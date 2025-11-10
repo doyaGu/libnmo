@@ -1,110 +1,185 @@
-/**
- * @file nmo_object.h
- * @brief Object metadata and handling
- */
-
 #ifndef NMO_OBJECT_H
 #define NMO_OBJECT_H
 
 #include "nmo_types.h"
+#include "nmo_chunk.h"
 #include "core/nmo_error.h"
+#include "core/nmo_arena.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief NMO object metadata
+ * @file nmo_object.h
+ * @brief Object metadata and runtime representation
+ *
+ * Represents a Virtools object in memory with its metadata, relationships,
+ * and associated chunk data.
  */
-typedef struct nmo_object nmo_object_t;
+
+/* Forward declaration */
+typedef struct nmo_object nmo_object;
 
 /**
- * @brief Object properties
+ * @brief Object structure
+ *
+ * Runtime representation of a Virtools object with metadata, hierarchical
+ * relationships, and chunk data.
  */
-typedef struct {
-    uint32_t id;             /* Object ID */
-    uint32_t manager_id;     /* Manager ID */
-    uint32_t flags;          /* Object flags */
-    uint64_t data_offset;    /* Offset in file */
-    uint32_t data_size;      /* Size of data */
-} nmo_object_props_t;
+struct nmo_object {
+    /* Identity */
+    nmo_object_id      id;              /**< Runtime object ID */
+    nmo_class_id       class_id;        /**< Object class ID */
+    const char*        name;            /**< Object name (optional) */
+    uint32_t          flags;           /**< Object flags */
+
+    /* Hierarchy */
+    nmo_object*        parent;          /**< Parent object (NULL for root) */
+    nmo_object**       children;        /**< Child objects array */
+    size_t            child_count;     /**< Number of children */
+    size_t            child_capacity;  /**< Children array capacity */
+
+    /* Data */
+    nmo_chunk*         chunk;           /**< Associated chunk data */
+    void*             data;            /**< Custom data pointer */
+
+    /* File context */
+    nmo_object_id      file_index;      /**< Original file ID */
+    uint32_t          creation_flags;  /**< Flags used during creation */
+    uint32_t          save_flags;      /**< Flags for saving */
+
+    /* Memory management */
+    nmo_arena*         arena;           /**< Arena for allocations */
+};
 
 /**
- * Create object
- * @param id Object ID
- * @param manager_id Manager ID
- * @return Object or NULL on error
+ * @brief Create object
+ *
+ * @param arena Arena for allocation (required)
+ * @param id Runtime object ID
+ * @param class_id Object class ID
+ * @return Object or NULL on allocation failure
  */
-NMO_API nmo_object_t* nmo_object_create(uint32_t id, uint32_t manager_id);
+NMO_API nmo_object* nmo_object_create(nmo_arena* arena, nmo_object_id id, nmo_class_id class_id);
 
 /**
- * Destroy object
+ * @brief Destroy object
+ *
+ * Since objects use arena allocation, this is mostly a no-op.
+ * The arena itself handles cleanup.
+ *
  * @param object Object to destroy
  */
-NMO_API void nmo_object_destroy(nmo_object_t* object);
+NMO_API void nmo_object_destroy(nmo_object* object);
 
 /**
- * Get object properties
- * @param object Object
- * @param out_props Output properties
+ * @brief Set object name
+ *
+ * @param object Object (required)
+ * @param name Name string (will be copied, can be NULL)
+ * @param arena Arena for name allocation
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_get_props(const nmo_object_t* object, nmo_object_props_t* out_props);
+NMO_API int nmo_object_set_name(nmo_object* object, const char* name, nmo_arena* arena);
 
 /**
- * Set object properties
- * @param object Object
- * @param props Properties to set
+ * @brief Get object name
+ *
+ * @param object Object (required)
+ * @return Name string or NULL if not set
+ */
+NMO_API const char* nmo_object_get_name(const nmo_object* object);
+
+/**
+ * @brief Add child object
+ *
+ * @param parent Parent object (required)
+ * @param child Child object (required)
+ * @param arena Arena for children array allocation
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_set_props(nmo_object_t* object, const nmo_object_props_t* props);
+NMO_API int nmo_object_add_child(nmo_object* parent, nmo_object* child, nmo_arena* arena);
 
 /**
- * Get object ID
- * @param object Object
- * @return Object ID
+ * @brief Remove child object
+ *
+ * @param parent Parent object (required)
+ * @param child Child object (required)
+ * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT if not found
  */
-NMO_API uint32_t nmo_object_get_id(const nmo_object_t* object);
+NMO_API int nmo_object_remove_child(nmo_object* parent, nmo_object* child);
 
 /**
- * Get manager ID
- * @param object Object
- * @return Manager ID
+ * @brief Get child by index
+ *
+ * @param object Parent object (required)
+ * @param index Child index
+ * @return Child object or NULL if index out of bounds
  */
-NMO_API uint32_t nmo_object_get_manager_id(const nmo_object_t* object);
+NMO_API nmo_object* nmo_object_get_child(const nmo_object* object, size_t index);
 
 /**
- * Get object data size
- * @param object Object
- * @return Data size in bytes
+ * @brief Get child count
+ *
+ * @param object Object (required)
+ * @return Number of children
  */
-NMO_API uint32_t nmo_object_get_data_size(const nmo_object_t* object);
+NMO_API size_t nmo_object_get_child_count(const nmo_object* object);
 
 /**
- * Set object data size
- * @param object Object
- * @param size Data size
+ * @brief Set object chunk data
+ *
+ * @param object Object (required)
+ * @param chunk Chunk data (can be NULL)
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_set_data_size(nmo_object_t* object, uint32_t size);
+NMO_API int nmo_object_set_chunk(nmo_object* object, nmo_chunk* chunk);
 
 /**
- * Get object data offset
- * @param object Object
- * @return Data offset in file
+ * @brief Get object chunk data
+ *
+ * @param object Object (required)
+ * @return Chunk data or NULL if not set
  */
-NMO_API uint64_t nmo_object_get_data_offset(const nmo_object_t* object);
+NMO_API nmo_chunk* nmo_object_get_chunk(const nmo_object* object);
 
 /**
- * Set object data offset
- * @param object Object
- * @param offset Data offset
+ * @brief Set custom data pointer
+ *
+ * @param object Object (required)
+ * @param data Custom data pointer
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_set_data_offset(nmo_object_t* object, uint64_t offset);
+NMO_API int nmo_object_set_data(nmo_object* object, void* data);
+
+/**
+ * @brief Get custom data pointer
+ *
+ * @param object Object (required)
+ * @return Custom data pointer or NULL
+ */
+NMO_API void* nmo_object_get_data(const nmo_object* object);
+
+/**
+ * @brief Set file index (original file ID)
+ *
+ * @param object Object (required)
+ * @param file_index File ID
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_set_file_index(nmo_object* object, nmo_object_id file_index);
+
+/**
+ * @brief Get file index
+ *
+ * @param object Object (required)
+ * @return File ID
+ */
+NMO_API nmo_object_id nmo_object_get_file_index(const nmo_object* object);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* NMO_OBJECT_H */
+#endif // NMO_OBJECT_H
