@@ -1,116 +1,135 @@
 /**
  * @file session.c
- * @brief High-level session API for loading and saving NMO files implementation
+ * @brief Session implementation (Phase 8.2)
  */
 
 #include "app/nmo_session.h"
+#include "app/nmo_context.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
+#include "session/nmo_object_repository.h"
+#include <stdlib.h>
+#include <string.h>
+
+#define DEFAULT_ARENA_SIZE (1024 * 1024)  /* 1 MB */
+
+/**
+ * Session structure
+ */
+struct nmo_session {
+    /* Borrowed context (not owned) */
+    nmo_context* context;
+
+    /* Owned resources */
+    nmo_arena* arena;
+    nmo_object_repository* repository;
+
+    /* File information */
+    nmo_file_info file_info;
+};
 
 /**
  * Create session
  */
-nmo_session_t* nmo_session_create(const char* file_path, nmo_session_mode_t mode) {
-    (void)file_path;
-    (void)mode;
-    return NULL;
-}
+nmo_session* nmo_session_create(nmo_context* ctx) {
+    if (ctx == NULL) {
+        return NULL;
+    }
 
-/**
- * Create session with options
- */
-nmo_session_t* nmo_session_create_with_options(const char* file_path, const nmo_session_options_t* options) {
-    (void)file_path;
-    (void)options;
-    return NULL;
+    nmo_session* session = (nmo_session*)malloc(sizeof(nmo_session));
+    if (session == NULL) {
+        return NULL;
+    }
+
+    memset(session, 0, sizeof(nmo_session));
+
+    /* Borrow context (do not retain) */
+    session->context = ctx;
+
+    /* Create arena for session-local allocations */
+    nmo_allocator* allocator = nmo_context_get_allocator(ctx);
+    session->arena = nmo_arena_create(allocator, DEFAULT_ARENA_SIZE);
+    if (session->arena == NULL) {
+        free(session);
+        return NULL;
+    }
+
+    /* Create object repository */
+    session->repository = nmo_object_repository_create(session->arena);
+    if (session->repository == NULL) {
+        nmo_arena_destroy(session->arena);
+        free(session);
+        return NULL;
+    }
+
+    /* Initialize file info to zero */
+    memset(&session->file_info, 0, sizeof(nmo_file_info));
+
+    return session;
 }
 
 /**
  * Destroy session
  */
-void nmo_session_destroy(nmo_session_t* session) {
-    (void)session;
-}
+void nmo_session_destroy(nmo_session* session) {
+    if (session != NULL) {
+        /* Destroy owned resources */
+        if (session->repository != NULL) {
+            nmo_object_repository_destroy(session->repository);
+        }
 
-/**
- * Open session (for read/existing file)
- */
-nmo_result_t nmo_session_open(nmo_session_t* session) {
-    (void)session;
-    return nmo_result_ok();
-}
+        if (session->arena != NULL) {
+            nmo_arena_destroy(session->arena);
+        }
 
-/**
- * Create new session (for write)
- */
-nmo_result_t nmo_session_create_new(nmo_session_t* session) {
-    (void)session;
-    return nmo_result_ok();
-}
+        /* Do not release context - we only borrowed it */
 
-/**
- * Close session
- */
-nmo_result_t nmo_session_close(nmo_session_t* session) {
-    (void)session;
-    return nmo_result_ok();
-}
-
-/**
- * Get object count
- */
-uint32_t nmo_session_get_object_count(const nmo_session_t* session) {
-    (void)session;
-    return 0;
-}
-
-/**
- * Load object
- */
-nmo_result_t nmo_session_load_object(
-    nmo_session_t* session, uint32_t object_id, void** out_data, size_t* out_size) {
-    (void)session;
-    (void)object_id;
-    if (out_data != NULL) {
-        *out_data = NULL;
+        free(session);
     }
-    if (out_size != NULL) {
-        *out_size = 0;
+}
+
+/**
+ * Get context
+ */
+nmo_context* nmo_session_get_context(const nmo_session* session) {
+    return session ? session->context : NULL;
+}
+
+/**
+ * Get arena
+ */
+nmo_arena* nmo_session_get_arena(const nmo_session* session) {
+    return session ? session->arena : NULL;
+}
+
+/**
+ * Get object repository
+ */
+nmo_object_repository* nmo_session_get_repository(const nmo_session* session) {
+    return session ? session->repository : NULL;
+}
+
+/**
+ * Get file info
+ */
+nmo_file_info nmo_session_get_file_info(const nmo_session* session) {
+    if (session) {
+        return session->file_info;
     }
-    return nmo_result_ok();
+
+    nmo_file_info empty;
+    memset(&empty, 0, sizeof(nmo_file_info));
+    return empty;
 }
 
 /**
- * Save object
+ * Set file info
  */
-nmo_result_t nmo_session_save_object(
-    nmo_session_t* session, uint32_t object_id, uint32_t manager_id, const void* data, size_t size) {
-    (void)session;
-    (void)object_id;
-    (void)manager_id;
-    (void)data;
-    (void)size;
-    return nmo_result_ok();
-}
+int nmo_session_set_file_info(nmo_session* session, const nmo_file_info* info) {
+    if (session == NULL || info == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
-/**
- * Get session error
- */
-const char* nmo_session_get_error(const nmo_session_t* session) {
-    (void)session;
-    return NULL;
-}
-
-/**
- * Check if session is active
- */
-int nmo_session_is_active(const nmo_session_t* session) {
-    (void)session;
-    return 0;
-}
-
-/**
- * Get session mode
- */
-nmo_session_mode_t nmo_session_get_mode(const nmo_session_t* session) {
-    (void)session;
-    return NMO_SESSION_READ;
+    session->file_info = *info;
+    return NMO_OK;
 }

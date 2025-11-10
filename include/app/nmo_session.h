@@ -1,6 +1,6 @@
 /**
  * @file nmo_session.h
- * @brief High-level session API for loading and saving NMO files
+ * @brief Session API for per-operation state (Phase 8.2)
  */
 
 #ifndef NMO_SESSION_H
@@ -13,124 +13,103 @@
 extern "C" {
 #endif
 
-/**
- * @brief Session context
- */
-typedef struct nmo_session nmo_session_t;
+/* Forward declarations */
+typedef struct nmo_context nmo_context;
+typedef struct nmo_arena nmo_arena;
+typedef struct nmo_object_repository nmo_object_repository;
 
 /**
- * @brief Session mode
+ * @brief Session structure
+ *
+ * Single-threaded per-operation state. Owns arena and object repository.
+ * Borrows context (does not retain).
  */
-typedef enum {
-    NMO_SESSION_READ = 0,
-    NMO_SESSION_WRITE,
-    NMO_SESSION_READ_WRITE,
-} nmo_session_mode_t;
+typedef struct nmo_session nmo_session;
 
 /**
- * @brief Session options
+ * @brief File information structure
  */
 typedef struct {
-    nmo_session_mode_t mode;    /* Session mode */
-    int load_all_objects;       /* Load all objects on session start */
-    int verify_checksums;       /* Verify checksums */
-    int enable_compression;     /* Enable compression */
-    int enable_validation;      /* Enable validation */
-} nmo_session_options_t;
+    uint32_t file_version;     /**< File format version */
+    uint32_t ck_version;       /**< CK engine version */
+    size_t file_size;          /**< File size in bytes */
+    uint32_t object_count;     /**< Number of objects */
+    uint32_t manager_count;    /**< Number of managers */
+    uint32_t write_mode;       /**< Write mode flags */
+} nmo_file_info;
 
 /**
- * Create session
- * @param file_path File path to load/save
- * @param mode Session mode
+ * @brief Create session
+ *
+ * Creates a new session borrowing the given context. The session is
+ * single-threaded and owns its own arena and object repository.
+ *
+ * @param ctx Context to borrow (must remain valid for session lifetime)
  * @return Session or NULL on error
  */
-NMO_API nmo_session_t* nmo_session_create(const char* file_path, nmo_session_mode_t mode);
+NMO_API nmo_session* nmo_session_create(nmo_context* ctx);
 
 /**
- * Create session with options
- * @param file_path File path to load/save
- * @param options Session options
- * @return Session or NULL on error
- */
-NMO_API nmo_session_t* nmo_session_create_with_options(const char* file_path, const nmo_session_options_t* options);
-
-/**
- * Destroy session
+ * @brief Destroy session
+ *
+ * Destroys the session and all owned resources (arena, repository).
+ * Does not affect the borrowed context.
+ *
  * @param session Session to destroy
  */
-NMO_API void nmo_session_destroy(nmo_session_t* session);
+NMO_API void nmo_session_destroy(nmo_session* session);
 
 /**
- * Open session (for read/existing file)
+ * @brief Get context
+ *
+ * Returns the borrowed context.
+ *
  * @param session Session
+ * @return Context
+ */
+NMO_API nmo_context* nmo_session_get_context(const nmo_session* session);
+
+/**
+ * @brief Get arena
+ *
+ * Returns the session-owned arena for temporary allocations.
+ *
+ * @param session Session
+ * @return Arena
+ */
+NMO_API nmo_arena* nmo_session_get_arena(const nmo_session* session);
+
+/**
+ * @brief Get object repository
+ *
+ * Returns the session-owned object repository.
+ *
+ * @param session Session
+ * @return Object repository
+ */
+NMO_API nmo_object_repository* nmo_session_get_repository(const nmo_session* session);
+
+/**
+ * @brief Get file info
+ *
+ * Returns information about the file associated with this session.
+ * Valid after a successful load operation.
+ *
+ * @param session Session
+ * @return File information
+ */
+NMO_API nmo_file_info nmo_session_get_file_info(const nmo_session* session);
+
+/**
+ * @brief Set file info
+ *
+ * Sets file information for the session. Used during load/save operations.
+ *
+ * @param session Session
+ * @param info File information to set
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_session_open(nmo_session_t* session);
-
-/**
- * Create new session (for write)
- * @param session Session
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_session_create_new(nmo_session_t* session);
-
-/**
- * Close session
- * @param session Session
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_session_close(nmo_session_t* session);
-
-/**
- * Get object count
- * @param session Session
- * @return Number of objects
- */
-NMO_API uint32_t nmo_session_get_object_count(const nmo_session_t* session);
-
-/**
- * Load object
- * @param session Session
- * @param object_id Object ID
- * @param out_data Output object data (caller must free)
- * @param out_size Output object size
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_session_load_object(
-    nmo_session_t* session, uint32_t object_id, void** out_data, size_t* out_size);
-
-/**
- * Save object
- * @param session Session
- * @param object_id Object ID
- * @param manager_id Manager ID
- * @param data Object data
- * @param size Data size
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_session_save_object(
-    nmo_session_t* session, uint32_t object_id, uint32_t manager_id, const void* data, size_t size);
-
-/**
- * Get session error
- * @param session Session
- * @return Error message or NULL
- */
-NMO_API const char* nmo_session_get_error(const nmo_session_t* session);
-
-/**
- * Check if session is active
- * @param session Session
- * @return 1 if active, 0 otherwise
- */
-NMO_API int nmo_session_is_active(const nmo_session_t* session);
-
-/**
- * Get session mode
- * @param session Session
- * @return Session mode
- */
-NMO_API nmo_session_mode_t nmo_session_get_mode(const nmo_session_t* session);
+NMO_API int nmo_session_set_file_info(nmo_session* session, const nmo_file_info* info);
 
 #ifdef __cplusplus
 }
