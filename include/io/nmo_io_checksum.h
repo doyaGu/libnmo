@@ -1,12 +1,13 @@
 /**
  * @file nmo_io_checksum.h
- * @brief Checksum IO operations
+ * @brief Checksum IO wrapper for composable IO operations
  */
 
 #ifndef NMO_IO_CHECKSUM_H
 #define NMO_IO_CHECKSUM_H
 
 #include "nmo_types.h"
+#include "io/nmo_io.h"
 #include "core/nmo_error.h"
 
 #ifdef __cplusplus
@@ -14,82 +15,58 @@ extern "C" {
 #endif
 
 /**
- * @brief Checksum IO context
- */
-typedef struct nmo_io_checksum nmo_io_checksum_t;
-
-/**
- * Checksum algorithm type
+ * @brief Checksum algorithm types
  */
 typedef enum {
-    NMO_CHECKSUM_NONE = 0,
-    NMO_CHECKSUM_CRC32,
-    NMO_CHECKSUM_MD5,
-    NMO_CHECKSUM_SHA1,
-    NMO_CHECKSUM_SHA256,
-} nmo_checksum_type_t;
+    NMO_CHECKSUM_ADLER32 = 0,  /**< Adler-32 checksum */
+    NMO_CHECKSUM_CRC32   = 1,  /**< CRC-32 checksum */
+} nmo_checksum_algorithm;
 
 /**
- * Create a checksum IO context for reading
- * @param base_io Base IO to read from
- * @param checksum_type Type of checksum
- * @return Checksum IO context or NULL on error
+ * @brief Checksummed IO descriptor
+ *
+ * Configures the checksum parameters for wrapping an IO interface.
  */
-NMO_API nmo_io_checksum_t* nmo_io_checksum_create_read(
-    void* base_io, nmo_checksum_type_t checksum_type);
+typedef struct {
+    nmo_checksum_algorithm algorithm;  /**< Checksum algorithm to use */
+    uint32_t initial_value;            /**< Initial checksum value (typically 0 for Adler-32, 0 for CRC32) */
+} nmo_checksummed_io_desc;
 
 /**
- * Create a checksum IO context for writing
- * @param base_io Base IO to write to
- * @param checksum_type Type of checksum
- * @return Checksum IO context or NULL on error
+ * @brief Wrap an IO interface with checksumming
+ *
+ * Creates a new IO interface that computes a checksum of all data that
+ * flows through it (both reads and writes), wrapping the provided inner
+ * IO interface.
+ *
+ * The wrapper passes through seek/tell/close operations to the underlying IO.
+ * The checksum accumulates across all data that flows through.
+ *
+ * @param inner The inner IO interface to wrap (must not be NULL)
+ * @param desc Checksum descriptor (must not be NULL)
+ * @return New wrapped IO interface, or NULL on error
+ *
+ * @note The caller is responsible for closing the returned interface.
+ *       Closing will also close the inner interface.
+ * @note The inner interface should not be used directly after wrapping.
+ * @note Use nmo_checksummed_io_get_checksum() to retrieve the computed checksum.
  */
-NMO_API nmo_io_checksum_t* nmo_io_checksum_create_write(
-    void* base_io, nmo_checksum_type_t checksum_type);
+NMO_API nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
+                                                    const nmo_checksummed_io_desc* desc);
 
 /**
- * Destroy checksum IO context
- * @param io_checksum Checksum IO context
+ * @brief Get the computed checksum value
+ *
+ * Retrieves the current checksum value computed from all data that has
+ * flowed through the checksummed IO interface.
+ *
+ * @param io The checksummed IO interface (must not be NULL)
+ * @return The computed checksum value, or 0 if the interface is not a checksummed IO
+ *
+ * @note This can be called at any time to get the current checksum state.
+ * @note The checksum continues to update with subsequent read/write operations.
  */
-NMO_API void nmo_io_checksum_destroy(nmo_io_checksum_t* io_checksum);
-
-/**
- * Read from checksum stream
- * @param io_checksum Checksum IO context
- * @param buffer Buffer to read into
- * @param size Number of bytes to read
- * @return Number of bytes read
- */
-NMO_API size_t nmo_io_checksum_read(nmo_io_checksum_t* io_checksum, void* buffer, size_t size);
-
-/**
- * Write to checksum stream
- * @param io_checksum Checksum IO context
- * @param buffer Data to write
- * @param size Number of bytes to write
- * @return Number of bytes written
- */
-NMO_API size_t nmo_io_checksum_write(nmo_io_checksum_t* io_checksum, const void* buffer, size_t size);
-
-/**
- * Get computed checksum
- * @param io_checksum Checksum IO context
- * @param out_digest Output digest buffer
- * @param out_digest_size Output digest size
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_io_checksum_get_digest(
-    const nmo_io_checksum_t* io_checksum, void* out_digest, size_t* out_digest_size);
-
-/**
- * Verify checksum against expected value
- * @param io_checksum Checksum IO context
- * @param expected_digest Expected digest
- * @param digest_size Digest size
- * @return NMO_OK if checksums match
- */
-NMO_API nmo_result_t nmo_io_checksum_verify(
-    const nmo_io_checksum_t* io_checksum, const void* expected_digest, size_t digest_size);
+NMO_API uint32_t nmo_checksummed_io_get_checksum(nmo_io_interface* io);
 
 #ifdef __cplusplus
 }

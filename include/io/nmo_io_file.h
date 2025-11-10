@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "io/nmo_io.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,6 +73,14 @@ NMO_API int64_t nmo_io_file_tell(nmo_io_file_t* io_file);
  * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_io_file_close(nmo_io_file_t* io_file);
+
+/**
+ * Open a file and return an IO interface
+ * @param path File path
+ * @param mode IO mode (NMO_IO_READ, NMO_IO_WRITE, NMO_IO_CREATE)
+ * @return IO interface or NULL on error
+ */
+NMO_API nmo_io_interface* nmo_file_io_open(const char* path, nmo_io_mode mode);
 
 #ifdef __cplusplus
 }
