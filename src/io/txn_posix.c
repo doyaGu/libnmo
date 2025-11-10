@@ -139,6 +139,13 @@ static int create_temp_file(const char* dir, const char* basename,
     if (fd >= 0) {
         // Rename to add .tmp suffix back
         char final_temp[PATH_MAX];
+        size_t base_len = strlen(temp_path_buf);
+        if (base_len + 4 >= PATH_MAX) {
+            close(fd);
+            unlink(temp_path_buf);
+            errno = ENAMETOOLONG;
+            return -1;
+        }
         snprintf(final_temp, sizeof(final_temp), "%s.tmp", temp_path_buf);
 
         if (rename(temp_path_buf, final_temp) != 0) {
