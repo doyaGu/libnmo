@@ -4,96 +4,128 @@
  */
 
 #include "schema/nmo_schema.h"
+#include <string.h>
+#include <stddef.h>
 
 /**
- * Create schema
+ * Get field type name
  */
-nmo_schema_t* nmo_schema_create(uint32_t schema_id, const char* name, uint32_t struct_size) {
-    (void)schema_id;
-    (void)name;
-    (void)struct_size;
-    return NULL;
-}
-
-/**
- * Destroy schema
- */
-void nmo_schema_destroy(nmo_schema_t* schema) {
-    (void)schema;
-}
-
-/**
- * Add field to schema
- */
-nmo_result_t nmo_schema_add_field(nmo_schema_t* schema, const nmo_field_descriptor_t* field) {
-    (void)schema;
-    (void)field;
-    return nmo_result_ok();
-}
-
-/**
- * Get schema info
- */
-nmo_result_t nmo_schema_get_info(const nmo_schema_t* schema, nmo_schema_info_t* out_info) {
-    (void)schema;
-    if (out_info != NULL) {
-        out_info->schema_id = 0;
-        out_info->name = NULL;
-        out_info->struct_size = 0;
-        out_info->field_count = 0;
-        out_info->version = 0;
+const char* nmo_field_type_name(nmo_field_type type) {
+    switch (type) {
+        case NMO_FIELD_INT8:       return "int8";
+        case NMO_FIELD_UINT8:      return "uint8";
+        case NMO_FIELD_INT16:      return "int16";
+        case NMO_FIELD_UINT16:     return "uint16";
+        case NMO_FIELD_INT32:      return "int32";
+        case NMO_FIELD_UINT32:     return "uint32";
+        case NMO_FIELD_FLOAT:      return "float";
+        case NMO_FIELD_STRING:     return "string";
+        case NMO_FIELD_GUID:       return "guid";
+        case NMO_FIELD_OBJECT_ID:  return "object_id";
+        case NMO_FIELD_STRUCT:     return "struct";
+        case NMO_FIELD_ARRAY:      return "array";
+        default:                   return "unknown";
     }
-    return nmo_result_ok();
 }
 
 /**
- * Get field count
+ * Get field type size
  */
-uint32_t nmo_schema_get_field_count(const nmo_schema_t* schema) {
-    (void)schema;
-    return 0;
-}
-
-/**
- * Get field by index
- */
-nmo_result_t nmo_schema_get_field(
-    const nmo_schema_t* schema, uint32_t index, nmo_field_descriptor_t* out_field) {
-    (void)schema;
-    (void)index;
-    if (out_field != NULL) {
-        out_field->name = NULL;
-        out_field->type = 0;
-        out_field->offset = 0;
-        out_field->size = 0;
-        out_field->flags = 0;
+size_t nmo_field_type_size(nmo_field_type type) {
+    switch (type) {
+        case NMO_FIELD_INT8:
+        case NMO_FIELD_UINT8:
+            return 1;
+        case NMO_FIELD_INT16:
+        case NMO_FIELD_UINT16:
+            return 2;
+        case NMO_FIELD_INT32:
+        case NMO_FIELD_UINT32:
+        case NMO_FIELD_FLOAT:
+        case NMO_FIELD_OBJECT_ID:
+            return 4;
+        case NMO_FIELD_GUID:
+            return 8;  // Two 32-bit values
+        case NMO_FIELD_STRING:
+        case NMO_FIELD_STRUCT:
+        case NMO_FIELD_ARRAY:
+            return 0;  // Variable size
+        default:
+            return 0;
     }
-    return nmo_result_ok();
 }
 
 /**
- * Get field by name
+ * Validate field descriptor
  */
-nmo_result_t nmo_schema_get_field_by_name(
-    const nmo_schema_t* schema, const char* field_name, nmo_field_descriptor_t* out_field) {
-    (void)schema;
-    (void)field_name;
-    if (out_field != NULL) {
-        out_field->name = NULL;
-        out_field->type = 0;
-        out_field->offset = 0;
-        out_field->size = 0;
-        out_field->flags = 0;
+int nmo_field_descriptor_validate(const nmo_field_descriptor* field) {
+    if (field == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    return nmo_result_ok();
+
+    // Name is required
+    if (field->name == NULL || field->name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Check valid type
+    if (field->type > NMO_FIELD_ARRAY) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // For fixed-size types, size should match type size
+    size_t expected_size = nmo_field_type_size(field->type);
+    if (expected_size > 0 && field->size != expected_size) {
+        // Allow mismatch for arrays
+        if (field->type != NMO_FIELD_ARRAY && field->count <= 1) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+    }
+
+    // Arrays must have count > 0
+    if (field->type == NMO_FIELD_ARRAY && field->count == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Structs must have a class_id
+    if (field->type == NMO_FIELD_STRUCT && field->class_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    return NMO_OK;
 }
 
 /**
- * Validate data against schema
+ * Validate schema descriptor
  */
-nmo_result_t nmo_schema_validate(const nmo_schema_t* schema, const void* data, size_t data_size) {
-    (void)schema;
-    (void)data;
-    (void)data_size;
-    return nmo_result_ok();
+int nmo_schema_descriptor_validate(const nmo_schema_descriptor* schema) {
+    if (schema == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Class ID is required
+    if (schema->class_id == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Class name is required
+    if (schema->class_name == NULL || schema->class_name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // If we have fields, validate them
+    if (schema->field_count > 0) {
+        if (schema->fields == NULL) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+
+        for (size_t i = 0; i < schema->field_count; i++) {
+            int result = nmo_field_descriptor_validate(&schema->fields[i]);
+            if (result != NMO_OK) {
+                return result;
+            }
+        }
+    }
+
+    return NMO_OK;
 }

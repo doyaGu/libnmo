@@ -13,99 +13,86 @@
 extern "C" {
 #endif
 
+/* Forward declarations */
+typedef struct nmo_object nmo_object;
+typedef struct nmo_chunk_writer nmo_chunk_writer;
+typedef struct nmo_chunk_parser nmo_chunk_parser;
+typedef struct nmo_arena nmo_arena;
+
 /**
- * @brief Schema descriptor
+ * @brief Field types for schema descriptors
  */
-typedef struct nmo_schema nmo_schema_t;
+typedef enum {
+    NMO_FIELD_INT8,
+    NMO_FIELD_UINT8,
+    NMO_FIELD_INT16,
+    NMO_FIELD_UINT16,
+    NMO_FIELD_INT32,
+    NMO_FIELD_UINT32,
+    NMO_FIELD_FLOAT,
+    NMO_FIELD_STRING,
+    NMO_FIELD_GUID,
+    NMO_FIELD_OBJECT_ID,
+    NMO_FIELD_STRUCT,
+    NMO_FIELD_ARRAY,
+} nmo_field_type;
 
 /**
  * @brief Field descriptor
  */
-typedef struct {
-    const char* name;        /* Field name */
-    uint32_t type;           /* Field type */
-    uint32_t offset;         /* Field offset in structure */
-    uint32_t size;           /* Field size */
-    uint32_t flags;          /* Field flags */
-} nmo_field_descriptor_t;
+typedef struct nmo_field_descriptor {
+    const char*     name;               /**< Field name */
+    nmo_field_type  type;               /**< Field type */
+    size_t          offset;             /**< Field offset in structure */
+    size_t          size;               /**< Field size */
+    size_t          count;              /**< Element count (for arrays) */
+    nmo_class_id    class_id;           /**< Class ID (for structs/objects) */
+    const char*     validation_rule;    /**< Validation rule (optional) */
+} nmo_field_descriptor;
 
 /**
- * @brief Schema info
+ * @brief Schema descriptor
  */
-typedef struct {
-    uint32_t schema_id;      /* Schema ID */
-    const char* name;        /* Schema name */
-    uint32_t struct_size;    /* Size of structure */
-    uint32_t field_count;    /* Number of fields */
-    uint32_t version;        /* Schema version */
-} nmo_schema_info_t;
+typedef struct nmo_schema_descriptor {
+    nmo_class_id           class_id;        /**< Class ID */
+    const char*            class_name;      /**< Class name */
+    nmo_class_id           parent_class_id; /**< Parent class ID (0 for root) */
+    nmo_field_descriptor*  fields;          /**< Field descriptors */
+    size_t                 field_count;     /**< Number of fields */
+    uint32_t               chunk_version;   /**< Chunk version */
+
+    /* Serialization functions */
+    void (*serialize_fn)(nmo_object* obj, nmo_chunk_writer* writer);
+    void (*deserialize_fn)(nmo_object* obj, nmo_chunk_parser* parser);
+} nmo_schema_descriptor;
 
 /**
- * Create schema
- * @param schema_id Schema ID
- * @param name Schema name
- * @param struct_size Size of structure
- * @return Schema or NULL on error
+ * @brief Get field type name
+ * @param type Field type
+ * @return Type name string
  */
-NMO_API nmo_schema_t* nmo_schema_create(uint32_t schema_id, const char* name, uint32_t struct_size);
+NMO_API const char* nmo_field_type_name(nmo_field_type type);
 
 /**
- * Destroy schema
- * @param schema Schema to destroy
+ * @brief Get field type size
+ * @param type Field type
+ * @return Size in bytes (0 for variable-size types)
  */
-NMO_API void nmo_schema_destroy(nmo_schema_t* schema);
+NMO_API size_t nmo_field_type_size(nmo_field_type type);
 
 /**
- * Add field to schema
- * @param schema Schema
+ * @brief Validate field descriptor
  * @param field Field descriptor
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_schema_add_field(nmo_schema_t* schema, const nmo_field_descriptor_t* field);
-
-/**
- * Get schema info
- * @param schema Schema
- * @param out_info Output schema info
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_schema_get_info(const nmo_schema_t* schema, nmo_schema_info_t* out_info);
-
-/**
- * Get field count
- * @param schema Schema
- * @return Number of fields
- */
-NMO_API uint32_t nmo_schema_get_field_count(const nmo_schema_t* schema);
-
-/**
- * Get field by index
- * @param schema Schema
- * @param index Field index
- * @param out_field Output field descriptor
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_schema_get_field(
-    const nmo_schema_t* schema, uint32_t index, nmo_field_descriptor_t* out_field);
-
-/**
- * Get field by name
- * @param schema Schema
- * @param field_name Field name
- * @param out_field Output field descriptor
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_schema_get_field_by_name(
-    const nmo_schema_t* schema, const char* field_name, nmo_field_descriptor_t* out_field);
-
-/**
- * Validate data against schema
- * @param schema Schema
- * @param data Data to validate
- * @param data_size Data size
  * @return NMO_OK if valid
  */
-NMO_API nmo_result_t nmo_schema_validate(const nmo_schema_t* schema, const void* data, size_t data_size);
+NMO_API int nmo_field_descriptor_validate(const nmo_field_descriptor* field);
+
+/**
+ * @brief Validate schema descriptor
+ * @param schema Schema descriptor
+ * @return NMO_OK if valid
+ */
+NMO_API int nmo_schema_descriptor_validate(const nmo_schema_descriptor* schema);
 
 #ifdef __cplusplus
 }
