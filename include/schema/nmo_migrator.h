@@ -13,77 +13,45 @@
 extern "C" {
 #endif
 
+/* Forward declarations */
+typedef struct nmo_schema_registry nmo_schema_registry;
+typedef struct nmo_chunk nmo_chunk;
+
 /**
  * @brief Migrator context
  */
-typedef struct nmo_migrator nmo_migrator_t;
+typedef struct nmo_migrator nmo_migrator;
 
 /**
- * @brief Migration function typedef
- */
-typedef nmo_result_t (*nmo_migration_fn)(const void* old_data, size_t old_size,
-                                          void* new_data, size_t* new_size);
-
-/**
- * Create migrator
- * @param schema_registry Schema registry
+ * @brief Create migrator
+ * @param registry Schema registry
  * @return Migrator or NULL on error
  */
-NMO_API nmo_migrator_t* nmo_migrator_create(void* schema_registry);
+NMO_API nmo_migrator* nmo_migrator_create(nmo_schema_registry* registry);
 
 /**
- * Destroy migrator
+ * @brief Destroy migrator
  * @param migrator Migrator to destroy
  */
-NMO_API void nmo_migrator_destroy(nmo_migrator_t* migrator);
+NMO_API void nmo_migrator_destroy(nmo_migrator* migrator);
 
 /**
- * Register migration function
+ * @brief Migrate chunk to target version
  * @param migrator Migrator
- * @param from_version Source schema version
- * @param to_version Target schema version
- * @param migration_fn Migration function
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_migrator_register_migration(
-    nmo_migrator_t* migrator, uint32_t from_version, uint32_t to_version,
-    nmo_migration_fn migration_fn);
-
-/**
- * Migrate data to target version
- * @param migrator Migrator
- * @param schema_id Schema ID
- * @param old_version Current data version
+ * @param chunk Chunk to migrate
  * @param target_version Target version
- * @param old_data Old data
- * @param old_size Old data size
- * @param out_new_data Output new data (caller must free)
- * @param out_new_size Output new data size
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_migrator_migrate(
-    nmo_migrator_t* migrator, uint32_t schema_id,
-    uint32_t old_version, uint32_t target_version,
-    const void* old_data, size_t old_size,
-    void** out_new_data, size_t* out_new_size);
+NMO_API int nmo_migrate_chunk(nmo_migrator* migrator, nmo_chunk* chunk, uint32_t target_version);
 
 /**
- * Check if migration path exists
+ * @brief Check if migration is supported
  * @param migrator Migrator
  * @param from_version Source version
  * @param to_version Target version
- * @return 1 if path exists, 0 otherwise
+ * @return 1 if supported, 0 otherwise
  */
-NMO_API int nmo_migrator_has_migration_path(
-    nmo_migrator_t* migrator, uint32_t from_version, uint32_t to_version);
-
-/**
- * Get latest schema version
- * @param migrator Migrator
- * @param schema_id Schema ID
- * @return Latest version or 0 if not found
- */
-NMO_API uint32_t nmo_migrator_get_latest_version(nmo_migrator_t* migrator, uint32_t schema_id);
+NMO_API int nmo_migrator_can_migrate(nmo_migrator* migrator, uint32_t from_version, uint32_t to_version);
 
 #ifdef __cplusplus
 }

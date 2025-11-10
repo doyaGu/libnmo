@@ -4,74 +4,69 @@
  */
 
 #include "schema/nmo_migrator.h"
+#include "schema/nmo_schema_registry.h"
+#include "format/nmo_chunk.h"
+#include <stdlib.h>
+
+/**
+ * Migrator context
+ */
+struct nmo_migrator {
+    nmo_schema_registry* registry;
+};
 
 /**
  * Create migrator
  */
-nmo_migrator_t* nmo_migrator_create(void* schema_registry) {
-    (void)schema_registry;
-    return NULL;
+nmo_migrator* nmo_migrator_create(nmo_schema_registry* registry) {
+    if (registry == NULL) {
+        return NULL;
+    }
+
+    nmo_migrator* migrator = (nmo_migrator*)malloc(sizeof(nmo_migrator));
+    if (migrator == NULL) {
+        return NULL;
+    }
+
+    migrator->registry = registry;
+
+    return migrator;
 }
 
 /**
  * Destroy migrator
  */
-void nmo_migrator_destroy(nmo_migrator_t* migrator) {
-    (void)migrator;
+void nmo_migrator_destroy(nmo_migrator* migrator) {
+    free(migrator);
 }
 
 /**
- * Register migration function
+ * Migrate chunk to target version
  */
-nmo_result_t nmo_migrator_register_migration(
-    nmo_migrator_t* migrator, uint32_t from_version, uint32_t to_version,
-    nmo_migration_fn migration_fn) {
-    (void)migrator;
+int nmo_migrate_chunk(nmo_migrator* migrator, nmo_chunk* chunk, uint32_t target_version) {
+    if (migrator == NULL || chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Basic migration: just update the chunk version
+    // Full migration would involve data transformation based on schema changes
+    chunk->chunk_version = target_version;
+
+    return NMO_OK;
+}
+
+/**
+ * Check if migration is supported
+ */
+int nmo_migrator_can_migrate(nmo_migrator* migrator, uint32_t from_version, uint32_t to_version) {
+    if (migrator == NULL) {
+        return 0;
+    }
+
+    // For now, we support all version migrations
+    // In a real implementation, we would check if there's a migration path
     (void)from_version;
     (void)to_version;
-    (void)migration_fn;
-    return nmo_result_ok();
-}
 
-/**
- * Migrate data to target version
- */
-nmo_result_t nmo_migrator_migrate(
-    nmo_migrator_t* migrator, uint32_t schema_id,
-    uint32_t old_version, uint32_t target_version,
-    const void* old_data, size_t old_size,
-    void** out_new_data, size_t* out_new_size) {
-    (void)migrator;
-    (void)schema_id;
-    (void)old_version;
-    (void)target_version;
-    (void)old_data;
-    (void)old_size;
-    if (out_new_data != NULL) {
-        *out_new_data = NULL;
-    }
-    if (out_new_size != NULL) {
-        *out_new_size = 0;
-    }
-    return nmo_result_ok();
-}
-
-/**
- * Check if migration path exists
- */
-int nmo_migrator_has_migration_path(
-    nmo_migrator_t* migrator, uint32_t from_version, uint32_t to_version) {
-    (void)migrator;
-    (void)from_version;
-    (void)to_version;
-    return 0;
-}
-
-/**
- * Get latest schema version
- */
-uint32_t nmo_migrator_get_latest_version(nmo_migrator_t* migrator, uint32_t schema_id) {
-    (void)migrator;
-    (void)schema_id;
-    return 0;
+    return 1;
 }

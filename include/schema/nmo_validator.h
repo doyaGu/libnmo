@@ -13,69 +13,77 @@
 extern "C" {
 #endif
 
+/* Forward declarations */
+typedef struct nmo_schema_registry nmo_schema_registry;
+typedef struct nmo_object nmo_object;
+
+/**
+ * @brief Validation modes
+ */
+typedef enum {
+    NMO_VALIDATION_STRICT,      /**< Strict validation */
+    NMO_VALIDATION_PERMISSIVE,  /**< Permissive validation */
+} nmo_validation_mode;
+
+/**
+ * @brief Validation results
+ */
+typedef enum {
+    NMO_VALID,                  /**< Data is valid */
+    NMO_VALID_WITH_WARNINGS,    /**< Data is valid but has warnings */
+    NMO_INVALID,                /**< Data is invalid */
+} nmo_validation_result;
+
 /**
  * @brief Validator context
  */
-typedef struct nmo_validator nmo_validator_t;
+typedef struct nmo_validation nmo_validation;
 
 /**
- * @brief Validation result
- */
-typedef struct {
-    int is_valid;            /* 1 if valid, 0 if invalid */
-    const char* error_msg;   /* Error message if invalid */
-    uint32_t error_field;    /* Field index of error (if applicable) */
-} nmo_validation_result_t;
-
-/**
- * Create validator
- * @param schema_registry Schema registry to use
+ * @brief Create validator
+ * @param registry Schema registry to use
+ * @param mode Validation mode
  * @return Validator or NULL on error
  */
-NMO_API nmo_validator_t* nmo_validator_create(void* schema_registry);
+NMO_API nmo_validation* nmo_validation_create(nmo_schema_registry* registry,
+                                                nmo_validation_mode mode);
 
 /**
- * Destroy validator
- * @param validator Validator to destroy
+ * @brief Destroy validator
+ * @param validation Validator to destroy
  */
-NMO_API void nmo_validator_destroy(nmo_validator_t* validator);
+NMO_API void nmo_validation_destroy(nmo_validation* validation);
 
 /**
- * Validate data
- * @param validator Validator
- * @param schema_id Schema ID to validate against
- * @param data Data to validate
- * @param data_size Data size
- * @param out_result Output validation result
- * @return NMO_OK if validation check succeeded (may still be invalid)
+ * @brief Validate object against schema
+ * @param validation Validator
+ * @param obj Object to validate
+ * @return Validation result
  */
-NMO_API nmo_result_t nmo_validator_validate(
-    nmo_validator_t* validator, uint32_t schema_id, const void* data, size_t data_size,
-    nmo_validation_result_t* out_result);
+NMO_API nmo_validation_result nmo_validate_object(nmo_validation* validation, nmo_object* obj);
 
 /**
- * Validate data structure
- * @param validator Validator
- * @param schema_id Schema ID
- * @param data Data pointer
- * @return 1 if valid, 0 if invalid
+ * @brief Validate file
+ * @param validation Validator
+ * @param path File path
+ * @return Validation result
  */
-NMO_API int nmo_validator_is_valid(
-    nmo_validator_t* validator, uint32_t schema_id, const void* data);
+NMO_API nmo_validation_result nmo_validate_file(nmo_validation* validation, const char* path);
 
 /**
- * Get validation error
- * @param validator Validator
- * @return Last validation error message
+ * @brief Get last validation error message
+ * @param validation Validator
+ * @return Error message or NULL
  */
-NMO_API const char* nmo_validator_get_error(const nmo_validator_t* validator);
+NMO_API const char* nmo_validation_get_error(const nmo_validation* validation);
 
 /**
- * Clear cached validation results
- * @param validator Validator
+ * @brief Set validation mode
+ * @param validation Validator
+ * @param mode Validation mode
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_validator_clear(nmo_validator_t* validator);
+NMO_API int nmo_validation_set_mode(nmo_validation* validation, nmo_validation_mode mode);
 
 #ifdef __cplusplus
 }
