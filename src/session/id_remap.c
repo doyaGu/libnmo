@@ -1,222 +1,324 @@
+/**
+ * @file id_remap.c
+ * @brief ID remapping implementation for load and save operations
+ */
+
 #include "session/nmo_id_remap.h"
+#include "session/nmo_load_session.h"
+#include "session/nmo_object_repository.h"
+#include "format/nmo_object.h"
 #include <stdlib.h>
 #include <string.h>
 
+/* Forward declarations for internal functions */
+extern int nmo_load_session_get_mappings(const nmo_load_session* session,
+                                          nmo_object_id** file_ids,
+                                          nmo_object_id** runtime_ids,
+                                          size_t* count);
+
 /**
- * @brief ID mapping entry
+ * Hash table entry for ID remapping
  */
 typedef struct {
-    uint32_t old_id;
-    uint32_t new_id;
+    nmo_object_id old_id;
+    nmo_object_id new_id;
     int occupied;
-} nmo_id_mapping;
+} remap_entry;
 
 /**
- * @brief ID remapper structure
+ * ID remap table structure
  */
-struct nmo_id_remap {
-    nmo_id_mapping* mappings;
+struct nmo_id_remap_table {
+    remap_entry* entries;
     size_t capacity;
     size_t count;
+
+    /* Dense array for iteration */
+    nmo_id_remap_entry* entry_list;
 };
 
-// Hash function for object IDs
-static inline size_t hash_id(uint32_t id, size_t capacity) {
-    // Simple multiplicative hash
+/**
+ * ID remap plan structure
+ */
+struct nmo_id_remap_plan {
+    nmo_id_remap_table* table;
+    size_t objects_remapped;
+    size_t conflicts_resolved;
+};
+
+/**
+ * Hash function for IDs
+ */
+static inline size_t hash_id(nmo_object_id id, size_t capacity) {
     return (id * 2654435761U) % capacity;
 }
 
-// Find mapping slot (returns index, -1 if not found)
-static int find_slot(const nmo_id_remap_t* remapper, uint32_t old_id, int* found) {
-    size_t index = hash_id(old_id, remapper->capacity);
+/**
+ * Find entry slot in hash table
+ */
+static int find_entry_slot(const nmo_id_remap_table* table,
+                            nmo_object_id old_id,
+                            int* found) {
+    size_t index = hash_id(old_id, table->capacity);
     size_t start = index;
 
     do {
-        if (!remapper->mappings[index].occupied) {
+        if (!table->entries[index].occupied) {
             *found = 0;
-            return (int)index;  // Empty slot
+            return (int)index;
         }
-
-        if (remapper->mappings[index].old_id == old_id) {
+        if (table->entries[index].old_id == old_id) {
             *found = 1;
-            return (int)index;  // Found existing
+            return (int)index;
         }
-
-        index = (index + 1) % remapper->capacity;
+        index = (index + 1) % table->capacity;
     } while (index != start);
 
     *found = 0;
-    return -1;  // Table full
+    return -1;
 }
 
-// Resize hash table
-static int resize_table(nmo_id_remap_t* remapper, size_t new_capacity) {
-    nmo_id_mapping* old_mappings = remapper->mappings;
-    size_t old_capacity = remapper->capacity;
-
-    // Allocate new table
-    nmo_id_mapping* new_mappings = (nmo_id_mapping*)calloc(new_capacity, sizeof(nmo_id_mapping));
-    if (new_mappings == NULL) {
-        return -1;
-    }
-
-    remapper->mappings = new_mappings;
-    remapper->capacity = new_capacity;
-    remapper->count = 0;
-
-    // Rehash old entries
-    for (size_t i = 0; i < old_capacity; i++) {
-        if (old_mappings[i].occupied) {
-            int found;
-            int slot = find_slot(remapper, old_mappings[i].old_id, &found);
-            if (slot >= 0) {
-                remapper->mappings[slot].old_id = old_mappings[i].old_id;
-                remapper->mappings[slot].new_id = old_mappings[i].new_id;
-                remapper->mappings[slot].occupied = 1;
-                remapper->count++;
-            }
-        }
-    }
-
-    free(old_mappings);
-    return 0;
-}
-
-nmo_id_remap_t* nmo_id_remap_create(size_t initial_capacity) {
-    if (initial_capacity == 0) {
-        initial_capacity = 32;
-    }
-
-    nmo_id_remap_t* remapper = (nmo_id_remap_t*)malloc(sizeof(nmo_id_remap_t));
-    if (remapper == NULL) {
-        return NULL;
-    }
-
-    remapper->mappings = (nmo_id_mapping*)calloc(initial_capacity, sizeof(nmo_id_mapping));
-    if (remapper->mappings == NULL) {
-        free(remapper);
-        return NULL;
-    }
-
-    remapper->capacity = initial_capacity;
-    remapper->count = 0;
-
-    return remapper;
-}
-
-void nmo_id_remap_destroy(nmo_id_remap_t* remapper) {
-    if (remapper != NULL) {
-        free(remapper->mappings);
-        free(remapper);
-    }
-}
-
-nmo_result_t nmo_id_remap_add_mapping(nmo_id_remap_t* remapper, uint32_t old_id, uint32_t new_id) {
-    if (remapper == NULL) {
-        return nmo_result_error(NULL);
-    }
-
-    // Resize if load factor > 0.7
-    if (remapper->count * 10 >= remapper->capacity * 7) {
-        if (resize_table(remapper, remapper->capacity * 2) != 0) {
-            return nmo_result_error(NULL);
-        }
-    }
-
+/**
+ * Add entry to remap table
+ */
+static int add_entry(nmo_id_remap_table* table,
+                     nmo_object_id old_id,
+                     nmo_object_id new_id) {
     int found;
-    int slot = find_slot(remapper, old_id, &found);
+    int slot = find_entry_slot(table, old_id, &found);
     if (slot < 0) {
-        return nmo_result_error(NULL);  // Table full (shouldn't happen after resize)
+        return NMO_ERR_NOMEM;
     }
 
     if (!found) {
-        remapper->count++;
+        table->count++;
     }
 
-    remapper->mappings[slot].old_id = old_id;
-    remapper->mappings[slot].new_id = new_id;
-    remapper->mappings[slot].occupied = 1;
+    table->entries[slot].old_id = old_id;
+    table->entries[slot].new_id = new_id;
+    table->entries[slot].occupied = 1;
 
-    return nmo_result_ok();
+    return NMO_OK;
 }
 
-nmo_result_t nmo_id_remap_get_mapping(const nmo_id_remap_t* remapper, uint32_t old_id, uint32_t* out_new_id) {
-    if (remapper == NULL || out_new_id == NULL) {
-        return nmo_result_error(NULL);
+/**
+ * Build ID remap table from load session
+ */
+nmo_id_remap_table* nmo_build_remap_table(nmo_load_session* session) {
+    if (session == NULL) {
+        return NULL;
+    }
+
+    /* Get mappings from load session */
+    nmo_object_id* file_ids = NULL;
+    nmo_object_id* runtime_ids = NULL;
+    size_t count = 0;
+
+    int result = nmo_load_session_get_mappings(session, &file_ids, &runtime_ids, &count);
+    if (result != NMO_OK || count == 0) {
+        return NULL;
+    }
+
+    /* Create remap table */
+    nmo_id_remap_table* table = (nmo_id_remap_table*)malloc(sizeof(nmo_id_remap_table));
+    if (table == NULL) {
+        free(file_ids);
+        free(runtime_ids);
+        return NULL;
+    }
+
+    /* Allocate hash table (2x count for low load factor) */
+    size_t capacity = count * 2;
+    table->entries = (remap_entry*)calloc(capacity, sizeof(remap_entry));
+    if (table->entries == NULL) {
+        free(table);
+        free(file_ids);
+        free(runtime_ids);
+        return NULL;
+    }
+
+    table->capacity = capacity;
+    table->count = 0;
+
+    /* Allocate entry list */
+    table->entry_list = (nmo_id_remap_entry*)malloc(count * sizeof(nmo_id_remap_entry));
+    if (table->entry_list == NULL) {
+        free(table->entries);
+        free(table);
+        free(file_ids);
+        free(runtime_ids);
+        return NULL;
+    }
+
+    /* Add mappings */
+    for (size_t i = 0; i < count; i++) {
+        add_entry(table, file_ids[i], runtime_ids[i]);
+        table->entry_list[i].old_id = file_ids[i];
+        table->entry_list[i].new_id = runtime_ids[i];
+    }
+
+    free(file_ids);
+    free(runtime_ids);
+
+    return table;
+}
+
+/**
+ * Lookup remapped ID
+ */
+int nmo_id_remap_lookup(const nmo_id_remap_table* table,
+                        nmo_object_id old_id,
+                        nmo_object_id* new_id) {
+    if (table == NULL || new_id == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     int found;
-    int slot = find_slot(remapper, old_id, &found);
-
-    if (found && slot >= 0) {
-        *out_new_id = remapper->mappings[slot].new_id;
-        return nmo_result_ok();
+    int slot = find_entry_slot(table, old_id, &found);
+    if (slot >= 0 && found) {
+        *new_id = table->entries[slot].new_id;
+        return NMO_OK;
     }
 
-    return nmo_result_error(NULL);
+    return NMO_ERR_INVALID_ARGUMENT;
 }
 
-int nmo_id_remap_has_mapping(const nmo_id_remap_t* remapper, uint32_t old_id) {
-    if (remapper == NULL) {
-        return 0;
-    }
-
-    int found;
-    find_slot(remapper, old_id, &found);
-    return found;
+/**
+ * Get entry count
+ */
+size_t nmo_id_remap_table_get_count(const nmo_id_remap_table* table) {
+    return table ? table->count : 0;
 }
 
-nmo_result_t nmo_id_remap_remove_mapping(nmo_id_remap_t* remapper, uint32_t old_id) {
-    if (remapper == NULL) {
-        return nmo_result_error(NULL);
+/**
+ * Get entry at index
+ */
+const nmo_id_remap_entry* nmo_id_remap_table_get_entry(
+    const nmo_id_remap_table* table, size_t index) {
+    if (table == NULL || index >= table->count) {
+        return NULL;
     }
 
-    int found;
-    int slot = find_slot(remapper, old_id, &found);
-
-    if (found && slot >= 0) {
-        remapper->mappings[slot].occupied = 0;
-        remapper->count--;
-        return nmo_result_ok();
-    }
-
-    return nmo_result_error(NULL);
+    return &table->entry_list[index];
 }
 
-uint32_t nmo_id_remap_get_count(const nmo_id_remap_t* remapper) {
-    if (remapper == NULL) {
-        return 0;
+/**
+ * Destroy remap table
+ */
+void nmo_id_remap_table_destroy(nmo_id_remap_table* table) {
+    if (table != NULL) {
+        free(table->entry_list);
+        free(table->entries);
+        free(table);
     }
-
-    return (uint32_t)remapper->count;
 }
 
-uint32_t nmo_id_remap_get_old_id_at(const nmo_id_remap_t* remapper, uint32_t index) {
-    if (remapper == NULL) {
-        return 0;
+/**
+ * Create ID remap plan for save
+ */
+nmo_id_remap_plan* nmo_id_remap_plan_create(nmo_object_repository* repo,
+                                              nmo_object** objects_to_save,
+                                              size_t object_count) {
+    if (repo == NULL || objects_to_save == NULL || object_count == 0) {
+        return NULL;
     }
 
-    // Iterate through occupied slots
-    uint32_t current = 0;
-    for (size_t i = 0; i < remapper->capacity; i++) {
-        if (remapper->mappings[i].occupied) {
-            if (current == index) {
-                return remapper->mappings[i].old_id;
-            }
-            current++;
+    /* Create plan */
+    nmo_id_remap_plan* plan = (nmo_id_remap_plan*)malloc(sizeof(nmo_id_remap_plan));
+    if (plan == NULL) {
+        return NULL;
+    }
+
+    /* Create remap table */
+    plan->table = (nmo_id_remap_table*)malloc(sizeof(nmo_id_remap_table));
+    if (plan->table == NULL) {
+        free(plan);
+        return NULL;
+    }
+
+    /* Allocate hash table */
+    size_t capacity = object_count * 2;
+    plan->table->entries = (remap_entry*)calloc(capacity, sizeof(remap_entry));
+    if (plan->table->entries == NULL) {
+        free(plan->table);
+        free(plan);
+        return NULL;
+    }
+
+    plan->table->capacity = capacity;
+    plan->table->count = 0;
+
+    /* Allocate entry list */
+    plan->table->entry_list = (nmo_id_remap_entry*)malloc(object_count *
+                                                            sizeof(nmo_id_remap_entry));
+    if (plan->table->entry_list == NULL) {
+        free(plan->table->entries);
+        free(plan->table);
+        free(plan);
+        return NULL;
+    }
+
+    plan->objects_remapped = 0;
+    plan->conflicts_resolved = 0;
+
+    /* Map runtime IDs to sequential file IDs (0-based) */
+    for (size_t i = 0; i < object_count; i++) {
+        nmo_object* obj = objects_to_save[i];
+        nmo_object_id runtime_id = obj->id;
+        nmo_object_id file_id = (nmo_object_id)i;
+
+        /* Add mapping */
+        int result = add_entry(plan->table, runtime_id, file_id);
+        if (result == NMO_OK) {
+            plan->table->entry_list[i].old_id = runtime_id;
+            plan->table->entry_list[i].new_id = file_id;
+            plan->objects_remapped++;
         }
     }
 
-    return 0;  // Index out of bounds
+    return plan;
 }
 
-nmo_result_t nmo_id_remap_clear(nmo_id_remap_t* remapper) {
-    if (remapper == NULL) {
-        return nmo_result_error(NULL);
+/**
+ * Lookup remapped ID from plan
+ */
+int nmo_id_remap_plan_lookup(const nmo_id_remap_plan* plan,
+                              nmo_object_id runtime_id,
+                              nmo_object_id* file_id) {
+    if (plan == NULL || plan->table == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    memset(remapper->mappings, 0, remapper->capacity * sizeof(nmo_id_mapping));
-    remapper->count = 0;
+    return nmo_id_remap_lookup(plan->table, runtime_id, file_id);
+}
 
-    return nmo_result_ok();
+/**
+ * Get remap table from plan
+ */
+nmo_id_remap_table* nmo_id_remap_plan_get_table(const nmo_id_remap_plan* plan) {
+    return plan ? plan->table : NULL;
+}
+
+/**
+ * Get objects remapped count
+ */
+size_t nmo_id_remap_plan_get_remapped_count(const nmo_id_remap_plan* plan) {
+    return plan ? plan->objects_remapped : 0;
+}
+
+/**
+ * Get conflicts resolved count
+ */
+size_t nmo_id_remap_plan_get_conflicts_resolved(const nmo_id_remap_plan* plan) {
+    return plan ? plan->conflicts_resolved : 0;
+}
+
+/**
+ * Destroy remap plan
+ */
+void nmo_id_remap_plan_destroy(nmo_id_remap_plan* plan) {
+    if (plan != NULL) {
+        nmo_id_remap_table_destroy(plan->table);
+        free(plan);
+    }
 }
