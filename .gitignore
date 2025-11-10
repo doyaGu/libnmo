@@ -1,0 +1,70 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# Compiled Object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+*.la
+
+# Executables
+*.exe
+*.out
+*.app
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.user
+*.suo
+*.ncb
+*.aps
+
+# Test coverage
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage/
+htmlcov/
+
+# Fuzzing
+corpus/
+crashes/
+hangs/
+*.profraw
+*.profdata
+
+# Generated files
+*.log
+*.tmp
+
+# Documentation
+docs/html/
+docs/latex/
+docs/man/
