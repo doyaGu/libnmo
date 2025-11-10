@@ -1,6 +1,6 @@
 /**
  * @file nmo_load_session.h
- * @brief Load session for parsing NMO files
+ * @brief Load session for managing object ID remapping during file load
  */
 
 #ifndef NMO_LOAD_SESSION_H
@@ -13,91 +13,89 @@
 extern "C" {
 #endif
 
-/**
- * @brief Load session context
- */
-typedef struct nmo_load_session nmo_load_session_t;
+/* Forward declarations */
+typedef struct nmo_object_repository nmo_object_repository;
+typedef struct nmo_object nmo_object;
 
 /**
- * @brief Load session configuration
+ * @brief Load session for tracking file ID to runtime ID mapping
  */
-typedef struct {
-    int load_all_objects;    /* Load all objects or on-demand */
-    int verify_checksums;    /* Verify checksums during load */
-    size_t buffer_size;      /* IO buffer size */
-    int decompress;          /* Decompress compressed data */
-} nmo_load_session_config_t;
+typedef struct nmo_load_session nmo_load_session;
 
 /**
- * Create load session
- * @param file_path Path to NMO file
+ * @brief Start load session
+ *
+ * Begins a load session that tracks object ID remapping from file IDs to runtime IDs.
+ * Objects loaded from a file have sequential file IDs (0-based), but runtime IDs may
+ * be different if objects already exist in the repository.
+ *
+ * @param repo Object repository
+ * @param max_saved_id Maximum object ID from the file being loaded
  * @return Load session or NULL on error
  */
-NMO_API nmo_load_session_t* nmo_load_session_create(const char* file_path);
+NMO_API nmo_load_session* nmo_load_session_start(nmo_object_repository* repo,
+                                                   nmo_object_id max_saved_id);
 
 /**
- * Create load session with config
- * @param file_path Path to NMO file
- * @param config Load session configuration
- * @return Load session or NULL on error
+ * @brief Register object with file ID
+ *
+ * Registers an object that was loaded from a file, mapping its file ID to its
+ * runtime ID. This mapping is used later to remap object references.
+ *
+ * @param session Load session
+ * @param obj Object to register
+ * @param file_id Original ID from the file
+ * @return NMO_OK on success
  */
-NMO_API nmo_load_session_t* nmo_load_session_create_with_config(
-    const char* file_path, const nmo_load_session_config_t* config);
+NMO_API int nmo_load_session_register(nmo_load_session* session,
+                                       nmo_object* obj,
+                                       nmo_object_id file_id);
 
 /**
- * Destroy load session
- * @param session Load session to destroy
- */
-NMO_API void nmo_load_session_destroy(nmo_load_session_t* session);
-
-/**
- * Start load session
+ * @brief End load session
+ *
+ * Completes the load session. After this, the ID mappings are finalized
+ * and can be used to build an ID remap table.
+ *
  * @param session Load session
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_load_session_start(nmo_load_session_t* session);
+NMO_API int nmo_load_session_end(nmo_load_session* session);
 
 /**
- * Get object count in file
- * @param session Load session
- * @return Number of objects
- */
-NMO_API uint32_t nmo_load_session_get_object_count(const nmo_load_session_t* session);
-
-/**
- * Load object
- * @param session Load session
- * @param object_id Object ID to load
- * @param out_data Output object data
- * @param out_size Output object size
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_load_session_load_object(
-    nmo_load_session_t* session, uint32_t object_id, void** out_data, size_t* out_size);
-
-/**
- * Get loaded object repository
+ * @brief Get object repository
+ *
  * @param session Load session
  * @return Object repository
  */
-NMO_API void* nmo_load_session_get_repository(const nmo_load_session_t* session);
+NMO_API nmo_object_repository* nmo_load_session_get_repository(
+    const nmo_load_session* session);
 
 /**
- * Get object list from file
+ * @brief Get ID base
+ *
+ * Returns the base ID that was allocated for this load session.
+ * File IDs are offset by this base to get runtime IDs.
+ *
  * @param session Load session
- * @param out_ids Output object ID array (caller must free)
- * @param out_count Output count
- * @return NMO_OK on success
+ * @return ID base
  */
-NMO_API nmo_result_t nmo_load_session_get_object_list(
-    nmo_load_session_t* session, uint32_t** out_ids, uint32_t* out_count);
+NMO_API nmo_object_id nmo_load_session_get_id_base(const nmo_load_session* session);
 
 /**
- * Finish load session
+ * @brief Get max saved ID
+ *
  * @param session Load session
- * @return NMO_OK on success
+ * @return Maximum object ID from file
  */
-NMO_API nmo_result_t nmo_load_session_finish(nmo_load_session_t* session);
+NMO_API nmo_object_id nmo_load_session_get_max_saved_id(const nmo_load_session* session);
+
+/**
+ * @brief Destroy load session
+ *
+ * @param session Load session to destroy
+ */
+NMO_API void nmo_load_session_destroy(nmo_load_session* session);
 
 #ifdef __cplusplus
 }
