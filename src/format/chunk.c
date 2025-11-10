@@ -4,6 +4,7 @@
  */
 
 #include "format/nmo_chunk.h"
+#include "session/nmo_id_remap.h"
 #include <string.h>
 
 /* Helper macros */
@@ -582,4 +583,42 @@ nmo_chunk_t* nmo_chunk_get_sub_chunk(const nmo_chunk_t* chunk, uint32_t index) {
         return NULL;
     }
     return chunk->chunks[index];
+}
+
+/**
+ * @brief Remap object IDs in chunk
+ */
+int nmo_chunk_remap_ids(nmo_chunk* chunk, nmo_id_remap_t* remap_table) {
+    if (chunk == NULL || remap_table == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Remap IDs in the ID tracking list */
+    if (chunk->ids != NULL && chunk->id_count > 0) {
+        for (size_t i = 0; i < chunk->id_count; i++) {
+            uint32_t old_id = chunk->ids[i];
+            uint32_t new_id;
+            
+            /* Try to get mapping */
+            nmo_result_t result = nmo_id_remap_get_mapping(remap_table, old_id, &new_id);
+            if (result.code == NMO_OK) {
+                chunk->ids[i] = new_id;
+            }
+            /* If no mapping exists, keep original ID */
+        }
+    }
+
+    /* Recursively remap sub-chunks */
+    if (chunk->chunks != NULL && chunk->chunk_count > 0) {
+        for (size_t i = 0; i < chunk->chunk_count; i++) {
+            if (chunk->chunks[i] != NULL) {
+                int result = nmo_chunk_remap_ids(chunk->chunks[i], remap_table);
+                if (result != NMO_OK) {
+                    return result;
+                }
+            }
+        }
+    }
+
+    return NMO_OK;
 }
