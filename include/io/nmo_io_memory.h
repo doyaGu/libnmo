@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "io/nmo_io.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -88,6 +89,29 @@ NMO_API const void* nmo_io_memory_get_buffer(const nmo_io_memory_t* io_memory, s
  * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_io_memory_reset(nmo_io_memory_t* io_memory);
+
+/**
+ * Open a read-only memory buffer and return an IO interface
+ * @param data Pointer to data buffer
+ * @param size Size of buffer
+ * @return IO interface or NULL on error
+ */
+NMO_API nmo_io_interface* nmo_memory_io_open_read(const void* data, size_t size);
+
+/**
+ * Open a write-only memory buffer with dynamic growth and return an IO interface
+ * @param initial_capacity Initial buffer capacity
+ * @return IO interface or NULL on error
+ */
+NMO_API nmo_io_interface* nmo_memory_io_open_write(size_t initial_capacity);
+
+/**
+ * Get the data from a write memory IO interface
+ * @param io IO interface (must be from nmo_memory_io_open_write)
+ * @param size Output parameter for data size
+ * @return Pointer to data buffer or NULL on error
+ */
+NMO_API const void* nmo_memory_io_get_data(nmo_io_interface* io, size_t* size);
 
 #ifdef __cplusplus
 }

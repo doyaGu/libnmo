@@ -1,12 +1,13 @@
 /**
  * @file nmo_io_compressed.h
- * @brief Compressed IO operations
+ * @brief Compressed IO wrapper for composable IO operations
  */
 
 #ifndef NMO_IO_COMPRESSED_H
 #define NMO_IO_COMPRESSED_H
 
 #include "nmo_types.h"
+#include "io/nmo_io.h"
 #include "core/nmo_error.h"
 
 #ifdef __cplusplus
@@ -14,68 +15,51 @@ extern "C" {
 #endif
 
 /**
- * @brief Compressed IO context
- */
-typedef struct nmo_io_compressed nmo_io_compressed_t;
-
-/**
- * Compression algorithm type
+ * @brief Compression codec types
  */
 typedef enum {
-    NMO_COMPRESSION_NONE = 0,
-    NMO_COMPRESSION_ZLIB,
-    NMO_COMPRESSION_ZSTD,
-} nmo_compression_type_t;
+    NMO_CODEC_ZLIB = 0,  /**< zlib compression (DEFLATE) */
+} nmo_compression_codec;
 
 /**
- * Create a compressed IO context for reading
- * @param base_io Base IO to read compressed data from
- * @param compression_type Type of compression
- * @return Compressed IO context or NULL on error
+ * @brief Compression mode
  */
-NMO_API nmo_io_compressed_t* nmo_io_compressed_create_read(
-    void* base_io, nmo_compression_type_t compression_type);
+typedef enum {
+    NMO_COMPRESS_MODE_DEFLATE = 0,  /**< Compress data (for writing) */
+    NMO_COMPRESS_MODE_INFLATE = 1,  /**< Decompress data (for reading) */
+} nmo_compression_mode;
 
 /**
- * Create a compressed IO context for writing
- * @param base_io Base IO to write compressed data to
- * @param compression_type Type of compression
- * @param level Compression level (0-9)
- * @return Compressed IO context or NULL on error
+ * @brief Compressed IO descriptor
+ *
+ * Configures the compression parameters for wrapping an IO interface.
  */
-NMO_API nmo_io_compressed_t* nmo_io_compressed_create_write(
-    void* base_io, nmo_compression_type_t compression_type, int level);
+typedef struct {
+    nmo_compression_codec codec;  /**< Compression codec to use */
+    nmo_compression_mode  mode;   /**< Compression mode (deflate/inflate) */
+    int level;                     /**< Compression level (1-9, where 1=fastest, 9=best compression, ignored for inflate) */
+} nmo_compressed_io_desc;
 
 /**
- * Destroy compressed IO context
- * @param io_compressed Compressed IO context
+ * @brief Wrap an IO interface with compression
+ *
+ * Creates a new IO interface that compresses writes and decompresses reads,
+ * wrapping the provided inner IO interface. The wrapper handles streaming
+ * compression/decompression with internal buffering (64KB default).
+ *
+ * The wrapper passes through seek/tell operations to the underlying IO.
+ * Compression is properly flushed on close.
+ *
+ * @param inner The inner IO interface to wrap (must not be NULL)
+ * @param desc Compression descriptor (must not be NULL)
+ * @return New wrapped IO interface, or NULL on error
+ *
+ * @note The caller is responsible for closing the returned interface.
+ *       Closing will also close the inner interface.
+ * @note The inner interface should not be used directly after wrapping.
  */
-NMO_API void nmo_io_compressed_destroy(nmo_io_compressed_t* io_compressed);
-
-/**
- * Read from compressed stream
- * @param io_compressed Compressed IO context
- * @param buffer Buffer to read into
- * @param size Number of bytes to read
- * @return Number of bytes read
- */
-NMO_API size_t nmo_io_compressed_read(nmo_io_compressed_t* io_compressed, void* buffer, size_t size);
-
-/**
- * Write to compressed stream
- * @param io_compressed Compressed IO context
- * @param buffer Data to write
- * @param size Number of bytes to write
- * @return Number of bytes written
- */
-NMO_API size_t nmo_io_compressed_write(nmo_io_compressed_t* io_compressed, const void* buffer, size_t size);
-
-/**
- * Flush compressed stream
- * @param io_compressed Compressed IO context
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_io_compressed_flush(nmo_io_compressed_t* io_compressed);
+NMO_API nmo_io_interface* nmo_compressed_io_wrap(nmo_io_interface* inner,
+                                                   const nmo_compressed_io_desc* desc);
 
 #ifdef __cplusplus
 }
