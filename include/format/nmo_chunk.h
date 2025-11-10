@@ -149,6 +149,22 @@ NMO_API nmo_result nmo_chunk_deserialize(const void* data,
  */
 NMO_API void nmo_chunk_destroy(nmo_chunk* chunk);
 
+/* Forward declaration for ID remap table */
+typedef struct nmo_id_remap nmo_id_remap_t;
+
+/**
+ * @brief Remap object IDs in chunk
+ *
+ * Applies ID remapping to all object IDs stored in the chunk's data buffer
+ * and ID tracking list. This is used during file load to convert file IDs
+ * to runtime IDs.
+ *
+ * @param chunk Chunk to remap (required)
+ * @param remap_table ID remap table (required)
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API int nmo_chunk_remap_ids(nmo_chunk* chunk, nmo_id_remap_t* remap_table);
+
 /* Legacy API for compatibility */
 
 /**
