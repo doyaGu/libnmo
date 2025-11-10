@@ -8,13 +8,72 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_arena.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief Chunk context (CKStateChunk)
+ * @brief Chunk option flags
+ *
+ * These flags control what optional data is serialized with the chunk.
+ */
+typedef enum {
+    NMO_CHUNK_OPTION_IDS      = 0x01,  /**< Contains object ID references */
+    NMO_CHUNK_OPTION_MAN      = 0x02,  /**< Contains manager int refs */
+    NMO_CHUNK_OPTION_CHN      = 0x04,  /**< Contains sub-chunks */
+    NMO_CHUNK_OPTION_FILE     = 0x08,  /**< Written with file context */
+    NMO_CHUNK_OPTION_ALLOWDYN = 0x10,  /**< Allow dynamic objects */
+    NMO_CHUNK_OPTION_LISTBIG  = 0x20,  /**< Lists in big endian (unused) */
+    NMO_CHUNK_DONTDELETE_PTR  = 0x40,  /**< Data not owned by chunk */
+} nmo_chunk_options;
+
+/**
+ * @brief CKStateChunk structure
+ *
+ * This is the fundamental serialization container in Virtools.
+ * It stores DWORD-aligned data with optional object IDs, sub-chunks,
+ * and manager references.
+ */
+typedef struct nmo_chunk {
+    /* Identity */
+    nmo_class_id       class_id;         /**< Object class ID */
+    uint32_t          data_version;     /**< Custom version per class */
+    uint32_t          chunk_version;    /**< Chunk format version (7) */
+    uint8_t           chunk_class_id;   /**< Legacy class ID (8-bit) */
+    uint32_t          chunk_options;    /**< Option flags */
+
+    /* Data buffer (DWORD-aligned) */
+    uint32_t*         data;             /**< Payload buffer */
+    size_t            data_size;        /**< Size in DWORDs (not bytes!) */
+    size_t            data_capacity;    /**< Capacity in DWORDs */
+
+    /* Optional tracking lists */
+    uint32_t*         ids;              /**< Object ID list */
+    size_t            id_count;
+    size_t            id_capacity;
+
+    struct nmo_chunk** chunks;          /**< Sub-chunk list */
+    size_t            chunk_count;
+    size_t            chunk_capacity;
+
+    uint32_t*         managers;         /**< Manager int list */
+    size_t            manager_count;
+    size_t            manager_capacity;
+
+    /* Compression info (for statistics) */
+    size_t            uncompressed_size;
+    size_t            compressed_size;
+    int               is_compressed;
+
+    /* Memory management */
+    nmo_arena*        arena;            /**< Arena for allocations */
+    int               owns_data;        /**< Whether to free data */
+} nmo_chunk;
+
+/**
+ * @brief Legacy typedef for compatibility
  */
 typedef struct nmo_chunk nmo_chunk_t;
 
@@ -29,17 +88,81 @@ typedef struct {
 } nmo_chunk_header_t;
 
 /**
- * Create chunk
+ * @brief Create empty chunk
+ *
+ * Creates a new chunk allocated from the given arena.
+ * All fields are initialized to 0/NULL except:
+ * - chunk_version is set to NMO_CHUNK_VERSION_4 (7)
+ * - owns_data is set to 1
+ *
+ * @param arena Arena for allocations (required)
+ * @return New chunk or NULL on allocation failure
+ */
+NMO_API nmo_chunk* nmo_chunk_create(nmo_arena* arena);
+
+/**
+ * @brief Serialize chunk to binary format
+ *
+ * Serializes the chunk according to the Virtools binary format:
+ * - [4 bytes] Version Info (packed)
+ * - [4 bytes] Chunk Size (in DWORDs)
+ * - [Size*4 bytes] Data buffer
+ * - [Optional] IDs List if OPTION_IDS set
+ * - [Optional] Chunks List if OPTION_CHN set
+ * - [Optional] Managers List if OPTION_MAN set
+ *
+ * @param chunk Chunk to serialize (required)
+ * @param out_data Output buffer pointer (required)
+ * @param out_size Output size in bytes (required)
+ * @param arena Arena for output buffer allocation (required)
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result nmo_chunk_serialize(const nmo_chunk* chunk,
+                                        void** out_data,
+                                        size_t* out_size,
+                                        nmo_arena* arena);
+
+/**
+ * @brief Deserialize chunk from binary format
+ *
+ * Parses a chunk from binary data according to the Virtools format.
+ * All memory is allocated from the given arena.
+ *
+ * @param data Input binary data (required)
+ * @param size Input data size in bytes (required)
+ * @param arena Arena for allocations (required)
+ * @param out_chunk Output chunk pointer (required)
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result nmo_chunk_deserialize(const void* data,
+                                          size_t size,
+                                          nmo_arena* arena,
+                                          nmo_chunk** out_chunk);
+
+/**
+ * @brief Destroy chunk
+ *
+ * Since chunks use arena allocation, this is mostly a no-op.
+ * The arena itself handles cleanup.
+ *
+ * @param chunk Chunk to destroy
+ */
+NMO_API void nmo_chunk_destroy(nmo_chunk* chunk);
+
+/* Legacy API for compatibility */
+
+/**
+ * Create chunk (legacy)
  * @param chunk_id Chunk ID
  * @return Chunk or NULL on error
  */
-NMO_API nmo_chunk_t* nmo_chunk_create(uint32_t chunk_id);
+NMO_API nmo_chunk_t* nmo_chunk_create_legacy(uint32_t chunk_id);
 
 /**
- * Destroy chunk
+ * Destroy chunk (legacy)
  * @param chunk Chunk to destroy
  */
-NMO_API void nmo_chunk_destroy(nmo_chunk_t* chunk);
+NMO_API void nmo_chunk_destroy_legacy(nmo_chunk_t* chunk);
 
 /**
  * Parse chunk from data
