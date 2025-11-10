@@ -13,83 +13,95 @@
 extern "C" {
 #endif
 
+/* Forward declarations */
+typedef struct nmo_object nmo_object;
+typedef struct nmo_arena nmo_arena;
+
 /**
  * @brief Object repository
  */
-typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_object_repository nmo_object_repository;
 
 /**
- * Create object repository
- * @param initial_capacity Initial capacity
+ * @brief Create object repository
+ * @param arena Arena for allocations
  * @return Repository or NULL on error
  */
-NMO_API nmo_object_repository_t* nmo_object_repository_create(size_t initial_capacity);
+NMO_API nmo_object_repository* nmo_object_repository_create(nmo_arena* arena);
 
 /**
- * Destroy object repository
+ * @brief Destroy object repository
  * @param repository Repository to destroy
  */
-NMO_API void nmo_object_repository_destroy(nmo_object_repository_t* repository);
+NMO_API void nmo_object_repository_destroy(nmo_object_repository* repository);
 
 /**
- * Store object in repository
+ * @brief Add object to repository
  * @param repository Repository
- * @param object_id Object ID
- * @param data Object data
- * @param size Data size
+ * @param object Object to add
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_repository_store(
-    nmo_object_repository_t* repository, uint32_t object_id, const void* data, size_t size);
+NMO_API int nmo_object_repository_add(nmo_object_repository* repository, nmo_object* object);
 
 /**
- * Retrieve object from repository
+ * @brief Find object by ID
  * @param repository Repository
- * @param object_id Object ID
- * @param out_data Output data pointer
- * @param out_size Output data size
- * @return NMO_OK on success
+ * @param id Object ID
+ * @return Object or NULL if not found
  */
-NMO_API nmo_result_t nmo_object_repository_get(
-    nmo_object_repository_t* repository, uint32_t object_id, const void** out_data, size_t* out_size);
+NMO_API nmo_object* nmo_object_repository_find_by_id(const nmo_object_repository* repository,
+                                                       nmo_object_id id);
 
 /**
- * Check if object exists in repository
+ * @brief Find object by name
  * @param repository Repository
- * @param object_id Object ID
- * @return 1 if exists, 0 otherwise
+ * @param name Object name
+ * @return Object or NULL if not found
  */
-NMO_API int nmo_object_repository_contains(nmo_object_repository_t* repository, uint32_t object_id);
+NMO_API nmo_object* nmo_object_repository_find_by_name(const nmo_object_repository* repository,
+                                                         const char* name);
 
 /**
- * Remove object from repository
+ * @brief Find objects by class
  * @param repository Repository
- * @param object_id Object ID
- * @return NMO_OK on success
+ * @param class_id Class ID
+ * @param out_count Output count of found objects
+ * @return Array of objects or NULL (caller must not free)
  */
-NMO_API nmo_result_t nmo_object_repository_remove(nmo_object_repository_t* repository, uint32_t object_id);
+NMO_API nmo_object** nmo_object_repository_find_by_class(const nmo_object_repository* repository,
+                                                           nmo_class_id class_id,
+                                                           size_t* out_count);
 
 /**
- * Get object count
+ * @brief Get object count
  * @param repository Repository
  * @return Number of objects
  */
-NMO_API uint32_t nmo_object_repository_get_count(const nmo_object_repository_t* repository);
+NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository* repository);
 
 /**
- * Get object ID at index
+ * @brief Get all objects
  * @param repository Repository
- * @param index Index
- * @return Object ID or 0 if index out of bounds
+ * @param out_count Output count
+ * @return Array of objects (caller must not free)
  */
-NMO_API uint32_t nmo_object_repository_get_id_at(const nmo_object_repository_t* repository, uint32_t index);
+NMO_API nmo_object** nmo_object_repository_get_all(const nmo_object_repository* repository,
+                                                     size_t* out_count);
 
 /**
- * Clear all objects
+ * @brief Remove object from repository
+ * @param repository Repository
+ * @param id Object ID
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_repository_remove(nmo_object_repository* repository, nmo_object_id id);
+
+/**
+ * @brief Clear all objects
  * @param repository Repository
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_repository_clear(nmo_object_repository_t* repository);
+NMO_API int nmo_object_repository_clear(nmo_object_repository* repository);
 
 #ifdef __cplusplus
 }
