@@ -1,6 +1,6 @@
 /**
  * @file parser.c
- * @brief Load pipeline implementation (Phase 9)
+ * @brief Load and save pipeline implementation (Phase 9 & 10)
  */
 
 #include "app/nmo_parser.h"
@@ -15,6 +15,8 @@
 #include "format/nmo_header1.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_object.h"
+#include "format/nmo_manager.h"
+#include "format/nmo_manager_registry.h"
 #include "session/nmo_load_session.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_object_repository.h"
@@ -130,7 +132,27 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
 
     /* Phase 7: Manager Pre-Load Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 7: Executing manager pre-load hooks");
-    /* TODO: Execute manager hooks when manager system is implemented */
+
+    nmo_manager_registry_t* manager_reg = nmo_context_get_manager_registry(ctx);
+    if (manager_reg != NULL) {
+        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
+        nmo_log(logger, NMO_LOG_INFO, "  Found %u registered managers", manager_count);
+
+        for (uint32_t i = 0; i < manager_count; i++) {
+            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
+            nmo_manager* manager = (nmo_manager*)nmo_manager_registry_get(manager_reg, manager_id);
+
+            if (manager != NULL) {
+                int hook_result = nmo_manager_invoke_pre_load(manager, session);
+                if (hook_result != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u pre-load hook failed: %d",
+                            manager_id, hook_result);
+                } else {
+                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u pre-load hook executed", manager_id);
+                }
+            }
+        }
+    }
 
     /* Phase 8: Read and Decompress Data Section */
     nmo_log(logger, NMO_LOG_INFO, "Phase 8: Reading data section (size: %u bytes)",
@@ -246,7 +268,25 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
 
     /* Phase 15: Manager Post-Load Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 15: Executing manager post-load hooks");
-    /* TODO: Execute manager hooks when manager system is implemented */
+
+    if (manager_reg != NULL) {
+        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
+
+        for (uint32_t i = 0; i < manager_count; i++) {
+            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
+            nmo_manager* manager = (nmo_manager*)nmo_manager_registry_get(manager_reg, manager_id);
+
+            if (manager != NULL) {
+                int hook_result = nmo_manager_invoke_post_load(manager, session);
+                if (hook_result != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u post-load hook failed: %d",
+                            manager_id, hook_result);
+                } else {
+                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u post-load hook executed", manager_id);
+                }
+            }
+        }
+    }
 
     /* Cleanup */
     if (remap_table != NULL) {
@@ -291,7 +331,28 @@ int nmo_save_file(nmo_session* session, const char* path, nmo_save_flags flags) 
 
     /* Phase 2: Manager Pre-Save Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Executing manager pre-save hooks");
-    /* TODO: Execute manager hooks when manager system is implemented */
+
+    nmo_manager_registry_t* manager_reg = nmo_context_get_manager_registry(ctx);
+    if (manager_reg != NULL) {
+        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
+        nmo_log(logger, NMO_LOG_INFO, "  Found %u registered managers", manager_count);
+
+        for (uint32_t i = 0; i < manager_count; i++) {
+            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
+            nmo_manager* manager = (nmo_manager*)nmo_manager_registry_get(manager_reg, manager_id);
+
+            if (manager != NULL) {
+                int hook_result = nmo_manager_invoke_pre_save(manager, session);
+                if (hook_result != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u pre-save hook failed: %d",
+                            manager_id, hook_result);
+                    /* Continue with other managers even if one fails */
+                } else {
+                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u pre-save hook executed", manager_id);
+                }
+            }
+        }
+    }
 
     /* Phase 3: Build ID Remap Plan (runtime → file IDs) */
     nmo_log(logger, NMO_LOG_INFO, "Phase 3: Building ID remap plan");
@@ -470,7 +531,25 @@ int nmo_save_file(nmo_session* session, const char* path, nmo_save_flags flags) 
 
     /* Phase 14: Manager Post-Save Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Executing manager post-save hooks");
-    /* TODO: Execute manager hooks when manager system is implemented */
+
+    if (manager_reg != NULL) {
+        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
+
+        for (uint32_t i = 0; i < manager_count; i++) {
+            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
+            nmo_manager* manager = (nmo_manager*)nmo_manager_registry_get(manager_reg, manager_id);
+
+            if (manager != NULL) {
+                int hook_result = nmo_manager_invoke_post_save(manager, session);
+                if (hook_result != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u post-save hook failed: %d",
+                            manager_id, hook_result);
+                } else {
+                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u post-save hook executed", manager_id);
+                }
+            }
+        }
+    }
 
     /* Cleanup */
     nmo_io_close(io);
