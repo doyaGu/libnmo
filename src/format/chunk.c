@@ -588,7 +588,7 @@ nmo_chunk_t* nmo_chunk_get_sub_chunk(const nmo_chunk_t* chunk, uint32_t index) {
 /**
  * @brief Remap object IDs in chunk
  */
-int nmo_chunk_remap_ids(nmo_chunk* chunk, nmo_id_remap_t* remap_table) {
+int nmo_chunk_remap_ids(nmo_chunk* chunk, nmo_id_remap_table* remap_table) {
     if (chunk == NULL || remap_table == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -600,8 +600,8 @@ int nmo_chunk_remap_ids(nmo_chunk* chunk, nmo_id_remap_t* remap_table) {
             uint32_t new_id;
             
             /* Try to get mapping */
-            nmo_result_t result = nmo_id_remap_get_mapping(remap_table, old_id, &new_id);
-            if (result.code == NMO_OK) {
+            int result = nmo_id_remap_lookup(remap_table, old_id, &new_id);
+            if (result == NMO_OK) {
                 chunk->ids[i] = new_id;
             }
             /* If no mapping exists, keep original ID */

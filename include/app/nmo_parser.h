@@ -1,6 +1,6 @@
 /**
  * @file nmo_parser.h
- * @brief Load pipeline API (Phase 9)
+ * @brief Load and Save pipeline API (Phase 9 & 10)
  */
 
 #ifndef NMO_PARSER_H
@@ -57,6 +57,46 @@ typedef enum {
 NMO_API int nmo_load_file(nmo_session* session,
                            const char* path,
                            nmo_load_flags flags);
+
+/**
+ * @brief Save flags
+ */
+typedef enum {
+    NMO_SAVE_DEFAULT            = 0,
+    NMO_SAVE_AS_OBJECTS         = 0x0001,  /**< Save as referenced objects */
+    NMO_SAVE_COMPRESSED         = 0x0002,  /**< Enable compression */
+    NMO_SAVE_SEQUENTIAL_IDS     = 0x0004,  /**< Use sequential file IDs */
+    NMO_SAVE_INCLUDE_MANAGERS   = 0x0008,  /**< Include manager state */
+    NMO_SAVE_VALIDATE_BEFORE    = 0x0010,  /**< Validate before writing */
+} nmo_save_flags;
+
+/**
+ * @brief Save file
+ *
+ * Implements the complete 14-phase save pipeline:
+ * 1. Validate Session State
+ * 2. Manager Pre-Save Hooks
+ * 3. Build ID Remap Plan (runtime → file IDs)
+ * 4. Serialize Manager Chunks
+ * 5. Serialize Object Chunks with ID Remapping
+ * 6. Compress Data Section
+ * 7. Build Object Descriptors for Header1
+ * 8. Build Plugin Dependencies List
+ * 9. Compress Header1
+ * 10. Calculate File Sizes
+ * 11. Build File Header
+ * 12. Open Output IO
+ * 13. Write File Header, Header1, Data Section
+ * 14. Manager Post-Save Hooks
+ *
+ * @param session Session to save from
+ * @param path File path
+ * @param flags Save flags
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_save_file(nmo_session* session,
+                           const char* path,
+                           nmo_save_flags flags);
 
 #ifdef __cplusplus
 }
