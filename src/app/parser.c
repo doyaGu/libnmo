@@ -50,14 +50,14 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
     /* Phase 2: Parse File Header */
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Parsing file header");
     nmo_file_header header;
-    nmo_result_t result = nmo_header_parse((nmo_header_t*)&header, io);
+    nmo_result_t result = nmo_file_header_parse(io, &header);
     if (result.code != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to parse file header");
         nmo_io_close(io);
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    result = nmo_header_validate((nmo_header_t*)&header);
+    result = nmo_file_header_validate(&header);
     if (result.code != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Invalid file header");
         nmo_io_close(io);
@@ -79,30 +79,40 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
     nmo_log(logger, NMO_LOG_INFO, "Phase 3: Reading header1 (size: %u bytes)",
             header.hdr1_pack_size);
 
-    void* hdr1_data = nmo_arena_alloc(arena, header.hdr1_unpack_size, 16);
-    if (hdr1_data == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate header1 buffer");
-        nmo_io_close(io);
-        return NMO_ERR_NOMEM;
-    }
-
-    /* Read header1 data (decompression handled if needed) */
-    size_t bytes_read = 0;
-    int read_result = nmo_io_read(io, hdr1_data, header.hdr1_pack_size, &bytes_read);
-    if (read_result != NMO_OK || bytes_read != header.hdr1_pack_size) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to read header1 data");
-        nmo_io_close(io);
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    /* Phase 4: Parse Header1 */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 4: Parsing header1");
     nmo_header1 hdr1;
-    result = nmo_header1_parse(hdr1_data, header.hdr1_unpack_size, &hdr1, arena);
-    if (result.code != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to parse header1");
-        nmo_io_close(io);
-        return NMO_ERR_INVALID_ARGUMENT;
+    memset(&hdr1, 0, sizeof(nmo_header1));
+    hdr1.object_count = header.object_count;
+
+    /* Skip header1 if empty (for files with no header1 data) */
+    if (header.hdr1_pack_size == 0 || header.hdr1_unpack_size == 0) {
+        nmo_log(logger, NMO_LOG_INFO, "  No header1 data (empty file or minimal format)");
+        hdr1.plugin_dep_count = 0;
+        hdr1.plugin_deps = NULL;
+    } else {
+        void* hdr1_data = nmo_arena_alloc(arena, header.hdr1_unpack_size, 16);
+        if (hdr1_data == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate header1 buffer");
+            nmo_io_close(io);
+            return NMO_ERR_NOMEM;
+        }
+
+        /* Read header1 data (decompression handled if needed) */
+        size_t bytes_read = 0;
+        int read_result = nmo_io_read(io, hdr1_data, header.hdr1_pack_size, &bytes_read);
+        if (read_result != NMO_OK || bytes_read != header.hdr1_pack_size) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to read header1 data");
+            nmo_io_close(io);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+
+        /* Phase 4: Parse Header1 */
+        nmo_log(logger, NMO_LOG_INFO, "Phase 4: Parsing header1");
+        result = nmo_header1_parse(hdr1_data, header.hdr1_unpack_size, &hdr1, arena);
+        if (result.code != NMO_OK) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to parse header1");
+            nmo_io_close(io);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
     }
 
     nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %zu plugins",
@@ -158,20 +168,28 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
     nmo_log(logger, NMO_LOG_INFO, "Phase 8: Reading data section (size: %u bytes)",
             header.data_pack_size);
 
-    void* data_section = nmo_arena_alloc(arena, header.data_unpack_size, 16);
-    if (data_section == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate data section buffer");
-        nmo_load_session_destroy(load_session);
-        nmo_io_close(io);
-        return NMO_ERR_NOMEM;
-    }
+    void* data_section = NULL;
+    size_t bytes_read = 0;
 
-    read_result = nmo_io_read(io, data_section, header.data_pack_size, &bytes_read);
-    if (read_result != NMO_OK || bytes_read != header.data_pack_size) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
-        nmo_load_session_destroy(load_session);
-        nmo_io_close(io);
-        return NMO_ERR_INVALID_ARGUMENT;
+    /* Skip data section if empty */
+    if (header.data_pack_size == 0 || header.data_unpack_size == 0) {
+        nmo_log(logger, NMO_LOG_INFO, "  No data section (empty file or minimal format)");
+    } else {
+        data_section = nmo_arena_alloc(arena, header.data_unpack_size, 16);
+        if (data_section == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate data section buffer");
+            nmo_load_session_destroy(load_session);
+            nmo_io_close(io);
+            return NMO_ERR_NOMEM;
+        }
+
+        int read_result = nmo_io_read(io, data_section, header.data_pack_size, &bytes_read);
+        if (read_result != NMO_OK || bytes_read != header.data_pack_size) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
+            nmo_load_session_destroy(load_session);
+            nmo_io_close(io);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
     }
 
     /* Phase 9: Parse Manager Chunks */
@@ -180,6 +198,14 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
 
     /* Phase 10: Create Objects */
     nmo_log(logger, NMO_LOG_INFO, "Phase 10: Creating %u objects", hdr1.object_count);
+
+    nmo_id_remap_table* remap_table = NULL;
+
+    /* Skip object creation if no header1 data or no object descriptors */
+    if (hdr1.objects == NULL || hdr1.object_count == 0) {
+        nmo_log(logger, NMO_LOG_INFO, "  No objects to create (empty file or no object descriptors)");
+        goto skip_object_processing;
+    }
 
     for (size_t i = 0; i < hdr1.object_count; i++) {
         nmo_object_desc* desc = &hdr1.objects[i];
@@ -235,7 +261,7 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
     /* Phase 12: Build ID Remap Table */
     nmo_log(logger, NMO_LOG_INFO, "Phase 12: Building ID remap table");
 
-    nmo_id_remap_table* remap_table = nmo_build_remap_table(load_session);
+    remap_table = nmo_build_remap_table(load_session);
     if (remap_table == NULL) {
         nmo_log(logger, NMO_LOG_WARN, "Failed to build ID remap table (may be empty session)");
     } else {
@@ -251,7 +277,7 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Deserializing objects");
 
     nmo_schema_registry* schema_reg = nmo_context_get_schema_registry(ctx);
-    size_t repo_count;
+    size_t repo_count = 0;
     nmo_object** objects = nmo_object_repository_get_all(repo, &repo_count);
 
     for (size_t i = 0; i < repo_count; i++) {
@@ -266,6 +292,9 @@ int nmo_load_file(nmo_session* session, const char* path, nmo_load_flags flags) 
         }
     }
 
+skip_object_processing:
+    /* Update repo_count after potential skip */
+    nmo_object_repository_get_all(repo, &repo_count);
     /* Phase 15: Manager Post-Load Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 15: Executing manager post-load hooks");
 
@@ -496,7 +525,7 @@ int nmo_save_file(nmo_session* session, const char* path, nmo_save_flags flags) 
     /* Phase 12: Open Output IO */
     nmo_log(logger, NMO_LOG_INFO, "Phase 12: Opening output file: %s", path);
 
-    nmo_io_interface* io = nmo_file_io_open(path, NMO_IO_WRITE);
+    nmo_io_interface* io = nmo_file_io_open(path, NMO_IO_WRITE | NMO_IO_CREATE);
     if (io == NULL) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to open output file: %s", path);
         nmo_id_remap_plan_destroy(remap_plan);
@@ -506,11 +535,11 @@ int nmo_save_file(nmo_session* session, const char* path, nmo_save_flags flags) 
     /* Phase 13: Write File Header, Header1, Data Section */
     nmo_log(logger, NMO_LOG_INFO, "Phase 13: Writing file data");
 
-    /* Write file header */
-    nmo_log(logger, NMO_LOG_INFO, "  Writing file header (%zu bytes)", sizeof(nmo_file_header));
-    int write_result = nmo_io_write(io, &header, sizeof(nmo_file_header));
+    /* Write file header using proper serialization */
+    nmo_log(logger, NMO_LOG_INFO, "  Writing file header");
+    nmo_result_t header_result = nmo_file_header_serialize(&header, io);
 
-    if (write_result != NMO_OK) {
+    if (header_result.code != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to write file header");
         nmo_io_close(io);
         nmo_id_remap_plan_destroy(remap_plan);
