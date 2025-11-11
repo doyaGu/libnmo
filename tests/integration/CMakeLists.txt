@@ -7,5 +7,6 @@ endmacro()
 
 # Integration tests
 add_integration_test(test_roundtrip)
+add_integration_test(test_round_trip)
 add_integration_test(test_load_pipeline)
 add_integration_test(test_save_pipeline)

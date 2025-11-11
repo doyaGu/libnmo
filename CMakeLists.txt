@@ -109,6 +109,7 @@ set(NMO_SESSION_SOURCES
 set(NMO_APP_SOURCES
     src/app/context.c
     src/app/session.c
+    src/app/parser.c
 )
 
 # Combine all sources
