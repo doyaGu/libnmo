@@ -3,8 +3,8 @@
  * @brief Load and Save pipeline API (Phase 9 & 10)
  */
 
-#ifndef NMO_PARSER_H
-#define NMO_PARSER_H
+#ifndef NMO_APP_PARSER_H
+#define NMO_APP_PARSER_H
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
@@ -102,4 +102,4 @@ NMO_API int nmo_save_file(nmo_session* session,
 }
 #endif
 
-#endif /* NMO_PARSER_H */
+#endif /* NMO_APP_PARSER_H */
