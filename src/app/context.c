@@ -7,6 +7,7 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include "schema/nmo_schema_registry.h"
+#include "format/nmo_manager_registry.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -89,8 +90,19 @@ nmo_context* nmo_context_create(const nmo_context_desc* desc) {
         return NULL;
     }
 
-    /* Manager registry will be created when needed (Phase 11) */
-    ctx->manager_registry = NULL;
+    /* Create manager registry (Phase 11) */
+    ctx->manager_registry = nmo_manager_registry_create();
+    if (ctx->manager_registry == NULL) {
+        nmo_schema_registry_destroy(ctx->schema_registry);
+        if (ctx->owns_logger) {
+            free(ctx->logger);
+        }
+        if (ctx->owns_allocator) {
+            free(ctx->allocator);
+        }
+        free(ctx);
+        return NULL;
+    }
 
     /* Thread pool size */
     ctx->thread_pool_size = (desc != NULL) ? desc->thread_pool_size : 0;
@@ -125,9 +137,9 @@ void nmo_context_release(nmo_context* ctx) {
             nmo_schema_registry_destroy(ctx->schema_registry);
         }
 
-        /* Manager registry will be destroyed here when implemented */
+        /* Destroy manager registry */
         if (ctx->manager_registry != NULL) {
-            /* nmo_manager_registry_destroy(ctx->manager_registry); */
+            nmo_manager_registry_destroy(ctx->manager_registry);
         }
 
         if (ctx->owns_logger && ctx->logger != NULL) {
