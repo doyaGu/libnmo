@@ -1,240 +1,82 @@
 /**
  * @file object_repository.c
- * @brief Object repository implementation with hash tables
+ * @brief Object repository implementation with generic hash tables
  */
 
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_indexed_map.h"
+#include "core/nmo_hash_table.h"
+#include "core/nmo_error.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define INITIAL_CAPACITY 64
 
-/**
- * Hash table entry for ID lookup
- */
-typedef struct {
-    nmo_object_id id;
-    nmo_object* object;
-    int occupied;
-} id_entry;
-
-/**
- * Hash table entry for name lookup
- */
-typedef struct {
-    const char* name;
-    nmo_object* object;
-    int occupied;
-} name_entry;
+// Forward declaration for private helper
+static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t *repo);
 
 /**
  * Object repository structure
  */
-struct nmo_object_repository {
-    nmo_arena* arena;
+typedef struct nmo_object_repository {
+    nmo_arena_t *arena;
 
-    /* ID hash table */
-    id_entry* id_table;
-    size_t id_capacity;
-    size_t id_count;
+    /* ID indexed map (provides both hash lookup and iteration) */
+    nmo_indexed_map_t *id_map; /* nmo_object_id_t -> nmo_object_t* */
 
-    /* Name hash table */
-    name_entry* name_table;
-    size_t name_capacity;
-    size_t name_count;
+    /* Name hash table (for name lookup only) */
+    nmo_hash_table_t *name_table; /* const char* -> nmo_object_t* */
 
-    /* Dense array for iteration */
-    nmo_object** objects;
-    size_t object_count;
-    size_t object_capacity;
-};
-
-/**
- * Hash function for IDs
- */
-static inline size_t hash_id(nmo_object_id id, size_t capacity) {
-    return (id * 2654435761U) % capacity;
-}
-
-/**
- * Hash function for strings
- */
-static size_t hash_string(const char* str, size_t capacity) {
-    size_t hash = 5381;
-    int c;
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + (size_t)c;
-    }
-    return hash % capacity;
-}
-
-/**
- * Find ID slot
- */
-static int find_id_slot(const nmo_object_repository* repo, nmo_object_id id, int* found) {
-    size_t index = hash_id(id, repo->id_capacity);
-    size_t start = index;
-
-    do {
-        if (!repo->id_table[index].occupied) {
-            *found = 0;
-            return (int)index;
-        }
-        if (repo->id_table[index].id == id) {
-            *found = 1;
-            return (int)index;
-        }
-        index = (index + 1) % repo->id_capacity;
-    } while (index != start);
-
-    *found = 0;
-    return -1;
-}
-
-/**
- * Find name slot
- */
-static int find_name_slot(const nmo_object_repository* repo, const char* name, int* found) {
-    if (name == NULL) {
-        *found = 0;
-        return -1;
-    }
-
-    size_t index = hash_string(name, repo->name_capacity);
-    size_t start = index;
-
-    do {
-        if (!repo->name_table[index].occupied) {
-            *found = 0;
-            return (int)index;
-        }
-        if (strcmp(repo->name_table[index].name, name) == 0) {
-            *found = 1;
-            return (int)index;
-        }
-        index = (index + 1) % repo->name_capacity;
-    } while (index != start);
-
-    *found = 0;
-    return -1;
-}
-
-/**
- * Resize ID table
- */
-static int resize_id_table(nmo_object_repository* repo, size_t new_capacity) {
-    id_entry* new_table = (id_entry*)calloc(new_capacity, sizeof(id_entry));
-    if (new_table == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    id_entry* old_table = repo->id_table;
-    size_t old_capacity = repo->id_capacity;
-
-    repo->id_table = new_table;
-    repo->id_capacity = new_capacity;
-    size_t old_count = repo->id_count;
-    repo->id_count = 0;
-
-    /* Rehash */
-    for (size_t i = 0; i < old_capacity; i++) {
-        if (old_table[i].occupied) {
-            int found;
-            int slot = find_id_slot(repo, old_table[i].id, &found);
-            if (slot >= 0) {
-                repo->id_table[slot].id = old_table[i].id;
-                repo->id_table[slot].object = old_table[i].object;
-                repo->id_table[slot].occupied = 1;
-                repo->id_count++;
-            }
-        }
-    }
-
-    free(old_table);
-    return (repo->id_count == old_count) ? NMO_OK : NMO_ERR_INVALID_STATE;
-}
-
-/**
- * Resize name table
- */
-static int resize_name_table(nmo_object_repository* repo, size_t new_capacity) {
-    name_entry* new_table = (name_entry*)calloc(new_capacity, sizeof(name_entry));
-    if (new_table == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    name_entry* old_table = repo->name_table;
-    size_t old_capacity = repo->name_capacity;
-
-    repo->name_table = new_table;
-    repo->name_capacity = new_capacity;
-    size_t old_count = repo->name_count;
-    repo->name_count = 0;
-
-    /* Rehash */
-    for (size_t i = 0; i < old_capacity; i++) {
-        if (old_table[i].occupied) {
-            int found;
-            int slot = find_name_slot(repo, old_table[i].name, &found);
-            if (slot >= 0) {
-                repo->name_table[slot].name = old_table[i].name;
-                repo->name_table[slot].object = old_table[i].object;
-                repo->name_table[slot].occupied = 1;
-                repo->name_count++;
-            }
-        }
-    }
-
-    free(old_table);
-    return (repo->name_count == old_count) ? NMO_OK : NMO_ERR_INVALID_STATE;
-}
+    /* Runtime ID allocator */
+    nmo_object_id_t next_runtime_id;
+} nmo_object_repository_t;
 
 /**
  * Create object repository
  */
-nmo_object_repository* nmo_object_repository_create(nmo_arena* arena) {
+nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
     if (arena == NULL) {
         return NULL;
     }
 
-    nmo_object_repository* repo = (nmo_object_repository*)malloc(sizeof(nmo_object_repository));
+    nmo_object_repository_t *repo = (nmo_object_repository_t *) malloc(sizeof(nmo_object_repository_t));
     if (repo == NULL) {
         return NULL;
     }
 
-    repo->arena = arena;
+    /* Create ID indexed map */
+    repo->id_map = nmo_indexed_map_create(
+        sizeof(nmo_object_id_t),
+        sizeof(nmo_object_t *),
+        INITIAL_CAPACITY,
+        nmo_map_hash_uint32,
+        NULL
+    );
 
-    /* Allocate ID table */
-    repo->id_table = (id_entry*)calloc(INITIAL_CAPACITY, sizeof(id_entry));
-    if (repo->id_table == NULL) {
+    if (repo->id_map == NULL) {
         free(repo);
         return NULL;
     }
-    repo->id_capacity = INITIAL_CAPACITY;
-    repo->id_count = 0;
 
-    /* Allocate name table */
-    repo->name_table = (name_entry*)calloc(INITIAL_CAPACITY, sizeof(name_entry));
+    /* Create name hash table */
+    repo->name_table = nmo_hash_table_create(
+        sizeof(const char *),
+        sizeof(nmo_object_t *),
+        INITIAL_CAPACITY,
+        nmo_hash_string,
+        nmo_compare_string
+    );
+
     if (repo->name_table == NULL) {
-        free(repo->id_table);
+        nmo_indexed_map_destroy(repo->id_map);
         free(repo);
         return NULL;
     }
-    repo->name_capacity = INITIAL_CAPACITY;
-    repo->name_count = 0;
 
-    /* Allocate object array */
-    repo->objects = (nmo_object**)malloc(INITIAL_CAPACITY * sizeof(nmo_object*));
-    if (repo->objects == NULL) {
-        free(repo->name_table);
-        free(repo->id_table);
-        free(repo);
-        return NULL;
-    }
-    repo->object_capacity = INITIAL_CAPACITY;
-    repo->object_count = 0;
+    repo->arena = arena;
+    repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
 
     return repo;
 }
@@ -242,80 +84,51 @@ nmo_object_repository* nmo_object_repository_create(nmo_arena* arena) {
 /**
  * Destroy object repository
  */
-void nmo_object_repository_destroy(nmo_object_repository* repository) {
-    if (repository != NULL) {
-        free(repository->objects);
-        free(repository->name_table);
-        free(repository->id_table);
-        free(repository);
+void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
+    if (repo != NULL) {
+        /* Note: Objects are owned by arena, don't free them here */
+        nmo_indexed_map_destroy(repo->id_map);
+        nmo_hash_table_destroy(repo->name_table);
+        free(repo);
     }
 }
 
 /**
- * Add object to repository
+ * Add object
  */
-int nmo_object_repository_add(nmo_object_repository* repository, nmo_object* object) {
-    if (repository == NULL || object == NULL) {
+int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) {
+    if (repo == NULL || obj == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Check if ID table needs resize */
-    if ((repository->id_count + 1) * 10 > repository->id_capacity * 7) {
-        int result = resize_id_table(repository, repository->id_capacity * 2);
+    /* Allocate a new runtime ID if the object doesn't have one */
+    if (obj->id == NMO_OBJECT_ID_NONE) {
+        obj->id = nmo_object_repository_allocate_id(repo);
+        if (obj->id == NMO_OBJECT_ID_NONE) {
+            return NMO_ERR_NOMEM; // Should not happen unless repo is NULL
+        }
+    }
+
+    /* Check if ID already exists */
+    if (nmo_indexed_map_contains(repo->id_map, &obj->id)) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    /* Add to ID map */
+    int result = nmo_indexed_map_insert(repo->id_map, &obj->id, &obj);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    /* Add to name table if object has a name */
+    if (obj->name != NULL && obj->name[0] != '\0') {
+        result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
         if (result != NMO_OK) {
+            /* Rollback ID insertion */
+            nmo_indexed_map_remove(repo->id_map, &obj->id);
             return result;
         }
     }
-
-    /* Add to ID table */
-    int found;
-    int slot = find_id_slot(repository, object->id, &found);
-    if (slot < 0) {
-        return NMO_ERR_NOMEM;
-    }
-    if (found) {
-        return NMO_ERR_INVALID_STATE;  // Object already exists
-    }
-
-    repository->id_table[slot].id = object->id;
-    repository->id_table[slot].object = object;
-    repository->id_table[slot].occupied = 1;
-    repository->id_count++;
-
-    /* Add to name table if object has a name */
-    if (object->name != NULL) {
-        if ((repository->name_count + 1) * 10 > repository->name_capacity * 7) {
-            int result = resize_name_table(repository, repository->name_capacity * 2);
-            if (result != NMO_OK) {
-                /* Rollback ID table entry */
-                repository->id_table[slot].occupied = 0;
-                repository->id_count--;
-                return result;
-            }
-        }
-
-        int name_slot = find_name_slot(repository, object->name, &found);
-        if (name_slot >= 0 && !found) {
-            repository->name_table[name_slot].name = object->name;
-            repository->name_table[name_slot].object = object;
-            repository->name_table[name_slot].occupied = 1;
-            repository->name_count++;
-        }
-    }
-
-    /* Add to dense array */
-    if (repository->object_count >= repository->object_capacity) {
-        size_t new_capacity = repository->object_capacity * 2;
-        nmo_object** new_objects = (nmo_object**)realloc(repository->objects,
-                                                          new_capacity * sizeof(nmo_object*));
-        if (new_objects == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-        repository->objects = new_objects;
-        repository->object_capacity = new_capacity;
-    }
-
-    repository->objects[repository->object_count++] = object;
 
     return NMO_OK;
 }
@@ -323,160 +136,233 @@ int nmo_object_repository_add(nmo_object_repository* repository, nmo_object* obj
 /**
  * Find object by ID
  */
-nmo_object* nmo_object_repository_find_by_id(const nmo_object_repository* repository,
-                                              nmo_object_id id) {
-    if (repository == NULL) {
+nmo_object_t *nmo_object_repository_find_by_id(const nmo_object_repository_t *repo,
+                                               nmo_object_id_t id) {
+    if (repo == NULL) {
         return NULL;
     }
 
-    int found;
-    int slot = find_id_slot(repository, id, &found);
-    if (slot < 0 || !found) {
-        return NULL;
+    nmo_object_t *obj = NULL;
+    if (nmo_indexed_map_get(repo->id_map, &id, &obj)) {
+        return obj;
     }
 
-    return repository->id_table[slot].object;
+    return NULL;
 }
 
 /**
  * Find object by name
  */
-nmo_object* nmo_object_repository_find_by_name(const nmo_object_repository* repository,
-                                                const char* name) {
-    if (repository == NULL || name == NULL) {
+nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_repository_t *repo,
+                                                 const char *name) {
+    if (repo == NULL || name == NULL) {
         return NULL;
     }
 
-    int found;
-    int slot = find_name_slot(repository, name, &found);
-    if (slot < 0 || !found) {
-        return NULL;
+    nmo_object_t *obj = NULL;
+    if (nmo_hash_table_get(repo->name_table, &name, &obj)) {
+        return obj;
     }
 
-    return repository->name_table[slot].object;
+    return NULL;
 }
 
 /**
- * Find objects by class
+ * Remove object
  */
-nmo_object** nmo_object_repository_find_by_class(const nmo_object_repository* repository,
-                                                  nmo_class_id class_id,
-                                                  size_t* out_count) {
-    if (repository == NULL || out_count == NULL) {
-        if (out_count) *out_count = 0;
-        return NULL;
+int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t id) {
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Count matching objects */
-    size_t count = 0;
-    for (size_t i = 0; i < repository->object_count; i++) {
-        if (repository->objects[i]->class_id == class_id) {
-            count++;
-        }
+    /* Get object before removing */
+    nmo_object_t *obj = NULL;
+    if (!nmo_indexed_map_get(repo->id_map, &id, &obj)) {
+        return NMO_ERR_INVALID_ARGUMENT; /* Not found */
     }
 
-    if (count == 0) {
-        *out_count = 0;
-        return NULL;
+    /* Remove from name table if has name */
+    if (obj != NULL && obj->name != NULL && obj->name[0] != '\0') {
+        nmo_hash_table_remove(repo->name_table, &obj->name);
     }
 
-    /* Allocate result array */
-    nmo_object** result = (nmo_object**)nmo_arena_alloc(repository->arena,
-                                                          count * sizeof(nmo_object*),
-                                                          sizeof(void*));
-    if (result == NULL) {
-        *out_count = 0;
-        return NULL;
+    /* Remove from ID map */
+    nmo_indexed_map_remove(repo->id_map, &id);
+
+    return NMO_OK;
+}
+
+/**
+ * Check if object exists
+ */
+int nmo_object_repository_contains(const nmo_object_repository_t *repo, nmo_object_id_t id) {
+    if (repo == NULL) {
+        return 0;
     }
 
-    /* Fill result */
-    size_t j = 0;
-    for (size_t i = 0; i < repository->object_count && j < count; i++) {
-        if (repository->objects[i]->class_id == class_id) {
-            result[j++] = repository->objects[i];
-        }
-    }
-
-    *out_count = count;
-    return result;
+    return nmo_indexed_map_contains(repo->id_map, &id);
 }
 
 /**
  * Get object count
  */
-size_t nmo_object_repository_get_count(const nmo_object_repository* repository) {
-    return repository ? repository->object_count : 0;
+size_t nmo_object_repository_get_count(const nmo_object_repository_t *repo) {
+    if (repo == NULL) {
+        return 0;
+    }
+
+    return nmo_indexed_map_get_count(repo->id_map);
+}
+
+/**
+ * Get object at index
+ */
+nmo_object_t *nmo_object_repository_get_at(const nmo_object_repository_t *repo, size_t index) {
+    if (repo == NULL) {
+        return NULL;
+    }
+
+    nmo_object_t *obj = NULL;
+    if (nmo_indexed_map_get_value_at(repo->id_map, index, &obj)) {
+        return obj;
+    }
+
+    return NULL;
 }
 
 /**
  * Get all objects
  */
-nmo_object** nmo_object_repository_get_all(const nmo_object_repository* repository,
-                                            size_t* out_count) {
-    if (repository == NULL || out_count == NULL) {
-        if (out_count) *out_count = 0;
+nmo_object_t **nmo_object_repository_get_all(const nmo_object_repository_t *repo, size_t *count) {
+    if (repo == NULL || count == NULL) {
+        if (count != NULL) *count = 0;
         return NULL;
     }
 
-    *out_count = repository->object_count;
-    return repository->objects;
+    size_t obj_count = nmo_indexed_map_get_count(repo->id_map);
+    if (obj_count == 0) {
+        *count = 0;
+        return NULL;
+    }
+
+    /* Allocate array */
+    nmo_object_t **objects = (nmo_object_t **) malloc(obj_count * sizeof(nmo_object_t *));
+    if (objects == NULL) {
+        *count = 0;
+        return NULL;
+    }
+
+    /* Fill array */
+    for (size_t i = 0; i < obj_count; i++) {
+        nmo_object_t *obj = NULL;
+        if (nmo_indexed_map_get_value_at(repo->id_map, i, &obj)) {
+            objects[i] = obj;
+        } else {
+            objects[i] = NULL;
+        }
+    }
+
+    *count = obj_count;
+    return objects;
 }
 
 /**
- * Remove object from repository
+ * Allocate new runtime ID
  */
-int nmo_object_repository_remove(nmo_object_repository* repository, nmo_object_id id) {
-    if (repository == NULL) {
+static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t *repo) {
+    if (repo == NULL) {
+        return NMO_OBJECT_ID_NONE;
+    }
+
+    nmo_object_id_t id = repo->next_runtime_id;
+    repo->next_runtime_id++;
+
+    /* Skip invalid ID if we wrap around */
+    if (repo->next_runtime_id == NMO_OBJECT_ID_NONE) {
+        repo->next_runtime_id = 1;
+    }
+
+    return id;
+}
+
+/**
+ * Clear repository
+ */
+int nmo_object_repository_clear(nmo_object_repository_t *repo) {
+    if (repo == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Find in ID table */
-    int found;
-    int slot = find_id_slot(repository, id, &found);
-    if (slot < 0 || !found) {
-        return NMO_ERR_INVALID_ARGUMENT;  // Object not found
-    }
-
-    nmo_object* object = repository->id_table[slot].object;
-
-    /* Remove from ID table */
-    repository->id_table[slot].occupied = 0;
-    repository->id_count--;
-
-    /* Remove from name table if applicable */
-    if (object->name != NULL) {
-        int name_slot = find_name_slot(repository, object->name, &found);
-        if (name_slot >= 0 && found) {
-            repository->name_table[name_slot].occupied = 0;
-            repository->name_count--;
-        }
-    }
-
-    /* Remove from dense array */
-    for (size_t i = 0; i < repository->object_count; i++) {
-        if (repository->objects[i] == object) {
-            repository->objects[i] = repository->objects[repository->object_count - 1];
-            repository->object_count--;
-            break;
-        }
-    }
+    nmo_indexed_map_clear(repo->id_map);
+    nmo_hash_table_clear(repo->name_table);
+    repo->next_runtime_id = 1;
 
     return NMO_OK;
 }
 
 /**
- * Clear all objects
+ * Get arena
  */
-int nmo_object_repository_clear(nmo_object_repository* repository) {
-    if (repository == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+nmo_arena_t *nmo_object_repository_get_arena(const nmo_object_repository_t *repo) {
+    return repo ? repo->arena : NULL;
+}
+
+/**
+ * Find objects by class
+ */
+nmo_object_t **nmo_object_repository_find_by_class(const nmo_object_repository_t *repo,
+                                                           nmo_class_id_t class_id,
+                                                           size_t *out_count) {
+    if (repo == NULL || out_count == NULL) {
+        if (out_count != NULL) *out_count = 0;
+        return NULL;
     }
 
-    memset(repository->id_table, 0, repository->id_capacity * sizeof(id_entry));
-    memset(repository->name_table, 0, repository->name_capacity * sizeof(name_entry));
-    repository->id_count = 0;
-    repository->name_count = 0;
-    repository->object_count = 0;
+    size_t total_count = nmo_indexed_map_get_count(repo->id_map);
+    if (total_count == 0) {
+        *out_count = 0;
+        return NULL;
+    }
 
-    return NMO_OK;
+    // First pass: count matching objects
+    size_t match_count = 0;
+    for (size_t i = 0; i < total_count; i++) {
+        nmo_object_t *obj = NULL;
+        if (nmo_indexed_map_get_value_at(repo->id_map, i, &obj) && obj->class_id == class_id) {
+            match_count++;
+        }
+    }
+
+    if (match_count == 0) {
+        *out_count = 0;
+        return NULL;
+    }
+
+    // Allocate array for matching objects
+    nmo_object_t **objects = (nmo_object_t **) nmo_arena_alloc(repo->arena,
+                                                              match_count * sizeof(nmo_object_t *),
+                                                              sizeof(void *));
+    if (objects == NULL) {
+        *out_count = 0;
+        return NULL;
+    }
+
+    // Second pass: fill the array
+    size_t current_match = 0;
+    for (size_t i = 0; i < total_count; i++) {
+        nmo_object_t *obj = NULL;
+        if (nmo_indexed_map_get_value_at(repo->id_map, i, &obj) && obj->class_id == class_id) {
+            objects[current_match++] = obj;
+        }
+    }
+
+    *out_count = match_count;
+    return objects;
+}
+
+/**
+ * Get object by index (alias for get_at to match header declaration)
+ */
+nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_repository_t *repo, size_t index) {
+    return nmo_object_repository_get_at(repo, index);
 }
