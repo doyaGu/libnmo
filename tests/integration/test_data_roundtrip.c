@@ -253,6 +253,10 @@ static void test_manager_with_chunk_data(void) {
     
     printf("  Chunk serialized to %zu bytes\n", chunk_size);
     
+    /* Store serialized data in chunk's raw_data for round-trip */
+    chunk->raw_data = chunk_data;
+    chunk->raw_size = chunk_size;
+    
     data.managers[0].chunk = chunk;
     data.managers[0].data_size = (uint32_t)chunk_size;
     
