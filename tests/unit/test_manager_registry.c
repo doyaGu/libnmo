@@ -3,183 +3,157 @@
  * @brief Test suite for manager registry (Phase 11)
  */
 
+#include "test_framework.h"
 #include "format/nmo_manager_registry.h"
 #include "format/nmo_manager.h"
 #include "core/nmo_guid.h"
+#include "nmo.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static int tests_passed = 0;
-static int tests_failed = 0;
-
-#define TEST_ASSERT(condition, message) \
-    do { \
-        if (!(condition)) { \
-            printf("FAIL: %s - %s\n", __func__, message); \
-            tests_failed++; \
-            return; \
-        } \
-    } while(0)
-
-#define TEST_PASS() \
-    do { \
-        printf("PASS: %s\n", __func__); \
-        tests_passed++; \
-    } while(0)
-
 /**
  * Test creating and destroying registry
  */
-static void test_registry_create_destroy(void) {
+TEST(manager_registry, create_destroy) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == 0, "New registry should be empty");
+    ASSERT_EQ(0, count);
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test registering a single manager
  */
-static void test_register_single_manager(void) {
+TEST(manager_registry, register_single_manager) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
-    nmo_guid guid = {0x12345678, 0x9ABCDEF0};
-    nmo_manager* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
-    TEST_ASSERT(manager != NULL, "Failed to create manager");
+    nmo_guid_t guid = nmo_guid_create(0x12345678, 0x9ABCDEF0);
+    nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(manager);
 
     nmo_result_t result = nmo_manager_registry_register(registry, 1, manager);
-    TEST_ASSERT(result.code == NMO_OK, "Failed to register manager");
+    ASSERT_EQ(NMO_OK, result.code);
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == 1, "Registry should have 1 manager");
+    ASSERT_EQ(1, count);
 
     int contains = nmo_manager_registry_contains(registry, 1);
-    TEST_ASSERT(contains == 1, "Registry should contain manager ID 1");
+    ASSERT_TRUE(contains);
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test registering multiple managers
  */
-static void test_register_multiple_managers(void) {
+TEST(manager_registry, register_multiple_managers) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
     const size_t manager_count = 10;
     for (size_t i = 0; i < manager_count; i++) {
-        nmo_guid guid = {(uint32_t)i, (uint32_t)(i * 2)};
-        nmo_manager* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
-        TEST_ASSERT(manager != NULL, "Failed to create manager");
+        nmo_guid_t guid = nmo_guid_create((uint32_t)i, (uint32_t)(i * 2));
+        nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
 
         nmo_result_t result = nmo_manager_registry_register(registry, (uint32_t)i, manager);
-        TEST_ASSERT(result.code == NMO_OK, "Failed to register manager");
+        ASSERT_EQ(NMO_OK, result.code);
     }
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == manager_count, "Registry should have 10 managers");
+    ASSERT_EQ(manager_count, count);
 
     for (size_t i = 0; i < manager_count; i++) {
         int contains = nmo_manager_registry_contains(registry, (uint32_t)i);
-        TEST_ASSERT(contains == 1, "Registry should contain all managers");
+        ASSERT_TRUE(contains);
     }
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test manager lookup
  */
-static void test_manager_lookup(void) {
+TEST(manager_registry, manager_lookup) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
-    nmo_guid guid1 = {0x11111111, 0x22222222};
-    nmo_manager* manager1 = nmo_manager_create(guid1, "Manager1", NMO_PLUGIN_MANAGER_DLL);
-    TEST_ASSERT(manager1 != NULL, "Failed to create manager1");
+    nmo_guid_t guid1 = nmo_guid_create(0x11111111, 0x22222222);
+    nmo_manager_t* manager1 = nmo_manager_create(guid1, "Manager1", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(manager1);
 
-    nmo_guid guid2 = {0x33333333, 0x44444444};
-    nmo_manager* manager2 = nmo_manager_create(guid2, "Manager2", NMO_PLUGIN_BEHAVIOR_DLL);
-    TEST_ASSERT(manager2 != NULL, "Failed to create manager2");
+    nmo_guid_t guid2 = nmo_guid_create(0x33333333, 0x44444444);
+    nmo_manager_t* manager2 = nmo_manager_create(guid2, "Manager2", NMO_PLUGIN_BEHAVIOR_DLL);
+    ASSERT_NOT_NULL(manager2);
 
     nmo_manager_registry_register(registry, 100, manager1);
     nmo_manager_registry_register(registry, 200, manager2);
 
-    nmo_manager* found1 = (nmo_manager*)nmo_manager_registry_get(registry, 100);
-    TEST_ASSERT(found1 == manager1, "Should find manager1");
+    nmo_manager_t* found1 = (nmo_manager_t*)nmo_manager_registry_get(registry, 100);
+    ASSERT_EQ(manager1, found1);
 
-    nmo_manager* found2 = (nmo_manager*)nmo_manager_registry_get(registry, 200);
-    TEST_ASSERT(found2 == manager2, "Should find manager2");
+    nmo_manager_t* found2 = (nmo_manager_t*)nmo_manager_registry_get(registry, 200);
+    ASSERT_EQ(manager2, found2);
 
-    nmo_manager* not_found = (nmo_manager*)nmo_manager_registry_get(registry, 999);
-    TEST_ASSERT(not_found == NULL, "Should not find non-existent manager");
+    nmo_manager_t* not_found = (nmo_manager_t*)nmo_manager_registry_get(registry, 999);
+    ASSERT_NULL(not_found);
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test unregistering managers
  */
-static void test_unregister_manager(void) {
+TEST(manager_registry, unregister_manager) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
-    nmo_guid guid = {0x55555555, 0x66666666};
-    nmo_manager* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
-    TEST_ASSERT(manager != NULL, "Failed to create manager");
+    nmo_guid_t guid = nmo_guid_create(0x55555555, 0x66666666);
+    nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(manager);
 
     nmo_manager_registry_register(registry, 42, manager);
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == 1, "Registry should have 1 manager");
+    ASSERT_EQ(1, count);
 
     nmo_result_t result = nmo_manager_registry_unregister(registry, 42);
-    TEST_ASSERT(result.code == NMO_OK, "Failed to unregister manager");
+    ASSERT_EQ(NMO_OK, result.code);
 
     count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == 0, "Registry should be empty after unregister");
+    ASSERT_EQ(0, count);
 
     int contains = nmo_manager_registry_contains(registry, 42);
-    TEST_ASSERT(contains == 0, "Registry should not contain unregistered manager");
+    ASSERT_FALSE(contains);
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test iteration over managers
  */
-static void test_manager_iteration(void) {
+TEST(manager_registry, manager_iteration) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
     uint32_t expected_ids[] = {10, 20, 30, 40, 50};
     const size_t manager_count = sizeof(expected_ids) / sizeof(expected_ids[0]);
 
     for (size_t i = 0; i < manager_count; i++) {
-        nmo_guid guid = {expected_ids[i], expected_ids[i] * 2};
-        nmo_manager* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
-        TEST_ASSERT(manager != NULL, "Failed to create manager");
+        nmo_guid_t guid = nmo_guid_create(expected_ids[i], expected_ids[i] * 2);
+        nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
 
         nmo_manager_registry_register(registry, expected_ids[i], manager);
     }
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == manager_count, "Registry should have correct count");
+    ASSERT_EQ(manager_count, count);
 
     /* Verify all IDs are accessible */
     int found[5] = {0};
@@ -195,135 +169,119 @@ static void test_manager_iteration(void) {
     }
 
     for (size_t i = 0; i < manager_count; i++) {
-        TEST_ASSERT(found[i] == 1, "All managers should be found during iteration");
+        ASSERT_TRUE(found[i]);
     }
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test clearing all managers
  */
-static void test_clear_all_managers(void) {
+TEST(manager_registry, clear_all_managers) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
     /* Add multiple managers */
     for (uint32_t i = 0; i < 5; i++) {
-        nmo_guid guid = {i, i * 2};
-        nmo_manager* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
-        TEST_ASSERT(manager != NULL, "Failed to create manager");
+        nmo_guid_t guid = nmo_guid_create(i, i * 2);
+        nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
 
         nmo_manager_registry_register(registry, i, manager);
     }
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == 5, "Registry should have 5 managers");
+    ASSERT_EQ(5, count);
 
     nmo_result_t result = nmo_manager_registry_clear(registry);
-    TEST_ASSERT(result.code == NMO_OK, "Failed to clear registry");
+    ASSERT_EQ(NMO_OK, result.code);
 
     count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == 0, "Registry should be empty after clear");
+    ASSERT_EQ(0, count);
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test hash table resizing
  */
-static void test_registry_resize(void) {
+TEST(manager_registry, registry_resize) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
     /* Add many managers to trigger resize */
     const size_t manager_count = 50;
     for (size_t i = 0; i < manager_count; i++) {
-        nmo_guid guid = {(uint32_t)i, (uint32_t)(i * 2)};
-        nmo_manager* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
-        TEST_ASSERT(manager != NULL, "Failed to create manager");
+        nmo_guid_t guid = nmo_guid_create((uint32_t)i, (uint32_t)(i * 2));
+        nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
 
         nmo_result_t result = nmo_manager_registry_register(registry, (uint32_t)i, manager);
-        TEST_ASSERT(result.code == NMO_OK, "Failed to register manager");
+        ASSERT_EQ(NMO_OK, result.code);
     }
 
     uint32_t count = nmo_manager_registry_get_count(registry);
-    TEST_ASSERT(count == manager_count, "Registry should have all managers after resize");
+    ASSERT_EQ(manager_count, count);
 
     /* Verify all managers are still accessible */
     for (size_t i = 0; i < manager_count; i++) {
         int contains = nmo_manager_registry_contains(registry, (uint32_t)i);
-        TEST_ASSERT(contains == 1, "All managers should be accessible after resize");
+        ASSERT_TRUE(contains);
     }
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
 /**
  * Test error handling
  */
-static void test_error_handling(void) {
+TEST(manager_registry, error_handling) {
     nmo_manager_registry_t* registry = nmo_manager_registry_create();
-    TEST_ASSERT(registry != NULL, "Failed to create registry");
+    ASSERT_NOT_NULL(registry);
 
     /* Test registering NULL manager */
     nmo_result_t result = nmo_manager_registry_register(registry, 1, NULL);
-    TEST_ASSERT(result.code != NMO_OK, "Should fail to register NULL manager");
+    ASSERT_NE(NMO_OK, result.code);
 
     /* Test registering duplicate ID */
-    nmo_guid guid = {0x77777777, 0x88888888};
-    nmo_manager* manager1 = nmo_manager_create(guid, "Manager1", NMO_PLUGIN_MANAGER_DLL);
-    TEST_ASSERT(manager1 != NULL, "Failed to create manager1");
+    nmo_guid_t guid = nmo_guid_create(0x77777777, 0x88888888);
+    nmo_manager_t* manager1 = nmo_manager_create(guid, "Manager1", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(manager1);
+
+    nmo_manager_t* manager2 = nmo_manager_create(guid, "Manager2", NMO_PLUGIN_BEHAVIOR_DLL);
+    ASSERT_NOT_NULL(manager2);
 
     nmo_manager_registry_register(registry, 123, manager1);
 
-    nmo_manager* manager2 = nmo_manager_create(guid, "Manager2", NMO_PLUGIN_MANAGER_DLL);
-    TEST_ASSERT(manager2 != NULL, "Failed to create manager2");
-
     result = nmo_manager_registry_register(registry, 123, manager2);
-    TEST_ASSERT(result.code != NMO_OK, "Should fail to register duplicate ID");
+    ASSERT_NE(NMO_OK, result.code);
 
     /* Cleanup manager2 since it wasn't registered */
     nmo_manager_destroy(manager2);
 
     /* Test unregistering non-existent manager */
     result = nmo_manager_registry_unregister(registry, 999);
-    TEST_ASSERT(result.code != NMO_OK, "Should fail to unregister non-existent manager");
+    ASSERT_NE(NMO_OK, result.code);
 
     /* Test NULL registry operations */
     uint32_t count = nmo_manager_registry_get_count(NULL);
-    TEST_ASSERT(count == 0, "get_count on NULL should return 0");
+    ASSERT_EQ(0, count);
 
     void* manager = nmo_manager_registry_get(NULL, 1);
-    TEST_ASSERT(manager == NULL, "get on NULL should return NULL");
+    ASSERT_NULL(manager);
 
     nmo_manager_registry_destroy(registry);
-
-    TEST_PASS();
 }
 
-int main(void) {
-    printf("Running manager registry tests...\n\n");
-
-    test_registry_create_destroy();
-    test_register_single_manager();
-    test_register_multiple_managers();
-    test_manager_lookup();
-    test_unregister_manager();
-    test_manager_iteration();
-    test_clear_all_managers();
-    test_registry_resize();
-    test_error_handling();
-
-    printf("\nAll manager registry tests completed!\n");
-    printf("Passed: %d\n", tests_passed);
-    printf("Failed: %d\n", tests_failed);
-
-    return (tests_failed == 0) ? 0 : 1;
-}
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(manager_registry, create_destroy);
+    REGISTER_TEST(manager_registry, register_single_manager);
+    REGISTER_TEST(manager_registry, register_multiple_managers);
+    REGISTER_TEST(manager_registry, manager_lookup);
+    REGISTER_TEST(manager_registry, unregister_manager);
+    REGISTER_TEST(manager_registry, manager_iteration);
+    REGISTER_TEST(manager_registry, clear_all_managers);
+    REGISTER_TEST(manager_registry, registry_resize);
+    REGISTER_TEST(manager_registry, error_handling);
+TEST_MAIN_END()

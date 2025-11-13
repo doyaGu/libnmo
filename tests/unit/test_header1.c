@@ -3,37 +3,67 @@
  * @brief Unit tests for NMO Header1 format
  */
 
-#include "../test_framework.h"
 #include "nmo.h"
+#include "test_framework.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-TEST(header1, create) {
-    nmo_header1_desc desc = {
-        .master_version = 1,
-        .file_version = 1,
-    };
-
-    nmo_header1 *header = nmo_header1_create(NULL, &desc);
-    ASSERT_NOT_NULL(header);
-    nmo_header1_destroy(header);
+TEST(header1, serialization) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    
+    // Create test header with no objects
+    nmo_header1_t header;
+    memset(&header, 0, sizeof(header));
+    header.object_count = 0;
+    header.plugin_dep_count = 0;
+    header.included_file_count = 0;
+    
+    void* out_data;
+    size_t out_size;
+    nmo_result_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_NOT_NULL(out_data);
+    ASSERT_TRUE(out_size > 0);
+    
+    nmo_arena_destroy(arena);
 }
 
-TEST(header1, get_versions) {
-    nmo_header1_desc desc = {
-        .master_version = 2,
-        .file_version = 3,
-    };
-
-    nmo_header1 *header = nmo_header1_create(NULL, &desc);
-    ASSERT_NOT_NULL(header);
-
-    uint32_t master = nmo_header1_get_master_version(header);
-    uint32_t file = nmo_header1_get_file_version(header);
-    ASSERT_EQ(master, 2);
-    ASSERT_EQ(file, 3);
-
-    nmo_header1_destroy(header);
+TEST(header1, round_trip) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    
+    // Create test header with no objects
+    nmo_header1_t header;
+    memset(&header, 0, sizeof(header));
+    header.object_count = 0;
+    header.plugin_dep_count = 0;
+    header.included_file_count = 0;
+    
+    void* out_data;
+    size_t out_size;
+    nmo_result_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_NOT_NULL(out_data);
+    ASSERT_TRUE(out_size > 0);
+    
+    // Parse serialized data
+    nmo_header1_t parsed_header;
+    memset(&parsed_header, 0, sizeof(parsed_header));
+    parsed_header.object_count = 0;  // Must be set before parsing
+    
+    result = nmo_header1_parse(out_data, out_size, &parsed_header, arena);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(parsed_header.object_count, 0);
+    ASSERT_NULL(parsed_header.objects);
+    ASSERT_EQ(parsed_header.plugin_dep_count, 0);
+    ASSERT_EQ(parsed_header.included_file_count, 0);
+    
+    nmo_arena_destroy(arena);
 }
 
-int main(void) {
-    return 0;
-}
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(header1, serialization);
+    REGISTER_TEST(header1, round_trip);
+TEST_MAIN_END()
