@@ -5,6 +5,7 @@
 #include "nmo_chunk.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_guid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,7 +20,7 @@ extern "C" {
  */
 
 /* Forward declaration */
-typedef struct nmo_object nmo_object;
+typedef struct nmo_object nmo_object_t;
 
 /**
  * @brief Object structure
@@ -27,31 +28,32 @@ typedef struct nmo_object nmo_object;
  * Runtime representation of a Virtools object with metadata, hierarchical
  * relationships, and chunk data.
  */
-struct nmo_object {
+typedef struct nmo_object {
     /* Identity */
-    nmo_object_id      id;              /**< Runtime object ID */
-    nmo_class_id       class_id;        /**< Object class ID */
-    const char*        name;            /**< Object name (optional) */
-    uint32_t          flags;           /**< Object flags */
+    nmo_object_id_t id;      /**< Runtime object ID */
+    nmo_class_id_t class_id; /**< Object class ID */
+    const char *name;      /**< Object name (optional) */
+    uint32_t flags;        /**< Object flags */
+    nmo_guid_t type_guid;  /**< Type GUID (for typed objects like parameters) */
 
     /* Hierarchy */
-    nmo_object*        parent;          /**< Parent object (NULL for root) */
-    nmo_object**       children;        /**< Child objects array */
-    size_t            child_count;     /**< Number of children */
-    size_t            child_capacity;  /**< Children array capacity */
+    nmo_object_t *parent;    /**< Parent object (NULL for root) */
+    nmo_object_t **children; /**< Child objects array */
+    size_t child_count;      /**< Number of children */
+    size_t child_capacity;   /**< Children array capacity */
 
     /* Data */
-    nmo_chunk*         chunk;           /**< Associated chunk data */
-    void*             data;            /**< Custom data pointer */
+    nmo_chunk_t *chunk; /**< Associated chunk data */
+    void *data;         /**< Custom data pointer */
 
     /* File context */
-    nmo_object_id      file_index;      /**< Original file ID */
-    uint32_t          creation_flags;  /**< Flags used during creation */
-    uint32_t          save_flags;      /**< Flags for saving */
+    nmo_object_id_t file_index; /**< Original file ID */
+    uint32_t creation_flags;  /**< Flags used during creation */
+    uint32_t save_flags;      /**< Flags for saving */
 
     /* Memory management */
-    nmo_arena*         arena;           /**< Arena for allocations */
-};
+    nmo_arena_t *arena; /**< Arena for allocations */
+} nmo_object_t;
 
 /**
  * @brief Create object
@@ -61,7 +63,7 @@ struct nmo_object {
  * @param class_id Object class ID
  * @return Object or NULL on allocation failure
  */
-NMO_API nmo_object* nmo_object_create(nmo_arena* arena, nmo_object_id id, nmo_class_id class_id);
+NMO_API nmo_object_t *nmo_object_create(nmo_arena_t *arena, nmo_object_id_t id, nmo_class_id_t class_id);
 
 /**
  * @brief Destroy object
@@ -71,7 +73,7 @@ NMO_API nmo_object* nmo_object_create(nmo_arena* arena, nmo_object_id id, nmo_cl
  *
  * @param object Object to destroy
  */
-NMO_API void nmo_object_destroy(nmo_object* object);
+NMO_API void nmo_object_destroy(nmo_object_t *object);
 
 /**
  * @brief Set object name
@@ -81,7 +83,7 @@ NMO_API void nmo_object_destroy(nmo_object* object);
  * @param arena Arena for name allocation
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_name(nmo_object* object, const char* name, nmo_arena* arena);
+NMO_API int nmo_object_set_name(nmo_object_t *object, const char *name, nmo_arena_t *arena);
 
 /**
  * @brief Get object name
@@ -89,7 +91,7 @@ NMO_API int nmo_object_set_name(nmo_object* object, const char* name, nmo_arena*
  * @param object Object (required)
  * @return Name string or NULL if not set
  */
-NMO_API const char* nmo_object_get_name(const nmo_object* object);
+NMO_API const char *nmo_object_get_name(const nmo_object_t *object);
 
 /**
  * @brief Add child object
@@ -99,7 +101,7 @@ NMO_API const char* nmo_object_get_name(const nmo_object* object);
  * @param arena Arena for children array allocation
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_add_child(nmo_object* parent, nmo_object* child, nmo_arena* arena);
+NMO_API int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t *arena);
 
 /**
  * @brief Remove child object
@@ -108,7 +110,7 @@ NMO_API int nmo_object_add_child(nmo_object* parent, nmo_object* child, nmo_aren
  * @param child Child object (required)
  * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT if not found
  */
-NMO_API int nmo_object_remove_child(nmo_object* parent, nmo_object* child);
+NMO_API int nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child);
 
 /**
  * @brief Get child by index
@@ -117,7 +119,7 @@ NMO_API int nmo_object_remove_child(nmo_object* parent, nmo_object* child);
  * @param index Child index
  * @return Child object or NULL if index out of bounds
  */
-NMO_API nmo_object* nmo_object_get_child(const nmo_object* object, size_t index);
+NMO_API nmo_object_t *nmo_object_get_child(const nmo_object_t *object, size_t index);
 
 /**
  * @brief Get child count
@@ -125,7 +127,7 @@ NMO_API nmo_object* nmo_object_get_child(const nmo_object* object, size_t index)
  * @param object Object (required)
  * @return Number of children
  */
-NMO_API size_t nmo_object_get_child_count(const nmo_object* object);
+NMO_API size_t nmo_object_get_child_count(const nmo_object_t *object);
 
 /**
  * @brief Set object chunk data
@@ -134,7 +136,7 @@ NMO_API size_t nmo_object_get_child_count(const nmo_object* object);
  * @param chunk Chunk data (can be NULL)
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_chunk(nmo_object* object, nmo_chunk* chunk);
+NMO_API int nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk);
 
 /**
  * @brief Get object chunk data
@@ -142,7 +144,7 @@ NMO_API int nmo_object_set_chunk(nmo_object* object, nmo_chunk* chunk);
  * @param object Object (required)
  * @return Chunk data or NULL if not set
  */
-NMO_API nmo_chunk* nmo_object_get_chunk(const nmo_object* object);
+NMO_API nmo_chunk_t *nmo_object_get_chunk(const nmo_object_t *object);
 
 /**
  * @brief Set custom data pointer
@@ -151,7 +153,7 @@ NMO_API nmo_chunk* nmo_object_get_chunk(const nmo_object* object);
  * @param data Custom data pointer
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_data(nmo_object* object, void* data);
+NMO_API int nmo_object_set_data(nmo_object_t *object, void *data);
 
 /**
  * @brief Get custom data pointer
@@ -159,7 +161,7 @@ NMO_API int nmo_object_set_data(nmo_object* object, void* data);
  * @param object Object (required)
  * @return Custom data pointer or NULL
  */
-NMO_API void* nmo_object_get_data(const nmo_object* object);
+NMO_API void *nmo_object_get_data(const nmo_object_t *object);
 
 /**
  * @brief Set file index (original file ID)
@@ -168,7 +170,7 @@ NMO_API void* nmo_object_get_data(const nmo_object* object);
  * @param file_index File ID
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_file_index(nmo_object* object, nmo_object_id file_index);
+NMO_API int nmo_object_set_file_index(nmo_object_t *object, nmo_object_id_t file_index);
 
 /**
  * @brief Get file index
@@ -176,7 +178,29 @@ NMO_API int nmo_object_set_file_index(nmo_object* object, nmo_object_id file_ind
  * @param object Object (required)
  * @return File ID
  */
-NMO_API nmo_object_id nmo_object_get_file_index(const nmo_object* object);
+NMO_API nmo_object_id_t nmo_object_get_file_index(const nmo_object_t *object);
+
+/**
+ * @brief Get object type GUID
+ *
+ * For typed objects (like parameters), returns the type GUID.
+ * For other objects, returns a null GUID.
+ *
+ * @param object Object (required)
+ * @return Type GUID (call nmo_guid_is_null to check validity)
+ */
+NMO_API nmo_guid_t nmo_object_get_type_guid(const nmo_object_t *object);
+
+/**
+ * @brief Set object type GUID
+ *
+ * Sets the type GUID for typed objects.
+ *
+ * @param object Object (required)
+ * @param guid Type GUID
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid);
 
 #ifdef __cplusplus
 }
