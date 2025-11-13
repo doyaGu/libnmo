@@ -247,9 +247,17 @@ nmo_result_t nmo_data_section_serialize(
             /* Serialize chunk to get its data and size */
             void *chunk_data = NULL;
             size_t chunk_size = 0;
-            nmo_result_t result = nmo_chunk_serialize(mgr->chunk, &chunk_data, &chunk_size, arena);
-            if (result.code != NMO_OK) {
-                return result;
+            if (mgr->chunk != NULL) {
+                /* Use raw_data if available, otherwise serialize */
+                if (mgr->chunk->raw_data != NULL && mgr->chunk->raw_size > 0) {
+                    chunk_data = mgr->chunk->raw_data;
+                    chunk_size = mgr->chunk->raw_size;
+                } else {
+                    nmo_result_t result = nmo_chunk_serialize(mgr->chunk, &chunk_data, &chunk_size, arena);
+                    if (result.code != NMO_OK) {
+                        return result;
+                    }
+                }
             }
 
             /* Write actual data size */
@@ -291,9 +299,17 @@ nmo_result_t nmo_data_section_serialize(
             /* Serialize chunk to get its data and size */
             void *chunk_data = NULL;
             size_t chunk_size = 0;
-            nmo_result_t result = nmo_chunk_serialize(obj->chunk, &chunk_data, &chunk_size, arena);
-            if (result.code != NMO_OK) {
-                return result;
+            if (obj->chunk != NULL) {
+                /* Use raw_data if available, otherwise serialize */
+                if (obj->chunk->raw_data != NULL && obj->chunk->raw_size > 0) {
+                    chunk_data = obj->chunk->raw_data;
+                    chunk_size = obj->chunk->raw_size;
+                } else {
+                    nmo_result_t result = nmo_chunk_serialize(obj->chunk, &chunk_data, &chunk_size, arena);
+                    if (result.code != NMO_OK) {
+                        return result;
+                    }
+                }
             }
 
             /* Write actual data size */
@@ -337,7 +353,10 @@ size_t nmo_data_section_calculate_size(
             total_size += 8; // GUID
             total_size += 4; // Data size
 
-            if (mgr->chunk != NULL) {
+            /* Use data_size if set, otherwise serialize to get size */
+            if (mgr->data_size > 0) {
+                total_size += mgr->data_size;
+            } else if (mgr->chunk != NULL) {
                 if (mgr->chunk->raw_data != NULL) {
                     total_size += mgr->chunk->raw_size;
                 } else {
@@ -362,7 +381,10 @@ size_t nmo_data_section_calculate_size(
 
             total_size += 4; // Data size
 
-            if (obj->chunk != NULL) {
+            /* Use data_size if set, otherwise serialize to get size */
+            if (obj->data_size > 0) {
+                total_size += obj->data_size;
+            } else if (obj->chunk != NULL) {
                 if (obj->chunk->raw_data != NULL) {
                     total_size += obj->chunk->raw_size;
                 } else {
