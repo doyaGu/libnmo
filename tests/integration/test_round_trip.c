@@ -7,7 +7,46 @@
 #include "app/nmo_parser.h"
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <direct.h>
+#define unlink _unlink
+#else
 #include <unistd.h>
+#endif
+
+/**
+ * Get platform-specific temporary directory path
+ */
+static const char* get_temp_dir(void) {
+#ifdef _WIN32
+    static char temp_path[MAX_PATH];
+    DWORD len = GetTempPathA(MAX_PATH, temp_path);
+    if (len == 0 || len > MAX_PATH) {
+        return ".";  // Fallback to current directory
+    }
+    // Remove trailing backslash if present
+    if (temp_path[len - 1] == '\\') {
+        temp_path[len - 1] = '\0';
+    }
+    return temp_path;
+#else
+    return "/tmp";
+#endif
+}
+
+/**
+ * Build a temporary file path
+ */
+static void get_temp_file_path(char* buffer, size_t buffer_size, const char* filename) {
+    const char* temp_dir = get_temp_dir();
+#ifdef _WIN32
+    snprintf(buffer, buffer_size, "%s\\%s", temp_dir, filename);
+#else
+    snprintf(buffer, buffer_size, "%s/%s", temp_dir, filename);
+#endif
+}
 
 /* Global counters for manager hooks */
 static int pre_save_called = 0;
@@ -48,39 +87,40 @@ static int test_post_load_hook(void* session, void* user_data) {
  * Test basic round-trip
  */
 static int test_basic_round_trip(void) {
-    const char* test_file = "/tmp/test_round_trip_basic.nmo";
+    char test_file[512];
+    get_temp_file_path(test_file, sizeof(test_file), "test_round_trip_basic.nmo");
     unlink(test_file);
 
     /* Create context */
-    nmo_context_desc ctx_desc = {
+    nmo_context_desc_t ctx_desc = {
         .allocator = NULL,
         .logger = NULL,  /* Use default logger */
         .thread_pool_size = 1,
     };
 
-    nmo_context* ctx = nmo_context_create(&ctx_desc);
+    nmo_context_t* ctx = nmo_context_create(&ctx_desc);
     if (ctx == NULL) return 1;
 
     /* Save phase */
-    nmo_session* save_session = nmo_session_create(ctx);
+    nmo_session_t* save_session = nmo_session_create(ctx);
     if (save_session == NULL) {
         nmo_context_release(ctx);
         return 1;
     }
 
-    nmo_object_repository* save_repo = nmo_session_get_repository(save_session);
-    nmo_arena* save_arena = nmo_session_get_arena(save_session);
+    nmo_object_repository_t* save_repo = nmo_session_get_repository(save_session);
+    nmo_arena_t* save_arena = nmo_session_get_arena(save_session);
 
     /* Create test objects */
     for (size_t i = 0; i < 5; i++) {
-        nmo_object* obj = (nmo_object*)nmo_arena_alloc(save_arena, sizeof(nmo_object), sizeof(void*));
+        nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(save_arena, sizeof(nmo_object_t), sizeof(void*));
         if (obj == NULL) {
             nmo_session_destroy(save_session);
             nmo_context_release(ctx);
             return 1;
         }
 
-        memset(obj, 0, sizeof(nmo_object));
+        memset(obj, 0, sizeof(nmo_object_t));
         obj->class_id = 0x10000000 + (uint32_t)i;
         obj->name = "TestObject";
         obj->arena = save_arena;
@@ -88,7 +128,7 @@ static int test_basic_round_trip(void) {
         nmo_object_repository_add(save_repo, obj);
     }
 
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -108,7 +148,7 @@ static int test_basic_round_trip(void) {
     nmo_session_destroy(save_session);
 
     /* Load phase */
-    nmo_session* load_session = nmo_session_create(ctx);
+    nmo_session_t* load_session = nmo_session_create(ctx);
     if (load_session == NULL) {
         nmo_context_release(ctx);
         unlink(test_file);
@@ -125,7 +165,7 @@ static int test_basic_round_trip(void) {
     /* Verify load completed without error */
     /* NOTE: Object serialization not yet implemented, so we can't verify object count */
     /* For now, just verify the pipeline completed successfully */
-    nmo_object_repository* load_repo = nmo_session_get_repository(load_session);
+    nmo_object_repository_t* load_repo = nmo_session_get_repository(load_session);
     size_t loaded_count;
     nmo_object_repository_get_all(load_repo, &loaded_count);
 
@@ -143,7 +183,8 @@ static int test_basic_round_trip(void) {
  * Test with manager hooks
  */
 static int test_manager_hooks(void) {
-    const char* test_file = "/tmp/test_round_trip_hooks.nmo";
+    char test_file[512];
+    get_temp_file_path(test_file, sizeof(test_file), "test_round_trip_hooks.nmo");
     unlink(test_file);
 
     pre_save_called = 0;
@@ -151,19 +192,19 @@ static int test_manager_hooks(void) {
     pre_load_called = 0;
     post_load_called = 0;
 
-    nmo_context_desc ctx_desc = {
+    nmo_context_desc_t ctx_desc = {
         .allocator = NULL,
         .logger = NULL,  /* Use default logger */
         .thread_pool_size = 1,
     };
 
-    nmo_context* ctx = nmo_context_create(&ctx_desc);
+    nmo_context_t* ctx = nmo_context_create(&ctx_desc);
     if (ctx == NULL) return 1;
 
     /* Register manager with hooks */
     nmo_manager_registry_t* manager_reg = nmo_context_get_manager_registry(ctx);
-    nmo_guid test_guid = {0xAABBCCDD, 0x11223344};
-    nmo_manager* manager = nmo_manager_create(test_guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
+    nmo_guid_t test_guid = {0xAABBCCDD, 0x11223344};
+    nmo_manager_t* manager = nmo_manager_create(test_guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
 
     nmo_manager_set_pre_save_hook(manager, test_pre_save_hook);
     nmo_manager_set_post_save_hook(manager, test_post_save_hook);
@@ -173,18 +214,18 @@ static int test_manager_hooks(void) {
     nmo_manager_registry_register(manager_reg, 1, manager);
 
     /* Save phase */
-    nmo_session* save_session = nmo_session_create(ctx);
-    nmo_object_repository* save_repo = nmo_session_get_repository(save_session);
-    nmo_arena* save_arena = nmo_session_get_arena(save_session);
+    nmo_session_t* save_session = nmo_session_create(ctx);
+    nmo_object_repository_t* save_repo = nmo_session_get_repository(save_session);
+    nmo_arena_t* save_arena = nmo_session_get_arena(save_session);
 
-    nmo_object* obj = (nmo_object*)nmo_arena_alloc(save_arena, sizeof(nmo_object), sizeof(void*));
-    memset(obj, 0, sizeof(nmo_object));
+    nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(save_arena, sizeof(nmo_object_t), sizeof(void*));
+    memset(obj, 0, sizeof(nmo_object_t));
     obj->class_id = 0x99887766;
     obj->name = "HookedObject";
     obj->arena = save_arena;
     nmo_object_repository_add(save_repo, obj);
 
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -198,7 +239,7 @@ static int test_manager_hooks(void) {
     nmo_session_destroy(save_session);
 
     /* Load phase */
-    nmo_session* load_session = nmo_session_create(ctx);
+    nmo_session_t* load_session = nmo_session_create(ctx);
     nmo_load_file(load_session, test_file, NMO_LOAD_DEFAULT);
     nmo_session_destroy(load_session);
 

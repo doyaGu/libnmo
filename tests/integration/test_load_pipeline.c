@@ -55,3 +55,8 @@ TEST(load_pipeline, load_with_validation) {
 int main(void) {
     return 0;
 }
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(load_pipeline, basic_load);
+    REGISTER_TEST(load_pipeline, load_with_validation);
+TEST_MAIN_END()
