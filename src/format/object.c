@@ -139,6 +139,14 @@ nmo_chunk_t *nmo_object_get_chunk(const nmo_object_t *object) {
     return object->chunk;
 }
 
+nmo_object_id_t nmo_object_get_id(const nmo_object_t *object) {
+    return object ? object->id : 0;
+}
+
+nmo_class_id_t nmo_object_get_class_id(const nmo_object_t *object) {
+    return object ? object->class_id : 0;
+}
+
 int nmo_object_set_data(nmo_object_t *object, void *data) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;

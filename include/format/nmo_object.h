@@ -94,6 +94,26 @@ NMO_API int nmo_object_set_name(nmo_object_t *object, const char *name, nmo_aren
 NMO_API const char *nmo_object_get_name(const nmo_object_t *object);
 
 /**
+ * @brief Get object ID
+ *
+ * Convenience accessor for object ID.
+ *
+ * @param object Object (required)
+ * @return Object ID
+ */
+NMO_API nmo_object_id_t nmo_object_get_id(const nmo_object_t *object);
+
+/**
+ * @brief Get object class ID
+ *
+ * Convenience accessor for class ID.
+ *
+ * @param object Object (required)
+ * @return Class ID
+ */
+NMO_API nmo_class_id_t nmo_object_get_class_id(const nmo_object_t *object);
+
+/**
  * @brief Add child object
  *
  * @param parent Parent object (required)
