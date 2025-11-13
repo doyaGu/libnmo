@@ -22,13 +22,13 @@ typedef struct nmo_manager_registry nmo_manager_registry_t;
  * Create manager registry
  * @return Registry or NULL on error
  */
-NMO_API nmo_manager_registry_t* nmo_manager_registry_create(void);
+NMO_API nmo_manager_registry_t *nmo_manager_registry_create(void);
 
 /**
  * Destroy manager registry
  * @param registry Registry to destroy
  */
-NMO_API void nmo_manager_registry_destroy(nmo_manager_registry_t* registry);
+NMO_API void nmo_manager_registry_destroy(nmo_manager_registry_t *registry);
 
 /**
  * Register manager
@@ -38,7 +38,7 @@ NMO_API void nmo_manager_registry_destroy(nmo_manager_registry_t* registry);
  * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_manager_registry_register(
-    nmo_manager_registry_t* registry, uint32_t manager_id, void* manager);
+    nmo_manager_registry_t *registry, uint32_t manager_id, void *manager);
 
 /**
  * Unregister manager
@@ -46,7 +46,7 @@ NMO_API nmo_result_t nmo_manager_registry_register(
  * @param manager_id Manager ID
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t* registry, uint32_t manager_id);
+NMO_API nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, uint32_t manager_id);
 
 /**
  * Get manager by ID
@@ -54,7 +54,7 @@ NMO_API nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t* reg
  * @param manager_id Manager ID
  * @return Manager or NULL if not found
  */
-NMO_API void* nmo_manager_registry_get(const nmo_manager_registry_t* registry, uint32_t manager_id);
+NMO_API void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, uint32_t manager_id);
 
 /**
  * Check if manager is registered
@@ -62,14 +62,14 @@ NMO_API void* nmo_manager_registry_get(const nmo_manager_registry_t* registry, u
  * @param manager_id Manager ID
  * @return 1 if registered, 0 otherwise
  */
-NMO_API int nmo_manager_registry_contains(const nmo_manager_registry_t* registry, uint32_t manager_id);
+NMO_API int nmo_manager_registry_contains(const nmo_manager_registry_t *registry, uint32_t manager_id);
 
 /**
  * Get registered manager count
  * @param registry Registry
  * @return Number of registered managers
  */
-NMO_API uint32_t nmo_manager_registry_get_count(const nmo_manager_registry_t* registry);
+NMO_API uint32_t nmo_manager_registry_get_count(const nmo_manager_registry_t *registry);
 
 /**
  * Get manager ID at index
@@ -77,14 +77,14 @@ NMO_API uint32_t nmo_manager_registry_get_count(const nmo_manager_registry_t* re
  * @param index Index
  * @return Manager ID or 0 if index out of bounds
  */
-NMO_API uint32_t nmo_manager_registry_get_id_at(const nmo_manager_registry_t* registry, uint32_t index);
+NMO_API uint32_t nmo_manager_registry_get_id_at(const nmo_manager_registry_t *registry, uint32_t index);
 
 /**
  * Clear all managers
  * @param registry Registry
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_manager_registry_clear(nmo_manager_registry_t* registry);
+NMO_API nmo_result_t nmo_manager_registry_clear(nmo_manager_registry_t *registry);
 
 #ifdef __cplusplus
 }
