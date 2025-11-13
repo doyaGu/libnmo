@@ -149,6 +149,29 @@ int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
     return NMO_OK;
 }
 
+int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out) {
+    if (p == NULL || out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Read low 16 bits, then high 16 bits, each from a DWORD
+    // Matches CKStateChunk::ReadDwordAsWords behavior
+    uint16_t low, high;
+
+    int result = nmo_chunk_parser_read_word(p, &low);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    result = nmo_chunk_parser_read_word(p, &high);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    *out = ((uint32_t)high << 16) | (uint32_t)low;
+    return NMO_OK;
+}
+
 int nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     if (p == NULL || out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -517,6 +540,30 @@ int nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, voi
     // Copy bytes from DWORD buffer
     memcpy(buffer, &p->chunk->data[p->cursor], bytes);
     p->cursor += dwords_needed;
+
+    return NMO_OK;
+}
+
+int nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p, size_t value_count, void *buffer) {
+    if (p == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (value_count == 0 || buffer == NULL) {
+        // Nothing to read if zero count or NULL buffer
+        return NMO_OK;
+    }
+
+    // Each 16-bit value is read as a separate DWORD-aligned word
+    // This matches CKStateChunk::ReadAndFillBuffer_LEndian16 behavior
+    uint16_t *values = (uint16_t *)buffer;
+
+    for (size_t i = 0; i < value_count; ++i) {
+        int result = nmo_chunk_parser_read_word(p, &values[i]);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
 
     return NMO_OK;
 }

@@ -105,6 +105,19 @@ NMO_API int nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out);
 NMO_API int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out);
 
 /**
+ * @brief Read 32-bit value stored as two 16-bit words
+ *
+ * Reads a 32-bit value that was written as two separate 16-bit writes (each padded to DWORD).
+ * Used for compressed animation data formats. Inverse of write_dword_as_words.
+ * Matches CKStateChunk::ReadDwordAsWords behavior.
+ *
+ * @param p Parser
+ * @param out Output value (reconstructed from low and high words)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out);
+
+/**
  * @brief Read int32_t (exactly one DWORD)
  *
  * @param p Parser
@@ -180,6 +193,20 @@ NMO_API int nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p, void **out, size
  * @return NMO_OK on success
  */
 NMO_API int nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, void *buffer);
+
+/**
+ * @brief Read buffer without size prefix with 16-bit endian conversion (Phase 6)
+ *
+ * Reads raw buffer data without a size prefix, applying 16-bit little-endian conversion.
+ * Used for specific compressed data formats that require 16-bit field swapping.
+ * Matches CKStateChunk::ReadAndFillBuffer_LEndian16 behavior.
+ *
+ * @param p Parser
+ * @param value_count Number of 16-bit values to read
+ * @param buffer Destination buffer (must be pre-allocated to value_count * 2 bytes)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p, size_t value_count, void *buffer);
 
 /**
  * @brief Lock read buffer for direct reading

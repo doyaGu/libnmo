@@ -72,6 +72,21 @@ NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
 NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
 
 /**
+ * @brief Write uint32_t as two 16-bit words (Phase 6)
+ *
+ * Writes a 32-bit value as two consecutive 16-bit values (low word first).
+ * Used for compressed animation data and specific file format requirements.
+ * Matches CKStateChunk::WriteDwordAsWords behavior.
+ *
+ * Format: [16-bit low][16-bit high] (both padded to DWORD boundaries)
+ *
+ * @param w Writer
+ * @param value 32-bit value to split and write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_t value);
+
+/**
  * @brief Write int32_t (exactly one DWORD)
  *
  * @param w Writer
@@ -145,6 +160,20 @@ NMO_API int nmo_chunk_writer_write_buffer(nmo_chunk_writer_t* w, const void* dat
  * @return NMO_OK on success
  */
 NMO_API int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t* w, size_t bytes, const void* data);
+
+/**
+ * @brief Write buffer without size prefix with 16-bit endian conversion
+ *
+ * Writes raw buffer data without a size prefix, applying 16-bit little-endian conversion.
+ * Used for specific compressed data formats that require 16-bit field swapping.
+ * Matches CKStateChunk::WriteBufferNoSize_LEndian16 behavior.
+ *
+ * @param w Writer
+ * @param value_count Number of 16-bit values to write
+ * @param data Source data (must contain value_count * 2 bytes)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t* w, size_t value_count, const void* data);
 
 /**
  * @brief Lock write buffer for direct writing
