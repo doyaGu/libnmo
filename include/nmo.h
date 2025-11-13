@@ -52,6 +52,10 @@
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_buffer.h"
+#include "core/nmo_hash.h"
+#include "core/nmo_hash_table.h"
+#include "core/nmo_indexed_map.h"
 
 // IO layer
 #include "io/nmo_io.h"
