@@ -5,7 +5,6 @@
 
 #include "format/nmo_chunk.h"
 #include "format/nmo_id_remap.h"
-#include "session/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
 
@@ -1066,10 +1065,47 @@ nmo_chunk_t *nmo_chunk_get_sub_chunk(const nmo_chunk_t *chunk, uint32_t index) {
     return chunk->chunks[index];
 }
 
+/* nmo_chunk_get_class_id moved to chunk_api.c */
+
+/**
+ * Check if chunk is compressed
+ */
+int nmo_chunk_is_compressed(const nmo_chunk_t *chunk) {
+    if (!chunk) {
+        return 0;
+    }
+    return (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) != 0;
+}
+
+/**
+ * Get object ID count
+ */
+size_t nmo_chunk_get_id_count(const nmo_chunk_t *chunk) {
+    if (!chunk) {
+        return 0;
+    }
+    return chunk->id_count;
+}
+
+/**
+ * Get object ID by index
+ */
+uint32_t nmo_chunk_get_object_id(const nmo_chunk_t *chunk, size_t index) {
+    if (!chunk || index >= chunk->id_count || !chunk->ids) {
+        return 0;
+    }
+    /* ids array contains positions in data buffer, not the IDs themselves */
+    uint32_t pos = chunk->ids[index];
+    if (pos < chunk->data_size) {
+        return chunk->data[pos];
+    }
+    return 0;
+}
+
 /**
  * @brief Remap object IDs in chunk
  */
-int nmo_chunk_remap_ids(nmo_chunk_t *chunk, nmo_id_remap_table_t *remap) {
+int nmo_chunk_remap_ids(nmo_chunk_t *chunk, nmo_id_remap_t *remap) {
     if (chunk == NULL || remap == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1082,7 +1118,7 @@ int nmo_chunk_remap_ids(nmo_chunk_t *chunk, nmo_id_remap_table_t *remap) {
                 uint32_t old_id = chunk->data[pos];
                 uint32_t new_id;
 
-                if (nmo_id_remap_lookup(remap, old_id, &new_id) == NMO_OK) {
+                if (nmo_id_remap_lookup_id(remap, old_id, &new_id).code == NMO_OK) {
                     chunk->data[pos] = new_id;
                 }
             }

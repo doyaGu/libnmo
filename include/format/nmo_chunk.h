@@ -20,14 +20,15 @@ extern "C" {
  * These flags control what optional data is serialized with the chunk.
  */
 typedef enum nmo_chunk_options {
-    NMO_CHUNK_OPTION_IDS      = 0x01, /**< Contains object ID references */
-    NMO_CHUNK_OPTION_MAN      = 0x02, /**< Contains manager int refs */
-    NMO_CHUNK_OPTION_CHN      = 0x04, /**< Contains sub-chunks */
-    NMO_CHUNK_OPTION_FILE     = 0x08, /**< Written with file context */
-    NMO_CHUNK_OPTION_ALLOWDYN = 0x10, /**< Allow dynamic objects */
-    NMO_CHUNK_OPTION_LISTBIG  = 0x20, /**< Lists in big endian (unused) */
-    NMO_CHUNK_DONTDELETE_PTR  = 0x40, /**< Data not owned by chunk */
-    NMO_CHUNK_OPTION_PACKED   = 0x80, /**< Data is compressed */
+    NMO_CHUNK_OPTION_IDS        = 0x01, /**< Contains object ID references */
+    NMO_CHUNK_OPTION_MAN        = 0x02, /**< Contains manager int refs */
+    NMO_CHUNK_OPTION_CHN        = 0x04, /**< Contains sub-chunks */
+    NMO_CHUNK_OPTION_FILE       = 0x08, /**< Written with file context */
+    NMO_CHUNK_OPTION_ALLOWDYN   = 0x10, /**< Allow dynamic objects */
+    NMO_CHUNK_OPTION_LISTBIG    = 0x20, /**< Lists in big endian (unused) */
+    NMO_CHUNK_DONTDELETE_PTR    = 0x40, /**< Data not owned by chunk */
+    NMO_CHUNK_DONTDELETE_PARSER = 0x80, /**< Parser state not owned by chunk */
+    NMO_CHUNK_OPTION_PACKED     = 0x100, /**< Data is compressed */
 } nmo_chunk_options_t;
 
 /**
@@ -285,6 +286,35 @@ NMO_API uint32_t nmo_chunk_get_sub_chunk_count(const nmo_chunk_t *chunk);
  * @return Sub-chunk or NULL
  */
 NMO_API nmo_chunk_t *nmo_chunk_get_sub_chunk(const nmo_chunk_t *chunk, uint32_t index);
+
+/**
+ * Get chunk class ID
+ * @param chunk Chunk
+ * @return Class ID
+ */
+NMO_API nmo_class_id_t nmo_chunk_get_class_id(const nmo_chunk_t *chunk);
+
+/**
+ * Check if chunk is compressed
+ * @param chunk Chunk
+ * @return 1 if compressed, 0 otherwise
+ */
+NMO_API int nmo_chunk_is_compressed(const nmo_chunk_t *chunk);
+
+/**
+ * Get object ID count
+ * @param chunk Chunk
+ * @return Number of object IDs
+ */
+NMO_API size_t nmo_chunk_get_id_count(const nmo_chunk_t *chunk);
+
+/**
+ * Get object ID by index
+ * @param chunk Chunk
+ * @param index ID index
+ * @return Object ID
+ */
+NMO_API uint32_t nmo_chunk_get_object_id(const nmo_chunk_t *chunk, size_t index);
 
 #ifdef __cplusplus
 }
