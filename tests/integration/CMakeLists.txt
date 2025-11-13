@@ -13,6 +13,9 @@ add_integration_test(test_file_roundtrip)
 add_integration_test(test_data_roundtrip)
 add_integration_test(test_file_io)
 
+# Phase 5: FinishLoading and object index tests
+add_integration_test(test_finish_loading)
+
 # Temporarily disabled tests (old API)
 # add_integration_test(test_roundtrip)
 # add_integration_test(test_round_trip)
