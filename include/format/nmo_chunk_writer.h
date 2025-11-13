@@ -5,6 +5,7 @@
 #include "nmo_chunk.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_math.h"
 #include "core/nmo_arena.h"
 
 #ifdef __cplusplus
@@ -24,7 +25,7 @@ extern "C" {
  */
 
 // Forward declaration
-typedef struct nmo_chunk_writer nmo_chunk_writer;
+typedef struct nmo_chunk_writer nmo_chunk_writer_t;
 
 /**
  * @brief Create writer with arena allocator
@@ -32,7 +33,7 @@ typedef struct nmo_chunk_writer nmo_chunk_writer;
  * @param arena Arena for allocations
  * @return Writer or NULL on allocation failure
  */
-NMO_API nmo_chunk_writer* nmo_chunk_writer_create(nmo_arena* arena);
+NMO_API nmo_chunk_writer_t* nmo_chunk_writer_create(nmo_arena_t* arena);
 
 /**
  * @brief Start new chunk
@@ -41,7 +42,7 @@ NMO_API nmo_chunk_writer* nmo_chunk_writer_create(nmo_arena* arena);
  * @param class_id Object class ID
  * @param chunk_version Chunk version
  */
-NMO_API void nmo_chunk_writer_start(nmo_chunk_writer* w, nmo_class_id class_id, uint32_t chunk_version);
+NMO_API void nmo_chunk_writer_start(nmo_chunk_writer_t* w, nmo_class_id_t class_id, uint32_t chunk_version);
 
 /**
  * @brief Write uint8_t (padded to DWORD)
@@ -50,7 +51,7 @@ NMO_API void nmo_chunk_writer_start(nmo_chunk_writer* w, nmo_class_id class_id, 
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_byte(nmo_chunk_writer* w, uint8_t value);
+NMO_API int nmo_chunk_writer_write_byte(nmo_chunk_writer_t* w, uint8_t value);
 
 /**
  * @brief Write uint16_t (padded to DWORD)
@@ -59,7 +60,7 @@ NMO_API int nmo_chunk_writer_write_byte(nmo_chunk_writer* w, uint8_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer* w, uint16_t value);
+NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
 
 /**
  * @brief Write uint32_t (exactly one DWORD)
@@ -68,7 +69,7 @@ NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer* w, uint16_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer* w, uint32_t value);
+NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
 
 /**
  * @brief Write int32_t (exactly one DWORD)
@@ -77,7 +78,7 @@ NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer* w, uint32_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_int(nmo_chunk_writer* w, int32_t value);
+NMO_API int nmo_chunk_writer_write_int(nmo_chunk_writer_t* w, int32_t value);
 
 /**
  * @brief Write float (exactly one DWORD)
@@ -86,7 +87,7 @@ NMO_API int nmo_chunk_writer_write_int(nmo_chunk_writer* w, int32_t value);
  * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_float(nmo_chunk_writer* w, float value);
+NMO_API int nmo_chunk_writer_write_float(nmo_chunk_writer_t* w, float value);
 
 /**
  * @brief Write GUID (two DWORDs)
@@ -95,7 +96,7 @@ NMO_API int nmo_chunk_writer_write_float(nmo_chunk_writer* w, float value);
  * @param guid GUID to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_guid(nmo_chunk_writer* w, nmo_guid guid);
+NMO_API int nmo_chunk_writer_write_guid(nmo_chunk_writer_t* w, nmo_guid_t guid);
 
 /**
  * @brief Write raw bytes (DWORD-aligned)
@@ -107,7 +108,7 @@ NMO_API int nmo_chunk_writer_write_guid(nmo_chunk_writer* w, nmo_guid guid);
  * @param bytes Number of bytes to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_bytes(nmo_chunk_writer* w, const void* data, size_t bytes);
+NMO_API int nmo_chunk_writer_write_bytes(nmo_chunk_writer_t* w, const void* data, size_t bytes);
 
 /**
  * @brief Write null-terminated string
@@ -118,7 +119,7 @@ NMO_API int nmo_chunk_writer_write_bytes(nmo_chunk_writer* w, const void* data, 
  * @param str String to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_string(nmo_chunk_writer* w, const char* str);
+NMO_API int nmo_chunk_writer_write_string(nmo_chunk_writer_t* w, const char* str);
 
 /**
  * @brief Write binary buffer
@@ -130,7 +131,33 @@ NMO_API int nmo_chunk_writer_write_string(nmo_chunk_writer* w, const char* str);
  * @param size Buffer size in bytes
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_buffer(nmo_chunk_writer* w, const void* data, size_t size);
+NMO_API int nmo_chunk_writer_write_buffer(nmo_chunk_writer_t* w, const void* data, size_t size);
+
+/**
+ * @brief Write buffer without size prefix
+ *
+ * Writes raw buffer data without a size prefix.
+ * Matches CKStateChunk::WriteBufferNoSize_LEndian behavior.
+ *
+ * @param w Writer
+ * @param bytes Number of bytes to write
+ * @param data Source data
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t* w, size_t bytes, const void* data);
+
+/**
+ * @brief Lock write buffer for direct writing
+ *
+ * Returns a pointer to the chunk's data buffer for direct writing.
+ * Caller must ensure they write exactly dword_count DWORDs.
+ * Matches CKStateChunk::LockWriteBuffer behavior.
+ *
+ * @param w Writer
+ * @param dword_count Number of DWORDs to reserve
+ * @return Pointer to write buffer, or NULL on error
+ */
+NMO_API uint32_t* nmo_chunk_writer_lock_write_buffer(nmo_chunk_writer_t* w, size_t dword_count);
 
 /**
  * @brief Write object ID and track
@@ -141,7 +168,7 @@ NMO_API int nmo_chunk_writer_write_buffer(nmo_chunk_writer* w, const void* data,
  * @param id Object ID
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_object_id(nmo_chunk_writer* w, nmo_object_id id);
+NMO_API int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t* w, nmo_object_id_t id);
 
 /**
  * @brief Start object sequence
@@ -152,7 +179,7 @@ NMO_API int nmo_chunk_writer_write_object_id(nmo_chunk_writer* w, nmo_object_id 
  * @param count Number of objects in sequence
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer* w, size_t count);
+NMO_API int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t* w, size_t count);
 
 /**
  * @brief Start manager sequence
@@ -163,23 +190,139 @@ NMO_API int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer* w, size_t c
  * @param count Number of managers in sequence
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer* w, size_t count);
+NMO_API int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t* w, size_t count);
 
 /**
- * @brief Start sub-chunk
+ * @brief Write manager int with GUID
+ *
+ * Writes [GUID.d1][GUID.d2][value] and tracks position in managers list.
+ * Matches CKStateChunk::WriteManagerInt behavior.
  *
  * @param w Writer
+ * @param manager Manager GUID
+ * @param value Value to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_sub_chunk(nmo_chunk_writer* w);
+NMO_API int nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t* w, nmo_guid_t manager, int32_t value);
 
 /**
- * @brief End sub-chunk
+ * @brief Write array with little-endian byte order
+ *
+ * Writes array in format: [totalBytes][elementCount][data padded to DWORDs].
+ * Matches CKStateChunk::WriteArray_LEndian behavior.
  *
  * @param w Writer
+ * @param element_count Number of elements in array
+ * @param element_size Size of each element in bytes
+ * @param src_data Source data pointer (can be NULL for empty array)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_end_sub_chunk(nmo_chunk_writer* w);
+NMO_API int nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t* w, int element_count, int element_size, const void* src_data);
+
+/**
+ * @brief Write array with 16-bit little-endian byte order
+ *
+ * Similar to write_array_lendian but handles 16-bit field-level byte swapping.
+ * Used for certain data types that require 16-bit endianness conversion.
+ * Matches CKStateChunk::WriteArray_LEndian16 behavior.
+ *
+ * @param w Writer
+ * @param element_count Number of elements in array
+ * @param element_size Size of each element in bytes
+ * @param src_data Source data pointer (can be NULL for empty array)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t* w, int element_count, int element_size, const void* src_data);
+
+/**
+ * @brief Write buffer with 16-bit little-endian conversion
+ *
+ * Writes raw buffer data with 16-bit field-level endianness conversion.
+ *
+ * @param w Writer
+ * @param bytes Number of bytes to write
+ * @param data Source data pointer
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t* w, size_t bytes, const void* data);
+
+/**
+ * @brief Start sub-chunk sequence
+ *
+ * Writes the count of sub-chunks that will follow and tracks the position.
+ * Matches CKStateChunk::StartSubChunkSequence behavior.
+ *
+ * @param w Writer
+ * @param count Number of sub-chunks in sequence
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t* w, size_t count);
+
+/**
+ * @brief Write sub-chunk to parent chunk
+ *
+ * Serializes a complete sub-chunk into the parent chunk's data buffer.
+ * Matches CKStateChunk::WriteSubChunkSequence behavior.
+ *
+ * @param w Writer
+ * @param sub Sub-chunk to write (can be NULL for empty slot)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t* w, const nmo_chunk_t* sub);
+
+/**
+ * @brief Write 2D vector (2 floats = 2 DWORDs)
+ *
+ * @param w Writer
+ * @param v Vector to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_vector2(nmo_chunk_writer_t* w, const nmo_vector2_t* v);
+
+/**
+ * @brief Write 3D vector (3 floats = 3 DWORDs)
+ *
+ * @param w Writer
+ * @param v Vector to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_vector(nmo_chunk_writer_t* w, const nmo_vector_t* v);
+
+/**
+ * @brief Write 4D vector (4 floats = 4 DWORDs)
+ *
+ * @param w Writer
+ * @param v Vector to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_vector4(nmo_chunk_writer_t* w, const nmo_vector4_t* v);
+
+/**
+ * @brief Write 4x4 matrix (16 floats = 16 DWORDs)
+ *
+ * @param w Writer
+ * @param m Matrix to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_matrix(nmo_chunk_writer_t* w, const nmo_matrix_t* m);
+
+/**
+ * @brief Write quaternion (4 floats = 4 DWORDs)
+ *
+ * @param w Writer
+ * @param q Quaternion to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_quaternion(nmo_chunk_writer_t* w, const nmo_quaternion_t* q);
+
+/**
+ * @brief Write RGBA color (4 floats = 4 DWORDs)
+ *
+ * @param w Writer
+ * @param c Color to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_color(nmo_chunk_writer_t* w, const nmo_color_t* c);
 
 /**
  * @brief Write identifier
@@ -188,7 +331,7 @@ NMO_API int nmo_chunk_writer_end_sub_chunk(nmo_chunk_writer* w);
  * @param identifier Identifier to write
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_write_identifier(nmo_chunk_writer* w, uint32_t identifier);
+NMO_API int nmo_chunk_writer_write_identifier(nmo_chunk_writer_t* w, uint32_t identifier);
 
 /**
  * @brief Finalize and get chunk
@@ -198,14 +341,14 @@ NMO_API int nmo_chunk_writer_write_identifier(nmo_chunk_writer* w, uint32_t iden
  * @param w Writer
  * @return Completed chunk or NULL on error
  */
-NMO_API nmo_chunk* nmo_chunk_writer_finalize(nmo_chunk_writer* w);
+NMO_API nmo_chunk_t* nmo_chunk_writer_finalize(nmo_chunk_writer_t* w);
 
 /**
  * @brief Destroy writer
  *
  * @param w Writer
  */
-NMO_API void nmo_chunk_writer_destroy(nmo_chunk_writer* w);
+NMO_API void nmo_chunk_writer_destroy(nmo_chunk_writer_t* w);
 
 #ifdef __cplusplus
 }
