@@ -22,14 +22,14 @@ extern "C" {
  * @param alignment Alignment requirement (must be power of 2)
  * @return Pointer to allocated memory or NULL on failure
  */
-typedef void* (*nmo_alloc_fn)(void* user_data, size_t size, size_t alignment);
+typedef void *(*nmo_alloc_fn)(void *user_data, size_t size, size_t alignment);
 
 /**
  * @brief Free function type
  * @param user_data User-defined data passed to allocator
  * @param ptr Pointer to memory to free
  */
-typedef void (*nmo_free_fn)(void* user_data, void* ptr);
+typedef void (*nmo_free_fn)(void *user_data, void *ptr);
 
 /**
  * @brief Allocator interface
@@ -38,10 +38,10 @@ typedef void (*nmo_free_fn)(void* user_data, void* ptr);
  * optional user data for context.
  */
 typedef struct nmo_allocator {
-    nmo_alloc_fn alloc;   /**< Allocation function */
-    nmo_free_fn  free;    /**< Deallocation function */
-    void*        user_data; /**< User-defined context */
-} nmo_allocator;
+    nmo_alloc_fn alloc; /**< Allocation function */
+    nmo_free_fn free;   /**< Deallocation function */
+    void *user_data;    /**< User-defined context */
+} nmo_allocator_t;
 
 /**
  * @brief Create default system allocator
@@ -50,7 +50,7 @@ typedef struct nmo_allocator {
  *
  * @return Default allocator instance
  */
-NMO_API nmo_allocator nmo_allocator_default(void);
+NMO_API nmo_allocator_t nmo_allocator_default(void);
 
 /**
  * @brief Create custom allocator
@@ -60,7 +60,7 @@ NMO_API nmo_allocator nmo_allocator_default(void);
  * @param user_data User-defined context
  * @return Custom allocator instance
  */
-NMO_API nmo_allocator nmo_allocator_custom(nmo_alloc_fn alloc, nmo_free_fn free, void* user_data);
+NMO_API nmo_allocator_t nmo_allocator_custom(nmo_alloc_fn alloc, nmo_free_fn free, void *user_data);
 
 /**
  * @brief Allocate memory
@@ -70,7 +70,7 @@ NMO_API nmo_allocator nmo_allocator_custom(nmo_alloc_fn alloc, nmo_free_fn free,
  * @param alignment Alignment requirement (must be power of 2)
  * @return Pointer to allocated memory or NULL on failure
  */
-NMO_API void* nmo_alloc(nmo_allocator* allocator, size_t size, size_t alignment);
+NMO_API void *nmo_alloc(nmo_allocator_t *allocator, size_t size, size_t alignment);
 
 /**
  * @brief Free memory
@@ -78,7 +78,7 @@ NMO_API void* nmo_alloc(nmo_allocator* allocator, size_t size, size_t alignment)
  * @param allocator Allocator to use
  * @param ptr Pointer to memory to free
  */
-NMO_API void nmo_free(nmo_allocator* allocator, void* ptr);
+NMO_API void nmo_free(nmo_allocator_t *allocator, void *ptr);
 
 #ifdef __cplusplus
 }
