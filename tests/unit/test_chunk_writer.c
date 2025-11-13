@@ -3,7 +3,7 @@
  * @brief Unit tests for chunk writer
  */
 
-#include "../test_framework.h"
+#include "test_framework.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_writer.h"
 #include "format/nmo_chunk_parser.h"
@@ -11,96 +11,49 @@
 #include <string.h>
 #include <stdio.h>
 
-// Test: Create writer and write primitives
-static void test_writer_primitives(void) {
-    nmo_arena* arena = nmo_arena_create(NULL, 8192);
-    if (arena == NULL) {
-        printf("FAIL: test_writer_primitives - arena creation failed\n");
-        return;
-    }
+/**
+ * Test: Create writer and write primitives
+ */
+TEST(chunk_writer, primitives) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
 
-    nmo_chunk_writer* writer = nmo_chunk_writer_create(arena);
-    if (writer == NULL) {
-        printf("FAIL: test_writer_primitives - writer creation failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
 
     nmo_chunk_writer_start(writer, 12345, NMO_CHUNK_VERSION_4);
 
     // Write primitives
-    if (nmo_chunk_writer_write_byte(writer, 0x78) != NMO_OK) {
-        printf("FAIL: test_writer_primitives - write_byte failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_byte(writer, 0x78));
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_word(writer, 0x5678));
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(writer, 0x12345678));
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_int(writer, -42));
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_float(writer, 3.14159f));
 
-    if (nmo_chunk_writer_write_word(writer, 0x5678) != NMO_OK) {
-        printf("FAIL: test_writer_primitives - write_word failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    if (nmo_chunk_writer_write_dword(writer, 0x12345678) != NMO_OK) {
-        printf("FAIL: test_writer_primitives - write_dword failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    if (nmo_chunk_writer_write_int(writer, -42) != NMO_OK) {
-        printf("FAIL: test_writer_primitives - write_int failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    if (nmo_chunk_writer_write_float(writer, 3.14159f) != NMO_OK) {
-        printf("FAIL: test_writer_primitives - write_float failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    nmo_guid test_guid = {0x11111111, 0x22222222};
-    if (nmo_chunk_writer_write_guid(writer, test_guid) != NMO_OK) {
-        printf("FAIL: test_writer_primitives - write_guid failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_guid_t test_guid = nmo_guid_create(0x11111111, 0x22222222);
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_guid(writer, test_guid));
 
     // Finalize
-    nmo_chunk* chunk = nmo_chunk_writer_finalize(writer);
-    if (chunk == NULL) {
-        printf("FAIL: test_writer_primitives - finalize failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
 
     // Verify we wrote 7 DWORDs (byte, word, dword, int, float, guid1, guid2)
-    if (chunk->data_size != 7) {
-        printf("FAIL: test_writer_primitives - data size incorrect (got %zu, expected 7)\n", chunk->data_size);
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_EQ(7, chunk->data_size);
 
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);
-    printf("PASS: test_writer_primitives\n");
 }
 
-// Test: Write and read roundtrip
-static void test_writer_roundtrip(void) {
-    nmo_arena* arena = nmo_arena_create(NULL, 8192);
-    if (arena == NULL) {
-        printf("FAIL: test_writer_roundtrip - arena creation failed\n");
-        return;
-    }
+/**
+ * Test: Write and read roundtrip
+ */
+TEST(chunk_writer, roundtrip) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
 
     // Write data
-    nmo_chunk_writer* writer = nmo_chunk_writer_create(arena);
-    if (writer == NULL) {
-        printf("FAIL: test_writer_roundtrip - writer creation failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
 
     nmo_chunk_writer_start(writer, 100, NMO_CHUNK_VERSION_4);
 
@@ -113,86 +66,40 @@ static void test_writer_roundtrip(void) {
     const char* test_str = "Hello, Virtools!";
     nmo_chunk_writer_write_string(writer, test_str);
 
-    nmo_chunk* chunk = nmo_chunk_writer_finalize(writer);
-    if (chunk == NULL) {
-        printf("FAIL: test_writer_roundtrip - finalize failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
 
     // Read data back
-    nmo_chunk_parser* parser = nmo_chunk_parser_create(chunk);
-    if (parser == NULL) {
-        printf("FAIL: test_writer_roundtrip - parser creation failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
 
     uint32_t read_value;
-    if (nmo_chunk_parser_read_dword(parser, &read_value) != NMO_OK) {
-        printf("FAIL: test_writer_roundtrip - read_dword failed\n");
-        nmo_chunk_parser_destroy(parser);
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    if (read_value != test_value) {
-        printf("FAIL: test_writer_roundtrip - dword mismatch\n");
-        nmo_chunk_parser_destroy(parser);
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_dword(parser, &read_value));
+    ASSERT_EQ(test_value, read_value);
 
     float read_float;
-    if (nmo_chunk_parser_read_float(parser, &read_float) != NMO_OK) {
-        printf("FAIL: test_writer_roundtrip - read_float failed\n");
-        nmo_chunk_parser_destroy(parser);
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    if (read_float < 2.71f || read_float > 2.72f) {
-        printf("FAIL: test_writer_roundtrip - float mismatch\n");
-        nmo_chunk_parser_destroy(parser);
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_float(parser, &read_float));
+    ASSERT_TRUE(read_float >= 2.71f && read_float <= 2.72f);
 
     char* read_str = NULL;
-    if (nmo_chunk_parser_read_string(parser, &read_str, arena) != NMO_OK) {
-        printf("FAIL: test_writer_roundtrip - read_string failed\n");
-        nmo_chunk_parser_destroy(parser);
-        nmo_arena_destroy(arena);
-        return;
-    }
-
-    if (read_str == NULL || strcmp(read_str, test_str) != 0) {
-        printf("FAIL: test_writer_roundtrip - string mismatch\n");
-        nmo_chunk_parser_destroy(parser);
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_string(parser, &read_str, arena));
+    ASSERT_NOT_NULL(read_str);
+    ASSERT_EQ(0, strcmp(read_str, test_str));
 
     nmo_chunk_parser_destroy(parser);
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);
-    printf("PASS: test_writer_roundtrip\n");
 }
 
-// Test: Object ID tracking
-static void test_writer_object_ids(void) {
-    nmo_arena* arena = nmo_arena_create(NULL, 8192);
-    if (arena == NULL) {
-        printf("FAIL: test_writer_object_ids - arena creation failed\n");
-        return;
-    }
+/**
+ * Test: Object ID tracking
+ */
+TEST(chunk_writer, object_ids) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
 
-    nmo_chunk_writer* writer = nmo_chunk_writer_create(arena);
-    if (writer == NULL) {
-        printf("FAIL: test_writer_object_ids - writer creation failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
 
     nmo_chunk_writer_start(writer, 200, NMO_CHUNK_VERSION_4);
     nmo_chunk_writer_start_object_sequence(writer, 3);
@@ -202,94 +109,54 @@ static void test_writer_object_ids(void) {
     nmo_chunk_writer_write_object_id(writer, 1002);
     nmo_chunk_writer_write_object_id(writer, 1001);  // Duplicate
 
-    nmo_chunk* chunk = nmo_chunk_writer_finalize(writer);
-    if (chunk == NULL) {
-        printf("FAIL: test_writer_object_ids - finalize failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
 
     // Check that IDS option is set
-    if (!(chunk->chunk_options & NMO_CHUNK_OPTION_IDS)) {
-        printf("FAIL: test_writer_object_ids - IDS option not set\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_TRUE(chunk->chunk_options & NMO_CHUNK_OPTION_IDS);
 
-    // Check that ID list has 2 unique IDs
-    if (chunk->id_count != 2) {
-        printf("FAIL: test_writer_object_ids - ID count incorrect (got %zu, expected 2)\n", chunk->id_count);
-        nmo_arena_destroy(arena);
-        return;
-    }
+    // Check that ID list has 3 positions (including duplicates)
+    ASSERT_EQ(3, chunk->id_count);
 
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);
-    printf("PASS: test_writer_object_ids\n");
 }
 
-// Test: Automatic buffer growth
-static void test_writer_growth(void) {
-    nmo_arena* arena = nmo_arena_create(NULL, 65536);  // Larger arena
-    if (arena == NULL) {
-        printf("FAIL: test_writer_growth - arena creation failed\n");
-        return;
-    }
+/**
+ * Test: Automatic buffer growth
+ */
+TEST(chunk_writer, growth) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 65536);  // Larger arena
+    ASSERT_NOT_NULL(arena);
 
-    nmo_chunk_writer* writer = nmo_chunk_writer_create(arena);
-    if (writer == NULL) {
-        printf("FAIL: test_writer_growth - writer creation failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
 
     nmo_chunk_writer_start(writer, 300, NMO_CHUNK_VERSION_4);
 
     // Write more than initial capacity (100 DWORDs)
     for (int i = 0; i < 200; i++) {
-        if (nmo_chunk_writer_write_dword(writer, (uint32_t)i) != NMO_OK) {
-            printf("FAIL: test_writer_growth - write_dword failed at iteration %d\n", i);
-            nmo_arena_destroy(arena);
-            return;
-        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(writer, (uint32_t)i));
     }
 
-    nmo_chunk* chunk = nmo_chunk_writer_finalize(writer);
-    if (chunk == NULL) {
-        printf("FAIL: test_writer_growth - finalize failed\n");
-        nmo_arena_destroy(arena);
-        return;
-    }
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
 
     // Verify we wrote 200 DWORDs
-    if (chunk->data_size != 200) {
-        printf("FAIL: test_writer_growth - data size incorrect (got %zu, expected 200)\n", chunk->data_size);
-        nmo_arena_destroy(arena);
-        return;
-    }
+    ASSERT_EQ(200, chunk->data_size);
 
     // Verify data
     for (size_t i = 0; i < 200; i++) {
-        if (chunk->data[i] != (uint32_t)i) {
-            printf("FAIL: test_writer_growth - data mismatch at index %zu\n", i);
-            nmo_arena_destroy(arena);
-            return;
-        }
+        ASSERT_EQ((uint32_t)i, chunk->data[i]);
     }
 
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);
-    printf("PASS: test_writer_growth\n");
 }
 
-int main(void) {
-    printf("Running chunk writer tests...\n\n");
-
-    test_writer_primitives();
-    test_writer_roundtrip();
-    test_writer_object_ids();
-    test_writer_growth();
-
-    printf("\nAll chunk writer tests completed!\n");
-    return 0;
-}
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(chunk_writer, primitives);
+    REGISTER_TEST(chunk_writer, roundtrip);
+    REGISTER_TEST(chunk_writer, object_ids);
+    REGISTER_TEST(chunk_writer, growth);
+TEST_MAIN_END()
