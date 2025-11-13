@@ -364,7 +364,7 @@ int nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p, void **array, n
     }
 
     // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(size_bytes);
+    size_t dwords_needed = nmo_align_dword(size_bytes) / 4;
 
     if (!check_bounds(p, dwords_needed)) {
         return NMO_ERR_EOF;
@@ -399,7 +399,7 @@ int nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p, size_t bytes, 
     }
 
     // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes);
+    size_t dwords_needed = nmo_align_dword(bytes) / 4;
 
     if (!check_bounds(p, dwords_needed)) {
         return NMO_ERR_EOF;
@@ -426,7 +426,7 @@ int nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_t bytes)
     }
 
     // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes);
+    size_t dwords_needed = nmo_align_dword(bytes) / 4;
 
     if (!check_bounds(p, dwords_needed)) {
         return NMO_ERR_EOF;
@@ -672,11 +672,12 @@ int nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier
  * @return NMO_OK if found, NMO_ERR_EOF if not found
  */
 int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier) {
-    if (p == NULL || p->chunk == NULL || p->chunk->data == NULL) {
+    if (p == NULL || p->chunk == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (p->chunk->data_size == 0) {
+    // Check for empty chunk first
+    if (p->chunk->data_size == 0 || p->chunk->data == NULL) {
         return NMO_ERR_EOF;
     }
 

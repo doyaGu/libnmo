@@ -343,7 +343,7 @@ int nmo_chunk_writer_write_bytes(nmo_chunk_writer_t *w, const void *data, size_t
     }
 
     // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes);
+    size_t dwords_needed = nmo_align_dword(bytes) / 4;
 
     int result = ensure_data_capacity(w, dwords_needed);
     if (result != NMO_OK) {
@@ -383,7 +383,7 @@ int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t bytes, co
     }
 
     // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes);
+    size_t dwords_needed = nmo_align_dword(bytes) / 4;
 
     int result = ensure_data_capacity(w, dwords_needed);
     if (result != NMO_OK) {
@@ -917,7 +917,7 @@ int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_co
 
     // Calculate total bytes and DWORDs needed
     size_t total_bytes = (size_t) element_count * (size_t) element_size;
-    size_t dword_count = nmo_align_dword(total_bytes);
+    size_t dword_count = nmo_align_dword(total_bytes) / 4;
 
     // Ensure capacity (size + count + data)
     int result = ensure_data_capacity(w, 2 + dword_count);
@@ -960,7 +960,7 @@ int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes,
     }
 
     // Calculate DWORDs needed (round up)
-    size_t dword_count = nmo_align_dword(bytes);
+    size_t dword_count = nmo_align_dword(bytes) / 4;
 
     // Ensure capacity
     int result = ensure_data_capacity(w, dword_count);
