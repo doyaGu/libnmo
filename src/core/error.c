@@ -4,7 +4,7 @@
 #include <string.h>
 
 // Error message table
-static const char* error_messages[] = {
+static const char *error_messages[] = {
     [NMO_OK] = "Success",
     [NMO_ERR_NOMEM] = "Out of memory",
     [NMO_ERR_BUFFER_OVERRUN] = "Buffer overrun",
@@ -26,20 +26,20 @@ static const char* error_messages[] = {
     [NMO_ERR_UNKNOWN] = "Unknown error",
 };
 
-nmo_error* nmo_error_create(nmo_arena* arena,
-                            nmo_error_code code,
-                            nmo_severity severity,
-                            const char* message,
-                            const char* file,
-                            int line) {
-    nmo_error* error;
+nmo_error_t *nmo_error_create(nmo_arena_t *arena,
+                              nmo_error_code_t code,
+                              nmo_severity_t severity,
+                              const char *message,
+                              const char *file,
+                              int line) {
+    nmo_error_t *error;
 
     // Allocate from arena if provided, otherwise use malloc
     if (arena != NULL) {
-        error = (nmo_error*)nmo_arena_alloc(arena, sizeof(nmo_error), sizeof(void*));
+        error = (nmo_error_t *) nmo_arena_alloc(arena, sizeof(nmo_error_t), sizeof(void *));
     } else {
-        nmo_allocator alloc = nmo_allocator_default();
-        error = (nmo_error*)nmo_alloc(&alloc, sizeof(nmo_error), sizeof(void*));
+        nmo_allocator_t alloc = nmo_allocator_default();
+        error = (nmo_error_t *) nmo_alloc(&alloc, sizeof(nmo_error_t), sizeof(void *));
     }
 
     if (error == NULL) {
@@ -56,7 +56,7 @@ nmo_error* nmo_error_create(nmo_arena* arena,
     return error;
 }
 
-void nmo_error_add_cause(nmo_error* error, nmo_error* cause) {
+void nmo_error_add_cause(nmo_error_t *error, nmo_error_t *cause) {
     if (error == NULL) {
         return;
     }
@@ -69,24 +69,24 @@ void nmo_error_add_cause(nmo_error* error, nmo_error* cause) {
     error->cause = cause;
 }
 
-const char* nmo_error_string(nmo_error_code code) {
-    if (code < 0 || code >= (nmo_error_code)(sizeof(error_messages) / sizeof(error_messages[0]))) {
+const char *nmo_error_string(nmo_error_code_t code) {
+    if (code < 0 || code >= (nmo_error_code_t) (sizeof(error_messages) / sizeof(error_messages[0]))) {
         return "Invalid error code";
     }
 
     return error_messages[code];
 }
 
-nmo_result nmo_result_ok(void) {
-    nmo_result result = {
+nmo_result_t nmo_result_ok(void) {
+    nmo_result_t result = {
         .code = NMO_OK,
         .error = NULL
     };
     return result;
 }
 
-nmo_result nmo_result_error(nmo_error* error) {
-    nmo_result result = {
+nmo_result_t nmo_result_error(nmo_error_t *error) {
+    nmo_result_t result = {
         .code = error ? error->code : NMO_ERR_UNKNOWN,
         .error = error
     };
