@@ -262,6 +262,24 @@ int nmo_chunk_writer_write_dword(nmo_chunk_writer_t *w, uint32_t value) {
     return NMO_OK;
 }
 
+int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    // Write low 16 bits, then high 16 bits, each padded to DWORD
+    // Matches CKStateChunk::WriteDwordAsWords behavior
+    uint16_t low = (uint16_t)(value & 0xFFFF);
+    uint16_t high = (uint16_t)((value >> 16) & 0xFFFF);
+
+    int result = nmo_chunk_writer_write_word(w, low);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    return nmo_chunk_writer_write_word(w, high);
+}
+
 int nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -378,6 +396,30 @@ int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t bytes, co
     // Copy data
     memcpy(&w->data[w->data_size], data, bytes);
     w->data_size += dwords_needed;
+
+    return NMO_OK;
+}
+
+int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t *w, size_t value_count, const void *data) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (value_count == 0 || data == NULL) {
+        // Nothing to write if NULL or zero count
+        return NMO_OK;
+    }
+
+    // Each 16-bit value is written as a separate DWORD-aligned word
+    // This matches CKStateChunk::WriteBufferNoSize_LEndian16 behavior
+    const uint16_t *values = (const uint16_t *)data;
+
+    for (size_t i = 0; i < value_count; ++i) {
+        int result = nmo_chunk_writer_write_word(w, values[i]);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
 
     return NMO_OK;
 }
