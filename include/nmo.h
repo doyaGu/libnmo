@@ -80,7 +80,7 @@
 // Session layer
 #include "session/nmo_object_repository.h"
 #include "session/nmo_load_session.h"
-#include "session/nmo_id_remap.h"
+#include "format/nmo_id_remap.h"
 #include "session/nmo_parser.h"
 #include "session/nmo_builder.h"
 
@@ -99,7 +99,7 @@ extern "C" {
  * @brief Get library version string
  * @return Version string (e.g., "1.0.0")
  */
-NMO_API const char* nmo_version(void);
+NMO_API const char *nmo_version(void);
 
 /**
  * @brief Get library version as integer

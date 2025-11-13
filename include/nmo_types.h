@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,16 +15,20 @@ extern "C" {
 #define NMO_VERSION_PATCH 0
 
 // Common types
-typedef uint32_t nmo_object_id;
-typedef uint32_t nmo_class_id;
+typedef uint32_t nmo_object_id_t;
+typedef uint32_t nmo_class_id_t;
+typedef uint32_t nmo_manager_id_t;
 
 // Special object ID values
-#define NMO_OBJECT_ID_NONE ((nmo_object_id)0)
-#define NMO_OBJECT_ID_INVALID ((nmo_object_id)0xFFFFFFFF)
+#define NMO_OBJECT_ID_NONE ((nmo_object_id_t)0)
+#define NMO_OBJECT_ID_INVALID ((nmo_object_id_t)0xFFFFFFFF)
 #define NMO_OBJECT_REFERENCE_FLAG (1u << 23)
 
+// Special class ID values
+#define NMO_CLASS_ID_INVALID ((nmo_class_id_t)0xFFFFFFFF)
+
 // File format versions
-typedef enum {
+typedef enum nmo_file_version {
     NMO_FILE_VERSION_2 = 2,
     NMO_FILE_VERSION_3 = 3,
     NMO_FILE_VERSION_4 = 4,
@@ -34,48 +37,58 @@ typedef enum {
     NMO_FILE_VERSION_7 = 7,
     NMO_FILE_VERSION_8 = 8,
     NMO_FILE_VERSION_9 = 9,
-} nmo_file_version;
+} nmo_file_version_t;
 
 // File write modes
-typedef enum {
-    NMO_FILE_WRITE_NORMAL = 0,
+typedef enum nmo_file_write_mode {
+    NMO_FILE_WRITE_NORMAL             = 0,
     NMO_FILE_WRITE_INCLUDE_REFERENCES = 1,
     NMO_FILE_WRITE_EXCLUDE_REFERENCES = 2,
-} nmo_file_write_mode;
+} nmo_file_write_mode_t;
 
-// Chunk version
-#define NMO_CHUNK_VERSION_4 7
+// Chunk versions (matching CKStateChunk CHUNK_VERSION constants exactly)
+#define NMO_CHUNK_VERSIONBASE 0
+#define NMO_CHUNK_VERSION1 4  // WriteObjectID => table
+#define NMO_CHUNK_VERSION2 5  // add Manager Data
+#define NMO_CHUNK_VERSION3 6  // New ConvertToBuffer / ReadFromBuffer
+#define NMO_CHUNK_VERSION4 7  // New WriteObjectID when saving to a file (Current version)
+
+// Legacy aliases for compatibility
+#define NMO_CHUNK_VERSION_1 NMO_CHUNK_VERSION1
+#define NMO_CHUNK_VERSION_2 NMO_CHUNK_VERSION2
+#define NMO_CHUNK_VERSION_3 NMO_CHUNK_VERSION3
+#define NMO_CHUNK_VERSION_4 NMO_CHUNK_VERSION4
 
 // Compression levels
-typedef enum {
-    NMO_COMPRESS_NONE = 0,
-    NMO_COMPRESS_FAST = 1,
+typedef enum nmo_compression_level {
+    NMO_COMPRESS_NONE    = 0,
+    NMO_COMPRESS_FAST    = 1,
     NMO_COMPRESS_DEFAULT = 6,
-    NMO_COMPRESS_BEST = 9,
-} nmo_compression_level;
+    NMO_COMPRESS_BEST    = 9,
+} nmo_compression_level_t;
 
 // Plugin categories
-typedef enum {
-    NMO_PLUGIN_MANAGER_DLL = 0,
+typedef enum nmo_plugin_category {
+    NMO_PLUGIN_MANAGER_DLL  = 0,
     NMO_PLUGIN_BEHAVIOR_DLL = 1,
-    NMO_PLUGIN_RENDER_DLL = 2,
-    NMO_PLUGIN_SOUND_DLL = 3,
-    NMO_PLUGIN_INPUT_DLL = 4,
-} nmo_plugin_category;
+    NMO_PLUGIN_RENDER_DLL   = 2,
+    NMO_PLUGIN_SOUND_DLL    = 3,
+    NMO_PLUGIN_INPUT_DLL    = 4,
+} nmo_plugin_category_t;
 
 // Visibility macros
 #ifdef _WIN32
-    #ifdef NMO_BUILD_SHARED
-        #ifdef NMO_EXPORTS
-            #define NMO_API __declspec(dllexport)
-        #else
-            #define NMO_API __declspec(dllimport)
-        #endif
-    #else
-        #define NMO_API
-    #endif
+#ifdef NMO_BUILD_SHARED
+#ifdef NMO_EXPORTS
+#define NMO_API __declspec(dllexport)
 #else
-    #define NMO_API __attribute__((visibility("default")))
+#define NMO_API __declspec(dllimport)
+#endif
+#else
+#define NMO_API
+#endif
+#else
+#define NMO_API __attribute__((visibility("default")))
 #endif
 
 #ifdef __cplusplus
