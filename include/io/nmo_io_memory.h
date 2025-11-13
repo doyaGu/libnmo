@@ -26,20 +26,20 @@ typedef struct nmo_io_memory nmo_io_memory_t;
  * @param copy_data Whether to copy buffer data
  * @return Memory IO context or NULL on error
  */
-NMO_API nmo_io_memory_t* nmo_io_memory_create(const void* buffer, size_t size, int copy_data);
+NMO_API nmo_io_memory_t *nmo_io_memory_create(const void *buffer, size_t size, int copy_data);
 
 /**
  * Create an empty memory IO context for writing
  * @param initial_capacity Initial buffer capacity
  * @return Memory IO context or NULL on error
  */
-NMO_API nmo_io_memory_t* nmo_io_memory_create_empty(size_t initial_capacity);
+NMO_API nmo_io_memory_t *nmo_io_memory_create_empty(size_t initial_capacity);
 
 /**
  * Destroy memory IO context
  * @param io_memory Memory IO context
  */
-NMO_API void nmo_io_memory_destroy(nmo_io_memory_t* io_memory);
+NMO_API void nmo_io_memory_destroy(nmo_io_memory_t *io_memory);
 
 /**
  * Read from memory
@@ -48,7 +48,7 @@ NMO_API void nmo_io_memory_destroy(nmo_io_memory_t* io_memory);
  * @param size Number of bytes to read
  * @return Number of bytes read
  */
-NMO_API size_t nmo_io_memory_read(nmo_io_memory_t* io_memory, void* buffer, size_t size);
+NMO_API size_t nmo_io_memory_read(nmo_io_memory_t *io_memory, void *buffer, size_t size);
 
 /**
  * Write to memory
@@ -57,7 +57,7 @@ NMO_API size_t nmo_io_memory_read(nmo_io_memory_t* io_memory, void* buffer, size
  * @param size Number of bytes to write
  * @return Number of bytes written
  */
-NMO_API size_t nmo_io_memory_write(nmo_io_memory_t* io_memory, const void* buffer, size_t size);
+NMO_API size_t nmo_io_memory_write(nmo_io_memory_t *io_memory, const void *buffer, size_t size);
 
 /**
  * Seek in memory
@@ -66,14 +66,14 @@ NMO_API size_t nmo_io_memory_write(nmo_io_memory_t* io_memory, const void* buffe
  * @param whence Seek origin (SEEK_SET, SEEK_CUR, SEEK_END)
  * @return New position or negative on error
  */
-NMO_API int64_t nmo_io_memory_seek(nmo_io_memory_t* io_memory, int64_t offset, int whence);
+NMO_API int64_t nmo_io_memory_seek(nmo_io_memory_t *io_memory, int64_t offset, int whence);
 
 /**
  * Get current position in memory
  * @param io_memory Memory IO context
  * @return Current position
  */
-NMO_API int64_t nmo_io_memory_tell(nmo_io_memory_t* io_memory);
+NMO_API int64_t nmo_io_memory_tell(nmo_io_memory_t *io_memory);
 
 /**
  * Get memory buffer
@@ -81,14 +81,14 @@ NMO_API int64_t nmo_io_memory_tell(nmo_io_memory_t* io_memory);
  * @param out_size Output buffer size
  * @return Pointer to buffer
  */
-NMO_API const void* nmo_io_memory_get_buffer(const nmo_io_memory_t* io_memory, size_t* out_size);
+NMO_API const void *nmo_io_memory_get_buffer(const nmo_io_memory_t *io_memory, size_t *out_size);
 
 /**
  * Reset memory position to beginning
  * @param io_memory Memory IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_io_memory_reset(nmo_io_memory_t* io_memory);
+NMO_API nmo_result_t nmo_io_memory_reset(nmo_io_memory_t *io_memory);
 
 /**
  * Open a read-only memory buffer and return an IO interface
@@ -96,14 +96,14 @@ NMO_API nmo_result_t nmo_io_memory_reset(nmo_io_memory_t* io_memory);
  * @param size Size of buffer
  * @return IO interface or NULL on error
  */
-NMO_API nmo_io_interface* nmo_memory_io_open_read(const void* data, size_t size);
+NMO_API nmo_io_interface_t *nmo_memory_io_open_read(const void *data, size_t size);
 
 /**
  * Open a write-only memory buffer with dynamic growth and return an IO interface
  * @param initial_capacity Initial buffer capacity
  * @return IO interface or NULL on error
  */
-NMO_API nmo_io_interface* nmo_memory_io_open_write(size_t initial_capacity);
+NMO_API nmo_io_interface_t *nmo_memory_io_open_write(size_t initial_capacity);
 
 /**
  * Get the data from a write memory IO interface
@@ -111,7 +111,7 @@ NMO_API nmo_io_interface* nmo_memory_io_open_write(size_t initial_capacity);
  * @param size Output parameter for data size
  * @return Pointer to data buffer or NULL on error
  */
-NMO_API const void* nmo_memory_io_get_data(nmo_io_interface* io, size_t* size);
+NMO_API const void *nmo_memory_io_get_data(nmo_io_interface_t *io, size_t *size);
 
 #ifdef __cplusplus
 }
