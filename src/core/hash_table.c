@@ -303,13 +303,23 @@ int nmo_hash_table_reserve(nmo_hash_table_t *table, size_t capacity) {
         return NMO_OK;
     }
     
+    /* Check for unreasonable capacity that would cause overflow */
+    if (capacity > SIZE_MAX / 2) {
+        return NMO_ERR_NOMEM;
+    }
+    
     /* Account for load factor */
     size_t target_capacity = (size_t)((double)capacity / LOAD_FACTOR) + 1;
     
     /* Round up to next power of 2 for better performance */
     size_t new_capacity = DEFAULT_INITIAL_CAPACITY;
-    while (new_capacity < target_capacity) {
+    while (new_capacity < target_capacity && new_capacity < SIZE_MAX / 2) {
         new_capacity *= 2;
+    }
+    
+    /* Overflow check */
+    if (new_capacity < target_capacity) {
+        return NMO_ERR_NOMEM;
     }
     
     return resize_table(table, new_capacity);
