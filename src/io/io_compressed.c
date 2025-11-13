@@ -5,8 +5,9 @@
 
 #include "io/nmo_io_compressed.h"
 #include "core/nmo_allocator.h"
-#include <zlib.h>
+
 #include <string.h>
+#include <miniz.h>
 
 /**
  * @brief Default buffer size for compression/decompression (64KB)
@@ -16,32 +17,32 @@
 /**
  * @brief Compressed IO context structure
  */
-typedef struct {
-    nmo_io_interface* inner;       /**< Inner IO interface */
-    z_stream          stream;      /**< zlib stream state */
-    uint8_t*          buffer;      /**< Internal buffer for compressed data */
-    size_t            buffer_size; /**< Size of internal buffer */
-    int               level;       /**< Compression level */
-    bool              is_write;    /**< True for write mode, false for read mode */
-    bool              initialized; /**< True if zlib stream is initialized */
-} nmo_compressed_io_handle;
+typedef struct nmo_compressed_io_handle {
+    nmo_io_interface_t *inner; /**< Inner IO interface */
+    z_stream stream;           /**< zlib stream state */
+    uint8_t *buffer;           /**< Internal buffer for compressed data */
+    size_t buffer_size;        /**< Size of internal buffer */
+    int level;                 /**< Compression level */
+    bool is_write;             /**< True for write mode, false for read mode */
+    bool initialized;          /**< True if zlib stream is initialized */
+} nmo_compressed_io_handle_t;
 
 /**
  * @brief Read function for compressed IO
  */
-static int compressed_io_read(void* handle, void* buffer, size_t size, size_t* bytes_read) {
+static int compressed_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_compressed_io_handle* ctx = (nmo_compressed_io_handle*)handle;
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) handle;
 
     if (!ctx->initialized) {
         return NMO_ERR_INVALID_STATE;
     }
 
-    ctx->stream.next_out = (Bytef*)buffer;
-    ctx->stream.avail_out = (uInt)size;
+    ctx->stream.next_out = (Bytef *) buffer;
+    ctx->stream.avail_out = (uInt) size;
 
     size_t total_read = 0;
 
@@ -63,15 +64,16 @@ static int compressed_io_read(void* handle, void* buffer, size_t size, size_t* b
             }
 
             ctx->stream.next_in = ctx->buffer;
-            ctx->stream.avail_in = (uInt)nread;
+            ctx->stream.avail_in = (uInt) nread;
         }
 
         // Decompress
         uInt before_out = ctx->stream.avail_out;
         int zret = inflate(&ctx->stream, Z_NO_FLUSH);
 
+        total_read += before_out - ctx->stream.avail_out;
+
         if (zret == Z_STREAM_END) {
-            total_read += before_out - ctx->stream.avail_out;
             break;
         }
 
@@ -81,8 +83,6 @@ static int compressed_io_read(void* handle, void* buffer, size_t size, size_t* b
             }
             return NMO_ERR_DECOMPRESSION_FAILED;
         }
-
-        total_read += before_out - ctx->stream.avail_out;
 
         if (ctx->stream.avail_out == 0) {
             break;
@@ -99,23 +99,23 @@ static int compressed_io_read(void* handle, void* buffer, size_t size, size_t* b
 /**
  * @brief Write function for compressed IO
  */
-static int compressed_io_write(void* handle, const void* buffer, size_t size) {
+static int compressed_io_write(void *handle, const void *buffer, size_t size) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_compressed_io_handle* ctx = (nmo_compressed_io_handle*)handle;
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) handle;
 
     if (!ctx->initialized) {
         return NMO_ERR_INVALID_STATE;
     }
 
-    ctx->stream.next_in = (Bytef*)buffer;
-    ctx->stream.avail_in = (uInt)size;
+    ctx->stream.next_in = (Bytef *) buffer;
+    ctx->stream.avail_in = (uInt) size;
 
     while (ctx->stream.avail_in > 0) {
         ctx->stream.next_out = ctx->buffer;
-        ctx->stream.avail_out = (uInt)ctx->buffer_size;
+        ctx->stream.avail_out = (uInt) ctx->buffer_size;
 
         int zret = deflate(&ctx->stream, Z_NO_FLUSH);
         if (zret != Z_OK) {
@@ -137,12 +137,12 @@ static int compressed_io_write(void* handle, const void* buffer, size_t size) {
 /**
  * @brief Seek function for compressed IO (pass-through)
  */
-static int compressed_io_seek(void* handle, int64_t offset, nmo_seek_origin origin) {
+static int compressed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_compressed_io_handle* ctx = (nmo_compressed_io_handle*)handle;
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) handle;
 
     if (ctx->inner == NULL || ctx->inner->seek == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -154,12 +154,12 @@ static int compressed_io_seek(void* handle, int64_t offset, nmo_seek_origin orig
 /**
  * @brief Tell function for compressed IO (pass-through)
  */
-static int64_t compressed_io_tell(void* handle) {
+static int64_t compressed_io_tell(void *handle) {
     if (handle == NULL) {
         return -1;
     }
 
-    nmo_compressed_io_handle* ctx = (nmo_compressed_io_handle*)handle;
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) handle;
 
     if (ctx->inner == NULL || ctx->inner->tell == NULL) {
         return -1;
@@ -169,47 +169,77 @@ static int64_t compressed_io_tell(void* handle) {
 }
 
 /**
- * @brief Close function for compressed IO
+ * @brief Flush function for compressed IO
+ * 
+ * Finalizes compression stream without closing the inner IO.
+ * Only meaningful for write (deflate) mode.
+ * For read (inflate) mode, this is a no-op.
  */
-static int compressed_io_close(void* handle) {
+static int compressed_io_flush(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_compressed_io_handle* ctx = (nmo_compressed_io_handle*)handle;
-    int result = NMO_OK;
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) handle;
 
-    // Flush compression if in write mode
-    if (ctx->initialized && ctx->is_write) {
-        int zret = Z_OK;
-        do {
-            ctx->stream.next_out = ctx->buffer;
-            ctx->stream.avail_out = (uInt)ctx->buffer_size;
-
-            zret = deflate(&ctx->stream, Z_FINISH);
-
-            size_t compressed_size = ctx->buffer_size - ctx->stream.avail_out;
-            if (compressed_size > 0 && ctx->inner != NULL) {
-                int ret = ctx->inner->write(ctx->inner->handle, ctx->buffer, compressed_size);
-                if (ret != NMO_OK && result == NMO_OK) {
-                    result = ret;
-                }
-            }
-        } while (zret == Z_OK);
-
-        if (zret != Z_STREAM_END && result == NMO_OK) {
-            result = NMO_ERR_COMPRESSION_FAILED;
-        }
+    if (!ctx->initialized) {
+        return NMO_OK; // Already flushed or not started
     }
 
-    // Clean up zlib stream
-    if (ctx->initialized) {
-        if (ctx->is_write) {
-            deflateEnd(&ctx->stream);
-        } else {
-            inflateEnd(&ctx->stream);
+    // Flush only makes sense for write mode
+    if (!ctx->is_write) {
+        return NMO_OK; // No-op for read mode
+    }
+
+    int result = NMO_OK;
+
+    // Finalize compression
+    int zret = Z_OK;
+    do {
+        ctx->stream.next_out = ctx->buffer;
+        ctx->stream.avail_out = (uInt) ctx->buffer_size;
+
+        zret = deflate(&ctx->stream, Z_FINISH);
+
+        size_t compressed_size = ctx->buffer_size - ctx->stream.avail_out;
+        if (compressed_size > 0 && ctx->inner != NULL) {
+            int ret = ctx->inner->write(ctx->inner->handle, ctx->buffer, compressed_size);
+            if (ret != NMO_OK && result == NMO_OK) {
+                result = ret;
+            }
         }
-        ctx->initialized = false;
+    } while (zret == Z_OK);
+
+    if (zret != Z_STREAM_END && result == NMO_OK) {
+        result = NMO_ERR_COMPRESSION_FAILED;
+    }
+
+    // Clean up zlib stream but DON'T close inner IO
+    deflateEnd(&ctx->stream);
+    ctx->initialized = false;
+
+    return result;
+}
+
+/**
+ * @brief Close function for compressed IO
+ * 
+ * Flushes remaining data, closes inner IO, and frees resources.
+ */
+static int compressed_io_close(void *handle) {
+    if (handle == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) handle;
+    int result = NMO_OK;
+
+    // Flush any remaining data
+    if (ctx->initialized) {
+        int flush_result = compressed_io_flush(handle);
+        if (flush_result != NMO_OK && result == NMO_OK) {
+            result = flush_result;
+        }
     }
 
     // Close inner IO
@@ -222,7 +252,7 @@ static int compressed_io_close(void* handle) {
     }
 
     // Free buffer
-    nmo_allocator alloc = nmo_allocator_default();
+    nmo_allocator_t alloc = nmo_allocator_default();
     if (ctx->buffer != NULL) {
         nmo_free(&alloc, ctx->buffer);
         ctx->buffer = NULL;
@@ -237,15 +267,17 @@ static int compressed_io_close(void* handle) {
 /**
  * @brief Wrap an IO interface with compression
  */
-nmo_io_interface* nmo_compressed_io_wrap(nmo_io_interface* inner,
-                                          const nmo_compressed_io_desc* desc) {
+nmo_io_interface_t *nmo_compressed_io_wrap(nmo_io_interface_t *inner,
+                                           const nmo_compressed_io_desc_t *desc) {
     if (inner == NULL || desc == NULL) {
         return NULL;
     }
 
-    // Validate compression level
-    if (desc->level < 1 || desc->level > 9) {
-        return NULL;
+    // Validate compression level (only for deflate mode)
+    if (desc->mode == NMO_COMPRESS_MODE_DEFLATE) {
+        if (desc->level < 1 || desc->level > 9) {
+            return NULL;
+        }
     }
 
     // Currently only zlib is supported
@@ -253,19 +285,19 @@ nmo_io_interface* nmo_compressed_io_wrap(nmo_io_interface* inner,
         return NULL;
     }
 
-    nmo_allocator alloc = nmo_allocator_default();
+    nmo_allocator_t alloc = nmo_allocator_default();
 
     // Allocate context
-    nmo_compressed_io_handle* ctx = (nmo_compressed_io_handle*)nmo_alloc(
-        &alloc, sizeof(nmo_compressed_io_handle), sizeof(void*));
+    nmo_compressed_io_handle_t *ctx = (nmo_compressed_io_handle_t *) nmo_alloc(
+        &alloc, sizeof(nmo_compressed_io_handle_t), sizeof(void *));
     if (ctx == NULL) {
         return NULL;
     }
 
-    memset(ctx, 0, sizeof(nmo_compressed_io_handle));
+    memset(ctx, 0, sizeof(nmo_compressed_io_handle_t));
 
     // Allocate buffer
-    ctx->buffer = (uint8_t*)nmo_alloc(&alloc, COMPRESSED_IO_BUFFER_SIZE, 1);
+    ctx->buffer = (uint8_t *) nmo_alloc(&alloc, COMPRESSED_IO_BUFFER_SIZE, 1);
     if (ctx->buffer == NULL) {
         nmo_free(&alloc, ctx);
         return NULL;
@@ -299,8 +331,8 @@ nmo_io_interface* nmo_compressed_io_wrap(nmo_io_interface* inner,
     ctx->initialized = true;
 
     // Allocate IO interface
-    nmo_io_interface* io = (nmo_io_interface*)nmo_alloc(
-        &alloc, sizeof(nmo_io_interface), sizeof(void*));
+    nmo_io_interface_t *io = (nmo_io_interface_t *) nmo_alloc(
+        &alloc, sizeof(nmo_io_interface_t), sizeof(void *));
     if (io == NULL) {
         if (ctx->is_write) {
             deflateEnd(&ctx->stream);
@@ -316,6 +348,7 @@ nmo_io_interface* nmo_compressed_io_wrap(nmo_io_interface* inner,
     io->write = compressed_io_write;
     io->seek = compressed_io_seek;
     io->tell = compressed_io_tell;
+    io->flush = compressed_io_flush;
     io->close = compressed_io_close;
     io->handle = ctx;
 
