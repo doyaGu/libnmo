@@ -14,10 +14,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_allocator nmo_allocator;
-typedef struct nmo_logger nmo_logger;
-typedef struct nmo_schema_registry nmo_schema_registry;
-typedef struct nmo_manager_registry nmo_manager_registry;
+typedef struct nmo_allocator nmo_allocator_t;
+typedef struct nmo_logger nmo_logger_t;
+typedef struct nmo_schema_registry nmo_schema_registry_t;
+typedef struct nmo_manager_registry nmo_manager_registry_t;
 
 /**
  * @brief Global context structure
@@ -25,16 +25,16 @@ typedef struct nmo_manager_registry nmo_manager_registry;
  * Reference-counted global state that owns schema registry and manager registry.
  * Thread-safe for concurrent access.
  */
-typedef struct nmo_context nmo_context;
+typedef struct nmo_context nmo_context_t;
 
 /**
  * @brief Context descriptor for creation
  */
-typedef struct {
-    nmo_allocator* allocator;      /**< Memory allocator (NULL for default) */
-    nmo_logger* logger;            /**< Logger (NULL for default) */
-    int thread_pool_size;          /**< Thread pool size (0 for no threading) */
-} nmo_context_desc;
+typedef struct nmo_context_desc {
+    nmo_allocator_t *allocator; /**< Memory allocator (NULL for default) */
+    nmo_logger_t *logger;       /**< Logger (NULL for default) */
+    int thread_pool_size;       /**< Thread pool size (0 for no threading) */
+} nmo_context_desc_t;
 
 /**
  * @brief Create context
@@ -45,7 +45,7 @@ typedef struct {
  * @param desc Context descriptor (NULL for defaults)
  * @return Context or NULL on error
  */
-NMO_API nmo_context* nmo_context_create(const nmo_context_desc* desc);
+NMO_API nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc);
 
 /**
  * @brief Retain context
@@ -54,7 +54,7 @@ NMO_API nmo_context* nmo_context_create(const nmo_context_desc* desc);
  *
  * @param ctx Context to retain
  */
-NMO_API void nmo_context_retain(nmo_context* ctx);
+NMO_API void nmo_context_retain(nmo_context_t *ctx);
 
 /**
  * @brief Release context
@@ -64,7 +64,7 @@ NMO_API void nmo_context_retain(nmo_context* ctx);
  *
  * @param ctx Context to release
  */
-NMO_API void nmo_context_release(nmo_context* ctx);
+NMO_API void nmo_context_release(nmo_context_t *ctx);
 
 /**
  * @brief Get schema registry
@@ -74,7 +74,7 @@ NMO_API void nmo_context_release(nmo_context* ctx);
  * @param ctx Context
  * @return Schema registry or NULL
  */
-NMO_API nmo_schema_registry* nmo_context_get_schema_registry(const nmo_context* ctx);
+NMO_API nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context_t *ctx);
 
 /**
  * @brief Get manager registry
@@ -84,7 +84,7 @@ NMO_API nmo_schema_registry* nmo_context_get_schema_registry(const nmo_context* 
  * @param ctx Context
  * @return Manager registry or NULL
  */
-NMO_API nmo_manager_registry* nmo_context_get_manager_registry(const nmo_context* ctx);
+NMO_API nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_context_t *ctx);
 
 /**
  * @brief Get allocator
@@ -92,7 +92,7 @@ NMO_API nmo_manager_registry* nmo_context_get_manager_registry(const nmo_context
  * @param ctx Context
  * @return Allocator
  */
-NMO_API nmo_allocator* nmo_context_get_allocator(const nmo_context* ctx);
+NMO_API nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx);
 
 /**
  * @brief Get logger
@@ -100,7 +100,7 @@ NMO_API nmo_allocator* nmo_context_get_allocator(const nmo_context* ctx);
  * @param ctx Context
  * @return Logger
  */
-NMO_API nmo_logger* nmo_context_get_logger(const nmo_context* ctx);
+NMO_API nmo_logger_t *nmo_context_get_logger(const nmo_context_t *ctx);
 
 /**
  * @brief Get reference count (for debugging)
@@ -108,7 +108,7 @@ NMO_API nmo_logger* nmo_context_get_logger(const nmo_context* ctx);
  * @param ctx Context
  * @return Current reference count
  */
-NMO_API int nmo_context_get_refcount(const nmo_context* ctx);
+NMO_API int nmo_context_get_refcount(const nmo_context_t *ctx);
 
 #ifdef __cplusplus
 }
