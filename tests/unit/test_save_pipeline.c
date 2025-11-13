@@ -14,6 +14,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Helper to get temp directory */
+static const char* get_temp_dir(void) {
+#ifdef _WIN32
+    const char* temp = getenv("TEMP");
+    if (!temp) temp = getenv("TMP");
+    if (!temp) temp = "C:\\\\Windows\\\\Temp";
+    return temp;
+#else
+    return "/tmp";
+#endif
+}
+
+/* Helper to build temp file path */
+static void build_temp_path(char* buffer, size_t size, const char* filename) {
+    snprintf(buffer, size, "%s/%s", get_temp_dir(), filename);
+}
+
 /**
  * Test saving empty session should fail
  */
@@ -26,7 +43,9 @@ TEST(save_pipeline, empty_session_fails) {
     ASSERT_NOT_NULL(session);
 
     /* Try to save empty session */
-    int result = nmo_save_file(session, "/tmp/test_empty.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_empty.nmo");
+    int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     nmo_session_destroy(session);
@@ -72,7 +91,9 @@ TEST(save_pipeline, single_object) {
     nmo_session_set_file_info(session, &file_info);
 
     /* Save to file */
-    int result = nmo_save_file(session, "/tmp/test_single.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_single.nmo");
+    int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
@@ -125,7 +146,9 @@ TEST(save_pipeline, multiple_objects) {
     nmo_session_set_file_info(session, &file_info);
 
     /* Save to file */
-    int result = nmo_save_file(session, "/tmp/test_multiple.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_multiple.nmo");
+    int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
@@ -169,13 +192,18 @@ TEST(save_pipeline, with_flags) {
     nmo_session_set_file_info(session, &file_info);
 
     /* Test different flags */
-    int result1 = nmo_save_file(session, "/tmp/test_flags1.nmo", NMO_SAVE_COMPRESSED);
+    char filepath1[256], filepath2[256], filepath3[256];
+    build_temp_path(filepath1, sizeof(filepath1), "test_flags1.nmo");
+    build_temp_path(filepath2, sizeof(filepath2), "test_flags2.nmo");
+    build_temp_path(filepath3, sizeof(filepath3), "test_flags3.nmo");
+    
+    int result1 = nmo_save_file(session, filepath1, NMO_SAVE_COMPRESSED);
     ASSERT_EQ(NMO_OK, result1);
 
-    int result2 = nmo_save_file(session, "/tmp/test_flags2.nmo", NMO_SAVE_SEQUENTIAL_IDS);
+    int result2 = nmo_save_file(session, filepath2, NMO_SAVE_SEQUENTIAL_IDS);
     ASSERT_EQ(NMO_OK, result2);
 
-    int result3 = nmo_save_file(session, "/tmp/test_flags3.nmo",
+    int result3 = nmo_save_file(session, filepath3,
                                 NMO_SAVE_COMPRESSED | NMO_SAVE_VALIDATE_BEFORE);
     ASSERT_EQ(NMO_OK, result3);
 
@@ -230,7 +258,9 @@ TEST(save_pipeline, id_remapping) {
     nmo_session_set_file_info(session, &file_info);
 
     /* Save - should create sequential file IDs */
-    int result = nmo_save_file(session, "/tmp/test_id_remap.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_id_remap.nmo");
+    int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
@@ -249,7 +279,9 @@ TEST(save_pipeline, null_arguments) {
     ASSERT_NOT_NULL(session);
 
     /* NULL session */
-    int result1 = nmo_save_file(NULL, "/tmp/test.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test.nmo");
+    int result1 = nmo_save_file(NULL, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result1);
 
     /* NULL path */
@@ -305,7 +337,9 @@ TEST(save_pipeline, large_count) {
     nmo_session_set_file_info(session, &file_info);
 
     /* Save to file */
-    int result = nmo_save_file(session, "/tmp/test_large.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_large.nmo");
+    int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
@@ -349,7 +383,9 @@ TEST(save_pipeline, file_info_propagation) {
     nmo_session_set_file_info(session, &file_info);
 
     /* Save - should use custom file info */
-    int result = nmo_save_file(session, "/tmp/test_file_info.nmo", NMO_SAVE_DEFAULT);
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_file_info.nmo");
+    int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
