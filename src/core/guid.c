@@ -52,14 +52,15 @@ static int parse_hex_uint32(const char *str, uint32_t *out) {
 }
 
 nmo_guid_t nmo_guid_parse(const char *str) {
-    if (str == NULL) {
+    if (str == NULL || str[0] == '\0') {
         return NMO_GUID_NULL;
     }
 
-    // Skip leading brace if present
-    if (*str == '{') {
-        str++;
+    // Require opening brace
+    if (*str != '{') {
+        return NMO_GUID_NULL;
     }
+    str++;
 
     // Parse first 32 bits
     uint32_t d1, d2;
@@ -68,13 +69,26 @@ nmo_guid_t nmo_guid_parse(const char *str) {
     }
     str += 8;
 
-    // Skip dash if present
-    if (*str == '-') {
-        str++;
+    // Require dash
+    if (*str != '-') {
+        return NMO_GUID_NULL;
     }
+    str++;
 
     // Parse second 32 bits
     if (!parse_hex_uint32(str, &d2)) {
+        return NMO_GUID_NULL;
+    }
+    str += 8;
+
+    // Require closing brace
+    if (*str != '}') {
+        return NMO_GUID_NULL;
+    }
+    str++;
+
+    // Should be at end of string
+    if (*str != '\0') {
         return NMO_GUID_NULL;
     }
 
@@ -84,7 +98,7 @@ nmo_guid_t nmo_guid_parse(const char *str) {
 
 int nmo_guid_format(nmo_guid_t guid, char *buffer, size_t size) {
     if (buffer == NULL || size < 21) {
-        return 0;
+        return -1;
     }
 
     return snprintf(buffer, size, "{%08X-%08X}", guid.d1, guid.d2);
