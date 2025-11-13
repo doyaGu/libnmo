@@ -17,28 +17,28 @@ extern "C" {
 /**
  * @brief Compression codec types
  */
-typedef enum {
-    NMO_CODEC_ZLIB = 0,  /**< zlib compression (DEFLATE) */
-} nmo_compression_codec;
+typedef enum nmo_compression_codec {
+    NMO_CODEC_ZLIB = 0, /**< zlib compression (DEFLATE) */
+} nmo_compression_codec_t;
 
 /**
  * @brief Compression mode
  */
-typedef enum {
-    NMO_COMPRESS_MODE_DEFLATE = 0,  /**< Compress data (for writing) */
-    NMO_COMPRESS_MODE_INFLATE = 1,  /**< Decompress data (for reading) */
-} nmo_compression_mode;
+typedef enum nmo_compression_mode {
+    NMO_COMPRESS_MODE_DEFLATE = 0, /**< Compress data (for writing) */
+    NMO_COMPRESS_MODE_INFLATE = 1, /**< Decompress data (for reading) */
+} nmo_compression_mode_t;
 
 /**
  * @brief Compressed IO descriptor
  *
  * Configures the compression parameters for wrapping an IO interface.
  */
-typedef struct {
-    nmo_compression_codec codec;  /**< Compression codec to use */
-    nmo_compression_mode  mode;   /**< Compression mode (deflate/inflate) */
-    int level;                     /**< Compression level (1-9, where 1=fastest, 9=best compression, ignored for inflate) */
-} nmo_compressed_io_desc;
+typedef struct nmo_compressed_io_desc {
+    nmo_compression_codec_t codec; /**< Compression codec to use */
+    nmo_compression_mode_t mode; /**< Compression mode (deflate/inflate) */
+    int level; /**< Compression level (1-9, where 1=fastest, 9=best compression, ignored for inflate) */
+} nmo_compressed_io_desc_t;
 
 /**
  * @brief Wrap an IO interface with compression
@@ -58,8 +58,8 @@ typedef struct {
  *       Closing will also close the inner interface.
  * @note The inner interface should not be used directly after wrapping.
  */
-NMO_API nmo_io_interface* nmo_compressed_io_wrap(nmo_io_interface* inner,
-                                                   const nmo_compressed_io_desc* desc);
+NMO_API nmo_io_interface_t *nmo_compressed_io_wrap(nmo_io_interface_t *inner,
+                                                   const nmo_compressed_io_desc_t *desc);
 
 #ifdef __cplusplus
 }
