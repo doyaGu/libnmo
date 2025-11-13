@@ -22,12 +22,12 @@ extern "C" {
  * File IDs can have bit 23 (0x800000) set to indicate reference-only objects.
  */
 typedef struct nmo_object_desc {
-    nmo_object_id  file_id;      /**< File index (0-based), bit 23 may be set for reference-only */
-    nmo_class_id   class_id;     /**< Class ID */
-    char*          name;         /**< Object name (allocated from arena) */
-    nmo_object_id  parent_id;    /**< Parent object ID (or 0) */
-    uint32_t       flags;        /**< Object flags (bit 23 = reference-only) */
-} nmo_object_desc;
+    nmo_object_id_t file_id;    /**< Object ID from file, bit 23 may be set for reference-only */
+    nmo_class_id_t class_id;    /**< Class ID (oit->ObjectCid) */
+    nmo_object_id_t file_index; /**< File index (oit->FileIndex) */
+    char *name;               /**< Object name (allocated from arena) */
+    uint32_t flags;           /**< Object flags (bit 23 = reference-only) */
+} nmo_object_desc_t;
 
 /**
  * @brief Plugin dependency
@@ -35,10 +35,10 @@ typedef struct nmo_object_desc {
  * Represents a required plugin with its GUID, category, and version.
  */
 typedef struct nmo_plugin_dep {
-    nmo_guid     guid;           /**< Plugin GUID */
-    uint32_t     category;       /**< Plugin category (behavior, manager, render, sound, input) */
-    uint32_t     version;        /**< Plugin version */
-} nmo_plugin_dep;
+    nmo_guid_t guid;   /**< Plugin GUID */
+    uint32_t category; /**< Plugin category (behavior, manager, render, sound, input) */
+    uint32_t version;  /**< Plugin version */
+} nmo_plugin_dep_t;
 
 /**
  * @brief Header1 structure
@@ -48,17 +48,17 @@ typedef struct nmo_plugin_dep {
  */
 typedef struct nmo_header1 {
     /* Object table (version 7+) */
-    uint32_t         object_count;
-    nmo_object_desc* objects;          /**< Array allocated from arena */
+    uint32_t object_count;
+    nmo_object_desc_t *objects; /**< Array allocated from arena */
 
     /* Plugin dependencies (version 8+) */
-    uint32_t         plugin_dep_count;
-    nmo_plugin_dep*  plugin_deps;      /**< Array allocated from arena */
+    uint32_t plugin_dep_count;
+    nmo_plugin_dep_t *plugin_deps; /**< Array allocated from arena */
 
     /* Included files (stub, always 0) */
-    uint32_t         included_file_count;
-    char**           included_files;   /**< Always NULL */
-} nmo_header1;
+    uint32_t included_file_count;
+    char **included_files; /**< Always NULL */
+} nmo_header1_t;
 
 /**
  * @brief Parse Header1 from buffer
@@ -73,10 +73,10 @@ typedef struct nmo_header1 {
  * @return NMO_OK on success, error code otherwise
  */
 NMO_API nmo_result_t nmo_header1_parse(
-    const void* data,
+    const void *data,
     size_t size,
-    nmo_header1* header,
-    nmo_arena* arena);
+    nmo_header1_t *header,
+    nmo_arena_t *arena);
 
 /**
  * @brief Serialize Header1 to buffer
@@ -91,10 +91,10 @@ NMO_API nmo_result_t nmo_header1_parse(
  * @return NMO_OK on success, error code otherwise
  */
 NMO_API nmo_result_t nmo_header1_serialize(
-    const nmo_header1* header,
-    void** out_data,
-    size_t* out_size,
-    nmo_arena* arena);
+    const nmo_header1_t *header,
+    void **out_data,
+    size_t *out_size,
+    nmo_arena_t *arena);
 
 /**
  * @brief Free Header1 resources
@@ -104,7 +104,7 @@ NMO_API nmo_result_t nmo_header1_serialize(
  *
  * @param header Header1 structure to free
  */
-NMO_API void nmo_header1_free(nmo_header1* header);
+NMO_API void nmo_header1_free(nmo_header1_t *header);
 
 #ifdef __cplusplus
 }
