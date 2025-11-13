@@ -64,6 +64,8 @@ add_unit_test(test_context_session)
 add_unit_test(test_context_threadsafe)  # Thread-safety tests
 add_unit_test(test_manager_registry)
 add_unit_test(test_nmo_baseline)
+# Set working directory to project root so data/ can be found
+set_tests_properties(test_nmo_baseline PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 add_unit_test(test_reference_resolver)
 add_unit_test(test_save_pipeline)
 add_unit_test(test_load_session_id_remap)
