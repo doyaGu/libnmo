@@ -4,75 +4,126 @@
  */
 
 #include "format/nmo_header.h"
+#include <stdlib.h>
 #include <string.h>
+
+/**
+ * Internal header structure
+ */
+struct nmo_header {
+    nmo_file_header_t data;
+};
 
 /**
  * Create header context
  */
-nmo_header_t* nmo_header_create(void) {
-    return NULL;
+nmo_header_t *nmo_header_create(void) {
+    nmo_header_t *header = (nmo_header_t *)malloc(sizeof(nmo_header_t));
+    if (header == NULL) {
+        return NULL;
+    }
+
+    /* Initialize with default values for a minimal valid header */
+    memset(&header->data, 0, sizeof(nmo_file_header_t));
+    memcpy(header->data.signature, "Nemo Fi\0", 8);
+    header->data.file_version = 8;  /* Current version */
+    header->data.ck_version = 0x13022002;  /* Default CK version */
+
+    return header;
 }
 
 /**
  * Destroy header context
  */
-void nmo_header_destroy(nmo_header_t* header) {
-    (void)header;
+void nmo_header_destroy(nmo_header_t *header) {
+    if (header != NULL) {
+        free(header);
+    }
 }
 
 /**
  * Parse header from IO
  */
-nmo_result_t nmo_header_parse(nmo_header_t* header, void* io) {
-    (void)header;
-    (void)io;
-    return nmo_result_ok();
+nmo_result_t nmo_header_parse(nmo_header_t *header, void *io) {
+    if (header == NULL || io == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Header and IO cannot be NULL"));
+    }
+
+    return nmo_file_header_parse((nmo_io_interface_t *)io, &header->data);
 }
 
 /**
  * Write header to IO
  */
-nmo_result_t nmo_header_write(const nmo_header_t* header, void* io) {
-    (void)header;
-    (void)io;
-    return nmo_result_ok();
+nmo_result_t nmo_header_write(const nmo_header_t *header, void *io) {
+    if (header == NULL || io == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Header and IO cannot be NULL"));
+    }
+
+    return nmo_file_header_serialize(&header->data, (nmo_io_interface_t *)io);
 }
 
 /**
  * Get header info
  */
-nmo_result_t nmo_header_get_info(const nmo_header_t* header, nmo_file_header_info_t* out_info) {
-    (void)header;
-    if (out_info != NULL) {
-        out_info->magic[0] = 0;
-        out_info->version = 0;
-        out_info->flags = 0;
-        out_info->file_size = 0;
-        out_info->header_size = 0;
+nmo_result_t nmo_header_get_info(const nmo_header_t *header, nmo_file_header_info_t *out_info) {
+    if (header == NULL || out_info == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Header and output info cannot be NULL"));
     }
+
+    /* Extract magic from signature (first 4 chars) */
+    memcpy(out_info->magic, header->data.signature, 4);
+    out_info->version = header->data.file_version;
+    out_info->flags = header->data.file_write_mode;
+    
+    /* Calculate total file size (approximate) */
+    out_info->file_size = 32;  /* Part0 */
+    if (header->data.file_version >= 5) {
+        out_info->file_size += 32;  /* Part1 */
+    }
+    out_info->file_size += header->data.hdr1_pack_size;
+    out_info->file_size += header->data.data_pack_size;
+    
+    out_info->header_size = (header->data.file_version >= 5) ? 64 : 32;
+
     return nmo_result_ok();
 }
 
 /**
  * Get header size
  */
-uint32_t nmo_header_get_size(const nmo_header_t* header) {
-    (void)header;
-    return 0;
+uint32_t nmo_header_get_size(const nmo_header_t *header) {
+    if (header == NULL) {
+        return 0;
+    }
+
+    /* Part0 is always 32 bytes, Part1 is 32 bytes if file_version >= 5 */
+    return (header->data.file_version >= 5) ? 64 : 32;
 }
 
 /**
  * Validate header
  */
-nmo_result_t nmo_header_validate(const nmo_header_t* header) {
-    (void)header;
-    return nmo_result_ok();
+nmo_result_t nmo_header_validate(const nmo_header_t *header) {
+    if (header == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Header cannot be NULL"));
+    }
+
+    return nmo_file_header_validate(&header->data);
 }
 
 /**
  * Parse Virtools file header from IO
  */
-nmo_result_t nmo_file_header_parse(nmo_io_interface* io, nmo_file_header* header) {
+nmo_result_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *header) {
     int result;
 
     /* Validate arguments */
@@ -83,7 +134,7 @@ nmo_result_t nmo_file_header_parse(nmo_io_interface* io, nmo_file_header* header
     }
 
     /* Initialize header to zero */
-    memset(header, 0, sizeof(nmo_file_header));
+    memset(header, 0, sizeof(nmo_file_header_t));
 
     /* Read Part0 - signature (8 bytes) */
     result = nmo_io_read_exact(io, header->signature, 8);
@@ -215,7 +266,7 @@ nmo_result_t nmo_file_header_parse(nmo_io_interface* io, nmo_file_header* header
 /**
  * Validate Virtools file header
  */
-nmo_result_t nmo_file_header_validate(const nmo_file_header* header) {
+nmo_result_t nmo_file_header_validate(const nmo_file_header_t *header) {
     /* Validate argument */
     if (header == NULL) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
@@ -243,7 +294,7 @@ nmo_result_t nmo_file_header_validate(const nmo_file_header* header) {
 /**
  * Serialize Virtools file header to IO
  */
-nmo_result_t nmo_file_header_serialize(const nmo_file_header* header, nmo_io_interface* io) {
+nmo_result_t nmo_file_header_serialize(const nmo_file_header_t *header, nmo_io_interface_t *io) {
     int result;
 
     /* Validate arguments */

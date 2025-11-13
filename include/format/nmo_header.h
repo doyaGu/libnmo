@@ -22,22 +22,22 @@ typedef struct nmo_header nmo_header_t;
 /**
  * @brief File header magic and version info
  */
-typedef struct {
-    char magic[4];           /* NMO file magic */
-    uint32_t version;        /* File format version */
-    uint32_t flags;          /* File flags */
-    uint64_t file_size;      /* Total file size */
-    uint32_t header_size;    /* Header size in bytes */
+typedef struct nmo_file_header_info {
+    char magic[4];        /* NMO file magic */
+    uint32_t version;     /* File format version */
+    uint32_t flags;       /* File flags */
+    uint64_t file_size;   /* Total file size */
+    uint32_t header_size; /* Header size in bytes */
 } nmo_file_header_info_t;
 
 /**
  * @brief File write mode flags
  */
-typedef enum {
-    NMO_FILE_WRITE_COMPRESS_HEADER = 1,  /**< Compress header1 */
-    NMO_FILE_WRITE_COMPRESS_DATA = 2,    /**< Compress data section */
-    NMO_FILE_WRITE_COMPRESS_BOTH = 3,    /**< Compress both header and data */
-} nmo_file_write_mode_flags;
+typedef enum nmo_file_write_mode_flags {
+    NMO_FILE_WRITE_COMPRESS_HEADER = 1, /**< Compress header1 */
+    NMO_FILE_WRITE_COMPRESS_DATA   = 2, /**< Compress data section */
+    NMO_FILE_WRITE_COMPRESS_BOTH   = 3, /**< Compress both header and data */
+} nmo_file_write_mode_flags_t;
 
 /**
  * @brief Virtools file header structure
@@ -46,38 +46,38 @@ typedef enum {
  * Part0 (32 bytes) is always present.
  * Part1 (32 bytes) is only present when file_version >= 5.
  */
-typedef struct {
+typedef struct nmo_file_header {
     /* Part0 - 32 bytes (always present) */
-    char signature[8];          /**< File signature "Nemo Fi\0" */
-    uint32_t crc;               /**< Adler-32 checksum */
-    uint32_t ck_version;        /**< Virtools engine version */
-    uint32_t file_version;      /**< File format version (2-9, current: 8) */
-    uint32_t file_version2;     /**< Legacy field (usually 0) */
-    uint32_t file_write_mode;   /**< Compression/save flags */
-    uint32_t hdr1_pack_size;    /**< Compressed Header1 size */
+    char signature[8];        /**< File signature "Nemo Fi\0" */
+    uint32_t crc;             /**< Adler-32 checksum */
+    uint32_t ck_version;      /**< Virtools engine version */
+    uint32_t file_version;    /**< File format version (2-9, current: 8) */
+    uint32_t file_version2;   /**< Legacy field (usually 0) */
+    uint32_t file_write_mode; /**< Compression/save flags */
+    uint32_t hdr1_pack_size;  /**< Compressed Header1 size */
 
     /* Part1 - 32 bytes (only when file_version >= 5) */
-    uint32_t data_pack_size;    /**< Compressed data size */
-    uint32_t data_unpack_size;  /**< Uncompressed data size */
-    uint32_t manager_count;     /**< Number of managers */
-    uint32_t object_count;      /**< Number of objects */
-    uint32_t max_id_saved;      /**< Highest object ID */
-    uint32_t product_version;   /**< Product version */
-    uint32_t product_build;     /**< Product build */
-    uint32_t hdr1_unpack_size;  /**< Uncompressed Header1 size */
-} nmo_file_header;
+    uint32_t data_pack_size;   /**< Compressed data size */
+    uint32_t data_unpack_size; /**< Uncompressed data size */
+    uint32_t manager_count;    /**< Number of managers */
+    uint32_t object_count;     /**< Number of objects */
+    uint32_t max_id_saved;     /**< Highest object ID */
+    uint32_t product_version;  /**< Product version */
+    uint32_t product_build;    /**< Product build */
+    uint32_t hdr1_unpack_size; /**< Uncompressed Header1 size */
+} nmo_file_header_t;
 
 /**
  * Create header context
  * @return Header context or NULL on error
  */
-NMO_API nmo_header_t* nmo_header_create(void);
+NMO_API nmo_header_t *nmo_header_create(void);
 
 /**
  * Destroy header context
  * @param header Header context
  */
-NMO_API void nmo_header_destroy(nmo_header_t* header);
+NMO_API void nmo_header_destroy(nmo_header_t *header);
 
 /**
  * Parse header from IO
@@ -85,7 +85,7 @@ NMO_API void nmo_header_destroy(nmo_header_t* header);
  * @param io IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_header_parse(nmo_header_t* header, void* io);
+NMO_API nmo_result_t nmo_header_parse(nmo_header_t *header, void *io);
 
 /**
  * Write header to IO
@@ -93,7 +93,7 @@ NMO_API nmo_result_t nmo_header_parse(nmo_header_t* header, void* io);
  * @param io IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_header_write(const nmo_header_t* header, void* io);
+NMO_API nmo_result_t nmo_header_write(const nmo_header_t *header, void *io);
 
 /**
  * Get header info
@@ -101,21 +101,21 @@ NMO_API nmo_result_t nmo_header_write(const nmo_header_t* header, void* io);
  * @param out_info Output header info
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_header_get_info(const nmo_header_t* header, nmo_file_header_info_t* out_info);
+NMO_API nmo_result_t nmo_header_get_info(const nmo_header_t *header, nmo_file_header_info_t *out_info);
 
 /**
  * Get header size
  * @param header Header context
  * @return Header size in bytes
  */
-NMO_API uint32_t nmo_header_get_size(const nmo_header_t* header);
+NMO_API uint32_t nmo_header_get_size(const nmo_header_t *header);
 
 /**
  * Validate header
  * @param header Header context
  * @return NMO_OK if valid
  */
-NMO_API nmo_result_t nmo_header_validate(const nmo_header_t* header);
+NMO_API nmo_result_t nmo_header_validate(const nmo_header_t *header);
 
 /**
  * @brief Parse Virtools file header from IO
@@ -131,7 +131,7 @@ NMO_API nmo_result_t nmo_header_validate(const nmo_header_t* header);
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
  *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9
  */
-NMO_API nmo_result_t nmo_file_header_parse(nmo_io_interface* io, nmo_file_header* header);
+NMO_API nmo_result_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *header);
 
 /**
  * @brief Validate Virtools file header
@@ -144,7 +144,7 @@ NMO_API nmo_result_t nmo_file_header_parse(nmo_io_interface* io, nmo_file_header
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
  *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9
  */
-NMO_API nmo_result_t nmo_file_header_validate(const nmo_file_header* header);
+NMO_API nmo_result_t nmo_file_header_validate(const nmo_file_header_t *header);
 
 /**
  * @brief Serialize Virtools file header to IO
@@ -157,7 +157,7 @@ NMO_API nmo_result_t nmo_file_header_validate(const nmo_file_header* header);
  * @return NMO_OK on success, error code otherwise
  *         NMO_ERR_INVALID_ARGUMENT if header or io is NULL
  */
-NMO_API nmo_result_t nmo_file_header_serialize(const nmo_file_header* header, nmo_io_interface* io);
+NMO_API nmo_result_t nmo_file_header_serialize(const nmo_file_header_t *header, nmo_io_interface_t *io);
 
 #ifdef __cplusplus
 }
