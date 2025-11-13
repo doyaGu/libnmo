@@ -71,6 +71,7 @@
 #include "format/nmo_object.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
 #include "format/nmo_chunk_writer.h"
 #include "format/nmo_manager_registry.h"

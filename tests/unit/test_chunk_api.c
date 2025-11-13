@@ -213,16 +213,16 @@ TEST(chunk_api, sequence) {
     
     // Write
     nmo_chunk_start_write(chunk);
-    nmo_chunk_start_object_sequence(chunk, 3);
-    nmo_chunk_write_object_id_sequence(chunk, 10);
-    nmo_chunk_write_object_id_sequence(chunk, 20);
-    nmo_chunk_write_object_id_sequence(chunk, 30);
+    nmo_chunk_write_object_sequence_start(chunk, 3);
+    nmo_chunk_write_object_sequence_item(chunk, 10);
+    nmo_chunk_write_object_sequence_item(chunk, 20);
+    nmo_chunk_write_object_sequence_item(chunk, 30);
     nmo_chunk_close(chunk);
     
     // Read
     nmo_chunk_start_read(chunk);
     size_t count;
-    nmo_chunk_start_read_sequence(chunk, &count);
+    nmo_chunk_read_object_sequence_start(chunk, &count);
     
     ASSERT_EQ(count, 3);
     

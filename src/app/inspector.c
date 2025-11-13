@@ -7,6 +7,7 @@
 
 #include "app/nmo_inspector.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
 #include "yyjson.h"
 #include <string.h>
@@ -137,7 +138,7 @@ static int dump_chunk_recursive(
     fprintf(stream, " {\n");
     
     /* Chunk ID */
-    uint32_t chunk_id = nmo_chunk_get_id(chunk);
+    uint32_t chunk_id = nmo_chunk_get_class_id(chunk);
     print_indent(stream, depth + 1);
     print_colored(stream, colorize, ANSI_YELLOW, "ID: ");
     fprintf(stream, "%u (0x%08x)\n", chunk_id, chunk_id);
@@ -356,8 +357,8 @@ int nmo_inspector_compare_chunks(
     int differences = 0;
     
     /* Compare chunk IDs */
-    uint32_t id1 = nmo_chunk_get_id(chunk1);
-    uint32_t id2 = nmo_chunk_get_id(chunk2);
+    uint32_t id1 = nmo_chunk_get_class_id(chunk1);
+    uint32_t id2 = nmo_chunk_get_class_id(chunk2);
     if (id1 != id2) {
         fprintf(stream, "Chunk ID differs: %u vs %u\n", id1, id2);
         differences++;

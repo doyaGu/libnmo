@@ -34,7 +34,7 @@ TEST(chunk, get_id) {
     ASSERT_NOT_NULL(chunk);
     
     // Default chunk ID should be 0
-    uint32_t id = nmo_chunk_get_id(chunk);
+    uint32_t id = nmo_chunk_get_class_id(chunk);
     ASSERT_EQ(id, 0);
     
     nmo_chunk_destroy(chunk);
@@ -83,10 +83,10 @@ TEST(chunk, serialize_null_params) {
  * Test 6: Get operations with NULL chunk
  */
 TEST(chunk, get_operations_null) {
-    uint32_t id = nmo_chunk_get_id(NULL);
+    uint32_t id = nmo_chunk_get_class_id(NULL);
     ASSERT_EQ(id, 0);
     
-    uint32_t size = nmo_chunk_get_size(NULL);
+    size_t size = nmo_chunk_get_data_size(NULL);
     ASSERT_EQ(size, 0);
     
     size_t data_size = 0;

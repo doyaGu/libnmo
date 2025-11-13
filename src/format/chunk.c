@@ -941,16 +941,6 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
 }
 
 /**
- * Write chunk to data
- */
-size_t nmo_chunk_write(const nmo_chunk_t *chunk, void *buffer, size_t size) {
-    (void) chunk;
-    (void) buffer;
-    (void) size;
-    return -1;
-}
-
-/**
  * Get chunk header
  */
 nmo_result_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *out_header) {
@@ -969,26 +959,6 @@ nmo_result_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *
 }
 
 /**
- * Get chunk ID
- */
-uint32_t nmo_chunk_get_id(const nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return 0;
-    }
-    return chunk->class_id;
-}
-
-/**
- * Get chunk size
- */
-uint32_t nmo_chunk_get_size(const nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return 0;
-    }
-    return (uint32_t) (chunk->data_size * 4); /* Convert to bytes */
-}
-
-/**
  * Get chunk data
  */
 const void *nmo_chunk_get_data(const nmo_chunk_t *chunk, size_t *out_size) {
@@ -1003,139 +973,4 @@ const void *nmo_chunk_get_data(const nmo_chunk_t *chunk, size_t *out_size) {
         *out_size = chunk->data_size * 4; /* Convert to bytes */
     }
     return chunk->data;
-}
-
-/**
- * Add sub-chunk
- */
-nmo_result_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk) {
-    if (!chunk || !sub_chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments"));
-    }
-
-    /* Check if we need to grow the array */
-    if (chunk->chunk_count >= chunk->chunk_capacity) {
-        size_t new_capacity = chunk->chunk_capacity == 0 ? 4 : chunk->chunk_capacity * 2;
-        nmo_chunk_t **new_chunks = nmo_arena_alloc(chunk->arena,
-                                                   new_capacity * sizeof(nmo_chunk_t *),
-                                                   sizeof(void *));
-        if (!new_chunks) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to grow sub-chunk array"));
-        }
-
-        /* Copy existing chunks */
-        if (chunk->chunks) {
-            memcpy(new_chunks, chunk->chunks, chunk->chunk_count * sizeof(nmo_chunk_t *));
-        }
-
-        chunk->chunks = new_chunks;
-        chunk->chunk_capacity = new_capacity;
-    }
-
-    /* Add sub-chunk */
-    chunk->chunks[chunk->chunk_count++] = sub_chunk;
-
-    /* Set CHN flag */
-    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-
-    return nmo_result_ok();
-}
-
-/**
- * Get sub-chunk count
- */
-uint32_t nmo_chunk_get_sub_chunk_count(const nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return 0;
-    }
-    return (uint32_t) chunk->chunk_count;
-}
-
-/**
- * Get sub-chunk by index
- */
-nmo_chunk_t *nmo_chunk_get_sub_chunk(const nmo_chunk_t *chunk, uint32_t index) {
-    if (!chunk || index >= chunk->chunk_count) {
-        return NULL;
-    }
-    return chunk->chunks[index];
-}
-
-/* nmo_chunk_get_class_id moved to chunk_api.c */
-
-/**
- * Check if chunk is compressed
- */
-int nmo_chunk_is_compressed(const nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return 0;
-    }
-    return (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) != 0;
-}
-
-/**
- * Get object ID count
- */
-size_t nmo_chunk_get_id_count(const nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return 0;
-    }
-    return chunk->id_count;
-}
-
-/**
- * Get object ID by index
- */
-uint32_t nmo_chunk_get_object_id(const nmo_chunk_t *chunk, size_t index) {
-    if (!chunk || index >= chunk->id_count || !chunk->ids) {
-        return 0;
-    }
-    /* ids array contains positions in data buffer, not the IDs themselves */
-    uint32_t pos = chunk->ids[index];
-    if (pos < chunk->data_size) {
-        return chunk->data[pos];
-    }
-    return 0;
-}
-
-/**
- * @brief Remap object IDs in chunk
- */
-int nmo_chunk_remap_ids(nmo_chunk_t *chunk, nmo_id_remap_t *remap) {
-    if (chunk == NULL || remap == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    /* The 'ids' array stores the DWORD position of each ID in the 'data' buffer. */
-    if ((chunk->chunk_options & NMO_CHUNK_OPTION_IDS) && chunk->ids != NULL) {
-        for (size_t i = 0; i < chunk->id_count; i++) {
-            uint32_t pos = chunk->ids[i];
-            if (pos < chunk->data_size) {
-                uint32_t old_id = chunk->data[pos];
-                uint32_t new_id;
-
-                if (nmo_id_remap_lookup_id(remap, old_id, &new_id).code == NMO_OK) {
-                    chunk->data[pos] = new_id;
-                }
-            }
-        }
-    }
-
-    /* Recursively remap sub-chunks */
-    if ((chunk->chunk_options & NMO_CHUNK_OPTION_CHN) && chunk->chunks != NULL) {
-        for (size_t i = 0; i < chunk->chunk_count; i++) {
-            if (chunk->chunks[i] != NULL) {
-                int result = nmo_chunk_remap_ids(chunk->chunks[i], remap);
-                if (result != NMO_OK) {
-                    return result;
-                }
-            }
-        }
-    }
-
-    return NMO_OK;
 }
