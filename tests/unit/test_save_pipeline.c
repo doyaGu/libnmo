@@ -3,6 +3,7 @@
  * @brief Test suite for save pipeline (Phase 10)
  */
 
+#include "test_framework.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
@@ -13,72 +14,54 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int tests_passed = 0;
-static int tests_failed = 0;
-
-#define TEST_ASSERT(condition, message) \
-    do { \
-        if (!(condition)) { \
-            printf("FAIL: %s - %s\n", __func__, message); \
-            tests_failed++; \
-            return; \
-        } \
-    } while(0)
-
-#define TEST_PASS() \
-    do { \
-        printf("PASS: %s\n", __func__); \
-        tests_passed++; \
-    } while(0)
-
 /**
  * Test saving empty session should fail
  */
-static void test_save_empty_session_fails(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, empty_session_fails) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
     /* Try to save empty session */
     int result = nmo_save_file(session, "/tmp/test_empty.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result == NMO_ERR_INVALID_ARGUMENT, "Empty session save should fail");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test saving session with single object
  */
-static void test_save_single_object(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, single_object) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
-    nmo_arena* arena = nmo_session_get_arena(session);
-    nmo_object_repository* repo = nmo_session_get_repository(session);
+    nmo_arena_t* arena = nmo_session_get_arena(session);
+    nmo_object_repository_t* repo = nmo_session_get_repository(session);
 
     /* Create a test object */
-    nmo_object* obj = (nmo_object*)nmo_arena_alloc(arena, sizeof(nmo_object), sizeof(void*));
-    TEST_ASSERT(obj != NULL, "Failed to allocate object");
+    nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
+    ASSERT_NOT_NULL(obj);
 
-    memset(obj, 0, sizeof(nmo_object));
+    memset(obj, 0, sizeof(nmo_object_t));
     obj->class_id = 0x12345678;
     obj->name = "TestObject";
     obj->flags = 0;
     obj->arena = arena;
 
     int add_result = nmo_object_repository_add(repo, obj);
-    TEST_ASSERT(add_result == NMO_OK, "Failed to add object to repository");
+    ASSERT_EQ(NMO_OK, add_result);
 
     /* Set file info */
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -90,34 +73,33 @@ static void test_save_single_object(void) {
 
     /* Save to file */
     int result = nmo_save_file(session, "/tmp/test_single.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result == NMO_OK, "Failed to save single object");
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test saving session with multiple objects
  */
-static void test_save_multiple_objects(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, multiple_objects) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
-    nmo_arena* arena = nmo_session_get_arena(session);
-    nmo_object_repository* repo = nmo_session_get_repository(session);
+    nmo_arena_t* arena = nmo_session_get_arena(session);
+    nmo_object_repository_t* repo = nmo_session_get_repository(session);
 
     /* Create multiple test objects */
     const size_t object_count = 10;
     for (size_t i = 0; i < object_count; i++) {
-        nmo_object* obj = (nmo_object*)nmo_arena_alloc(arena, sizeof(nmo_object), sizeof(void*));
-        TEST_ASSERT(obj != NULL, "Failed to allocate object");
+        nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
+        ASSERT_NOT_NULL(obj);
 
-        memset(obj, 0, sizeof(nmo_object));
+        memset(obj, 0, sizeof(nmo_object_t));
         obj->class_id = 0x10000000 + (uint32_t)i;
 
         /* Create name */
@@ -128,11 +110,11 @@ static void test_save_multiple_objects(void) {
         obj->arena = arena;
 
         int add_result = nmo_object_repository_add(repo, obj);
-        TEST_ASSERT(add_result == NMO_OK, "Failed to add object to repository");
+        ASSERT_EQ(NMO_OK, add_result);
     }
 
     /* Set file info */
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -144,32 +126,31 @@ static void test_save_multiple_objects(void) {
 
     /* Save to file */
     int result = nmo_save_file(session, "/tmp/test_multiple.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result == NMO_OK, "Failed to save multiple objects");
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test saving with different flags
  */
-static void test_save_with_flags(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, with_flags) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
-    nmo_arena* arena = nmo_session_get_arena(session);
-    nmo_object_repository* repo = nmo_session_get_repository(session);
+    nmo_arena_t* arena = nmo_session_get_arena(session);
+    nmo_object_repository_t* repo = nmo_session_get_repository(session);
 
     /* Create a test object */
-    nmo_object* obj = (nmo_object*)nmo_arena_alloc(arena, sizeof(nmo_object), sizeof(void*));
-    TEST_ASSERT(obj != NULL, "Failed to allocate object");
+    nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
+    ASSERT_NOT_NULL(obj);
 
-    memset(obj, 0, sizeof(nmo_object));
+    memset(obj, 0, sizeof(nmo_object_t));
     obj->class_id = 0xABCDEF00;
     obj->name = "FlaggedObject";
     obj->arena = arena;
@@ -177,7 +158,7 @@ static void test_save_with_flags(void) {
     nmo_object_repository_add(repo, obj);
 
     /* Set file info */
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -189,43 +170,42 @@ static void test_save_with_flags(void) {
 
     /* Test different flags */
     int result1 = nmo_save_file(session, "/tmp/test_flags1.nmo", NMO_SAVE_COMPRESSED);
-    TEST_ASSERT(result1 == NMO_OK, "Failed to save with COMPRESSED flag");
+    ASSERT_EQ(NMO_OK, result1);
 
     int result2 = nmo_save_file(session, "/tmp/test_flags2.nmo", NMO_SAVE_SEQUENTIAL_IDS);
-    TEST_ASSERT(result2 == NMO_OK, "Failed to save with SEQUENTIAL_IDS flag");
+    ASSERT_EQ(NMO_OK, result2);
 
     int result3 = nmo_save_file(session, "/tmp/test_flags3.nmo",
                                 NMO_SAVE_COMPRESSED | NMO_SAVE_VALIDATE_BEFORE);
-    TEST_ASSERT(result3 == NMO_OK, "Failed to save with combined flags");
+    ASSERT_EQ(NMO_OK, result3);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test ID remapping during save
  */
-static void test_save_id_remapping(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, id_remapping) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
-    nmo_arena* arena = nmo_session_get_arena(session);
-    nmo_object_repository* repo = nmo_session_get_repository(session);
+    nmo_arena_t* arena = nmo_session_get_arena(session);
+    nmo_object_repository_t* repo = nmo_session_get_repository(session);
 
     /* Create objects with non-sequential runtime IDs */
-    nmo_object_id runtime_ids[] = {100, 50, 200, 25, 150};
+    nmo_object_id_t runtime_ids[] = {100, 50, 200, 25, 150};
     const size_t object_count = sizeof(runtime_ids) / sizeof(runtime_ids[0]);
 
     for (size_t i = 0; i < object_count; i++) {
-        nmo_object* obj = (nmo_object*)nmo_arena_alloc(arena, sizeof(nmo_object), sizeof(void*));
-        TEST_ASSERT(obj != NULL, "Failed to allocate object");
+        nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
+        ASSERT_NOT_NULL(obj);
 
-        memset(obj, 0, sizeof(nmo_object));
+        memset(obj, 0, sizeof(nmo_object_t));
         obj->class_id = 0x20000000 + (uint32_t)i;
 
         char* name = (char*)nmo_arena_alloc(arena, 32, 1);
@@ -235,11 +215,11 @@ static void test_save_id_remapping(void) {
 
         /* Add to repository - will assign sequential runtime IDs */
         int add_result = nmo_object_repository_add(repo, obj);
-        TEST_ASSERT(add_result == NMO_OK, "Failed to add object to repository");
+        ASSERT_EQ(NMO_OK, add_result);
     }
 
     /* Set file info */
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -251,61 +231,58 @@ static void test_save_id_remapping(void) {
 
     /* Save - should create sequential file IDs */
     int result = nmo_save_file(session, "/tmp/test_id_remap.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result == NMO_OK, "Failed to save with ID remapping");
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test saving with NULL arguments
  */
-static void test_save_null_arguments(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, null_arguments) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
     /* NULL session */
     int result1 = nmo_save_file(NULL, "/tmp/test.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result1 == NMO_ERR_INVALID_ARGUMENT, "NULL session should fail");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result1);
 
     /* NULL path */
     int result2 = nmo_save_file(session, NULL, NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result2 == NMO_ERR_INVALID_ARGUMENT, "NULL path should fail");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result2);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test large object count save
  */
-static void test_save_large_count(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, large_count) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
-    nmo_arena* arena = nmo_session_get_arena(session);
-    nmo_object_repository* repo = nmo_session_get_repository(session);
+    nmo_arena_t* arena = nmo_session_get_arena(session);
+    nmo_object_repository_t* repo = nmo_session_get_repository(session);
 
     /* Create 100 test objects */
     const size_t object_count = 100;
     for (size_t i = 0; i < object_count; i++) {
-        nmo_object* obj = (nmo_object*)nmo_arena_alloc(arena, sizeof(nmo_object), sizeof(void*));
+        nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
         if (obj == NULL) {
-            printf("Failed to allocate object %zu\n", i);
             break;
         }
 
-        memset(obj, 0, sizeof(nmo_object));
+        memset(obj, 0, sizeof(nmo_object_t));
         obj->class_id = 0x30000000 + (uint32_t)i;
 
         char* name = (char*)nmo_arena_alloc(arena, 32, 1);
@@ -317,7 +294,7 @@ static void test_save_large_count(void) {
     }
 
     /* Set file info */
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 8,
         .ck_version = 0x13022002,
         .file_size = 0,
@@ -329,32 +306,31 @@ static void test_save_large_count(void) {
 
     /* Save to file */
     int result = nmo_save_file(session, "/tmp/test_large.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result == NMO_OK, "Failed to save large object count");
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
 /**
  * Test file info propagation during save
  */
-static void test_save_file_info_propagation(void) {
-    nmo_context* ctx = nmo_context_create(NULL);
-    TEST_ASSERT(ctx != NULL, "Failed to create context");
+TEST(save_pipeline, file_info_propagation) {
+    nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
+    nmo_context_t* ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
 
-    nmo_session* session = nmo_session_create(ctx);
-    TEST_ASSERT(session != NULL, "Failed to create session");
+    nmo_session_t* session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
 
-    nmo_arena* arena = nmo_session_get_arena(session);
-    nmo_object_repository* repo = nmo_session_get_repository(session);
+    nmo_arena_t* arena = nmo_session_get_arena(session);
+    nmo_object_repository_t* repo = nmo_session_get_repository(session);
 
     /* Create a test object */
-    nmo_object* obj = (nmo_object*)nmo_arena_alloc(arena, sizeof(nmo_object), sizeof(void*));
-    TEST_ASSERT(obj != NULL, "Failed to allocate object");
+    nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
+    ASSERT_NOT_NULL(obj);
 
-    memset(obj, 0, sizeof(nmo_object));
+    memset(obj, 0, sizeof(nmo_object_t));
     obj->class_id = 0x40000000;
     obj->name = "FileInfoTest";
     obj->arena = arena;
@@ -362,7 +338,7 @@ static void test_save_file_info_propagation(void) {
     nmo_object_repository_add(repo, obj);
 
     /* Set custom file info */
-    nmo_file_info file_info = {
+    nmo_file_info_t file_info = {
         .file_version = 9,              /* Custom version */
         .ck_version = 0x99999999,       /* Custom CK version */
         .file_size = 0,
@@ -374,29 +350,19 @@ static void test_save_file_info_propagation(void) {
 
     /* Save - should use custom file info */
     int result = nmo_save_file(session, "/tmp/test_file_info.nmo", NMO_SAVE_DEFAULT);
-    TEST_ASSERT(result == NMO_OK, "Failed to save with custom file info");
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
-
-    TEST_PASS();
 }
 
-int main(void) {
-    printf("Running save pipeline tests...\n\n");
-
-    test_save_empty_session_fails();
-    test_save_single_object();
-    test_save_multiple_objects();
-    test_save_with_flags();
-    test_save_id_remapping();
-    test_save_null_arguments();
-    test_save_large_count();
-    test_save_file_info_propagation();
-
-    printf("\nAll save pipeline tests completed!\n");
-    printf("Passed: %d\n", tests_passed);
-    printf("Failed: %d\n", tests_failed);
-
-    return (tests_failed == 0) ? 0 : 1;
-}
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(save_pipeline, empty_session_fails);
+    REGISTER_TEST(save_pipeline, single_object);
+    REGISTER_TEST(save_pipeline, multiple_objects);
+    REGISTER_TEST(save_pipeline, with_flags);
+    REGISTER_TEST(save_pipeline, id_remapping);
+    REGISTER_TEST(save_pipeline, null_arguments);
+    REGISTER_TEST(save_pipeline, large_count);
+    REGISTER_TEST(save_pipeline, file_info_propagation);
+TEST_MAIN_END()
