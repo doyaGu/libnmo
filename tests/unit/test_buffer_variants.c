@@ -60,10 +60,6 @@ TEST(buffer_variants, write_read_buffer_nosize) {
     // Verify buffer content
     ASSERT_EQ(memcmp(test_data, read_data, sizeof(test_data)), 0);
 
-    // Manually advance cursor past the buffer (7 bytes -> 2 DWORDs)
-    // read_buffer_nosize may not advance the cursor
-    nmo_chunk_parser_skip(parser, 2);
-
     // Read int after buffer
     result = nmo_chunk_parser_read_int(parser, &value);
     ASSERT_EQ(result, NMO_OK);
