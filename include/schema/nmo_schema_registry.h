@@ -17,19 +17,19 @@ extern "C" {
 /**
  * @brief Schema registry
  */
-typedef struct nmo_schema_registry nmo_schema_registry;
+typedef struct nmo_schema_registry nmo_schema_registry_t;
 
 /**
  * @brief Create schema registry
  * @return Registry or NULL on error
  */
-NMO_API nmo_schema_registry* nmo_schema_registry_create(void);
+NMO_API nmo_schema_registry_t *nmo_schema_registry_create(void);
 
 /**
  * @brief Destroy schema registry
  * @param registry Registry to destroy
  */
-NMO_API void nmo_schema_registry_destroy(nmo_schema_registry* registry);
+NMO_API void nmo_schema_registry_destroy(nmo_schema_registry_t *registry);
 
 /**
  * @brief Register schema
@@ -37,15 +37,15 @@ NMO_API void nmo_schema_registry_destroy(nmo_schema_registry* registry);
  * @param schema Schema descriptor
  * @return NMO_OK on success
  */
-NMO_API int nmo_schema_registry_add(nmo_schema_registry* registry,
-                                      const nmo_schema_descriptor* schema);
+NMO_API int nmo_schema_registry_add(nmo_schema_registry_t *registry,
+                                    const nmo_schema_descriptor_t *schema);
 
 /**
  * @brief Register all built-in schemas
  * @param registry Registry
  * @return NMO_OK on success
  */
-NMO_API int nmo_schema_registry_add_builtin(nmo_schema_registry* registry);
+NMO_API int nmo_schema_registry_add_builtin(nmo_schema_registry_t *registry);
 
 /**
  * @brief Find schema by class ID
@@ -53,8 +53,8 @@ NMO_API int nmo_schema_registry_add_builtin(nmo_schema_registry* registry);
  * @param class_id Class ID
  * @return Schema descriptor or NULL if not found
  */
-NMO_API const nmo_schema_descriptor* nmo_schema_registry_find_by_id(
-    const nmo_schema_registry* registry, nmo_class_id class_id);
+NMO_API const nmo_schema_descriptor_t *nmo_schema_registry_find_by_id(
+    const nmo_schema_registry_t *registry, nmo_class_id_t class_id);
 
 /**
  * @brief Find schema by class name
@@ -62,29 +62,29 @@ NMO_API const nmo_schema_descriptor* nmo_schema_registry_find_by_id(
  * @param class_name Class name
  * @return Schema descriptor or NULL if not found
  */
-NMO_API const nmo_schema_descriptor* nmo_schema_registry_find_by_name(
-    const nmo_schema_registry* registry, const char* class_name);
+NMO_API const nmo_schema_descriptor_t *nmo_schema_registry_find_by_name(
+    const nmo_schema_registry_t *registry, const char *class_name);
 
 /**
  * @brief Get number of registered schemas
  * @param registry Registry
  * @return Schema count
  */
-NMO_API size_t nmo_schema_registry_get_count(const nmo_schema_registry* registry);
+NMO_API size_t nmo_schema_registry_get_count(const nmo_schema_registry_t *registry);
 
 /**
  * @brief Verify schema consistency
  * @param registry Registry
  * @return NMO_OK if all schemas are consistent
  */
-NMO_API int nmo_verify_schema_consistency(nmo_schema_registry* registry);
+NMO_API int nmo_verify_schema_consistency(nmo_schema_registry_t *registry);
 
 /**
  * @brief Clear all schemas from registry
  * @param registry Registry
  * @return NMO_OK on success
  */
-NMO_API int nmo_schema_registry_clear(nmo_schema_registry* registry);
+NMO_API int nmo_schema_registry_clear(nmo_schema_registry_t *registry);
 
 #ifdef __cplusplus
 }

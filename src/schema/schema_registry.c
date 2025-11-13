@@ -4,104 +4,41 @@
  */
 
 #include "schema/nmo_schema_registry.h"
+#include "core/nmo_hash_table.h"
+#include "core/nmo_error.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define INITIAL_CAPACITY 32
 
 /**
- * Schema registry entry
- */
-typedef struct {
-    const nmo_schema_descriptor* schema;
-    int occupied;
-} schema_entry;
-
-/**
  * Schema registry structure
  */
-struct nmo_schema_registry {
-    schema_entry* entries;
-    size_t capacity;
-    size_t count;
-};
-
-/**
- * Hash function for class IDs
- */
-static inline size_t hash_class_id(nmo_class_id class_id, size_t capacity) {
-    return (class_id * 2654435761U) % capacity;
-}
-
-/**
- * Find entry slot (linear probing)
- */
-static int find_slot(const nmo_schema_registry* registry, nmo_class_id class_id, int* found) {
-    size_t index = hash_class_id(class_id, registry->capacity);
-    size_t start_index = index;
-
-    do {
-        if (!registry->entries[index].occupied) {
-            *found = 0;
-            return (int)index;
-        }
-
-        if (registry->entries[index].schema->class_id == class_id) {
-            *found = 1;
-            return (int)index;
-        }
-
-        index = (index + 1) % registry->capacity;
-    } while (index != start_index);
-
-    *found = 0;
-    return -1;  // Table full
-}
-
-/**
- * Resize registry
- */
-static int resize_registry(nmo_schema_registry* registry, size_t new_capacity) {
-    schema_entry* new_entries = (schema_entry*)calloc(new_capacity, sizeof(schema_entry));
-    if (new_entries == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    // Rehash existing entries
-    schema_entry* old_entries = registry->entries;
-    size_t old_capacity = registry->capacity;
-
-    registry->entries = new_entries;
-    registry->capacity = new_capacity;
-    registry->count = 0;
-
-    for (size_t i = 0; i < old_capacity; i++) {
-        if (old_entries[i].occupied) {
-            nmo_schema_registry_add(registry, old_entries[i].schema);
-        }
-    }
-
-    free(old_entries);
-    return NMO_OK;
-}
+typedef struct nmo_schema_registry {
+    nmo_hash_table_t *schemas;  /* class_id -> schema* */
+} nmo_schema_registry_t;
 
 /**
  * Create schema registry
  */
-nmo_schema_registry* nmo_schema_registry_create(void) {
-    nmo_schema_registry* registry = (nmo_schema_registry*)malloc(sizeof(nmo_schema_registry));
+nmo_schema_registry_t *nmo_schema_registry_create(void) {
+    nmo_schema_registry_t *registry = (nmo_schema_registry_t *) malloc(sizeof(nmo_schema_registry_t));
     if (registry == NULL) {
         return NULL;
     }
 
-    registry->entries = (schema_entry*)calloc(INITIAL_CAPACITY, sizeof(schema_entry));
-    if (registry->entries == NULL) {
+    registry->schemas = nmo_hash_table_create(
+        sizeof(nmo_class_id_t),                    /* key: class_id */
+        sizeof(const nmo_schema_descriptor_t *),   /* value: schema pointer */
+        INITIAL_CAPACITY,
+        nmo_hash_uint32,                           /* hash function for uint32_t */
+        NULL                                        /* use default memcmp */
+    );
+
+    if (registry->schemas == NULL) {
         free(registry);
         return NULL;
     }
-
-    registry->capacity = INITIAL_CAPACITY;
-    registry->count = 0;
 
     return registry;
 }
@@ -109,9 +46,9 @@ nmo_schema_registry* nmo_schema_registry_create(void) {
 /**
  * Destroy schema registry
  */
-void nmo_schema_registry_destroy(nmo_schema_registry* registry) {
+void nmo_schema_registry_destroy(nmo_schema_registry_t *registry) {
     if (registry != NULL) {
-        free(registry->entries);
+        nmo_hash_table_destroy(registry->schemas);
         free(registry);
     }
 }
@@ -119,8 +56,8 @@ void nmo_schema_registry_destroy(nmo_schema_registry* registry) {
 /**
  * Register schema
  */
-int nmo_schema_registry_add(nmo_schema_registry* registry,
-                             const nmo_schema_descriptor* schema) {
+int nmo_schema_registry_add(nmo_schema_registry_t *registry,
+                            const nmo_schema_descriptor_t *schema) {
     if (registry == NULL || schema == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -131,129 +68,144 @@ int nmo_schema_registry_add(nmo_schema_registry* registry,
         return validation_result;
     }
 
-    // Check if we need to resize (load factor > 0.7)
-    if ((registry->count + 1) * 10 > registry->capacity * 7) {
-        int result = resize_registry(registry, registry->capacity * 2);
-        if (result != NMO_OK) {
-            return result;
-        }
-    }
-
-    // Find slot
-    int found;
-    int slot = find_slot(registry, schema->class_id, &found);
-    if (slot < 0) {
-        return NMO_ERR_NOMEM;  // Table full (shouldn't happen after resize)
-    }
-
-    if (found) {
-        // Update existing schema
-        registry->entries[slot].schema = schema;
-    } else {
-        // Add new schema
-        registry->entries[slot].schema = schema;
-        registry->entries[slot].occupied = 1;
-        registry->count++;
-    }
-
-    return NMO_OK;
+    // Add or update schema in hash table
+    return nmo_hash_table_insert(registry->schemas, &schema->class_id, &schema);
 }
 
 /**
  * Find schema by class ID
  */
-const nmo_schema_descriptor* nmo_schema_registry_find_by_id(
-    const nmo_schema_registry* registry, nmo_class_id class_id) {
-
+const nmo_schema_descriptor_t *nmo_schema_registry_find_by_id(
+    const nmo_schema_registry_t *registry, nmo_class_id_t class_id) {
     if (registry == NULL) {
         return NULL;
     }
 
-    int found;
-    int slot = find_slot(registry, class_id, &found);
-    if (slot < 0 || !found) {
-        return NULL;
-    }
-
-    return registry->entries[slot].schema;
-}
-
-/**
- * Find schema by class name
- */
-const nmo_schema_descriptor* nmo_schema_registry_find_by_name(
-    const nmo_schema_registry* registry, const char* class_name) {
-
-    if (registry == NULL || class_name == NULL) {
-        return NULL;
-    }
-
-    for (size_t i = 0; i < registry->capacity; i++) {
-        if (registry->entries[i].occupied) {
-            const nmo_schema_descriptor* schema = registry->entries[i].schema;
-            if (strcmp(schema->class_name, class_name) == 0) {
-                return schema;
-            }
-        }
+    const nmo_schema_descriptor_t *schema = NULL;
+    if (nmo_hash_table_get(registry->schemas, &class_id, &schema)) {
+        return schema;
     }
 
     return NULL;
 }
 
 /**
+ * Iterator context for name search
+ */
+typedef struct {
+    const char *target_name;
+    const nmo_schema_descriptor_t *found_schema;
+} name_search_context_t;
+
+/**
+ * Iterator function to find schema by name
+ */
+static int find_by_name_iterator(const void *key, void *value, void *user_data) {
+    (void)key;
+    name_search_context_t *context = (name_search_context_t *)user_data;
+    const nmo_schema_descriptor_t *schema = *(const nmo_schema_descriptor_t **)value;
+
+    if (strcmp(schema->class_name, context->target_name) == 0) {
+        context->found_schema = schema;
+        return 0; /* Stop iteration */
+    }
+
+    return 1; /* Continue iteration */
+}
+
+/**
+ * Find schema by class name
+ */
+const nmo_schema_descriptor_t *nmo_schema_registry_find_by_name(
+    const nmo_schema_registry_t *registry, const char *class_name) {
+    if (registry == NULL || class_name == NULL) {
+        return NULL;
+    }
+
+    name_search_context_t context = {
+        .target_name = class_name,
+        .found_schema = NULL
+    };
+
+    nmo_hash_table_iterate(registry->schemas, find_by_name_iterator, &context);
+
+    return context.found_schema;
+}
+
+/**
  * Get number of registered schemas
  */
-size_t nmo_schema_registry_get_count(const nmo_schema_registry* registry) {
+size_t nmo_schema_registry_get_count(const nmo_schema_registry_t *registry) {
     if (registry == NULL) {
         return 0;
     }
 
-    return registry->count;
+    return nmo_hash_table_get_count(registry->schemas);
+}
+
+/**
+ * Iterator context for schema verification
+ */
+typedef struct {
+    nmo_schema_registry_t *registry;
+    int error_code;
+} verify_context_t;
+
+/**
+ * Iterator function to verify each schema
+ */
+static int verify_schema_iterator(const void *key, void *value, void *user_data) {
+    (void)key;
+    verify_context_t *context = (verify_context_t *)user_data;
+    const nmo_schema_descriptor_t *schema = *(const nmo_schema_descriptor_t **)value;
+
+    // Validate schema
+    int result = nmo_schema_descriptor_validate(schema);
+    if (result != NMO_OK) {
+        context->error_code = result;
+        return 0; /* Stop iteration */
+    }
+
+    // If schema has a parent, verify parent exists
+    if (schema->parent_class_id != 0) {
+        const nmo_schema_descriptor_t *parent =
+            nmo_schema_registry_find_by_id(context->registry, schema->parent_class_id);
+        if (parent == NULL) {
+            context->error_code = NMO_ERR_INVALID_ARGUMENT; /* Parent not found */
+            return 0; /* Stop iteration */
+        }
+    }
+
+    return 1; /* Continue iteration */
 }
 
 /**
  * Verify schema consistency
  */
-int nmo_verify_schema_consistency(nmo_schema_registry* registry) {
+int nmo_verify_schema_consistency(nmo_schema_registry_t *registry) {
     if (registry == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Check each schema
-    for (size_t i = 0; i < registry->capacity; i++) {
-        if (registry->entries[i].occupied) {
-            const nmo_schema_descriptor* schema = registry->entries[i].schema;
+    verify_context_t context = {
+        .registry = registry,
+        .error_code = NMO_OK
+    };
 
-            // Validate schema
-            int result = nmo_schema_descriptor_validate(schema);
-            if (result != NMO_OK) {
-                return result;
-            }
+    nmo_hash_table_iterate(registry->schemas, verify_schema_iterator, &context);
 
-            // If schema has a parent, verify parent exists
-            if (schema->parent_class_id != 0) {
-                const nmo_schema_descriptor* parent =
-                    nmo_schema_registry_find_by_id(registry, schema->parent_class_id);
-                if (parent == NULL) {
-                    return NMO_ERR_INVALID_ARGUMENT;  // Parent not found
-                }
-            }
-        }
-    }
-
-    return NMO_OK;
+    return context.error_code;
 }
 
 /**
  * Clear all schemas from registry
  */
-int nmo_schema_registry_clear(nmo_schema_registry* registry) {
+int nmo_schema_registry_clear(nmo_schema_registry_t *registry) {
     if (registry == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    memset(registry->entries, 0, registry->capacity * sizeof(schema_entry));
-    registry->count = 0;
+    nmo_hash_table_clear(registry->schemas);
 
     return NMO_OK;
 }
@@ -261,12 +213,12 @@ int nmo_schema_registry_clear(nmo_schema_registry* registry) {
 /**
  * Forward declaration for built-in schemas
  */
-extern int nmo_builtin_schemas_register(nmo_schema_registry* registry);
+extern int nmo_builtin_schemas_register(nmo_schema_registry_t *registry);
 
 /**
  * Register all built-in schemas
  */
-int nmo_schema_registry_add_builtin(nmo_schema_registry* registry) {
+int nmo_schema_registry_add_builtin(nmo_schema_registry_t *registry) {
     if (registry == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
