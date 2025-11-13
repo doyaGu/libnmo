@@ -21,14 +21,14 @@ extern "C" {
  * @brief 8-byte GUID structure
  */
 typedef struct nmo_guid {
-    uint32_t d1;  /**< First 32 bits */
-    uint32_t d2;  /**< Second 32 bits */
-} nmo_guid;
+    uint32_t d1; /**< First 32 bits */
+    uint32_t d2; /**< Second 32 bits */
+} nmo_guid_t;
 
 /**
  * @brief Null GUID constant
  */
-#define NMO_GUID_NULL ((nmo_guid){0, 0})
+#define NMO_GUID_NULL ((nmo_guid_t){0, 0})
 
 /**
  * @brief Check if two GUIDs are equal
@@ -37,7 +37,7 @@ typedef struct nmo_guid {
  * @param b Second GUID
  * @return 1 if equal, 0 otherwise
  */
-NMO_API int nmo_guid_equals(nmo_guid a, nmo_guid b);
+NMO_API int nmo_guid_equals(nmo_guid_t a, nmo_guid_t b);
 
 /**
  * @brief Check if GUID is null
@@ -45,7 +45,7 @@ NMO_API int nmo_guid_equals(nmo_guid a, nmo_guid b);
  * @param guid GUID to check
  * @return 1 if null, 0 otherwise
  */
-NMO_API int nmo_guid_is_null(nmo_guid guid);
+NMO_API int nmo_guid_is_null(nmo_guid_t guid);
 
 /**
  * @brief Compute hash of GUID for hash tables
@@ -53,7 +53,7 @@ NMO_API int nmo_guid_is_null(nmo_guid guid);
  * @param guid GUID to hash
  * @return Hash value
  */
-NMO_API uint32_t nmo_guid_hash(nmo_guid guid);
+NMO_API uint32_t nmo_guid_hash(nmo_guid_t guid);
 
 /**
  * @brief Parse GUID from string
@@ -66,7 +66,7 @@ NMO_API uint32_t nmo_guid_hash(nmo_guid guid);
  * @param str String to parse
  * @return Parsed GUID or NMO_GUID_NULL on error
  */
-NMO_API nmo_guid nmo_guid_parse(const char* str);
+NMO_API nmo_guid_t nmo_guid_parse(const char *str);
 
 /**
  * @brief Format GUID to string
@@ -78,7 +78,7 @@ NMO_API nmo_guid nmo_guid_parse(const char* str);
  * @param size Size of output buffer
  * @return Number of characters written (excluding null terminator)
  */
-NMO_API int nmo_guid_format(nmo_guid guid, char* buffer, size_t size);
+NMO_API int nmo_guid_format(nmo_guid_t guid, char *buffer, size_t size);
 
 /**
  * @brief Create GUID from two 32-bit values
@@ -87,8 +87,8 @@ NMO_API int nmo_guid_format(nmo_guid guid, char* buffer, size_t size);
  * @param d2 Second 32 bits
  * @return GUID
  */
-static inline nmo_guid nmo_guid_create(uint32_t d1, uint32_t d2) {
-    nmo_guid guid = { d1, d2 };
+static inline nmo_guid_t nmo_guid_create(uint32_t d1, uint32_t d2) {
+    nmo_guid_t guid = {d1, d2};
     return guid;
 }
 
