@@ -14,12 +14,12 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_session nmo_session;
+typedef struct nmo_session nmo_session_t;
 
 /**
  * @brief Load flags
  */
-typedef enum {
+typedef enum nmo_load_flags {
     NMO_LOAD_DEFAULT            = 0,
     NMO_LOAD_DODIALOG           = 0x0001,
     NMO_LOAD_AUTOMATICMODE      = 0x0002,
@@ -27,7 +27,7 @@ typedef enum {
     NMO_LOAD_AS_DYNAMIC_OBJECT  = 0x0008,
     NMO_LOAD_ONLYBEHAVIORS      = 0x0010,
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
-} nmo_load_flags;
+} nmo_load_flags_t;
 
 /**
  * @brief Load file
@@ -54,21 +54,21 @@ typedef enum {
  * @param flags Load flags
  * @return NMO_OK on success
  */
-NMO_API int nmo_load_file(nmo_session* session,
-                           const char* path,
-                           nmo_load_flags flags);
+NMO_API int nmo_load_file(nmo_session_t *session,
+                          const char *path,
+                          nmo_load_flags_t flags);
 
 /**
  * @brief Save flags
  */
-typedef enum {
-    NMO_SAVE_DEFAULT            = 0,
-    NMO_SAVE_AS_OBJECTS         = 0x0001,  /**< Save as referenced objects */
-    NMO_SAVE_COMPRESSED         = 0x0002,  /**< Enable compression */
-    NMO_SAVE_SEQUENTIAL_IDS     = 0x0004,  /**< Use sequential file IDs */
-    NMO_SAVE_INCLUDE_MANAGERS   = 0x0008,  /**< Include manager state */
-    NMO_SAVE_VALIDATE_BEFORE    = 0x0010,  /**< Validate before writing */
-} nmo_save_flags;
+typedef enum nmo_save_flags {
+    NMO_SAVE_DEFAULT          = 0,
+    NMO_SAVE_AS_OBJECTS       = 0x0001, /**< Save as referenced objects */
+    NMO_SAVE_COMPRESSED       = 0x0002, /**< Enable compression */
+    NMO_SAVE_SEQUENTIAL_IDS   = 0x0004, /**< Use sequential file IDs */
+    NMO_SAVE_INCLUDE_MANAGERS = 0x0008, /**< Include manager state */
+    NMO_SAVE_VALIDATE_BEFORE  = 0x0010, /**< Validate before writing */
+} nmo_save_flags_t;
 
 /**
  * @brief Save file
@@ -94,9 +94,9 @@ typedef enum {
  * @param flags Save flags
  * @return NMO_OK on success
  */
-NMO_API int nmo_save_file(nmo_session* session,
-                           const char* path,
-                           nmo_save_flags flags);
+NMO_API int nmo_save_file(nmo_session_t *session,
+                          const char *path,
+                          nmo_save_flags_t flags);
 
 #ifdef __cplusplus
 }
