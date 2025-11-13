@@ -508,6 +508,8 @@ CKStateChunk is the core serialization container used for all object and manager
 
 #### Binary Format
 
+> **Note:** The library now correctly serializes and deserializes the full 32-bit `Version Info` field, including `ChunkOptions` and `ChunkClassID`. A previous critical bug that ignored these fields has been fixed.
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Version Info (DWORD)                                    │
@@ -998,18 +1000,14 @@ void nmo_id_remap_plan_destroy(nmo_id_remap_plan* plan);
 
 ## 8. Load Pipeline
 
-Complete 15-phase load workflow.
+The file loading process is handled by the `nmo_load_file` function located in `src/app/parser.c`. It follows a multi-phase workflow to read a Virtools file, decompress its data, and reconstruct the object and manager states in memory.
 
 ```c
 // Load flags
 typedef enum {
     NMO_LOAD_DEFAULT            = 0,
-    NMO_LOAD_DODIALOG           = 0x0001,
-    NMO_LOAD_AUTOMATICMODE      = 0x0002,
-    NMO_LOAD_CHECKDUPLICATES    = 0x0004,
-    NMO_LOAD_AS_DYNAMIC_OBJECT  = 0x0008,
-    NMO_LOAD_ONLYBEHAVIORS      = 0x0010,
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
+    // Other flags are not yet implemented
 } nmo_load_flags;
 
 // Load file
@@ -1020,293 +1018,60 @@ nmo_result nmo_load_file(nmo_session* session,
 
 ### 15-Phase Load Workflow
 
-```c
-int nmo_load_file_impl(nmo_session* session, const char* path, nmo_load_flags flags) {
-    // Phase 1: Open IO
-    nmo_io_interface* io = nmo_file_io_open(path, NMO_IO_READ);
-    
-    // Phase 2: Parse file header
-    nmo_file_header header;
-    nmo_header_parse(io, &header);
-    nmo_header_validate(&header);
-    
-    // Phase 3: Read and decompress Header1
-    nmo_buffer* hdr1_compressed = nmo_buffer_read(io, header.hdr1_pack_size);
-    nmo_buffer* hdr1_data = nmo_decompress_buffer(hdr1_compressed, NMO_CODEC_ZLIB, 
-                                                   header.hdr1_unpack_size);
-    
-    // Phase 4: Parse Header1
-    nmo_header1 hdr1;
-    nmo_header1_parse(hdr1_data->data, hdr1_data->size, &hdr1, session->arena);
-    
-    // Phase 5: Start load session
-    nmo_load_session_start(session->repo, hdr1.max_object_id);
-    
-    // Phase 6: Check plugin dependencies
-    for (size_t i = 0; i < hdr1.plugin_dep_count; i++) {
-        nmo_plugin_dep* dep = &hdr1.plugin_deps[i];
-        // Verify plugin is available
-    }
-    
-    // Phase 7: Manager pre-load hooks
-    nmo_execute_managers_pre_load(session);
-    
-    // Phase 8: Read and decompress data section
-    nmo_buffer* data_compressed = nmo_buffer_read(io, header.data_pack_size);
-    nmo_buffer* data = nmo_decompress_buffer(data_compressed, NMO_CODEC_ZLIB,
-                                             header.data_unpack_size);
-    
-    // Phase 9: Parse manager chunks
-    size_t offset = 0;
-    for (size_t i = 0; i < hdr1.manager_count; i++) {
-        uint32_t size = *(uint32_t*)&data->data[offset];
-        offset += 4;
-        
-        nmo_chunk* chunk = nmo_chunk_deserialize(&data->data[offset], size, session->arena);
-        offset += size;
-        
-        // Call manager load_data hook
-        nmo_manager* mgr = nmo_find_manager_by_guid(session, chunk->guid);
-        if (mgr && mgr->load_data) {
-            mgr->load_data(session, chunk, mgr->user_data);
-        }
-    }
-    
-    // Phase 10: Create objects
-    for (size_t i = 0; i < hdr1.object_count; i++) {
-        nmo_object_desc* desc = &hdr1.objects[i];
-        
-        // Skip reference-only objects
-        if (desc->file_id & NMO_OBJECT_REFERENCE_FLAG) {
-            continue;
-        }
-        
-        nmo_object* obj = nmo_object_create(session->repo, desc->class_id, 
-                                           desc->name, 0);
-        nmo_load_session_register(session->load_session, obj, desc->file_id);
-    }
-    
-    // Phase 11: Parse object chunks
-    for (size_t i = 0; i < hdr1.object_count; i++) {
-        nmo_object_desc* desc = &hdr1.objects[i];
-        
-        if (desc->file_id & NMO_OBJECT_REFERENCE_FLAG) {
-            continue;
-        }
-        
-        uint32_t size = *(uint32_t*)&data->data[offset];
-        offset += 4;
-        
-        nmo_chunk* chunk = nmo_chunk_deserialize(&data->data[offset], size, session->arena);
-        offset += size;
-        
-        nmo_object* obj = nmo_object_find_by_id(session->repo, 
-                                                session->load_session->id_base + desc->file_id);
-        obj->chunk = chunk;
-    }
-    
-    // Phase 12: Build ID remap table
-    nmo_id_remap_table* remap_table = nmo_build_remap_table(session->load_session);
-    
-    // Phase 13: Remap IDs in all chunks
-    for (size_t i = 0; i < session->repo->object_count; i++) {
-        nmo_object* obj = session->repo->objects[i];
-        if (obj->chunk) {
-            nmo_chunk_remap_ids(obj->chunk, remap_table);
-        }
-    }
-    
-    // Phase 14: Deserialize objects
-    for (size_t i = 0; i < session->repo->object_count; i++) {
-        nmo_object* obj = session->repo->objects[i];
-        const nmo_schema_descriptor* schema = 
-            nmo_schema_registry_find_by_id(session->context->schema_registry, 
-                                          obj->class_id);
-        
-        if (schema && schema->deserialize_fn && obj->chunk) {
-            schema->deserialize_fn(obj, nmo_chunk_parser_create(obj->chunk));
-        }
-    }
-    
-    // Phase 15: Manager post-load hooks
-    nmo_execute_managers_post_load(session);
-    
-    nmo_io_close(io);
-    return NMO_OK;
-}
-```
+The `nmo_load_file` function is internally structured as a 15-phase pipeline:
+
+1.  **Open IO**: Opens the specified file path for reading.
+2.  **Parse File Header**: Reads and validates the main file header (`nmo_file_header_t`).
+3.  **Read and Decompress Header1**: Reads the (potentially compressed) Header1 section from the file.
+4.  **Parse Header1**: Parses the decompressed Header1 data to get object descriptors and plugin dependencies.
+5.  **Start Load Session**: Initializes a load session to manage the mapping of file object IDs to new runtime IDs.
+6.  **Check Plugin Dependencies**: (Stub) Logs plugin dependency information.
+7.  **Manager Pre-Load Hooks**: (Stub) Calls pre-load hooks on registered managers.
+8.  **Read and Decompress Data Section**: Reads the (potentially compressed) main data block containing manager and object chunks.
+9.  **Parse Manager Chunks**: Parses the manager chunks from the data section.
+10. **Create Objects**: Iterates through the object descriptors from Header1 and creates `nmo_object_t` instances for each, registering them with the object repository and the load session.
+11. **Attach Object Chunks**: Parses the object chunks from the data section and attaches them to the newly created objects.
+12. **Build ID Remap Table**: Creates a lookup table to map old file IDs to new runtime IDs based on the registered objects.
+13. **Remap IDs in All Chunks**: Iterates through all loaded object and manager chunks and uses the remap table to update all object ID references.
+14. **Deserialize Objects**: (Stub) This phase is intended to use the schema system to deserialize the data from each chunk into the corresponding object's native structure.
+15. **Manager Post-Load Hooks**: (Stub) Calls post-load hooks on registered managers.
 
 ---
 
 ## 9. Save Pipeline
 
-Complete 14-phase save workflow.
+The file saving process is handled by the `nmo_save_file` function, also located in `src/app/parser.c`. It is the counterpart to the load pipeline and follows its own multi-phase workflow to serialize a session's state into a file.
 
 ```c
-// Save options
-typedef struct nmo_save_options {
-    uint32_t              file_version;
-    nmo_file_write_mode   write_mode;
-    nmo_compression_level compress_level;
-} nmo_save_options;
+// Save flags (currently unused)
+typedef enum {
+    NMO_SAVE_DEFAULT = 0,
+} nmo_save_flags;
 
-// Save builder
-typedef struct nmo_save_builder nmo_save_builder;
-
-// Create save builder
-nmo_save_builder* nmo_save_builder_create(nmo_session* session);
-
-// Add objects to save
-void nmo_save_builder_add(nmo_save_builder* builder, nmo_object* obj);
-void nmo_save_builder_add_all(nmo_save_builder* builder);
-
-// Set options
-void nmo_save_builder_set_options(nmo_save_builder* builder, 
-                                  nmo_save_options* opts);
-
-// Execute save
-nmo_result nmo_save_builder_execute(nmo_save_builder* builder, 
-                                    const char* path);
-
-void nmo_save_builder_destroy(nmo_save_builder* builder);
+// Save file
+nmo_result nmo_save_file(nmo_session* session, 
+                         const char* path, 
+                         nmo_save_flags flags);
 ```
 
 ### 14-Phase Save Workflow
 
-```c
-int nmo_save_builder_execute_impl(nmo_save_builder* builder, const char* path) {
-    // Phase 1: Manager pre-save hooks
-    nmo_execute_managers_pre_save(builder->session);
-    
-    // Phase 2: Build ID remap plan
-    nmo_id_remap_plan* plan = nmo_id_remap_plan_create(builder->session->repo,
-                                                       builder->objects,
-                                                       builder->object_count);
-    
-    // Phase 3: Serialize manager chunks
-    nmo_buffer* manager_buffer = nmo_buffer_create(64 * 1024);
-    for (size_t i = 0; i < builder->manager_count; i++) {
-        nmo_manager* mgr = builder->managers[i];
-        if (mgr->save_data) {
-            nmo_chunk* chunk = mgr->save_data(builder->session, mgr->user_data);
-            nmo_buffer* chunk_buf = nmo_chunk_serialize(chunk);
-            
-            uint32_t size = (uint32_t)chunk_buf->size;
-            nmo_buffer_append(manager_buffer, &size, 4);
-            nmo_buffer_append(manager_buffer, chunk_buf->data, chunk_buf->size);
-        }
-    }
-    
-    // Phase 4: Serialize object chunks
-    nmo_buffer* object_buffer = nmo_buffer_create(1024 * 1024);
-    for (size_t i = 0; i < builder->object_count; i++) {
-        nmo_object* obj = builder->objects[i];
-        const nmo_schema_descriptor* schema = 
-            nmo_schema_registry_find_by_id(builder->session->context->schema_registry,
-                                          obj->class_id);
-        
-        nmo_chunk_writer* writer = nmo_chunk_writer_create(builder->session->arena);
-        nmo_chunk_writer_start(writer, obj->class_id, schema->chunk_version);
-        
-        if (schema && schema->serialize_fn) {
-            schema->serialize_fn(obj, writer);
-        }
-        
-        nmo_chunk* chunk = nmo_chunk_writer_finalize(writer);
-        nmo_chunk_remap_ids(chunk, plan->table);
-        
-        nmo_buffer* chunk_buf = nmo_chunk_serialize(chunk);
-        uint32_t size = (uint32_t)chunk_buf->size;
-        nmo_buffer_append(object_buffer, &size, 4);
-        nmo_buffer_append(object_buffer, chunk_buf->data, chunk_buf->size);
-    }
-    
-    // Phase 5: Build Header1
-    nmo_header1 header1 = {0};
-    header1.object_count = builder->object_count;
-    header1.manager_count = builder->manager_count;
-    header1.max_object_id = builder->object_count;
-    
-    header1.objects = nmo_arena_alloc(builder->session->arena,
-                                     header1.object_count * sizeof(nmo_object_desc),
-                                     alignof(nmo_object_desc));
-    
-    for (size_t i = 0; i < builder->object_count; i++) {
-        nmo_object* obj = builder->objects[i];
-        nmo_object_desc* desc = &header1.objects[i];
-        
-        nmo_object_id new_id;
-        nmo_id_remap_lookup(plan->table, obj->id, &new_id);
-        
-        desc->file_id = new_id;
-        desc->class_id = obj->class_id;
-        desc->name = obj->name;
-        desc->parent_id = 0;
-        
-        if (obj->save_flags & NMO_OBJECT_ONLYFORFILEREFERENCE) {
-            desc->file_id |= NMO_OBJECT_REFERENCE_FLAG;
-        }
-    }
-    
-    header1.plugin_deps = nmo_compute_plugin_dependencies(builder);
-    
-    // Phase 6: Serialize Header1
-    nmo_buffer* header1_buf = nmo_serialize_header1(&header1);
-    
-    // Phase 7: Combine data buffers
-    nmo_buffer* data_buf = nmo_buffer_create(manager_buffer->size + object_buffer->size);
-    nmo_buffer_append(data_buf, manager_buffer->data, manager_buffer->size);
-    nmo_buffer_append(data_buf, object_buffer->data, object_buffer->size);
-    
-    // Phase 8: Apply compression
-    nmo_buffer* final_data = data_buf;
-    size_t uncompressed_size = data_buf->size;
-    
-    if (builder->options.write_mode & NMO_WRITE_MODE_COMPRESSED) {
-        final_data = nmo_compress_buffer(data_buf, NMO_CODEC_ZLIB, 
-                                         builder->options.compress_level);
-    }
-    
-    // Phase 9: Build file header
-    nmo_file_header header = {0};
-    memcpy(header.signature, "Nemo Fi\0", 8);
-    header.file_version = builder->options.file_version;
-    header.hdr1_pack_size = (uint32_t)header1_buf->size;
-    header.hdr1_unpack_size = (uint32_t)header1_buf->size;
-    header.data_pack_size = (uint32_t)final_data->size;
-    header.data_unpack_size = (uint32_t)uncompressed_size;
-    
-    // Phase 10: Compute checksum
-    if (header.file_version >= 8) {
-        uint32_t crc = nmo_adler32(0, &header, sizeof(header));
-        crc = nmo_adler32(crc, header1_buf->data, header1_buf->size);
-        crc = nmo_adler32(crc, final_data->data, final_data->size);
-        header.crc = crc;
-    }
-    
-    // Phase 11: Open transaction
-    nmo_txn_handle* txn = nmo_txn_open(&(nmo_txn_desc){
-        .path = path,
-        .durability = NMO_TXN_FSYNC
-    });
-    
-    // Phase 12: Write data
-    nmo_txn_write(txn, &header, sizeof(header));
-    nmo_txn_write(txn, header1_buf->data, header1_buf->size);
-    nmo_txn_write(txn, final_data->data, final_data->size);
-    
-    // Phase 13: Commit transaction
-    int result = nmo_txn_commit(txn);
-    nmo_txn_close(txn);
-    
-    // Phase 14: Manager post-save hooks
-    if (result == NMO_OK) {
-        nmo_execute_managers_post_save(builder->session);
-    }
-    
-    return result;
-}
-```
+The `nmo_save_file` function is structured as a 14-phase pipeline:
+
+1.  **Validate Session State**: Checks that the session contains objects to save.
+2.  **Manager Pre-Save Hooks**: (Stub) Calls pre-save hooks on registered managers.
+3.  **Build ID Remap Plan**: Creates a plan to map the current runtime object IDs to a compact, sequential set of file IDs.
+4.  **Serialize Manager Chunks**: (Stub) Serializes data for each manager that provides it.
+5.  **Serialize Object Chunks**: Iterates through all objects in the repository and serializes their state into new `nmo_chunk_t` instances. (Currently uses a default serializer).
+6.  **Build and Compress Data Section**: Assembles the manager and object chunks into a single data section buffer. Compression is not yet implemented.
+7.  **Build Object Descriptors for Header1**: Creates the list of object descriptors that will be stored in the Header1 section.
+8.  **Build Plugin Dependencies List**: (Stub) Creates the list of required plugins.
+9.  **Build and Serialize Header1**: Assembles the object descriptors and plugin list into the Header1 buffer.
+10. **Calculate File Sizes**: Computes the final sizes of all sections.
+11. **Build File Header**: Constructs the main file header with all the necessary counts, sizes, and version information.
+12. **Open Output IO**: Opens the target file path for writing.
+13. **Write File Data**: Writes the file header, Header1, and the data section to the file.
+14. **Manager Post-Save Hooks**: (Stub) Calls post-save hooks on registered managers.```
 
 ---
 
@@ -1586,14 +1351,12 @@ typedef enum {
 | | nmo_chunk | Chunk serialization | Single-threaded |
 | | nmo_object | Object metadata | Single-threaded |
 | | nmo_manager | Manager data | Single-threaded |
-| Schema | nmo_schema_registry | Schema lookup | Thread-safe (RW lock) |
-| | nmo_validator | Validation operations | Single-threaded |
+| Schema | nmo_validator | Validation operations | Single-threaded |
 | | nmo_migrator | Version migration | Single-threaded |
-| Session | nmo_parser | Load pipeline | Single-threaded |
-| | nmo_builder | Save pipeline | Single-threaded |
-| | nmo_id_remap | ID remapping | Single-threaded |
+| Session | nmo_id_remap | ID remapping | Single-threaded |
 | Application | nmo_context | Global state | Thread-safe (ref-counted) |
 | | nmo_session | Operation state | Single-threaded |
+| | nmo_parser | Load/Save pipeline | Single-threaded |
 
 ### 12.3 File Organization
 
@@ -1626,11 +1389,10 @@ libnmo/
 │   │   ├── nmo_validator.h
 │   │   └── nmo_migrator.h
 │   ├── session/
-│   │   ├── nmo_parser.h
-│   │   ├── nmo_builder.h
 │   │   └── nmo_id_remap.h
 │   └── app/
 │       ├── nmo_context.h
+│       ├── nmo_parser.h
 │       └── nmo_session.h
 │
 ├── src/
@@ -1639,8 +1401,8 @@ libnmo/
 │   ├── format/         (header.c, chunk.c, object.c, manager.c)
 │   ├── schema/         (schema.c, schema_registry.c, validator.c, migrator.c)
 │   ├── builtin_schemas/ (nmo_builtin_schemas.c - pre-generated)
-│   ├── session/        (parser.c, builder.c, id_remap.c)
-│   └── app/            (context.c, session.c)
+│   ├── session/        (id_remap.c, object_repository.c, load_session.c)
+│   └── app/            (context.c, session.c, parser.c)
 │
 ├── tools/              (nmo-inspect, nmo-validate, nmo-convert, nmo-diff)
 ├── tests/              (unit/, integration/, fuzz/)
@@ -1700,13 +1462,14 @@ set(NMO_SOURCES
     src/builtin_schemas/nmo_builtin_schemas.c
     
     # Session
-    src/session/parser.c
-    src/session/builder.c
     src/session/id_remap.c
+    src/session/load_session.c
+    src/session/object_repository.c
     
     # Application
     src/app/context.c
     src/app/session.c
+    src/app/parser.c
 )
 
 # Platform-specific sources
