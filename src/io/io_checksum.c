@@ -5,8 +5,9 @@
 
 #include "io/nmo_io_checksum.h"
 #include "core/nmo_allocator.h"
-#include <zlib.h>
+
 #include <string.h>
+#include <miniz.h>
 
 /**
  * @brief Magic value to identify checksummed IO handles
@@ -16,45 +17,45 @@
 /**
  * @brief Checksummed IO context structure
  */
-typedef struct {
-    uint32_t              magic;     /**< Magic value for identification */
-    nmo_io_interface*     inner;     /**< Inner IO interface */
-    nmo_checksum_algorithm algorithm; /**< Checksum algorithm */
-    uint32_t              checksum;  /**< Current checksum value */
-} nmo_checksummed_io_handle;
+typedef struct nmo_checksummed_io_handle {
+    uint32_t magic;                   /**< Magic value for identification */
+    nmo_io_interface_t *inner;        /**< Inner IO interface */
+    nmo_checksum_algorithm_t algorithm; /**< Checksum algorithm */
+    uint32_t checksum;                /**< Current checksum value */
+} nmo_checksummed_io_handle_t;
 
 /**
  * @brief Update checksum with new data
  */
-static void update_checksum(nmo_checksummed_io_handle* ctx, const void* data, size_t size) {
+static void update_checksum(nmo_checksummed_io_handle_t *ctx, const void *data, size_t size) {
     if (ctx == NULL || data == NULL || size == 0) {
         return;
     }
 
     switch (ctx->algorithm) {
-        case NMO_CHECKSUM_ADLER32:
-            ctx->checksum = adler32(ctx->checksum, (const Bytef*)data, (uInt)size);
-            break;
+    case NMO_CHECKSUM_ADLER32:
+        ctx->checksum = adler32(ctx->checksum, (const Bytef *) data, (uInt) size);
+        break;
 
-        case NMO_CHECKSUM_CRC32:
-            ctx->checksum = crc32(ctx->checksum, (const Bytef*)data, (uInt)size);
-            break;
+    case NMO_CHECKSUM_CRC32:
+        ctx->checksum = crc32(ctx->checksum, (const Bytef *) data, (uInt) size);
+        break;
 
-        default:
-            // Unknown algorithm - do nothing
-            break;
+    default:
+        // Unknown algorithm - do nothing
+        break;
     }
 }
 
 /**
  * @brief Read function for checksummed IO
  */
-static int checksummed_io_read(void* handle, void* buffer, size_t size, size_t* bytes_read) {
+static int checksummed_io_read(void *handle, void *buffer, size_t size, size_t *bytes_read) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)handle;
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) handle;
 
     if (ctx->inner == NULL || ctx->inner->read == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -79,12 +80,12 @@ static int checksummed_io_read(void* handle, void* buffer, size_t size, size_t* 
 /**
  * @brief Write function for checksummed IO
  */
-static int checksummed_io_write(void* handle, const void* buffer, size_t size) {
+static int checksummed_io_write(void *handle, const void *buffer, size_t size) {
     if (handle == NULL || buffer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)handle;
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) handle;
 
     if (ctx->inner == NULL || ctx->inner->write == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -100,12 +101,12 @@ static int checksummed_io_write(void* handle, const void* buffer, size_t size) {
 /**
  * @brief Seek function for checksummed IO (pass-through)
  */
-static int checksummed_io_seek(void* handle, int64_t offset, nmo_seek_origin origin) {
+static int checksummed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)handle;
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) handle;
 
     if (ctx->inner == NULL || ctx->inner->seek == NULL) {
         return NMO_ERR_INVALID_STATE;
@@ -117,12 +118,12 @@ static int checksummed_io_seek(void* handle, int64_t offset, nmo_seek_origin ori
 /**
  * @brief Tell function for checksummed IO (pass-through)
  */
-static int64_t checksummed_io_tell(void* handle) {
+static int64_t checksummed_io_tell(void *handle) {
     if (handle == NULL) {
         return -1;
     }
 
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)handle;
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) handle;
 
     if (ctx->inner == NULL || ctx->inner->tell == NULL) {
         return -1;
@@ -134,12 +135,12 @@ static int64_t checksummed_io_tell(void* handle) {
 /**
  * @brief Close function for checksummed IO
  */
-static int checksummed_io_close(void* handle) {
+static int checksummed_io_close(void *handle) {
     if (handle == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)handle;
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) handle;
     int result = NMO_OK;
 
     // Close inner IO
@@ -149,7 +150,7 @@ static int checksummed_io_close(void* handle) {
     }
 
     // Free context
-    nmo_allocator alloc = nmo_allocator_default();
+    nmo_allocator_t alloc = nmo_allocator_default();
     nmo_free(&alloc, ctx);
 
     return result;
@@ -158,8 +159,8 @@ static int checksummed_io_close(void* handle) {
 /**
  * @brief Wrap an IO interface with checksumming
  */
-nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
-                                           const nmo_checksummed_io_desc* desc) {
+nmo_io_interface_t *nmo_checksummed_io_wrap(nmo_io_interface_t *inner,
+                                            const nmo_checksummed_io_desc_t *desc) {
     if (inner == NULL || desc == NULL) {
         return NULL;
     }
@@ -170,16 +171,16 @@ nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
         return NULL;
     }
 
-    nmo_allocator alloc = nmo_allocator_default();
+    nmo_allocator_t alloc = nmo_allocator_default();
 
     // Allocate context
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)nmo_alloc(
-        &alloc, sizeof(nmo_checksummed_io_handle), sizeof(void*));
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) nmo_alloc(
+        &alloc, sizeof(nmo_checksummed_io_handle_t), sizeof(void *));
     if (ctx == NULL) {
         return NULL;
     }
 
-    memset(ctx, 0, sizeof(nmo_checksummed_io_handle));
+    memset(ctx, 0, sizeof(nmo_checksummed_io_handle_t));
 
     ctx->magic = CHECKSUM_IO_MAGIC;
     ctx->inner = inner;
@@ -198,8 +199,8 @@ nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
     }
 
     // Allocate IO interface
-    nmo_io_interface* io = (nmo_io_interface*)nmo_alloc(
-        &alloc, sizeof(nmo_io_interface), sizeof(void*));
+    nmo_io_interface_t *io = (nmo_io_interface_t *) nmo_alloc(
+        &alloc, sizeof(nmo_io_interface_t), sizeof(void *));
     if (io == NULL) {
         nmo_free(&alloc, ctx);
         return NULL;
@@ -209,6 +210,7 @@ nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
     io->write = checksummed_io_write;
     io->seek = checksummed_io_seek;
     io->tell = checksummed_io_tell;
+    io->flush = NULL; /* Checksum IO doesn't need flush (could add later for footer writes) */
     io->close = checksummed_io_close;
     io->handle = ctx;
 
@@ -218,12 +220,12 @@ nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
 /**
  * @brief Get the computed checksum value
  */
-uint32_t nmo_checksummed_io_get_checksum(nmo_io_interface* io) {
+uint32_t nmo_checksummed_io_get_checksum(nmo_io_interface_t *io) {
     if (io == NULL || io->handle == NULL) {
         return 0;
     }
 
-    nmo_checksummed_io_handle* ctx = (nmo_checksummed_io_handle*)io->handle;
+    nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) io->handle;
 
     // Verify this is actually a checksummed IO handle by checking magic
     if (ctx->magic != CHECKSUM_IO_MAGIC) {

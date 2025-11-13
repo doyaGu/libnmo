@@ -17,20 +17,20 @@ extern "C" {
 /**
  * @brief Checksum algorithm types
  */
-typedef enum {
-    NMO_CHECKSUM_ADLER32 = 0,  /**< Adler-32 checksum */
-    NMO_CHECKSUM_CRC32   = 1,  /**< CRC-32 checksum */
-} nmo_checksum_algorithm;
+typedef enum nmo_checksum_algorithm {
+    NMO_CHECKSUM_ADLER32 = 0, /**< Adler-32 checksum */
+    NMO_CHECKSUM_CRC32   = 1, /**< CRC-32 checksum */
+} nmo_checksum_algorithm_t;
 
 /**
  * @brief Checksummed IO descriptor
  *
  * Configures the checksum parameters for wrapping an IO interface.
  */
-typedef struct {
-    nmo_checksum_algorithm algorithm;  /**< Checksum algorithm to use */
-    uint32_t initial_value;            /**< Initial checksum value (typically 0 for Adler-32, 0 for CRC32) */
-} nmo_checksummed_io_desc;
+typedef struct nmo_checksummed_io_desc {
+    nmo_checksum_algorithm_t algorithm; /**< Checksum algorithm to use */
+    uint32_t initial_value;           /**< Initial checksum value (typically 0 for Adler-32, 0 for CRC32) */
+} nmo_checksummed_io_desc_t;
 
 /**
  * @brief Wrap an IO interface with checksumming
@@ -51,8 +51,8 @@ typedef struct {
  * @note The inner interface should not be used directly after wrapping.
  * @note Use nmo_checksummed_io_get_checksum() to retrieve the computed checksum.
  */
-NMO_API nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
-                                                    const nmo_checksummed_io_desc* desc);
+NMO_API nmo_io_interface_t *nmo_checksummed_io_wrap(nmo_io_interface_t *inner,
+                                                    const nmo_checksummed_io_desc_t *desc);
 
 /**
  * @brief Get the computed checksum value
@@ -66,7 +66,7 @@ NMO_API nmo_io_interface* nmo_checksummed_io_wrap(nmo_io_interface* inner,
  * @note This can be called at any time to get the current checksum state.
  * @note The checksum continues to update with subsequent read/write operations.
  */
-NMO_API uint32_t nmo_checksummed_io_get_checksum(nmo_io_interface* io);
+NMO_API uint32_t nmo_checksummed_io_get_checksum(nmo_io_interface_t *io);
 
 #ifdef __cplusplus
 }
