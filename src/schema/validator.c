@@ -15,22 +15,22 @@
 /**
  * Validator context
  */
-struct nmo_validation {
-    nmo_schema_registry* registry;
-    nmo_validation_mode mode;
+typedef struct nmo_validation {
+    nmo_schema_registry_t *registry;
+    nmo_validation_mode_t mode;
     char error_message[MAX_ERROR_LEN];
-};
+} nmo_validation_t;
 
 /**
  * Create validator
  */
-nmo_validation* nmo_validation_create(nmo_schema_registry* registry,
-                                      nmo_validation_mode mode) {
+nmo_validation_t *nmo_validation_create(nmo_schema_registry_t *registry,
+                                        nmo_validation_mode_t mode) {
     if (registry == NULL) {
         return NULL;
     }
 
-    nmo_validation* validation = (nmo_validation*)malloc(sizeof(nmo_validation));
+    nmo_validation_t *validation = (nmo_validation_t *) malloc(sizeof(nmo_validation_t));
     if (validation == NULL) {
         return NULL;
     }
@@ -45,20 +45,20 @@ nmo_validation* nmo_validation_create(nmo_schema_registry* registry,
 /**
  * Destroy validator
  */
-void nmo_validation_destroy(nmo_validation* validation) {
+void nmo_validation_destroy(nmo_validation_t *validation) {
     free(validation);
 }
 
 /**
  * Validate object against schema
  */
-nmo_validation_result nmo_validate_object(nmo_validation* validation, nmo_object* obj) {
+nmo_validation_result_t nmo_validate_object(nmo_validation_t *validation, nmo_object_t *obj) {
     if (validation == NULL || obj == NULL) {
         return NMO_INVALID;
     }
 
     // Find schema for object's class
-    const nmo_schema_descriptor* schema =
+    const nmo_schema_descriptor_t *schema =
         nmo_schema_registry_find_by_id(validation->registry, obj->class_id);
 
     if (schema == NULL) {
@@ -82,15 +82,15 @@ nmo_validation_result nmo_validate_object(nmo_validation* validation, nmo_object
 /**
  * Validate file
  */
-nmo_validation_result nmo_validate_file(nmo_validation* validation, const char* path) {
+nmo_validation_result_t nmo_validate_file(nmo_validation_t *validation, const char *path) {
     if (validation == NULL || path == NULL) {
         return NMO_INVALID;
     }
 
     // Basic file validation - just check if file exists
     // Full file validation would require parsing the file, which is not implemented yet
-    (void)validation;
-    (void)path;
+    (void) validation;
+    (void) path;
 
     return NMO_VALID_WITH_WARNINGS;
 }
@@ -98,7 +98,7 @@ nmo_validation_result nmo_validate_file(nmo_validation* validation, const char* 
 /**
  * Get last validation error message
  */
-const char* nmo_validation_get_error(const nmo_validation* validation) {
+const char *nmo_validation_get_error(const nmo_validation_t *validation) {
     if (validation == NULL) {
         return NULL;
     }
@@ -109,7 +109,7 @@ const char* nmo_validation_get_error(const nmo_validation* validation) {
 /**
  * Set validation mode
  */
-int nmo_validation_set_mode(nmo_validation* validation, nmo_validation_mode mode) {
+int nmo_validation_set_mode(nmo_validation_t *validation, nmo_validation_mode_t mode) {
     if (validation == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
