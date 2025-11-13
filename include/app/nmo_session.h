@@ -136,6 +136,174 @@ NMO_API void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_da
  */
 NMO_API nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, uint32_t *out_count);
 
+/* High-level convenience API */
+
+/**
+ * @brief Load NMO file into session
+ *
+ * High-level function to load a complete NMO file.
+ * Creates and populates the object repository.
+ *
+ * @param ctx Context
+ * @param filename Path to NMO file
+ * @return Session with loaded data, or NULL on error
+ */
+NMO_API nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename);
+
+/**
+ * @brief Save session to NMO file
+ *
+ * High-level function to save session to file.
+ *
+ * @param session Session to save
+ * @param filename Output file path
+ * @return 0 on success, negative on error
+ */
+NMO_API int nmo_session_save(nmo_session_t *session, const char *filename);
+
+/* Forward declaration */
+typedef struct nmo_object nmo_object_t;
+typedef struct nmo_header nmo_header_t;
+typedef struct nmo_object_index nmo_object_index_t;
+typedef struct nmo_guid nmo_guid_t;
+
+/**
+ * @brief Get all objects from session
+ *
+ * Returns array of all objects in the session's repository.
+ *
+ * @param session Session
+ * @param out_objects Output object array pointer
+ * @param out_count Output object count
+ * @return 0 on success, negative on error
+ */
+NMO_API int nmo_session_get_objects(
+    nmo_session_t *session,
+    nmo_object_t ***out_objects,
+    size_t *out_count
+);
+
+/**
+ * @brief Get file header from session
+ *
+ * Returns the parsed file header if available.
+ *
+ * @param session Session
+ * @return Header pointer or NULL if not loaded
+ */
+NMO_API const nmo_header_t *nmo_session_get_header(const nmo_session_t *session);
+
+/* ==================== Object Index Management (Phase 5) ==================== */
+
+/**
+ * @brief Set object index
+ *
+ * Sets the object index for this session. Used by finish_loading phase.
+ *
+ * @param session Session
+ * @param index Object index (session takes ownership)
+ */
+NMO_API void nmo_session_set_object_index(nmo_session_t *session, nmo_object_index_t *index);
+
+/**
+ * @brief Get object index
+ *
+ * Returns the object index if available.
+ *
+ * @param session Session
+ * @return Object index or NULL if not built
+ */
+NMO_API nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *session);
+
+/**
+ * @brief Rebuild object indexes
+ *
+ * Rebuilds object indexes after objects have been added/removed.
+ *
+ * @param session Session
+ * @param flags Index types to rebuild (NMO_INDEX_BUILD_*)
+ * @return 0 on success, negative on error
+ */
+NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
+
+/* ==================== Object Query API (Phase 5) ==================== */
+
+/**
+ * @brief Find object by name
+ *
+ * Searches for an object by name. Uses index if available for fast lookup.
+ *
+ * @param session Session
+ * @param name Object name to search for
+ * @param class_id Optional class filter (0 = any class)
+ * @return Object pointer or NULL if not found
+ */
+NMO_API nmo_object_t *nmo_session_find_by_name(
+    nmo_session_t *session,
+    const char *name,
+    nmo_class_id_t class_id
+);
+
+/**
+ * @brief Find object by GUID
+ *
+ * Searches for an object by type GUID. Uses index if available.
+ *
+ * @param session Session
+ * @param guid GUID to search for
+ * @return Object pointer or NULL if not found
+ */
+NMO_API nmo_object_t *nmo_session_find_by_guid(
+    nmo_session_t *session,
+    nmo_guid_t guid
+);
+
+/**
+ * @brief Get all objects of a specific class
+ *
+ * Returns all objects with the specified class ID. Uses index if available.
+ *
+ * @param session Session
+ * @param class_id Class ID to search for
+ * @param out_count Output: number of objects found
+ * @return Array of object pointers, or NULL if none found
+ */
+NMO_API nmo_object_t **nmo_session_get_objects_by_class(
+    nmo_session_t *session,
+    nmo_class_id_t class_id,
+    size_t *out_count
+);
+
+/**
+ * @brief Count objects of a specific class
+ *
+ * Returns the number of objects with the specified class ID.
+ *
+ * @param session Session
+ * @param class_id Class ID
+ * @return Number of objects
+ */
+NMO_API size_t nmo_session_count_objects_by_class(
+    nmo_session_t *session,
+    nmo_class_id_t class_id
+);
+
+/* ==================== Internal API (Used by Parser) ==================== */
+
+/**
+ * @brief Set file header (internal use by parser)
+ *
+ * Stores the parsed file header in session arena as opaque data.
+ * This is an internal API used by the parser during file loading.
+ * The session stores the header without needing to know its structure,
+ * maintaining proper layer separation.
+ *
+ * @param session Session
+ * @param header Opaque file header data to store
+ * @param header_size Size of header data in bytes
+ */
+void nmo_session_set_file_header(nmo_session_t *session, const void *header, size_t header_size);
+
 #ifdef __cplusplus
 }
 #endif

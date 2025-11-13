@@ -67,6 +67,17 @@ NMO_API void nmo_context_retain(nmo_context_t *ctx);
 NMO_API void nmo_context_release(nmo_context_t *ctx);
 
 /**
+ * @brief Destroy context (alias for release)
+ *
+ * Convenience function, equivalent to nmo_context_release().
+ *
+ * @param ctx Context to destroy
+ */
+static inline void nmo_context_destroy(nmo_context_t *ctx) {
+    nmo_context_release(ctx);
+}
+
+/**
  * @brief Get schema registry
  *
  * Thread-safe access to the schema registry.
