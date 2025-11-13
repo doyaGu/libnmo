@@ -62,10 +62,30 @@ else()
     find_package(ZLIB REQUIRED)
 endif()
 
+# Use yyjson for JSON export
+set(YYJSON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/yyjson")
+if(EXISTS "${YYJSON_DIR}/src/yyjson.h")
+    message(STATUS "Using yyjson from: ${YYJSON_DIR}")
+    # Add yyjson as a subdirectory if not already added
+    if(NOT TARGET yyjson)
+        set(YYJSON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_DOC OFF CACHE BOOL "" FORCE)
+        set(YYJSON_BUILD_MISC OFF CACHE BOOL "" FORCE)
+        add_subdirectory("${YYJSON_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/yyjson" EXCLUDE_FROM_ALL)
+    endif()
+    set(YYJSON_FOUND TRUE)
+    set(YYJSON_INCLUDE_DIRS "${YYJSON_DIR}/src")
+    set(YYJSON_LIBRARIES yyjson)
+else()
+    message(WARNING "yyjson not found, JSON export features will be limited")
+    set(YYJSON_FOUND FALSE)
+endif()
+
 # Include directories
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
     ${ZLIB_INCLUDE_DIRS}
+    ${YYJSON_INCLUDE_DIRS}
 )
 
 # Core library sources
@@ -136,6 +156,9 @@ set(NMO_APP_SOURCES
     src/app/context.c
     src/app/session.c
     src/app/parser.c
+    src/app/finish_loading.c
+    src/app/stats.c
+    src/app/inspector.c
 )
 
 # Combine all sources
@@ -157,6 +180,9 @@ endif()
 
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
+if(YYJSON_FOUND)
+    target_link_libraries(nmo PUBLIC ${YYJSON_LIBRARIES})
+endif()
 
 # Enable threads support
 find_package(Threads REQUIRED)
@@ -212,4 +238,5 @@ message(STATUS "  Build examples: ${NMO_BUILD_EXAMPLES}")
 message(STATUS "  Enable SIMD:   ${NMO_ENABLE_SIMD}")
 message(STATUS "  Build shared:  ${NMO_BUILD_SHARED}")
 message(STATUS "  ZLIB found:    ${ZLIB_FOUND}")
+message(STATUS "  yyjson found:  ${YYJSON_FOUND}")
 message(STATUS "")
