@@ -46,18 +46,18 @@ extern "C" {
  * Represents an in-progress atomic file write operation.
  * Must be closed with nmo_txn_close() to free resources.
  */
-typedef struct nmo_txn_handle nmo_txn_handle;
+typedef struct nmo_txn_handle nmo_txn_handle_t;
 
 /**
  * @brief Durability mode for transaction commits
  *
  * Controls how aggressively data is synced to disk on commit.
  */
-typedef enum {
-    NMO_TXN_NONE = 0,      /**< No explicit sync (fastest, least durable) */
-    NMO_TXN_FDATASYNC,     /**< Sync data only (skip metadata when possible) */
-    NMO_TXN_FSYNC,         /**< Full sync of data and metadata (safest) */
-} nmo_txn_durability;
+typedef enum nmo_txn_durability {
+    NMO_TXN_NONE = 0,  /**< No explicit sync (fastest, least durable) */
+    NMO_TXN_FDATASYNC, /**< Sync data only (skip metadata when possible) */
+    NMO_TXN_FSYNC,     /**< Full sync of data and metadata (safest) */
+} nmo_txn_durability_t;
 
 /**
  * @brief Transaction descriptor
@@ -65,10 +65,10 @@ typedef enum {
  * Configuration for opening a new transactional write.
  */
 typedef struct nmo_txn_desc {
-    const char* path;                /**< Final file path (required) */
-    nmo_txn_durability durability;   /**< Durability mode (default: NMO_TXN_NONE) */
-    const char* staging_dir;         /**< Staging directory (NULL = use temp dir) */
-} nmo_txn_desc;
+    const char *path;                /**< Final file path (required) */
+    nmo_txn_durability_t durability; /**< Durability mode (default: NMO_TXN_NONE) */
+    const char *staging_dir;         /**< Staging directory (NULL = use temp dir) */
+} nmo_txn_desc_t;
 
 /**
  * @brief Open a new transaction for atomic file write
@@ -82,7 +82,7 @@ typedef struct nmo_txn_desc {
  * @note The returned handle must be freed with nmo_txn_close()
  * @note If the final path exists, it will be replaced atomically on commit
  */
-NMO_API nmo_txn_handle* nmo_txn_open(const nmo_txn_desc* desc);
+NMO_API nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc);
 
 /**
  * @brief Write data to transaction
@@ -98,7 +98,7 @@ NMO_API nmo_txn_handle* nmo_txn_open(const nmo_txn_desc* desc);
  * @note Multiple writes are supported and append to the temp file
  * @note Writes after commit/rollback will return NMO_ERR_INVALID_STATE
  */
-NMO_API nmo_result_t nmo_txn_write(nmo_txn_handle* txn, const void* data, size_t size);
+NMO_API nmo_result_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size_t size);
 
 /**
  * @brief Commit transaction atomically
@@ -114,7 +114,7 @@ NMO_API nmo_result_t nmo_txn_write(nmo_txn_handle* txn, const void* data, size_t
  * @note The temporary file is removed after successful commit
  * @note On failure, temporary file is preserved for debugging
  */
-NMO_API nmo_result_t nmo_txn_commit(nmo_txn_handle* txn);
+NMO_API nmo_result_t nmo_txn_commit(nmo_txn_handle_t *txn);
 
 /**
  * @brief Rollback transaction and discard changes
@@ -128,7 +128,7 @@ NMO_API nmo_result_t nmo_txn_commit(nmo_txn_handle* txn);
  * @note Subsequent writes will fail with NMO_ERR_INVALID_STATE
  * @note The temporary file is always removed
  */
-NMO_API nmo_result_t nmo_txn_rollback(nmo_txn_handle* txn);
+NMO_API nmo_result_t nmo_txn_rollback(nmo_txn_handle_t *txn);
 
 /**
  * @brief Close transaction and free resources
@@ -141,7 +141,7 @@ NMO_API nmo_result_t nmo_txn_rollback(nmo_txn_handle* txn);
  * @note Always call this to free transaction resources
  * @note After close, the handle is invalid and must not be used
  */
-NMO_API void nmo_txn_close(nmo_txn_handle* txn);
+NMO_API void nmo_txn_close(nmo_txn_handle_t *txn);
 
 #ifdef __cplusplus
 }
