@@ -14,13 +14,13 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_object_repository nmo_object_repository;
-typedef struct nmo_object nmo_object;
+typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_object nmo_object_t;
 
 /**
  * @brief Load session for tracking file ID to runtime ID mapping
  */
-typedef struct nmo_load_session nmo_load_session;
+typedef struct nmo_load_session nmo_load_session_t;
 
 /**
  * @brief Start load session
@@ -33,8 +33,8 @@ typedef struct nmo_load_session nmo_load_session;
  * @param max_saved_id Maximum object ID from the file being loaded
  * @return Load session or NULL on error
  */
-NMO_API nmo_load_session* nmo_load_session_start(nmo_object_repository* repo,
-                                                   nmo_object_id max_saved_id);
+NMO_API nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
+                                                 nmo_object_id_t max_saved_id);
 
 /**
  * @brief Register object with file ID
@@ -47,9 +47,9 @@ NMO_API nmo_load_session* nmo_load_session_start(nmo_object_repository* repo,
  * @param file_id Original ID from the file
  * @return NMO_OK on success
  */
-NMO_API int nmo_load_session_register(nmo_load_session* session,
-                                       nmo_object* obj,
-                                       nmo_object_id file_id);
+NMO_API int nmo_load_session_register(nmo_load_session_t *session,
+                                      nmo_object_t *obj,
+                                      nmo_object_id_t file_id);
 
 /**
  * @brief End load session
@@ -60,7 +60,7 @@ NMO_API int nmo_load_session_register(nmo_load_session* session,
  * @param session Load session
  * @return NMO_OK on success
  */
-NMO_API int nmo_load_session_end(nmo_load_session* session);
+NMO_API int nmo_load_session_end(nmo_load_session_t *session);
 
 /**
  * @brief Get object repository
@@ -68,8 +68,8 @@ NMO_API int nmo_load_session_end(nmo_load_session* session);
  * @param session Load session
  * @return Object repository
  */
-NMO_API nmo_object_repository* nmo_load_session_get_repository(
-    const nmo_load_session* session);
+NMO_API nmo_object_repository_t *nmo_load_session_get_repository(
+    const nmo_load_session_t *session);
 
 /**
  * @brief Get ID base
@@ -80,7 +80,7 @@ NMO_API nmo_object_repository* nmo_load_session_get_repository(
  * @param session Load session
  * @return ID base
  */
-NMO_API nmo_object_id nmo_load_session_get_id_base(const nmo_load_session* session);
+NMO_API nmo_object_id_t nmo_load_session_get_id_base(const nmo_load_session_t *session);
 
 /**
  * @brief Get max saved ID
@@ -88,14 +88,14 @@ NMO_API nmo_object_id nmo_load_session_get_id_base(const nmo_load_session* sessi
  * @param session Load session
  * @return Maximum object ID from file
  */
-NMO_API nmo_object_id nmo_load_session_get_max_saved_id(const nmo_load_session* session);
+NMO_API nmo_object_id_t nmo_load_session_get_max_saved_id(const nmo_load_session_t *session);
 
 /**
  * @brief Destroy load session
  *
  * @param session Load session to destroy
  */
-NMO_API void nmo_load_session_destroy(nmo_load_session* session);
+NMO_API void nmo_load_session_destroy(nmo_load_session_t *session);
 
 #ifdef __cplusplus
 }
