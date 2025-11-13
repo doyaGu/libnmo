@@ -14,9 +14,9 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_context nmo_context;
-typedef struct nmo_arena nmo_arena;
-typedef struct nmo_object_repository nmo_object_repository;
+typedef struct nmo_context nmo_context_t;
+typedef struct nmo_arena nmo_arena_t;
+typedef struct nmo_object_repository nmo_object_repository_t;
 
 /**
  * @brief Session structure
@@ -24,19 +24,19 @@ typedef struct nmo_object_repository nmo_object_repository;
  * Single-threaded per-operation state. Owns arena and object repository.
  * Borrows context (does not retain).
  */
-typedef struct nmo_session nmo_session;
+typedef struct nmo_session nmo_session_t;
 
 /**
  * @brief File information structure
  */
-typedef struct {
-    uint32_t file_version;     /**< File format version */
-    uint32_t ck_version;       /**< CK engine version */
-    size_t file_size;          /**< File size in bytes */
-    uint32_t object_count;     /**< Number of objects */
-    uint32_t manager_count;    /**< Number of managers */
-    uint32_t write_mode;       /**< Write mode flags */
-} nmo_file_info;
+typedef struct nmo_file_info {
+    uint32_t file_version;  /**< File format version */
+    uint32_t ck_version;    /**< CK engine version */
+    size_t file_size;       /**< File size in bytes */
+    uint32_t object_count;  /**< Number of objects */
+    uint32_t manager_count; /**< Number of managers */
+    uint32_t write_mode;    /**< Write mode flags */
+} nmo_file_info_t;
 
 /**
  * @brief Create session
@@ -47,7 +47,7 @@ typedef struct {
  * @param ctx Context to borrow (must remain valid for session lifetime)
  * @return Session or NULL on error
  */
-NMO_API nmo_session* nmo_session_create(nmo_context* ctx);
+NMO_API nmo_session_t *nmo_session_create(nmo_context_t *ctx);
 
 /**
  * @brief Destroy session
@@ -57,7 +57,7 @@ NMO_API nmo_session* nmo_session_create(nmo_context* ctx);
  *
  * @param session Session to destroy
  */
-NMO_API void nmo_session_destroy(nmo_session* session);
+NMO_API void nmo_session_destroy(nmo_session_t *session);
 
 /**
  * @brief Get context
@@ -67,7 +67,7 @@ NMO_API void nmo_session_destroy(nmo_session* session);
  * @param session Session
  * @return Context
  */
-NMO_API nmo_context* nmo_session_get_context(const nmo_session* session);
+NMO_API nmo_context_t *nmo_session_get_context(const nmo_session_t *session);
 
 /**
  * @brief Get arena
@@ -77,7 +77,7 @@ NMO_API nmo_context* nmo_session_get_context(const nmo_session* session);
  * @param session Session
  * @return Arena
  */
-NMO_API nmo_arena* nmo_session_get_arena(const nmo_session* session);
+NMO_API nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session);
 
 /**
  * @brief Get object repository
@@ -87,7 +87,7 @@ NMO_API nmo_arena* nmo_session_get_arena(const nmo_session* session);
  * @param session Session
  * @return Object repository
  */
-NMO_API nmo_object_repository* nmo_session_get_repository(const nmo_session* session);
+NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session);
 
 /**
  * @brief Get file info
@@ -98,7 +98,7 @@ NMO_API nmo_object_repository* nmo_session_get_repository(const nmo_session* ses
  * @param session Session
  * @return File information
  */
-NMO_API nmo_file_info nmo_session_get_file_info(const nmo_session* session);
+NMO_API nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session);
 
 /**
  * @brief Set file info
@@ -109,7 +109,32 @@ NMO_API nmo_file_info nmo_session_get_file_info(const nmo_session* session);
  * @param info File information to set
  * @return NMO_OK on success
  */
-NMO_API int nmo_session_set_file_info(nmo_session* session, const nmo_file_info* info);
+NMO_API int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info);
+
+/* Forward declaration for manager data */
+typedef struct nmo_manager_data nmo_manager_data_t;
+
+/**
+ * @brief Set manager data
+ *
+ * Sets manager data for the session (for round-trip serialization).
+ *
+ * @param session Session
+ * @param data Manager data array (borrowed, not owned)
+ * @param count Number of managers
+ */
+NMO_API void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_data_t *data, uint32_t count);
+
+/**
+ * @brief Get manager data
+ *
+ * Gets manager data from the session.
+ *
+ * @param session Session
+ * @param out_count Output manager count (optional)
+ * @return Manager data array or NULL
+ */
+NMO_API nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, uint32_t *out_count);
 
 #ifdef __cplusplus
 }
