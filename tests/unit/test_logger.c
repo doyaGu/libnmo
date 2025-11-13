@@ -4,24 +4,19 @@
  */
 
 #include "../test_framework.h"
-#include "nmo.h"
+#include "core/nmo_logger.h"
 
 TEST(logger, create_stderr_logger) {
-    nmo_logger *logger = nmo_logger_stderr();
-    ASSERT_NOT_NULL(logger);
+    nmo_logger_t logger = nmo_logger_stderr();
+    ASSERT_NOT_NULL(logger.log);
 }
 
 TEST(logger, create_null_logger) {
-    nmo_logger *logger = nmo_logger_null();
-    ASSERT_NOT_NULL(logger);
+    nmo_logger_t logger = nmo_logger_null();
+    ASSERT_NOT_NULL(logger.log);
 }
 
-TEST(logger, log_message) {
-    nmo_logger *logger = nmo_logger_stderr();
-    ASSERT_NOT_NULL(logger);
-    nmo_logger_log(logger, NMO_LOG_INFO, "Test message");
-}
-
-int main(void) {
-    return 0;
-}
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(logger, create_stderr_logger);
+    REGISTER_TEST(logger, create_null_logger);
+TEST_MAIN_END()
