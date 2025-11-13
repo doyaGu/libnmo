@@ -27,6 +27,10 @@ typedef enum nmo_load_flags {
     NMO_LOAD_AS_DYNAMIC_OBJECT  = 0x0008,
     NMO_LOAD_ONLYBEHAVIORS      = 0x0010,
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
+    
+    /* Phase 5 flags */
+    NMO_LOAD_SKIP_INDEX_BUILD       = 0x0040,  /* Skip object index building */
+    NMO_LOAD_SKIP_REFERENCE_RESOLVE = 0x0080,  /* Skip reference resolution */
 } nmo_load_flags_t;
 
 /**

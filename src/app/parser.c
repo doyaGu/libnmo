@@ -6,6 +6,7 @@
 #include "app/nmo_parser.h"
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
+#include "app/nmo_finish_loading.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "io/nmo_io.h"
@@ -119,6 +120,9 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         .write_mode = header.file_write_mode
     };
     nmo_session_set_file_info(session, &file_info);
+    
+    /* Store file header in session (opaquely to maintain layer separation) */
+    nmo_session_set_file_header(session, &header, sizeof(nmo_file_header_t));
 
     /* Phase 3: Read and Decompress Header1 */
     nmo_log(logger, NMO_LOG_INFO, "Phase 3: Reading header1 (size: %u bytes)",
@@ -584,6 +588,34 @@ skip_object_processing:
     nmo_io_close(io);
 
     nmo_log(logger, NMO_LOG_INFO, "Load complete: %zu objects loaded", repo_count);
+
+    /* Phase 16: FinishLoading (Phase 5 integration) */
+    nmo_log(logger, NMO_LOG_INFO, "Phase 16: Executing finish loading phase");
+    
+    /* Determine finish loading flags based on load flags */
+    uint32_t finish_flags = 0;
+    
+    if (flags & NMO_LOAD_DEFAULT) {
+        /* Default: enable all finish loading operations */
+        finish_flags = NMO_FINISH_LOAD_DEFAULT;
+    }
+    
+    if (flags & NMO_LOAD_SKIP_INDEX_BUILD) {
+        /* Disable index building if requested */
+        finish_flags &= ~NMO_FINISH_LOAD_BUILD_INDEXES;
+    }
+    
+    if (flags & NMO_LOAD_SKIP_REFERENCE_RESOLVE) {
+        /* Disable reference resolution if requested */
+        finish_flags &= ~NMO_FINISH_LOAD_RESOLVE_REFERENCES;
+    }
+    
+    /* Execute finish loading */
+    int finish_result = nmo_session_finish_loading(session, finish_flags);
+    if (finish_result != NMO_OK) {
+        nmo_log(logger, NMO_LOG_WARN, "FinishLoading phase failed: %d (continuing anyway)", finish_result);
+        /* Don't fail the entire load for finish loading issues */
+    }
 
     return NMO_OK;
 }
