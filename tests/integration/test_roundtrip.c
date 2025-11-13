@@ -8,20 +8,20 @@
 #include <unistd.h>
 
 TEST(roundtrip, simple_roundtrip) {
-    nmo_context_desc ctx_desc = {
+    nmo_context_desc_t ctx_desc = {
         .allocator = NULL,
         .logger = nmo_logger_stderr(),
         .thread_pool_size = 4,
     };
 
-    nmo_context *ctx = nmo_context_create(&ctx_desc);
+    nmo_context_t *ctx = nmo_context_create(&ctx_desc);
     ASSERT_NOT_NULL(ctx);
 
     // Register built-in schemas
-    nmo_schema_registry *registry = nmo_context_get_schema_registry(ctx);
+    nmo_schema_registry_t *registry = nmo_context_get_schema_registry(ctx);
     ASSERT_NOT_NULL(registry);
 
-    nmo_session *session = nmo_session_create(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
 
     // Test file paths
@@ -42,3 +42,7 @@ TEST(roundtrip, simple_roundtrip) {
 int main(void) {
     return 0;
 }
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(roundtrip, simple_roundtrip);
+TEST_MAIN_END()
