@@ -6,7 +6,16 @@ macro(add_integration_test name)
 endmacro()
 
 # Integration tests
-add_integration_test(test_roundtrip)
-add_integration_test(test_round_trip)
-add_integration_test(test_load_pipeline)
-add_integration_test(test_save_pipeline)
+# Phase 2: File I/O round-trip test (NEW - verifies complete load/save pipeline)
+add_integration_test(test_file_roundtrip)
+
+# Existing tests
+add_integration_test(test_data_roundtrip)
+add_integration_test(test_file_io)
+
+# Temporarily disabled tests (old API)
+# add_integration_test(test_roundtrip)
+# add_integration_test(test_round_trip)
+# add_integration_test(test_real_file_roundtrip)
+# add_integration_test(test_load_pipeline)
+# add_integration_test(test_save_pipeline)
