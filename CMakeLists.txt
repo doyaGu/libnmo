@@ -127,7 +127,18 @@ set(NMO_FORMAT_SOURCES
     src/format/chunk.c
     src/format/chunk_parser.c
     src/format/chunk_writer.c
-    src/format/chunk_api.c
+    src/format/chunk_lifecycle.c
+    src/format/chunk_navigation.c
+    src/format/chunk_primitives.c
+    src/format/chunk_arrays.c
+    src/format/chunk_sequences.c
+    src/format/chunk_identifiers.c
+    src/format/chunk_managers.c
+    src/format/chunk_subchunks.c
+    src/format/chunk_math.c
+    src/format/chunk_compression.c
+    src/format/chunk_crc.c
+    src/format/chunk_remap.c
     src/format/chunk_pool.c
     src/format/manager_registry.c
     src/format/nmo_id_remap.c

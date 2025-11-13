@@ -9,6 +9,7 @@
 #include "app/nmo_session.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "session/nmo_object_repository.h"
 #include "yyjson.h"
 #include <string.h>

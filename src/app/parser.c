@@ -16,6 +16,7 @@
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_writer.h"
 #include "format/nmo_object.h"
 #include "format/nmo_manager.h"
@@ -489,14 +490,14 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     if (remap_table != NULL) {
         for (size_t i = 0; i < hdr1.object_count; i++) {
             if (created_objects[i] != NULL && created_objects[i]->chunk != NULL) {
-                nmo_chunk_remap_ids(created_objects[i]->chunk, remap_table);
+                nmo_chunk_remap_object_ids(created_objects[i]->chunk, remap_table);
             }
         }
         // Also remap manager chunks
         if (data_sect.managers != NULL) {
             for (uint32_t i = 0; i < data_sect.manager_count; i++) {
                 if (data_sect.managers[i].chunk != NULL) {
-                    nmo_chunk_remap_ids(data_sect.managers[i].chunk, remap_table);
+                    nmo_chunk_remap_object_ids(data_sect.managers[i].chunk, remap_table);
                 }
             }
         }

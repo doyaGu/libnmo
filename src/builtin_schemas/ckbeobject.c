@@ -9,7 +9,7 @@
 #include "format/nmo_object_data.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
-#include "format/nmo_chunk_helpers.h"
+#include "format/nmo_chunk_api.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 #include <stdlib.h>
@@ -128,7 +128,7 @@ void ckbeobject_deserialize(nmo_object_t *obj, nmo_chunk_parser_t *parser) {
         
         // Read attribute count
         size_t attr_count = 0;
-        result = nmo_chunk_start_read_sequence(chunk, &attr_count);
+        result = nmo_chunk_read_object_sequence_start(chunk, &attr_count);
         if (result.code == NMO_OK && attr_count > 0) {
             // Read attribute object IDs (parameters)
             // Reference lines 544-547
@@ -158,7 +158,7 @@ void ckbeobject_deserialize(nmo_object_t *obj, nmo_chunk_parser_t *parser) {
                         for (size_t i = 0; i < seq_count; i++) {
                             // Read attribute type
                             size_t attr_type = 0;
-                            result = nmo_chunk_start_read_sequence(chunk, &attr_type);
+                            result = nmo_chunk_read_object_sequence_start(chunk, &attr_type);
                             if (result.code == NMO_OK) {
                                 nmo_object_id_t param_id = attr_object_ids[i];
                                 // Store attribute in CKBeObject data

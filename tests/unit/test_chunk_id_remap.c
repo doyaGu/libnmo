@@ -110,9 +110,9 @@ TEST(chunk_id_remap, sequence_id_remap) {
     
     // Write a sequence of object IDs
     nmo_object_id_t ids[] = {100, 101, 102, 103};
-    nmo_chunk_start_object_sequence(chunk, 4);
+    nmo_chunk_write_object_sequence_start(chunk, 4);
     for (int i = 0; i < 4; i++) {
-        nmo_chunk_write_object_id_sequence(chunk, ids[i]);
+        nmo_chunk_write_object_sequence_item(chunk, ids[i]);
     }
     
     nmo_chunk_close(chunk);

@@ -41,6 +41,7 @@ add_unit_test(test_chunk_writer)
 add_unit_test(test_chunk_serialize)
 # Add new chunk API test
 add_unit_test(test_chunk_api)
+add_unit_test(test_chunk_helpers)
 add_unit_test(test_chunk_id_remap)
 add_unit_test(test_chunk_serialization)
 add_unit_test(test_identifier_search)  # Phase 3: Identifier search tests

@@ -1,6 +1,9 @@
 /**
  * @file nmo_chunk.h
- * @brief CKStateChunk handling
+ * @brief CKStateChunk - Low-level chunk structure and core operations
+ *
+ * This header defines the fundamental chunk structure and core lifecycle operations.
+ * For high-level read/write operations, see nmo_chunk_api.h.
  */
 
 #ifndef NMO_CHUNK_H
@@ -84,13 +87,19 @@ typedef struct nmo_chunk {
 
 /**
  * @brief Chunk header info
+ *
+ * Compact representation of chunk metadata.
  */
 typedef struct nmo_chunk_header {
-    uint32_t chunk_id;        /* Chunk identifier */
-    uint32_t chunk_size;      /* Chunk size */
-    uint32_t sub_chunk_count; /* Number of sub-chunks */
-    uint32_t flags;           /* Chunk flags */
+    uint32_t chunk_id;        /**< Chunk class identifier */
+    uint32_t chunk_size;      /**< Chunk data size in bytes */
+    uint32_t sub_chunk_count; /**< Number of sub-chunks */
+    uint32_t flags;           /**< Chunk option flags */
 } nmo_chunk_header_t;
+
+// =============================================================================
+// LIFECYCLE OPERATIONS
+// =============================================================================
 
 /**
  * @brief Create empty chunk
@@ -104,6 +113,39 @@ typedef struct nmo_chunk_header {
  * @return New chunk or NULL on allocation failure
  */
 NMO_API nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena);
+
+/**
+ * @brief Destroy chunk
+ *
+ * Since chunks use arena allocation, this is mostly a no-op.
+ * The arena itself handles cleanup.
+ *
+ * @param chunk Chunk to destroy (can be NULL)
+ */
+NMO_API void nmo_chunk_destroy(nmo_chunk_t *chunk);
+
+/**
+ * @brief Clone a chunk (deep copy)
+ *
+ * Creates a complete copy of the chunk including:
+ * - Data buffer
+ * - ID list
+ * - Sub-chunks (recursive)
+ * - Manager list
+ *
+ * Matches CKStateChunk::Clone behavior.
+ *
+ * Implemented in: chunk.c
+ *
+ * @param src Source chunk to clone (required)
+ * @param arena Arena for allocations (required)
+ * @return New chunk or NULL on error
+ */
+NMO_API nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena);
+
+// =============================================================================
+// SERIALIZATION
+// =============================================================================
 
 /**
  * @brief Serialize chunk to binary format
@@ -173,148 +215,40 @@ NMO_API nmo_result_t nmo_chunk_deserialize(const void *data,
                                            nmo_chunk_t **out_chunk);
 
 /**
- * @brief Destroy chunk
+ * @brief Parse chunk from data (alternative to deserialize)
  *
- * Since chunks use arena allocation, this is mostly a no-op.
- * The arena itself handles cleanup.
+ * Parses serialized chunk data in Virtools VERSION1 format.
+ * Similar to deserialize but operates on an existing chunk structure.
  *
- * @param chunk Chunk to destroy
- */
-NMO_API void nmo_chunk_destroy(nmo_chunk_t *chunk);
-
-/**
- * @brief Clone a chunk (deep copy)
- *
- * Creates a complete copy of the chunk including:
- * - Data buffer
- * - ID list
- * - Sub-chunks (recursive)
- * - Manager list
- *
- * Matches CKStateChunk::Clone behavior.
- *
- * @param src Source chunk to clone
- * @param arena Arena for allocations
- * @return New chunk or NULL on error
- */
-NMO_API nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena);
-
-/* Forward declaration for ID remap */
-typedef struct nmo_id_remap nmo_id_remap_t;
-
-/**
- * @brief Remap object IDs in chunk
- *
- * Applies ID remapping to all object IDs stored in the chunk's data buffer
- * and ID tracking list. This is used during file load to convert file IDs
- * to runtime IDs.
- *
- * @param chunk Chunk to remap (required)
- * @param remap ID remap table (required)
+ * @param chunk Chunk to parse into (required)
+ * @param data Serialized data buffer (required)
+ * @param size Data size in bytes
  * @return NMO_OK on success, error code on failure
- */
-NMO_API int nmo_chunk_remap_ids(nmo_chunk_t *chunk, nmo_id_remap_t *remap);
-
-
-/**
- * Parse chunk from data
- * @param chunk Chunk
- * @param data Data buffer
- * @param size Data size
- * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size);
 
 /**
- * Write chunk to data
- * @param chunk Chunk
- * @param buffer Output buffer
- * @param size Buffer size
+ * @brief Write chunk to data buffer
+ *
+ * Use nmo_chunk_serialize() or nmo_chunk_serialize_version1() instead.
+ *
+ * @param chunk Chunk to write (required)
+ * @param buffer Output buffer (required)
+ * @param size Buffer size in bytes
  * @return Number of bytes written or negative on error
  */
 NMO_API size_t nmo_chunk_write(const nmo_chunk_t *chunk, void *buffer, size_t size);
 
 /**
- * Get chunk header
- * @param chunk Chunk
- * @param out_header Output header
- * @return NMO_OK on success
+ * @brief Get chunk header information
+ *
+ * Fills a header structure with chunk metadata.
+ *
+ * @param chunk Chunk (required)
+ * @param out_header Output header structure (required)
+ * @return NMO_OK on success, error code on failure
  */
 NMO_API nmo_result_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *out_header);
-
-/**
- * Get chunk ID
- * @param chunk Chunk
- * @return Chunk ID
- */
-NMO_API uint32_t nmo_chunk_get_id(const nmo_chunk_t *chunk);
-
-/**
- * Get chunk size
- * @param chunk Chunk
- * @return Chunk size in bytes
- */
-NMO_API uint32_t nmo_chunk_get_size(const nmo_chunk_t *chunk);
-
-/**
- * Get chunk data
- * @param chunk Chunk
- * @param out_size Output data size
- * @return Pointer to chunk data
- */
-NMO_API const void *nmo_chunk_get_data(const nmo_chunk_t *chunk, size_t *out_size);
-
-/**
- * Add sub-chunk
- * @param chunk Parent chunk
- * @param sub_chunk Sub-chunk to add
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk);
-
-/**
- * Get sub-chunk count
- * @param chunk Chunk
- * @return Number of sub-chunks
- */
-NMO_API uint32_t nmo_chunk_get_sub_chunk_count(const nmo_chunk_t *chunk);
-
-/**
- * Get sub-chunk by index
- * @param chunk Chunk
- * @param index Sub-chunk index
- * @return Sub-chunk or NULL
- */
-NMO_API nmo_chunk_t *nmo_chunk_get_sub_chunk(const nmo_chunk_t *chunk, uint32_t index);
-
-/**
- * Get chunk class ID
- * @param chunk Chunk
- * @return Class ID
- */
-NMO_API nmo_class_id_t nmo_chunk_get_class_id(const nmo_chunk_t *chunk);
-
-/**
- * Check if chunk is compressed
- * @param chunk Chunk
- * @return 1 if compressed, 0 otherwise
- */
-NMO_API int nmo_chunk_is_compressed(const nmo_chunk_t *chunk);
-
-/**
- * Get object ID count
- * @param chunk Chunk
- * @return Number of object IDs
- */
-NMO_API size_t nmo_chunk_get_id_count(const nmo_chunk_t *chunk);
-
-/**
- * Get object ID by index
- * @param chunk Chunk
- * @param index ID index
- * @return Object ID
- */
-NMO_API uint32_t nmo_chunk_get_object_id(const nmo_chunk_t *chunk, size_t index);
 
 #ifdef __cplusplus
 }
