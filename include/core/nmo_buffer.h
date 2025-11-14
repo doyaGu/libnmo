@@ -92,6 +92,21 @@ NMO_API nmo_result_t nmo_buffer_append_array(nmo_buffer_t *buffer,
                                              size_t count);
 
 /**
+ * @brief Extend buffer with uninitialized space for additional elements
+ *
+ * Provides a pointer to the first newly reserved element so callers can
+ * write data directly without an intermediate copy.
+ *
+ * @param buffer Buffer to extend (required)
+ * @param additional Number of elements to add to the logical size
+ * @param out_begin Optional pointer that receives the first new element
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result_t nmo_buffer_extend(nmo_buffer_t *buffer,
+                                       size_t additional,
+                                       void **out_begin);
+
+/**
  * @brief Get element at index
  *
  * @param buffer Buffer to access (required)
@@ -109,6 +124,51 @@ NMO_API void *nmo_buffer_get(const nmo_buffer_t *buffer, size_t index);
  * @return NMO_OK on success, error code on failure
  */
 NMO_API nmo_result_t nmo_buffer_set(nmo_buffer_t *buffer, size_t index, const void *element);
+
+/**
+ * @brief Insert element at the specified position (with shifting)
+ *
+ * @param buffer Buffer to modify (required)
+ * @param index Insertion index (0..count)
+ * @param element Pointer to element data (required)
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result_t nmo_buffer_insert(nmo_buffer_t *buffer,
+                                       size_t index,
+                                       const void *element);
+
+/**
+ * @brief Remove element at index (shifts remaining elements)
+ *
+ * Optionally copies the removed element into @p out_element.
+ *
+ * @param buffer Buffer to modify (required)
+ * @param index Element index
+ * @param out_element Optional pointer receiving removed element data
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result_t nmo_buffer_remove(nmo_buffer_t *buffer,
+                                       size_t index,
+                                       void *out_element);
+
+/**
+ * @brief Pop element from the end of the buffer
+ *
+ * @param buffer Buffer to modify (required)
+ * @param out_element Optional pointer receiving removed element
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result_t nmo_buffer_pop(nmo_buffer_t *buffer, void *out_element);
+
+/**
+ * @brief Get pointer to first element (or NULL if empty)
+ */
+NMO_API void *nmo_buffer_front(const nmo_buffer_t *buffer);
+
+/**
+ * @brief Get pointer to last element (or NULL if empty)
+ */
+NMO_API void *nmo_buffer_back(const nmo_buffer_t *buffer);
 
 /**
  * @brief Clear buffer (reset count to 0)
@@ -198,6 +258,40 @@ NMO_API nmo_result_t nmo_buffer_clone(const nmo_buffer_t *src,
  */
 #define NMO_BUFFER_DATA(type, buffer_ptr) \
     ((type *)((buffer_ptr)->data))
+
+/**
+ * @brief Access first element with type safety
+ *
+ * Usage: uint32_t *front = NMO_BUFFER_FRONT(uint32_t, &buffer);
+ */
+#define NMO_BUFFER_FRONT(type, buffer_ptr) \
+    ((type *)nmo_buffer_front(buffer_ptr))
+
+/**
+ * @brief Access last element with type safety
+ *
+ * Usage: uint32_t *back = NMO_BUFFER_BACK(uint32_t, &buffer);
+ */
+#define NMO_BUFFER_BACK(type, buffer_ptr) \
+    ((type *)nmo_buffer_back(buffer_ptr))
+
+/**
+ * @brief Extend buffer with typed pointer output
+ *
+ * Usage:
+ * uint32_t *values = NULL;
+ * NMO_BUFFER_EXTEND(&buffer, 4, values);
+ */
+#define NMO_BUFFER_EXTEND(buffer_ptr, count, out_ptr_var) \
+    nmo_buffer_extend(buffer_ptr, count, (void **)&(out_ptr_var))
+
+/**
+ * @brief Pop element into a typed destination
+ *
+ * Usage: uint32_t value; NMO_BUFFER_POP(&buffer, &value);
+ */
+#define NMO_BUFFER_POP(buffer_ptr, out_ptr) \
+    nmo_buffer_pop(buffer_ptr, out_ptr)
 
 #ifdef __cplusplus
 }

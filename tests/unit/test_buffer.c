@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 /* Test fixture */
 static nmo_arena_t *g_arena = NULL;
@@ -781,6 +782,171 @@ TEST(buffer, typed_macros_with_struct) {
 }
 
 /* ============================================================================
+ * Convenience Operation Tests
+ * ========================================================================== */
+
+TEST(buffer, extend_single_element) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_result_t result = nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+    ASSERT_EQ(result.code, NMO_OK);
+
+    uint32_t *slot = NULL;
+    result = nmo_buffer_extend(&buffer, 1, (void **)&slot);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_NOT_NULL(slot);
+
+    *slot = 1234;
+    ASSERT_EQ(buffer.count, 1);
+    ASSERT_EQ(((uint32_t *)buffer.data)[0], 1234U);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, extend_multiple_elements) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_result_t result = nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+    ASSERT_EQ(result.code, NMO_OK);
+
+    uint32_t *values = NULL;
+    result = NMO_BUFFER_EXTEND(&buffer, 5, values);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(buffer.count, 5);
+    ASSERT_NOT_NULL(values);
+
+    for (uint32_t i = 0; i < 5; ++i) {
+        values[i] = i * 10;
+    }
+
+    uint32_t *data = (uint32_t *)buffer.data;
+    for (uint32_t i = 0; i < 5; ++i) {
+        ASSERT_EQ(data[i], i * 10);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, extend_zero_returns_end_pointer) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+
+    uint32_t val = 88;
+    nmo_buffer_append(&buffer, &val);
+
+    uint32_t *end_ptr = NULL;
+    nmo_result_t result = nmo_buffer_extend(&buffer, 0, (void **)&end_ptr);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_NOT_NULL(end_ptr);
+    ASSERT_EQ((uintptr_t)end_ptr, (uintptr_t)((uint32_t *)buffer.data + buffer.count));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, pop_returns_last_element) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+
+    for (uint32_t i = 0; i < 3; ++i) {
+        nmo_buffer_append(&buffer, &i);
+    }
+
+    uint32_t popped = 0;
+    nmo_result_t result = NMO_BUFFER_POP(&buffer, &popped);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(popped, 2U);
+    ASSERT_EQ(buffer.count, 2);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, remove_middle_shifts_elements) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+
+    for (uint32_t i = 0; i < 5; ++i) {
+        nmo_buffer_append(&buffer, &i);
+    }
+
+    uint32_t removed = 0;
+    nmo_result_t result = nmo_buffer_remove(&buffer, 2, &removed);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(removed, 2U);
+    ASSERT_EQ(buffer.count, 4);
+
+    uint32_t *data = (uint32_t *)buffer.data;
+    uint32_t expected[] = {0, 1, 3, 4};
+    for (size_t i = 0; i < buffer.count; ++i) {
+        ASSERT_EQ(data[i], expected[i]);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, insert_middle_shifts_elements) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+
+    uint32_t values[] = {0, 2, 3};
+    nmo_buffer_append_array(&buffer, values, 3);
+
+    uint32_t insert_value = 1;
+    nmo_result_t result = nmo_buffer_insert(&buffer, 1, &insert_value);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(buffer.count, 4);
+
+    uint32_t *data = (uint32_t *)buffer.data;
+    uint32_t expected[] = {0, 1, 2, 3};
+    for (size_t i = 0; i < buffer.count; ++i) {
+        ASSERT_EQ(data[i], expected[i]);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, front_back_helpers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_buffer_t buffer;
+    nmo_buffer_init(&buffer, sizeof(uint32_t), 0, arena);
+
+    uint32_t first = 10;
+    uint32_t second = 20;
+    nmo_buffer_append(&buffer, &first);
+    nmo_buffer_append(&buffer, &second);
+
+    uint32_t *front = NMO_BUFFER_FRONT(uint32_t, &buffer);
+    uint32_t *back = NMO_BUFFER_BACK(uint32_t, &buffer);
+    ASSERT_NOT_NULL(front);
+    ASSERT_NOT_NULL(back);
+    ASSERT_EQ(*front, 10U);
+    ASSERT_EQ(*back, 20U);
+
+    nmo_buffer_clear(&buffer);
+    ASSERT_NULL(nmo_buffer_front(&buffer));
+    ASSERT_NULL(nmo_buffer_back(&buffer));
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
  * Edge Cases and Error Handling Tests
  * ========================================================================== */
 
@@ -1125,6 +1291,15 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(buffer, typed_macros_basic);
     REGISTER_TEST(buffer, typed_data_macro);
     REGISTER_TEST(buffer, typed_macros_with_struct);
+
+    /* Convenience Operation Tests */
+    REGISTER_TEST(buffer, extend_single_element);
+    REGISTER_TEST(buffer, extend_multiple_elements);
+    REGISTER_TEST(buffer, extend_zero_returns_end_pointer);
+    REGISTER_TEST(buffer, pop_returns_last_element);
+    REGISTER_TEST(buffer, remove_middle_shifts_elements);
+    REGISTER_TEST(buffer, insert_middle_shifts_elements);
+    REGISTER_TEST(buffer, front_back_helpers);
 
     /* Edge Cases and Error Handling Tests */
     REGISTER_TEST(buffer, null_buffer_parameter);
