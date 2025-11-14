@@ -63,7 +63,7 @@ nmo_arena_config_t nmo_arena_default_config(void) {
 }
 
 /**
- * Create arena with configuration (Phase 5)
+ * Create arena with configuration
  */
 nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_config_t *config) {
     // Use default allocator if none provided
@@ -113,7 +113,7 @@ nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_con
 }
 
 /**
- * Create arena (backwards compatible)
+ * Create arena
  */
 nmo_arena_t *nmo_arena_create(nmo_allocator_t *allocator, size_t initial_size) {
     nmo_arena_config_t config = nmo_arena_default_config();
