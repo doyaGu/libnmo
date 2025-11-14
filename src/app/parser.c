@@ -902,9 +902,13 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     for (size_t i = 0; i < object_count; i++) {
         if (reference_map[i]) {
             data_sect.objects[i].chunk = NULL;
-            data_sect.objects[i].size = 0;
+            data_sect.objects[i].data_size = 0;
         } else {
-            data_sect.objects[i].chunk = objects[i]->chunk;
+            nmo_chunk_t *chunk = objects[i]->chunk;
+            data_sect.objects[i].chunk = chunk;
+            data_sect.objects[i].data_size = (chunk && chunk->raw_data != NULL)
+                ? (uint32_t)chunk->raw_size
+                : 0;
         }
     }
 
@@ -1186,7 +1190,7 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
                     nmo_log(logger, NMO_LOG_ERROR, "Failed to write metadata for included file '%s'", name);
                     nmo_io_close(io);
                     nmo_id_remap_plan_destroy(remap_plan);
-                    return NMO_ERR_IO;
+                    return NMO_ERR_CANT_WRITE_FILE;
                 }
 
                 if (included_files[i].size > 0 && included_files[i].data != NULL) {
@@ -1195,7 +1199,7 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
                                 "Failed to write included payload for '%s'", name);
                         nmo_io_close(io);
                         nmo_id_remap_plan_destroy(remap_plan);
-                        return NMO_ERR_IO;
+                        return NMO_ERR_CANT_WRITE_FILE;
                     }
                 }
             }
