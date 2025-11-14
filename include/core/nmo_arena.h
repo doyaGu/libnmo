@@ -53,7 +53,7 @@ typedef struct nmo_arena_config {
 NMO_API nmo_arena_config_t nmo_arena_default_config(void);
 
 /**
- * @brief Create arena allocator with configuration (Phase 5)
+ * @brief Create arena allocator with configuration
  *
  * @param allocator Backing allocator (NULL for default)
  * @param config Arena configuration (NULL for defaults)
