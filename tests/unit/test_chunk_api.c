@@ -575,6 +575,50 @@ TEST(chunk_api, compression) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, compression_new_api) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 32);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_result_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result.code, NMO_OK);
+
+    for (int i = 0; i < 128; ++i) {
+        result = nmo_chunk_write_int(chunk, 0x11111111);
+        ASSERT_EQ(result.code, NMO_OK);
+    }
+
+    size_t original_bytes = nmo_chunk_get_data_size(chunk);
+    ASSERT_GT(original_bytes, 0U);
+
+    result = nmo_chunk_compress(chunk, 6);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_LT(nmo_chunk_get_data_size(chunk), original_bytes);
+
+    result = nmo_chunk_decompress(chunk);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_data_size(chunk), original_bytes);
+
+    result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result.code, NMO_OK);
+    for (int i = 0; i < 64; ++i) {
+        result = nmo_chunk_write_int(chunk, i);
+        ASSERT_EQ(result.code, NMO_OK);
+    }
+
+    size_t noisy_bytes = nmo_chunk_get_data_size(chunk);
+    ASSERT_GT(noisy_bytes, 0U);
+
+    // Use an extremely small ratio to guarantee compression is skipped
+    result = nmo_chunk_compress_if_beneficial(chunk, 6, 0.01f);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_data_size(chunk), noisy_bytes);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, crc) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -630,5 +674,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, sub_chunks);
     REGISTER_TEST(chunk_api, arrays);
     REGISTER_TEST(chunk_api, compression);
+    REGISTER_TEST(chunk_api, compression_new_api);
     REGISTER_TEST(chunk_api, crc);
 TEST_MAIN_END()

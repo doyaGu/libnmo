@@ -984,26 +984,53 @@ NMO_API nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id);
 // =============================================================================
 
 /**
- * @brief Compress chunk data
+ * @brief Compress chunk payload unconditionally.
  *
- * Compresses the chunk data using zlib/miniz compression.
- * Sets the PACKED flag if compression successful.
- * Original uncompressed size is stored in unpack_size.
+ * Always compresses the chunk buffer using miniz/zlib with the requested
+ * compression level. The compressed payload replaces the current buffer and
+ * the original DWORD count is stored in unpack_size so it can be restored
+ * later via nmo_chunk_decompress().
  *
  * @param chunk Chunk to compress (required)
- * @param compression_level Compression level (0-9, 6=default)
- * @return NMO_OK on success, error code on failure
+ * @param compression_level Compression level (0-9, values <0 fall back to 6)
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level);
+
+/**
+ * @brief Compress chunk payload only if compression helps.
+ *
+ * Invokes nmo_chunk_compress() and keeps the compressed buffer only when the
+ * resulting size satisfies the provided ratio threshold.
+ *
+ * @param chunk Chunk to compress (required)
+ * @param compression_level Compression level (0-9)
+ * @param min_ratio Minimum compression ratio to accept (0 < ratio <= 1). The
+ *        compressed size must be <= original_size * min_ratio.
+ * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT on bad ratio
+ */
+NMO_API nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
+                                                      int compression_level,
+                                                      float min_ratio);
+
+/**
+ * @brief Decompress chunk payload produced by nmo_chunk_compress().
+ *
+ * Restores the uncompressed buffer using the stored unpack_size metadata and
+ * clears the PACKED option flag.
+ *
+ * @param chunk Chunk to decompress (required)
+ * @return NMO_OK on success, error code otherwise
+ */
+NMO_API nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk);
+
+/**
+ * @brief Legacy helper that forwards to nmo_chunk_compress().
  */
 NMO_API nmo_result_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level);
 
 /**
- * @brief Decompress chunk data
- *
- * Decompresses the chunk data if PACKED flag is set.
- * Uses unpack_size as the expected decompressed size.
- *
- * @param chunk Chunk to decompress (required)
- * @return NMO_OK on success, error code on failure
+ * @brief Legacy helper that forwards to nmo_chunk_decompress().
  */
 NMO_API nmo_result_t nmo_chunk_unpack(nmo_chunk_t *chunk);
 
