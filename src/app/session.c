@@ -47,11 +47,48 @@ typedef struct nmo_session {
     nmo_manager_data_t *manager_data;
     uint32_t manager_data_count;
 
+    /* Included files */
+    nmo_included_file_t *included_files;
+    uint32_t included_file_count;
+    uint32_t included_file_capacity;
+
     /* Chunk pool for chunk allocations */
     nmo_chunk_pool_t *chunk_pool;
     size_t chunk_pool_capacity;
 } nmo_session_t;
 
+static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t needed) {
+    if (session == NULL || session->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (session->included_file_capacity >= needed) {
+        return NMO_OK;
+    }
+
+    uint32_t new_capacity = session->included_file_capacity ? session->included_file_capacity : 4;
+    while (new_capacity < needed) {
+        new_capacity *= 2;
+    }
+
+    size_t bytes = sizeof(nmo_included_file_t) * new_capacity;
+    nmo_included_file_t *new_block = (nmo_included_file_t *) nmo_arena_alloc(session->arena, bytes, sizeof(void *));
+    if (new_block == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    memset(new_block, 0, bytes);
+
+    if (session->included_files != NULL && session->included_file_count > 0) {
+        memcpy(new_block,
+               session->included_files,
+               sizeof(nmo_included_file_t) * session->included_file_count);
+    }
+
+    session->included_files = new_block;
+    session->included_file_capacity = new_capacity;
+    return NMO_OK;
+}
 /**
  * Create session
  */
@@ -92,6 +129,9 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     /* Initialize manager data */
     session->manager_data = NULL;
     session->manager_data_count = 0;
+    session->included_files = NULL;
+    session->included_file_count = 0;
+    session->included_file_capacity = 0;
     session->chunk_pool = NULL;
     session->chunk_pool_capacity = 0;
 
@@ -236,6 +276,86 @@ nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, u
         *out_count = session->manager_data_count;
     }
     return session->manager_data;
+}
+
+static int nmo_session_store_included_file(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size,
+    int copy_payload
+) {
+    if (session == NULL || name == NULL || (size > 0 && data == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int reserve_result = nmo_session_reserve_included_files(session, session->included_file_count + 1);
+    if (reserve_result != NMO_OK) {
+        return reserve_result;
+    }
+
+    size_t name_len = strlen(name);
+    char *name_copy = (char *) nmo_arena_alloc(session->arena, name_len + 1, 1);
+    if (name_copy == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memcpy(name_copy, name, name_len + 1);
+
+    const void *payload_src = data;
+    void *payload = NULL;
+    if (size > 0) {
+        if (copy_payload) {
+            payload = nmo_arena_alloc(session->arena, size, 1);
+            if (payload == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+            memcpy(payload, payload_src, size);
+        } else {
+            payload = (void *) payload_src;
+        }
+    }
+
+    nmo_included_file_t *entry = &session->included_files[session->included_file_count++];
+    entry->name = name_copy;
+    entry->data = payload;
+    entry->size = size;
+    return NMO_OK;
+}
+
+int nmo_session_add_included_file(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size
+) {
+    return nmo_session_store_included_file(session, name, data, size, 1);
+}
+
+int nmo_session_add_included_file_borrowed(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size
+) {
+    return nmo_session_store_included_file(session, name, data, size, 0);
+}
+
+nmo_included_file_t *nmo_session_get_included_files(
+    const nmo_session_t *session,
+    uint32_t *out_count
+) {
+    if (session == NULL) {
+        if (out_count != NULL) {
+            *out_count = 0;
+        }
+        return NULL;
+    }
+
+    if (out_count != NULL) {
+        *out_count = session->included_file_count;
+    }
+
+    return session->included_files;
 }
 
 /* High-level convenience API */
