@@ -215,8 +215,8 @@ static void test_parse_file(const char* filepath, const char* expected_signature
             data_section.manager_count = header.manager_count;
             data_section.object_count = header.object_count;
 
-            nmo_result_t data_result = nmo_data_section_parse(data_buffer, data_size,
-                                                           header.file_version, &data_section, arena);
+                nmo_result_t data_result = nmo_data_section_parse(data_buffer, data_size,
+                                                                   header.file_version, &data_section, NULL, arena);
             ASSERT_EQ(NMO_OK, data_result.code);
 
             printf("  Managers parsed: %u\n", data_section.manager_count);

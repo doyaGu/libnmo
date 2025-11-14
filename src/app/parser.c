@@ -82,6 +82,7 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     nmo_context_t *ctx = nmo_session_get_context(session);
     nmo_arena_t *arena = nmo_session_get_arena(session);
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_chunk_pool_t *chunk_pool = NULL;
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
 
     (void) flags; /* Flags will be used in full implementation */
@@ -331,8 +332,17 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         }
 
         /* Parse Data section */
+        if (chunk_pool == NULL) {
+            size_t pool_hint = (size_t)header.object_count + (size_t)header.manager_count;
+            chunk_pool = nmo_session_ensure_chunk_pool(session, pool_hint);
+            if (chunk_pool == NULL) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Chunk pool unavailable; falling back to direct chunk allocations");
+            }
+        }
+
         result = nmo_data_section_parse(data_buffer, data_size, header.file_version,
-                                        &data_sect, arena);
+                                        &data_sect, chunk_pool, arena);
         if (result.code != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
             nmo_load_session_destroy(load_session);

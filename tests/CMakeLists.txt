@@ -8,6 +8,9 @@ add_subdirectory(unit)
 # Integration tests
 add_subdirectory(integration)
 
+# Stress tests
+add_subdirectory(stress)
+
 # Fuzz tests (optional)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/CMakeLists.txt)
     add_subdirectory(fuzz)
