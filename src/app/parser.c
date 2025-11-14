@@ -71,6 +71,29 @@ static nmo_chunk_t* nmo_default_serialize_object(nmo_object_t *obj, nmo_arena_t 
     return new_chunk;
 }
 
+static int nmo_should_save_object_as_reference(
+    const nmo_object_t *obj,
+    nmo_save_flags_t flags
+) {
+    if (obj == NULL) {
+        return 0;
+    }
+
+    if (flags & NMO_SAVE_AS_OBJECTS) {
+        return 1;
+    }
+
+    if (obj->save_flags & NMO_OBJECT_REFERENCE_FLAG) {
+        return 1;
+    }
+
+    if (obj->flags & NMO_OBJECT_REFERENCE_FLAG) {
+        return 1;
+    }
+
+    return 0;
+}
+
 
 /**
  * Load file - 15-phase load pipeline
@@ -662,6 +685,28 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     nmo_log(logger, NMO_LOG_INFO, "  Session has %zu objects to save", object_count);
 
+    /* Determine which objects should be serialized as references */
+    uint8_t *reference_map = NULL;
+    size_t reference_count = 0;
+
+    reference_map = (uint8_t *) nmo_arena_alloc(arena, object_count * sizeof(uint8_t), 1);
+    if (reference_map == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate reference map");
+        return NMO_ERR_NOMEM;
+    }
+    memset(reference_map, 0, object_count * sizeof(uint8_t));
+
+    for (size_t i = 0; i < object_count; i++) {
+        if (nmo_should_save_object_as_reference(objects[i], flags)) {
+            reference_map[i] = 1;
+            reference_count++;
+        }
+    }
+
+    if (reference_count > 0) {
+        nmo_log(logger, NMO_LOG_INFO, "  Objects marked as references: %zu", reference_count);
+    }
+
     /* Phase 2: Manager Pre-Save Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Executing manager pre-save hooks");
 
@@ -713,6 +758,12 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     for (size_t i = 0; i < object_count; i++) {
         nmo_object_t *obj = objects[i];
 
+        if (reference_map[i]) {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Skipping serialization for object %zu (reference placeholder)", i);
+            continue;
+        }
+
         // In a full implementation, we would find the correct schema here.
         // const nmo_schema_descriptor_t *schema =
         //     nmo_schema_registry_find_by_id(schema_reg, obj->class_id);
@@ -753,7 +804,12 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     /* Copy chunk pointers */
     for (size_t i = 0; i < object_count; i++) {
-        data_sect.objects[i].chunk = objects[i]->chunk;
+        if (reference_map[i]) {
+            data_sect.objects[i].chunk = NULL;
+            data_sect.objects[i].size = 0;
+        } else {
+            data_sect.objects[i].chunk = objects[i]->chunk;
+        }
     }
 
     /* Calculate data section size */
@@ -816,7 +872,12 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
         obj_descs[i].class_id = obj->class_id;
         obj_descs[i].name = (char *) obj->name; /* Cast away const */
         obj_descs[i].file_index = i;            /* TODO: Calculate from hierarchy */
-        obj_descs[i].flags = obj->flags;
+
+        uint32_t descriptor_flags = obj->flags;
+        if (reference_map[i]) {
+            descriptor_flags |= NMO_OBJECT_REFERENCE_FLAG;
+        }
+        obj_descs[i].flags = descriptor_flags;
 
         nmo_log(logger, NMO_LOG_INFO, "  Object %zu: runtime_id=%u → file_id=%u, class=0x%08X",
                 i, obj->id, file_id, obj->class_id);
