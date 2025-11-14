@@ -229,9 +229,19 @@ nmo_result_t nmo_header1_parse(
 
         uint32_t included_table_size = nmo_read_u32_le(buffer + pos);
         pos += 4;
-        (void) included_table_size;
 
-        if (included_count > 0) {
+        header->included_file_count = included_count;
+
+        if (included_table_size > 0 && pos + included_table_size > size) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                                              NMO_SEVERITY_ERROR,
+                                              "Buffer too small for included file table"));
+        }
+
+        if (included_count == 0 || included_table_size == 0) {
+            /* Table descriptors are absent; metadata lives outside Header1 */
+            pos += included_table_size;
+        } else {
             header->included_files = (nmo_included_file_desc_t *) nmo_arena_alloc(
                 arena,
                 sizeof(nmo_included_file_desc_t) * included_count,
@@ -246,61 +256,61 @@ nmo_result_t nmo_header1_parse(
 
             memset(header->included_files, 0,
                    sizeof(nmo_included_file_desc_t) * included_count);
-        }
 
-        header->included_file_count = included_count;
+            size_t table_end = pos + included_table_size;
 
-        for (uint32_t i = 0; i < included_count; i++) {
-            if (pos + 4 > size) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Buffer too small for included name length"));
-            }
-
-            uint32_t name_len = nmo_read_u32_le(buffer + pos);
-            pos += 4;
-
-            char *name_ptr = NULL;
-            if (name_len > 0) {
-                if (pos + name_len > size) {
+            for (uint32_t i = 0; i < included_count; i++) {
+                if (pos + 4 > table_end) {
                     return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                                       NMO_SEVERITY_ERROR,
-                                                      "Buffer too small for included filename"));
+                                                      "Buffer too small for included name length"));
                 }
 
-                name_ptr = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
-                if (name_ptr == NULL) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                uint32_t name_len = nmo_read_u32_le(buffer + pos);
+                pos += 4;
+
+                char *name_ptr = NULL;
+                if (name_len > 0) {
+                    if (pos + name_len > table_end) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                                                          NMO_SEVERITY_ERROR,
+                                                          "Buffer too small for included filename"));
+                    }
+
+                    name_ptr = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
+                    if (name_ptr == NULL) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                                          NMO_SEVERITY_ERROR,
+                                                          "Failed to allocate included filename"));
+                    }
+
+                    memcpy(name_ptr, buffer + pos, name_len);
+                    name_ptr[name_len] = '\0';
+                    pos += name_len;
+                } else {
+                    name_ptr = (char *) nmo_arena_alloc(arena, 1, 1);
+                    if (name_ptr == NULL) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                                          NMO_SEVERITY_ERROR,
+                                                          "Failed to allocate empty filename"));
+                    }
+                    name_ptr[0] = '\0';
+                }
+
+                if (pos + 4 > table_end) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                                       NMO_SEVERITY_ERROR,
-                                                      "Failed to allocate included filename"));
+                                                      "Buffer too small for included size"));
                 }
 
-                memcpy(name_ptr, buffer + pos, name_len);
-                name_ptr[name_len] = '\0';
-                pos += name_len;
-            } else {
-                name_ptr = (char *) nmo_arena_alloc(arena, 1, 1);
-                if (name_ptr == NULL) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                      NMO_SEVERITY_ERROR,
-                                                      "Failed to allocate empty filename"));
-                }
-                name_ptr[0] = '\0';
-            }
+                uint32_t data_size = nmo_read_u32_le(buffer + pos);
+                pos += 4;
 
-            if (pos + 4 > size) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Buffer too small for included size"));
-            }
-
-            uint32_t data_size = nmo_read_u32_le(buffer + pos);
-            pos += 4;
-
-            if (header->included_files != NULL) {
                 header->included_files[i].name = name_ptr;
                 header->included_files[i].data_size = data_size;
             }
+
+            pos = table_end;
         }
     }
 
