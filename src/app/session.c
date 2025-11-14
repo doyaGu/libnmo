@@ -106,6 +106,11 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
  */
 void nmo_session_destroy(nmo_session_t *session) {
     if (session != NULL) {
+        if (session->object_index != NULL) {
+            nmo_object_index_destroy(session->object_index);
+            session->object_index = NULL;
+        }
+
         /* Destroy owned resources */
         if (session->repository != NULL) {
             nmo_object_repository_destroy(session->repository);
@@ -289,6 +294,7 @@ int nmo_session_get_objects(
 void nmo_session_set_object_index(nmo_session_t *session, nmo_object_index_t *index) {
     if (session != NULL) {
         session->object_index = index;
+        nmo_object_repository_set_index(session->repository, index);
     }
 }
 
@@ -313,10 +319,34 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
         if (session->object_index == NULL) {
             return NMO_ERR_NOMEM;
         }
+        nmo_object_repository_set_index(session->repository, session->object_index);
+    }
+
+    if (flags == 0) {
+        flags = nmo_object_index_get_active_flags(session->object_index);
+        if (flags == 0) {
+            flags = NMO_INDEX_BUILD_ALL;
+        }
     }
     
     /* Rebuild */
     return nmo_object_index_rebuild(session->object_index, flags);
+}
+
+int nmo_session_get_object_index_stats(
+    const nmo_session_t *session,
+    nmo_index_stats_t *stats
+) {
+    if (session == NULL || stats == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (session->object_index == NULL) {
+        memset(stats, 0, sizeof(*stats));
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    return nmo_object_index_get_stats(session->object_index, stats);
 }
 
 /**

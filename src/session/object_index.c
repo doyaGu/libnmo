@@ -564,6 +564,13 @@ int nmo_object_index_clear(nmo_object_index_t *index, uint32_t flags) {
     return NMO_OK;
 }
 
+uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *index) {
+    if (index == NULL) {
+        return 0;
+    }
+    return index->active_indexes;
+}
+
 /* ==================== Class ID Lookup ==================== */
 
 /**

@@ -313,6 +313,26 @@ TEST(object_index, statistics) {
     teardown_fixture(f);
 }
 
+TEST(object_index, active_flags) {
+    test_fixture_t *f = setup_fixture();
+    ASSERT_NOT_NULL(f);
+
+    create_test_object(f, 1, 100, "Obj1");
+
+    nmo_object_index_build(f->index, NMO_INDEX_BUILD_NAME);
+    ASSERT_EQ(NMO_INDEX_BUILD_NAME, nmo_object_index_get_active_flags(f->index));
+
+    nmo_object_index_build(f->index, NMO_INDEX_BUILD_CLASS);
+    ASSERT_EQ(
+        (uint32_t)(NMO_INDEX_BUILD_NAME | NMO_INDEX_BUILD_CLASS),
+        nmo_object_index_get_active_flags(f->index));
+
+    nmo_object_index_clear(f->index, NMO_INDEX_BUILD_NAME);
+    ASSERT_EQ(NMO_INDEX_BUILD_CLASS, nmo_object_index_get_active_flags(f->index));
+
+    teardown_fixture(f);
+}
+
 /**
  * Test: Rebuild indexes
  */
@@ -356,5 +376,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_index, guid_index);
     REGISTER_TEST(object_index, incremental_update);
     REGISTER_TEST(object_index, statistics);
+    REGISTER_TEST(object_index, active_flags);
     REGISTER_TEST(object_index, rebuild);
 TEST_MAIN_END()
