@@ -307,6 +307,32 @@ NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
  */
 NMO_API void nmo_session_reset_reference_resolver(nmo_session_t *session);
 
+typedef struct nmo_finish_loading_stats {
+    size_t total_objects;
+    uint32_t flags;
+    struct {
+        uint32_t total;
+        uint32_t resolved;
+        uint32_t unresolved;
+        uint32_t ambiguous;
+    } references;
+    struct {
+        size_t class_entries;
+        size_t name_entries;
+        size_t guid_entries;
+        size_t memory_usage;
+    } indexes;
+    uint32_t manager_errors;
+} nmo_finish_loading_stats_t;
+
+void nmo_session_set_finish_loading_stats(
+    nmo_session_t *session,
+    const nmo_finish_loading_stats_t *stats);
+
+NMO_API int nmo_session_get_finish_loading_stats(
+    const nmo_session_t *session,
+    nmo_finish_loading_stats_t *out_stats);
+
 /* ==================== Object Query API (Phase 5) ==================== */
 
 /**

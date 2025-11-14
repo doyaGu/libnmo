@@ -168,6 +168,26 @@ static void show_statistics(nmo_session_t *session) {
     
     nmo_stats_print(&stats, stdout);
 
+    nmo_finish_loading_stats_t finish_stats;
+    if (nmo_session_get_finish_loading_stats(session, &finish_stats) == NMO_OK) {
+        printf("\n--- FinishLoading Diagnostics ---\n");
+        printf("Flags: 0x%08X\n", finish_stats.flags);
+        printf("Objects indexed: %zu\n", finish_stats.total_objects);
+        printf("References: total=%u resolved=%u unresolved=%u ambiguous=%u\n",
+               finish_stats.references.total,
+               finish_stats.references.resolved,
+               finish_stats.references.unresolved,
+               finish_stats.references.ambiguous);
+        printf("Indexes: class=%zu name=%zu guid=%zu memory=%zu bytes\n",
+               finish_stats.indexes.class_entries,
+               finish_stats.indexes.name_entries,
+               finish_stats.indexes.guid_entries,
+               finish_stats.indexes.memory_usage);
+        if (finish_stats.manager_errors > 0) {
+            printf("Manager post-load errors: %u\n", finish_stats.manager_errors);
+        }
+    }
+
     uint32_t included_count = 0;
     nmo_included_file_t *included = nmo_session_get_included_files(session, &included_count);
     if (included_count > 0 && included != NULL) {

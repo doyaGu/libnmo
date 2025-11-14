@@ -44,6 +44,10 @@ typedef struct nmo_finish_loading_context {
     
     /* Flags */
     uint32_t flags;
+
+    /* Diagnostics */
+    nmo_finish_loading_stats_t stats;
+    uint32_t manager_errors;
 } nmo_finish_loading_context_t;
 
 /**
@@ -90,15 +94,28 @@ static int finish_loading_phase_9_resolve_references(nmo_finish_loading_context_
     nmo_reference_stats_t stats;
     result = nmo_reference_resolver_get_stats(ctx->resolver, &stats);
     if (result == NMO_OK) {
-        nmo_log(ctx->logger, NMO_LOG_INFO, "  References resolved: %u total, %u resolved, %u unresolved",
-                stats.total_count, stats.resolved_count, stats.unresolved_count);
-        
-        /* Log unresolved references if any */
-        if (stats.unresolved_count > 0) {
-            nmo_log(ctx->logger, NMO_LOG_WARN, "  %u references remain unresolved", 
-                    stats.unresolved_count);
-            
-            /* TODO: Iterate and log each unresolved reference */
+        if (stats.total_count == 0) {
+            nmo_log(ctx->logger, NMO_LOG_INFO, "  No reference descriptors registered during load");
+        } else {
+            nmo_log(ctx->logger, NMO_LOG_INFO,
+                    "  References resolved: %u total, %u resolved, %u unresolved",
+                    stats.total_count, stats.resolved_count, stats.unresolved_count);
+
+            ctx->stats.references.total = stats.total_count;
+            ctx->stats.references.resolved = stats.resolved_count;
+            ctx->stats.references.unresolved = stats.unresolved_count;
+            ctx->stats.references.ambiguous = stats.ambiguous_count;
+
+            if (stats.unresolved_count > 0) {
+                nmo_log(ctx->logger, NMO_LOG_WARN, "  %u references remain unresolved", 
+                        stats.unresolved_count);
+
+                if (ctx->flags & NMO_FINISH_LOAD_STRICT_REFERENCES) {
+                    nmo_log(ctx->logger, NMO_LOG_ERROR,
+                            "  Strict reference resolution enabled - aborting load");
+                    return NMO_ERR_VALIDATION_FAILED;
+                }
+            }
         }
     }
     
@@ -162,6 +179,11 @@ static int finish_loading_phase_10_build_indexes(nmo_finish_loading_context_t *c
         nmo_log(ctx->logger, NMO_LOG_INFO, "    Name index: %zu entries", stats.name_index_entries);
         nmo_log(ctx->logger, NMO_LOG_INFO, "    GUID index: %zu entries", stats.guid_index_entries);
         nmo_log(ctx->logger, NMO_LOG_INFO, "    Memory usage: %zu bytes", stats.memory_usage);
+        ctx->stats.indexes.class_entries = stats.class_index_entries;
+        ctx->stats.indexes.name_entries = stats.name_index_entries;
+        ctx->stats.indexes.guid_entries = stats.guid_index_entries;
+        ctx->stats.indexes.memory_usage = stats.memory_usage;
+        ctx->stats.total_objects = stats.total_objects;
     }
     
     return NMO_OK;
@@ -216,6 +238,7 @@ static int finish_loading_phase_11_manager_postload(nmo_finish_loading_context_t
     if (errors > 0) {
         nmo_log(ctx->logger, NMO_LOG_WARN, "  %d manager(s) reported errors during post-load", errors);
     }
+    ctx->manager_errors = errors;
     
     return NMO_OK;
 }
@@ -233,6 +256,9 @@ static int finish_loading_phase_12_gather_stats(nmo_finish_loading_context_t *ct
     size_t object_count = nmo_object_repository_get_count(repo);
     
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Total objects loaded: %zu", object_count);
+    ctx->stats.flags = ctx->flags;
+    ctx->stats.total_objects = object_count;
+    ctx->stats.manager_errors = ctx->manager_errors;
     
     /* Reference resolution stats */
     if (ctx->resolver != NULL) {
@@ -258,6 +284,8 @@ static int finish_loading_phase_12_gather_stats(nmo_finish_loading_context_t *ct
     nmo_file_info_t file_info = nmo_session_get_file_info(ctx->session);
     nmo_log(ctx->logger, NMO_LOG_INFO, "  File version: %u, CK version: 0x%08X",
             file_info.file_version, file_info.ck_version);
+
+    nmo_session_set_finish_loading_stats(ctx->session, &ctx->stats);
     
     return NMO_OK;
 }
