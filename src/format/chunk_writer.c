@@ -1,7 +1,10 @@
 #include "format/nmo_chunk_writer.h"
+#include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
 #include <stdlib.h>
+
+#define LIST_SEQUENCE_MARKER 0xFFFFFFFFu
 
 #define WRITER_INITIAL_CAPACITY 100  // DWORDs
 #define WRITER_GROWTH_INCREMENT 500  // DWORDs (as per spec)
@@ -22,6 +25,9 @@ typedef struct nmo_chunk_writer {
     // Chunk being built
     nmo_chunk_t *chunk;
 
+    // Optional file-context remap tables (borrowed)
+    const nmo_chunk_file_context_t *file_context;
+
     // Arena allocator
     nmo_arena_t *arena;
 
@@ -38,6 +44,10 @@ typedef struct nmo_chunk_writer {
     uint32_t *manager_list;
     size_t manager_count;
     size_t manager_capacity;
+
+    uint32_t *chunk_ref_list;
+    size_t chunk_ref_count;
+    size_t chunk_ref_capacity;
 
     nmo_chunk_t **chunk_list;
     size_t chunk_count;
@@ -83,6 +93,132 @@ static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
     return NMO_OK;
 }
 
+static int ensure_id_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
+    if (w->id_count + needed_entries <= w->id_capacity) {
+        return NMO_OK;
+    }
+
+    size_t new_capacity = (w->id_capacity == 0) ? 16 : w->id_capacity * 2;
+    while (new_capacity < w->id_count + needed_entries) {
+        new_capacity *= 2;
+    }
+
+    uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
+                                                      new_capacity * sizeof(uint32_t),
+                                                      sizeof(uint32_t));
+    if (new_list == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (w->id_list != NULL && w->id_count > 0) {
+        memcpy(new_list, w->id_list, w->id_count * sizeof(uint32_t));
+    }
+
+    w->id_list = new_list;
+    w->id_capacity = new_capacity;
+    return NMO_OK;
+}
+
+static int ensure_manager_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
+    if (w->manager_count + needed_entries <= w->manager_capacity) {
+        return NMO_OK;
+    }
+
+    size_t new_capacity = (w->manager_capacity == 0) ? 16 : w->manager_capacity * 2;
+    while (new_capacity < w->manager_count + needed_entries) {
+        new_capacity *= 2;
+    }
+
+    uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
+                                                      new_capacity * sizeof(uint32_t),
+                                                      sizeof(uint32_t));
+    if (new_list == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (w->manager_list != NULL && w->manager_count > 0) {
+        memcpy(new_list, w->manager_list, w->manager_count * sizeof(uint32_t));
+    }
+
+    w->manager_list = new_list;
+    w->manager_capacity = new_capacity;
+    return NMO_OK;
+}
+
+static int track_id_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
+    int result = ensure_id_capacity(w, 2);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->id_list[w->id_count++] = LIST_SEQUENCE_MARKER;
+    w->id_list[w->id_count++] = position;
+    return NMO_OK;
+}
+
+static int track_manager_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
+    int result = ensure_manager_capacity(w, 2);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->manager_list[w->manager_count++] = LIST_SEQUENCE_MARKER;
+    w->manager_list[w->manager_count++] = position;
+    return NMO_OK;
+}
+
+static int ensure_chunk_ref_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
+    if (w->chunk_ref_count + needed_entries <= w->chunk_ref_capacity) {
+        return NMO_OK;
+    }
+
+    size_t new_capacity = (w->chunk_ref_capacity == 0) ? 16 : w->chunk_ref_capacity * 2;
+    while (new_capacity < w->chunk_ref_count + needed_entries) {
+        new_capacity *= 2;
+    }
+
+    uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
+                                                      new_capacity * sizeof(uint32_t),
+                                                      sizeof(uint32_t));
+    if (new_list == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (w->chunk_ref_list != NULL && w->chunk_ref_count > 0) {
+        memcpy(new_list, w->chunk_ref_list, w->chunk_ref_count * sizeof(uint32_t));
+    }
+
+    w->chunk_ref_list = new_list;
+    w->chunk_ref_capacity = new_capacity;
+    return NMO_OK;
+}
+
+static int track_chunk_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
+    int result = ensure_chunk_ref_capacity(w, 2);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->chunk_ref_list[w->chunk_ref_count++] = LIST_SEQUENCE_MARKER;
+    w->chunk_ref_list[w->chunk_ref_count++] = position;
+    return NMO_OK;
+}
+
+static int track_chunk_position(nmo_chunk_writer_t *w, uint32_t position) {
+    int result = ensure_chunk_ref_capacity(w, 1);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->chunk_ref_list[w->chunk_ref_count++] = position;
+    return NMO_OK;
+}
+
+static inline int writer_has_file_context(const nmo_chunk_writer_t *w) {
+    return (w != NULL) && (w->file_context != NULL) &&
+           (w->file_context->runtime_to_file != NULL);
+}
+
 // Helper to add ID to tracking list
 /**
  * @brief Track position for object ID (for later remapping)
@@ -95,22 +231,9 @@ static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
  * @return NMO_OK on success, error code on failure
  */
 static int track_id_position(nmo_chunk_writer_t *w) {
-    // Grow list if needed
-    if (w->id_count >= w->id_capacity) {
-        size_t new_capacity = w->id_capacity == 0 ? 16 : w->id_capacity * 2;
-        uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                          new_capacity * sizeof(uint32_t),
-                                                          sizeof(uint32_t));
-        if (new_list == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-
-        if (w->id_list != NULL && w->id_count > 0) {
-            memcpy(new_list, w->id_list, w->id_count * sizeof(uint32_t));
-        }
-
-        w->id_list = new_list;
-        w->id_capacity = new_capacity;
+    int result = ensure_id_capacity(w, 1);
+    if (result != NMO_OK) {
+        return result;
     }
 
     // Track the current position (not the ID itself!)
@@ -118,51 +241,27 @@ static int track_id_position(nmo_chunk_writer_t *w) {
     return NMO_OK;
 }
 
-// Helper to add manager to tracking list
-static int track_manager(nmo_chunk_writer_t *w, uint32_t manager) __attribute__((unused));
-
-static int track_manager(nmo_chunk_writer_t *w, uint32_t manager) {
-    // Grow list if needed
-    if (w->manager_count >= w->manager_capacity) {
-        size_t new_capacity = w->manager_capacity == 0 ? 16 : w->manager_capacity * 2;
-        uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                          new_capacity * sizeof(uint32_t),
-                                                          sizeof(uint32_t));
-        if (new_list == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-
-        if (w->manager_list != NULL && w->manager_count > 0) {
-            memcpy(new_list, w->manager_list, w->manager_count * sizeof(uint32_t));
-        }
-
-        w->manager_list = new_list;
-        w->manager_capacity = new_capacity;
+static int encode_object_id(const nmo_chunk_writer_t *w,
+                            nmo_object_id_t id,
+                            uint32_t *out_value) {
+    if (out_value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    w->manager_list[w->manager_count++] = manager;
-    return NMO_OK;
-}
+    if (!writer_has_file_context(w) || id == 0) {
+        *out_value = (uint32_t) id;
+        return NMO_OK;
+    }
 
-/**
- * @brief Track position for sub-chunk (for sequence tracking)
- *
- * Adds the current write position to the chunks list. This list will be used
- * during serialization to track where sub-chunk sequences begin.
- * Matches CKStateChunk behavior where m_Chunks->AddEntries(CurrentPos - 1) is called.
- *
- * @param w Writer context
- * @param position Position to track
- * @return NMO_OK on success, error code on failure
- */
-static int track_chunk_position(nmo_chunk_writer_t *w, uint32_t position) {
-    // For now, we just track the position. The actual chunk list will be built
-    // during finalization from the chunk_list array.
-    // This matches CKStateChunk's m_Chunks list which tracks positions.
+    nmo_object_id_t file_id = 0;
+    nmo_result_t remap = nmo_id_remap_lookup_id(w->file_context->runtime_to_file,
+                                                id,
+                                                &file_id);
+    if (remap.code != NMO_OK) {
+        return remap.code;
+    }
 
-    // Note: We're not actually using this yet because we're building chunks
-    // in the chunk_list array. This is here for API completeness.
-    (void) position; // Unused for now
+    *out_value = (uint32_t) file_id;
     return NMO_OK;
 }
 
@@ -193,6 +292,23 @@ nmo_chunk_writer_t *nmo_chunk_writer_create(nmo_arena_t *arena) {
     return w;
 }
 
+void nmo_chunk_writer_set_file_context(nmo_chunk_writer_t *w,
+                                       const nmo_chunk_file_context_t *ctx) {
+    if (w == NULL) {
+        return;
+    }
+
+    w->file_context = ctx;
+
+    if (w->chunk != NULL) {
+        if (writer_has_file_context(w)) {
+            w->chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        } else {
+            w->chunk->chunk_options &= ~NMO_CHUNK_OPTION_FILE;
+        }
+    }
+}
+
 void nmo_chunk_writer_start(nmo_chunk_writer_t *w, nmo_class_id_t class_id, uint32_t chunk_version) {
     if (w == NULL) {
         return;
@@ -206,13 +322,19 @@ void nmo_chunk_writer_start(nmo_chunk_writer_t *w, nmo_class_id_t class_id, uint
 
     w->chunk->class_id = class_id;
     w->chunk->chunk_version = chunk_version;
-    w->chunk->chunk_class_id = 0; // Will be set during serialization
+    w->chunk->chunk_class_id = (uint8_t) (class_id & 0xFF);
     w->chunk->data_version = 0;
+    if (writer_has_file_context(w)) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    } else {
+        w->chunk->chunk_options &= ~NMO_CHUNK_OPTION_FILE;
+    }
 
     // Reset state
     w->data_size = 0;
     w->id_count = 0;
     w->manager_count = 0;
+    w->chunk_ref_count = 0;
     w->chunk_count = 0;
     w->prev_identifier_pos = 0;
     w->finalized = 0;
@@ -558,17 +680,27 @@ int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_id_t id) 
         return result;
     }
 
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
+    }
+
+    int in_file_context = writer_has_file_context(w);
+
     // If ID is non-zero and we don't have file context, track the position
-    // (In file context mode, IDs would be converted to indices by the file)
-    if (id != 0) {
+    if (id != 0 && !in_file_context) {
         result = track_id_position(w);
         if (result != NMO_OK) {
             return result;
         }
     }
 
-    // Write the ID
-    w->data[w->data_size++] = id;
+    uint32_t encoded_value = 0;
+    result = encode_object_id(w, id, &encoded_value);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->data[w->data_size++] = encoded_value;
     return NMO_OK;
 }
 
@@ -582,11 +714,26 @@ int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_t count) 
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
 
-    (void) count; // Count is informational, not stored
+    int result = ensure_data_capacity(w, 1);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    int in_file_context = writer_has_file_context(w);
+    if (count > 0 && !in_file_context) {
+        result = track_id_sequence_start(w, (uint32_t) w->data_size);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
+
+    w->data[w->data_size++] = (uint32_t) count;
     return NMO_OK;
 }
 
-int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w, size_t count) {
+int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
+                                            nmo_guid_t manager,
+                                            size_t count) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -596,7 +743,19 @@ int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w, size_t count)
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
     }
 
-    (void) count; // Count is informational, not stored
+    int result = ensure_data_capacity(w, 3);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    result = track_manager_sequence_start(w, (uint32_t) w->data_size);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->data[w->data_size++] = (uint32_t) count;
+    w->data[w->data_size++] = manager.d1;
+    w->data[w->data_size++] = manager.d2;
     return NMO_OK;
 }
 
@@ -627,8 +786,8 @@ int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, size_t count
         return result;
     }
 
-    // Track the position (CurrentPos - 1 in CKStateChunk, but we track before writing)
-    result = track_chunk_position(w, (uint32_t) w->data_size);
+    uint32_t sequence_pos = (w->data_size == 0) ? 0u : (uint32_t) (w->data_size - 1);
+    result = track_chunk_sequence_start(w, sequence_pos);
     if (result != NMO_OK) {
         return result;
     }
@@ -668,6 +827,10 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    }
+
     // Add sub-chunk to chunk list for tracking
     if (sub != NULL) {
         // Grow chunk list if needed
@@ -695,22 +858,39 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
 
     // Calculate total size needed
     size_t size_dwords = 1; // For the size field itself
+    uint32_t sub_flags = 0;
     if (sub != NULL) {
+        sub_flags = sub->chunk_options;
+        if (sub->id_count > 0) {
+            sub_flags |= NMO_CHUNK_OPTION_IDS;
+        }
+        if (sub->chunk_ref_count > 0) {
+            sub_flags |= NMO_CHUNK_OPTION_CHN;
+        }
+        if (sub->manager_count > 0) {
+            sub_flags |= NMO_CHUNK_OPTION_MAN;
+        }
         size_dwords = 8;
-        // Header fields (size, classID, version, chunkSize, hasFile, idCount, chunkCount, managerCount)
         if (sub->data_size != 0) {
             size_dwords += sub->data_size;
         }
-        if (sub->id_count > 0) {
-            size_dwords += sub->id_count;
+        if (sub_flags & NMO_CHUNK_OPTION_IDS) {
+            size_dwords += 1; /* count field */
+            if (sub->id_count > 0) {
+                size_dwords += sub->id_count;
+            }
         }
-        if (sub->chunk_count > 0) {
-            // For sub-chunks, we need to calculate the size recursively
-            // For now, we'll just reserve space for the chunk positions
-            size_dwords += sub->chunk_count;
+        if (sub_flags & NMO_CHUNK_OPTION_CHN) {
+            size_dwords += 1;
+            if (sub->chunk_ref_count > 0) {
+                size_dwords += sub->chunk_ref_count;
+            }
         }
-        if (sub->manager_count > 0) {
-            size_dwords += sub->manager_count;
+        if (sub_flags & NMO_CHUNK_OPTION_MAN) {
+            size_dwords += 1;
+            if (sub->manager_count > 0) {
+                size_dwords += sub->manager_count;
+            }
         }
     }
 
@@ -723,31 +903,30 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
     // Write size (in DWORDs, minus 1)
     w->data[w->data_size++] = (uint32_t) (size_dwords - 1);
 
+    // Track this sub-chunk entry position (points to size field)
     if (sub != NULL) {
-        // Write class ID
-        w->data[w->data_size++] = sub->class_id;
+        result = track_chunk_position(w, (uint32_t) (w->data_size - 1));
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
 
-        // Write combined version info (DataVersion | ChunkClassID | ChunkVersion | ChunkOptions)
-        uint32_t version_info = ((uint8_t)sub->data_version) |
-                                (((uint8_t)sub->chunk_class_id) << 8) |
-                                (((uint8_t)sub->chunk_version) << 16) |
-                                (((uint8_t)sub->chunk_options) << 24);
+    if (sub != NULL) {
+        uint8_t sub_class_byte = sub->chunk_class_id != 0 ?
+                     sub->chunk_class_id :
+                     (uint8_t) (sub->class_id & 0xFF);
+        w->data[w->data_size++] = (uint32_t) sub_class_byte;
+
+        // Write legacy version layout (data | chunk<<16)
+        uint32_t version_info = ((uint32_t) sub->data_version & 0xFFFFu) |
+                                (((uint32_t) sub->chunk_version & 0xFFFFu) << 16);
         w->data[w->data_size++] = version_info;
 
         // Write chunk size
         w->data[w->data_size++] = (uint32_t) sub->data_size;
 
-        // Write hasFile flag (0 for non-file context)
-        w->data[w->data_size++] = 0;
-
-        // Write ID count
-        w->data[w->data_size++] = (uint32_t) sub->id_count;
-
-        // Write chunk count
-        w->data[w->data_size++] = (uint32_t) sub->chunk_count;
-
-        // Write manager count
-        w->data[w->data_size++] = (uint32_t) sub->manager_count;
+        uint32_t has_file = (sub_flags & NMO_CHUNK_OPTION_FILE) ? 1u : 0u;
+        w->data[w->data_size++] = has_file;
 
         // Write data buffer
         if (sub->data_size != 0 && sub->data != NULL) {
@@ -755,65 +934,34 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
             w->data_size += sub->data_size;
         }
 
-        // Write IDs buffer
-        if (sub->id_count > 0 && sub->ids != NULL) {
-            memcpy(&w->data[w->data_size], sub->ids, sub->id_count * sizeof(uint32_t));
-            w->data_size += sub->id_count;
+        // Write ID list
+        if (sub_flags & NMO_CHUNK_OPTION_IDS) {
+            w->data[w->data_size++] = (uint32_t) sub->id_count;
+            if (sub->id_count > 0 && sub->ids != NULL) {
+                memcpy(&w->data[w->data_size], sub->ids, sub->id_count * sizeof(uint32_t));
+                w->data_size += sub->id_count;
+            }
         }
 
-        // Write chunks buffer (positions)
-        if (sub->chunk_count > 0 && sub->chunks != NULL) {
-            // For now, we write placeholder positions
-            // In a full implementation, this would write the chunk positions
-            for (size_t i = 0; i < sub->chunk_count; i++) {
-                w->data[w->data_size++] = 0; // Placeholder
+        // Write chunk references
+        if (sub_flags & NMO_CHUNK_OPTION_CHN) {
+            w->data[w->data_size++] = (uint32_t) sub->chunk_ref_count;
+            if (sub->chunk_ref_count > 0 && sub->chunk_refs != NULL) {
+                memcpy(&w->data[w->data_size], sub->chunk_refs, sub->chunk_ref_count * sizeof(uint32_t));
+                w->data_size += sub->chunk_ref_count;
             }
         }
 
         // Write managers buffer
-        if (sub->manager_count > 0 && sub->managers != NULL) {
-            memcpy(&w->data[w->data_size], sub->managers, sub->manager_count * sizeof(uint32_t));
-            w->data_size += sub->manager_count;
+        if (sub_flags & NMO_CHUNK_OPTION_MAN) {
+            w->data[w->data_size++] = (uint32_t) sub->manager_count;
+            if (sub->manager_count > 0 && sub->managers != NULL) {
+                memcpy(&w->data[w->data_size], sub->managers, sub->manager_count * sizeof(uint32_t));
+                w->data_size += sub->manager_count;
+            }
         }
     }
 
-    return NMO_OK;
-}
-
-/**
- * @brief Ensure manager list capacity
- *
- * Grows the manager list if needed to accommodate more entries.
- *
- * @param w Writer context
- * @param needed Number of entries needed
- * @return NMO_OK on success, error code on failure
- */
-static int ensure_manager_capacity(nmo_chunk_writer_t *w, size_t needed) {
-    if (w->manager_count + needed <= w->manager_capacity) {
-        return NMO_OK;
-    }
-
-    // Grow capacity (similar to ID list growth)
-    size_t new_capacity = w->manager_capacity == 0 ? 16 : w->manager_capacity * 2;
-    while (new_capacity < w->manager_count + needed) {
-        new_capacity *= 2;
-    }
-
-    uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                      new_capacity * sizeof(uint32_t),
-                                                      sizeof(uint32_t));
-    if (new_list == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    // Copy existing entries
-    if (w->manager_count > 0 && w->manager_list != NULL) {
-        memcpy(new_list, w->manager_list, w->manager_count * sizeof(uint32_t));
-    }
-
-    w->manager_list = new_list;
-    w->manager_capacity = new_capacity;
     return NMO_OK;
 }
 
@@ -831,6 +979,10 @@ static int ensure_manager_capacity(nmo_chunk_writer_t *w, size_t needed) {
 int nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_t manager, int32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
     }
 
     // Ensure capacity for [GUID.d1][GUID.d2][value] (3 DWORDs)
@@ -1093,6 +1245,12 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
     if (w->chunk_count > 0) {
         w->chunk->chunks = w->chunk_list;
         w->chunk->chunk_count = w->chunk_count;
+    }
+
+    if (w->chunk_ref_count > 0) {
+        w->chunk->chunk_refs = w->chunk_ref_list;
+        w->chunk->chunk_ref_count = w->chunk_ref_count;
+        w->chunk->chunk_ref_capacity = w->chunk_ref_count;
     }
 
     w->finalized = 1;

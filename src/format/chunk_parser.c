@@ -1,4 +1,5 @@
 #include "format/nmo_chunk_parser.h"
+#include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
 #include <stdlib.h>
@@ -16,6 +17,14 @@ typedef struct nmo_chunk_parser {
     size_t cursor;              /**< Current position in DWORDs */
     size_t prev_identifier_pos; /**< Position of previous identifier for linked-list traversal */
     nmo_allocator_t *alloc;     /**< Allocator for parser itself */
+    const nmo_chunk_file_context_t *file_context; /**< Optional file remap context */
+    size_t object_sequence_remaining; /**< Remaining entries in current object sequence */
+    size_t manager_sequence_remaining; /**< Remaining entries in current manager sequence */
+    size_t subchunk_sequence_remaining; /**< Remaining entries in current sub-chunk sequence */
+    int in_object_sequence;     /**< Whether parser is inside an object ID sequence */
+    int in_manager_sequence;    /**< Whether parser is inside a manager int sequence */
+    int in_subchunk_sequence;   /**< Whether parser is inside a sub-chunk sequence */
+    nmo_guid_t current_manager_guid; /**< Active manager GUID for sequence tracking */
 } nmo_chunk_parser_t;
 
 // Helper to check if enough data remains
@@ -24,6 +33,19 @@ static inline int check_bounds(nmo_chunk_parser_t *p, size_t dwords_needed) {
         return 0;
     }
     return (p->cursor + dwords_needed) <= p->chunk->data_size;
+}
+
+static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
+    if (p == NULL) {
+        return;
+    }
+
+    if (p->in_subchunk_sequence && p->subchunk_sequence_remaining > 0) {
+        p->subchunk_sequence_remaining--;
+        if (p->subchunk_sequence_remaining == 0) {
+            p->in_subchunk_sequence = 0;
+        }
+    }
 }
 
 nmo_chunk_parser_t *nmo_chunk_parser_create(nmo_chunk_t *chunk) {
@@ -41,8 +63,25 @@ nmo_chunk_parser_t *nmo_chunk_parser_create(nmo_chunk_t *chunk) {
     p->cursor = 0;
     p->prev_identifier_pos = 0;
     p->alloc = NULL;
+    p->file_context = NULL;
+    p->object_sequence_remaining = 0;
+    p->manager_sequence_remaining = 0;
+    p->subchunk_sequence_remaining = 0;
+    p->in_object_sequence = 0;
+    p->in_manager_sequence = 0;
+    p->in_subchunk_sequence = 0;
+    p->current_manager_guid.d1 = 0;
+    p->current_manager_guid.d2 = 0;
 
     return p;
+}
+
+void nmo_chunk_parser_set_file_context(nmo_chunk_parser_t *p,
+                                       const nmo_chunk_file_context_t *ctx) {
+    if (p == NULL) {
+        return;
+    }
+    p->file_context = ctx;
 }
 
 void nmo_chunk_parser_destroy(nmo_chunk_parser_t *p) {
@@ -292,11 +331,45 @@ int32_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p) {
         return 0;
     }
 
+    if (!p->in_manager_sequence || p->manager_sequence_remaining == 0) {
+        return 0;
+    }
+
     if (!check_bounds(p, 1)) {
         return 0;
     }
 
-    return (int32_t) p->chunk->data[p->cursor++];
+    int32_t value = (int32_t) p->chunk->data[p->cursor++];
+    p->manager_sequence_remaining--;
+    if (p->manager_sequence_remaining == 0) {
+        p->in_manager_sequence = 0;
+    }
+    return value;
+}
+
+int nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p, nmo_guid_t *out_manager) {
+    if (p == NULL || p->chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!check_bounds(p, 3)) {
+        return NMO_ERR_EOF;
+    }
+
+    uint32_t count = p->chunk->data[p->cursor++];
+    nmo_guid_t guid;
+    guid.d1 = p->chunk->data[p->cursor++];
+    guid.d2 = p->chunk->data[p->cursor++];
+
+    p->current_manager_guid = guid;
+    p->manager_sequence_remaining = count;
+    p->in_manager_sequence = (count > 0);
+
+    if (out_manager != NULL) {
+        *out_manager = guid;
+    }
+
+    return (int) count;
 }
 
 /**
@@ -635,14 +708,48 @@ int nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out)
         return NMO_ERR_EOF;
     }
 
-    // Read the object ID (or file index in file context mode)
-    uint32_t id = p->chunk->data[p->cursor++];
+    uint32_t raw_id = p->chunk->data[p->cursor++];
+    nmo_object_id_t resolved_id = (nmo_object_id_t) raw_id;
 
-    // In file context mode, we would call file->LoadFindObject(id) here
-    // to convert file index to runtime ID. For now, just return the raw value.
-    *out = id;
+    if ((p->chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0 &&
+        p->file_context != NULL &&
+        p->file_context->file_to_runtime != NULL &&
+        raw_id != 0) {
+        nmo_object_id_t remapped = 0;
+        nmo_result_t remap = nmo_id_remap_lookup_id(
+            p->file_context->file_to_runtime,
+            (nmo_object_id_t) raw_id,
+            &remapped);
+        if (remap.code == NMO_OK) {
+            resolved_id = remapped;
+        }
+    }
+
+    *out = resolved_id;
+
+    if (p->in_object_sequence && p->object_sequence_remaining > 0) {
+        p->object_sequence_remaining--;
+        if (p->object_sequence_remaining == 0) {
+            p->in_object_sequence = 0;
+        }
+    }
 
     return NMO_OK;
+}
+
+int nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p) {
+    if (p == NULL || p->chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!check_bounds(p, 1)) {
+        return NMO_ERR_EOF;
+    }
+
+    uint32_t count = p->chunk->data[p->cursor++];
+    p->object_sequence_remaining = count;
+    p->in_object_sequence = (count > 0);
+    return (int) count;
 }
 
 /**
@@ -847,6 +954,8 @@ int nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p) {
 
     // Read the count
     uint32_t count = p->chunk->data[p->cursor++];
+    p->subchunk_sequence_remaining = count;
+    p->in_subchunk_sequence = (count > 0);
     return (int) count;
 }
 
@@ -867,6 +976,10 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    if (p->in_subchunk_sequence && p->subchunk_sequence_remaining == 0) {
+        return NMO_ERR_EOF;
+    }
+
     *out_chunk = NULL;
 
     // Check if we have enough data
@@ -879,6 +992,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
 
     if (size_dwords == 0) {
         // Empty sub-chunk (NULL marker)
+        consume_subchunk_slot(p);
         return NMO_OK;
     }
 
@@ -1009,6 +1123,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     }
 
     *out_chunk = sub;
+    consume_subchunk_slot(p);
     return NMO_OK;
 }
 

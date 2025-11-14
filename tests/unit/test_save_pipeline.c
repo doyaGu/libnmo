@@ -378,7 +378,10 @@ TEST(save_pipeline, file_info_propagation) {
     /* Set custom file info */
     nmo_file_info_t file_info = {
         .file_version = 9,              /* Custom version */
+        .file_version2 = 2,             /* Custom secondary version */
         .ck_version = 0x99999999,       /* Custom CK version */
+        .product_version = 0x12345678,  /* Custom product metadata */
+        .product_build = 0x9ABCDEF0,
         .file_size = 0,
         .object_count = 1,
         .manager_count = 5,             /* Custom manager count */
@@ -391,6 +394,22 @@ TEST(save_pipeline, file_info_propagation) {
     build_temp_path(filepath, sizeof(filepath), "test_file_info.nmo");
     int result = nmo_save_file(session, filepath, NMO_SAVE_DEFAULT);
     ASSERT_EQ(NMO_OK, result);
+
+    FILE *fp = fopen(filepath, "rb");
+    ASSERT_NOT_NULL(fp);
+
+    nmo_file_header_t header;
+    ASSERT_EQ(1u, fread(&header, sizeof(header), 1, fp));
+    fclose(fp);
+
+    ASSERT_EQ(file_info.file_version, header.file_version);
+    ASSERT_EQ(file_info.file_version2, header.file_version2);
+    ASSERT_EQ(file_info.ck_version, header.ck_version);
+    ASSERT_EQ(file_info.product_version, header.product_version);
+    ASSERT_EQ(file_info.product_build, header.product_build);
+    ASSERT_EQ(file_info.write_mode, header.file_write_mode);
+
+    remove(filepath);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

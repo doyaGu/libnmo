@@ -9,7 +9,8 @@
 #ifndef NMO_ID_REMAP_H
 #define NMO_ID_REMAP_H
 
-#include "format/nmo_chunk.h"
+#include "nmo_types.h"
+#include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 
 #ifdef __cplusplus

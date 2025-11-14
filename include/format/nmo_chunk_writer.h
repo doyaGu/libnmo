@@ -3,6 +3,7 @@
 
 #include "nmo_types.h"
 #include "nmo_chunk.h"
+#include "format/nmo_chunk_context.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_math.h"
@@ -34,6 +35,16 @@ typedef struct nmo_chunk_writer nmo_chunk_writer_t;
  * @return Writer or NULL on allocation failure
  */
 NMO_API nmo_chunk_writer_t* nmo_chunk_writer_create(nmo_arena_t* arena);
+
+/**
+ * @brief Attach file-context remap tables used for SaveFindObjectIndex semantics.
+ *
+ * When set, the writer encodes object IDs as file indices and automatically
+ * raises the NMO_CHUNK_OPTION_FILE flag. Passing NULL clears the context and
+ * reverts to raw ID behavior.
+ */
+NMO_API void nmo_chunk_writer_set_file_context(nmo_chunk_writer_t* w,
+											   const nmo_chunk_file_context_t* ctx);
 
 /**
  * @brief Start new chunk
@@ -230,13 +241,16 @@ NMO_API int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t* w, size_t
 /**
  * @brief Start manager sequence
  *
- * Sets up manager tracking for a sequence of manager ints.
+ * Writes the sequence header [count][GUID.d1][GUID.d2] and tracks offsets.
  *
  * @param w Writer
- * @param count Number of managers in sequence
+ * @param manager Manager GUID for the sequence
+ * @param count Number of entries in the sequence
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t* w, size_t count);
+NMO_API int nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t* w,
+													nmo_guid_t manager,
+													size_t count);
 
 /**
  * @brief Write manager int with GUID

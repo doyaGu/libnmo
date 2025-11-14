@@ -63,6 +63,10 @@ typedef struct nmo_chunk {
     size_t chunk_count;
     size_t chunk_capacity;
 
+    uint32_t *chunk_refs; /**< Sub-chunk offset/int-list data */
+    size_t chunk_ref_count;
+    size_t chunk_ref_capacity;
+
     uint32_t *managers; /**< Manager int list */
     size_t manager_count;
     size_t manager_capacity;

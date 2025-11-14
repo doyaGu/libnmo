@@ -394,27 +394,27 @@ nmo_result_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
 static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
     size_t size = 0;
 
-    /* VERSION1 header:
-     * - version_info (4 bytes)
-     * - chunk_class_id (4 bytes)
-     * - chunk_size (4 bytes)
-     * - reserved (4 bytes)
-     * - id_count (4 bytes)
-     * - chunk_count (4 bytes)
-     */
-    size += 6 * sizeof(uint32_t); /* 24 bytes header */
+    size += 2 * sizeof(uint32_t); /* version_info + chunk_size */
 
     /* Data buffer (in DWORDs) */
     size += chunk->data_size * sizeof(uint32_t);
 
-    /* IDs array */
+    /* IDs array with count */
     if (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) {
+        size += sizeof(uint32_t); /* count */
         size += chunk->id_count * sizeof(uint32_t);
     }
 
-    /* Sub-chunks positions (just count, positions are relative) */
+    /* Sub-chunk positions with count */
     if (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) {
-        size += chunk->chunk_count * sizeof(uint32_t);
+        size += sizeof(uint32_t);
+        size += chunk->chunk_ref_count * sizeof(uint32_t);
+    }
+
+    /* Manager list with count */
+    if (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) {
+        size += sizeof(uint32_t);
+        size += chunk->manager_count * sizeof(uint32_t);
     }
 
     return size;
@@ -428,15 +428,13 @@ static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
  * Format:
  *   Offset | Size | Field
  *   -------|------|-------
- *   0      | 4    | version_info = (data_version & 0xFF) | ((chunk_version & 0xFF) << 16)
- *   4      | 4    | chunk_class_id
- *   8      | 4    | chunk_size (in DWORDs)
- *   12     | 4    | reserved (0)
- *   16     | 4    | id_count
- *   20     | 4    | chunk_count
- *   24     | N*4  | data buffer
- *   ...    | N*4  | IDs array (if id_count > 0)
- *   ...    | N*4  | chunk positions (if chunk_count > 0, relative offsets)
+ *   0      | 4    | version_info = (data_version | (chunk_class_id << 8)) |
+ *                ((chunk_version | (chunk_options << 8)) << 16)
+ *   4      | 4    | chunk_size (in DWORDs)
+ *   8      | N*4  | data buffer
+ *   ...    |      | [if IDS] id_count + id_count entries
+ *   ...    |      | [if CHN] chunk_count + chunk_count entries
+ *   ...    |      | [if MAN] manager_count + manager_count entries
  */
 nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
                                           void **out_data,
@@ -462,27 +460,32 @@ nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
 
     size_t pos = 0; /* Position in DWORDs */
 
-    /* Write version info: (data_version & 0xFF) | ((chunk_version & 0xFF) << 16) */
-    /* VERSION1 format uses chunk_version = 4 */
-    uint32_t version_info = (chunk->data_version & 0xFF) | ((NMO_CHUNK_VERSION1 & 0xFF) << 16);
-    buffer[pos++] = version_info;
+    /* Determine chunk options to pack */
+    uint32_t option_flags = chunk->chunk_options;
+    if (chunk->id_count > 0) {
+        option_flags |= NMO_CHUNK_OPTION_IDS;
+    }
+    if (chunk->chunk_ref_count > 0) {
+        option_flags |= NMO_CHUNK_OPTION_CHN;
+    }
+    if (chunk->manager_count > 0) {
+        option_flags |= NMO_CHUNK_OPTION_MAN;
+    }
 
-    /* Write chunk_class_id (32-bit) */
-    buffer[pos++] = chunk->class_id;
+    uint8_t chunk_options = (uint8_t) (option_flags & 0xFF);
+    uint8_t chunk_version = (uint8_t) (chunk->chunk_version & 0xFF);
+    uint8_t data_version = (uint8_t) (chunk->data_version & 0xFF);
+    uint8_t class_id_byte = (chunk->chunk_class_id != 0) ?
+                            chunk->chunk_class_id :
+                            (uint8_t) (chunk->class_id & 0xFF);
+
+    uint16_t data_packed = (uint16_t) (data_version | (class_id_byte << 8));
+    uint16_t chunk_packed = (uint16_t) (chunk_version | (chunk_options << 8));
+    uint32_t version_info = (uint32_t) data_packed | ((uint32_t) chunk_packed << 16);
+    buffer[pos++] = version_info;
 
     /* Write chunk_size (in DWORDs) */
     buffer[pos++] = (uint32_t) chunk->data_size;
-
-    /* Write reserved field */
-    buffer[pos++] = 0;
-
-    /* Write id_count */
-    uint32_t id_count = (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) ? (uint32_t) chunk->id_count : 0;
-    buffer[pos++] = id_count;
-
-    /* Write chunk_count */
-    uint32_t chunk_count = (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) ? (uint32_t) chunk->chunk_count : 0;
-    buffer[pos++] = chunk_count;
 
     /* Write data buffer */
     if (chunk->data_size > 0) {
@@ -491,16 +494,30 @@ nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
     }
 
     /* Write IDs array */
-    if (id_count > 0) {
-        memcpy(&buffer[pos], chunk->ids, id_count * sizeof(uint32_t));
-        pos += id_count;
+    if (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) {
+        buffer[pos++] = (uint32_t) chunk->id_count;
+        if (chunk->id_count > 0 && chunk->ids != NULL) {
+            memcpy(&buffer[pos], chunk->ids, chunk->id_count * sizeof(uint32_t));
+            pos += chunk->id_count;
+        }
     }
 
-    /* Write chunk positions (placeholder - just write zeros for now) */
-    if (chunk_count > 0) {
-        /* TODO: Calculate actual relative positions for sub-chunks */
-        memset(&buffer[pos], 0, chunk_count * sizeof(uint32_t));
-        pos += chunk_count;
+    /* Write chunk positions */
+    if (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) {
+        buffer[pos++] = (uint32_t) chunk->chunk_ref_count;
+        if (chunk->chunk_ref_count > 0 && chunk->chunk_refs != NULL) {
+            memcpy(&buffer[pos], chunk->chunk_refs, chunk->chunk_ref_count * sizeof(uint32_t));
+            pos += chunk->chunk_ref_count;
+        }
+    }
+
+    /* Write manager list */
+    if (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) {
+        buffer[pos++] = (uint32_t) chunk->manager_count;
+        if (chunk->manager_count > 0 && chunk->managers != NULL) {
+            memcpy(&buffer[pos], chunk->managers, chunk->manager_count * sizeof(uint32_t));
+            pos += chunk->manager_count;
+        }
     }
 
     *out_data = buffer;
@@ -628,6 +645,19 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
         clone->chunk_capacity = src->chunk_count;
     }
 
+    // Clone sub-chunk reference list
+    if (src->chunk_refs != NULL && src->chunk_ref_count > 0) {
+        clone->chunk_refs = (uint32_t *) nmo_arena_alloc(arena,
+                                                         src->chunk_ref_count * sizeof(uint32_t),
+                                                         sizeof(uint32_t));
+        if (clone->chunk_refs == NULL) {
+            return NULL;
+        }
+        memcpy(clone->chunk_refs, src->chunk_refs, src->chunk_ref_count * sizeof(uint32_t));
+        clone->chunk_ref_count = src->chunk_ref_count;
+        clone->chunk_ref_capacity = src->chunk_ref_count;
+    }
+
     return clone;
 }
 
@@ -666,10 +696,10 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
 
     /* Read first DWORD which contains version info */
     uint32_t val = buf[pos++];
-    uint16_t data_version = (uint16_t) (val & 0x0000FFFF);
-    data_version &= 0x00FF; /* Only low byte is data version */
-    uint16_t chunk_version = (uint16_t) ((val & 0xFFFF0000) >> 16);
-    chunk_version &= 0x00FF; /* Only low byte is chunk version */
+    uint16_t packed_data_version = (uint16_t) (val & 0x0000FFFF);
+    uint16_t packed_chunk_version = (uint16_t) ((val & 0xFFFF0000) >> 16);
+    uint8_t data_version = (uint8_t) (packed_data_version & 0x00FF);
+    uint8_t chunk_version = (uint8_t) (packed_chunk_version & 0x00FF);
 
     chunk->data_version = data_version;
     chunk->chunk_version = chunk_version;
@@ -731,12 +761,23 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
             chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
         }
 
-        /* Skip sub-chunks array (just positions, not actual chunks) */
+        /* Read sub-chunk positions */
         if (chunk_count > 0) {
             if (pos + chunk_count > size_dwords) {
                 return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
                                                   NMO_SEVERITY_ERROR, "Buffer too small for chunk array"));
             }
+
+            chunk->chunk_refs = (uint32_t *) nmo_arena_alloc(chunk->arena,
+                                                              chunk_count * sizeof(uint32_t), sizeof(uint32_t));
+            if (chunk->chunk_refs == NULL) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                                  NMO_SEVERITY_ERROR, "Failed to allocate chunk refs"));
+            }
+
+            memcpy(chunk->chunk_refs, &buf[pos], chunk_count * sizeof(uint32_t));
+            chunk->chunk_ref_count = chunk_count;
+            chunk->chunk_ref_capacity = chunk_count;
             pos += chunk_count;
             chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
         }
@@ -800,6 +841,17 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
                 return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
                                                   NMO_SEVERITY_ERROR, "Buffer too small for chunk array"));
             }
+
+            chunk->chunk_refs = (uint32_t *) nmo_arena_alloc(chunk->arena,
+                                                              chunk_count * sizeof(uint32_t), sizeof(uint32_t));
+            if (chunk->chunk_refs == NULL) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                                  NMO_SEVERITY_ERROR, "Failed to allocate chunk refs"));
+            }
+
+            memcpy(chunk->chunk_refs, &buf[pos], chunk_count * sizeof(uint32_t));
+            chunk->chunk_ref_count = chunk_count;
+            chunk->chunk_ref_capacity = chunk_count;
             pos += chunk_count;
             chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
         }
@@ -826,13 +878,13 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
     } else if (chunk_version <= NMO_CHUNK_VERSION4) {
         /* CHUNK_VERSION3/VERSION4 format (modern, compact header with options) */
         /* Extract chunk options and class ID from packed version field */
-        uint8_t chunk_options = (uint8_t) ((chunk_version & 0xFF00) >> 8);
-        chunk->chunk_class_id = (uint8_t) ((data_version & 0xFF00) >> 8);
+        uint8_t chunk_options = (uint8_t) ((packed_chunk_version & 0xFF00) >> 8);
+        chunk->chunk_class_id = (uint8_t) ((packed_data_version & 0xFF00) >> 8);
         chunk->chunk_options = chunk_options;
 
         /* Re-extract actual versions (low bytes only) */
-        chunk->data_version = data_version & 0x00FF;
-        chunk->chunk_version = chunk_version & 0x00FF;
+        chunk->data_version = (uint8_t) (packed_data_version & 0x00FF);
+        chunk->chunk_version = (uint8_t) (packed_chunk_version & 0x00FF);
 
         /* Read chunk size */
         if (pos >= size_dwords) {
@@ -901,7 +953,16 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
                     return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
                                                       NMO_SEVERITY_ERROR, "Buffer too small for chunk array"));
                 }
-                /* Skip chunk positions for now */
+                chunk->chunk_refs = (uint32_t *) nmo_arena_alloc(chunk->arena,
+                                                                  chunk_count * sizeof(uint32_t), sizeof(uint32_t));
+                if (chunk->chunk_refs == NULL) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                                      NMO_SEVERITY_ERROR, "Failed to allocate chunk refs"));
+                }
+
+                memcpy(chunk->chunk_refs, &buf[pos], chunk_count * sizeof(uint32_t));
+                chunk->chunk_ref_count = chunk_count;
+                chunk->chunk_ref_capacity = chunk_count;
                 pos += chunk_count;
             }
         }
