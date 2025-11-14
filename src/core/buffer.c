@@ -6,6 +6,7 @@
 #include "core/nmo_buffer.h"
 #include "core/nmo_error.h"
 #include <string.h>
+#include <limits.h>
 
 nmo_result_t nmo_buffer_init(nmo_buffer_t *buffer,
                              size_t element_size,
@@ -74,6 +75,12 @@ nmo_result_t nmo_buffer_ensure_space(nmo_buffer_t *buffer, size_t additional) {
                                           "Invalid buffer argument"));
     }
 
+    if (additional > 0 && buffer->count > SIZE_MAX - additional) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Buffer size overflow"));
+    }
+
     size_t required = buffer->count + additional;
     if (required <= buffer->capacity) {
         return nmo_result_ok(); // Already have enough space
@@ -132,6 +139,36 @@ nmo_result_t nmo_buffer_append_array(nmo_buffer_t *buffer,
     return nmo_result_ok();
 }
 
+nmo_result_t nmo_buffer_extend(nmo_buffer_t *buffer,
+                               size_t additional,
+                               void **out_begin) {
+    if (!buffer) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid buffer extend arguments"));
+    }
+
+    uint8_t *start = NULL;
+    if (additional > 0) {
+        nmo_result_t result = nmo_buffer_ensure_space(buffer, additional);
+        if (result.code != NMO_OK) {
+            return result;
+        }
+    }
+
+    if (buffer->data) {
+        start = (uint8_t *)buffer->data + (buffer->count * buffer->element_size);
+    }
+
+    if (out_begin) {
+        *out_begin = start;
+    }
+
+    buffer->count += additional;
+
+    return nmo_result_ok();
+}
+
 void *nmo_buffer_get(const nmo_buffer_t *buffer, size_t index) {
     if (!buffer || index >= buffer->count) {
         return NULL;
@@ -150,6 +187,95 @@ nmo_result_t nmo_buffer_set(nmo_buffer_t *buffer, size_t index, const void *elem
 
     uint8_t *dest = (uint8_t *)buffer->data + (index * buffer->element_size);
     memcpy(dest, element, buffer->element_size);
+
+    return nmo_result_ok();
+}
+
+void *nmo_buffer_front(const nmo_buffer_t *buffer) {
+    if (!buffer || buffer->count == 0) {
+        return NULL;
+    }
+    return buffer->data;
+}
+
+void *nmo_buffer_back(const nmo_buffer_t *buffer) {
+    if (!buffer || buffer->count == 0) {
+        return NULL;
+    }
+
+    uint8_t *data = (uint8_t *)buffer->data;
+    return data + ((buffer->count - 1) * buffer->element_size);
+}
+
+nmo_result_t nmo_buffer_insert(nmo_buffer_t *buffer,
+                               size_t index,
+                               const void *element) {
+    if (!buffer || !element || index > buffer->count) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid buffer insert arguments"));
+    }
+
+    nmo_result_t result = nmo_buffer_ensure_space(buffer, 1);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+
+    uint8_t *base = (uint8_t *)buffer->data;
+    uint8_t *dest = base + (index * buffer->element_size);
+
+    if (index < buffer->count) {
+        size_t move_bytes = (buffer->count - index) * buffer->element_size;
+        memmove(dest + buffer->element_size, dest, move_bytes);
+    }
+
+    memcpy(dest, element, buffer->element_size);
+    buffer->count++;
+
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_buffer_remove(nmo_buffer_t *buffer,
+                               size_t index,
+                               void *out_element) {
+    if (!buffer || index >= buffer->count) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid buffer remove arguments"));
+    }
+
+    uint8_t *base = (uint8_t *)buffer->data;
+    uint8_t *target = base + (index * buffer->element_size);
+
+    if (out_element) {
+        memcpy(out_element, target, buffer->element_size);
+    }
+
+    if (index < buffer->count - 1) {
+        size_t move_bytes = (buffer->count - index - 1) * buffer->element_size;
+        memmove(target, target + buffer->element_size, move_bytes);
+    }
+
+    buffer->count--;
+
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_buffer_pop(nmo_buffer_t *buffer, void *out_element) {
+    if (!buffer || buffer->count == 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid buffer pop arguments"));
+    }
+
+    uint8_t *base = (uint8_t *)buffer->data;
+    uint8_t *target = base + ((buffer->count - 1) * buffer->element_size);
+
+    if (out_element) {
+        memcpy(out_element, target, buffer->element_size);
+    }
+
+    buffer->count--;
 
     return nmo_result_ok();
 }
