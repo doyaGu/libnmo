@@ -18,6 +18,7 @@ typedef struct nmo_context nmo_context_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
+typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 
 /**
  * @brief Session structure
@@ -257,6 +258,26 @@ NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
 NMO_API int nmo_session_get_object_index_stats(
     const nmo_session_t *session,
     nmo_index_stats_t *stats);
+
+/**
+ * @brief Get current reference resolver
+ *
+ * Returns the resolver instance associated with this session, or NULL if
+ * reference resolution has not been initialized yet.
+ */
+NMO_API nmo_reference_resolver_t *nmo_session_get_reference_resolver(
+    const nmo_session_t *session);
+
+/**
+ * @brief Ensure reference resolver exists
+ */
+NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
+    nmo_session_t *session);
+
+/**
+ * @brief Reset reference resolver pointer
+ */
+NMO_API void nmo_session_reset_reference_resolver(nmo_session_t *session);
 
 /* ==================== Object Query API (Phase 5) ==================== */
 

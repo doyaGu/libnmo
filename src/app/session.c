@@ -10,6 +10,7 @@
 #include "core/nmo_allocator.h"
 #include "session/nmo_object_repository.h"
 #include "session/nmo_object_index.h"
+#include "session/nmo_reference_resolver.h"
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include <stdlib.h>
@@ -31,6 +32,9 @@ typedef struct nmo_session {
 
     /* Object index (Phase 5) */
     nmo_object_index_t *object_index;
+
+    /* Reference resolver (initialised on demand) */
+    nmo_reference_resolver_t *reference_resolver;
 
     /* File information */
     nmo_file_info_t file_info;
@@ -93,6 +97,9 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 
     /* Initialize object index */
     session->object_index = NULL;
+
+    /* Initialize reference resolver */
+    session->reference_resolver = NULL;
     
     /* Initialize file header */
     session->file_header = NULL;
@@ -114,6 +121,10 @@ void nmo_session_destroy(nmo_session_t *session) {
         /* Destroy owned resources */
         if (session->repository != NULL) {
             nmo_object_repository_destroy(session->repository);
+        }
+
+        if (session->reference_resolver != NULL) {
+            session->reference_resolver = NULL;
         }
 
         if (session->chunk_pool != NULL) {
@@ -474,4 +485,42 @@ size_t nmo_session_count_objects_by_class(
     size_t count = 0;
     nmo_session_get_objects_by_class(session, class_id, &count);
     return count;
+}
+nmo_reference_resolver_t *nmo_session_get_reference_resolver(
+    const nmo_session_t *session
+) {
+    return (session != NULL) ? session->reference_resolver : NULL;
+}
+
+nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
+    nmo_session_t *session
+) {
+    if (session == NULL) {
+        return NULL;
+    }
+
+    if (session->reference_resolver != NULL) {
+        return session->reference_resolver;
+    }
+
+    if (session->repository == NULL || session->arena == NULL) {
+        return NULL;
+    }
+
+    nmo_reference_resolver_t *resolver = nmo_reference_resolver_create(
+        session->repository,
+        session->arena
+    );
+
+    if (resolver != NULL) {
+        session->reference_resolver = resolver;
+    }
+
+    return resolver;
+}
+
+void nmo_session_reset_reference_resolver(nmo_session_t *session) {
+    if (session != NULL) {
+        session->reference_resolver = NULL;
+    }
 }

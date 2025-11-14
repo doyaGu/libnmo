@@ -24,6 +24,7 @@
 #include "session/nmo_load_session.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_object_repository.h"
+#include "session/nmo_reference_resolver.h"
 #include "schema/nmo_schema_registry.h"
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +85,8 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_chunk_pool_t *chunk_pool = NULL;
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
+
+    nmo_session_reset_reference_resolver(session);
 
     (void) flags; /* Flags will be used in full implementation */
 

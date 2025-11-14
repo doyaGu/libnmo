@@ -73,6 +73,7 @@ add_unit_test(test_nmo_baseline)
 # Set working directory to project root so data/ can be found
 set_tests_properties(test_nmo_baseline PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 add_unit_test(test_reference_resolver)
+add_unit_test(test_session_reference_resolver)
 add_unit_test(test_save_pipeline)
 add_unit_test(test_load_session_id_remap)
 add_unit_test(test_session)
