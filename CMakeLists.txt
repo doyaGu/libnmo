@@ -139,9 +139,13 @@ set(NMO_FORMAT_SOURCES
     src/format/chunk_compression.c
     src/format/chunk_crc.c
     src/format/chunk_remap.c
+    src/format/chunk_bitmap.c
     src/format/chunk_pool.c
     src/format/manager_registry.c
     src/format/nmo_id_remap.c
+    src/format/nmo_image.c
+    src/format/nmo_image_codec.c
+    src/format/nmo_stb_adapter.c
 )
 
 # Schema layer sources
@@ -195,6 +199,8 @@ target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
 if(YYJSON_FOUND)
     target_link_libraries(nmo PUBLIC ${YYJSON_LIBRARIES})
 endif()
+
+target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps)
 
 # Enable threads support
 find_package(Threads REQUIRED)

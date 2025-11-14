@@ -75,6 +75,9 @@
 #include "format/nmo_chunk_parser.h"
 #include "format/nmo_chunk_writer.h"
 #include "format/nmo_manager_registry.h"
+#include "format/nmo_image.h"
+#include "format/nmo_image_codec.h"
+#include "format/nmo_stb_adapter.h"
 
 // Schema layer
 #include "schema/nmo_schema.h"
