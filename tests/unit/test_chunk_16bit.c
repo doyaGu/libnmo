@@ -84,6 +84,57 @@ TEST(chunk_16bit, dword_as_words_boundary) {
 }
 
 /**
+ * Test: Array helper for dword_as_words
+ */
+TEST(chunk_16bit, dword_as_words_array_helper) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+
+    uint32_t values[] = {
+        0x00010002, 0x7FFF8000, 0xDEADBEEF, 0xCAFEBABE,
+        0xFFFFFFFF, 0x12345678, 0x0000FFFF, 0xF00DFACE
+    };
+    size_t value_count = sizeof(values) / sizeof(values[0]);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_writer_write_array_dword_as_words(writer, values, value_count));
+
+    // Ensure invalid arguments are caught before finalizing
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_chunk_writer_write_array_dword_as_words(writer, NULL, value_count));
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_writer_write_array_dword_as_words(writer, values, 0));
+
+    nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(value_count * 2, chunk->data_size);
+
+    nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
+
+    uint32_t *decoded = (uint32_t *) nmo_arena_alloc(arena,
+                                                     value_count * sizeof(uint32_t),
+                                                     sizeof(uint32_t));
+    ASSERT_NOT_NULL(decoded);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_parser_read_dword_array_as_words(parser, decoded, value_count));
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_parser_read_dword_array_as_words(parser, NULL, 0));
+
+    for (size_t i = 0; i < value_count; ++i) {
+        ASSERT_EQ(values[i], decoded[i]);
+    }
+
+    ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_arena_destroy(arena);
+}
+
+/**
  * Test: buffer_nosize_lendian16 with various buffer sizes
  */
 TEST(chunk_16bit, buffer_nosize_lendian16_basic) {
@@ -322,6 +373,7 @@ TEST(chunk_16bit, virtools_compatibility) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_16bit, dword_as_words_basic);
     REGISTER_TEST(chunk_16bit, dword_as_words_boundary);
+    REGISTER_TEST(chunk_16bit, dword_as_words_array_helper);
     REGISTER_TEST(chunk_16bit, buffer_nosize_lendian16_basic);
     REGISTER_TEST(chunk_16bit, buffer_nosize_lendian16_single);
     REGISTER_TEST(chunk_16bit, buffer_nosize_lendian16_large);

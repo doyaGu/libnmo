@@ -12,6 +12,7 @@ add_integration_test(test_file_roundtrip)
 # Existing tests
 add_integration_test(test_data_roundtrip)
 add_integration_test(test_file_io)
+add_integration_test(test_chunk_special_cases)
 
 # Phase 5: FinishLoading and object index tests
 add_integration_test(test_finish_loading)

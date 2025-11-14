@@ -118,6 +118,23 @@ NMO_API int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out);
 NMO_API int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out);
 
 /**
+ * @brief Read array of 32-bit values stored as 16-bit word pairs
+ *
+ * Helper for bulk decoding of sequences written via
+ * `nmo_chunk_writer_write_array_dword_as_words`. Automatically iterates the
+ * parser cursor and reconstructs each DWORD.
+ *
+ * @param p Parser
+ * @param out_values Destination buffer (must contain @p count entries)
+ * @param count Number of DWORD values to reconstruct
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_parser_read_dword_array_as_words(
+	nmo_chunk_parser_t *p,
+	uint32_t *out_values,
+	size_t count);
+
+/**
  * @brief Read int32_t (exactly one DWORD)
  *
  * @param p Parser

@@ -280,6 +280,41 @@ int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value)
     return nmo_chunk_writer_write_word(w, high);
 }
 
+int nmo_chunk_writer_write_array_dword_as_words(
+    nmo_chunk_writer_t *w,
+    const uint32_t *values,
+    size_t count) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (count == 0) {
+        return NMO_OK;
+    }
+
+    if (values == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (count > (SIZE_MAX / 2)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t dwords_needed = count * 2;
+    int result = ensure_data_capacity(w, dwords_needed);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        uint32_t value = values[i];
+        w->data[w->data_size++] = (uint32_t) (value & 0xFFFF);
+        w->data[w->data_size++] = (uint32_t) ((value >> 16) & 0xFFFF);
+    }
+
+    return NMO_OK;
+}
+
 int nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;

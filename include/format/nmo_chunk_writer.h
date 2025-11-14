@@ -72,7 +72,7 @@ NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
 NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
 
 /**
- * @brief Write uint32_t as two 16-bit words (Phase 6)
+ * @brief Write uint32_t as two 16-bit words (Phase 7)
  *
  * Writes a 32-bit value as two consecutive 16-bit values (low word first).
  * Used for compressed animation data and specific file format requirements.
@@ -85,6 +85,23 @@ NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
  * @return NMO_OK on success
  */
 NMO_API int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_t value);
+
+/**
+ * @brief Write array of uint32_t values as 16-bit word pairs
+ *
+ * Convenience helper for bulk writing of `count` DWORDs via the
+ * `WriteDwordAsWords` encoding. Performs a single buffer reservation to
+ * minimize reallocation churn compared to looping manually.
+ *
+ * @param w Writer
+ * @param values Source array (must contain @p count entries)
+ * @param count Number of DWORD values to encode
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_array_dword_as_words(
+	nmo_chunk_writer_t* w,
+	const uint32_t* values,
+	size_t count);
 
 /**
  * @brief Write int32_t (exactly one DWORD)
