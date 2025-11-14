@@ -27,6 +27,7 @@
 
 #include "nmo_chunk.h"
 #include "nmo_types.h"
+#include "nmo_image.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -1041,6 +1042,60 @@ NMO_API nmo_result_t nmo_chunk_unpack(nmo_chunk_t *chunk);
  */
 NMO_API nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
                                                 const nmo_id_remap_t *remap);
+
+// =============================================================================
+// BITMAP OPERATIONS
+// =============================================================================
+
+/**
+ * @brief Write planar raw bitmap payload (CKStateChunk::WriteRawBitmap)
+ *
+ * Writes bits-per-pixel, dimensions, channel masks, compression flag (0)
+ * followed by R/G/B/(A) planes with bottom-up scanlines.
+ */
+NMO_API nmo_result_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
+                                                const nmo_image_desc_t *desc);
+
+/**
+ * @brief Read planar raw bitmap payload (CKStateChunk::ReadRawBitmap)
+ *
+ * Reconstructs a 32-bit ARGB image descriptor allocated from the chunk arena.
+ */
+NMO_API nmo_result_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
+                                               nmo_image_desc_t *out_desc,
+                                               uint8_t **out_pixels);
+
+/**
+ * @brief Write encoded bitmap payload (CKStateChunk::WriteReaderBitmap)
+ *
+ * Uses registered codecs (PNG/JPG/etc.) to store compressed bitmap data.
+ */
+NMO_API nmo_result_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
+                                                    const nmo_image_desc_t *desc,
+                                                    const nmo_bitmap_properties_t *props);
+
+/**
+ * @brief Read encoded bitmap payload (CKStateChunk::ReadBitmap2)
+ */
+NMO_API nmo_result_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
+                                                   nmo_image_desc_t *out_desc,
+                                                   uint8_t **out_pixels);
+
+/**
+ * @brief Write legacy bitmap payload (CKStateChunk::WriteBitmap)
+ *
+ * Stores "CKxxx" signature followed by codec output for backward compatibility.
+ */
+NMO_API nmo_result_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
+                                                   const nmo_image_desc_t *desc,
+                                                   const nmo_bitmap_properties_t *props);
+
+/**
+ * @brief Read legacy bitmap payload (CKStateChunk::ReadBitmap)
+ */
+NMO_API nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
+                                                  nmo_image_desc_t *out_desc,
+                                                  uint8_t **out_pixels);
 
 // =============================================================================
 // ADVANCED OPERATIONS

@@ -48,6 +48,11 @@ add_unit_test(test_identifier_search)  # Phase 3: Identifier search tests
 add_unit_test(test_identifiers)  # Identifier system tests
 add_unit_test(test_subchunks)  # Sub-chunk support tests
 add_unit_test(test_chunk_16bit)  # Phase 6: 16-bit special format operations
+add_unit_test(test_chunk_raw_bitmap)
+add_unit_test(test_chunk_encoded_bitmap)
+add_unit_test(test_chunk_legacy_bitmap)
+add_unit_test(test_image_utils)
+add_unit_test(test_stb_adapter)
 
 # Schema layer tests
 add_unit_test(test_schema)
