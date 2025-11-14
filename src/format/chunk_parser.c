@@ -172,6 +172,28 @@ int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out) {
     return NMO_OK;
 }
 
+int nmo_chunk_parser_read_dword_array_as_words(
+    nmo_chunk_parser_t *p,
+    uint32_t *out_values,
+    size_t count) {
+    if (count == 0) {
+        return NMO_OK;
+    }
+
+    if (p == NULL || out_values == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        int result = nmo_chunk_parser_read_dword_as_words(p, &out_values[i]);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
+
+    return NMO_OK;
+}
+
 int nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     if (p == NULL || out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
