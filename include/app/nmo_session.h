@@ -185,6 +185,7 @@ NMO_API int nmo_session_save(nmo_session_t *session, const char *filename);
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_header nmo_header_t;
 typedef struct nmo_object_index nmo_object_index_t;
+typedef struct nmo_index_stats nmo_index_stats_t;
 typedef struct nmo_guid nmo_guid_t;
 
 /**
@@ -245,6 +246,17 @@ NMO_API nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *se
  * @return 0 on success, negative on error
  */
 NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
+
+/**
+ * @brief Retrieve index statistics when available
+ *
+ * @param session Session
+ * @param stats Output statistics buffer
+ * @return NMO_OK on success, NMO_ERR_NOT_FOUND if indexes not built yet
+ */
+NMO_API int nmo_session_get_object_index_stats(
+    const nmo_session_t *session,
+    nmo_index_stats_t *stats);
 
 /* ==================== Object Query API (Phase 5) ==================== */
 

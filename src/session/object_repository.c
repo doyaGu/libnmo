@@ -4,6 +4,7 @@
  */
 
 #include "session/nmo_object_repository.h"
+#include "session/nmo_object_index.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_indexed_map.h"
@@ -31,7 +32,41 @@ typedef struct nmo_object_repository {
 
     /* Runtime ID allocator */
     nmo_object_id_t next_runtime_id;
+
+    /* Optional attached index for incremental maintenance */
+    nmo_object_index_t *attached_index;
 } nmo_object_repository_t;
+
+static uint32_t nmo_object_repository_get_active_index_flags(
+    const nmo_object_repository_t *repo
+) {
+    if (repo == NULL || repo->attached_index == NULL) {
+        return 0;
+    }
+    return nmo_object_index_get_active_flags(repo->attached_index);
+}
+
+static int nmo_object_repository_notify_add(
+    nmo_object_repository_t *repo,
+    nmo_object_t *obj
+) {
+    uint32_t flags = nmo_object_repository_get_active_index_flags(repo);
+    if (flags == 0) {
+        return NMO_OK;
+    }
+    return nmo_object_index_add_object(repo->attached_index, obj, flags);
+}
+
+static int nmo_object_repository_notify_remove(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t id
+) {
+    uint32_t flags = nmo_object_repository_get_active_index_flags(repo);
+    if (flags == 0) {
+        return NMO_OK;
+    }
+    return nmo_object_index_remove_object(repo->attached_index, id, flags);
+}
 
 /**
  * Create object repository
@@ -77,6 +112,7 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
 
     repo->arena = arena;
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
+    repo->attached_index = NULL;
 
     return repo;
 }
@@ -91,6 +127,16 @@ void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
         nmo_hash_table_destroy(repo->name_table);
         free(repo);
     }
+}
+
+void nmo_object_repository_set_index(
+    nmo_object_repository_t *repo,
+    nmo_object_index_t *index
+) {
+    if (repo == NULL) {
+        return;
+    }
+    repo->attached_index = index;
 }
 
 /**
@@ -128,6 +174,16 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) 
             nmo_indexed_map_remove(repo->id_map, &obj->id);
             return result;
         }
+    }
+
+    result = nmo_object_repository_notify_add(repo, obj);
+    if (result != NMO_OK) {
+        /* Keep structures consistent if index update fails */
+        if (obj->name != NULL && obj->name[0] != '\0') {
+            nmo_hash_table_remove(repo->name_table, &obj->name);
+        }
+        nmo_indexed_map_remove(repo->id_map, &obj->id);
+        return result;
     }
 
     return NMO_OK;
@@ -179,6 +235,11 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
     nmo_object_t *obj = NULL;
     if (!nmo_indexed_map_get(repo->id_map, &id, &obj)) {
         return NMO_ERR_INVALID_ARGUMENT; /* Not found */
+    }
+
+    int result = nmo_object_repository_notify_remove(repo, id);
+    if (result != NMO_OK) {
+        return result;
     }
 
     /* Remove from name table if has name */
@@ -296,6 +357,13 @@ int nmo_object_repository_clear(nmo_object_repository_t *repo) {
     nmo_indexed_map_clear(repo->id_map);
     nmo_hash_table_clear(repo->name_table);
     repo->next_runtime_id = 1;
+
+    if (repo->attached_index != NULL) {
+        int result = nmo_object_index_clear(repo->attached_index, NMO_INDEX_BUILD_ALL);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
 
     return NMO_OK;
 }

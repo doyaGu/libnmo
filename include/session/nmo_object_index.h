@@ -137,6 +137,14 @@ NMO_API int nmo_object_index_clear(
     uint32_t flags
 );
 
+/**
+ * Get currently active index flags
+ *
+ * @param index Object index
+ * @return Bitmask of built indexes
+ */
+NMO_API uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *index);
+
 /* ==================== Class ID Lookup ==================== */
 
 /**

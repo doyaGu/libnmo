@@ -16,6 +16,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_arena nmo_arena_t;
+typedef struct nmo_object_index nmo_object_index_t;
 
 /**
  * @brief Object repository
@@ -34,6 +35,15 @@ NMO_API nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena
  * @param repository Repository to destroy
  */
 NMO_API void nmo_object_repository_destroy(nmo_object_repository_t *repository);
+
+/**
+ * @brief Attach or detach an object index for incremental maintenance
+ * @param repository Repository
+ * @param index Object index to notify (NULL to detach)
+ */
+NMO_API void nmo_object_repository_set_index(
+    nmo_object_repository_t *repository,
+    nmo_object_index_t *index);
 
 /**
  * @brief Add object to repository
