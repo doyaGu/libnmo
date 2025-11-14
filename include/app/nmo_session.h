@@ -19,6 +19,7 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
+typedef struct nmo_included_file nmo_included_file_t;
 
 /**
  * @brief Session structure
@@ -258,6 +259,33 @@ NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
 NMO_API int nmo_session_get_object_index_stats(
     const nmo_session_t *session,
     nmo_index_stats_t *stats);
+
+/* Included file management */
+
+/**
+ * @brief Included file metadata stored in the session
+ */
+typedef struct nmo_included_file {
+    const char *name; /**< Filename without path */
+    const void *data; /**< Raw payload data */
+    uint32_t size;    /**< Payload size in bytes */
+} nmo_included_file_t;
+
+NMO_API int nmo_session_add_included_file(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size);
+
+int nmo_session_add_included_file_borrowed(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size);
+
+NMO_API nmo_included_file_t *nmo_session_get_included_files(
+    const nmo_session_t *session,
+    uint32_t *out_count);
 
 /**
  * @brief Get current reference resolver

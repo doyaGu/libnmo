@@ -40,6 +40,11 @@ typedef struct nmo_plugin_dep {
     uint32_t version;  /**< Plugin version */
 } nmo_plugin_dep_t;
 
+typedef struct nmo_included_file_desc {
+    char *name;        /**< Null-terminated filename */
+    uint32_t data_size;/**< Size of payload in bytes */
+} nmo_included_file_desc_t;
+
 /**
  * @brief Header1 structure
  *
@@ -55,9 +60,9 @@ typedef struct nmo_header1 {
     uint32_t plugin_dep_count;
     nmo_plugin_dep_t *plugin_deps; /**< Array allocated from arena */
 
-    /* Included files (stub, always 0) */
+    /* Included files */
     uint32_t included_file_count;
-    char **included_files; /**< Always NULL */
+    nmo_included_file_desc_t *included_files; /**< Array allocated from arena */
 } nmo_header1_t;
 
 /**

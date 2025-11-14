@@ -471,6 +471,88 @@ TEST(save_pipeline, reference_only_save) {
     nmo_context_release(ctx);
 }
 
+TEST(save_pipeline, included_files_round_trip) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
+    ASSERT_NOT_NULL(obj);
+    memset(obj, 0, sizeof(nmo_object_t));
+    obj->class_id = 0x50000001;
+    obj->name = "IncludedCarrier";
+    obj->arena = arena;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+
+    nmo_file_info_t file_info = {
+        .file_version = 8,
+        .ck_version = 0x13022002,
+        .file_size = 0,
+        .object_count = 1,
+        .manager_count = 0,
+        .write_mode = 0x01
+    };
+    nmo_session_set_file_info(session, &file_info);
+
+    const uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    ASSERT_EQ(NMO_OK,
+              nmo_session_add_included_file(session,
+                                            "payload.bin",
+                                            payload,
+                                            sizeof(payload)));
+
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_included.nmo");
+    ASSERT_EQ(NMO_OK, nmo_save_file(session, filepath, NMO_SAVE_DEFAULT));
+
+    FILE *fp = fopen(filepath, "rb");
+    ASSERT_NOT_NULL(fp);
+
+    nmo_file_header_t header;
+    ASSERT_EQ(1u, fread(&header, sizeof(header), 1, fp));
+
+    fseek(fp, header.hdr1_pack_size + header.data_pack_size, SEEK_CUR);
+
+    uint32_t name_len = 0;
+    ASSERT_EQ(1u, fread(&name_len, sizeof(uint32_t), 1, fp));
+    ASSERT_EQ(strlen("payload.bin"), name_len);
+
+    char name_buf[64] = {0};
+    ASSERT_EQ(name_len, fread(name_buf, 1, name_len, fp));
+    ASSERT_STR_EQ("payload.bin", name_buf);
+
+    uint32_t data_size = 0;
+    ASSERT_EQ(1u, fread(&data_size, sizeof(uint32_t), 1, fp));
+    ASSERT_EQ(sizeof(payload), data_size);
+
+    uint8_t file_payload[sizeof(payload)] = {0};
+    ASSERT_EQ(sizeof(payload), fread(file_payload, 1, sizeof(payload), fp));
+    ASSERT_EQ(0, memcmp(file_payload, payload, sizeof(payload)));
+    fclose(fp);
+
+    nmo_session_t *loaded = nmo_session_load(ctx, filepath);
+    ASSERT_NOT_NULL(loaded);
+
+    uint32_t included_count = 0;
+    nmo_included_file_t *files = nmo_session_get_included_files(loaded, &included_count);
+    ASSERT_EQ(1u, included_count);
+    ASSERT_NOT_NULL(files);
+    ASSERT_STR_EQ("payload.bin", files[0].name);
+    ASSERT_EQ(sizeof(payload), files[0].size);
+    ASSERT_EQ(0, memcmp(files[0].data, payload, sizeof(payload)));
+
+    nmo_session_destroy(loaded);
+    remove(filepath);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(save_pipeline, empty_session_fails);
     REGISTER_TEST(save_pipeline, single_object);
@@ -481,4 +563,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(save_pipeline, large_count);
     REGISTER_TEST(save_pipeline, file_info_propagation);
     REGISTER_TEST(save_pipeline, reference_only_save);
+    REGISTER_TEST(save_pipeline, included_files_round_trip);
 TEST_MAIN_END()

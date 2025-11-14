@@ -94,6 +94,96 @@ static int nmo_should_save_object_as_reference(
     return 0;
 }
 
+static int nmo_load_included_files(
+    nmo_session_t *session,
+    nmo_io_interface_t *io,
+    const nmo_header1_t *hdr1,
+    nmo_logger_t *logger
+) {
+    if (session == NULL || io == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t expected = (hdr1 != NULL) ? hdr1->included_file_count : 0;
+    uint32_t parsed = 0;
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+
+    while (1) {
+        uint32_t name_len = 0;
+        int read_result = nmo_io_read_u32(io, &name_len);
+        if (read_result != NMO_OK) {
+            if (read_result == NMO_ERR_EOF) {
+                break;
+            }
+
+            if (read_result == NMO_ERR_INVALID_ARGUMENT) {
+                break;
+            }
+
+            nmo_log(logger, NMO_LOG_WARN,
+                    "Failed to read included filename length: %d", read_result);
+            return read_result;
+        }
+
+        char *name_buf = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
+        if (name_buf == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+
+        if (name_len > 0) {
+            size_t bytes_read = 0;
+            int name_read = nmo_io_read(io, name_buf, name_len, &bytes_read);
+            if (name_read != NMO_OK || bytes_read != name_len) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "Failed to read included filename payload");
+                return (name_read != NMO_OK) ? name_read : NMO_ERR_EOF;
+            }
+        }
+        name_buf[name_len] = '\0';
+
+        uint32_t data_size = 0;
+        if (nmo_io_read_u32(io, &data_size) != NMO_OK) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "Failed to read included file size for '%s'", name_buf);
+            return NMO_ERR_EOF;
+        }
+
+        void *payload = NULL;
+        if (data_size > 0) {
+            payload = nmo_arena_alloc(arena, data_size, 1);
+            if (payload == NULL) {
+                return NMO_ERR_NOMEM;
+            }
+
+            size_t bytes_read = 0;
+            int data_result = nmo_io_read(io, payload, data_size, &bytes_read);
+            if (data_result != NMO_OK || bytes_read != data_size) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "Failed to read included payload for '%s'", name_buf);
+                return (data_result != NMO_OK) ? data_result : NMO_ERR_EOF;
+            }
+        }
+
+        int add_result = nmo_session_add_included_file_borrowed(
+            session,
+            name_buf,
+            payload,
+            data_size);
+        if (add_result != NMO_OK) {
+            return add_result;
+        }
+
+        parsed++;
+    }
+
+    if (expected > 0 && parsed != expected) {
+        nmo_log(logger, NMO_LOG_WARN,
+                "  Header references %u included file(s), parsed %u entries", expected, parsed);
+    }
+
+    return NMO_OK;
+}
+
 
 /**
  * Load file - 15-phase load pipeline
@@ -379,6 +469,12 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         nmo_log(logger, NMO_LOG_INFO, "  Data section parsed successfully");
         nmo_log(logger, NMO_LOG_INFO, "  Managers parsed: %u", data_sect.manager_count);
         nmo_log(logger, NMO_LOG_INFO, "  Objects parsed: %u", data_sect.object_count);
+
+        int included_result = nmo_load_included_files(session, io, &hdr1, logger);
+        if (included_result != NMO_OK) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "Failed to load included files (code=%d)", included_result);
+        }
     }
 
     /* Phase 9: Parse Manager Chunks */
@@ -900,8 +996,31 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     hdr1.objects = obj_descs;
     hdr1.plugin_dep_count = plugin_count;
     hdr1.plugin_deps = plugin_deps;
+
     hdr1.included_file_count = 0;
     hdr1.included_files = NULL;
+    if (session != NULL) {
+        uint32_t included_file_count = 0;
+        nmo_included_file_t *included_files = nmo_session_get_included_files(session, &included_file_count);
+        hdr1.included_file_count = included_file_count;
+        if (included_file_count > 0 && included_files != NULL) {
+            hdr1.included_files = (nmo_included_file_desc_t *) nmo_arena_alloc(
+                arena,
+                sizeof(nmo_included_file_desc_t) * included_file_count,
+                sizeof(void *)
+            );
+            if (hdr1.included_files == NULL) {
+                nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate included file descriptors");
+                nmo_id_remap_plan_destroy(remap_plan);
+                return NMO_ERR_NOMEM;
+            }
+
+            for (uint32_t i = 0; i < included_file_count; i++) {
+                hdr1.included_files[i].name = (char *) included_files[i].name;
+                hdr1.included_files[i].data_size = included_files[i].size;
+            }
+        }
+    }
 
     /* Serialize Header1 */
     void *hdr1_buffer = NULL;
@@ -1050,33 +1169,37 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
         }
     }
 
-    /* TODO: Phase 15: Write Included Files (if any) */
-    /*
-     * According to VIRTOOLS_FILE_FORMAT_SPEC.md Section 11:
-     * Included files should be appended after the data section.
-     * They are NOT part of the CRC calculation.
-     *
-     * Implementation plan:
-     * 1. Query session for list of included files (new API needed)
-     * 2. For each file:
-     *    a. Write filename length (4 bytes)
-     *    b. Write filename string
-     *    c. Write file data size (4 bytes)
-     *    d. Write file data
-     * 3. The header's "included_file_count" must be set during Header1 construction
-     *
-     * Current status: NOT IMPLEMENTED
-     * Reason: This is a rarely-used feature. Most Virtools files do not include
-     *         embedded files. We're focusing on core save/load functionality first.
-     *
-     * API needed:
-     *   - nmo_session_add_included_file(session, filename, data, size)
-     *   - nmo_session_get_included_files(session, &count)
-     */
     if (hdr1.included_file_count > 0) {
-        nmo_log(logger, NMO_LOG_WARN, "Session requests %u included files, but feature is not yet implemented",
-                hdr1.included_file_count);
-        nmo_log(logger, NMO_LOG_WARN, "Included files will not be written to file.");
+        nmo_log(logger, NMO_LOG_INFO, "Phase 15: Writing %u included file(s)", hdr1.included_file_count);
+        uint32_t included_count = 0;
+        nmo_included_file_t *included_files = nmo_session_get_included_files(session, &included_count);
+        if (included_files == NULL || included_count == 0) {
+            nmo_log(logger, NMO_LOG_WARN, "Header declares included files, but session has none");
+        } else {
+            for (uint32_t i = 0; i < included_count; i++) {
+                const char *name = included_files[i].name ? included_files[i].name : "";
+                uint32_t name_len = (uint32_t) strlen(name);
+
+                if (nmo_io_write_u32(io, name_len) != NMO_OK ||
+                    (name_len > 0 && nmo_io_write(io, name, name_len) != NMO_OK) ||
+                    nmo_io_write_u32(io, included_files[i].size) != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_ERROR, "Failed to write metadata for included file '%s'", name);
+                    nmo_io_close(io);
+                    nmo_id_remap_plan_destroy(remap_plan);
+                    return NMO_ERR_IO;
+                }
+
+                if (included_files[i].size > 0 && included_files[i].data != NULL) {
+                    if (nmo_io_write(io, included_files[i].data, included_files[i].size) != NMO_OK) {
+                        nmo_log(logger, NMO_LOG_ERROR,
+                                "Failed to write included payload for '%s'", name);
+                        nmo_io_close(io);
+                        nmo_id_remap_plan_destroy(remap_plan);
+                        return NMO_ERR_IO;
+                    }
+                }
+            }
+        }
     }
 
     /* Cleanup */

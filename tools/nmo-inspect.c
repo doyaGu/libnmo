@@ -147,6 +147,11 @@ static void show_basic_info(nmo_session_t *session, const inspect_options_t *opt
     nmo_object_t **objects = NULL;
     nmo_session_get_objects(session, &objects, &object_count);
     printf("Objects: %zu\n", object_count);
+
+    uint32_t included_count = 0;
+    nmo_included_file_t *included = nmo_session_get_included_files(session, &included_count);
+    (void)included;
+    printf("Included files: %u\n", included_count);
 }
 
 /* Display file statistics */
@@ -162,6 +167,17 @@ static void show_statistics(nmo_session_t *session) {
     }
     
     nmo_stats_print(&stats, stdout);
+
+    uint32_t included_count = 0;
+    nmo_included_file_t *included = nmo_session_get_included_files(session, &included_count);
+    if (included_count > 0 && included != NULL) {
+        printf("\n--- Included Files ---\n");
+        for (uint32_t i = 0; i < included_count; i++) {
+            printf("  [%u] %s (%u bytes)\n", i,
+                   included[i].name ? included[i].name : "(unnamed)",
+                   included[i].size);
+        }
+    }
 }
 
 /* List objects with optional filtering */
