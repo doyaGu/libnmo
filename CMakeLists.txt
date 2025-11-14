@@ -141,6 +141,7 @@ set(NMO_FORMAT_SOURCES
     src/format/chunk_remap.c
     src/format/chunk_bitmap.c
     src/format/chunk_pool.c
+    src/format/stream_io.c
     src/format/manager_registry.c
     src/format/nmo_id_remap.c
     src/format/nmo_image.c
