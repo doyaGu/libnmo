@@ -63,7 +63,31 @@ TEST(header1, round_trip) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, included_metadata_only) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    /* Header layout: [category_count=0][included_count=2][table_size=0] */
+    uint32_t buffer[] = {
+        0, /* plugin categories */
+        2, /* included files referenced */
+        0  /* no inline descriptor table */
+    };
+
+    nmo_header1_t header;
+    memset(&header, 0, sizeof(header));
+    header.object_count = 0;
+
+    nmo_result_t result = nmo_header1_parse(buffer, sizeof(buffer), &header, arena);
+    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(2u, header.included_file_count);
+    ASSERT_NULL(header.included_files);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header1, serialization);
     REGISTER_TEST(header1, round_trip);
+    REGISTER_TEST(header1, included_metadata_only);
 TEST_MAIN_END()
