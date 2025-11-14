@@ -55,6 +55,10 @@ typedef struct nmo_session {
     /* Chunk pool for chunk allocations */
     nmo_chunk_pool_t *chunk_pool;
     size_t chunk_pool_capacity;
+
+    /* Finish loading diagnostics */
+    nmo_finish_loading_stats_t finish_stats;
+    int finish_stats_valid;
 } nmo_session_t;
 
 static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t needed) {
@@ -134,6 +138,9 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     session->included_file_capacity = 0;
     session->chunk_pool = NULL;
     session->chunk_pool_capacity = 0;
+
+    memset(&session->finish_stats, 0, sizeof(session->finish_stats));
+    session->finish_stats_valid = 0;
 
     /* Initialize object index */
     session->object_index = NULL;
@@ -478,6 +485,35 @@ int nmo_session_get_object_index_stats(
     }
 
     return nmo_object_index_get_stats(session->object_index, stats);
+}
+
+int nmo_session_get_finish_loading_stats(
+    const nmo_session_t *session,
+    nmo_finish_loading_stats_t *out_stats
+) {
+    if (session == NULL || out_stats == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!session->finish_stats_valid) {
+        memset(out_stats, 0, sizeof(*out_stats));
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    *out_stats = session->finish_stats;
+    return NMO_OK;
+}
+
+void nmo_session_set_finish_loading_stats(
+    nmo_session_t *session,
+    const nmo_finish_loading_stats_t *stats
+) {
+    if (session == NULL || stats == NULL) {
+        return;
+    }
+
+    session->finish_stats = *stats;
+    session->finish_stats_valid = 1;
 }
 
 /**
