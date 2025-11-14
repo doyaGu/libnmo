@@ -11,10 +11,12 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_object_index.h"
 #include "format/nmo_data.h"
+#include "format/nmo_chunk_pool.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define DEFAULT_ARENA_SIZE (1024 * 1024)  /* 1 MB */
+#define DEFAULT_CHUNK_POOL_CAPACITY 128
 
 /**
  * Session structure
@@ -40,6 +42,10 @@ typedef struct nmo_session {
     /* Manager data for round-trip */
     nmo_manager_data_t *manager_data;
     uint32_t manager_data_count;
+
+    /* Chunk pool for chunk allocations */
+    nmo_chunk_pool_t *chunk_pool;
+    size_t chunk_pool_capacity;
 } nmo_session_t;
 
 /**
@@ -82,6 +88,8 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     /* Initialize manager data */
     session->manager_data = NULL;
     session->manager_data_count = 0;
+    session->chunk_pool = NULL;
+    session->chunk_pool_capacity = 0;
 
     /* Initialize object index */
     session->object_index = NULL;
@@ -101,6 +109,12 @@ void nmo_session_destroy(nmo_session_t *session) {
         /* Destroy owned resources */
         if (session->repository != NULL) {
             nmo_object_repository_destroy(session->repository);
+        }
+
+        if (session->chunk_pool != NULL) {
+            nmo_chunk_pool_destroy(session->chunk_pool);
+            session->chunk_pool = NULL;
+            session->chunk_pool_capacity = 0;
         }
 
         if (session->arena != NULL) {
@@ -132,6 +146,28 @@ nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session) {
  */
 nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session) {
     return session ? session->repository : NULL;
+}
+
+nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session) {
+    return session ? session->chunk_pool : NULL;
+}
+
+nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
+    nmo_session_t *session,
+    size_t initial_capacity_hint
+) {
+    if (session == NULL || session->arena == NULL) {
+        return NULL;
+    }
+
+    if (session->chunk_pool != NULL) {
+        return session->chunk_pool;
+    }
+
+    size_t capacity = initial_capacity_hint > 0 ? initial_capacity_hint : DEFAULT_CHUNK_POOL_CAPACITY;
+    session->chunk_pool = nmo_chunk_pool_create(capacity, session->arena);
+    session->chunk_pool_capacity = (session->chunk_pool != NULL) ? capacity : 0;
+    return session->chunk_pool;
 }
 
 /**

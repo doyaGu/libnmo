@@ -17,6 +17,7 @@ extern "C" {
 typedef struct nmo_context nmo_context_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 
 /**
  * @brief Session structure
@@ -88,6 +89,25 @@ NMO_API nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session);
  * @return Object repository
  */
 NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session);
+
+/**
+ * @brief Get chunk pool used for chunk allocations
+ *
+ * Returns the optional chunk pool owned by the session. May be NULL if the
+ * pool has not been created yet or failed to initialize.
+ */
+NMO_API nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session);
+
+/**
+ * @brief Ensure chunk pool exists
+ *
+ * Creates the chunk pool on-demand if it does not already exist. The
+ * initial_capacity_hint parameter can be zero to use the default size.
+ * Returns NULL on allocation failure.
+ */
+NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
+    nmo_session_t *session,
+    size_t initial_capacity_hint);
 
 /**
  * @brief Get file info

@@ -5,6 +5,7 @@
 
 #include "format/nmo_data.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_pool.h"
 #include "core/nmo_utils.h"
 #include <string.h>
 #include <stdio.h>
@@ -30,11 +31,22 @@
  *     - data_size (4 bytes int32)
  *     - chunk_data (data_size bytes)
  */
+static nmo_chunk_t *allocate_chunk(nmo_chunk_pool_t *chunk_pool, nmo_arena_t *arena) {
+    if (chunk_pool != NULL) {
+        nmo_chunk_t *chunk = nmo_chunk_pool_acquire(chunk_pool);
+        if (chunk != NULL) {
+            return chunk;
+        }
+    }
+    return nmo_chunk_create(arena);
+}
+
 static nmo_result_t parse_manager_data(
     const uint8_t *data,
     size_t size,
     size_t *pos,
     nmo_data_section_t *section,
+    nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *arena) {
     if (section->manager_count == 0) {
         section->managers = NULL;
@@ -72,7 +84,7 @@ static nmo_result_t parse_manager_data(
             CHECK_BUFFER_SIZE(*pos, mgr->data_size, size);
 
             /* Create chunk */
-            mgr->chunk = nmo_chunk_create(arena);
+            mgr->chunk = allocate_chunk(chunk_pool, arena);
             if (mgr->chunk == NULL) {
                 return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
                                                   NMO_SEVERITY_ERROR, "Failed to create manager chunk"));
@@ -108,6 +120,7 @@ static nmo_result_t parse_object_data(
     size_t *pos,
     uint32_t file_version,
     nmo_data_section_t *section,
+    nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *arena) {
     if (section->object_count == 0) {
         section->objects = NULL;
@@ -149,7 +162,7 @@ static nmo_result_t parse_object_data(
             CHECK_BUFFER_SIZE(*pos, obj->data_size, size);
 
             /* Create chunk */
-            obj->chunk = nmo_chunk_create(arena);
+            obj->chunk = allocate_chunk(chunk_pool, arena);
             if (obj->chunk == NULL) {
                 return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
                                                   NMO_SEVERITY_ERROR, "Failed to create object chunk"));
@@ -175,6 +188,7 @@ nmo_result_t nmo_data_section_parse(
     size_t size,
     uint32_t file_version,
     nmo_data_section_t *data_section,
+    nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *arena) {
     if (data == NULL || data_section == NULL || arena == NULL) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
@@ -197,7 +211,7 @@ nmo_result_t nmo_data_section_parse(
 
     /* Parse manager data (file_version >= 6) */
     if (file_version >= 6 && manager_count > 0) {
-        nmo_result_t result = parse_manager_data(buffer, size, &pos, data_section, arena);
+        nmo_result_t result = parse_manager_data(buffer, size, &pos, data_section, chunk_pool, arena);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -205,7 +219,7 @@ nmo_result_t nmo_data_section_parse(
 
     /* Parse object data (file_version >= 4) */
     if (file_version >= 4 && object_count > 0) {
-        nmo_result_t result = parse_object_data(buffer, size, &pos, file_version, data_section, arena);
+        nmo_result_t result = parse_object_data(buffer, size, &pos, file_version, data_section, chunk_pool, arena);
         if (result.code != NMO_OK) {
             return result;
         }

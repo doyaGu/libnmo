@@ -27,6 +27,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
+#include "format/nmo_chunk_pool.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,6 +85,7 @@ typedef struct nmo_data_section {
  * @param size Size of buffer
  * @param file_version File format version
  * @param data_section Data section structure (object_count and manager_count must be set)
+ * @param chunk_pool Optional chunk pool used for chunk allocation (can be NULL)
  * @param arena Arena allocator for temporary data
  * @return NMO_OK on success, error code otherwise
  */
@@ -91,7 +93,8 @@ NMO_API nmo_result_t nmo_data_section_parse(
     const void *data,
     size_t size,
     uint32_t file_version,
-    nmo_data_section_t *data_section,
+     nmo_data_section_t *data_section,
+     nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *arena);
 
 /**
