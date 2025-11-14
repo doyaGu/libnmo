@@ -34,23 +34,22 @@ nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
     // Set MAN flag
     chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
-    // Write manager GUID (2 DWORDs)
-    nmo_result_t result = nmo_chunk_write_guid(chunk, manager_guid);
+    // Write count then manager GUID
+    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     if (result.code != NMO_OK) return result;
 
-    // Write count
-    return nmo_chunk_write_dword(chunk, (uint32_t) count);
+    return nmo_chunk_write_guid(chunk, manager_guid);
 }
 
 nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
-                                         nmo_manager_id_t mgr_id,
+                                         nmo_guid_t manager_guid,
                                          uint32_t value) {
     if (!chunk) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR, "Invalid chunk argument"));
     }
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 2);
+    nmo_result_t result = nmo_chunk_check_size(chunk, 3);
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -83,8 +82,9 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
 
     chunk->managers[chunk->manager_count++] = state->current_pos;
 
-    // Write manager ID and value
-    chunk->data[state->current_pos++] = mgr_id;
+    // Write manager GUID and value
+    chunk->data[state->current_pos++] = manager_guid.d1;
+    chunk->data[state->current_pos++] = manager_guid.d2;
     chunk->data[state->current_pos++] = value;
 
     // Update data_size
@@ -96,20 +96,21 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
 }
 
 nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
-                                        nmo_manager_id_t *out_mgr_id,
+                                        nmo_guid_t *out_manager_guid,
                                         uint32_t *out_value) {
-    if (!chunk || !out_mgr_id || !out_value) {
+    if (!chunk || !out_manager_guid || !out_value) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
-    if (!can_read(chunk, 2)) {
+    if (!can_read(chunk, 3)) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
                                           NMO_SEVERITY_ERROR, "Insufficient data for manager int"));
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    *out_mgr_id = chunk->data[state->current_pos++];
+    out_manager_guid->d1 = chunk->data[state->current_pos++];
+    out_manager_guid->d2 = chunk->data[state->current_pos++];
     *out_value = chunk->data[state->current_pos++];
 
     return nmo_result_ok();
@@ -123,13 +124,12 @@ nmo_result_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
                                           NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
-    // Read manager GUID (2 DWORDs)
-    nmo_result_t result = nmo_chunk_read_guid(chunk, out_manager_guid);
+    // Read count then manager GUID
+    uint32_t count_u32 = 0;
+    nmo_result_t result = nmo_chunk_read_dword(chunk, &count_u32);
     if (result.code != NMO_OK) return result;
 
-    // Read count
-    uint32_t count_u32 = 0;
-    result = nmo_chunk_read_dword(chunk, &count_u32);
+    result = nmo_chunk_read_guid(chunk, out_manager_guid);
     if (result.code != NMO_OK) return result;
 
     *out_count = (size_t)count_u32;

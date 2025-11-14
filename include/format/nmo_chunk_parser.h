@@ -3,6 +3,7 @@
 
 #include "nmo_types.h"
 #include "nmo_chunk.h"
+#include "format/nmo_chunk_context.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
@@ -34,6 +35,15 @@ typedef struct nmo_chunk_parser nmo_chunk_parser_t;
  * @return Parser or NULL on allocation failure
  */
 NMO_API nmo_chunk_parser_t *nmo_chunk_parser_create(nmo_chunk_t *chunk);
+
+/**
+ * @brief Provide file-context remap tables for LoadFindObject semantics.
+ *
+ * When configured, object IDs read from chunks authored in file mode are
+ * remapped back to runtime IDs automatically. Passing NULL disables remapping.
+ */
+NMO_API void nmo_chunk_parser_set_file_context(nmo_chunk_parser_t *p,
+											   const nmo_chunk_file_context_t *ctx);
 
 /**
  * @brief Get current cursor position
@@ -248,6 +258,17 @@ NMO_API const uint32_t *nmo_chunk_parser_lock_read_buffer(nmo_chunk_parser_t *p)
 NMO_API int nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out);
 
 /**
+ * @brief Start reading an object ID sequence
+ *
+ * Reads the sequence count and enables internal tracking so subsequent
+ * calls to ReadObjectID automatically advance the sequence state.
+ *
+ * @param p Parser
+ * @return Number of objects in the sequence, or negative error code on failure
+ */
+NMO_API int nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p);
+
+/**
  * @brief Read manager int with GUID
  *
  * Reads [GUID.d1][GUID.d2][value] and advances cursor.
@@ -269,6 +290,18 @@ NMO_API int32_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p, nmo_gui
  * @return Manager int value, or 0 on error
  */
 NMO_API int32_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p);
+
+/**
+ * @brief Start reading a manager int sequence
+ *
+ * Reads the sequence header [count][GUID] and stores the GUID for
+ * subsequent ReadManagerIntSequence calls.
+ *
+ * @param p Parser
+ * @param out_manager Optional pointer to receive the manager GUID
+ * @return Number of entries in the sequence, or negative error code on failure
+ */
+NMO_API int nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p, nmo_guid_t *out_manager);
 
 /**
  * @brief Read array with little-endian byte order

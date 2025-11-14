@@ -231,7 +231,10 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     /* Set file info in session */
     nmo_file_info_t file_info = {
         .file_version = header.file_version,
+        .file_version2 = header.file_version2,
         .ck_version = header.ck_version,
+        .product_version = header.product_version,
+        .product_build = header.product_build,
         .file_size = 0, /* Will calculate from headers */
         .object_count = header.object_count,
         .manager_count = header.manager_count,
@@ -1063,7 +1066,12 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     /* Set versions */
     header.file_version = (file_info.file_version != 0) ? file_info.file_version : 8;
+    header.file_version2 = file_info.file_version2;
     header.ck_version = (file_info.ck_version != 0) ? file_info.ck_version : 0x13022002;
+
+    /* Preserve product metadata when available */
+    header.product_version = file_info.product_version;
+    header.product_build = file_info.product_build;
 
     /* Set counts */
     header.object_count = (uint32_t) object_count;

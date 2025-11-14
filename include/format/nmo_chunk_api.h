@@ -840,7 +840,7 @@ NMO_API nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
  * @return NMO_OK on success, error code on failure
  */
 NMO_API nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
-                                                 nmo_manager_id_t mgr_id,
+                                                 nmo_guid_t manager_guid,
                                                  uint32_t value);
 
 /**
@@ -854,7 +854,7 @@ NMO_API nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
  * @return NMO_OK on success, error code on failure
  */
 NMO_API nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
-                                                nmo_manager_id_t *out_mgr_id,
+                                                nmo_guid_t *out_manager_guid,
                                                 uint32_t *out_value);
 
 /**

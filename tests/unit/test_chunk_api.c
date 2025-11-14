@@ -369,12 +369,16 @@ TEST(chunk_api, manager_sequence) {
     // Note: Can't directly access chunk_options, but functionality is verified by successful manager operations
     
     // Write manager ints
-    result = nmo_chunk_write_manager_int(chunk, 100, 0xAABBCCDD);
-    ASSERT_EQ(result.code, NMO_OK);
-    result = nmo_chunk_write_manager_int(chunk, 200, 0x11223344);
-    ASSERT_EQ(result.code, NMO_OK);
-    result = nmo_chunk_write_manager_int(chunk, 300, 0x55667788);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_guid_t entry_guids[3] = {
+        {0xDEADBEEF, 0x01020304},
+        {0xFEEDFACE, 0x05060708},
+        {0xCAFEBABE, 0x0A0B0C0D}
+    };
+    uint32_t entry_values[3] = {0xAABBCCDD, 0x11223344, 0x55667788};
+    for (int i = 0; i < 3; ++i) {
+        result = nmo_chunk_write_manager_int(chunk, entry_guids[i], entry_values[i]);
+        ASSERT_EQ(result.code, NMO_OK);
+    }
     
     // Start read mode
     result = nmo_chunk_start_read(chunk);
@@ -382,30 +386,23 @@ TEST(chunk_api, manager_sequence) {
     
     // Read manager sequence header
     nmo_guid_t read_guid;
-    uint32_t count;
-    result = nmo_chunk_read_guid(chunk, &read_guid);
+    size_t count = 0;
+    result = nmo_chunk_start_manager_read_sequence(chunk, &read_guid, &count);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(read_guid.d1, mgr_guid.d1);
     ASSERT_EQ(read_guid.d2, mgr_guid.d2);
-    result = nmo_chunk_read_dword(chunk, &count);
-    ASSERT_EQ(result.code, NMO_OK);
-    ASSERT_EQ(count, 3);
-    
+    ASSERT_EQ(count, 3u);
+
     // Read manager ints
-    nmo_manager_id_t mgr_id;
+    nmo_guid_t mgr_entry;
     uint32_t value;
-    result = nmo_chunk_read_manager_int(chunk, &mgr_id, &value);
-    ASSERT_EQ(result.code, NMO_OK);
-    ASSERT_EQ(mgr_id, 100);
-    ASSERT_EQ(value, 0xAABBCCDD);
-    result = nmo_chunk_read_manager_int(chunk, &mgr_id, &value);
-    ASSERT_EQ(result.code, NMO_OK);
-    ASSERT_EQ(mgr_id, 200);
-    ASSERT_EQ(value, 0x11223344);
-    result = nmo_chunk_read_manager_int(chunk, &mgr_id, &value);
-    ASSERT_EQ(result.code, NMO_OK);
-    ASSERT_EQ(mgr_id, 300);
-    ASSERT_EQ(value, 0x55667788);
+    for (int i = 0; i < 3; ++i) {
+        result = nmo_chunk_read_manager_int(chunk, &mgr_entry, &value);
+        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(mgr_entry.d1, entry_guids[i].d1);
+        ASSERT_EQ(mgr_entry.d2, entry_guids[i].d2);
+        ASSERT_EQ(value, entry_values[i]);
+    }
     
     nmo_arena_destroy(arena);
 }

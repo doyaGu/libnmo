@@ -33,12 +33,15 @@ typedef struct nmo_session nmo_session_t;
  * @brief File information structure
  */
 typedef struct nmo_file_info {
-    uint32_t file_version;  /**< File format version */
-    uint32_t ck_version;    /**< CK engine version */
-    size_t file_size;       /**< File size in bytes */
-    uint32_t object_count;  /**< Number of objects */
-    uint32_t manager_count; /**< Number of managers */
-    uint32_t write_mode;    /**< Write mode flags */
+    uint32_t file_version;    /**< File format version */
+    uint32_t file_version2;   /**< Secondary file version field */
+    uint32_t ck_version;      /**< CK engine version */
+    uint32_t product_version; /**< Product version field */
+    uint32_t product_build;   /**< Product build identifier */
+    size_t file_size;         /**< File size in bytes */
+    uint32_t object_count;    /**< Number of objects */
+    uint32_t manager_count;   /**< Number of managers */
+    uint32_t write_mode;      /**< Write mode flags */
 } nmo_file_info_t;
 
 /**

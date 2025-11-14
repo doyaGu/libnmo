@@ -212,12 +212,18 @@ TEST(context_session, session_file_info) {
     /* Get default file info (should be all zeros) */
     nmo_file_info_t info = nmo_session_get_file_info(session);
     ASSERT_EQ(0, info.file_version);
+    ASSERT_EQ(0, info.file_version2);
+    ASSERT_EQ(0, info.product_version);
+    ASSERT_EQ(0, info.product_build);
     ASSERT_EQ(0, info.object_count);
 
     /* Set file info */
     nmo_file_info_t new_info = {
         .file_version = 8,
+        .file_version2 = 1,
         .ck_version = 0x13022002,
+        .product_version = 0x01020304,
+        .product_build = 0x55667788,
         .file_size = 12345,
         .object_count = 42,
         .manager_count = 3,
@@ -230,7 +236,10 @@ TEST(context_session, session_file_info) {
     /* Verify file info was set */
     info = nmo_session_get_file_info(session);
     ASSERT_EQ(8, info.file_version);
+    ASSERT_EQ(1, info.file_version2);
     ASSERT_EQ(0x13022002, info.ck_version);
+    ASSERT_EQ(0x01020304, info.product_version);
+    ASSERT_EQ(0x55667788, info.product_build);
     ASSERT_EQ(12345, info.file_size);
     ASSERT_EQ(42, info.object_count);
     ASSERT_EQ(3, info.manager_count);
