@@ -47,7 +47,11 @@ typedef struct nmo_manager_data {
     nmo_guid_t guid;    /**< Manager GUID */
     uint32_t data_size; /**< Size of chunk data in bytes */
     nmo_chunk_t *chunk; /**< Chunk containing manager state (may be NULL if size=0) */
+    uint32_t flags;     /**< Internal flags for loader bookkeeping */
 } nmo_manager_data_t;
+
+#define NMO_MANAGER_DATA_FLAG_DISPATCHED 0x00000001u
+#define NMO_MANAGER_DATA_FLAG_ERROR      0x00000002u
 
 /**
  * @brief Object data from file

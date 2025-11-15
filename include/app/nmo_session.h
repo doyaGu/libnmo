@@ -172,12 +172,17 @@ NMO_API nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *se
 /**
  * @brief Store plugin dependency metadata (borrowed pointer)
  */
-NMO_API void nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
+NMO_API int nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
 
 /**
  * @brief Retrieve plugin dependency metadata from session
  */
 NMO_API nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(const nmo_session_t *session, uint32_t *out_count);
+
+/**
+ * @brief Rebuild plugin dependency diagnostics based on current metadata.
+ */
+NMO_API int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session);
 
 /* High-level convenience API */
 
@@ -286,10 +291,23 @@ NMO_API int nmo_session_get_object_index_stats(
  * @brief Included file metadata stored in the session
  */
 typedef struct nmo_included_file {
-    const char *name; /**< Filename without path */
-    const void *data; /**< Raw payload data */
-    uint32_t size;    /**< Payload size in bytes */
+    const char *name;           /**< Filename without path */
+    const void *data;           /**< Raw payload data */
+    uint32_t size;              /**< Payload size in bytes */
+    nmo_object_id_t *owner_ids; /**< Owning object IDs (optional) */
+    uint32_t owner_count;       /**< Number of owning objects */
+    uint32_t owner_capacity;    /**< Allocated owner slots */
+    uint32_t attributes;        /**< Metadata flags (borrowed payload, etc.) */
 } nmo_included_file_t;
+
+#define NMO_INCLUDED_FILE_ATTR_BORROWED      0x00000001u
+#define NMO_INCLUDED_FILE_ATTR_METADATA_ONLY 0x00000002u
+
+typedef struct nmo_included_file_metadata {
+    const nmo_object_id_t *owner_ids;
+    uint32_t owner_count;
+    uint32_t attributes; /**< Use NMO_INCLUDED_FILE_ATTR_* */
+} nmo_included_file_metadata_t;
 
 NMO_API int nmo_session_add_included_file(
     nmo_session_t *session,
@@ -297,11 +315,31 @@ NMO_API int nmo_session_add_included_file(
     const void *data,
     uint32_t size);
 
+NMO_API int nmo_session_add_included_file_ex(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size,
+    const nmo_included_file_metadata_t *meta);
+
 int nmo_session_add_included_file_borrowed(
     nmo_session_t *session,
     const char *name,
     const void *data,
     uint32_t size);
+
+int nmo_session_add_included_file_borrowed_ex(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size,
+    const nmo_included_file_metadata_t *meta);
+
+NMO_API int nmo_session_set_included_file_owners(
+    nmo_session_t *session,
+    uint32_t index,
+    const nmo_object_id_t *owner_ids,
+    uint32_t owner_count);
 
 NMO_API nmo_included_file_t *nmo_session_get_included_files(
     const nmo_session_t *session,

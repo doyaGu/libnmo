@@ -51,7 +51,8 @@ NMO_API nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc);
 /**
  * @brief Retain context
  *
- * Increments the reference count. Thread-safe.
+ * Increments the reference count. Thread-safe across MSVC, GCC, and Clang via
+ * the platform-specific atomic primitives used internally.
  *
  * @param ctx Context to retain
  */
@@ -61,7 +62,8 @@ NMO_API void nmo_context_retain(nmo_context_t *ctx);
  * @brief Release context
  *
  * Decrements the reference count. When count reaches 0, the context
- * is destroyed. Thread-safe.
+ * is destroyed. Uses the same cross-compiler atomic primitives as retain,
+ * making it safe to call from multiple threads simultaneously.
  *
  * @param ctx Context to release
  */

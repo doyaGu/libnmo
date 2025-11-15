@@ -72,6 +72,7 @@ typedef enum nmo_save_flags {
     NMO_SAVE_SEQUENTIAL_IDS   = 0x0004, /**< Use sequential file IDs */
     NMO_SAVE_INCLUDE_MANAGERS = 0x0008, /**< Include manager state */
     NMO_SAVE_VALIDATE_BEFORE  = 0x0010, /**< Validate before writing */
+    NMO_SAVE_STRIP_INCLUDED_FILES = 0x0020, /**< Drop included payloads during save */
 } nmo_save_flags_t;
 
 /**

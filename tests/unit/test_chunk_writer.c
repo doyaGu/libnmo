@@ -115,8 +115,13 @@ TEST(chunk_writer, object_ids) {
     // Check that IDS option is set
     ASSERT_TRUE(chunk->chunk_options & NMO_CHUNK_OPTION_IDS);
 
-    // Check that ID list has 3 positions (including duplicates)
-    ASSERT_EQ(3, chunk->id_count);
+    // ID tracking now captures sequence marker + write positions
+    ASSERT_EQ(5u, chunk->id_count);
+    ASSERT_EQ(0xFFFFFFFFu, chunk->ids[0]);
+    ASSERT_EQ(0u, chunk->ids[1]);        // Sequence starts before count write
+    ASSERT_EQ(1u, chunk->ids[2]);        // First ID location
+    ASSERT_EQ(2u, chunk->ids[3]);        // Second ID location
+    ASSERT_EQ(3u, chunk->ids[4]);        // Third ID location (duplicate allowed)
 
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);

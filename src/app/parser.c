@@ -30,7 +30,10 @@
 #include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
-#include "miniz.h"  /* For decompression */
+#include <stdalign.h>
+#include "miniz.h"  /* For compression/decompression */
+
+#define NMO_SAVE_COMPRESSION_LEVEL MZ_DEFAULT_COMPRESSION
 
 /**
  * @brief Default placeholder serialization function.
@@ -63,19 +66,6 @@ static void nmo_format_guid_short(nmo_guid_t guid, char *buffer, size_t buffer_s
     if (nmo_guid_format(guid, buffer, buffer_size) <= 0) {
         buffer[0] = '\0';
     }
-}
-
-static const char *nmo_copy_string_arena(nmo_arena_t *arena, const char *src) {
-    if (arena == NULL || src == NULL) {
-        return NULL;
-    }
-    size_t len = strlen(src);
-    char *copy = (char *) nmo_arena_alloc(arena, len + 1, 1);
-    if (copy == NULL) {
-        return NULL;
-    }
-    memcpy(copy, src, len + 1);
-    return copy;
 }
 
 static nmo_chunk_t* nmo_default_serialize_object(nmo_object_t *obj, nmo_arena_t *arena, nmo_logger_t *logger) {
@@ -129,6 +119,24 @@ static int nmo_should_save_object_as_reference(
     }
 
     return 0;
+}
+
+static int nmo_register_included_metadata(
+    nmo_session_t *session,
+    const char *name,
+    uint32_t data_size
+) {
+    nmo_included_file_metadata_t meta;
+    meta.owner_ids = NULL;
+    meta.owner_count = 0;
+    meta.attributes = NMO_INCLUDED_FILE_ATTR_METADATA_ONLY;
+    const char *safe_name = (name != NULL) ? name : "";
+    return nmo_session_add_included_file_borrowed_ex(
+        session,
+        safe_name,
+        NULL,
+        data_size,
+        &meta);
 }
 
 static int nmo_load_included_files(
@@ -210,12 +218,49 @@ static int nmo_load_included_files(
             return add_result;
         }
 
+        if (hdr1 != NULL && hdr1->included_files != NULL && parsed < hdr1->included_file_count) {
+            const nmo_included_file_desc_t *desc = &hdr1->included_files[parsed];
+            if (desc->name != NULL && strcmp(desc->name, name_buf) != 0) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Included file #%u name mismatch (Header1='%s', Payload='%s')",
+                        parsed, desc->name, name_buf);
+            }
+            if (desc->data_size != data_size) {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "Included file '%s' size mismatch (Header1=%u, Payload=%u)",
+                        name_buf, desc->data_size, data_size);
+            }
+        }
+
         parsed++;
     }
 
-    if (expected > 0 && parsed != expected) {
+    if (expected > parsed) {
         nmo_log(logger, NMO_LOG_WARN,
-                "  Header references %u included file(s), parsed %u entries", expected, parsed);
+                "  Header references %u included file(s), parsed %u entries",
+                expected, parsed);
+
+        if (hdr1 != NULL && hdr1->included_files != NULL) {
+            for (uint32_t i = parsed; i < expected; i++) {
+                const nmo_included_file_desc_t *desc = &hdr1->included_files[i];
+                const char *meta_name = (desc != NULL && desc->name != NULL)
+                    ? desc->name
+                    : "";
+                int meta_result = nmo_register_included_metadata(
+                    session,
+                    meta_name,
+                    desc != NULL ? desc->data_size : 0u);
+                if (meta_result != NMO_OK) {
+                    return meta_result;
+                }
+            }
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Recorded %u metadata-only include entries",
+                    expected - parsed);
+        } else {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Missing Header1 descriptors; cannot preserve include metadata");
+        }
     }
 
     return NMO_OK;
@@ -363,7 +408,13 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         }
     }
 
-    nmo_session_set_plugin_dependencies(session, hdr1.plugin_deps, hdr1.plugin_dep_count);
+    int dep_store_result = nmo_session_set_plugin_dependencies(session, hdr1.plugin_deps, hdr1.plugin_dep_count);
+    if (dep_store_result != NMO_OK) {
+        nmo_log(logger, NMO_LOG_ERROR,
+                "Failed to store plugin dependencies (code=%d)", dep_store_result);
+        nmo_io_close(io);
+        return dep_store_result;
+    }
 
     nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %zu plugins",
             hdr1.object_count, header.manager_count, hdr1.plugin_dep_count);
@@ -383,102 +434,53 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     nmo_log(logger, NMO_LOG_INFO, "Phase 6: Checking plugin dependencies (%zu plugins)",
             hdr1.plugin_dep_count);
 
-    size_t missing_plugins = 0;
-    size_t outdated_plugins = 0;
     nmo_plugin_manager_t *plugin_manager = nmo_session_get_plugin_manager(session);
-    nmo_session_plugin_dependency_status_t *plugin_diag_entries = NULL;
-
-    if (hdr1.plugin_dep_count > 0) {
-        size_t diag_bytes = sizeof(nmo_session_plugin_dependency_status_t) * hdr1.plugin_dep_count;
-        plugin_diag_entries = (nmo_session_plugin_dependency_status_t *) nmo_arena_alloc(
-            arena,
-            diag_bytes,
-            sizeof(void *)
-        );
-        if (plugin_diag_entries != NULL) {
-            memset(plugin_diag_entries, 0, diag_bytes);
-        } else {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Unable to allocate plugin diagnostics buffer (%zu bytes)", diag_bytes);
-        }
-    }
 
     if (hdr1.plugin_dep_count > 0 && plugin_manager == NULL) {
         nmo_log(logger, NMO_LOG_WARN, "  Plugin dependencies present but plugin manager is unavailable");
     }
 
-    for (size_t i = 0; i < hdr1.plugin_dep_count; i++) {
-        nmo_plugin_dep_t *dep = &hdr1.plugin_deps[i];
-        char guid_buffer[32];
-        nmo_format_guid_short(dep->guid, guid_buffer, sizeof(guid_buffer));
+    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(session);
+    size_t missing_plugins = (diag != NULL) ? diag->missing_count : 0;
+    size_t outdated_plugins = (diag != NULL) ? diag->outdated_count : 0;
+    if (diag != NULL && diag->entries != NULL) {
+        for (size_t i = 0; i < diag->entry_count; i++) {
+            const nmo_session_plugin_dependency_status_t *entry = &diag->entries[i];
+            char guid_buffer[32];
+            nmo_format_guid_short(entry->guid, guid_buffer, sizeof(guid_buffer));
 
-        nmo_session_plugin_dependency_status_t *diag_entry = NULL;
-        if (plugin_diag_entries != NULL) {
-            diag_entry = &plugin_diag_entries[i];
-            diag_entry->guid = dep->guid;
-            diag_entry->category = (nmo_plugin_category_t) dep->category;
-            diag_entry->required_version = dep->version;
-        }
-
-        const nmo_plugin_t *registered = plugin_manager
-            ? nmo_plugin_manager_find_by_guid(plugin_manager, dep->guid)
-            : NULL;
-
-        if (registered == NULL) {
-            missing_plugins++;
-            if (diag_entry != NULL) {
-                diag_entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
-                if (plugin_manager == NULL) {
-                    diag_entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE;
-                }
+            if (entry->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Missing plugin %zu: guid=%s category=%s version=%u",
+                        i,
+                        guid_buffer,
+                        nmo_plugin_category_label(entry->category),
+                        entry->required_version);
+                continue;
             }
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Missing plugin %zu: guid=%s category=%s version=%u",
-                    i,
-                    guid_buffer,
-                    nmo_plugin_category_label(dep->category),
-                    dep->version);
-            continue;
-        }
 
-        if (diag_entry != NULL) {
-            diag_entry->resolved_version = registered->version;
-            if (registered->name != NULL) {
-                diag_entry->resolved_name = nmo_copy_string_arena(arena, registered->name);
+            const char *resolved_name = (entry->resolved_name != NULL)
+                ? entry->resolved_name
+                : "<unnamed>";
+
+            if (entry->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Plugin %s (guid=%s) version %u is older than required version %u",
+                        resolved_name,
+                        guid_buffer,
+                        entry->resolved_version,
+                        entry->required_version);
+            } else {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "  Plugin %s (guid=%s) satisfied dependency (version=%u)",
+                        resolved_name,
+                        guid_buffer,
+                        entry->resolved_version);
             }
         }
-
-        if (registered->version < dep->version) {
-            outdated_plugins++;
-            if (diag_entry != NULL) {
-                diag_entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD;
-            }
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Plugin %s (guid=%s) version %u is older than required version %u",
-                    registered->name ? registered->name : "<unnamed>",
-                    guid_buffer,
-                    registered->version,
-                    dep->version);
-        } else {
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Plugin %s (guid=%s) satisfied dependency (version=%u)",
-                    registered->name ? registered->name : "<unnamed>",
-                    guid_buffer,
-                    registered->version);
-        }
-    }
-
-    if (hdr1.plugin_dep_count > 0 || plugin_manager != NULL) {
-        size_t entry_count = hdr1.plugin_dep_count;
-        nmo_session_set_plugin_diagnostics(
-            session,
-            plugin_diag_entries,
-            entry_count,
-            missing_plugins,
-            outdated_plugins,
-            plugin_manager != NULL ? 1 : 0);
-    } else {
-        nmo_session_set_plugin_diagnostics(session, NULL, 0, 0, 0, plugin_manager != NULL ? 1 : 0);
+    } else if (hdr1.plugin_dep_count > 0) {
+        nmo_log(logger, NMO_LOG_INFO,
+                "  Plugin diagnostics unavailable (dependencies=%u)", hdr1.plugin_dep_count);
     }
 
     if (missing_plugins > 0 && enforce_plugin_dependencies) {
@@ -776,6 +778,63 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         }
     }
 
+    /* Phase 13b: Dispatch manager chunks to registered managers */
+    nmo_log(logger, NMO_LOG_INFO, "Phase 13b: Dispatching manager chunks");
+
+    if (data_sect.managers != NULL && data_sect.manager_count > 0) {
+        if (manager_reg == NULL) {
+            nmo_log(logger, NMO_LOG_WARN, "  Manager registry unavailable; preserving %u chunk(s) for round-trip",
+                    data_sect.manager_count);
+        } else {
+            for (uint32_t i = 0; i < data_sect.manager_count; i++) {
+                nmo_manager_data_t *mgr_data = &data_sect.managers[i];
+                char guid_buffer[64];
+                nmo_format_guid_short(mgr_data->guid, guid_buffer, sizeof(guid_buffer));
+
+                nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_find_by_guid(
+                    manager_reg,
+                    mgr_data->guid);
+
+                if (manager == NULL) {
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Skipping manager chunk GUID=%s (no registered manager); data preserved",
+                            guid_buffer);
+                    continue;
+                }
+
+                if (manager->load_data == NULL) {
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Manager %s (GUID=%s) has no load_data hook; data preserved",
+                            manager->name ? manager->name : "<unnamed>", guid_buffer);
+                    continue;
+                }
+
+                const nmo_chunk_t *chunk = mgr_data->chunk;
+                if (chunk == NULL) {
+                    nmo_log(logger, NMO_LOG_INFO,
+                            "  Manager %s (GUID=%s) has no chunk payload; nothing to dispatch",
+                            manager->name ? manager->name : "<unnamed>", guid_buffer);
+                    continue;
+                }
+
+                int load_result = nmo_manager_invoke_load_data(manager, session, chunk);
+                if (load_result == NMO_OK) {
+                    mgr_data->flags |= NMO_MANAGER_DATA_FLAG_DISPATCHED;
+                    nmo_log(logger, NMO_LOG_INFO,
+                            "  Manager %s (GUID=%s) consumed its chunk", manager->name ? manager->name : "<unnamed>",
+                            guid_buffer);
+                } else {
+                    mgr_data->flags |= NMO_MANAGER_DATA_FLAG_ERROR;
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Manager %s (GUID=%s) failed to load data (code=%d); chunk preserved",
+                            manager->name ? manager->name : "<unnamed>", guid_buffer, load_result);
+                }
+            }
+        }
+    } else {
+        nmo_log(logger, NMO_LOG_INFO, "  No manager chunks to dispatch");
+    }
+
     /* Phase 14: Deserialize Objects */
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Deserializing objects");
 
@@ -823,34 +882,6 @@ skip_object_processing:
                 }
             }
         }
-    }
-
-    /* TODO: Phase 16: Read Included Files (if any) */
-    /*
-     * According to VIRTOOLS_FILE_FORMAT_SPEC.md Section 11:
-     * Included files are appended after the data section and are NOT part of the CRC.
-     * They follow this format:
-     *   [4 bytes] Filename length (n)
-     *   [n bytes] Filename string
-     *   [4 bytes] File data size (m)
-     *   [m bytes] File data
-     *
-     * Implementation plan:
-     * 1. Read the "included_file_count" from Header1 (already parsed in Phase 4)
-     * 2. For each included file:
-     *    a. Read filename length and filename
-     *    b. Read file data size and data
-     *    c. Extract to temporary directory or store in session
-     * 3. Store included file information in session for later access
-     *
-     * Current status: NOT IMPLEMENTED
-     * Reason: This is a rarely-used feature in Virtools files. Most .nmo files
-     *         do not contain included files. We're prioritizing core functionality.
-     */
-    if (hdr1.included_file_count > 0) {
-        nmo_log(logger, NMO_LOG_WARN, "File contains %u included files, but feature is not yet implemented",
-                hdr1.included_file_count);
-        nmo_log(logger, NMO_LOG_WARN, "Included files will be skipped. File may not load completely.");
     }
 
     /* Cleanup */
@@ -906,8 +937,18 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     nmo_arena_t *arena = nmo_session_get_arena(session);
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
+    const int strip_included_files = (flags & NMO_SAVE_STRIP_INCLUDED_FILES) != 0;
+    uint32_t session_included_count = 0;
+    nmo_included_file_t *session_included_files = nmo_session_get_included_files(session, &session_included_count);
+    nmo_file_info_t file_info = nmo_session_get_file_info(session);
 
-    (void) flags; /* Flags will be used in full implementation */
+    const uint32_t compression_mask = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
+    uint32_t compression_flags = file_info.write_mode & compression_mask;
+    if (flags & NMO_SAVE_COMPRESSED) {
+        compression_flags = NMO_FILE_WRITE_COMPRESS_BOTH;
+    }
+    int compress_header = (compression_flags & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
+    int compress_data = (compression_flags & NMO_FILE_WRITE_COMPRESS_DATA) != 0;
 
     /* Phase 1: Validate Session State */
     nmo_log(logger, NMO_LOG_INFO, "Phase 1: Validating session state");
@@ -948,11 +989,12 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Executing manager pre-save hooks");
 
     nmo_manager_registry_t *manager_reg = nmo_context_get_manager_registry(ctx);
+    uint32_t registered_manager_count = 0;
     if (manager_reg != NULL) {
-        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
-        nmo_log(logger, NMO_LOG_INFO, "  Found %u registered managers", manager_count);
+        registered_manager_count = nmo_manager_registry_get_count(manager_reg);
+        nmo_log(logger, NMO_LOG_INFO, "  Found %u registered managers", registered_manager_count);
 
-        for (uint32_t i = 0; i < manager_count; i++) {
+        for (uint32_t i = 0; i < registered_manager_count; i++) {
             uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
             nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
 
@@ -984,7 +1026,83 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     /* Phase 4: Serialize Manager Chunks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 4: Serializing manager chunks");
-    /* TODO: Serialize manager chunks when manager system is implemented */
+    uint32_t session_manager_count = 0;
+    nmo_manager_data_t *session_managers = nmo_session_get_manager_data(session, &session_manager_count);
+
+    uint32_t manager_capacity = registered_manager_count + session_manager_count;
+    nmo_manager_data_t *manager_entries = NULL;
+    uint32_t manager_entry_count = 0;
+
+    if (manager_capacity > 0) {
+        manager_entries = (nmo_manager_data_t *) nmo_arena_alloc(
+            arena,
+            sizeof(nmo_manager_data_t) * manager_capacity,
+            alignof(nmo_manager_data_t));
+        if (manager_entries == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate manager data array (%u entries)", manager_capacity);
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_NOMEM;
+        }
+        memset(manager_entries, 0, sizeof(nmo_manager_data_t) * manager_capacity);
+    }
+
+    if (manager_reg != NULL && registered_manager_count > 0) {
+        for (uint32_t i = 0; i < registered_manager_count; i++) {
+            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
+            nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
+            if (manager == NULL) {
+                continue;
+            }
+
+            nmo_chunk_t *chunk = nmo_manager_invoke_save_data(manager, session);
+            if (chunk == NULL) {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "  Manager %s produced no save chunk", manager->name ? manager->name : "<unnamed>");
+                continue;
+            }
+
+            if (manager_entries == NULL || manager_entry_count >= manager_capacity) {
+                nmo_log(logger, NMO_LOG_ERROR, "Manager data array overflow while storing generated chunk");
+                nmo_id_remap_plan_destroy(remap_plan);
+                return NMO_ERR_NOMEM;
+            }
+
+            nmo_manager_data_t *entry = &manager_entries[manager_entry_count++];
+            entry->guid = manager->guid;
+            entry->chunk = chunk;
+            entry->data_size = (chunk->raw_data != NULL) ? (uint32_t)chunk->raw_size : 0;
+            entry->flags = NMO_MANAGER_DATA_FLAG_DISPATCHED;
+
+            char guid_buffer[64];
+            nmo_format_guid_short(entry->guid, guid_buffer, sizeof(guid_buffer));
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Manager %s saved chunk (GUID=%s, size=%u)",
+                    manager->name ? manager->name : "<unnamed>", guid_buffer, entry->data_size);
+        }
+    }
+
+    if (session_managers != NULL && session_manager_count > 0) {
+        for (uint32_t i = 0; i < session_manager_count; i++) {
+            nmo_manager_data_t *fallback = &session_managers[i];
+            if ((fallback->flags & NMO_MANAGER_DATA_FLAG_DISPATCHED) != 0) {
+                continue; /* Already consumed by a manager */
+            }
+
+            if (manager_entries == NULL || manager_entry_count >= manager_capacity) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "Insufficient capacity to preserve manager chunk %u", i);
+                nmo_id_remap_plan_destroy(remap_plan);
+                return NMO_ERR_NOMEM;
+            }
+
+            manager_entries[manager_entry_count++] = *fallback;
+
+            char guid_buffer[64];
+            nmo_format_guid_short(fallback->guid, guid_buffer, sizeof(guid_buffer));
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Preserving unmanaged chunk GUID=%s for round-trip", guid_buffer);
+        }
+    }
 
     /* Phase 5: Serialize Object Chunks with ID Remapping */
     nmo_log(logger, NMO_LOG_INFO, "Phase 5: Serializing object chunks");
@@ -1019,15 +1137,11 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     /* Phase 6: Build and Compress Data Section */
     nmo_log(logger, NMO_LOG_INFO, "Phase 6: Building data section");
 
-    /* Get manager data from session */
-    uint32_t session_manager_count = 0;
-    nmo_manager_data_t *session_managers = nmo_session_get_manager_data(session, &session_manager_count);
-
     /* Build data section structure from objects */
     nmo_data_section_t data_sect;
     memset(&data_sect, 0, sizeof(nmo_data_section_t));
-    data_sect.manager_count = session_manager_count;
-    data_sect.managers = session_managers;
+    data_sect.manager_count = manager_entry_count;
+    data_sect.managers = (manager_entry_count > 0) ? manager_entries : NULL;
     data_sect.object_count = (uint32_t) object_count;
 
     /* Allocate object data array */
@@ -1077,12 +1191,52 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     nmo_log(logger, NMO_LOG_INFO, "  Data section serialized: %zu bytes", data_bytes_written);
 
-    /* Compress data section */
+    /* Compress data section if requested */
     void *data_packed = data_buffer;
     uint32_t data_pack_size = (uint32_t) data_bytes_written;
 
-    /* TODO: Add compression support when file_write_mode has compression flag */
-    nmo_log(logger, NMO_LOG_INFO, "  Data section pack size: %u bytes (uncompressed)", data_pack_size);
+    if (compress_data && data_bytes_written > 0) {
+        mz_ulong bound = mz_compressBound((mz_ulong) data_bytes_written);
+        void *compressed = nmo_arena_alloc(arena, bound, 16);
+        if (compressed == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate compressed data buffer (%lu bytes)",
+                    (unsigned long)bound);
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_NOMEM;
+        }
+
+        mz_ulong dest_len = bound;
+        int comp_result = mz_compress2((unsigned char *) compressed,
+                                       &dest_len,
+                                       (const unsigned char *) data_buffer,
+                                       (mz_ulong) data_bytes_written,
+                                       NMO_SAVE_COMPRESSION_LEVEL);
+        if (comp_result != MZ_OK) {
+            nmo_log(logger, NMO_LOG_ERROR, "Data compression failed (code=%d)", comp_result);
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_INTERNAL;
+        }
+
+        if (dest_len < (mz_ulong) data_bytes_written) {
+            data_packed = compressed;
+            data_pack_size = (uint32_t) dest_len;
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Data section compressed: %zu -> %u bytes (%.2fx)",
+                    data_bytes_written,
+                    data_pack_size,
+                    (double) data_pack_size / (double) data_bytes_written);
+        } else {
+            compress_data = 0;
+            compression_flags &= ~NMO_FILE_WRITE_COMPRESS_DATA;
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Data compression skipped (no gain, %zu bytes)", data_bytes_written);
+        }
+    }
+
+    if (!compress_data) {
+        nmo_log(logger, NMO_LOG_INFO,
+                "  Data section stored uncompressed (%u bytes)", data_pack_size);
+    }
 
     /* Phase 7: Build Object Descriptors for Header1 */
     nmo_log(logger, NMO_LOG_INFO, "Phase 7: Building object descriptors");
@@ -1170,18 +1324,30 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
                 }
 
                 plugin_count = registered_count;
-                nmo_session_set_plugin_dependencies(session, plugin_deps, (uint32_t) plugin_count);
+                int dep_result = nmo_session_set_plugin_dependencies(session, plugin_deps, (uint32_t) plugin_count);
+                if (dep_result != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Failed to refresh plugin diagnostics from plugin manager (code=%d)", dep_result);
+                }
                 nmo_log(logger, NMO_LOG_INFO,
                         "  Derived %zu plugin dependency entries from plugin manager", plugin_count);
             } else {
                 nmo_log(logger, NMO_LOG_INFO,
                         "  Plugin manager reported no registered plugins; dependency table empty");
-                nmo_session_set_plugin_dependencies(session, NULL, 0);
+                int dep_result = nmo_session_set_plugin_dependencies(session, NULL, 0);
+                if (dep_result != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Failed to clear plugin dependency table (code=%d)", dep_result);
+                }
             }
         } else {
             nmo_log(logger, NMO_LOG_INFO,
                     "  Plugin manager unavailable; dependency table empty");
-            nmo_session_set_plugin_dependencies(session, NULL, 0);
+            int dep_result = nmo_session_set_plugin_dependencies(session, NULL, 0);
+            if (dep_result != NMO_OK) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Failed to clear plugin dependency table (code=%d)", dep_result);
+            }
         }
     }
 
@@ -1198,27 +1364,26 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     hdr1.included_file_count = 0;
     hdr1.included_files = NULL;
-    if (session != NULL) {
-        uint32_t included_file_count = 0;
-        nmo_included_file_t *included_files = nmo_session_get_included_files(session, &included_file_count);
-        hdr1.included_file_count = included_file_count;
-        if (included_file_count > 0 && included_files != NULL) {
-            hdr1.included_files = (nmo_included_file_desc_t *) nmo_arena_alloc(
-                arena,
-                sizeof(nmo_included_file_desc_t) * included_file_count,
-                sizeof(void *)
-            );
-            if (hdr1.included_files == NULL) {
-                nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate included file descriptors");
-                nmo_id_remap_plan_destroy(remap_plan);
-                return NMO_ERR_NOMEM;
-            }
-
-            for (uint32_t i = 0; i < included_file_count; i++) {
-                hdr1.included_files[i].name = (char *) included_files[i].name;
-                hdr1.included_files[i].data_size = included_files[i].size;
-            }
+    if (!strip_included_files && session_included_files != NULL && session_included_count > 0) {
+        hdr1.included_file_count = session_included_count;
+        hdr1.included_files = (nmo_included_file_desc_t *) nmo_arena_alloc(
+            arena,
+            sizeof(nmo_included_file_desc_t) * session_included_count,
+            sizeof(void *)
+        );
+        if (hdr1.included_files == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate included file descriptors");
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_NOMEM;
         }
+
+        for (uint32_t i = 0; i < session_included_count; i++) {
+            hdr1.included_files[i].name = (char *) session_included_files[i].name;
+            hdr1.included_files[i].data_size = session_included_files[i].size;
+        }
+    } else if (strip_included_files && session_included_count > 0) {
+        nmo_log(logger, NMO_LOG_INFO,
+                "  Stripping %u included file(s) per save flags", session_included_count);
     }
 
     /* Serialize Header1 */
@@ -1233,11 +1398,52 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     nmo_log(logger, NMO_LOG_INFO, "  Header1 serialized: %zu bytes", hdr1_unpack_size);
 
-    /* For now, no compression */
     void *hdr1_packed = hdr1_buffer;
     uint32_t hdr1_pack_size = (uint32_t) hdr1_unpack_size;
 
-    nmo_log(logger, NMO_LOG_INFO, "  Header1 pack size: %u bytes (uncompressed)", hdr1_pack_size);
+    if (compress_header && hdr1_unpack_size > 0) {
+        mz_ulong bound = mz_compressBound((mz_ulong) hdr1_unpack_size);
+        void *compressed = nmo_arena_alloc(arena, bound, 16);
+        if (compressed == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "Failed to allocate compressed Header1 buffer (%lu bytes)",
+                    (unsigned long) bound);
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_NOMEM;
+        }
+
+        mz_ulong dest_len = bound;
+        int comp_result = mz_compress2((unsigned char *) compressed,
+                                       &dest_len,
+                                       (const unsigned char *) hdr1_buffer,
+                                       (mz_ulong) hdr1_unpack_size,
+                                       NMO_SAVE_COMPRESSION_LEVEL);
+        if (comp_result != MZ_OK) {
+            nmo_log(logger, NMO_LOG_ERROR, "Header1 compression failed (code=%d)", comp_result);
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_INTERNAL;
+        }
+
+        if (dest_len < (mz_ulong) hdr1_unpack_size) {
+            hdr1_packed = compressed;
+            hdr1_pack_size = (uint32_t) dest_len;
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Header1 compressed: %zu -> %u bytes (%.2fx)",
+                    hdr1_unpack_size,
+                    hdr1_pack_size,
+                    (double) hdr1_pack_size / (double) hdr1_unpack_size);
+        } else {
+            compress_header = 0;
+            compression_flags &= ~NMO_FILE_WRITE_COMPRESS_HEADER;
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Header1 compression skipped (no gain, %zu bytes)", hdr1_unpack_size);
+        }
+    }
+
+    if (!compress_header) {
+        nmo_log(logger, NMO_LOG_INFO,
+                "  Header1 stored uncompressed (%u bytes)", hdr1_pack_size);
+    }
 
     /* Phase 10: Calculate File Sizes */
     nmo_log(logger, NMO_LOG_INFO, "Phase 10: Calculating file sizes");
@@ -1245,10 +1451,14 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     uint32_t file_size = sizeof(nmo_file_header_t) + hdr1_pack_size + data_pack_size;
     nmo_log(logger, NMO_LOG_INFO, "  Total file size: %u bytes", file_size);
 
+    file_info.file_size = file_size;
+    file_info.object_count = (uint32_t) object_count;
+    file_info.manager_count = session_manager_count;
+    file_info.write_mode = (file_info.write_mode & ~compression_mask) | compression_flags;
+    (void) nmo_session_set_file_info(session, &file_info);
+
     /* Phase 11: Build File Header */
     nmo_log(logger, NMO_LOG_INFO, "Phase 11: Building file header");
-
-    nmo_file_info_t file_info = nmo_session_get_file_info(session);
 
     nmo_file_header_t header;
     memset(&header, 0, sizeof(nmo_file_header_t));
@@ -1373,28 +1583,26 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
         }
     }
 
-    if (hdr1.included_file_count > 0) {
+    if (!strip_included_files && hdr1.included_file_count > 0) {
         nmo_log(logger, NMO_LOG_INFO, "Phase 15: Writing %u included file(s)", hdr1.included_file_count);
-        uint32_t included_count = 0;
-        nmo_included_file_t *included_files = nmo_session_get_included_files(session, &included_count);
-        if (included_files == NULL || included_count == 0) {
+        if (session_included_files == NULL || session_included_count == 0) {
             nmo_log(logger, NMO_LOG_WARN, "Header declares included files, but session has none");
         } else {
-            for (uint32_t i = 0; i < included_count; i++) {
-                const char *name = included_files[i].name ? included_files[i].name : "";
+            for (uint32_t i = 0; i < session_included_count; i++) {
+                const char *name = session_included_files[i].name ? session_included_files[i].name : "";
                 uint32_t name_len = (uint32_t) strlen(name);
 
                 if (nmo_io_write_u32(io, name_len) != NMO_OK ||
                     (name_len > 0 && nmo_io_write(io, name, name_len) != NMO_OK) ||
-                    nmo_io_write_u32(io, included_files[i].size) != NMO_OK) {
+                    nmo_io_write_u32(io, session_included_files[i].size) != NMO_OK) {
                     nmo_log(logger, NMO_LOG_ERROR, "Failed to write metadata for included file '%s'", name);
                     nmo_io_close(io);
                     nmo_id_remap_plan_destroy(remap_plan);
                     return NMO_ERR_CANT_WRITE_FILE;
                 }
 
-                if (included_files[i].size > 0 && included_files[i].data != NULL) {
-                    if (nmo_io_write(io, included_files[i].data, included_files[i].size) != NMO_OK) {
+                if (session_included_files[i].size > 0 && session_included_files[i].data != NULL) {
+                    if (nmo_io_write(io, session_included_files[i].data, session_included_files[i].size) != NMO_OK) {
                         nmo_log(logger, NMO_LOG_ERROR,
                                 "Failed to write included payload for '%s'", name);
                         nmo_io_close(io);
@@ -1404,6 +1612,9 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
                 }
             }
         }
+    } else if (strip_included_files && session_included_count > 0) {
+        nmo_log(logger, NMO_LOG_INFO, "Phase 15: Included files skipped (%u stripped)",
+                session_included_count);
     }
 
     /* Cleanup */

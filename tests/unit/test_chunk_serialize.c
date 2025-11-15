@@ -21,8 +21,8 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
 
-    /* Start chunk with class ID and version */
-    nmo_chunk_writer_start(writer, 0x12345678, NMO_CHUNK_VERSION_4);
+    /* Start chunk with class ID and legacy format version for VERSION1 layout */
+    nmo_chunk_writer_start(writer, 0x12345678, NMO_CHUNK_VERSION_1);
 
     /* Write some test data */
     int result = nmo_chunk_writer_write_int(writer, 42);
@@ -43,6 +43,10 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     ASSERT_NOT_NULL(data);
     ASSERT_GT(size, 0);
 
+    /* VERSION1 layout should carry the full class ID */
+    uint32_t *words = (uint32_t *) data;
+    ASSERT_EQ(words[1], 0x12345678);
+
     /* Deserialize chunk using nmo_chunk_parse (for VERSION1 format) */
     nmo_chunk_t *read_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(read_chunk);
@@ -50,6 +54,7 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     res = nmo_chunk_parse(read_chunk, data, size);
     ASSERT_EQ(res.code, NMO_OK);
     ASSERT_NOT_NULL(read_chunk);
+    ASSERT_EQ(read_chunk->chunk_version, NMO_CHUNK_VERSION_1);
 
     /* Verify metadata */
     ASSERT_EQ(read_chunk->class_id, 0x12345678);
@@ -87,7 +92,7 @@ TEST(chunk_serialize, empty_chunk) {
     ASSERT_NOT_NULL(writer);
 
     /* Start empty chunk */
-    nmo_chunk_writer_start(writer, 0x00000001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x00000001, NMO_CHUNK_VERSION_1);
 
     /* Finalize to get chunk */
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);

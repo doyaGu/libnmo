@@ -7,6 +7,7 @@
 #include "test_framework.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 TEST(bit_array, basic_set_and_test) {
     nmo_bit_array_t bits;
@@ -73,10 +74,11 @@ TEST(bit_array, bitwise_ops) {
     ASSERT_EQ(NMO_OK, nmo_bit_array_init(&lhs, 32, NULL).code);
     ASSERT_EQ(NMO_OK, nmo_bit_array_init(&rhs, 32, NULL).code);
 
-    nmo_bit_array_set(&lhs, 1);
-    nmo_bit_array_set(&lhs, 3);
-    nmo_bit_array_set(&rhs, 3);
-    nmo_bit_array_set(&rhs, 4);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 1).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 3).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&rhs, 3).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&rhs, 4).code);
+    ASSERT_TRUE(nmo_bit_array_test(&rhs, 4));
 
     ASSERT_EQ(NMO_OK, nmo_bit_array_and(&lhs, &rhs).code);
     ASSERT_FALSE(nmo_bit_array_test(&lhs, 1));
@@ -86,11 +88,18 @@ TEST(bit_array, bitwise_ops) {
     ASSERT_EQ(NMO_OK, nmo_bit_array_or(&lhs, &rhs).code);
     ASSERT_TRUE(nmo_bit_array_test(&lhs, 4));
 
+    /* Reset lhs to original pattern before exercising XOR/not */
+    nmo_bit_array_clear_all(&lhs);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 1).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 3).code);
+
     ASSERT_EQ(NMO_OK, nmo_bit_array_xor(&lhs, &rhs).code);
+    ASSERT_TRUE(nmo_bit_array_test(&lhs, 1));
     ASSERT_FALSE(nmo_bit_array_test(&lhs, 3));
     ASSERT_TRUE(nmo_bit_array_test(&lhs, 4));
 
     nmo_bit_array_not(&lhs);
+    ASSERT_FALSE(nmo_bit_array_test(&lhs, 1));
     ASSERT_FALSE(nmo_bit_array_test(&lhs, 4)); /* was 1, now inverted */
 
     nmo_bit_array_dispose(&lhs);
@@ -105,13 +114,16 @@ TEST(bit_array, to_string) {
     nmo_bit_array_set(&bits, 3);
     nmo_bit_array_set(&bits, 7);
 
-    char buffer[32];
-    ASSERT_NOT_NULL(nmo_bit_array_to_string(&bits, buffer, sizeof(buffer)));
-    ASSERT_EQ(strlen(buffer), nmo_bit_array_capacity(&bits));
+    size_t capacity = nmo_bit_array_capacity(&bits);
+    char *buffer = (char *) malloc(capacity + 1);
+    ASSERT_NOT_NULL(buffer);
+    ASSERT_NOT_NULL(nmo_bit_array_to_string(&bits, buffer, capacity + 1));
+    ASSERT_EQ(strlen(buffer), capacity);
     ASSERT_EQ('1', buffer[0]);
     ASSERT_EQ('1', buffer[3]);
     ASSERT_EQ('1', buffer[7]);
 
+    free(buffer);
     nmo_bit_array_dispose(&bits);
 }
 
