@@ -53,6 +53,7 @@
 #include "core/nmo_logger.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_array.h"
+#include "core/nmo_bit_array.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_indexed_map.h"

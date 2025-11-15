@@ -12,6 +12,7 @@ add_unit_test(test_error)
 add_unit_test(test_logger)
 add_unit_test(test_guid)
 add_unit_test(test_array)
+add_unit_test(test_bit_array)
 add_unit_test(test_hash_table)
 add_unit_test(test_indexed_map)
 
