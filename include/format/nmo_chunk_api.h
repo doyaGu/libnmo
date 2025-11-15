@@ -933,6 +933,18 @@ NMO_API nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *
 NMO_API nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub);
 
 /**
+ * @brief Start reading sub-chunk sequence
+ *
+ * Reads count of sub-chunks in sequence and prepares for reading them.
+ * Corresponds to StartReadSequence in Virtools SDK.
+ *
+ * @param chunk Chunk (required)
+ * @param out_count Output count of sub-chunks (optional, can be NULL)
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count);
+
+/**
  * @brief Start sub-chunk sequence
  *
  * Writes count of sub-chunks to follow.

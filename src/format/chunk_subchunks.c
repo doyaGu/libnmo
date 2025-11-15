@@ -123,6 +123,27 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     return nmo_result_ok();
 }
 
+nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count) {
+    if (!chunk) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
+    }
+
+    // Read sequence count (stored as single DWORD)
+    uint32_t count;
+    nmo_result_t result = nmo_chunk_read_dword(chunk, &count);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+
+    // Store count if requested
+    if (out_count) {
+        *out_count = (size_t)count;
+    }
+
+    return nmo_result_ok();
+}
+
 nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub) {
     if (!chunk || !out_sub) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
