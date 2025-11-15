@@ -18,6 +18,86 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "miniz.h"
+
+typedef struct saved_section {
+    void *data;
+    size_t size;
+    int needs_free;
+} saved_section_t;
+
+static void read_section(FILE *fp, uint32_t size, saved_section_t *out) {
+    out->data = NULL;
+    out->size = 0;
+    out->needs_free = 0;
+
+    if (size == 0) {
+        return;
+    }
+
+    void *buffer = malloc(size);
+    ASSERT_NOT_NULL(buffer);
+    ASSERT_EQ(size, fread(buffer, 1, size, fp));
+
+    out->data = buffer;
+    out->size = size;
+    out->needs_free = 1;
+}
+
+static void free_section(saved_section_t *section) {
+    if (section->needs_free && section->data != NULL) {
+        free(section->data);
+    }
+    section->data = NULL;
+    section->size = 0;
+    section->needs_free = 0;
+}
+
+static void ensure_unpacked(saved_section_t *section, uint32_t unpack_size) {
+    if (unpack_size == 0 || unpack_size == section->size) {
+        return;
+    }
+
+    void *dest = malloc(unpack_size);
+    ASSERT_NOT_NULL(dest);
+
+    mz_ulong dest_len = unpack_size;
+    int status = mz_uncompress((unsigned char *)dest,
+                               &dest_len,
+                               (const unsigned char *)section->data,
+                               (mz_ulong)section->size);
+    ASSERT_EQ(MZ_OK, status);
+    ASSERT_EQ(unpack_size, dest_len);
+
+    free_section(section);
+    section->data = dest;
+    section->size = dest_len;
+    section->needs_free = 1;
+}
+
+static void add_repeated_objects(nmo_session_t *session,
+                                 size_t count,
+                                 const char *name_template,
+                                 uint32_t class_base) {
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
+        ASSERT_NOT_NULL(obj);
+        memset(obj, 0, sizeof(nmo_object_t));
+        obj->class_id = class_base + (uint32_t) i;
+
+        size_t name_len = strlen(name_template);
+        char *name_copy = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
+        ASSERT_NOT_NULL(name_copy);
+        memcpy(name_copy, name_template, name_len + 1);
+        obj->name = name_copy;
+        obj->arena = arena;
+
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+    }
+}
 
 /* Helper to get temp directory */
 static const char* get_temp_dir(void) {
@@ -424,7 +504,8 @@ TEST(save_pipeline, file_info_propagation) {
     ASSERT_EQ(file_info.ck_version, header.ck_version);
     ASSERT_EQ(file_info.product_version, header.product_version);
     ASSERT_EQ(file_info.product_build, header.product_build);
-    ASSERT_EQ(file_info.write_mode, header.file_write_mode);
+    nmo_file_info_t updated_info = nmo_session_get_file_info(session);
+    ASSERT_EQ(updated_info.write_mode, header.file_write_mode);
 
     remove(filepath);
 
@@ -472,35 +553,40 @@ TEST(save_pipeline, reference_only_save) {
     nmo_file_header_t header;
     ASSERT_EQ(1u, fread(&header, sizeof(header), 1, fp));
 
-    void *hdr1_buf = malloc(header.hdr1_pack_size);
-    ASSERT_NOT_NULL(hdr1_buf);
-    ASSERT_EQ(1u, fread(hdr1_buf, header.hdr1_pack_size, 1, fp));
-
-    void *data_buf = malloc(header.data_pack_size);
-    ASSERT_NOT_NULL(data_buf);
-    ASSERT_EQ(1u, fread(data_buf, header.data_pack_size, 1, fp));
+    saved_section_t hdr1_section = {0};
+    saved_section_t data_section_raw = {0};
+    read_section(fp, header.hdr1_pack_size, &hdr1_section);
+    read_section(fp, header.data_pack_size, &data_section_raw);
     fclose(fp);
+
+    ensure_unpacked(&hdr1_section, header.hdr1_unpack_size);
+    ensure_unpacked(&data_section_raw, header.data_unpack_size);
 
     nmo_arena_t *parse_arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(parse_arena);
 
     nmo_header1_t hdr1 = {0};
     hdr1.object_count = header.object_count;
-    nmo_result_t parse_result = nmo_header1_parse(hdr1_buf, header.hdr1_pack_size, &hdr1, parse_arena);
+    nmo_result_t parse_result = nmo_header1_parse(hdr1_section.data, hdr1_section.size, &hdr1, parse_arena);
     ASSERT_EQ(NMO_OK, parse_result.code);
     ASSERT_TRUE((hdr1.objects[0].flags & NMO_OBJECT_REFERENCE_FLAG) != 0);
 
     nmo_data_section_t data_section = {0};
     data_section.manager_count = header.manager_count;
     data_section.object_count = header.object_count;
-    parse_result = nmo_data_section_parse(data_buf, header.data_pack_size, header.file_version, &data_section, NULL, parse_arena);
+    parse_result = nmo_data_section_parse(data_section_raw.data,
+                                          data_section_raw.size,
+                                          header.file_version,
+                                          &data_section,
+                                          NULL,
+                                          parse_arena);
     ASSERT_EQ(NMO_OK, parse_result.code);
     ASSERT_NULL(data_section.objects[0].chunk);
     ASSERT_EQ(0u, data_section.objects[0].data_size);
 
     nmo_arena_destroy(parse_arena);
-    free(hdr1_buf);
-    free(data_buf);
+    free_section(&hdr1_section);
+    free_section(&data_section_raw);
     remove(filepath);
 
     nmo_session_destroy(session);
@@ -638,30 +724,101 @@ TEST(save_pipeline, plugin_dependencies_from_plugin_manager) {
     ASSERT_EQ(1u, fread(&header, sizeof(header), 1, fp));
     ASSERT_GT(header.hdr1_pack_size, 0u);
 
-    void *hdr1_buf = malloc(header.hdr1_pack_size);
-    ASSERT_NOT_NULL(hdr1_buf);
-    ASSERT_EQ(header.hdr1_pack_size, fread(hdr1_buf, 1, header.hdr1_pack_size, fp));
+    saved_section_t hdr1_section = {0};
+    read_section(fp, header.hdr1_pack_size, &hdr1_section);
     fclose(fp);
+
+    ensure_unpacked(&hdr1_section, header.hdr1_unpack_size);
 
     nmo_arena_t *parse_arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(parse_arena);
 
     nmo_header1_t hdr1 = {0};
     hdr1.object_count = header.object_count;
-    nmo_result_t parse_result = nmo_header1_parse(hdr1_buf, header.hdr1_pack_size, &hdr1, parse_arena);
+    nmo_result_t parse_result = nmo_header1_parse(hdr1_section.data, hdr1_section.size, &hdr1, parse_arena);
     ASSERT_EQ(NMO_OK, parse_result.code);
     ASSERT_EQ(1u, hdr1.plugin_dep_count);
     ASSERT_NOT_NULL(hdr1.plugin_deps);
     ASSERT_EQ(save_pipeline_test_plugin.guid.d1, hdr1.plugin_deps[0].guid.d1);
     ASSERT_EQ(save_pipeline_test_plugin.guid.d2, hdr1.plugin_deps[0].guid.d2);
     ASSERT_EQ(save_pipeline_test_plugin.category, hdr1.plugin_deps[0].category);
-    ASSERT_EQ(save_pipeline_test_plugin.version, hdr1.plugin_deps[0].version);
+    /* Plugin versions are not serialized into Header1; Virtools stores only GUID/category */
+    ASSERT_EQ(0u, hdr1.plugin_deps[0].version);
 
     nmo_arena_destroy(parse_arena);
-    free(hdr1_buf);
+    free_section(&hdr1_section);
     remove(filepath);
 
     nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(save_pipeline, compression_modes) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    const size_t object_count = 64;
+    const char *repeat_name = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    /* Uncompressed baseline */
+    nmo_session_t *plain_session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(plain_session);
+    add_repeated_objects(plain_session, object_count, repeat_name, 0x71000000);
+
+    nmo_file_info_t plain_info = {
+        .file_version = 8,
+        .ck_version = 0x13022002,
+        .write_mode = 0
+    };
+    nmo_session_set_file_info(plain_session, &plain_info);
+
+    char plain_path[256];
+    build_temp_path(plain_path, sizeof(plain_path), "test_compression_plain.nmo");
+    ASSERT_EQ(NMO_OK, nmo_save_file(plain_session, plain_path, NMO_SAVE_DEFAULT));
+
+    FILE *fp = fopen(plain_path, "rb");
+    ASSERT_NOT_NULL(fp);
+    nmo_file_header_t plain_header;
+    ASSERT_EQ(1u, fread(&plain_header, sizeof(plain_header), 1, fp));
+    fclose(fp);
+
+    uint32_t compression_bits = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
+    ASSERT_EQ(0u, plain_header.file_write_mode & compression_bits);
+    ASSERT_EQ(plain_header.hdr1_pack_size, plain_header.hdr1_unpack_size);
+    ASSERT_EQ(plain_header.data_pack_size, plain_header.data_unpack_size);
+    remove(plain_path);
+    nmo_session_destroy(plain_session);
+
+    /* Forced compression path */
+    nmo_session_t *compressed_session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(compressed_session);
+    add_repeated_objects(compressed_session, object_count, repeat_name, 0x72000000);
+
+    nmo_file_info_t compressed_info = {
+        .file_version = 8,
+        .ck_version = 0x13022002,
+        .write_mode = 0
+    };
+    nmo_session_set_file_info(compressed_session, &compressed_info);
+
+    char compressed_path[256];
+    build_temp_path(compressed_path, sizeof(compressed_path), "test_compression_forced.nmo");
+    ASSERT_EQ(NMO_OK, nmo_save_file(compressed_session, compressed_path, NMO_SAVE_COMPRESSED));
+
+    fp = fopen(compressed_path, "rb");
+    ASSERT_NOT_NULL(fp);
+    nmo_file_header_t compressed_header;
+    ASSERT_EQ(1u, fread(&compressed_header, sizeof(compressed_header), 1, fp));
+    fclose(fp);
+
+    ASSERT_NE(0u, compressed_header.file_write_mode & NMO_FILE_WRITE_COMPRESS_HEADER);
+    ASSERT_NE(0u, compressed_header.file_write_mode & NMO_FILE_WRITE_COMPRESS_DATA);
+    ASSERT_TRUE(compressed_header.hdr1_pack_size < compressed_header.hdr1_unpack_size);
+    ASSERT_TRUE(compressed_header.data_pack_size < compressed_header.data_unpack_size);
+
+    remove(compressed_path);
+    nmo_session_destroy(compressed_session);
     nmo_context_release(ctx);
 }
 
@@ -677,4 +834,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(save_pipeline, reference_only_save);
     REGISTER_TEST(save_pipeline, included_files_round_trip);
     REGISTER_TEST(save_pipeline, plugin_dependencies_from_plugin_manager);
+    REGISTER_TEST(save_pipeline, compression_modes);
 TEST_MAIN_END()

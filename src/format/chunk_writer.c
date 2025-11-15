@@ -856,109 +856,118 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
         w->chunk_list[w->chunk_count++] = (nmo_chunk_t *)sub;
     }
 
-    // Calculate total size needed
-    size_t size_dwords = 1; // For the size field itself
-    uint32_t sub_flags = 0;
-    if (sub != NULL) {
-        sub_flags = sub->chunk_options;
+    uint32_t option_flags = 0;
+    uint32_t manager_count_field = 0;
+    size_t payload_dwords = 0;
+    const int has_subchunk = (sub != NULL);
+
+    if (has_subchunk) {
+        option_flags = sub->chunk_options;
         if (sub->id_count > 0) {
-            sub_flags |= NMO_CHUNK_OPTION_IDS;
+            option_flags |= NMO_CHUNK_OPTION_IDS;
         }
         if (sub->chunk_ref_count > 0) {
-            sub_flags |= NMO_CHUNK_OPTION_CHN;
+            option_flags |= NMO_CHUNK_OPTION_CHN;
         }
         if (sub->manager_count > 0) {
-            sub_flags |= NMO_CHUNK_OPTION_MAN;
+            option_flags |= NMO_CHUNK_OPTION_MAN;
         }
-        size_dwords = 8;
-        if (sub->data_size != 0) {
-            size_dwords += sub->data_size;
+
+        const int include_manager_field = (sub->chunk_version > 4); /* literal 4 */
+        manager_count_field = include_manager_field ? (uint32_t) sub->manager_count : 0u;
+
+        size_t header_fields = 6; /* class_id, version, chunk_size, has_file, id_count, chunk_count */
+        if (include_manager_field) {
+            header_fields += 1; /* manager_count */
         }
-        if (sub_flags & NMO_CHUNK_OPTION_IDS) {
-            size_dwords += 1; /* count field */
-            if (sub->id_count > 0) {
-                size_dwords += sub->id_count;
-            }
+
+        payload_dwords = header_fields;
+        payload_dwords += sub->data_size;
+        if (sub->id_count > 0) {
+            payload_dwords += sub->id_count;
         }
-        if (sub_flags & NMO_CHUNK_OPTION_CHN) {
-            size_dwords += 1;
-            if (sub->chunk_ref_count > 0) {
-                size_dwords += sub->chunk_ref_count;
-            }
+        if (sub->chunk_ref_count > 0) {
+            payload_dwords += sub->chunk_ref_count;
         }
-        if (sub_flags & NMO_CHUNK_OPTION_MAN) {
-            size_dwords += 1;
-            if (sub->manager_count > 0) {
-                size_dwords += sub->manager_count;
-            }
+        if (manager_count_field > 0) {
+            payload_dwords += manager_count_field;
         }
     }
 
+    /* Size field stores number of DWORDs following it */
+    size_t total_needed = 1 + payload_dwords;
+
     // Ensure capacity
-    int result = ensure_data_capacity(w, size_dwords);
+    int result = ensure_data_capacity(w, total_needed);
     if (result != NMO_OK) {
         return result;
     }
 
-    // Write size (in DWORDs, minus 1)
-    w->data[w->data_size++] = (uint32_t) (size_dwords - 1);
+    // Write size (number of DWORDs after this field)
+    w->data[w->data_size++] = (uint32_t) payload_dwords;
 
     // Track this sub-chunk entry position (points to size field)
-    if (sub != NULL) {
+    if (has_subchunk) {
         result = track_chunk_position(w, (uint32_t) (w->data_size - 1));
         if (result != NMO_OK) {
             return result;
         }
     }
 
-    if (sub != NULL) {
-        uint8_t sub_class_byte = sub->chunk_class_id != 0 ?
-                     sub->chunk_class_id :
-                     (uint8_t) (sub->class_id & 0xFF);
-        w->data[w->data_size++] = (uint32_t) sub_class_byte;
+    if (has_subchunk) {
+        /* Class ID (full 32-bit) */
+        w->data[w->data_size++] = sub->class_id;
 
-        // Write legacy version layout (data | chunk<<16)
-        uint32_t version_info = ((uint32_t) sub->data_version & 0xFFFFu) |
-                                (((uint32_t) sub->chunk_version & 0xFFFFu) << 16);
+        /* VERSION4 packed header matches top-level chunk serialization */
+        uint8_t chunk_class_byte = sub->chunk_class_id != 0 ?
+                                   sub->chunk_class_id :
+                                   (uint8_t) (sub->class_id & 0xFFu);
+        uint8_t data_version = (uint8_t) (sub->data_version & 0xFFu);
+        uint8_t chunk_version = (uint8_t) (sub->chunk_version & 0xFFu);
+        uint8_t chunk_options = (uint8_t) (option_flags & 0xFFu);
+
+        uint16_t data_packed = (uint16_t) (data_version | (chunk_class_byte << 8));
+        uint16_t version_packed = (uint16_t) (chunk_version | (chunk_options << 8));
+        uint32_t version_info = (uint32_t) data_packed | ((uint32_t) version_packed << 16);
         w->data[w->data_size++] = version_info;
 
-        // Write chunk size
+        /* Chunk size in DWORDs */
         w->data[w->data_size++] = (uint32_t) sub->data_size;
 
-        uint32_t has_file = (sub_flags & NMO_CHUNK_OPTION_FILE) ? 1u : 0u;
+        /* HasFile flag */
+        uint32_t has_file = (option_flags & NMO_CHUNK_OPTION_FILE) ? 1u : 0u;
         w->data[w->data_size++] = has_file;
 
-        // Write data buffer
-        if (sub->data_size != 0 && sub->data != NULL) {
+        /* ID and sub-chunk counts are always written */
+        w->data[w->data_size++] = (uint32_t) sub->id_count;
+        w->data[w->data_size++] = (uint32_t) sub->chunk_ref_count;
+
+        if (sub->chunk_version > 4) {
+            w->data[w->data_size++] = manager_count_field;
+        }
+
+        /* Data buffer */
+        if (sub->data_size > 0 && sub->data != NULL) {
             memcpy(&w->data[w->data_size], sub->data, sub->data_size * sizeof(uint32_t));
             w->data_size += sub->data_size;
         }
 
-        // Write ID list
-        if (sub_flags & NMO_CHUNK_OPTION_IDS) {
-            w->data[w->data_size++] = (uint32_t) sub->id_count;
-            if (sub->id_count > 0 && sub->ids != NULL) {
-                memcpy(&w->data[w->data_size], sub->ids, sub->id_count * sizeof(uint32_t));
-                w->data_size += sub->id_count;
-            }
+        /* IDs */
+        if (sub->id_count > 0 && sub->ids != NULL) {
+            memcpy(&w->data[w->data_size], sub->ids, sub->id_count * sizeof(uint32_t));
+            w->data_size += sub->id_count;
         }
 
-        // Write chunk references
-        if (sub_flags & NMO_CHUNK_OPTION_CHN) {
-            w->data[w->data_size++] = (uint32_t) sub->chunk_ref_count;
-            if (sub->chunk_ref_count > 0 && sub->chunk_refs != NULL) {
-                memcpy(&w->data[w->data_size], sub->chunk_refs, sub->chunk_ref_count * sizeof(uint32_t));
-                w->data_size += sub->chunk_ref_count;
-            }
+        /* Sub-chunk reference positions */
+        if (sub->chunk_ref_count > 0 && sub->chunk_refs != NULL) {
+            memcpy(&w->data[w->data_size], sub->chunk_refs, sub->chunk_ref_count * sizeof(uint32_t));
+            w->data_size += sub->chunk_ref_count;
         }
 
-        // Write managers buffer
-        if (sub_flags & NMO_CHUNK_OPTION_MAN) {
-            w->data[w->data_size++] = (uint32_t) sub->manager_count;
-            if (sub->manager_count > 0 && sub->managers != NULL) {
-                memcpy(&w->data[w->data_size], sub->managers, sub->manager_count * sizeof(uint32_t));
-                w->data_size += sub->manager_count;
-            }
+        /* Manager data */
+        if (manager_count_field > 0 && sub->managers != NULL) {
+            memcpy(&w->data[w->data_size], sub->managers, manager_count_field * sizeof(uint32_t));
+            w->data_size += manager_count_field;
         }
     }
 

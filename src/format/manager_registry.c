@@ -7,6 +7,7 @@
 #include "format/nmo_manager.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,8 +17,15 @@
  * @brief Manager registry structure
  */
 typedef struct nmo_manager_registry {
-    nmo_indexed_map_t *managers;  /* manager_id -> nmo_manager_t* */
+    nmo_indexed_map_t *managers_by_id;   /* manager_id -> nmo_manager_t* */
+    nmo_indexed_map_t *managers_by_guid; /* nmo_guid_t -> nmo_manager_t* */
 } nmo_manager_registry_t;
+
+static size_t nmo_map_hash_guid(const void *key, size_t key_size) {
+    (void)key_size;
+    const nmo_guid_t *guid = (const nmo_guid_t *)key;
+    return (size_t)nmo_guid_hash(*guid);
+}
 
 /**
  * Create manager registry
@@ -28,7 +36,7 @@ nmo_manager_registry_t *nmo_manager_registry_create(void) {
         return NULL;
     }
 
-    registry->managers = nmo_indexed_map_create(
+    registry->managers_by_id = nmo_indexed_map_create(
         sizeof(uint32_t),           /* key: manager_id */
         sizeof(nmo_manager_t *),    /* value: manager pointer */
         INITIAL_CAPACITY,
@@ -36,7 +44,20 @@ nmo_manager_registry_t *nmo_manager_registry_create(void) {
         NULL                        /* use default memcmp */
     );
 
-    if (registry->managers == NULL) {
+    if (registry->managers_by_id == NULL) {
+        free(registry);
+        return NULL;
+    }
+
+    registry->managers_by_guid = nmo_indexed_map_create(
+        sizeof(nmo_guid_t),
+        sizeof(nmo_manager_t *),
+        INITIAL_CAPACITY,
+        nmo_map_hash_guid,
+        NULL);
+
+    if (registry->managers_by_guid == NULL) {
+        nmo_indexed_map_destroy(registry->managers_by_id);
         free(registry);
         return NULL;
     }
@@ -50,15 +71,16 @@ nmo_manager_registry_t *nmo_manager_registry_create(void) {
 void nmo_manager_registry_destroy(nmo_manager_registry_t *registry) {
     if (registry != NULL) {
         /* Destroy all registered managers */
-        size_t count = nmo_indexed_map_get_count(registry->managers);
+        size_t count = nmo_indexed_map_get_count(registry->managers_by_id);
         for (size_t i = 0; i < count; i++) {
             nmo_manager_t *manager = NULL;
-            if (nmo_indexed_map_get_value_at(registry->managers, i, &manager) && manager != NULL) {
+            if (nmo_indexed_map_get_value_at(registry->managers_by_id, i, &manager) && manager != NULL) {
                 nmo_manager_destroy(manager);
             }
         }
 
-        nmo_indexed_map_destroy(registry->managers);
+        nmo_indexed_map_destroy(registry->managers_by_id);
+        nmo_indexed_map_destroy(registry->managers_by_guid);
         free(registry);
     }
 }
@@ -77,16 +99,32 @@ nmo_result_t nmo_manager_registry_register(
     }
 
     /* Check if manager already registered */
-    if (nmo_indexed_map_contains(registry->managers, &manager_id)) {
+    if (nmo_indexed_map_contains(registry->managers_by_id, &manager_id)) {
+        result.code = NMO_ERR_INVALID_ARGUMENT;
+        result.error = NULL;
+        return result;
+    }
+
+    nmo_manager_t *mgr = (nmo_manager_t *)manager;
+
+    if (nmo_indexed_map_contains(registry->managers_by_guid, &mgr->guid)) {
         result.code = NMO_ERR_INVALID_ARGUMENT;
         result.error = NULL;
         return result;
     }
 
     /* Insert manager */
-    nmo_manager_t *mgr = (nmo_manager_t *)manager;
-    int insert_result = nmo_indexed_map_insert(registry->managers, &manager_id, &mgr);
+    int insert_result = nmo_indexed_map_insert(registry->managers_by_id, &manager_id, &mgr);
     if (insert_result != NMO_OK) {
+        result.code = insert_result;
+        result.error = NULL;
+        return result;
+    }
+
+    insert_result = nmo_indexed_map_insert(registry->managers_by_guid, &mgr->guid, &mgr);
+    if (insert_result != NMO_OK) {
+        /* Roll back ID map insert */
+        nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
         result.code = insert_result;
         result.error = NULL;
         return result;
@@ -109,9 +147,10 @@ nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, u
 
     /* Get manager before removing */
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers, &manager_id, &manager) && manager != NULL) {
+    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager) && manager != NULL) {
         nmo_manager_destroy(manager);
-        nmo_indexed_map_remove(registry->managers, &manager_id);
+        nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
+        nmo_indexed_map_remove(registry->managers_by_guid, &manager->guid);
         return nmo_result_ok();
     }
 
@@ -129,7 +168,7 @@ void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, uint32_t 
     }
 
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers, &manager_id, &manager)) {
+    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager)) {
         return manager;
     }
 
@@ -143,7 +182,7 @@ int nmo_manager_registry_contains(const nmo_manager_registry_t *registry, uint32
     if (registry == NULL) {
         return 0;
     }
-    return nmo_indexed_map_contains(registry->managers, &manager_id);
+    return nmo_indexed_map_contains(registry->managers_by_id, &manager_id);
 }
 
 /**
@@ -154,7 +193,7 @@ uint32_t nmo_manager_registry_get_count(const nmo_manager_registry_t *registry) 
         return 0;
     }
 
-    return (uint32_t)nmo_indexed_map_get_count(registry->managers);
+    return (uint32_t)nmo_indexed_map_get_count(registry->managers_by_id);
 }
 
 /**
@@ -166,7 +205,7 @@ uint32_t nmo_manager_registry_get_id_at(const nmo_manager_registry_t *registry, 
     }
 
     uint32_t manager_id = 0;
-    if (nmo_indexed_map_get_key_at(registry->managers, index, &manager_id)) {
+    if (nmo_indexed_map_get_key_at(registry->managers_by_id, index, &manager_id)) {
         return manager_id;
     }
 
@@ -186,16 +225,32 @@ nmo_result_t nmo_manager_registry_clear(nmo_manager_registry_t *registry) {
     }
 
     /* Destroy all managers */
-    size_t count = nmo_indexed_map_get_count(registry->managers);
+    size_t count = nmo_indexed_map_get_count(registry->managers_by_id);
     for (size_t i = 0; i < count; i++) {
         nmo_manager_t *manager = NULL;
-        if (nmo_indexed_map_get_value_at(registry->managers, i, &manager) && manager != NULL) {
+        if (nmo_indexed_map_get_value_at(registry->managers_by_id, i, &manager) && manager != NULL) {
             nmo_manager_destroy(manager);
         }
     }
 
-    nmo_indexed_map_clear(registry->managers);
+    nmo_indexed_map_clear(registry->managers_by_id);
+    nmo_indexed_map_clear(registry->managers_by_guid);
 
     return nmo_result_ok();
+}
+
+void *nmo_manager_registry_find_by_guid(
+    const nmo_manager_registry_t *registry,
+    nmo_guid_t guid) {
+    if (registry == NULL) {
+        return NULL;
+    }
+
+    nmo_manager_t *manager = NULL;
+    if (nmo_indexed_map_get(registry->managers_by_guid, &guid, &manager)) {
+        return manager;
+    }
+
+    return NULL;
 }
 

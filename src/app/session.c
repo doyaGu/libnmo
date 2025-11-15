@@ -6,6 +6,7 @@
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
+#include "app/nmo_plugin.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "session/nmo_object_repository.h"
@@ -13,6 +14,7 @@
 #include "session/nmo_reference_resolver.h"
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
+#include "format/nmo_header1.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,6 +70,21 @@ typedef struct nmo_session {
     nmo_session_plugin_diagnostics_t plugin_diag;
     int plugin_diag_valid;
 } nmo_session_t;
+
+static const char *nmo_session_copy_string(nmo_arena_t *arena, const char *source) {
+    if (arena == NULL || source == NULL) {
+        return NULL;
+    }
+
+    size_t len = strlen(source) + 1;
+    char *dest = (char *) nmo_arena_alloc(arena, len, sizeof(char));
+    if (dest == NULL) {
+        return NULL;
+    }
+
+    memcpy(dest, source, len);
+    return dest;
+}
 
 static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t needed) {
     if (session == NULL || session->arena == NULL) {
@@ -304,23 +321,30 @@ nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, u
     return session->manager_data;
 }
 
-void nmo_session_set_plugin_dependencies(
+int nmo_session_set_plugin_dependencies(
     nmo_session_t *session,
     nmo_plugin_dep_t *deps,
     uint32_t count
 ) {
     if (session == NULL) {
-        return;
-    }
-
-    if (deps == NULL || count == 0) {
-        session->plugin_deps = NULL;
-        session->plugin_dep_count = 0;
-        return;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     session->plugin_deps = deps;
     session->plugin_dep_count = count;
+
+    if (deps == NULL || count == 0) {
+        nmo_context_t *ctx = nmo_session_get_context(session);
+        int manager_available = 0;
+        if (ctx != NULL && nmo_context_get_plugin_manager(ctx) != NULL) {
+            manager_available = 1;
+        }
+
+        nmo_session_set_plugin_diagnostics(session, NULL, 0, 0, 0, manager_available);
+        return NMO_OK;
+    }
+
+    return nmo_session_refresh_plugin_diagnostics(session);
 }
 
 nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(
@@ -341,14 +365,54 @@ nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(
     return session->plugin_deps;
 }
 
+static int nmo_session_copy_owner_ids(
+    nmo_session_t *session,
+    nmo_included_file_t *entry,
+    const nmo_object_id_t *owner_ids,
+    uint32_t owner_count
+) {
+    if (entry == NULL || session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (owner_ids == NULL || owner_count == 0) {
+        entry->owner_count = 0;
+        return NMO_OK;
+    }
+
+    if (entry->owner_capacity < owner_count || entry->owner_ids == NULL) {
+        nmo_object_id_t *buffer = (nmo_object_id_t *) nmo_arena_alloc(
+            session->arena,
+            owner_count * sizeof(nmo_object_id_t),
+            sizeof(nmo_object_id_t));
+        if (buffer == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        entry->owner_ids = buffer;
+        entry->owner_capacity = owner_count;
+    }
+
+    memcpy(entry->owner_ids, owner_ids, owner_count * sizeof(nmo_object_id_t));
+    entry->owner_count = owner_count;
+    return NMO_OK;
+}
+
 static int nmo_session_store_included_file(
     nmo_session_t *session,
     const char *name,
     const void *data,
     uint32_t size,
-    int copy_payload
+    int copy_payload,
+    const nmo_included_file_metadata_t *meta
 ) {
-    if (session == NULL || name == NULL || (size > 0 && data == NULL)) {
+    uint32_t meta_attrs = (meta != NULL) ? meta->attributes : 0u;
+    const int metadata_only = (meta_attrs & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
+
+    if (session == NULL || name == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (size > 0 && data == NULL && !metadata_only) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -366,7 +430,7 @@ static int nmo_session_store_included_file(
 
     const void *payload_src = data;
     void *payload = NULL;
-    if (size > 0) {
+    if (size > 0 && !metadata_only && payload_src != NULL) {
         if (copy_payload) {
             payload = nmo_arena_alloc(session->arena, size, 1);
             if (payload == NULL) {
@@ -382,6 +446,26 @@ static int nmo_session_store_included_file(
     entry->name = name_copy;
     entry->data = payload;
     entry->size = size;
+    uint32_t entry_attributes = copy_payload ? 0u : NMO_INCLUDED_FILE_ATTR_BORROWED;
+    if (meta_attrs != 0u) {
+        entry_attributes |= meta_attrs;
+    }
+    entry->attributes = entry_attributes;
+    entry->owner_ids = NULL;
+    entry->owner_count = 0;
+    entry->owner_capacity = 0;
+
+    if (meta != NULL) {
+        int owner_result = nmo_session_copy_owner_ids(
+            session,
+            entry,
+            meta->owner_ids,
+            meta->owner_count);
+        if (owner_result != NMO_OK) {
+            return owner_result;
+        }
+    }
+
     return NMO_OK;
 }
 
@@ -391,7 +475,17 @@ int nmo_session_add_included_file(
     const void *data,
     uint32_t size
 ) {
-    return nmo_session_store_included_file(session, name, data, size, 1);
+    return nmo_session_store_included_file(session, name, data, size, 1, NULL);
+}
+
+int nmo_session_add_included_file_ex(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size,
+    const nmo_included_file_metadata_t *meta
+) {
+    return nmo_session_store_included_file(session, name, data, size, 1, meta);
 }
 
 int nmo_session_add_included_file_borrowed(
@@ -400,7 +494,36 @@ int nmo_session_add_included_file_borrowed(
     const void *data,
     uint32_t size
 ) {
-    return nmo_session_store_included_file(session, name, data, size, 0);
+    return nmo_session_store_included_file(session, name, data, size, 0, NULL);
+}
+
+int nmo_session_add_included_file_borrowed_ex(
+    nmo_session_t *session,
+    const char *name,
+    const void *data,
+    uint32_t size,
+    const nmo_included_file_metadata_t *meta
+) {
+    return nmo_session_store_included_file(session, name, data, size, 0, meta);
+}
+
+int nmo_session_set_included_file_owners(
+    nmo_session_t *session,
+    uint32_t index,
+    const nmo_object_id_t *owner_ids,
+    uint32_t owner_count
+) {
+    if (session == NULL || index >= session->included_file_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_included_file_t *entry = &session->included_files[index];
+    if (owner_ids == NULL || owner_count == 0) {
+        entry->owner_count = 0;
+        return NMO_OK;
+    }
+
+    return nmo_session_copy_owner_ids(session, entry, owner_ids, owner_count);
 }
 
 nmo_included_file_t *nmo_session_get_included_files(
@@ -600,6 +723,111 @@ const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     }
 
     return &session->plugin_diag;
+}
+
+static int nmo_session_build_plugin_diagnostics(
+    nmo_session_t *session,
+    const nmo_plugin_dep_t *deps,
+    size_t dep_count,
+    size_t *out_missing,
+    size_t *out_outdated
+) {
+    if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    nmo_plugin_manager_t *plugin_manager = ctx != NULL
+        ? nmo_context_get_plugin_manager(ctx)
+        : NULL;
+
+    size_t missing = 0;
+    size_t outdated = 0;
+    nmo_session_plugin_dependency_status_t *entries = NULL;
+
+    if (dep_count > 0 && arena != NULL) {
+        size_t bytes = dep_count * sizeof(nmo_session_plugin_dependency_status_t);
+        entries = (nmo_session_plugin_dependency_status_t *) nmo_arena_alloc(
+            arena,
+            bytes,
+            sizeof(void *));
+        if (entries != NULL) {
+            memset(entries, 0, bytes);
+        }
+    }
+
+    if (deps != NULL && dep_count > 0) {
+        for (size_t i = 0; i < dep_count; i++) {
+            const nmo_plugin_dep_t *dep = &deps[i];
+            nmo_session_plugin_dependency_status_t *entry = entries ? &entries[i] : NULL;
+
+            if (entry != NULL) {
+                entry->guid = dep->guid;
+                entry->category = (nmo_plugin_category_t) dep->category;
+                entry->required_version = dep->version;
+            }
+
+            const nmo_plugin_t *registered = plugin_manager
+                ? nmo_plugin_manager_find_by_guid(plugin_manager, dep->guid)
+                : NULL;
+
+            if (registered == NULL) {
+                missing++;
+                if (entry != NULL) {
+                    entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
+                    if (plugin_manager == NULL) {
+                        entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE;
+                    }
+                }
+                continue;
+            }
+
+            if (entry != NULL) {
+                entry->resolved_version = registered->version;
+                if (registered->name != NULL) {
+                    entry->resolved_name = nmo_session_copy_string(arena, registered->name);
+                }
+            }
+
+            if (registered->version < dep->version) {
+                outdated++;
+                if (entry != NULL) {
+                    entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD;
+                }
+            }
+        }
+    }
+
+    nmo_session_set_plugin_diagnostics(
+        session,
+        entries,
+        dep_count,
+        missing,
+        outdated,
+        plugin_manager != NULL ? 1 : 0);
+
+    if (out_missing != NULL) {
+        *out_missing = missing;
+    }
+    if (out_outdated != NULL) {
+        *out_outdated = outdated;
+    }
+
+    return NMO_OK;
+}
+
+int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session) {
+    if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    return nmo_session_build_plugin_diagnostics(
+        session,
+        session->plugin_deps,
+        session->plugin_dep_count,
+        NULL,
+        NULL);
 }
 
 /**

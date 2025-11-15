@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,6 +56,16 @@ NMO_API nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t *reg
  * @return Manager or NULL if not found
  */
 NMO_API void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, uint32_t manager_id);
+
+/**
+ * Get manager by GUID
+ * @param registry Registry
+ * @param guid Manager GUID
+ * @return Manager or NULL if not found
+ */
+NMO_API void *nmo_manager_registry_find_by_guid(
+    const nmo_manager_registry_t *registry,
+    nmo_guid_t guid);
 
 /**
  * Check if manager is registered

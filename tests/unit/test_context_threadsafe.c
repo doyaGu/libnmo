@@ -106,7 +106,34 @@ TEST(context_threadsafe, stress_test) {
     /* If we get here without crashing, the test passed */
 }
 
+TEST(context_threadsafe, refcount_consistency_under_contention) {
+    const int num_threads = 6;
+    const int iterations = 4000;
+
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    thread_t threads[6];
+    thread_data_t thread_data[6];
+
+    for (int i = 0; i < num_threads; i++) {
+        thread_data[i].ctx = ctx;
+        thread_data[i].iterations = iterations;
+        thread_create(&threads[i], retain_release_thread, &thread_data[i]);
+    }
+
+    for (int i = 0; i < num_threads; i++) {
+        thread_join(threads[i]);
+    }
+
+    int refcount = nmo_context_get_refcount(ctx);
+    ASSERT_EQ(1, refcount);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(context_threadsafe, multiple_threads_retain_release);
     REGISTER_TEST(context_threadsafe, stress_test);
+    REGISTER_TEST(context_threadsafe, refcount_consistency_under_contention);
 TEST_MAIN_END()

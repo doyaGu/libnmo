@@ -393,26 +393,46 @@ nmo_result_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
  */
 static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
     size_t size = 0;
+    uint32_t chunk_version = chunk->chunk_version;
+
+    if (chunk_version < NMO_CHUNK_VERSION2) {
+        /* VERSION1 header: version_info, class_id, chunk_size, reserved, id_count, chunk_count */
+        size += 6 * sizeof(uint32_t);
+        size += chunk->data_size * sizeof(uint32_t);
+        size += chunk->id_count * sizeof(uint32_t);
+        size += chunk->chunk_ref_count * sizeof(uint32_t);
+        return size;
+    }
+
+    if (chunk_version == NMO_CHUNK_VERSION2) {
+        /* VERSION2 header adds manager_count */
+        size += 7 * sizeof(uint32_t);
+        size += chunk->data_size * sizeof(uint32_t);
+        size += chunk->id_count * sizeof(uint32_t);
+        size += chunk->chunk_ref_count * sizeof(uint32_t);
+        size += chunk->manager_count * sizeof(uint32_t);
+        return size;
+    }
+
+    /* VERSION3/VERSION4 compact header */
+    const int has_ids = (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) || chunk->id_count > 0;
+    const int has_chunks = (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) || chunk->chunk_ref_count > 0;
+    const int has_managers = (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) || chunk->manager_count > 0;
 
     size += 2 * sizeof(uint32_t); /* version_info + chunk_size */
-
-    /* Data buffer (in DWORDs) */
     size += chunk->data_size * sizeof(uint32_t);
 
-    /* IDs array with count */
-    if (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) {
+    if (has_ids) {
         size += sizeof(uint32_t); /* count */
         size += chunk->id_count * sizeof(uint32_t);
     }
 
-    /* Sub-chunk positions with count */
-    if (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) {
+    if (has_chunks) {
         size += sizeof(uint32_t);
         size += chunk->chunk_ref_count * sizeof(uint32_t);
     }
 
-    /* Manager list with count */
-    if (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) {
+    if (has_managers) {
         size += sizeof(uint32_t);
         size += chunk->manager_count * sizeof(uint32_t);
     }
@@ -459,64 +479,177 @@ nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
     }
 
     size_t pos = 0; /* Position in DWORDs */
+    uint32_t chunk_version = chunk->chunk_version;
 
-    /* Determine chunk options to pack */
-    uint32_t option_flags = chunk->chunk_options;
-    if (chunk->id_count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_IDS;
-    }
-    if (chunk->chunk_ref_count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_CHN;
-    }
-    if (chunk->manager_count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_MAN;
+    if (chunk_version < NMO_CHUNK_VERSION1) {
+        chunk_version = NMO_CHUNK_VERSION1;
+    } else if (chunk_version > NMO_CHUNK_VERSION4) {
+        chunk_version = NMO_CHUNK_VERSION4;
     }
 
-    uint8_t chunk_options = (uint8_t) (option_flags & 0xFF);
-    uint8_t chunk_version = (uint8_t) (chunk->chunk_version & 0xFF);
-    uint8_t data_version = (uint8_t) (chunk->data_version & 0xFF);
-    uint8_t class_id_byte = (chunk->chunk_class_id != 0) ?
-                            chunk->chunk_class_id :
-                            (uint8_t) (chunk->class_id & 0xFF);
-
-    uint16_t data_packed = (uint16_t) (data_version | (class_id_byte << 8));
-    uint16_t chunk_packed = (uint16_t) (chunk_version | (chunk_options << 8));
-    uint32_t version_info = (uint32_t) data_packed | ((uint32_t) chunk_packed << 16);
-    buffer[pos++] = version_info;
-
-    /* Write chunk_size (in DWORDs) */
-    buffer[pos++] = (uint32_t) chunk->data_size;
-
-    /* Write data buffer */
-    if (chunk->data_size > 0) {
-        memcpy(&buffer[pos], chunk->data, chunk->data_size * sizeof(uint32_t));
-        pos += chunk->data_size;
-    }
-
-    /* Write IDs array */
-    if (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) {
+    if (chunk_version < NMO_CHUNK_VERSION2) {
+        /* VERSION1 layout (24-byte header) */
+        uint32_t version_info = (chunk->data_version & 0xFFu) |
+                                ((chunk_version & 0xFFu) << 16);
+        buffer[pos++] = version_info;
+        buffer[pos++] = chunk->class_id;
+        buffer[pos++] = (uint32_t) chunk->data_size;
+        buffer[pos++] = 0u; /* Reserved */
         buffer[pos++] = (uint32_t) chunk->id_count;
-        if (chunk->id_count > 0 && chunk->ids != NULL) {
+        buffer[pos++] = (uint32_t) chunk->chunk_ref_count;
+
+        if (chunk->data_size > 0) {
+            if (!chunk->data) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has data_size but no data"));
+            }
+            memcpy(&buffer[pos], chunk->data, chunk->data_size * sizeof(uint32_t));
+            pos += chunk->data_size;
+        }
+
+        if (chunk->id_count > 0) {
+            if (!chunk->ids) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has ID count but no ID list"));
+            }
             memcpy(&buffer[pos], chunk->ids, chunk->id_count * sizeof(uint32_t));
             pos += chunk->id_count;
         }
-    }
 
-    /* Write chunk positions */
-    if (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) {
-        buffer[pos++] = (uint32_t) chunk->chunk_ref_count;
-        if (chunk->chunk_ref_count > 0 && chunk->chunk_refs != NULL) {
+        if (chunk->chunk_ref_count > 0) {
+            if (!chunk->chunk_refs) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has chunk references but no data"));
+            }
             memcpy(&buffer[pos], chunk->chunk_refs, chunk->chunk_ref_count * sizeof(uint32_t));
             pos += chunk->chunk_ref_count;
         }
-    }
-
-    /* Write manager list */
-    if (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) {
+    } else if (chunk_version == NMO_CHUNK_VERSION2) {
+        /* VERSION2 layout adds manager count */
+        uint32_t version_info = (chunk->data_version & 0xFFu) |
+                                ((chunk_version & 0xFFu) << 16);
+        buffer[pos++] = version_info;
+        buffer[pos++] = (uint32_t) chunk->chunk_class_id;
+        buffer[pos++] = (uint32_t) chunk->data_size;
+        buffer[pos++] = 0u;
+        buffer[pos++] = (uint32_t) chunk->id_count;
+        buffer[pos++] = (uint32_t) chunk->chunk_ref_count;
         buffer[pos++] = (uint32_t) chunk->manager_count;
-        if (chunk->manager_count > 0 && chunk->managers != NULL) {
+
+        if (chunk->data_size > 0) {
+            if (!chunk->data) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has data_size but no data"));
+            }
+            memcpy(&buffer[pos], chunk->data, chunk->data_size * sizeof(uint32_t));
+            pos += chunk->data_size;
+        }
+
+        if (chunk->id_count > 0) {
+            if (!chunk->ids) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has ID count but no ID list"));
+            }
+            memcpy(&buffer[pos], chunk->ids, chunk->id_count * sizeof(uint32_t));
+            pos += chunk->id_count;
+        }
+
+        if (chunk->chunk_ref_count > 0) {
+            if (!chunk->chunk_refs) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has chunk references but no data"));
+            }
+            memcpy(&buffer[pos], chunk->chunk_refs, chunk->chunk_ref_count * sizeof(uint32_t));
+            pos += chunk->chunk_ref_count;
+        }
+
+        if (chunk->manager_count > 0) {
+            if (!chunk->managers) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has manager count but no manager data"));
+            }
             memcpy(&buffer[pos], chunk->managers, chunk->manager_count * sizeof(uint32_t));
             pos += chunk->manager_count;
+        }
+    } else {
+        /* VERSION3/VERSION4 compact layout */
+        uint32_t option_flags = chunk->chunk_options;
+        if (chunk->id_count > 0) {
+            option_flags |= NMO_CHUNK_OPTION_IDS;
+        }
+        if (chunk->chunk_ref_count > 0) {
+            option_flags |= NMO_CHUNK_OPTION_CHN;
+        }
+        if (chunk->manager_count > 0) {
+            option_flags |= NMO_CHUNK_OPTION_MAN;
+        }
+
+        uint8_t chunk_options = (uint8_t) (option_flags & 0xFFu);
+        uint8_t data_version = (uint8_t) (chunk->data_version & 0xFFu);
+        uint8_t class_id_byte = (chunk->chunk_class_id != 0) ?
+                                chunk->chunk_class_id :
+                                (uint8_t) (chunk->class_id & 0xFFu);
+
+        uint16_t data_packed = (uint16_t) (data_version | (class_id_byte << 8));
+        uint16_t chunk_packed = (uint16_t) ((chunk_version & 0xFFu) | (chunk_options << 8));
+        uint32_t version_info = (uint32_t) data_packed | ((uint32_t) chunk_packed << 16);
+        buffer[pos++] = version_info;
+        buffer[pos++] = (uint32_t) chunk->data_size;
+
+        if (chunk->data_size > 0) {
+            if (!chunk->data) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Chunk has data_size but no data"));
+            }
+            memcpy(&buffer[pos], chunk->data, chunk->data_size * sizeof(uint32_t));
+            pos += chunk->data_size;
+        }
+
+        if (option_flags & NMO_CHUNK_OPTION_IDS) {
+            buffer[pos++] = (uint32_t) chunk->id_count;
+            if (chunk->id_count > 0) {
+                if (!chunk->ids) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR,
+                                                      "Chunk has ID count but no ID list"));
+                }
+                memcpy(&buffer[pos], chunk->ids, chunk->id_count * sizeof(uint32_t));
+                pos += chunk->id_count;
+            }
+        }
+
+        if (option_flags & NMO_CHUNK_OPTION_CHN) {
+            buffer[pos++] = (uint32_t) chunk->chunk_ref_count;
+            if (chunk->chunk_ref_count > 0) {
+                if (!chunk->chunk_refs) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR,
+                                                      "Chunk has chunk references but no data"));
+                }
+                memcpy(&buffer[pos], chunk->chunk_refs, chunk->chunk_ref_count * sizeof(uint32_t));
+                pos += chunk->chunk_ref_count;
+            }
+        }
+
+        if (option_flags & NMO_CHUNK_OPTION_MAN) {
+            buffer[pos++] = (uint32_t) chunk->manager_count;
+            if (chunk->manager_count > 0) {
+                if (!chunk->managers) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR,
+                                                      "Chunk has manager count but no manager data"));
+                }
+                memcpy(&buffer[pos], chunk->managers, chunk->manager_count * sizeof(uint32_t));
+                pos += chunk->manager_count;
+            }
         }
     }
 

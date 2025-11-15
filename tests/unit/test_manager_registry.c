@@ -107,6 +107,30 @@ TEST(manager_registry, manager_lookup) {
 }
 
 /**
+ * Test lookup by GUID
+ */
+TEST(manager_registry, find_by_guid) {
+    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    ASSERT_NOT_NULL(registry);
+
+    nmo_guid_t guid = nmo_guid_create(0xABCDEF12, 0x3456789A);
+    nmo_manager_t* manager = nmo_manager_create(guid, "GuidManager", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(manager);
+
+    nmo_result_t result = nmo_manager_registry_register(registry, 77, manager);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    nmo_manager_t* found = (nmo_manager_t*)nmo_manager_registry_find_by_guid(registry, guid);
+    ASSERT_EQ(manager, found);
+
+    nmo_guid_t missing_guid = nmo_guid_create(0x0, 0x1);
+    nmo_manager_t* missing = (nmo_manager_t*)nmo_manager_registry_find_by_guid(registry, missing_guid);
+    ASSERT_NULL(missing);
+
+    nmo_manager_registry_destroy(registry);
+}
+
+/**
  * Test unregistering managers
  */
 TEST(manager_registry, unregister_manager) {
@@ -260,6 +284,20 @@ TEST(manager_registry, error_handling) {
     /* Cleanup manager2 since it wasn't registered */
     nmo_manager_destroy(manager2);
 
+    /* Test registering duplicate GUID */
+    nmo_guid_t dup_guid = nmo_guid_create(0x99999999, 0xAAAAAAAA);
+    nmo_manager_t* guid_manager1 = nmo_manager_create(dup_guid, "Guid1", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(guid_manager1);
+    nmo_manager_t* guid_manager2 = nmo_manager_create(dup_guid, "Guid2", NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_NOT_NULL(guid_manager2);
+
+    result = nmo_manager_registry_register(registry, 200, guid_manager1);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    result = nmo_manager_registry_register(registry, 201, guid_manager2);
+    ASSERT_NE(NMO_OK, result.code);
+    nmo_manager_destroy(guid_manager2);
+
     /* Test unregistering non-existent manager */
     result = nmo_manager_registry_unregister(registry, 999);
     ASSERT_NE(NMO_OK, result.code);
@@ -279,6 +317,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(manager_registry, register_single_manager);
     REGISTER_TEST(manager_registry, register_multiple_managers);
     REGISTER_TEST(manager_registry, manager_lookup);
+    REGISTER_TEST(manager_registry, find_by_guid);
     REGISTER_TEST(manager_registry, unregister_manager);
     REGISTER_TEST(manager_registry, manager_iteration);
     REGISTER_TEST(manager_registry, clear_all_managers);

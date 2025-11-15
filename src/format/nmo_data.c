@@ -100,6 +100,8 @@ static nmo_result_t parse_manager_data(
         } else {
             mgr->chunk = NULL;
         }
+
+        mgr->flags = 0;
     }
 
     return nmo_result_ok();
