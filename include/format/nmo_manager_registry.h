@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_arena.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,10 +21,11 @@ extern "C" {
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 
 /**
- * Create manager registry
+ * Create manager registry using the provided arena
+ * @param arena Arena used for allocations (required)
  * @return Registry or NULL on error
  */
-NMO_API nmo_manager_registry_t *nmo_manager_registry_create(void);
+NMO_API nmo_manager_registry_t *nmo_manager_registry_create(nmo_arena_t *arena);
 
 /**
  * Destroy manager registry

@@ -7,29 +7,52 @@
 #include "format/nmo_manager_registry.h"
 #include "format/nmo_manager.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_arena.h"
 #include "nmo.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+static nmo_manager_registry_t *create_registry_with_arena(nmo_arena_t **arena_out) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (arena_out != NULL) {
+        *arena_out = arena;
+    }
+    if (arena == NULL) {
+        return NULL;
+    }
+    return nmo_manager_registry_create(arena);
+}
+
+static void destroy_registry_with_arena(nmo_manager_registry_t *registry, nmo_arena_t *arena) {
+    nmo_manager_registry_destroy(registry);
+    if (arena != NULL) {
+        nmo_arena_destroy(arena);
+    }
+}
+
 /**
  * Test creating and destroying registry
  */
 TEST(manager_registry, create_destroy) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     uint32_t count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(0, count);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test registering a single manager
  */
 TEST(manager_registry, register_single_manager) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid = nmo_guid_create(0x12345678, 0x9ABCDEF0);
@@ -45,14 +68,16 @@ TEST(manager_registry, register_single_manager) {
     int contains = nmo_manager_registry_contains(registry, 1);
     ASSERT_TRUE(contains);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test registering multiple managers
  */
 TEST(manager_registry, register_multiple_managers) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     const size_t manager_count = 10;
@@ -73,14 +98,16 @@ TEST(manager_registry, register_multiple_managers) {
         ASSERT_TRUE(contains);
     }
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test manager lookup
  */
 TEST(manager_registry, manager_lookup) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid1 = nmo_guid_create(0x11111111, 0x22222222);
@@ -103,14 +130,16 @@ TEST(manager_registry, manager_lookup) {
     nmo_manager_t* not_found = (nmo_manager_t*)nmo_manager_registry_get(registry, 999);
     ASSERT_NULL(not_found);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test lookup by GUID
  */
 TEST(manager_registry, find_by_guid) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid = nmo_guid_create(0xABCDEF12, 0x3456789A);
@@ -127,14 +156,16 @@ TEST(manager_registry, find_by_guid) {
     nmo_manager_t* missing = (nmo_manager_t*)nmo_manager_registry_find_by_guid(registry, missing_guid);
     ASSERT_NULL(missing);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test unregistering managers
  */
 TEST(manager_registry, unregister_manager) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid = nmo_guid_create(0x55555555, 0x66666666);
@@ -155,14 +186,16 @@ TEST(manager_registry, unregister_manager) {
     int contains = nmo_manager_registry_contains(registry, 42);
     ASSERT_FALSE(contains);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test iteration over managers
  */
 TEST(manager_registry, manager_iteration) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     uint32_t expected_ids[] = {10, 20, 30, 40, 50};
@@ -196,14 +229,16 @@ TEST(manager_registry, manager_iteration) {
         ASSERT_TRUE(found[i]);
     }
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test clearing all managers
  */
 TEST(manager_registry, clear_all_managers) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     /* Add multiple managers */
@@ -224,14 +259,16 @@ TEST(manager_registry, clear_all_managers) {
     count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(0, count);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test hash table resizing
  */
 TEST(manager_registry, registry_resize) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     /* Add many managers to trigger resize */
@@ -254,14 +291,16 @@ TEST(manager_registry, registry_resize) {
         ASSERT_TRUE(contains);
     }
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 /**
  * Test error handling
  */
 TEST(manager_registry, error_handling) {
-    nmo_manager_registry_t* registry = nmo_manager_registry_create();
+    nmo_arena_t *arena = NULL;
+    nmo_manager_registry_t* registry = create_registry_with_arena(&arena);
+    ASSERT_NOT_NULL(arena);
     ASSERT_NOT_NULL(registry);
 
     /* Test registering NULL manager */
@@ -309,7 +348,7 @@ TEST(manager_registry, error_handling) {
     void* manager = nmo_manager_registry_get(NULL, 1);
     ASSERT_NULL(manager);
 
-    nmo_manager_registry_destroy(registry);
+    destroy_registry_with_arena(registry, arena);
 }
 
 TEST_MAIN_BEGIN()

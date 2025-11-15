@@ -34,6 +34,7 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
         return NULL;
     }
 
+    nmo_arena_t *arena = nmo_object_repository_get_arena(repo);
     nmo_load_session_t *session = (nmo_load_session_t *) malloc(sizeof(nmo_load_session_t));
     if (session == NULL) {
         return NULL;
@@ -42,6 +43,7 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
     /* Initialize mapping table using generic hash table */
     size_t initial_capacity = (max_saved_id > 64) ? (max_saved_id * 2) : 64;
     session->id_mappings = nmo_hash_table_create(
+        arena,
         sizeof(nmo_object_id_t),    /* key: file_id */
         sizeof(nmo_object_id_t),    /* value: runtime_id */
         initial_capacity,

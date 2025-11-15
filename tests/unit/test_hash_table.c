@@ -23,11 +23,21 @@ static int failing_iterator(const void *key, void *value, void *user_data) {
     return 0;  // Always return 0 to stop iteration
 }
 
+static void track_key_dispose(void *element, void *user_data) {
+    uint32_t *total = (uint32_t *)user_data;
+    *total += *(uint32_t *)element;
+}
+
+static void track_value_dispose(void *element, void *user_data) {
+    uint32_t *total = (uint32_t *)user_data;
+    *total += *(uint32_t *)element;
+}
+
 /**
  * Test basic hash table operations
  */
 TEST(hash_table, basic) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -76,7 +86,7 @@ TEST(hash_table, basic) {
  * Test hash table with multiple entries
  */
 TEST(hash_table, multiple) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         4,
@@ -114,7 +124,7 @@ TEST(hash_table, multiple) {
  * Test hash table iteration
  */
 TEST(hash_table, iterate) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -161,7 +171,7 @@ TEST(hash_table, null_table) {
 }
 
 TEST(hash_table, null_pointers) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -194,23 +204,23 @@ TEST(hash_table, null_pointers) {
 
 TEST(hash_table, invalid_sizes) {
     // Test creation with zero key size
-    nmo_hash_table_t *table = nmo_hash_table_create(0, sizeof(uint32_t), 0, NULL, NULL);
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 0, sizeof(uint32_t), 0, NULL, NULL);
     ASSERT_NULL(table);  // Should fail with zero key size
 
     // Test creation with zero value size
-    table = nmo_hash_table_create(sizeof(uint32_t), 0, 0, NULL, NULL);
+    table = nmo_hash_table_create(NULL, sizeof(uint32_t), 0, 0, NULL, NULL);
     ASSERT_NULL(table);  // Should fail with zero value size
 
     // Test creation with extremely large sizes
-    table = nmo_hash_table_create(SIZE_MAX, sizeof(uint32_t), 0, NULL, NULL);
+    table = nmo_hash_table_create(NULL, SIZE_MAX, sizeof(uint32_t), 0, NULL, NULL);
     ASSERT_NULL(table);  // Should fail with too large key size
 
-    table = nmo_hash_table_create(sizeof(uint32_t), SIZE_MAX, 0, NULL, NULL);
+    table = nmo_hash_table_create(NULL, sizeof(uint32_t), SIZE_MAX, 0, NULL, NULL);
     ASSERT_NULL(table);  // Should fail with too large value size
 }
 
 TEST(hash_table, empty_operations) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -237,7 +247,7 @@ TEST(hash_table, empty_operations) {
 }
 
 TEST(hash_table, duplicate_keys) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL,
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -265,8 +275,58 @@ TEST(hash_table, duplicate_keys) {
     nmo_hash_table_destroy(table);
 }
 
+TEST(hash_table, lifecycle_hooks) {
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL,
+        sizeof(uint32_t),
+        sizeof(uint32_t),
+        0,
+        nmo_hash_uint32,
+        NULL
+    );
+    ASSERT_NOT_NULL(table);
+
+    uint32_t key_total = 0;
+    uint32_t value_total = 0;
+    nmo_container_lifecycle_t key_lifecycle = {
+        .dispose = track_key_dispose,
+        .user_data = &key_total
+    };
+    nmo_container_lifecycle_t value_lifecycle = {
+        .dispose = track_value_dispose,
+        .user_data = &value_total
+    };
+    nmo_hash_table_set_lifecycle(table, &key_lifecycle, &value_lifecycle);
+
+    uint32_t key1 = 1, key2 = 2, key3 = 3;
+    uint32_t value1 = 10, value2 = 20, value3 = 30;
+
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &value1));
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key2, &value2));
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key3, &value3));
+
+    uint32_t updated = 100;
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &updated));
+    ASSERT_EQ(value_total, 10u); /* Old value1 disposed */
+
+    ASSERT_EQ(1, nmo_hash_table_remove(table, &key2));
+    ASSERT_EQ(key_total, 2u);
+    ASSERT_EQ(value_total, 30u); /* value2 disposed */
+
+    nmo_hash_table_clear(table);
+    ASSERT_EQ(key_total, 6u);    /* keys 1 + 3 added after clear */
+    ASSERT_EQ(value_total, 160u);/* value1(updated) + value3 */
+
+    nmo_hash_table_set_lifecycle(table, NULL, NULL);
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &value1));
+    ASSERT_EQ(1, nmo_hash_table_remove(table, &key1));
+    ASSERT_EQ(key_total, 6u);
+    ASSERT_EQ(value_total, 160u);
+
+    nmo_hash_table_destroy(table);
+}
+
 TEST(hash_table, reserve_invalid) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -288,7 +348,7 @@ TEST(hash_table, reserve_invalid) {
 }
 
 TEST(hash_table, iterator_early_stop) {
-    nmo_hash_table_t *table = nmo_hash_table_create(
+    nmo_hash_table_t *table = nmo_hash_table_create(NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -322,6 +382,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(hash_table, invalid_sizes);
     REGISTER_TEST(hash_table, empty_operations);
     REGISTER_TEST(hash_table, duplicate_keys);
+    REGISTER_TEST(hash_table, lifecycle_hooks);
     REGISTER_TEST(hash_table, reserve_invalid);
     REGISTER_TEST(hash_table, iterator_early_stop);
 TEST_MAIN_END()

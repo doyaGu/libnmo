@@ -9,8 +9,12 @@
 #include "core/nmo_logger.h"
 #include "schema/nmo_schema_registry.h"
 #include "format/nmo_manager_registry.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_array.h"
+#include "core/nmo_logger.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdalign.h>
 
 /* C11 atomic support for thread-safe reference counting */
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
@@ -44,25 +48,30 @@ typedef struct nmo_context {
     NMO_ATOMIC_INT refcount;
 
     /* Owned resources */
+    nmo_allocator_t allocator_storage;
+    nmo_logger_t logger_storage;
     nmo_allocator_t *allocator;
     nmo_logger_t *logger;
     nmo_schema_registry_t *schema_registry;
     nmo_manager_registry_t *manager_registry;
     nmo_plugin_manager_t *plugin_manager;
+    nmo_arena_t *arena;
 
     /* Configuration */
     int thread_pool_size;
 
-    /* Flags */
-    int owns_allocator;
-    int owns_logger;
 } nmo_context_t;
 
 /**
  * Create context
  */
 nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
-    nmo_context_t *ctx = (nmo_context_t *) malloc(sizeof(nmo_context_t));
+    nmo_allocator_t effective_allocator =
+        (desc != NULL && desc->allocator != NULL)
+            ? *desc->allocator
+            : nmo_allocator_default();
+
+    nmo_context_t *ctx = (nmo_context_t *)nmo_alloc(&effective_allocator, sizeof(nmo_context_t), alignof(nmo_context_t));
     if (ctx == NULL) {
         return NULL;
     }
@@ -70,63 +79,38 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     memset(ctx, 0, sizeof(nmo_context_t));
     ctx->refcount = 1;
 
-    /* Set up allocator */
     if (desc != NULL && desc->allocator != NULL) {
         ctx->allocator = desc->allocator;
-        ctx->owns_allocator = 0;
     } else {
-        /* Use default allocator */
-        ctx->allocator = (nmo_allocator_t *) malloc(sizeof(nmo_allocator_t));
-        if (ctx->allocator == NULL) {
-            free(ctx);
-            return NULL;
-        }
-        *ctx->allocator = nmo_allocator_default();
-        ctx->owns_allocator = 1;
+        ctx->allocator_storage = effective_allocator;
+        ctx->allocator = &ctx->allocator_storage;
     }
 
-    /* Set up logger */
     if (desc != NULL && desc->logger != NULL) {
         ctx->logger = desc->logger;
-        ctx->owns_logger = 0;
     } else {
-        /* Use default logger (stderr) */
-        ctx->logger = (nmo_logger_t *) malloc(sizeof(nmo_logger_t));
-        if (ctx->logger == NULL) {
-            if (ctx->owns_allocator) {
-                free(ctx->allocator);
-            }
-            free(ctx);
-            return NULL;
-        }
-        *ctx->logger = nmo_logger_stderr();
-        ctx->owns_logger = 1;
+        ctx->logger_storage = nmo_logger_stderr();
+        ctx->logger = &ctx->logger_storage;
     }
 
-    /* Create schema registry */
-    ctx->schema_registry = nmo_schema_registry_create();
-    if (ctx->schema_registry == NULL) {
-        if (ctx->owns_logger) {
-            free(ctx->logger);
-        }
-        if (ctx->owns_allocator) {
-            free(ctx->allocator);
-        }
-        free(ctx);
+    ctx->arena = nmo_arena_create(ctx->allocator, 0);
+    if (ctx->arena == NULL) {
+        nmo_free(&effective_allocator, ctx);
         return NULL;
     }
 
-    /* Create manager registry (Phase 11) */
-    ctx->manager_registry = nmo_manager_registry_create();
+    ctx->schema_registry = nmo_schema_registry_create(ctx->arena);
+    if (ctx->schema_registry == NULL) {
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    ctx->manager_registry = nmo_manager_registry_create(ctx->arena);
     if (ctx->manager_registry == NULL) {
         nmo_schema_registry_destroy(ctx->schema_registry);
-        if (ctx->owns_logger) {
-            free(ctx->logger);
-        }
-        if (ctx->owns_allocator) {
-            free(ctx->allocator);
-        }
-        free(ctx);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
         return NULL;
     }
 
@@ -134,19 +118,12 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     if (ctx->plugin_manager == NULL) {
         nmo_manager_registry_destroy(ctx->manager_registry);
         nmo_schema_registry_destroy(ctx->schema_registry);
-        if (ctx->owns_logger) {
-            free(ctx->logger);
-        }
-        if (ctx->owns_allocator) {
-            free(ctx->allocator);
-        }
-        free(ctx);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
         return NULL;
     }
 
-    /* Thread pool size */
     ctx->thread_pool_size = (desc != NULL) ? desc->thread_pool_size : 0;
-
     return ctx;
 }
 
@@ -174,10 +151,6 @@ void nmo_context_release(nmo_context_t *ctx) {
     /* If old value was 1, we just decremented to 0, so cleanup */
     if (old_refcount == 1) {
         /* Destroy owned resources */
-        if (ctx->schema_registry != NULL) {
-            nmo_schema_registry_destroy(ctx->schema_registry);
-        }
-
         if (ctx->plugin_manager != NULL) {
             nmo_plugin_manager_destroy(ctx->plugin_manager);
         }
@@ -187,15 +160,17 @@ void nmo_context_release(nmo_context_t *ctx) {
             nmo_manager_registry_destroy(ctx->manager_registry);
         }
 
-        if (ctx->owns_logger && ctx->logger != NULL) {
-            free(ctx->logger);
+        if (ctx->schema_registry != NULL) {
+            nmo_schema_registry_destroy(ctx->schema_registry);
         }
 
-        if (ctx->owns_allocator && ctx->allocator != NULL) {
-            free(ctx->allocator);
+        if (ctx->arena != NULL) {
+            nmo_arena_destroy(ctx->arena);
         }
 
-        free(ctx);
+        if (ctx->allocator != NULL) {
+            nmo_free(ctx->allocator, ctx);
+        }
     }
 }
 
@@ -229,6 +204,13 @@ nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx) {
  */
 nmo_logger_t *nmo_context_get_logger(const nmo_context_t *ctx) {
     return ctx ? ctx->logger : NULL;
+}
+
+/**
+ * Get arena
+ */
+nmo_arena_t *nmo_context_get_arena(const nmo_context_t *ctx) {
+    return ctx ? ctx->arena : NULL;
 }
 
 /**

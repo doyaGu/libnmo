@@ -122,6 +122,13 @@ NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nm
  */
 NMO_API int nmo_object_repository_clear(nmo_object_repository_t *repository);
 
+/**
+ * @brief Get the arena backing this repository
+ * @param repository Repository
+ * @return Arena pointer or NULL
+ */
+NMO_API nmo_arena_t *nmo_object_repository_get_arena(const nmo_object_repository_t *repository);
+
 #ifdef __cplusplus
 }
 #endif

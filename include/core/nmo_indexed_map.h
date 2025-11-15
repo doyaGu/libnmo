@@ -7,6 +7,8 @@
 #define NMO_INDEXED_MAP_H
 
 #include "nmo_types.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_container_lifecycle.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -34,6 +36,7 @@ typedef int (*nmo_map_compare_func_t)(const void *key1, const void *key2, size_t
 
 /**
  * @brief Create an indexed map
+ * @param arena Arena for allocations (NULL to use a private arena)
  * @param key_size Size of key in bytes
  * @param value_size Size of value in bytes
  * @param initial_capacity Initial capacity (0 for default)
@@ -42,12 +45,27 @@ typedef int (*nmo_map_compare_func_t)(const void *key1, const void *key2, size_t
  * @return New indexed map or NULL on error
  */
 nmo_indexed_map_t *nmo_indexed_map_create(
+    nmo_arena_t *arena,
     size_t key_size,
     size_t value_size,
     size_t initial_capacity,
     nmo_map_hash_func_t hash_func,
     nmo_map_compare_func_t compare_func
 );
+
+/**
+ * @brief Configure lifecycle hooks for stored keys and values.
+ *
+ * Dispose callbacks run whenever an element leaves the map (remove, clear,
+ * destroy) or a value is overwritten. Passing NULL resets the lifecycle.
+ *
+ * @param map Indexed map
+ * @param key_lifecycle Lifecycle hooks for keys (optional)
+ * @param value_lifecycle Lifecycle hooks for values (optional)
+ */
+void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
+                                   const nmo_container_lifecycle_t *key_lifecycle,
+                                   const nmo_container_lifecycle_t *value_lifecycle);
 
 /**
  * @brief Destroy indexed map

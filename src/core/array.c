@@ -39,6 +39,38 @@ static void nmo_array_release_owned_data(nmo_array_t *array) {
     }
 }
 
+static void nmo_array_dispose_range(nmo_array_t *array, size_t start, size_t count) {
+    if (array == NULL || array->data == NULL || array->lifecycle.dispose == NULL || count == 0) {
+        return;
+    }
+
+    if (start >= array->count) {
+        return;
+    }
+
+    if (start + count > array->count) {
+        count = array->count - start;
+    }
+
+    uint8_t *base = (uint8_t *)array->data + (start * array->element_size);
+    for (size_t i = 0; i < count; ++i) {
+        array->lifecycle.dispose(base + (i * array->element_size), array->lifecycle.user_data);
+    }
+}
+
+void nmo_array_set_lifecycle(nmo_array_t *array,
+                             const nmo_container_lifecycle_t *lifecycle) {
+    if (!array) {
+        return;
+    }
+    if (lifecycle) {
+        array->lifecycle = *lifecycle;
+    } else {
+        array->lifecycle.dispose = NULL;
+        array->lifecycle.user_data = NULL;
+    }
+}
+
 nmo_result_t nmo_array_init(nmo_array_t *array,
                              size_t element_size,
                              size_t initial_capacity,
@@ -57,6 +89,8 @@ nmo_result_t nmo_array_init(nmo_array_t *array,
     array->allocator = nmo_allocator_default();
     array->use_allocator = 0;
     array->owns_data = 0;
+    array->lifecycle.dispose = NULL;
+    array->lifecycle.user_data = NULL;
 
     if (initial_capacity > 0) {
         return nmo_array_reserve(array, initial_capacity);
@@ -83,6 +117,8 @@ nmo_result_t nmo_array_init_with_allocator(nmo_array_t *array,
     array->allocator = allocator ? *allocator : nmo_allocator_default();
     array->use_allocator = 1;
     array->owns_data = 0;
+    array->lifecycle.dispose = NULL;
+    array->lifecycle.user_data = NULL;
 
     if (initial_capacity > 0) {
         return nmo_array_reserve(array, initial_capacity);
@@ -252,6 +288,7 @@ nmo_result_t nmo_array_set(nmo_array_t *array, size_t index, const void *element
     }
 
     uint8_t *dest = (uint8_t *)array->data + (index * array->element_size);
+    nmo_array_dispose_range(array, index, 1);
     memcpy(dest, element, array->element_size);
 
     return nmo_result_ok();
@@ -317,6 +354,8 @@ nmo_result_t nmo_array_remove(nmo_array_t *array,
         memcpy(out_element, target, array->element_size);
     }
 
+    nmo_array_dispose_range(array, index, 1);
+
     if (index < array->count - 1) {
         size_t move_bytes = (array->count - index - 1) * array->element_size;
         memmove(target, target + array->element_size, move_bytes);
@@ -341,15 +380,19 @@ nmo_result_t nmo_array_pop(nmo_array_t *array, void *out_element) {
         memcpy(out_element, target, array->element_size);
     }
 
+    nmo_array_dispose_range(array, array->count - 1, 1);
     array->count--;
 
     return nmo_result_ok();
 }
 
 void nmo_array_clear(nmo_array_t *array) {
-    if (array) {
-        array->count = 0;
+    if (array == NULL) {
+        return;
     }
+
+    nmo_array_dispose_range(array, 0, array->count);
+    array->count = 0;
 }
 
 nmo_result_t nmo_array_set_data(nmo_array_t *array,
@@ -361,6 +404,7 @@ nmo_result_t nmo_array_set_data(nmo_array_t *array,
                                           "Invalid array set_data arguments"));
     }
 
+    nmo_array_dispose_range(array, 0, array->count);
     nmo_array_release_owned_data(array);
     array->data = data;
     array->count = count;
@@ -388,6 +432,8 @@ nmo_result_t nmo_array_alloc(nmo_array_t *array,
     array->data = NULL;
     array->use_allocator = 0;
     array->owns_data = 0;
+    array->lifecycle.dispose = NULL;
+    array->lifecycle.user_data = NULL;
 
     if (count == 0) {
         return nmo_result_ok();
@@ -440,6 +486,7 @@ void nmo_array_dispose(nmo_array_t *array) {
         return;
     }
 
+    nmo_array_clear(array);
     nmo_array_release_owned_data(array);
     array->data = NULL;
     array->count = 0;
