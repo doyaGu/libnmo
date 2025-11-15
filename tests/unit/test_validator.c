@@ -6,9 +6,12 @@
 #include "../test_framework.h"
 #include "schema/nmo_validator.h"
 #include "schema/nmo_schema_registry.h"
+#include "core/nmo_arena.h"
 
 TEST(validator, create_destroy) {
-    nmo_schema_registry_t *registry = nmo_schema_registry_create();
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    ASSERT_NOT_NULL(arena);
+    nmo_schema_registry_t *registry = nmo_schema_registry_create(arena);
     ASSERT_NOT_NULL(registry);
     
     nmo_validation_t *validation = nmo_validation_create(registry, NMO_VALIDATION_STRICT);
@@ -16,6 +19,7 @@ TEST(validator, create_destroy) {
     
     nmo_validation_destroy(validation);
     nmo_schema_registry_destroy(registry);
+    nmo_arena_destroy(arena);
 }
 
 TEST(validator, create_null_registry) {

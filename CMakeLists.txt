@@ -156,10 +156,11 @@ set(NMO_FORMAT_SOURCES
 set(NMO_SCHEMA_SOURCES
     src/schema/schema.c
     src/schema/schema_registry.c
+    src/schema/schema_builder.c
     src/schema/validator.c
     src/schema/migrator.c
-    src/builtin_schemas/nmo_builtin_schemas.c
-    # src/builtin_schemas/ckbeobject.c  # Temporarily disabled - needs nmo_beobject_data_t
+    src/schema/builtin/builtin_types.c
+    src/schema/builtin/ckobject_hierarchy.c
 )
 
 # Session layer sources

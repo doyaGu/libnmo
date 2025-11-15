@@ -57,9 +57,9 @@ nmo_validation_result_t nmo_validate_object(nmo_validation_t *validation, nmo_ob
         return NMO_INVALID;
     }
 
-    // Find schema for object's class
-    const nmo_schema_descriptor_t *schema =
-        nmo_schema_registry_find_by_id(validation->registry, obj->class_id);
+    // Find schema for object's class - use new API
+    const nmo_schema_type_t *schema =
+        nmo_schema_registry_find_by_class_id(validation->registry, obj->class_id);
 
     if (schema == NULL) {
         snprintf(validation->error_message, MAX_ERROR_LEN,

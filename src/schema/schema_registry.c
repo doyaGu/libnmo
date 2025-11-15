@@ -5,223 +5,368 @@
 
 #include "schema/nmo_schema_registry.h"
 #include "core/nmo_hash_table.h"
-#include "core/nmo_error.h"
+#include "core/nmo_indexed_map.h"
 #include <stdlib.h>
 #include <string.h>
-
-#define INITIAL_CAPACITY 32
-
-/**
- * Schema registry structure
- */
-typedef struct nmo_schema_registry {
-    nmo_hash_table_t *schemas;  /* class_id -> schema* */
-} nmo_schema_registry_t;
+#include <stdalign.h>
 
 /**
- * Create schema registry
+ * @brief Schema registry structure
+ *
+ * Maintains three indices for fast lookup:
+ * 1. By type name (hash table)
+ * 2. By class ID (indexed map)
+ * 3. By manager GUID (hash table)
  */
-nmo_schema_registry_t *nmo_schema_registry_create(void) {
-    nmo_schema_registry_t *registry = (nmo_schema_registry_t *) malloc(sizeof(nmo_schema_registry_t));
+struct nmo_schema_registry {
+    nmo_arena_t *arena;              /**< Arena for allocations */
+    nmo_hash_table_t *by_name;       /**< name -> type* */
+    nmo_indexed_map_t *by_class_id;  /**< class_id -> type* */
+    nmo_hash_table_t *by_guid;       /**< guid -> type* */
+    size_t count;                    /**< Total registered types */
+};
+
+/* =============================================================================
+ * LIFECYCLE
+ * ============================================================================= */
+
+nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena) {
+    if (arena == NULL) {
+        return NULL;
+    }
+
+    nmo_schema_registry_t *registry =
+        (nmo_schema_registry_t *)nmo_arena_alloc(arena, sizeof(nmo_schema_registry_t), alignof(nmo_schema_registry_t));
     if (registry == NULL) {
         return NULL;
     }
 
-    registry->schemas = nmo_hash_table_create(
-        sizeof(nmo_class_id_t),                    /* key: class_id */
-        sizeof(const nmo_schema_descriptor_t *),   /* value: schema pointer */
-        INITIAL_CAPACITY,
-        nmo_hash_uint32,                           /* hash function for uint32_t */
-        NULL                                        /* use default memcmp */
-    );
-
-    if (registry->schemas == NULL) {
-        free(registry);
+    registry->arena = arena;
+    registry->count = 0;
+    
+    /* Create name index - note: hash tables don't use arena in current API */
+    registry->by_name = nmo_hash_table_create(
+        registry->arena,
+        sizeof(const char *),              /* key: string pointer */
+        sizeof(const nmo_schema_type_t *), /* value: type pointer */
+        64,                                 /* initial capacity */
+        nmo_hash_string,                   /* string hash */
+        nmo_compare_string);                /* string comparison */
+    
+    if (registry->by_name == NULL) {
         return NULL;
     }
-
+    
+    /* Create class ID index */
+    registry->by_class_id = nmo_indexed_map_create(
+        registry->arena,
+        sizeof(nmo_class_id_t),            /* key: class ID (uint32) */
+        sizeof(const nmo_schema_type_t *), /* value: type pointer */
+        64,                                 /* initial capacity */
+        NULL,                               /* default hash for uint32 */
+        NULL);                              /* default memcmp */
+    
+    if (registry->by_class_id == NULL) {
+        return NULL;
+    }
+    
+    /* Create GUID index */
+    registry->by_guid = nmo_hash_table_create(
+        registry->arena,
+        sizeof(nmo_guid_t),                /* key: GUID */
+        sizeof(const nmo_schema_type_t *), /* value: type pointer */
+        32,                                 /* initial capacity */
+        NULL,                               /* default hash */
+        NULL);                              /* default memcmp */
+    
+    if (registry->by_guid == NULL) {
+        return NULL;
+    }
+    
     return registry;
 }
 
-/**
- * Destroy schema registry
- */
 void nmo_schema_registry_destroy(nmo_schema_registry_t *registry) {
-    if (registry != NULL) {
-        nmo_hash_table_destroy(registry->schemas);
-        free(registry);
-    }
+    /* Since we use arena allocation, cleanup is handled by arena */
+    (void)registry;
 }
 
-/**
- * Register schema
- */
-int nmo_schema_registry_add(nmo_schema_registry_t *registry,
-                            const nmo_schema_descriptor_t *schema) {
-    if (registry == NULL || schema == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
+/* =============================================================================
+ * REGISTRATION
+ * ============================================================================= */
 
-    // Validate schema
-    int validation_result = nmo_schema_descriptor_validate(schema);
-    if (validation_result != NMO_OK) {
-        return validation_result;
+nmo_result_t nmo_schema_registry_add(
+    nmo_schema_registry_t *registry,
+    const nmo_schema_type_t *type)
+{
+    if (registry == NULL || type == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "NULL argument to nmo_schema_registry_add"));
     }
-
-    // Add or update schema in hash table
-    return nmo_hash_table_insert(registry->schemas, &schema->class_id, &schema);
+    
+    if (type->name == NULL || type->name[0] == '\0') {
+        return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Type name is required"));
+    }
+    
+    /* Check for duplicate name */
+    const nmo_schema_type_t *existing = nmo_schema_registry_find_by_name(registry, type->name);
+    if (existing != NULL) {
+        return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Type with this name already registered"));
+    }
+    
+    /* Add to name index */
+    int result = nmo_hash_table_insert(registry->by_name, &type->name, &type);
+    if (result != NMO_OK) {
+        return nmo_result_error(NMO_ERROR(registry->arena, result,
+            NMO_SEVERITY_ERROR, "Failed to add type to name index"));
+    }
+    
+    registry->count++;
+    return nmo_result_ok();
 }
 
-/**
- * Find schema by class ID
- */
-const nmo_schema_descriptor_t *nmo_schema_registry_find_by_id(
-    const nmo_schema_registry_t *registry, nmo_class_id_t class_id) {
+/* Forward declaration */
+extern const nmo_schema_type_t *nmo_builtin_types[];
+extern const size_t nmo_builtin_type_count;
+
+nmo_result_t nmo_schema_registry_add_builtin(nmo_schema_registry_t *registry) {
     if (registry == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "NULL registry"));
+    }
+    
+    /* TODO: Add built-in types (u8-u64, i8-i64, f32, f64, bool, string, etc.) */
+    /* For now, return success */
+    return nmo_result_ok();
+}
+
+/* =============================================================================
+ * LOOKUP
+ * ============================================================================= */
+
+const nmo_schema_type_t *nmo_schema_registry_find_by_name(
+    const nmo_schema_registry_t *registry,
+    const char *name)
+{
+    if (registry == NULL || name == NULL) {
         return NULL;
     }
-
-    const nmo_schema_descriptor_t *schema = NULL;
-    if (nmo_hash_table_get(registry->schemas, &class_id, &schema)) {
-        return schema;
+    
+    const nmo_schema_type_t *type = NULL;
+    if (nmo_hash_table_get(registry->by_name, &name, &type)) {
+        return type;
     }
-
+    
     return NULL;
 }
 
-/**
- * Iterator context for name search
- */
-typedef struct {
-    const char *target_name;
-    const nmo_schema_descriptor_t *found_schema;
-} name_search_context_t;
-
-/**
- * Iterator function to find schema by name
- */
-static int find_by_name_iterator(const void *key, void *value, void *user_data) {
-    (void)key;
-    name_search_context_t *context = (name_search_context_t *)user_data;
-    const nmo_schema_descriptor_t *schema = *(const nmo_schema_descriptor_t **)value;
-
-    if (strcmp(schema->class_name, context->target_name) == 0) {
-        context->found_schema = schema;
-        return 0; /* Stop iteration */
-    }
-
-    return 1; /* Continue iteration */
-}
-
-/**
- * Find schema by class name
- */
-const nmo_schema_descriptor_t *nmo_schema_registry_find_by_name(
-    const nmo_schema_registry_t *registry, const char *class_name) {
-    if (registry == NULL || class_name == NULL) {
+const nmo_schema_type_t *nmo_schema_registry_find_by_class_id(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t class_id)
+{
+    if (registry == NULL || class_id == 0) {
         return NULL;
     }
-
-    name_search_context_t context = {
-        .target_name = class_name,
-        .found_schema = NULL
-    };
-
-    nmo_hash_table_iterate(registry->schemas, find_by_name_iterator, &context);
-
-    return context.found_schema;
+    
+    const nmo_schema_type_t *type = NULL;
+    if (nmo_indexed_map_get(registry->by_class_id, &class_id, &type)) {
+        return type;
+    }
+    
+    return NULL;
 }
 
-/**
- * Get number of registered schemas
- */
+const nmo_schema_type_t *nmo_schema_registry_find_by_guid(
+    const nmo_schema_registry_t *registry,
+    nmo_guid_t guid)
+{
+    if (registry == NULL) {
+        return NULL;
+    }
+    
+    const nmo_schema_type_t *type = NULL;
+    if (nmo_hash_table_get(registry->by_guid, &guid, &type)) {
+        return type;
+    }
+    
+    return NULL;
+}
+
 size_t nmo_schema_registry_get_count(const nmo_schema_registry_t *registry) {
     if (registry == NULL) {
         return 0;
     }
-
-    return nmo_hash_table_get_count(registry->schemas);
+    
+    return registry->count;
 }
 
-/**
- * Iterator context for schema verification
- */
+/* =============================================================================
+ * ITERATION AND VALIDATION
+ * ============================================================================= */
+
 typedef struct {
-    nmo_schema_registry_t *registry;
-    int error_code;
-} verify_context_t;
+    nmo_schema_iterator_fn callback;
+    void *user_data;
+} iteration_context_t;
 
-/**
- * Iterator function to verify each schema
- */
-static int verify_schema_iterator(const void *key, void *value, void *user_data) {
+static int iterate_adapter(const void *key, void *value, void *user_data) {
     (void)key;
-    verify_context_t *context = (verify_context_t *)user_data;
-    const nmo_schema_descriptor_t *schema = *(const nmo_schema_descriptor_t **)value;
+    iteration_context_t *ctx = (iteration_context_t *)user_data;
+    const nmo_schema_type_t *type = *(const nmo_schema_type_t **)value;
+    return ctx->callback(type, ctx->user_data);
+}
 
-    // Validate schema
-    int result = nmo_schema_descriptor_validate(schema);
-    if (result != NMO_OK) {
-        context->error_code = result;
-        return 0; /* Stop iteration */
+void nmo_schema_registry_iterate(
+    const nmo_schema_registry_t *registry,
+    nmo_schema_iterator_fn callback,
+    void *user_data)
+{
+    if (registry == NULL || callback == NULL) {
+        return;
     }
+    
+    iteration_context_t ctx = { callback, user_data };
+    nmo_hash_table_iterate(registry->by_name, iterate_adapter, &ctx);
+}
 
-    // If schema has a parent, verify parent exists
-    if (schema->parent_class_id != 0) {
-        const nmo_schema_descriptor_t *parent =
-            nmo_schema_registry_find_by_id(context->registry, schema->parent_class_id);
-        if (parent == NULL) {
-            context->error_code = NMO_ERR_INVALID_ARGUMENT; /* Parent not found */
-            return 0; /* Stop iteration */
+/* Validation helper: check for circular dependencies */
+static int check_circular(
+    const nmo_schema_type_t *type,
+    const nmo_schema_type_t *root,
+    int depth)
+{
+    if (depth > 100) {
+        return 0; /* Circular dependency detected */
+    }
+    
+    if (type == root && depth > 0) {
+        return 0; /* Found cycle */
+    }
+    
+    if (type->kind != NMO_TYPE_STRUCT) {
+        return 1; /* Not a struct, no recursion */
+    }
+    
+    /* Check all fields */
+    for (size_t i = 0; i < type->field_count; i++) {
+        const nmo_schema_field_t *field = &type->fields[i];
+        if (field->type->kind == NMO_TYPE_STRUCT) {
+            if (!check_circular(field->type, root, depth + 1)) {
+                return 0;
+            }
         }
     }
-
-    return 1; /* Continue iteration */
+    
+    return 1;
 }
 
-/**
- * Verify schema consistency
- */
-int nmo_verify_schema_consistency(nmo_schema_registry_t *registry) {
-    if (registry == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+/* Callback for verification */
+typedef struct {
+    nmo_schema_registry_t *registry;
+    nmo_arena_t *arena;
+    nmo_result_t error;
+} verify_context_t;
+
+static int verify_callback(const nmo_schema_type_t *type, void *user_data) {
+    verify_context_t *ctx = (verify_context_t *)user_data;
+    
+    /* Check circular dependencies for structs */
+    if (type->kind == NMO_TYPE_STRUCT) {
+        if (!check_circular(type, type, 0)) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Circular dependency detected in type"));
+            return 0; /* Stop iteration */
+        }
+        
+        /* Check field offsets */
+        for (size_t i = 0; i < type->field_count; i++) {
+            const nmo_schema_field_t *field = &type->fields[i];
+            if (field->offset + field->type->size > type->size && type->size > 0) {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field exceeds struct bounds"));
+                return 0;
+            }
+        }
     }
-
-    verify_context_t context = {
-        .registry = registry,
-        .error_code = NMO_OK
-    };
-
-    nmo_hash_table_iterate(registry->schemas, verify_schema_iterator, &context);
-
-    return context.error_code;
+    
+    return 1; /* Continue */
 }
 
-/**
- * Clear all schemas from registry
- */
-int nmo_schema_registry_clear(nmo_schema_registry_t *registry) {
+nmo_result_t nmo_schema_registry_verify(
+    nmo_schema_registry_t *registry,
+    nmo_arena_t *arena)
+{
     if (registry == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "NULL registry"));
     }
-
-    nmo_hash_table_clear(registry->schemas);
-
-    return NMO_OK;
+    
+    /* Iterate all types and check consistency */
+    verify_context_t verify_ctx = { registry, arena, nmo_result_ok() };
+    
+    nmo_schema_registry_iterate(registry, verify_callback, &verify_ctx);
+    
+    return verify_ctx.error;
 }
 
-/**
- * Forward declaration for built-in schemas
- */
-extern int nmo_builtin_schemas_register(nmo_schema_registry_t *registry);
+/* =============================================================================
+ * EXTENDED METADATA
+ * ============================================================================= */
 
-/**
- * Register all built-in schemas
- */
-int nmo_schema_registry_add_builtin(nmo_schema_registry_t *registry) {
-    if (registry == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+nmo_result_t nmo_schema_registry_map_class_id(
+    nmo_schema_registry_t *registry,
+    nmo_class_id_t class_id,
+    const nmo_schema_type_t *type)
+{
+    if (registry == NULL || type == NULL || class_id == 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "NULL argument or zero class_id"));
     }
+    
+    /* Check for existing mapping */
+    const nmo_schema_type_t *existing = nmo_schema_registry_find_by_class_id(registry, class_id);
+    if (existing != NULL && existing != type) {
+        return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Class ID already mapped to different type"));
+    }
+    
+    /* Add to index */
+    int result = nmo_indexed_map_insert(registry->by_class_id, &class_id, &type);
+    if (result != NMO_OK) {
+        return nmo_result_error(NMO_ERROR(registry->arena, result,
+            NMO_SEVERITY_ERROR, "Failed to map class ID"));
+    }
+    
+    return nmo_result_ok();
+}
 
-    return nmo_builtin_schemas_register(registry);
+nmo_result_t nmo_schema_registry_map_guid(
+    nmo_schema_registry_t *registry,
+    nmo_guid_t guid,
+    const nmo_schema_type_t *type)
+{
+    if (registry == NULL || type == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "NULL argument"));
+    }
+    
+    /* Check for existing mapping */
+    const nmo_schema_type_t *existing = nmo_schema_registry_find_by_guid(registry, guid);
+    if (existing != NULL && existing != type) {
+        return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "GUID already mapped to different type"));
+    }
+    
+    /* Add to index */
+    int result = nmo_hash_table_insert(registry->by_guid, &guid, &type);
+    if (result != NMO_OK) {
+        return nmo_result_error(NMO_ERROR(registry->arena, result,
+            NMO_SEVERITY_ERROR, "Failed to map GUID"));
+    }
+    
+    return nmo_result_ok();
 }

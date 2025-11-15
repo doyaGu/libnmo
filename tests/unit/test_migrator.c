@@ -6,9 +6,12 @@
 #include "../test_framework.h"
 #include "schema/nmo_migrator.h"
 #include "schema/nmo_schema_registry.h"
+#include "core/nmo_arena.h"
 
 TEST(migrator, create_destroy) {
-    nmo_schema_registry_t *registry = nmo_schema_registry_create();
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    ASSERT_NOT_NULL(arena);
+    nmo_schema_registry_t *registry = nmo_schema_registry_create(arena);
     ASSERT_NOT_NULL(registry);
 
     nmo_migrator_t *migrator = nmo_migrator_create(registry);
@@ -16,6 +19,7 @@ TEST(migrator, create_destroy) {
 
     nmo_migrator_destroy(migrator);
     nmo_schema_registry_destroy(registry);
+    nmo_arena_destroy(arena);
 }
 
 TEST(migrator, create_null_registry) {
@@ -24,7 +28,9 @@ TEST(migrator, create_null_registry) {
 }
 
 TEST(migrator, can_migrate_same_version) {
-    nmo_schema_registry_t *registry = nmo_schema_registry_create();
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    ASSERT_NOT_NULL(arena);
+    nmo_schema_registry_t *registry = nmo_schema_registry_create(arena);
     ASSERT_NOT_NULL(registry);
 
     nmo_migrator_t *migrator = nmo_migrator_create(registry);
@@ -36,6 +42,7 @@ TEST(migrator, can_migrate_same_version) {
 
     nmo_migrator_destroy(migrator);
     nmo_schema_registry_destroy(registry);
+    nmo_arena_destroy(arena);
 }
 
 TEST(migrator, destroy_null) {
