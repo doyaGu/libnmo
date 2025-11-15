@@ -101,7 +101,9 @@ set(NMO_CORE_SOURCES
     src/core/string.c
     src/core/hash.c
     src/core/hash_table.c
+    src/core/hash_set.c
     src/core/indexed_map.c
+    src/core/list.c
     src/core/shared_library.c
 )
 

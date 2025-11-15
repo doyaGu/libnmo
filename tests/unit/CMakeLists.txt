@@ -15,7 +15,9 @@ add_unit_test(test_array)
 add_unit_test(test_bit_array)
 add_unit_test(test_string)
 add_unit_test(test_hash_table)
+add_unit_test(test_hash_set)
 add_unit_test(test_indexed_map)
+add_unit_test(test_list)
 
 # IO layer tests
 # Note: Old IO API tests have been removed (test_io_file, test_io_memory, 
