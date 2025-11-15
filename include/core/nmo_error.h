@@ -46,6 +46,7 @@ typedef enum nmo_error_code {
     NMO_ERR_INTERNAL,             /**< Internal error */
     NMO_ERR_OUT_OF_BOUNDS,        /**< Index out of bounds */
     NMO_ERR_NOT_FOUND,            /**< Item not found */
+    NMO_ERR_ALREADY_EXISTS,       /**< Item already exists */
     NMO_ERR_CORRUPT,              /**< Corrupted data */
 } nmo_error_code_t;
 

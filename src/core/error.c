@@ -26,6 +26,12 @@ static const char *error_messages[] = {
     [NMO_ERR_INVALID_STATE] = "Invalid state",
     [NMO_ERR_NOT_IMPLEMENTED] = "Not implemented",
     [NMO_ERR_UNKNOWN] = "Unknown error",
+    [NMO_ERR_NOT_SUPPORTED] = "Operation not supported",
+    [NMO_ERR_INTERNAL] = "Internal error",
+    [NMO_ERR_OUT_OF_BOUNDS] = "Index out of bounds",
+    [NMO_ERR_NOT_FOUND] = "Item not found",
+    [NMO_ERR_ALREADY_EXISTS] = "Item already exists",
+    [NMO_ERR_CORRUPT] = "Corrupted data",
 };
 
 nmo_error_t *nmo_error_create(nmo_arena_t *arena,

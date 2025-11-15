@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_hash.h"
+#include "core/nmo_hash_common.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_container_lifecycle.h"
 #include <stddef.h>
@@ -21,23 +22,6 @@ extern "C" {
  * @brief Hash table opaque type
  */
 typedef struct nmo_hash_table nmo_hash_table_t;
-
-/**
- * @brief Hash function type
- * @param key Key to hash
- * @param key_size Size of key in bytes
- * @return Hash value
- */
-typedef size_t (*nmo_hash_func_t)(const void *key, size_t key_size);
-
-/**
- * @brief Key comparison function type
- * @param key1 First key
- * @param key2 Second key
- * @param key_size Size of keys in bytes
- * @return 0 if equal, non-zero otherwise
- */
-typedef int (*nmo_key_compare_func_t)(const void *key1, const void *key2, size_t key_size);
 
 /**
  * @brief Create a hash table
