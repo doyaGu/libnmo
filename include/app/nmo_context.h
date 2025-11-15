@@ -19,6 +19,7 @@ typedef struct nmo_logger nmo_logger_t;
 typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_plugin_manager nmo_plugin_manager_t;
+typedef struct nmo_arena nmo_arena_t;
 
 /**
  * @brief Global context structure
@@ -120,6 +121,14 @@ NMO_API nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx);
  * @return Logger
  */
 NMO_API nmo_logger_t *nmo_context_get_logger(const nmo_context_t *ctx);
+
+/**
+ * @brief Get the arena owned by the context
+ *
+ * @param ctx Context
+ * @return Arena pointer or NULL
+ */
+NMO_API nmo_arena_t *nmo_context_get_arena(const nmo_context_t *ctx);
 
 /**
  * @brief Get reference count (for debugging)

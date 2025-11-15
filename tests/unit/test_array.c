@@ -34,6 +34,19 @@ static void teardown_buffer_test(void) {
     }
 }
 
+typedef struct tracked_value {
+    uint32_t id;
+} tracked_value_t;
+
+static void tracked_value_dispose(void *element, void *user_data) {
+    if (element == NULL || user_data == NULL) {
+        return;
+    }
+    const tracked_value_t *value = (const tracked_value_t *)element;
+    uint32_t *total = (uint32_t *)user_data;
+    *total += value->id;
+}
+
 /* ============================================================================
  * Initialization Tests
  * ========================================================================== */
@@ -589,6 +602,48 @@ TEST(buffer, clear_and_reuse) {
     uint32_t *data = (uint32_t *)buffer.data;
     ASSERT_EQ(data[0], 456);
 
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, lifecycle_dispose_callbacks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_array_t buffer;
+    ASSERT_EQ(NMO_OK, nmo_array_init(&buffer, sizeof(tracked_value_t), 0, arena).code);
+
+    uint32_t disposed_total = 0;
+    nmo_container_lifecycle_t lifecycle = {
+        .dispose = tracked_value_dispose,
+        .user_data = &disposed_total
+    };
+    nmo_array_set_lifecycle(&buffer, &lifecycle);
+
+    tracked_value_t v1 = {1}, v2 = {2}, v3 = {3}, v4 = {7}, replacement = {5};
+
+    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v1).code);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v2).code);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v3).code);
+
+    ASSERT_EQ(NMO_OK, nmo_array_set(&buffer, 1, &replacement).code);
+    ASSERT_EQ(2u, disposed_total);
+
+    ASSERT_EQ(NMO_OK, nmo_array_remove(&buffer, 0, NULL).code);
+    ASSERT_EQ(3u, disposed_total);
+
+    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v4).code);
+    ASSERT_EQ(NMO_OK, nmo_array_pop(&buffer, NULL).code);
+    ASSERT_EQ(10u, disposed_total);
+
+    nmo_array_clear(&buffer);
+    ASSERT_EQ(18u, disposed_total);
+
+    nmo_array_set_lifecycle(&buffer, NULL);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v1).code);
+    ASSERT_EQ(NMO_OK, nmo_array_pop(&buffer, NULL).code);
+    ASSERT_EQ(18u, disposed_total);
+
+    nmo_array_dispose(&buffer);
     nmo_arena_destroy(arena);
 }
 
@@ -1311,6 +1366,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(buffer, clear_resets_count);
     REGISTER_TEST(buffer, clear_empty_buffer);
     REGISTER_TEST(buffer, clear_and_reuse);
+    REGISTER_TEST(buffer, lifecycle_dispose_callbacks);
 
     /* Set Data Operation Tests */
     REGISTER_TEST(buffer, set_data_basic);

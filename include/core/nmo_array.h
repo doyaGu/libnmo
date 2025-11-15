@@ -10,6 +10,7 @@
 #include "nmo_error.h"
 #include "nmo_arena.h"
 #include "nmo_allocator.h"
+#include "nmo_container_lifecycle.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,7 @@ typedef struct nmo_array {
     nmo_allocator_t allocator; /**< Allocator copy when using heap mode */
     int use_allocator;         /**< Non-zero if allocator mode is active */
     int owns_data;             /**< Tracks ownership for allocator-backed data */
+    nmo_container_lifecycle_t lifecycle; /**< Optional lifecycle hooks */
 } nmo_array_t;
 
 /**
@@ -64,6 +66,19 @@ NMO_API nmo_result_t nmo_array_init_with_allocator(nmo_array_t *array,
                                                     size_t element_size,
                                                     size_t initial_capacity,
                                                     const nmo_allocator_t *allocator);
+
+/**
+ * @brief Configure lifecycle callbacks for stored elements.
+ *
+ * When a dispose callback is provided it is invoked for every element that
+ * leaves the array (overwrite, remove, pop, clear, dispose, set_data).
+ * Passing NULL resets the lifecycle to a no-op configuration.
+ *
+ * @param array  Array to configure (required)
+ * @param lifecycle Lifecycle hooks (NULL to reset)
+ */
+NMO_API void nmo_array_set_lifecycle(nmo_array_t *array,
+                                     const nmo_container_lifecycle_t *lifecycle);
 
 /**
  * @brief Reserve capacity in array
@@ -192,7 +207,9 @@ NMO_API void *nmo_array_back(const nmo_array_t *array);
 /**
  * @brief Clear array (reset count to 0)
  *
- * Does not deallocate memory, just resets the count.
+ * Does not deallocate memory, just resets the count. If a lifecycle dispose
+ * callback is configured it will be executed for each element before the
+ * logical contents are dropped.
  *
  * @param array array to clear (required)
  */
@@ -260,7 +277,7 @@ NMO_API void nmo_array_dispose(nmo_array_t *array);
  * Usage: NMO_ARRAY_INIT(uint32_t, 16, arena)
  */
 #define NMO_ARRAY_INIT(type, initial_capacity, arena_ptr) \
-    { NULL, 0, 0, sizeof(type), arena_ptr }
+    { NULL, 0, 0, sizeof(type), (arena_ptr), { NULL, NULL, NULL }, 0, 0, NMO_CONTAINER_LIFECYCLE_INIT }
 
 /**
  * @brief Get typed element from array

@@ -90,8 +90,17 @@ TEST(subchunks, create_and_write_subchunks) {
     nmo_chunk_t* parent = nmo_chunk_writer_finalize(parent_writer);
     ASSERT_NOT_NULL(parent);
 
-    // Verify CHN option flag is set
+    // Verify CHN option flag and chunk ref IntList layout
     ASSERT_TRUE((parent->chunk_options & NMO_CHUNK_OPTION_CHN) != 0);
+    ASSERT_NOT_NULL(parent->chunk_refs);
+    ASSERT_EQ(4u, parent->chunk_ref_count);
+    ASSERT_EQ(0xFFFFFFFFu, parent->chunk_refs[0]);  // Sentinel before packed list
+    ASSERT_EQ(0u, parent->chunk_refs[1]);          // Sequence header offset
+    ASSERT_NE(0xFFFFFFFFu, parent->chunk_refs[2]);
+    ASSERT_NE(0xFFFFFFFFu, parent->chunk_refs[3]);
+    ASSERT_LT(parent->chunk_refs[2], parent->data_size);
+    ASSERT_LT(parent->chunk_refs[3], parent->data_size);
+    ASSERT_GT(parent->chunk_refs[3], parent->chunk_refs[2]);
 
     // Cleanup
     nmo_chunk_writer_destroy(parent_writer);
@@ -255,7 +264,44 @@ TEST(subchunks, read_subchunks) {
     nmo_arena_destroy(sub_arena);
 }
 
+TEST(subchunks, standalone_subchunk_refs) {
+    nmo_arena_t* parent_arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(parent_arena);
+
+    nmo_arena_t* sub_arena = nmo_arena_create(NULL, 2048);
+    ASSERT_NOT_NULL(sub_arena);
+
+    // Build a simple sub-chunk
+    nmo_chunk_writer_t* sub_writer = nmo_chunk_writer_create(sub_arena);
+    ASSERT_NOT_NULL(sub_writer);
+    nmo_chunk_writer_start(sub_writer, 0x0F0F0F0F, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_int(sub_writer, 42));
+    nmo_chunk_t* sub = nmo_chunk_writer_finalize(sub_writer);
+    ASSERT_NOT_NULL(sub);
+
+    // Parent without StartSubChunkSequence should still track offsets
+    nmo_chunk_writer_t* parent_writer = nmo_chunk_writer_create(parent_arena);
+    ASSERT_NOT_NULL(parent_writer);
+    nmo_chunk_writer_start(parent_writer, 0x01020304, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_subchunk(parent_writer, sub));
+    nmo_chunk_t* parent = nmo_chunk_writer_finalize(parent_writer);
+    ASSERT_NOT_NULL(parent);
+
+    ASSERT_TRUE((parent->chunk_options & NMO_CHUNK_OPTION_CHN) != 0);
+    ASSERT_EQ(1u, parent->chunk_ref_count);
+    ASSERT_NOT_NULL(parent->chunk_refs);
+    ASSERT_NE(0xFFFFFFFFu, parent->chunk_refs[0]);
+    ASSERT_EQ(0u, parent->chunk_refs[0]);  // First entry starts at beginning
+    ASSERT_LT(parent->chunk_refs[0], parent->data_size);
+
+    nmo_chunk_writer_destroy(parent_writer);
+    nmo_chunk_writer_destroy(sub_writer);
+    nmo_arena_destroy(parent_arena);
+    nmo_arena_destroy(sub_arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(subchunks, create_and_write_subchunks);
     REGISTER_TEST(subchunks, read_subchunks);
+    REGISTER_TEST(subchunks, standalone_subchunk_refs);
 TEST_MAIN_END()

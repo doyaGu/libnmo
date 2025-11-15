@@ -38,6 +38,7 @@ void test_hash_table_reserve(void) {
     /* Test without reserve */
     double start = get_time_ms();
     nmo_hash_table_t *table1 = nmo_hash_table_create(
+        NULL,
         sizeof(uint32_t), sizeof(uint32_t), 16, NULL, NULL
     );
     for (size_t i = 0; i < num_items; i++) {
@@ -51,6 +52,7 @@ void test_hash_table_reserve(void) {
     /* Test with reserve */
     start = get_time_ms();
     nmo_hash_table_t *table2 = nmo_hash_table_create(
+        NULL,
         sizeof(uint32_t), sizeof(uint32_t), 16, NULL, NULL
     );
     nmo_hash_table_reserve(table2, num_items);  /* Pre-allocate */

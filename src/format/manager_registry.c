@@ -8,8 +8,10 @@
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_arena.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdalign.h>
 
 #define INITIAL_CAPACITY 16
 
@@ -17,6 +19,7 @@
  * @brief Manager registry structure
  */
 typedef struct nmo_manager_registry {
+    nmo_arena_t *arena;
     nmo_indexed_map_t *managers_by_id;   /* manager_id -> nmo_manager_t* */
     nmo_indexed_map_t *managers_by_guid; /* nmo_guid_t -> nmo_manager_t* */
 } nmo_manager_registry_t;
@@ -30,35 +33,43 @@ static size_t nmo_map_hash_guid(const void *key, size_t key_size) {
 /**
  * Create manager registry
  */
-nmo_manager_registry_t *nmo_manager_registry_create(void) {
-    nmo_manager_registry_t *registry = (nmo_manager_registry_t *) malloc(sizeof(nmo_manager_registry_t));
+nmo_manager_registry_t *nmo_manager_registry_create(nmo_arena_t *arena) {
+    if (arena == NULL) {
+        return NULL;
+    }
+
+    nmo_manager_registry_t *registry =
+        (nmo_manager_registry_t *)nmo_arena_alloc(arena, sizeof(nmo_manager_registry_t), alignof(nmo_manager_registry_t));
     if (registry == NULL) {
         return NULL;
     }
 
+    memset(registry, 0, sizeof(*registry));
+    registry->arena = arena;
+
     registry->managers_by_id = nmo_indexed_map_create(
-        sizeof(uint32_t),           /* key: manager_id */
-        sizeof(nmo_manager_t *),    /* value: manager pointer */
+        arena,
+        sizeof(uint32_t),
+        sizeof(nmo_manager_t *),
         INITIAL_CAPACITY,
-        nmo_map_hash_uint32,        /* hash function for uint32_t */
-        NULL                        /* use default memcmp */
+        nmo_map_hash_uint32,
+        NULL
     );
 
     if (registry->managers_by_id == NULL) {
-        free(registry);
         return NULL;
     }
 
     registry->managers_by_guid = nmo_indexed_map_create(
+        arena,
         sizeof(nmo_guid_t),
         sizeof(nmo_manager_t *),
         INITIAL_CAPACITY,
         nmo_map_hash_guid,
-        NULL);
+        NULL
+    );
 
     if (registry->managers_by_guid == NULL) {
-        nmo_indexed_map_destroy(registry->managers_by_id);
-        free(registry);
         return NULL;
     }
 
@@ -81,7 +92,6 @@ void nmo_manager_registry_destroy(nmo_manager_registry_t *registry) {
 
         nmo_indexed_map_destroy(registry->managers_by_id);
         nmo_indexed_map_destroy(registry->managers_by_guid);
-        free(registry);
     }
 }
 
