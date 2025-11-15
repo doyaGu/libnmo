@@ -2,6 +2,8 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 // Error message table
 static const char *error_messages[] = {
@@ -91,4 +93,57 @@ nmo_result_t nmo_result_error(nmo_error_t *error) {
         .error = error
     };
     return result;
+}
+
+static char *nmo_error_alloc_message(nmo_arena_t *arena, size_t length) {
+    size_t bytes = length + 1;
+    if (arena != NULL) {
+        return (char *) nmo_arena_alloc(arena, bytes, 1);
+    }
+    nmo_allocator_t alloc = nmo_allocator_default();
+    return (char *) nmo_alloc(&alloc, bytes, 1);
+}
+
+nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
+                               nmo_error_code_t code,
+                               nmo_severity_t severity,
+                               const char *fmt, ...) {
+    if (fmt == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, code, severity,
+                                          "Invalid error format string"));
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, fmt, args_copy);
+    va_end(args_copy);
+
+    char *message = NULL;
+    int message_allocated = 0;
+    if (needed >= 0) {
+        message = nmo_error_alloc_message(arena, (size_t)needed);
+        if (message != NULL) {
+            (void)vsnprintf(message, (size_t)needed + 1, fmt, args);
+            message_allocated = 1;
+        }
+    }
+    va_end(args);
+
+    if (message == NULL) {
+        message = "Failed to format error message";
+    }
+
+    nmo_error_t *error = NMO_ERROR(arena, code, severity, message);
+    if (error == NULL) {
+        if (message_allocated && arena == NULL) {
+            nmo_allocator_t alloc = nmo_allocator_default();
+            nmo_free(&alloc, message);
+        }
+        nmo_result_t result = { code, NULL };
+        return result;
+    }
+
+    return nmo_result_error(error);
 }

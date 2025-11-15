@@ -133,6 +133,24 @@ NMO_API nmo_result_t nmo_result_ok(void);
  */
 NMO_API nmo_result_t nmo_result_error(nmo_error_t *error);
 
+/**
+ * @brief Create formatted error result with printf-style formatting
+ *
+ * Allocates storage for the error message using the provided arena or the
+ * default allocator when arena is NULL.
+ *
+ * @param arena Arena for allocations (optional)
+ * @param code Error code
+ * @param severity Severity level
+ * @param fmt printf-style format string
+ * @param ... Arguments for format string
+ * @return Result describing the error
+ */
+NMO_API nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
+                                       nmo_error_code_t code,
+                                       nmo_severity_t severity,
+                                       const char *fmt, ...);
+
 // Convenience macros
 #define NMO_ERROR(arena, code, severity, message) \
     nmo_error_create(arena, code, severity, message, __FILE__, __LINE__)
