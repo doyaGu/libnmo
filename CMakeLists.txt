@@ -179,6 +179,7 @@ set(NMO_APP_SOURCES
     src/app/finish_loading.c
     src/app/stats.c
     src/app/inspector.c
+    src/app/nmo_plugin_manager.c
 )
 
 # Combine all sources

@@ -5,6 +5,7 @@
 
 #include "app/nmo_parser.h"
 #include "app/nmo_session.h"
+#include "app/nmo_plugin.h"
 #include "app/nmo_context.h"
 #include "app/nmo_finish_loading.h"
 #include "core/nmo_arena.h"
@@ -26,6 +27,7 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "schema/nmo_schema_registry.h"
+#include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
 #include "miniz.h"  /* For decompression */
@@ -41,6 +43,41 @@
  * @param logger The logger for messages.
  * @return A new nmo_chunk_t* on success, or NULL on failure.
  */
+static const char *nmo_plugin_category_label(uint32_t category) {
+    switch (category) {
+        case NMO_PLUGIN_MANAGER_DLL:  return "Manager";
+        case NMO_PLUGIN_BEHAVIOR_DLL: return "Behavior";
+        case NMO_PLUGIN_RENDER_DLL:   return "Render";
+        case NMO_PLUGIN_SOUND_DLL:    return "Sound";
+        case NMO_PLUGIN_INPUT_DLL:    return "Input";
+        case NMO_PLUGIN_OBJECT_READER_DLL: return "ObjectReader";
+        case NMO_PLUGIN_CUSTOM_DLL: return "Custom";
+        default: return "Unknown";
+    }
+}
+
+static void nmo_format_guid_short(nmo_guid_t guid, char *buffer, size_t buffer_size) {
+    if (buffer == NULL || buffer_size == 0) {
+        return;
+    }
+    if (nmo_guid_format(guid, buffer, buffer_size) <= 0) {
+        buffer[0] = '\0';
+    }
+}
+
+static const char *nmo_copy_string_arena(nmo_arena_t *arena, const char *src) {
+    if (arena == NULL || src == NULL) {
+        return NULL;
+    }
+    size_t len = strlen(src);
+    char *copy = (char *) nmo_arena_alloc(arena, len + 1, 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+    memcpy(copy, src, len + 1);
+    return copy;
+}
+
 static nmo_chunk_t* nmo_default_serialize_object(nmo_object_t *obj, nmo_arena_t *arena, nmo_logger_t *logger) {
     if (!obj || !arena) {
         return NULL;
@@ -201,7 +238,7 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
 
     nmo_session_reset_reference_resolver(session);
 
-    (void) flags; /* Flags will be used in full implementation */
+    const int enforce_plugin_dependencies = (flags & NMO_LOAD_CHECK_DEPENDENCIES) != 0;
 
     /* Phase 1: Open IO */
     nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
@@ -326,6 +363,8 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         }
     }
 
+    nmo_session_set_plugin_dependencies(session, hdr1.plugin_deps, hdr1.plugin_dep_count);
+
     nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %zu plugins",
             hdr1.object_count, header.manager_count, hdr1.plugin_dep_count);
 
@@ -344,11 +383,110 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     nmo_log(logger, NMO_LOG_INFO, "Phase 6: Checking plugin dependencies (%zu plugins)",
             hdr1.plugin_dep_count);
 
+    size_t missing_plugins = 0;
+    size_t outdated_plugins = 0;
+    nmo_plugin_manager_t *plugin_manager = nmo_session_get_plugin_manager(session);
+    nmo_session_plugin_dependency_status_t *plugin_diag_entries = NULL;
+
+    if (hdr1.plugin_dep_count > 0) {
+        size_t diag_bytes = sizeof(nmo_session_plugin_dependency_status_t) * hdr1.plugin_dep_count;
+        plugin_diag_entries = (nmo_session_plugin_dependency_status_t *) nmo_arena_alloc(
+            arena,
+            diag_bytes,
+            sizeof(void *)
+        );
+        if (plugin_diag_entries != NULL) {
+            memset(plugin_diag_entries, 0, diag_bytes);
+        } else {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Unable to allocate plugin diagnostics buffer (%zu bytes)", diag_bytes);
+        }
+    }
+
+    if (hdr1.plugin_dep_count > 0 && plugin_manager == NULL) {
+        nmo_log(logger, NMO_LOG_WARN, "  Plugin dependencies present but plugin manager is unavailable");
+    }
+
     for (size_t i = 0; i < hdr1.plugin_dep_count; i++) {
         nmo_plugin_dep_t *dep = &hdr1.plugin_deps[i];
-        nmo_log(logger, NMO_LOG_INFO, "  Plugin %zu: category=%u, version=%u",
-                i, dep->category, dep->version);
-        /* TODO: Actual plugin availability check */
+        char guid_buffer[32];
+        nmo_format_guid_short(dep->guid, guid_buffer, sizeof(guid_buffer));
+
+        nmo_session_plugin_dependency_status_t *diag_entry = NULL;
+        if (plugin_diag_entries != NULL) {
+            diag_entry = &plugin_diag_entries[i];
+            diag_entry->guid = dep->guid;
+            diag_entry->category = (nmo_plugin_category_t) dep->category;
+            diag_entry->required_version = dep->version;
+        }
+
+        const nmo_plugin_t *registered = plugin_manager
+            ? nmo_plugin_manager_find_by_guid(plugin_manager, dep->guid)
+            : NULL;
+
+        if (registered == NULL) {
+            missing_plugins++;
+            if (diag_entry != NULL) {
+                diag_entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
+                if (plugin_manager == NULL) {
+                    diag_entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE;
+                }
+            }
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Missing plugin %zu: guid=%s category=%s version=%u",
+                    i,
+                    guid_buffer,
+                    nmo_plugin_category_label(dep->category),
+                    dep->version);
+            continue;
+        }
+
+        if (diag_entry != NULL) {
+            diag_entry->resolved_version = registered->version;
+            if (registered->name != NULL) {
+                diag_entry->resolved_name = nmo_copy_string_arena(arena, registered->name);
+            }
+        }
+
+        if (registered->version < dep->version) {
+            outdated_plugins++;
+            if (diag_entry != NULL) {
+                diag_entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD;
+            }
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Plugin %s (guid=%s) version %u is older than required version %u",
+                    registered->name ? registered->name : "<unnamed>",
+                    guid_buffer,
+                    registered->version,
+                    dep->version);
+        } else {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Plugin %s (guid=%s) satisfied dependency (version=%u)",
+                    registered->name ? registered->name : "<unnamed>",
+                    guid_buffer,
+                    registered->version);
+        }
+    }
+
+    if (hdr1.plugin_dep_count > 0 || plugin_manager != NULL) {
+        size_t entry_count = hdr1.plugin_dep_count;
+        nmo_session_set_plugin_diagnostics(
+            session,
+            plugin_diag_entries,
+            entry_count,
+            missing_plugins,
+            outdated_plugins,
+            plugin_manager != NULL ? 1 : 0);
+    } else {
+        nmo_session_set_plugin_diagnostics(session, NULL, 0, 0, 0, plugin_manager != NULL ? 1 : 0);
+    }
+
+    if (missing_plugins > 0 && enforce_plugin_dependencies) {
+        nmo_log(logger, NMO_LOG_ERROR,
+                "Missing %zu required plugin(s); aborting due to NMO_LOAD_CHECK_DEPENDENCIES", missing_plugins);
+        nmo_load_session_destroy(load_session);
+        nmo_io_close(io);
+        return NMO_ERR_NOT_FOUND;
     }
 
     /* Phase 7: Manager Pre-Load Hooks */
@@ -988,10 +1126,64 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
 
     /* Phase 8: Build Plugin Dependencies List */
     nmo_log(logger, NMO_LOG_INFO, "Phase 8: Building plugin dependencies");
-    /* TODO: Build plugin dependency list based on object classes */
-    /* For now, use empty plugin list */
+
+    uint32_t stored_plugin_count = 0;
+    nmo_plugin_dep_t *stored_plugin_deps = nmo_session_get_plugin_dependencies(session, &stored_plugin_count);
+
     size_t plugin_count = 0;
     nmo_plugin_dep_t *plugin_deps = NULL;
+
+    if (stored_plugin_deps != NULL && stored_plugin_count > 0) {
+        plugin_deps = stored_plugin_deps;
+        plugin_count = stored_plugin_count;
+        nmo_log(logger, NMO_LOG_INFO,
+                "  Using %zu plugin dependency entries preserved in session metadata",
+                plugin_count);
+    } else {
+        nmo_plugin_manager_t *plugin_manager = nmo_session_get_plugin_manager(session);
+        if (plugin_manager != NULL) {
+            size_t registered_count = 0;
+            const nmo_plugin_instance_info_t *instances =
+                nmo_plugin_manager_get_plugins(plugin_manager, &registered_count);
+
+            if (instances != NULL && registered_count > 0) {
+                size_t deps_size = registered_count * sizeof(nmo_plugin_dep_t);
+                plugin_deps = (nmo_plugin_dep_t *) nmo_arena_alloc(arena, deps_size, sizeof(void *));
+                if (plugin_deps == NULL) {
+                    nmo_log(logger, NMO_LOG_ERROR,
+                            "Failed to allocate plugin dependency table (%zu bytes)", deps_size);
+                    nmo_id_remap_plan_destroy(remap_plan);
+                    return NMO_ERR_NOMEM;
+                }
+
+                for (size_t i = 0; i < registered_count; ++i) {
+                    const nmo_plugin_t *plugin = instances[i].plugin;
+                    if (plugin != NULL) {
+                        plugin_deps[i].guid = plugin->guid;
+                        plugin_deps[i].category = plugin->category;
+                        plugin_deps[i].version = plugin->version;
+                    } else {
+                        plugin_deps[i].guid = NMO_GUID_NULL;
+                        plugin_deps[i].category = NMO_PLUGIN_CUSTOM_DLL;
+                        plugin_deps[i].version = 0;
+                    }
+                }
+
+                plugin_count = registered_count;
+                nmo_session_set_plugin_dependencies(session, plugin_deps, (uint32_t) plugin_count);
+                nmo_log(logger, NMO_LOG_INFO,
+                        "  Derived %zu plugin dependency entries from plugin manager", plugin_count);
+            } else {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "  Plugin manager reported no registered plugins; dependency table empty");
+                nmo_session_set_plugin_dependencies(session, NULL, 0);
+            }
+        } else {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Plugin manager unavailable; dependency table empty");
+            nmo_session_set_plugin_dependencies(session, NULL, 0);
+        }
+    }
 
     /* Phase 9: Build and Serialize Header1 */
     nmo_log(logger, NMO_LOG_INFO, "Phase 9: Building header1");

@@ -4,6 +4,7 @@
  */
 
 #include "app/nmo_context.h"
+#include "app/nmo_plugin.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include "schema/nmo_schema_registry.h"
@@ -47,6 +48,7 @@ typedef struct nmo_context {
     nmo_logger_t *logger;
     nmo_schema_registry_t *schema_registry;
     nmo_manager_registry_t *manager_registry;
+    nmo_plugin_manager_t *plugin_manager;
 
     /* Configuration */
     int thread_pool_size;
@@ -128,6 +130,20 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
+    ctx->plugin_manager = nmo_plugin_manager_create(ctx);
+    if (ctx->plugin_manager == NULL) {
+        nmo_manager_registry_destroy(ctx->manager_registry);
+        nmo_schema_registry_destroy(ctx->schema_registry);
+        if (ctx->owns_logger) {
+            free(ctx->logger);
+        }
+        if (ctx->owns_allocator) {
+            free(ctx->allocator);
+        }
+        free(ctx);
+        return NULL;
+    }
+
     /* Thread pool size */
     ctx->thread_pool_size = (desc != NULL) ? desc->thread_pool_size : 0;
 
@@ -162,6 +178,10 @@ void nmo_context_release(nmo_context_t *ctx) {
             nmo_schema_registry_destroy(ctx->schema_registry);
         }
 
+        if (ctx->plugin_manager != NULL) {
+            nmo_plugin_manager_destroy(ctx->plugin_manager);
+        }
+
         /* Destroy manager registry */
         if (ctx->manager_registry != NULL) {
             nmo_manager_registry_destroy(ctx->manager_registry);
@@ -191,6 +211,10 @@ nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context_t *ctx)
  */
 nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_context_t *ctx) {
     return ctx ? ctx->manager_registry : NULL;
+}
+
+nmo_plugin_manager_t *nmo_context_get_plugin_manager(const nmo_context_t *ctx) {
+    return ctx ? ctx->plugin_manager : NULL;
 }
 
 /**

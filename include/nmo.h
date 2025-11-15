@@ -99,6 +99,7 @@
 // App layer
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
+#include "app/nmo_plugin.h"
 
 // Built-in schemas
 #include "nmo_builtin_schemas.h"

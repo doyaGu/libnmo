@@ -13,6 +13,7 @@
 #include "nmo.h"
 #include "app/nmo_stats.h"
 #include "app/nmo_inspector.h"
+#include "core/nmo_guid.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -137,6 +138,84 @@ static int parse_args(int argc, char **argv, inspect_options_t *opts) {
     return 0;
 }
 
+static const char *plugin_category_label(nmo_plugin_category_t category) {
+    switch (category) {
+        case NMO_PLUGIN_MANAGER_DLL: return "Manager";
+        case NMO_PLUGIN_BEHAVIOR_DLL: return "Behavior";
+        case NMO_PLUGIN_RENDER_DLL: return "Render";
+        case NMO_PLUGIN_SOUND_DLL: return "Sound";
+        case NMO_PLUGIN_INPUT_DLL: return "Input";
+        case NMO_PLUGIN_OBJECT_READER_DLL: return "ObjectReader";
+        case NMO_PLUGIN_CUSTOM_DLL: return "Custom";
+        default: return "Unknown";
+    }
+}
+
+static void show_plugin_diagnostics(nmo_session_t *session) {
+    const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(session);
+    if (diag == NULL) {
+        return;
+    }
+
+    printf("\n--- Plugin Dependencies ---\n");
+    printf("Plugin manager: %s\n", diag->plugin_manager_available ? "available" : "not available");
+    printf("Dependencies: %zu total (missing=%zu, outdated=%zu)\n",
+           diag->entry_count,
+           diag->missing_count,
+           diag->outdated_count);
+
+    if (diag->entries == NULL || diag->entry_count == 0) {
+        if (diag->entry_count > 0) {
+            printf("  Detailed dependency list unavailable.\n");
+        }
+        return;
+    }
+
+    for (size_t i = 0; i < diag->entry_count; i++) {
+        const nmo_session_plugin_dependency_status_t *entry = &diag->entries[i];
+        char guid_buf[64];
+        if (nmo_guid_format(entry->guid, guid_buf, sizeof(guid_buf)) <= 0) {
+            strncpy(guid_buf, "<invalid>", sizeof(guid_buf));
+            guid_buf[sizeof(guid_buf) - 1] = '\0';
+        }
+
+        printf("  [%zu] %s guid=%s required=%u",
+               i,
+               plugin_category_label(entry->category),
+               guid_buf,
+               entry->required_version);
+
+        if (entry->resolved_version > 0) {
+            printf(" installed=%u", entry->resolved_version);
+        }
+
+        if (entry->resolved_name != NULL) {
+            printf(" name=%s", entry->resolved_name);
+        }
+
+        printf(" status=");
+        uint32_t flags = entry->status_flags;
+        if (flags == 0) {
+            printf("ok");
+        } else {
+            int printed = 0;
+            if (flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
+                printf("missing");
+                printed = 1;
+            }
+            if (flags & NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+                printf(printed ? ",manager-unavailable" : "manager-unavailable");
+                printed = 1;
+            }
+            if (flags & NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+                printf(printed ? ",version-too-old" : "version-too-old");
+            }
+        }
+
+        printf("\n");
+    }
+}
+
 /* Display basic file info */
 static void show_basic_info(nmo_session_t *session, const inspect_options_t *opts) {
     printf("\n=== File Information ===\n");
@@ -198,6 +277,8 @@ static void show_statistics(nmo_session_t *session) {
                    included[i].size);
         }
     }
+
+    show_plugin_diagnostics(session);
 }
 
 /* List objects with optional filtering */

@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,8 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 typedef struct nmo_included_file nmo_included_file_t;
+typedef struct nmo_plugin_manager nmo_plugin_manager_t;
+typedef struct nmo_plugin_dep nmo_plugin_dep_t;
 
 /**
  * @brief Session structure
@@ -74,6 +77,11 @@ NMO_API void nmo_session_destroy(nmo_session_t *session);
  * @return Context
  */
 NMO_API nmo_context_t *nmo_session_get_context(const nmo_session_t *session);
+/**
+ * @brief Get plugin manager (borrowed from context)
+ */
+NMO_API nmo_plugin_manager_t *nmo_session_get_plugin_manager(const nmo_session_t *session);
+
 
 /**
  * @brief Get arena
@@ -161,6 +169,16 @@ NMO_API void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_da
  */
 NMO_API nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, uint32_t *out_count);
 
+/**
+ * @brief Store plugin dependency metadata (borrowed pointer)
+ */
+NMO_API void nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
+
+/**
+ * @brief Retrieve plugin dependency metadata from session
+ */
+NMO_API nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(const nmo_session_t *session, uint32_t *out_count);
+
 /* High-level convenience API */
 
 /**
@@ -191,7 +209,6 @@ typedef struct nmo_object nmo_object_t;
 typedef struct nmo_header nmo_header_t;
 typedef struct nmo_object_index nmo_object_index_t;
 typedef struct nmo_index_stats nmo_index_stats_t;
-typedef struct nmo_guid nmo_guid_t;
 
 /**
  * @brief Get all objects from session
@@ -335,6 +352,38 @@ void nmo_session_set_finish_loading_stats(
 NMO_API int nmo_session_get_finish_loading_stats(
     const nmo_session_t *session,
     nmo_finish_loading_stats_t *out_stats);
+
+typedef struct nmo_session_plugin_dependency_status {
+    nmo_guid_t guid;
+    nmo_plugin_category_t category;
+    uint32_t required_version;
+    uint32_t resolved_version;
+    const char *resolved_name;
+    uint32_t status_flags;
+} nmo_session_plugin_dependency_status_t;
+
+#define NMO_SESSION_PLUGIN_DEP_STATUS_MISSING            0x00000001u
+#define NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD    0x00000002u
+#define NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE 0x00000004u
+
+typedef struct nmo_session_plugin_diagnostics {
+    const nmo_session_plugin_dependency_status_t *entries;
+    size_t entry_count;
+    size_t missing_count;
+    size_t outdated_count;
+    int plugin_manager_available;
+} nmo_session_plugin_diagnostics_t;
+
+NMO_API void nmo_session_set_plugin_diagnostics(
+    nmo_session_t *session,
+    nmo_session_plugin_dependency_status_t *entries,
+    size_t entry_count,
+    size_t missing_count,
+    size_t outdated_count,
+    int plugin_manager_available);
+
+NMO_API const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
+    const nmo_session_t *session);
 
 /* ==================== Object Query API (Phase 5) ==================== */
 

@@ -18,6 +18,7 @@ typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_logger nmo_logger_t;
 typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
+typedef struct nmo_plugin_manager nmo_plugin_manager_t;
 
 /**
  * @brief Global context structure
@@ -96,6 +97,11 @@ NMO_API nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context
  * @return Manager registry or NULL
  */
 NMO_API nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_context_t *ctx);
+
+/**
+ * @brief Get plugin manager
+ */
+NMO_API nmo_plugin_manager_t *nmo_context_get_plugin_manager(const nmo_context_t *ctx);
 
 /**
  * @brief Get allocator

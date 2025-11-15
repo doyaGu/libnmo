@@ -47,6 +47,10 @@ typedef struct nmo_session {
     nmo_manager_data_t *manager_data;
     uint32_t manager_data_count;
 
+    /* Plugin dependency data */
+    nmo_plugin_dep_t *plugin_deps;
+    uint32_t plugin_dep_count;
+
     /* Included files */
     nmo_included_file_t *included_files;
     uint32_t included_file_count;
@@ -59,6 +63,10 @@ typedef struct nmo_session {
     /* Finish loading diagnostics */
     nmo_finish_loading_stats_t finish_stats;
     int finish_stats_valid;
+
+    /* Plugin dependency diagnostics */
+    nmo_session_plugin_diagnostics_t plugin_diag;
+    int plugin_diag_valid;
 } nmo_session_t;
 
 static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t needed) {
@@ -133,6 +141,8 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     /* Initialize manager data */
     session->manager_data = NULL;
     session->manager_data_count = 0;
+    session->plugin_deps = NULL;
+    session->plugin_dep_count = 0;
     session->included_files = NULL;
     session->included_file_count = 0;
     session->included_file_capacity = 0;
@@ -141,6 +151,8 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 
     memset(&session->finish_stats, 0, sizeof(session->finish_stats));
     session->finish_stats_valid = 0;
+    memset(&session->plugin_diag, 0, sizeof(session->plugin_diag));
+    session->plugin_diag_valid = 0;
 
     /* Initialize object index */
     session->object_index = NULL;
@@ -195,6 +207,13 @@ void nmo_session_destroy(nmo_session_t *session) {
  */
 nmo_context_t *nmo_session_get_context(const nmo_session_t *session) {
     return session ? session->context : NULL;
+}
+
+nmo_plugin_manager_t *nmo_session_get_plugin_manager(const nmo_session_t *session) {
+    if (session == NULL) {
+        return NULL;
+    }
+    return nmo_context_get_plugin_manager(session->context);
 }
 
 /**
@@ -283,6 +302,43 @@ nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, u
         *out_count = session->manager_data_count;
     }
     return session->manager_data;
+}
+
+void nmo_session_set_plugin_dependencies(
+    nmo_session_t *session,
+    nmo_plugin_dep_t *deps,
+    uint32_t count
+) {
+    if (session == NULL) {
+        return;
+    }
+
+    if (deps == NULL || count == 0) {
+        session->plugin_deps = NULL;
+        session->plugin_dep_count = 0;
+        return;
+    }
+
+    session->plugin_deps = deps;
+    session->plugin_dep_count = count;
+}
+
+nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(
+    const nmo_session_t *session,
+    uint32_t *out_count
+) {
+    if (session == NULL) {
+        if (out_count != NULL) {
+            *out_count = 0;
+        }
+        return NULL;
+    }
+
+    if (out_count != NULL) {
+        *out_count = session->plugin_dep_count;
+    }
+
+    return session->plugin_deps;
 }
 
 static int nmo_session_store_included_file(
@@ -514,6 +570,36 @@ void nmo_session_set_finish_loading_stats(
 
     session->finish_stats = *stats;
     session->finish_stats_valid = 1;
+}
+
+void nmo_session_set_plugin_diagnostics(
+    nmo_session_t *session,
+    nmo_session_plugin_dependency_status_t *entries,
+    size_t entry_count,
+    size_t missing_count,
+    size_t outdated_count,
+    int plugin_manager_available
+) {
+    if (session == NULL) {
+        return;
+    }
+
+    session->plugin_diag.entries = entries;
+    session->plugin_diag.entry_count = entry_count;
+    session->plugin_diag.missing_count = missing_count;
+    session->plugin_diag.outdated_count = outdated_count;
+    session->plugin_diag.plugin_manager_available = plugin_manager_available ? 1 : 0;
+    session->plugin_diag_valid = 1;
+}
+
+const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
+    const nmo_session_t *session
+) {
+    if (session == NULL || !session->plugin_diag_valid) {
+        return NULL;
+    }
+
+    return &session->plugin_diag;
 }
 
 /**

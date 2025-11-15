@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file header1.c
  * @brief NMO Header1 (object descriptors and plugin dependencies) implementation
  */
