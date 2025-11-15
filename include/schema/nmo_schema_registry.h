@@ -48,8 +48,8 @@ NMO_API nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena);
 /**
  * @brief Destroy schema registry
  *
- * Since registry uses arena allocation, this is mostly a no-op.
- * The arena itself handles cleanup.
+ * Releases internal hash/index structures. The caller remains responsible
+ * for destroying the arena that was passed to create().
  *
  * @param registry Registry to destroy (can be NULL)
  */

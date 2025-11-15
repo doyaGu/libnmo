@@ -4,7 +4,6 @@
  */
 
 #include "core/nmo_hash_table.h"
-#include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include <string.h>
 #include <stddef.h>
@@ -19,8 +18,7 @@ typedef enum nmo_hash_entry_state {
 } nmo_hash_entry_state_t;
 
 struct nmo_hash_table {
-    nmo_arena_t *arena;
-    int owns_arena;
+    nmo_allocator_t allocator;
     size_t key_size;
     size_t value_size;
     size_t capacity;
@@ -78,13 +76,24 @@ static int nmo_hash_table_allocate_storage(nmo_hash_table_t *table, size_t capac
     size_t key_bytes = capacity * table->key_size;
     size_t value_bytes = capacity * table->value_size;
 
-    uint8_t *states = (uint8_t *)nmo_arena_alloc(table->arena, capacity, sizeof(uint8_t));
-    uint8_t *keys = (uint8_t *)nmo_arena_alloc(table->arena, key_bytes,
+    uint8_t *states = (uint8_t *)nmo_alloc(&table->allocator,
+        capacity * sizeof(uint8_t),
+        1);
+    uint8_t *keys = (uint8_t *)nmo_alloc(&table->allocator, key_bytes,
         nmo_hash_table_alignment(table->key_size));
-    uint8_t *values = (uint8_t *)nmo_arena_alloc(table->arena, value_bytes,
+    uint8_t *values = (uint8_t *)nmo_alloc(&table->allocator, value_bytes,
         nmo_hash_table_alignment(table->value_size));
 
     if (states == NULL || keys == NULL || values == NULL) {
+        if (states != NULL) {
+            nmo_free(&table->allocator, states);
+        }
+        if (keys != NULL) {
+            nmo_free(&table->allocator, keys);
+        }
+        if (values != NULL) {
+            nmo_free(&table->allocator, values);
+        }
         return NMO_ERR_NOMEM;
     }
 
@@ -124,6 +133,16 @@ static int nmo_hash_table_rehash(nmo_hash_table_t *table, size_t new_capacity) {
                 nmo_hash_table_place_entry(table, key_ptr, value_ptr);
             }
         }
+    }
+
+    if (old_states != NULL) {
+        nmo_free(&table->allocator, old_states);
+    }
+    if (old_keys != NULL) {
+        nmo_free(&table->allocator, old_keys);
+    }
+    if (old_values != NULL) {
+        nmo_free(&table->allocator, old_values);
     }
 
     return NMO_OK;
@@ -198,7 +217,7 @@ static void nmo_hash_table_dispose_value(nmo_hash_table_t *table, size_t index) 
 }
 
 nmo_hash_table_t *nmo_hash_table_create(
-    nmo_arena_t *arena,
+    const nmo_allocator_t *allocator,
     size_t key_size,
     size_t value_size,
     size_t initial_capacity,
@@ -209,28 +228,19 @@ nmo_hash_table_t *nmo_hash_table_create(
         return NULL;
     }
 
-    nmo_arena_t *arena_to_use = arena;
-    int owns_arena = 0;
-    if (arena_to_use == NULL) {
-        arena_to_use = nmo_arena_create(NULL, 0);
-        if (arena_to_use == NULL) {
-            return NULL;
-        }
-        owns_arena = 1;
-    }
+    nmo_allocator_t effective_allocator =
+        allocator ? *allocator : nmo_allocator_default();
 
-    nmo_hash_table_t *table = (nmo_hash_table_t *)nmo_arena_alloc(
-        arena_to_use, sizeof(nmo_hash_table_t), nmo_hash_table_alignment(sizeof(nmo_hash_table_t)));
+    nmo_hash_table_t *table = (nmo_hash_table_t *)nmo_alloc(
+        &effective_allocator,
+        sizeof(nmo_hash_table_t),
+        nmo_hash_table_alignment(sizeof(nmo_hash_table_t)));
     if (table == NULL) {
-        if (owns_arena) {
-            nmo_arena_destroy(arena_to_use);
-        }
         return NULL;
     }
 
     memset(table, 0, sizeof(*table));
-    table->arena = arena_to_use;
-    table->owns_arena = owns_arena;
+    table->allocator = effective_allocator;
     table->key_size = key_size;
     table->value_size = value_size;
     table->hash_func = hash_func ? hash_func : nmo_hash_fnv1a;
@@ -244,16 +254,12 @@ nmo_hash_table_t *nmo_hash_table_create(
         ? nmo_hash_table_next_capacity(initial_capacity)
         : DEFAULT_INITIAL_CAPACITY;
     if (capacity == 0) {
-        if (owns_arena) {
-            nmo_arena_destroy(arena_to_use);
-        }
+        nmo_free(&table->allocator, table);
         return NULL;
     }
 
     if (nmo_hash_table_allocate_storage(table, capacity) != NMO_OK) {
-        if (owns_arena) {
-            nmo_arena_destroy(arena_to_use);
-        }
+        nmo_free(&table->allocator, table);
         return NULL;
     }
 
@@ -267,9 +273,17 @@ void nmo_hash_table_destroy(nmo_hash_table_t *table) {
 
     nmo_hash_table_clear(table);
 
-    if (table->owns_arena && table->arena != NULL) {
-        nmo_arena_destroy(table->arena);
+    if (table->states != NULL) {
+        nmo_free(&table->allocator, table->states);
     }
+    if (table->keys != NULL) {
+        nmo_free(&table->allocator, table->keys);
+    }
+    if (table->values != NULL) {
+        nmo_free(&table->allocator, table->values);
+    }
+
+    nmo_free(&table->allocator, table);
 }
 
 void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
@@ -433,52 +447,4 @@ void nmo_hash_table_iterate(const nmo_hash_table_t *table,
             }
         }
     }
-}
-
-/* Utility hash functions */
-
-size_t nmo_hash_fnv1a(const void *data, size_t size) {
-    const unsigned char *bytes = (const unsigned char *)data;
-    size_t hash = 14695981039346656037ULL;
-
-    for (size_t i = 0; i < size; i++) {
-        hash ^= bytes[i];
-        hash *= 1099511628211ULL;
-    }
-
-    return hash;
-}
-
-size_t nmo_hash_uint32(const void *key, size_t key_size) {
-    (void)key_size;
-    uint32_t value = *(const uint32_t *)key;
-    return (size_t)nmo_hash_int32(value);
-}
-
-size_t nmo_hash_string(const void *key, size_t key_size) {
-    (void)key_size;
-    const char *str = *(const char * const *)key;
-    size_t hash = 5381;
-    int c;
-
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + (size_t)c;
-    }
-
-    return hash;
-}
-
-size_t nmo_hash_murmur3(const void *data, size_t size) {
-    return (size_t)nmo_murmur3_32(data, size, 0);
-}
-
-size_t nmo_hash_xxhash(const void *data, size_t size) {
-    return (size_t)nmo_xxhash32(data, size, 0);
-}
-
-int nmo_compare_string(const void *key1, const void *key2, size_t key_size) {
-    (void)key_size;
-    const char *str1 = *(const char * const *)key1;
-    const char *str2 = *(const char * const *)key2;
-    return strcmp(str1, str2);
 }

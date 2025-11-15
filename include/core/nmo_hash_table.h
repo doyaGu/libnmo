@@ -7,7 +7,8 @@
 #define NMO_HASH_TABLE_H
 
 #include "nmo_types.h"
-#include "core/nmo_arena.h"
+#include "core/nmo_hash.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_container_lifecycle.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -40,7 +41,7 @@ typedef int (*nmo_key_compare_func_t)(const void *key1, const void *key2, size_t
 
 /**
  * @brief Create a hash table
- * @param arena Arena for allocations (NULL to use a private arena)
+ * @param allocator Allocator for allocations (NULL for default system allocator)
  * @param key_size Size of key in bytes
  * @param value_size Size of value in bytes
  * @param initial_capacity Initial capacity (0 for default)
@@ -49,7 +50,7 @@ typedef int (*nmo_key_compare_func_t)(const void *key1, const void *key2, size_t
  * @return New hash table or NULL on error
  */
 nmo_hash_table_t *nmo_hash_table_create(
-    nmo_arena_t *arena,
+    const nmo_allocator_t *allocator,
     size_t key_size,
     size_t value_size,
     size_t initial_capacity,
@@ -62,6 +63,21 @@ nmo_hash_table_t *nmo_hash_table_create(
  * @param table Hash table to destroy
  */
 void nmo_hash_table_destroy(nmo_hash_table_t *table);
+
+/**
+ * @brief Configure lifecycle hooks for keys and values.
+ *
+ * The provided callbacks execute whenever an element leaves the table
+ * (remove, clear, destroy) or a value is overwritten. Passing NULL resets
+ * the lifecycle for that side to the default no-op.
+ *
+ * @param table Hash table
+ * @param key_lifecycle Lifecycle hooks for key storage (optional)
+ * @param value_lifecycle Lifecycle hooks for value storage (optional)
+ */
+void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
+                                  const nmo_container_lifecycle_t *key_lifecycle,
+                                  const nmo_container_lifecycle_t *value_lifecycle);
 
 /**
  * @brief Insert or update entry
@@ -155,61 +171,8 @@ typedef int (*nmo_hash_table_iterator_func_t)(const void *key, void *value, void
  */
 void nmo_hash_table_iterate(const nmo_hash_table_t *table, nmo_hash_table_iterator_func_t func, void *user_data);
 
-/* Utility hash functions */
-
-/**
- * @brief Default hash function (FNV-1a)
- */
-size_t nmo_hash_fnv1a(const void *data, size_t size);
-
-/**
- * @brief Hash function for uint32_t keys (optimized with MurmurHash3 finalizer)
- */
-size_t nmo_hash_uint32(const void *key, size_t key_size);
-
-/**
- * @brief Hash function for string keys (djb2 algorithm)
- */
-size_t nmo_hash_string(const void *key, size_t key_size);
-
-/**
- * @brief MurmurHash3-based hash function (Phase 5 optimization)
- * 
- * Higher quality and faster than FNV-1a for most data.
- * Recommended for general-purpose hashing.
- */
-size_t nmo_hash_murmur3(const void *data, size_t size);
-
-/**
- * @brief XXHash-based hash function (Phase 5 optimization)
- * 
- * Fastest hash function, good for large data blocks.
- * Slightly lower quality than MurmurHash3 but significantly faster.
- */
-size_t nmo_hash_xxhash(const void *data, size_t size);
-
-/**
- * @brief Comparison function for string keys
- */
-int nmo_compare_string(const void *key1, const void *key2, size_t key_size);
-
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* NMO_HASH_TABLE_H */
-
-/**
- * @brief Configure lifecycle hooks for keys and values.
- *
- * The provided callbacks execute whenever an element leaves the table
- * (remove, clear, destroy) or a value is overwritten. Passing NULL resets
- * the lifecycle for that side to the default no-op.
- *
- * @param table Hash table
- * @param key_lifecycle Lifecycle hooks for key storage (optional)
- * @param value_lifecycle Lifecycle hooks for value storage (optional)
- */
-void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
-                                  const nmo_container_lifecycle_t *key_lifecycle,
-                                  const nmo_container_lifecycle_t *value_lifecycle);

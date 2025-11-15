@@ -5,7 +5,7 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_shared_library.h"
 #include "core/nmo_arena.h"
-#include "core/nmo_array.h"
+#include "core/nmo_arena_array.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -14,7 +14,7 @@ struct nmo_plugin_manager {
     nmo_context_t *context;
     nmo_allocator_t *allocator;
     nmo_arena_t *arena;
-    nmo_array_t instances;
+    nmo_arena_array_t instances;
 };
 
 static int nmo_plugin_manager_reserve(nmo_plugin_manager_t *manager, size_t needed) {
@@ -26,7 +26,7 @@ static int nmo_plugin_manager_reserve(nmo_plugin_manager_t *manager, size_t need
         return NMO_OK;
     }
 
-    nmo_result_t result = nmo_array_reserve(&manager->instances, needed);
+    nmo_result_t result = nmo_arena_array_reserve(&manager->instances, needed);
     return result.code;
 }
 
@@ -75,7 +75,7 @@ nmo_plugin_manager_t *nmo_plugin_manager_create(nmo_context_t *ctx) {
     manager->allocator = allocator;
     manager->arena = arena;
 
-    nmo_result_t init_result = nmo_array_init(&manager->instances,
+    nmo_result_t init_result = nmo_arena_array_init(&manager->instances,
                                               sizeof(nmo_plugin_instance_info_t),
                                               0,
                                               arena);
@@ -104,7 +104,7 @@ void nmo_plugin_manager_destroy(nmo_plugin_manager_t *manager) {
         }
     }
 
-    nmo_array_clear(&manager->instances);
+    nmo_arena_array_clear(&manager->instances);
 }
 
 nmo_context_t *nmo_plugin_manager_get_context(const nmo_plugin_manager_t *manager) {
@@ -135,7 +135,7 @@ int nmo_plugin_manager_register(
         }
 
         nmo_plugin_instance_info_t *slot = NULL;
-        nmo_result_t extend = nmo_array_extend(&manager->instances, 1, (void **)&slot);
+        nmo_result_t extend = nmo_arena_array_extend(&manager->instances, 1, (void **)&slot);
         if (extend.code != NMO_OK) {
             return extend.code;
         }
@@ -216,7 +216,7 @@ int nmo_plugin_manager_load_library(
         }
 
         nmo_plugin_instance_info_t *slot = NULL;
-        nmo_result_t extend = nmo_array_extend(&manager->instances, 1, (void **)&slot);
+        nmo_result_t extend = nmo_arena_array_extend(&manager->instances, 1, (void **)&slot);
         if (extend.code != NMO_OK) {
             continue;
         }
@@ -278,3 +278,4 @@ const nmo_plugin_t *nmo_plugin_manager_find_by_guid(
     nmo_plugin_instance_info_t *entries = (nmo_plugin_instance_info_t *)manager->instances.data;
     return entries ? entries[index].plugin : NULL;
 }
+

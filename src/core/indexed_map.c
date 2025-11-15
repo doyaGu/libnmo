@@ -21,6 +21,7 @@ typedef enum indexed_map_entry_state {
 struct nmo_indexed_map {
     nmo_arena_t *arena;
     int owns_arena;
+    nmo_allocator_t hash_allocator;
     size_t key_size;
     size_t value_size;
 
@@ -81,10 +82,19 @@ static int indexed_map_allocate_hash(nmo_indexed_map_t *map, size_t capacity) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    uint8_t *states = (uint8_t *)nmo_arena_alloc(map->arena, capacity, sizeof(uint8_t));
-    size_t *indices = (size_t *)nmo_arena_alloc(map->arena, capacity * sizeof(size_t),
+    uint8_t *states = (uint8_t *)nmo_alloc(&map->hash_allocator,
+        capacity * sizeof(uint8_t),
+        1);
+    size_t *indices = (size_t *)nmo_alloc(&map->hash_allocator,
+        capacity * sizeof(size_t),
         indexed_map_alignment(sizeof(size_t)));
     if (states == NULL || indices == NULL) {
+        if (states != NULL) {
+            nmo_free(&map->hash_allocator, states);
+        }
+        if (indices != NULL) {
+            nmo_free(&map->hash_allocator, indices);
+        }
         return NMO_ERR_NOMEM;
     }
 
@@ -197,6 +207,13 @@ static int indexed_map_rehash(nmo_indexed_map_t *map, size_t new_capacity) {
         map->hash_to_dense[slot] = i;
     }
 
+    if (old_states != NULL) {
+        nmo_free(&map->hash_allocator, old_states);
+    }
+    if (old_hash != NULL) {
+        nmo_free(&map->hash_allocator, old_hash);
+    }
+
     return NMO_OK;
 }
 
@@ -213,6 +230,7 @@ static void indexed_map_dispose_entry(nmo_indexed_map_t *map, size_t dense_index
 
 nmo_indexed_map_t *nmo_indexed_map_create(
     nmo_arena_t *arena,
+    const nmo_allocator_t *hash_allocator,
     size_t key_size,
     size_t value_size,
     size_t initial_capacity,
@@ -245,6 +263,7 @@ nmo_indexed_map_t *nmo_indexed_map_create(
     memset(map, 0, sizeof(*map));
     map->arena = arena_to_use;
     map->owns_arena = owns_arena;
+    map->hash_allocator = hash_allocator ? *hash_allocator : nmo_allocator_default();
     map->key_size = key_size;
     map->value_size = value_size;
     map->hash_func = hash_func ? hash_func : indexed_map_hash_default;
@@ -272,6 +291,14 @@ nmo_indexed_map_t *nmo_indexed_map_create(
     }
 
     if (indexed_map_allocate_dense(map, capacity) != NMO_OK) {
+        if (map->states != NULL) {
+            nmo_free(&map->hash_allocator, map->states);
+            map->states = NULL;
+        }
+        if (map->hash_to_dense != NULL) {
+            nmo_free(&map->hash_allocator, map->hash_to_dense);
+            map->hash_to_dense = NULL;
+        }
         if (owns_arena) {
             nmo_arena_destroy(arena_to_use);
         }
@@ -290,6 +317,15 @@ void nmo_indexed_map_destroy(nmo_indexed_map_t *map) {
     /* Dispose dense entries */
     for (size_t i = 0; i < map->count; ++i) {
         indexed_map_dispose_entry(map, i);
+    }
+
+    if (map->states != NULL) {
+        nmo_free(&map->hash_allocator, map->states);
+        map->states = NULL;
+    }
+    if (map->hash_to_dense != NULL) {
+        nmo_free(&map->hash_allocator, map->hash_to_dense);
+        map->hash_to_dense = NULL;
     }
 
     if (map->owns_arena && map->arena != NULL) {

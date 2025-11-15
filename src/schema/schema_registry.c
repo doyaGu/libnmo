@@ -5,6 +5,7 @@
 
 #include "schema/nmo_schema_registry.h"
 #include "core/nmo_hash_table.h"
+#include "core/nmo_hash.h"
 #include "core/nmo_indexed_map.h"
 #include <stdlib.h>
 #include <string.h>
@@ -46,7 +47,7 @@ nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena) {
     
     /* Create name index - note: hash tables don't use arena in current API */
     registry->by_name = nmo_hash_table_create(
-        registry->arena,
+        NULL,
         sizeof(const char *),              /* key: string pointer */
         sizeof(const nmo_schema_type_t *), /* value: type pointer */
         64,                                 /* initial capacity */
@@ -60,6 +61,7 @@ nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena) {
     /* Create class ID index */
     registry->by_class_id = nmo_indexed_map_create(
         registry->arena,
+        NULL,
         sizeof(nmo_class_id_t),            /* key: class ID (uint32) */
         sizeof(const nmo_schema_type_t *), /* value: type pointer */
         64,                                 /* initial capacity */
@@ -67,12 +69,14 @@ nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena) {
         NULL);                              /* default memcmp */
     
     if (registry->by_class_id == NULL) {
+        nmo_hash_table_destroy(registry->by_name);
+        registry->by_name = NULL;
         return NULL;
     }
     
     /* Create GUID index */
     registry->by_guid = nmo_hash_table_create(
-        registry->arena,
+        NULL,
         sizeof(nmo_guid_t),                /* key: GUID */
         sizeof(const nmo_schema_type_t *), /* value: type pointer */
         32,                                 /* initial capacity */
@@ -80,6 +84,10 @@ nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena) {
         NULL);                              /* default memcmp */
     
     if (registry->by_guid == NULL) {
+        nmo_indexed_map_destroy(registry->by_class_id);
+        registry->by_class_id = NULL;
+        nmo_hash_table_destroy(registry->by_name);
+        registry->by_name = NULL;
         return NULL;
     }
     
@@ -87,8 +95,22 @@ nmo_schema_registry_t *nmo_schema_registry_create(nmo_arena_t *arena) {
 }
 
 void nmo_schema_registry_destroy(nmo_schema_registry_t *registry) {
-    /* Since we use arena allocation, cleanup is handled by arena */
-    (void)registry;
+    if (registry == NULL) {
+        return;
+    }
+
+    if (registry->by_name != NULL) {
+        nmo_hash_table_destroy(registry->by_name);
+        registry->by_name = NULL;
+    }
+    if (registry->by_guid != NULL) {
+        nmo_hash_table_destroy(registry->by_guid);
+        registry->by_guid = NULL;
+    }
+    if (registry->by_class_id != NULL) {
+        nmo_indexed_map_destroy(registry->by_class_id);
+        registry->by_class_id = NULL;
+    }
 }
 
 /* =============================================================================

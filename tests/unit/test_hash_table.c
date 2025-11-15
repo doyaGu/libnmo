@@ -5,6 +5,7 @@
 
 #include "../test_framework.h"
 #include "core/nmo_hash_table.h"
+#include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include <string.h>
 
