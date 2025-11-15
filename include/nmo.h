@@ -58,6 +58,7 @@
 #include "core/nmo_hash.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_indexed_map.h"
+#include "core/nmo_shared_library.h"
 
 // IO layer
 #include "io/nmo_io.h"

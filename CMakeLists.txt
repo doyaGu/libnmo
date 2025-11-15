@@ -101,6 +101,7 @@ set(NMO_CORE_SOURCES
     src/core/hash.c
     src/core/hash_table.c
     src/core/indexed_map.c
+    src/core/shared_library.c
 )
 
 # IO layer sources
