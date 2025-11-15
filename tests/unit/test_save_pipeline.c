@@ -8,6 +8,7 @@
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "session/nmo_object_repository.h"
+#include "app/nmo_plugin.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_header.h"
 #include "format/nmo_header1.h"
@@ -34,6 +35,22 @@ static const char* get_temp_dir(void) {
 static void build_temp_path(char* buffer, size_t size, const char* filename) {
     snprintf(buffer, size, "%s/%s", get_temp_dir(), filename);
 }
+
+static int test_plugin_init(const nmo_plugin_t *plugin, nmo_context_t *ctx) {
+    (void)plugin;
+    (void)ctx;
+    return NMO_OK;
+}
+
+static const nmo_plugin_t save_pipeline_test_plugin = {
+    .name = "SavePipelineTestPlugin",
+    .version = 7,
+    .guid = {0xA1B2C3D4u, 0x5E6F7788u},
+    .category = NMO_PLUGIN_MANAGER_DLL,
+    .init = test_plugin_init,
+    .shutdown = NULL,
+    .register_managers = NULL,
+};
 
 /**
  * Test saving empty session should fail
@@ -572,6 +589,82 @@ TEST(save_pipeline, included_files_round_trip) {
     nmo_context_release(ctx);
 }
 
+TEST(save_pipeline, plugin_dependencies_from_plugin_manager) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_plugin_manager_t *plugin_mgr = nmo_context_get_plugin_manager(ctx);
+    ASSERT_NOT_NULL(plugin_mgr);
+
+    nmo_plugin_registration_desc_t reg_desc = {
+        .plugins = &save_pipeline_test_plugin,
+        .plugin_count = 1
+    };
+    ASSERT_EQ(NMO_OK, nmo_plugin_manager_register(plugin_mgr, &reg_desc));
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
+    ASSERT_NOT_NULL(obj);
+    memset(obj, 0, sizeof(nmo_object_t));
+    obj->class_id = 0x60000001;
+    obj->name = "PluginCarrier";
+    obj->arena = arena;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+
+    nmo_file_info_t file_info = {
+        .file_version = 8,
+        .ck_version = 0x13022002,
+        .file_size = 0,
+        .object_count = 1,
+        .manager_count = 0,
+        .write_mode = 0x01
+    };
+    nmo_session_set_file_info(session, &file_info);
+
+    char filepath[256];
+    build_temp_path(filepath, sizeof(filepath), "test_plugin_deps.nmo");
+    ASSERT_EQ(NMO_OK, nmo_save_file(session, filepath, NMO_SAVE_DEFAULT));
+
+    FILE *fp = fopen(filepath, "rb");
+    ASSERT_NOT_NULL(fp);
+
+    nmo_file_header_t header;
+    ASSERT_EQ(1u, fread(&header, sizeof(header), 1, fp));
+    ASSERT_GT(header.hdr1_pack_size, 0u);
+
+    void *hdr1_buf = malloc(header.hdr1_pack_size);
+    ASSERT_NOT_NULL(hdr1_buf);
+    ASSERT_EQ(header.hdr1_pack_size, fread(hdr1_buf, 1, header.hdr1_pack_size, fp));
+    fclose(fp);
+
+    nmo_arena_t *parse_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(parse_arena);
+
+    nmo_header1_t hdr1 = {0};
+    hdr1.object_count = header.object_count;
+    nmo_result_t parse_result = nmo_header1_parse(hdr1_buf, header.hdr1_pack_size, &hdr1, parse_arena);
+    ASSERT_EQ(NMO_OK, parse_result.code);
+    ASSERT_EQ(1u, hdr1.plugin_dep_count);
+    ASSERT_NOT_NULL(hdr1.plugin_deps);
+    ASSERT_EQ(save_pipeline_test_plugin.guid.d1, hdr1.plugin_deps[0].guid.d1);
+    ASSERT_EQ(save_pipeline_test_plugin.guid.d2, hdr1.plugin_deps[0].guid.d2);
+    ASSERT_EQ(save_pipeline_test_plugin.category, hdr1.plugin_deps[0].category);
+    ASSERT_EQ(save_pipeline_test_plugin.version, hdr1.plugin_deps[0].version);
+
+    nmo_arena_destroy(parse_arena);
+    free(hdr1_buf);
+    remove(filepath);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(save_pipeline, empty_session_fails);
     REGISTER_TEST(save_pipeline, single_object);
@@ -583,4 +676,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(save_pipeline, file_info_propagation);
     REGISTER_TEST(save_pipeline, reference_only_save);
     REGISTER_TEST(save_pipeline, included_files_round_trip);
+    REGISTER_TEST(save_pipeline, plugin_dependencies_from_plugin_manager);
 TEST_MAIN_END()

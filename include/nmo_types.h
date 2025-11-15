@@ -67,14 +67,25 @@ typedef enum nmo_compression_level {
     NMO_COMPRESS_BEST    = 9,
 } nmo_compression_level_t;
 
-// Plugin categories
+// Plugin categories (mirrors CKPluginManager ordering for compatibility)
 typedef enum nmo_plugin_category {
-    NMO_PLUGIN_MANAGER_DLL  = 0,
-    NMO_PLUGIN_BEHAVIOR_DLL = 1,
-    NMO_PLUGIN_RENDER_DLL   = 2,
-    NMO_PLUGIN_SOUND_DLL    = 3,
-    NMO_PLUGIN_INPUT_DLL    = 4,
+    NMO_PLUGIN_MANAGER_DLL        = 0,
+    NMO_PLUGIN_BEHAVIOR_DLL       = 1,
+    NMO_PLUGIN_RENDER_DLL         = 2,
+    NMO_PLUGIN_SOUND_DLL          = 3,
+    NMO_PLUGIN_INPUT_DLL          = 4,
+    NMO_PLUGIN_OBJECT_READER_DLL  = 5,
+    NMO_PLUGIN_CUSTOM_DLL         = 255
 } nmo_plugin_category_t;
+
+/* Backward-compatible aliases kept for existing code */
+#define NMO_PLUGIN_MANAGER_DLL       NMO_PLUGIN_MANAGER_DLL
+#define NMO_PLUGIN_BEHAVIOR_DLL      NMO_PLUGIN_BEHAVIOR_DLL
+#define NMO_PLUGIN_RENDER_DLL        NMO_PLUGIN_RENDER_DLL
+#define NMO_PLUGIN_SOUND_DLL         NMO_PLUGIN_SOUND_DLL
+#define NMO_PLUGIN_INPUT_DLL         NMO_PLUGIN_INPUT_DLL
+#define NMO_PLUGIN_OBJECT_READER_DLL NMO_PLUGIN_OBJECT_READER_DLL
+#define NMO_PLUGIN_CUSTOM_DLL        NMO_PLUGIN_CUSTOM_DLL
 
 // Visibility macros
 #ifdef _WIN32
