@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_container_lifecycle.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -36,7 +37,8 @@ typedef int (*nmo_map_compare_func_t)(const void *key1, const void *key2, size_t
 
 /**
  * @brief Create an indexed map
- * @param arena Arena for allocations (NULL to use a private arena)
+ * @param arena Arena for dense data allocations (NULL to use a private arena)
+ * @param hash_allocator Allocator for hash metadata (NULL for default system allocator)
  * @param key_size Size of key in bytes
  * @param value_size Size of value in bytes
  * @param initial_capacity Initial capacity (0 for default)
@@ -46,6 +48,7 @@ typedef int (*nmo_map_compare_func_t)(const void *key1, const void *key2, size_t
  */
 nmo_indexed_map_t *nmo_indexed_map_create(
     nmo_arena_t *arena,
+    const nmo_allocator_t *hash_allocator,
     size_t key_size,
     size_t value_size,
     size_t initial_capacity,

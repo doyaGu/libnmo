@@ -89,6 +89,39 @@ static inline uint64_t nmo_hash_int64(uint64_t value) {
  */
 uint32_t nmo_xxhash32(const void *data, size_t len, uint32_t seed);
 
+/**
+ * @brief Default hash function (FNV-1a)
+ * @param data Data to hash
+ * @param size Size of data in bytes
+ * @return Hash value
+ */
+size_t nmo_hash_fnv1a(const void *data, size_t size);
+
+/**
+ * @brief Hash function for uint32_t keys (optimized with MurmurHash3 finalizer)
+ * @param key Key to hash
+ * @param key_size Size of key in bytes (should be 4 for uint32_t)
+ * @return Hash value
+ */
+size_t nmo_hash_uint32(const void *key, size_t key_size);
+
+/**
+ * @brief Hash function for string keys (djb2 algorithm)
+ * @param key Key to hash (pointer to const char*)
+ * @param key_size Size of key in bytes (should be sizeof(const char*))
+ * @return Hash value
+ */
+size_t nmo_hash_string(const void *key, size_t key_size);
+
+/**
+ * @brief Comparison function for string keys
+ * @param key1 First key (pointer to const char*)
+ * @param key2 Second key (pointer to const char*)
+ * @param key_size Size of keys in bytes (should be sizeof(const char*))
+ * @return 0 if equal, non-zero otherwise
+ */
+int nmo_compare_string(const void *key1, const void *key2, size_t key_size);
+
 #ifdef __cplusplus
 }
 #endif

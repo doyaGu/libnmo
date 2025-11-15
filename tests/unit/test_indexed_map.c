@@ -12,7 +12,7 @@
  * Test basic indexed map operations
  */
 TEST(indexed_map, basic) {
-    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, 
+    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -48,7 +48,7 @@ TEST(indexed_map, basic) {
  * Test indexed map with multiple entries
  */
 TEST(indexed_map, multiple) {
-    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, 
+    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         4,
@@ -108,7 +108,7 @@ static void indexed_map_value_dispose(void *element, void *user_data) {
 }
 
 TEST(indexed_map, iterate) {
-    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, 
+    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -137,7 +137,7 @@ TEST(indexed_map, iterate) {
  * Test indexed map removal
  */
 TEST(indexed_map, remove) {
-    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, 
+    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, NULL, 
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,
@@ -173,7 +173,7 @@ TEST(indexed_map, remove) {
 }
 
 TEST(indexed_map, lifecycle_hooks) {
-    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL,
+    nmo_indexed_map_t *map = nmo_indexed_map_create(NULL, NULL,
         sizeof(uint32_t),
         sizeof(uint32_t),
         0,

@@ -9,6 +9,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_hash_table.h"
+#include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include <stdlib.h>
 #include <string.h>
@@ -86,6 +87,7 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
     /* Create ID indexed map */
     repo->id_map = nmo_indexed_map_create(
         arena,
+        NULL,
         sizeof(nmo_object_id_t),
         sizeof(nmo_object_t *),
         INITIAL_CAPACITY,
@@ -100,7 +102,7 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
 
     /* Create name hash table */
     repo->name_table = nmo_hash_table_create(
-        arena,
+        NULL,
         sizeof(const char *),
         sizeof(nmo_object_t *),
         INITIAL_CAPACITY,

@@ -7,6 +7,7 @@
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_hash_table.h"
+#include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include <stdlib.h>
 #include <string.h>
@@ -43,7 +44,7 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
     /* Initialize mapping table using generic hash table */
     size_t initial_capacity = (max_saved_id > 64) ? (max_saved_id * 2) : 64;
     session->id_mappings = nmo_hash_table_create(
-        arena,
+        NULL,
         sizeof(nmo_object_id_t),    /* key: file_id */
         sizeof(nmo_object_id_t),    /* value: runtime_id */
         initial_capacity,

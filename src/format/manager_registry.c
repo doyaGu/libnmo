@@ -49,6 +49,7 @@ nmo_manager_registry_t *nmo_manager_registry_create(nmo_arena_t *arena) {
 
     registry->managers_by_id = nmo_indexed_map_create(
         arena,
+        NULL,
         sizeof(uint32_t),
         sizeof(nmo_manager_t *),
         INITIAL_CAPACITY,
@@ -62,6 +63,7 @@ nmo_manager_registry_t *nmo_manager_registry_create(nmo_arena_t *arena) {
 
     registry->managers_by_guid = nmo_indexed_map_create(
         arena,
+        NULL,
         sizeof(nmo_guid_t),
         sizeof(nmo_manager_t *),
         INITIAL_CAPACITY,

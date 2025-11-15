@@ -141,7 +141,7 @@ static int build_class_index(nmo_object_index_t *index) {
     
     /* Create hash table: uint32_t → object_array_t* */
     index->class_index = nmo_hash_table_create(
-        index->arena,
+        NULL,
         sizeof(nmo_class_id_t),
         sizeof(object_array_t *),
         64, /* Initial capacity */
@@ -193,7 +193,7 @@ static int build_name_index(nmo_object_index_t *index) {
     
     /* Create hash table: string → object_array_t* */
     index->name_index = nmo_hash_table_create(
-        index->arena,
+        NULL,
         sizeof(char *),
         sizeof(object_array_t *),
         64,
@@ -252,7 +252,7 @@ static int build_guid_index(nmo_object_index_t *index) {
     
     /* Create hash table: nmo_guid_t → object_array_t* */
     index->guid_index = nmo_hash_table_create(
-        index->arena,
+        NULL,
         sizeof(nmo_guid_t),
         sizeof(object_array_t *),
         64,

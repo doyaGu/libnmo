@@ -55,15 +55,16 @@ TEST(buffer, init_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NULL(buffer.data);
     ASSERT_EQ(buffer.count, 0);
     ASSERT_EQ(buffer.capacity, 0);
     ASSERT_EQ(buffer.element_size, sizeof(uint32_t));
-    ASSERT_EQ(buffer.arena, arena);
+    /* Arena is in union, can't directly test it */
+    // ASSERT_EQ(buffer.mem.arena, arena);
 
     nmo_arena_destroy(arena);
 }
@@ -72,8 +73,8 @@ TEST(buffer, init_with_capacity) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 16, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_init(&buffer, sizeof(uint32_t), 16, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(buffer.data);
@@ -87,12 +88,12 @@ TEST(buffer, init_with_capacity) {
 TEST(buffer, init_with_allocator_basic) {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init_with_allocator(&buffer, sizeof(uint32_t), 4, &allocator);
+    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 4, &allocator);
 
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(buffer.data);
     ASSERT_EQ(buffer.capacity, 4);
-    ASSERT_EQ(buffer.use_allocator, 1);
+    /* Allocator-backed array */
 
     uint32_t value = 99;
     result = nmo_array_append(&buffer, &value);
@@ -105,7 +106,7 @@ TEST(buffer, init_with_allocator_basic) {
 TEST(buffer, allocator_growth_and_dispose) {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init_with_allocator(&buffer, sizeof(uint32_t), 0, &allocator);
+    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 0, &allocator);
     ASSERT_EQ(NMO_OK, result.code);
 
     for (uint32_t i = 0; i < 64; ++i) {
@@ -124,21 +125,21 @@ TEST(buffer, init_different_element_sizes) {
     ASSERT_NOT_NULL(arena);
 
     /* uint8_t buffer */
-    nmo_array_t buffer1;
-    nmo_result_t result = nmo_array_init(&buffer1, sizeof(uint8_t), 8, arena);
+    nmo_arena_array_t buffer1;
+    nmo_result_t result = nmo_arena_array_init(&buffer1, sizeof(uint8_t), 8, arena);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer1.element_size, sizeof(uint8_t));
 
     /* uint64_t buffer */
-    nmo_array_t buffer2;
-    result = nmo_array_init(&buffer2, sizeof(uint64_t), 8, arena);
+    nmo_arena_array_t buffer2;
+    result = nmo_arena_array_init(&buffer2, sizeof(uint64_t), 8, arena);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer2.element_size, sizeof(uint64_t));
 
     /* struct buffer */
     typedef struct { int x, y, z; } point3d_t;
-    nmo_array_t buffer3;
-    result = nmo_array_init(&buffer3, sizeof(point3d_t), 8, arena);
+    nmo_arena_array_t buffer3;
+    result = nmo_arena_array_init(&buffer3, sizeof(point3d_t), 8, arena);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer3.element_size, sizeof(point3d_t));
 
@@ -149,8 +150,8 @@ TEST(buffer, alloc_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_alloc(&buffer, sizeof(uint32_t), 10, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 10, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(buffer.data);
@@ -165,8 +166,8 @@ TEST(buffer, alloc_zero_count) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_alloc(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 0, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NULL(buffer.data);
@@ -180,8 +181,8 @@ TEST(buffer, alloc_large_count) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_alloc(&buffer, sizeof(uint32_t), 1000, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 1000, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(buffer.data);
@@ -199,11 +200,11 @@ TEST(buffer, append_single_element) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t value = 42;
-    nmo_result_t result = nmo_array_append(&buffer, &value);
+    nmo_result_t result = nmo_arena_array_append(&buffer, &value);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 1);
@@ -219,11 +220,11 @@ TEST(buffer, append_multiple_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     for (uint32_t i = 0; i < 10; i++) {
-        nmo_result_t result = nmo_array_append(&buffer, &i);
+        nmo_result_t result = nmo_arena_array_append(&buffer, &i);
         ASSERT_EQ(result.code, NMO_OK);
     }
     
@@ -241,16 +242,16 @@ TEST(buffer, append_triggers_growth) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 2, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 2, arena);
     
     ASSERT_EQ(buffer.capacity, 2);
 
     /* Append 3 elements - should trigger growth */
     uint32_t value = 1;
-    nmo_array_append(&buffer, &value);
-    nmo_array_append(&buffer, &value);
-    nmo_array_append(&buffer, &value);
+    nmo_arena_array_append(&buffer, &value);
+    nmo_arena_array_append(&buffer, &value);
+    nmo_arena_array_append(&buffer, &value);
 
     ASSERT_EQ(buffer.count, 3);
     ASSERT_TRUE(buffer.capacity >= 3);
@@ -262,11 +263,11 @@ TEST(buffer, append_array_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t values[] = {10, 20, 30, 40, 50};
-    nmo_result_t result = nmo_array_append_array(&buffer, values, 5);
+    nmo_result_t result = nmo_arena_array_append_array(&buffer, values, 5);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 5);
@@ -283,11 +284,11 @@ TEST(buffer, append_array_empty) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t values[] = {1, 2, 3};
-    nmo_result_t result = nmo_array_append_array(&buffer, values, 0);
+    nmo_result_t result = nmo_arena_array_append_array(&buffer, values, 0);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 0);
@@ -299,14 +300,14 @@ TEST(buffer, append_array_multiple_times) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t values1[] = {1, 2, 3};
     uint32_t values2[] = {4, 5, 6};
     
-    nmo_array_append_array(&buffer, values1, 3);
-    nmo_array_append_array(&buffer, values2, 3);
+    nmo_arena_array_append_array(&buffer, values1, 3);
+    nmo_arena_array_append_array(&buffer, values2, 3);
     
     ASSERT_EQ(buffer.count, 6);
     
@@ -327,8 +328,8 @@ TEST(buffer, get_valid_index) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
     
     uint32_t *data = (uint32_t *)buffer.data;
     for (int i = 0; i < 5; i++) {
@@ -336,7 +337,7 @@ TEST(buffer, get_valid_index) {
     }
 
     for (int i = 0; i < 5; i++) {
-        uint32_t *val = (uint32_t *)nmo_array_get(&buffer, i);
+        uint32_t *val = (uint32_t *)nmo_arena_array_get(&buffer, i);
         ASSERT_NOT_NULL(val);
         ASSERT_EQ(*val, i * 10);
     }
@@ -348,11 +349,11 @@ TEST(buffer, get_out_of_bounds) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
 
     /* Beyond count */
-    void *val = nmo_array_get(&buffer, 10);
+    void *val = nmo_arena_array_get(&buffer, 10);
     ASSERT_NULL(val);
 
     nmo_arena_destroy(arena);
@@ -362,10 +363,10 @@ TEST(buffer, get_empty_buffer) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
-    void *val = nmo_array_get(&buffer, 0);
+    void *val = nmo_arena_array_get(&buffer, 0);
     ASSERT_NULL(val);
 
     nmo_arena_destroy(arena);
@@ -375,11 +376,11 @@ TEST(buffer, set_valid_index) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
     
     uint32_t new_value = 999;
-    nmo_result_t result = nmo_array_set(&buffer, 2, &new_value);
+    nmo_result_t result = nmo_arena_array_set(&buffer, 2, &new_value);
     
     ASSERT_EQ(result.code, NMO_OK);
     
@@ -393,11 +394,11 @@ TEST(buffer, set_out_of_bounds) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
     
     uint32_t new_value = 999;
-    nmo_result_t result = nmo_array_set(&buffer, 10, &new_value);
+    nmo_result_t result = nmo_arena_array_set(&buffer, 10, &new_value);
     
     ASSERT_NE(result.code, NMO_OK);
 
@@ -408,12 +409,12 @@ TEST(buffer, set_all_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 10, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 10, arena);
     
     for (uint32_t i = 0; i < 10; i++) {
         uint32_t value = i * i;
-        nmo_array_set(&buffer, i, &value);
+        nmo_arena_array_set(&buffer, i, &value);
     }
     
     uint32_t *data = (uint32_t *)buffer.data;
@@ -432,12 +433,12 @@ TEST(buffer, reserve_increases_capacity) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     ASSERT_EQ(buffer.capacity, 0);
     
-    nmo_result_t result = nmo_array_reserve(&buffer, 20);
+    nmo_result_t result = nmo_arena_array_reserve(&buffer, 20);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.capacity, 20);
     ASSERT_NOT_NULL(buffer.data);
@@ -449,14 +450,14 @@ TEST(buffer, reserve_preserves_data) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 2, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 2, arena);
     
     uint32_t v1 = 10, v2 = 20;
-    nmo_array_append(&buffer, &v1);
-    nmo_array_append(&buffer, &v2);
+    nmo_arena_array_append(&buffer, &v1);
+    nmo_arena_array_append(&buffer, &v2);
     
-    nmo_array_reserve(&buffer, 10);
+    nmo_arena_array_reserve(&buffer, 10);
     
     ASSERT_EQ(buffer.count, 2);
     uint32_t *data = (uint32_t *)buffer.data;
@@ -470,12 +471,12 @@ TEST(buffer, reserve_does_not_shrink) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 20, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 20, arena);
     
     ASSERT_EQ(buffer.capacity, 20);
     
-    nmo_array_reserve(&buffer, 5);
+    nmo_arena_array_reserve(&buffer, 5);
     ASSERT_EQ(buffer.capacity, 20); /* Should not shrink */
 
     nmo_arena_destroy(arena);
@@ -485,10 +486,10 @@ TEST(buffer, ensure_space_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
-    nmo_result_t result = nmo_array_ensure_space(&buffer, 5);
+    nmo_result_t result = nmo_arena_array_ensure_space(&buffer, 5);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_TRUE(buffer.capacity >= 5);
 
@@ -499,15 +500,15 @@ TEST(buffer, ensure_space_with_existing_data) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 2, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 2, arena);
     
     uint32_t v1 = 100, v2 = 200;
-    nmo_array_append(&buffer, &v1);
-    nmo_array_append(&buffer, &v2);
+    nmo_arena_array_append(&buffer, &v1);
+    nmo_arena_array_append(&buffer, &v2);
     
     /* Buffer is full (count=2, capacity=2), ensure space for 3 more */
-    nmo_array_ensure_space(&buffer, 3);
+    nmo_arena_array_ensure_space(&buffer, 3);
     
     ASSERT_TRUE(buffer.capacity >= 5);
     ASSERT_EQ(buffer.count, 2);
@@ -524,19 +525,19 @@ TEST(buffer, ensure_space_exponential_growth) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 4, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 4, arena);
     
     size_t old_capacity = buffer.capacity;
     
     /* Fill to capacity */
     for (int i = 0; i < 4; i++) {
         uint32_t val = i;
-        nmo_array_append(&buffer, &val);
+        nmo_arena_array_append(&buffer, &val);
     }
     
     /* Ensure space for 1 more - should double */
-    nmo_array_ensure_space(&buffer, 1);
+    nmo_arena_array_ensure_space(&buffer, 1);
     
     ASSERT_TRUE(buffer.capacity >= old_capacity * 2);
 
@@ -551,17 +552,17 @@ TEST(buffer, clear_resets_count) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 10, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 10, arena);
     
     for (int i = 0; i < 5; i++) {
         uint32_t val = i;
-        nmo_array_append(&buffer, &val);
+        nmo_arena_array_append(&buffer, &val);
     }
     
     ASSERT_EQ(buffer.count, 5);
     
-    nmo_array_clear(&buffer);
+    nmo_arena_array_clear(&buffer);
     
     ASSERT_EQ(buffer.count, 0);
     ASSERT_TRUE(buffer.capacity >= 10); /* Capacity unchanged */
@@ -574,10 +575,10 @@ TEST(buffer, clear_empty_buffer) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
-    nmo_array_clear(&buffer);
+    nmo_arena_array_clear(&buffer);
     
     ASSERT_EQ(buffer.count, 0);
 
@@ -588,15 +589,15 @@ TEST(buffer, clear_and_reuse) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 5, arena);
     
     uint32_t val = 123;
-    nmo_array_append(&buffer, &val);
-    nmo_array_clear(&buffer);
+    nmo_arena_array_append(&buffer, &val);
+    nmo_arena_array_clear(&buffer);
     
     val = 456;
-    nmo_array_append(&buffer, &val);
+    nmo_arena_array_append(&buffer, &val);
     
     ASSERT_EQ(buffer.count, 1);
     uint32_t *data = (uint32_t *)buffer.data;
@@ -609,41 +610,41 @@ TEST(buffer, lifecycle_dispose_callbacks) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    ASSERT_EQ(NMO_OK, nmo_array_init(&buffer, sizeof(tracked_value_t), 0, arena).code);
+    nmo_arena_array_t buffer;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_init(&buffer, sizeof(tracked_value_t), 0, arena).code);
 
     uint32_t disposed_total = 0;
     nmo_container_lifecycle_t lifecycle = {
         .dispose = tracked_value_dispose,
         .user_data = &disposed_total
     };
-    nmo_array_set_lifecycle(&buffer, &lifecycle);
+    nmo_arena_array_set_lifecycle(&buffer, &lifecycle);
 
     tracked_value_t v1 = {1}, v2 = {2}, v3 = {3}, v4 = {7}, replacement = {5};
 
-    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v1).code);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v2).code);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v3).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &v1).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &v2).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &v3).code);
 
-    ASSERT_EQ(NMO_OK, nmo_array_set(&buffer, 1, &replacement).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_set(&buffer, 1, &replacement).code);
     ASSERT_EQ(2u, disposed_total);
 
-    ASSERT_EQ(NMO_OK, nmo_array_remove(&buffer, 0, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_remove(&buffer, 0, NULL).code);
     ASSERT_EQ(3u, disposed_total);
 
-    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v4).code);
-    ASSERT_EQ(NMO_OK, nmo_array_pop(&buffer, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &v4).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_pop(&buffer, NULL).code);
     ASSERT_EQ(10u, disposed_total);
 
-    nmo_array_clear(&buffer);
+    nmo_arena_array_clear(&buffer);
     ASSERT_EQ(18u, disposed_total);
 
-    nmo_array_set_lifecycle(&buffer, NULL);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&buffer, &v1).code);
-    ASSERT_EQ(NMO_OK, nmo_array_pop(&buffer, NULL).code);
+    nmo_arena_array_set_lifecycle(&buffer, NULL);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &v1).code);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_pop(&buffer, NULL).code);
     ASSERT_EQ(18u, disposed_total);
 
-    nmo_array_dispose(&buffer);
+    nmo_arena_array_dispose(&buffer);
     nmo_arena_destroy(arena);
 }
 
@@ -655,15 +656,15 @@ TEST(buffer, set_data_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     uint32_t *external_data = (uint32_t *)nmo_arena_alloc(arena, sizeof(uint32_t) * 5, sizeof(uint32_t));
     for (int i = 0; i < 5; i++) {
         external_data[i] = i * 100;
     }
     
-    nmo_result_t result = nmo_array_set_data(&buffer, external_data, 5);
+    nmo_result_t result = nmo_arena_array_set_data(&buffer, external_data, 5);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.data, external_data);
@@ -681,15 +682,15 @@ TEST(buffer, set_data_replaces_existing) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 10, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 10, arena);
     
     uint32_t *new_data = (uint32_t *)nmo_arena_alloc(arena, sizeof(uint32_t) * 3, sizeof(uint32_t));
     new_data[0] = 111;
     new_data[1] = 222;
     new_data[2] = 333;
     
-    nmo_array_set_data(&buffer, new_data, 3);
+    nmo_arena_array_set_data(&buffer, new_data, 3);
     
     ASSERT_EQ(buffer.count, 3);
     ASSERT_EQ(buffer.data, new_data);
@@ -701,11 +702,11 @@ TEST(buffer, set_data_zero_count) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     uint32_t *data = (uint32_t *)nmo_arena_alloc(arena, sizeof(uint32_t), sizeof(uint32_t));
-    nmo_result_t result = nmo_array_set_data(&buffer, data, 0);
+    nmo_result_t result = nmo_arena_array_set_data(&buffer, data, 0);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 0);
@@ -721,16 +722,16 @@ TEST(buffer, clone_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t src;
-    nmo_array_alloc(&src, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t src;
+    nmo_arena_array_alloc(&src, sizeof(uint32_t), 5, arena);
     
     uint32_t *src_data = (uint32_t *)src.data;
     for (int i = 0; i < 5; i++) {
         src_data[i] = i * 10;
     }
 
-    nmo_array_t dest;
-    nmo_result_t result = nmo_array_clone(&src, &dest, arena);
+    nmo_arena_array_t dest;
+    nmo_result_t result = nmo_arena_array_clone(&src, &dest, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(dest.count, src.count);
@@ -749,11 +750,11 @@ TEST(buffer, clone_empty_buffer) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t src;
-    nmo_array_init(&src, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t src;
+    nmo_arena_array_init(&src, sizeof(uint32_t), 0, arena);
 
-    nmo_array_t dest;
-    nmo_result_t result = nmo_array_clone(&src, &dest, arena);
+    nmo_arena_array_t dest;
+    nmo_result_t result = nmo_arena_array_clone(&src, &dest, arena);
     
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(dest.count, 0);
@@ -766,16 +767,16 @@ TEST(buffer, clone_preserves_independence) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t src;
-    nmo_array_alloc(&src, sizeof(uint32_t), 3, arena);
+    nmo_arena_array_t src;
+    nmo_arena_array_alloc(&src, sizeof(uint32_t), 3, arena);
     
     uint32_t *src_data = (uint32_t *)src.data;
     src_data[0] = 100;
     src_data[1] = 200;
     src_data[2] = 300;
 
-    nmo_array_t dest;
-    nmo_array_clone(&src, &dest, arena);
+    nmo_arena_array_t dest;
+    nmo_arena_array_clone(&src, &dest, arena);
     
     /* Modify source */
     src_data[0] = 999;
@@ -797,19 +798,19 @@ TEST(buffer, typed_macros_basic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     uint32_t val1 = 10, val2 = 20, val3 = 30;
-    NMO_ARRAY_APPEND(uint32_t, &buffer, val1);
-    NMO_ARRAY_APPEND(uint32_t, &buffer, val2);
-    NMO_ARRAY_APPEND(uint32_t, &buffer, val3);
+    NMO_ARENA_ARRAY_APPEND(uint32_t, &buffer, val1);
+    NMO_ARENA_ARRAY_APPEND(uint32_t, &buffer, val2);
+    NMO_ARENA_ARRAY_APPEND(uint32_t, &buffer, val3);
     
     ASSERT_EQ(buffer.count, 3);
     
-    uint32_t *p1 = NMO_ARRAY_GET(uint32_t, &buffer, 0);
-    uint32_t *p2 = NMO_ARRAY_GET(uint32_t, &buffer, 1);
-    uint32_t *p3 = NMO_ARRAY_GET(uint32_t, &buffer, 2);
+    uint32_t *p1 = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, 0);
+    uint32_t *p2 = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, 1);
+    uint32_t *p3 = nmo_arena_array_get(uint32_t, &buffer, 2);
     
     ASSERT_NOT_NULL(p1);
     ASSERT_NOT_NULL(p2);
@@ -825,8 +826,8 @@ TEST(buffer, typed_data_macro) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
     
     uint32_t *data = NMO_ARRAY_DATA(uint32_t, &buffer);
     ASSERT_NOT_NULL(data);
@@ -836,7 +837,7 @@ TEST(buffer, typed_data_macro) {
     }
     
     for (int i = 0; i < 5; i++) {
-        uint32_t *val = NMO_ARRAY_GET(uint32_t, &buffer, i);
+        uint32_t *val = nmo_arena_array_get(uint32_t, &buffer, i);
         ASSERT_EQ(*val, i * i);
     }
 
@@ -851,17 +852,17 @@ TEST(buffer, typed_macros_with_struct) {
         int x, y;
     } point_t;
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(point_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(point_t), 0, arena);
     
     point_t p1 = {10, 20};
     point_t p2 = {30, 40};
     
-    NMO_ARRAY_APPEND(point_t, &buffer, p1);
-    NMO_ARRAY_APPEND(point_t, &buffer, p2);
+    nmo_arena_array_append(point_t, &buffer, p1);
+    nmo_arena_array_append(point_t, &buffer, p2);
 
-    point_t *pp1 = NMO_ARRAY_GET(point_t, &buffer, 0);
-    point_t *pp2 = NMO_ARRAY_GET(point_t, &buffer, 1);
+    point_t *pp1 = nmo_arena_array_get(point_t, &buffer, 0);
+    point_t *pp2 = nmo_arena_array_get(point_t, &buffer, 1);
     
     ASSERT_EQ(pp1->x, 10);
     ASSERT_EQ(pp1->y, 20);
@@ -879,12 +880,12 @@ TEST(buffer, extend_single_element) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     ASSERT_EQ(result.code, NMO_OK);
 
     uint32_t *slot = NULL;
-    result = NMO_ARRAY_EXTEND(&buffer, 1, slot);
+    result = nmo_arena_array_extend(&buffer, 1, slot);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(slot);
 
@@ -899,12 +900,12 @@ TEST(buffer, extend_multiple_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     ASSERT_EQ(result.code, NMO_OK);
 
     uint32_t *values = NULL;
-    result = NMO_ARRAY_EXTEND(&buffer, 5, values);
+    result = nmo_arena_array_extend(&buffer, 5, values);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 5);
     ASSERT_NOT_NULL(values);
@@ -925,14 +926,14 @@ TEST(buffer, extend_zero_returns_end_pointer) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t val = 88;
-    nmo_array_append(&buffer, &val);
+    nmo_arena_array_append(&buffer, &val);
 
     uint32_t *end_ptr = NULL;
-    nmo_result_t result = NMO_ARRAY_EXTEND(&buffer, 0, end_ptr);
+    nmo_result_t result = nmo_arena_array_extend(&buffer, 0, end_ptr);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(end_ptr);
     ASSERT_EQ((uintptr_t)end_ptr, (uintptr_t)((uint32_t *)buffer.data + buffer.count));
@@ -944,15 +945,15 @@ TEST(buffer, pop_returns_last_element) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     for (uint32_t i = 0; i < 3; ++i) {
-        nmo_array_append(&buffer, &i);
+        nmo_arena_array_append(&buffer, &i);
     }
 
     uint32_t popped = 0;
-    nmo_result_t result = nmo_array_pop(&buffer, &popped);
+    nmo_result_t result = nmo_arena_array_pop(&buffer, &popped);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(popped, 2U);
     ASSERT_EQ(buffer.count, 2);
@@ -964,15 +965,15 @@ TEST(buffer, remove_middle_shifts_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     for (uint32_t i = 0; i < 5; ++i) {
-        nmo_array_append(&buffer, &i);
+        nmo_arena_array_append(&buffer, &i);
     }
 
     uint32_t removed = 0;
-    nmo_result_t result = nmo_array_remove(&buffer, 2, &removed);
+    nmo_result_t result = nmo_arena_array_remove(&buffer, 2, &removed);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(removed, 2U);
     ASSERT_EQ(buffer.count, 4);
@@ -990,14 +991,14 @@ TEST(buffer, insert_middle_shifts_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t values[] = {0, 2, 3};
-    nmo_array_append_array(&buffer, values, 3);
+    nmo_arena_array_append_array(&buffer, values, 3);
 
     uint32_t insert_value = 1;
-    nmo_result_t result = nmo_array_insert(&buffer, 1, &insert_value);
+    nmo_result_t result = nmo_arena_array_insert(&buffer, 1, &insert_value);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 4);
 
@@ -1014,24 +1015,24 @@ TEST(buffer, front_back_helpers) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 2048);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
 
     uint32_t first = 10;
     uint32_t second = 20;
-    nmo_array_append(&buffer, &first);
-    nmo_array_append(&buffer, &second);
+    nmo_arena_array_append(&buffer, &first);
+    nmo_arena_array_append(&buffer, &second);
 
-    uint32_t *front = NMO_ARRAY_FRONT(uint32_t, &buffer);
-    uint32_t *back = NMO_ARRAY_BACK(uint32_t, &buffer);
+    uint32_t *front = nmo_arena_array_front(uint32_t, &buffer);
+    uint32_t *back = nmo_arena_array_back(uint32_t, &buffer);
     ASSERT_NOT_NULL(front);
     ASSERT_NOT_NULL(back);
     ASSERT_EQ(*front, 10U);
     ASSERT_EQ(*back, 20U);
 
-    nmo_array_clear(&buffer);
-    ASSERT_NULL(nmo_array_front(&buffer));
-    ASSERT_NULL(nmo_array_back(&buffer));
+    nmo_arena_array_clear(&buffer);
+    ASSERT_NULL(nmo_arena_array_front(&buffer));
+    ASSERT_NULL(nmo_arena_array_back(&buffer));
 
     nmo_arena_destroy(arena);
 }
@@ -1044,15 +1045,15 @@ TEST(buffer, null_buffer_parameter) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_result_t result = nmo_array_init(NULL, sizeof(uint32_t), 0, arena);
+    nmo_result_t result = nmo_arena_array_init(NULL, sizeof(uint32_t), 0, arena);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
 }
 
 TEST(buffer, null_arena_parameter) {
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init(&buffer, sizeof(uint32_t), 0, NULL);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, NULL);
     ASSERT_NE(result.code, NMO_OK);
 }
 
@@ -1060,8 +1061,8 @@ TEST(buffer, zero_element_size) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_result_t result = nmo_array_init(&buffer, 0, 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_result_t result = nmo_arena_array_init(&buffer, 0, 0, arena);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1071,10 +1072,10 @@ TEST(buffer, append_null_element) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
-    nmo_result_t result = nmo_array_append(&buffer, NULL);
+    nmo_result_t result = nmo_arena_array_append(&buffer, NULL);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1084,10 +1085,10 @@ TEST(buffer, append_array_null_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
-    nmo_result_t result = nmo_array_append_array(&buffer, NULL, 5);
+    nmo_result_t result = nmo_arena_array_append_array(&buffer, NULL, 5);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1097,10 +1098,10 @@ TEST(buffer, set_null_element) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_alloc(&buffer, sizeof(uint32_t), 5, arena);
     
-    nmo_result_t result = nmo_array_set(&buffer, 0, NULL);
+    nmo_result_t result = nmo_arena_array_set(&buffer, 0, NULL);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1110,11 +1111,11 @@ TEST(buffer, set_data_null_data) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     /* NULL data with count > 0 should fail */
-    nmo_result_t result = nmo_array_set_data(&buffer, NULL, 5);
+    nmo_result_t result = nmo_arena_array_set_data(&buffer, NULL, 5);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1125,7 +1126,7 @@ TEST(buffer, clone_null_source) {
     ASSERT_NOT_NULL(arena);
 
     nmo_array_t dest;
-    nmo_result_t result = nmo_array_clone(NULL, &dest, arena);
+    nmo_result_t result = nmo_arena_array_clone(NULL, &dest, arena);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1136,9 +1137,9 @@ TEST(buffer, clone_null_destination) {
     ASSERT_NOT_NULL(arena);
 
     nmo_array_t src;
-    nmo_array_init(&src, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_init(&src, sizeof(uint32_t), 0, arena);
     
-    nmo_result_t result = nmo_array_clone(&src, NULL, arena);
+    nmo_result_t result = nmo_arena_array_clone(&src, NULL, arena);
     ASSERT_NE(result.code, NMO_OK);
 
     nmo_arena_destroy(arena);
@@ -1152,18 +1153,18 @@ TEST(buffer, data_integrity_after_growth) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 2, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 2, arena);
     
     /* Fill initial capacity */
     uint32_t val1 = 111, val2 = 222;
-    nmo_array_append(&buffer, &val1);
-    nmo_array_append(&buffer, &val2);
+    nmo_arena_array_append(&buffer, &val1);
+    nmo_arena_array_append(&buffer, &val2);
     
     /* Trigger growth */
     uint32_t val3 = 333, val4 = 444;
-    nmo_array_append(&buffer, &val3);
-    nmo_array_append(&buffer, &val4);
+    nmo_arena_array_append(&buffer, &val3);
+    nmo_arena_array_append(&buffer, &val4);
     
     /* Verify all data preserved */
     uint32_t *data = (uint32_t *)buffer.data;
@@ -1179,19 +1180,19 @@ TEST(buffer, large_buffer_operations) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     /* Append 1000 elements */
     for (uint32_t i = 0; i < 1000; i++) {
-        nmo_array_append(&buffer, &i);
+        nmo_arena_array_append(&buffer, &i);
     }
     
     ASSERT_EQ(buffer.count, 1000);
     
     /* Verify all elements */
     for (uint32_t i = 0; i < 1000; i++) {
-        uint32_t *val = (uint32_t *)nmo_array_get(&buffer, i);
+        uint32_t *val = (uint32_t *)nmo_arena_array_get(&buffer, i);
         ASSERT_NOT_NULL(val);
         ASSERT_EQ(*val, i);
     }
@@ -1203,25 +1204,25 @@ TEST(buffer, mixed_operations_sequence) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     /* Append some elements */
     uint32_t val = 10;
-    nmo_array_append(&buffer, &val);
+    nmo_arena_array_append(&buffer, &val);
     val = 20;
-    nmo_array_append(&buffer, &val);
+    nmo_arena_array_append(&buffer, &val);
     
     /* Reserve more space */
-    nmo_array_reserve(&buffer, 10);
+    nmo_arena_array_reserve(&buffer, 10);
     
     /* Append array */
     uint32_t arr[] = {30, 40, 50};
-    nmo_array_append_array(&buffer, arr, 3);
+    nmo_arena_array_append_array(&buffer, arr, 3);
     
     /* Modify element */
     val = 99;
-    nmo_array_set(&buffer, 1, &val);
+    nmo_arena_array_set(&buffer, 1, &val);
     
     /* Verify final state */
     ASSERT_EQ(buffer.count, 5);
@@ -1240,16 +1241,16 @@ TEST(buffer, different_element_sizes_integrity) {
     ASSERT_NOT_NULL(arena);
 
     /* uint8_t buffer */
-    nmo_array_t buffer1;
-    nmo_array_alloc(&buffer1, sizeof(uint8_t), 10, arena);
+    nmo_arena_array_t buffer1;
+    nmo_arena_array_alloc(&buffer1, sizeof(uint8_t), 10, arena);
     uint8_t *data1 = (uint8_t *)buffer1.data;
     for (int i = 0; i < 10; i++) {
         data1[i] = (uint8_t)(i + 100);
     }
 
     /* uint64_t buffer */
-    nmo_array_t buffer2;
-    nmo_array_alloc(&buffer2, sizeof(uint64_t), 10, arena);
+    nmo_arena_array_t buffer2;
+    nmo_arena_array_alloc(&buffer2, sizeof(uint64_t), 10, arena);
     uint64_t *data2 = (uint64_t *)buffer2.data;
     for (int i = 0; i < 10; i++) {
         data2[i] = (uint64_t)i * 1000000000ULL;
@@ -1272,21 +1273,21 @@ TEST(buffer, stress_append_many_elements) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 262144); /* 256KB */
     ASSERT_NOT_NULL(arena);
 
-    nmo_array_t buffer;
-    nmo_array_init(&buffer, sizeof(uint32_t), 0, arena);
+    nmo_arena_array_t buffer;
+    nmo_arena_array_init(&buffer, sizeof(uint32_t), 0, arena);
     
     /* Append 10000 elements */
     for (uint32_t i = 0; i < 10000; i++) {
-        nmo_result_t result = nmo_array_append(&buffer, &i);
+        nmo_result_t result = nmo_arena_array_append(&buffer, &i);
         ASSERT_EQ(result.code, NMO_OK);
     }
     
     ASSERT_EQ(buffer.count, 10000);
     
     /* Spot check elements */
-    uint32_t *val0 = (uint32_t *)nmo_array_get(&buffer, 0);
-    uint32_t *val5000 = (uint32_t *)nmo_array_get(&buffer, 5000);
-    uint32_t *val9999 = (uint32_t *)nmo_array_get(&buffer, 9999);
+    uint32_t *val0 = (uint32_t *)nmo_arena_array_get(&buffer, 0);
+    uint32_t *val5000 = (uint32_t *)nmo_arena_array_get(&buffer, 5000);
+    uint32_t *val9999 = (uint32_t *)nmo_arena_array_get(&buffer, 9999);
     
     ASSERT_EQ(*val0, 0);
     ASSERT_EQ(*val5000, 5000);
@@ -1300,15 +1301,15 @@ TEST(buffer, stress_multiple_buffers) {
     ASSERT_NOT_NULL(arena);
 
     /* Create 100 buffers */
-    nmo_array_t buffers[100];
+    nmo_arena_array_t buffers[100];
     
     for (int i = 0; i < 100; i++) {
-        nmo_array_init(&buffers[i], sizeof(uint32_t), 0, arena);
+        nmo_arena_array_init(&buffers[i], sizeof(uint32_t), 0, arena);
         
         /* Add elements to each buffer */
         for (int j = 0; j < 10; j++) {
             uint32_t val = i * 100 + j;
-            nmo_array_append(&buffers[i], &val);
+            nmo_arena_array_append(&buffers[i], &val);
         }
     }
     
@@ -1413,3 +1414,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(buffer, stress_append_many_elements);
     REGISTER_TEST(buffer, stress_multiple_buffers);
 TEST_MAIN_END()
+

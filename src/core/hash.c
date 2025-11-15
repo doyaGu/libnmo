@@ -260,3 +260,41 @@ uint32_t nmo_xxhash32(const void *data, size_t len, uint32_t seed) {
     
     return h32;
 }
+
+size_t nmo_hash_fnv1a(const void *data, size_t size) {
+    const unsigned char *bytes = (const unsigned char *)data;
+    size_t hash = 14695981039346656037ULL;
+
+    for (size_t i = 0; i < size; i++) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ULL;
+    }
+
+    return hash;
+}
+
+size_t nmo_hash_uint32(const void *key, size_t key_size) {
+    (void)key_size;
+    uint32_t value = *(const uint32_t *)key;
+    return (size_t)nmo_hash_int32(value);
+}
+
+size_t nmo_hash_string(const void *key, size_t key_size) {
+    (void)key_size;
+    const char *str = *(const char * const *)key;
+    size_t hash = 5381;
+    int c;
+
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + (size_t)c;
+    }
+
+    return hash;
+}
+
+int nmo_compare_string(const void *key1, const void *key2, size_t key_size) {
+    (void)key_size;
+    const char *str1 = *(const char * const *)key1;
+    const char *str2 = *(const char * const *)key2;
+    return strcmp(str1, str2);
+}
