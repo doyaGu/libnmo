@@ -192,7 +192,7 @@ Managers are expected to return `CKStateChunk*` objects and consume them symmetr
 
 ---
 
-## 8. Included Files Pipeline & Limitation
+## 8. Included Files Pipeline
 
 - `CKFile::IncludeFile(path)` resolves the file through `CKPathManager`. Resolved paths are stored verbatim in `m_IncludedFiles`.
 - `EndSave` appends each file directly after the packed data section:
@@ -202,7 +202,7 @@ Managers are expected to return `CKStateChunk*` objects and consume them symmetr
   [4 bytes] file size
   [size bytes] raw payload
   ```
-- **Limitation**: The metadata stub in Header1 is never filled, so `ReadFileData` never learns how many files were appended and therefore cannot extract them. To support this feature, extend Header1 with file descriptors while remaining backward compatible (e.g., reserve a GUID-tagged block) and teach `ReadFileData` to read past the data section in the mapped file. Until then, included data is write-only.
+- libnmo mirrors this behavior: Header1 now records `included_file_count` and a table of filename/size descriptors, while the payloads are appended after the packed data buffer (outside the checksum). The loader scans the appended region, registers each payload with the session, and exposes them via `nmo_session_get_included_files()` for CLI tools and re-saving.
 
 ---
 
