@@ -844,19 +844,12 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
 
     for (size_t i = 0; i < repo_count; i++) {
         nmo_object_t *obj = objects[i];
-        const nmo_schema_descriptor_t *schema =
-            nmo_schema_registry_find_by_id(schema_reg, obj->class_id);
-
-        if (schema != NULL && schema->deserialize_fn != NULL && obj->chunk != NULL) {
-            /* Deserialize object using schema */
-            nmo_log(logger, NMO_LOG_INFO, "  Deserializing object %zu (class 0x%08X)",
-                    i, obj->class_id);
-            
-            /* Call schema deserialize function with chunk parser
-             * The chunk parser is the chunk itself for read operations
-             */
-            schema->deserialize_fn(obj, (nmo_chunk_parser_t *)obj->chunk);
-        }
+        /* TODO: Implement new schema-based deserialization
+         * Old API: nmo_schema_descriptor_t / deserialize_fn
+         * New API: nmo_schema_type_t / nmo_schema_read_struct
+         */
+        (void)schema_reg;  /* Suppress unused warning */
+        (void)obj;  /* Suppress unused warning */
     }
 
 skip_object_processing:
