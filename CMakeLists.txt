@@ -96,6 +96,7 @@ set(NMO_CORE_SOURCES
     src/core/logger.c
     src/core/guid.c
     src/core/array.c
+    src/core/bit_array.c
     src/core/hash.c
     src/core/hash_table.c
     src/core/indexed_map.c
