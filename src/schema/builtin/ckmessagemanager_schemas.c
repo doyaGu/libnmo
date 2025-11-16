@@ -10,11 +10,14 @@
 
 #include "schema/nmo_ckmessagemanager_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
+#include <stdalign.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -111,38 +114,69 @@ static nmo_result_t nmo_ckmessagemanager_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckmessagemanager_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckmessagemanager_state_t *state)
+    const nmo_ckmessagemanager_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_serialize"));
     }
 
     /* Don't write if no message types */
-    if (state->message_type_count == 0) {
+    if (in_state->message_type_count == 0) {
         return nmo_result_ok();
     }
 
     nmo_result_t result;
 
     /* Write identifier */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MESSAGEMANAGER);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESSAGEMANAGER);
     if (result.code != NMO_OK) return result;
 
     /* Write message type count */
-    result = nmo_chunk_write_int(chunk, (int32_t)state->message_type_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->message_type_count);
     if (result.code != NMO_OK) return result;
 
     /* Write each message type name */
-    for (uint32_t i = 0; i < state->message_type_count; i++) {
-        const char *name = state->message_type_names[i];
-        result = nmo_chunk_write_string(chunk, name ? name : "");
+    for (uint32_t i = 0; i < in_state->message_type_count; i++) {
+        const char *name = in_state->message_type_names[i];
+        result = nmo_chunk_write_string(out_chunk, name ? name : "");
         if (result.code != NMO_OK) return result;
     }
 
     return nmo_result_ok();
 }
+
+/* =============================================================================
+ * VTABLE WRAPPERS
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_ckmessagemanager(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_state)
+{
+    (void)type;
+    return nmo_ckmessagemanager_deserialize(chunk, arena, (nmo_ckmessagemanager_state_t *)out_state);
+}
+
+static nmo_result_t vtable_write_ckmessagemanager(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_state,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    return nmo_ckmessagemanager_serialize((const nmo_ckmessagemanager_state_t *)in_state, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_ckmessagemanager_vtable = {
+    .read = vtable_read_ckmessagemanager,
+    .write = vtable_write_ckmessagemanager,
+    .validate = NULL
+};
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -166,10 +200,13 @@ nmo_result_t nmo_register_ckmessagemanager_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckmessagemanager_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
-    
-    return nmo_result_ok();
+    nmo_schema_builder_t builder = nmo_builder_struct(
+        arena, "nmo_ckmessagemanager_state_t",
+        sizeof(nmo_ckmessagemanager_state_t), alignof(nmo_ckmessagemanager_state_t));
+
+    nmo_builder_set_vtable(&builder, &nmo_ckmessagemanager_vtable);
+
+    return nmo_builder_build(&builder, registry);
 }
 
 /* =============================================================================

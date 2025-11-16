@@ -39,13 +39,13 @@ typedef struct nmo_ck3dobject_state {
 
 /* Function pointer types for vtable */
 typedef nmo_result_t (*nmo_ck3dobject_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ck3dobject_state_t *out_state);
 
 typedef nmo_result_t (*nmo_ck3dobject_serialize_fn)(
-    const nmo_ck3dobject_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ck3dobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena);
 
 typedef nmo_result_t (*nmo_ck3dobject_finish_loading_fn)(

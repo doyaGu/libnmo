@@ -18,6 +18,7 @@
 #include "schema/nmo_schema_builder.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_cksceneobject_schemas.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -91,21 +92,23 @@ nmo_result_t nmo_cksceneobject_deserialize(
  * 
  * Symmetric write operation for round-trip support.
  * 
- * @param chunk Chunk to write to
- * @param state State structure to serialize
+ * @param in_state State structure to serialize (input)
+ * @param out_chunk Chunk to write to (output)
+ * @param arena Arena allocator for error handling
  * @return Result indicating success or error
  */
 nmo_result_t nmo_cksceneobject_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_cksceneobject_state_t *state)
+    const nmo_cksceneobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksceneobject_serialize"));
     }
 
     /* Start write mode */
-    nmo_result_t result = nmo_chunk_start_write(chunk);
+    nmo_result_t result = nmo_chunk_start_write(out_chunk);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -113,15 +116,15 @@ nmo_result_t nmo_cksceneobject_serialize(
     /* Serialize base CKObject state */
     nmo_ckobject_serialize_fn parent_serialize = nmo_get_ckobject_serialize();
     if (parent_serialize) {
-        result = parent_serialize(chunk, &state->base);
+        result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) {
             return result;
         }
     }
 
     /* Write preserved unknown data */
-    if (state->raw_tail != NULL && state->raw_tail_size > 0) {
-        result = nmo_chunk_write_buffer(chunk, (const void *)state->raw_tail, state->raw_tail_size);
+    if (in_state->raw_tail != NULL && in_state->raw_tail_size > 0) {
+        result = nmo_chunk_write_buffer(out_chunk, (const void *)in_state->raw_tail, in_state->raw_tail_size);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -146,4 +149,67 @@ nmo_cksceneobject_deserialize_fn nmo_get_cksceneobject_deserialize(void) {
  */
 nmo_cksceneobject_serialize_fn nmo_get_cksceneobject_serialize(void) {
     return nmo_cksceneobject_serialize;
+}
+
+/* =============================================================================
+ * VTABLE IMPLEMENTATION
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_cksceneobject(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
+    (void)type;
+    return nmo_cksceneobject_deserialize(chunk, arena, (nmo_cksceneobject_state_t *)out_ptr);
+}
+
+static nmo_result_t vtable_write_cksceneobject(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
+    (void)type;
+    return nmo_cksceneobject_serialize((const nmo_cksceneobject_state_t *)in_ptr, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_cksceneobject_vtable = {
+    .read = vtable_read_cksceneobject,
+    .write = vtable_write_cksceneobject,
+    .validate = NULL
+};
+
+/* =============================================================================
+ * SCHEMA REGISTRATION
+ * ============================================================================= */
+
+/**
+ * @brief Register CKSceneObject schema
+ */
+nmo_result_t nmo_register_cksceneobject_schemas(
+    nmo_schema_registry_t *registry,
+    nmo_arena_t *arena)
+{
+    if (!registry || !arena) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_cksceneobject_schemas"));
+    }
+
+    /* Register minimal schema with vtable for abstract base class */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKSceneObjectState",
+                                                      sizeof(nmo_cksceneobject_state_t),
+                                                      alignof(nmo_cksceneobject_state_t));
+    
+    /* Set vtable for automated serialization */
+    nmo_builder_set_vtable(&builder, &nmo_cksceneobject_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+
+    /* Map class ID to schema */
+    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKSceneObjectState");
+    if (type) {
+        result = nmo_schema_registry_map_class_id(registry, NMO_CID_SCENEOBJECT, type);
+        if (result.code != NMO_OK) {
+            return result;
+        }
+    }
+
+    return nmo_result_ok();
 }

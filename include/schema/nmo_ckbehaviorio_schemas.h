@@ -63,7 +63,7 @@ typedef struct nmo_ckbehaviorio_state_t {
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckbehaviorio_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckbehaviorio_state_t *out_state);
 
@@ -75,8 +75,9 @@ typedef nmo_result_t (*nmo_ckbehaviorio_deserialize_fn)(
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckbehaviorio_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckbehaviorio_state_t *state);
+    const nmo_ckbehaviorio_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * PUBLIC API

@@ -10,6 +10,7 @@
 #include "schema/nmo_schema.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -89,28 +90,32 @@ nmo_result_t nmo_ckobject_deserialize(
  * 
  * Reference: reference/src/CKObject.cpp:75-85
  * 
- * @param chunk Chunk to write to
- * @param state Input state structure
+ * @param in_state  Input state structure to serialize (must not be NULL)
+ * @param out_chunk Output chunk to write to (must not be NULL)
+ * @param arena     Arena for temporary allocations (not needed for CKObject)
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckobject_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckobject_state_t *state)
+    const nmo_ckobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    (void)arena;  /* Not needed for simple CKObject serialization */
+    
+    if (in_state == NULL || out_chunk == NULL) {
+        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_serialize");
         return nmo_result_error(err);
     }
 
     /* Write appropriate identifier based on visibility state */
-    if ((state->visibility_flags & NMO_CKOBJECT_VISIBLE) == 0) {
-        if (state->visibility_flags & NMO_CKOBJECT_HIERARCHICAL) {
+    if ((in_state->visibility_flags & NMO_CKOBJECT_VISIBLE) == 0) {
+        if (in_state->visibility_flags & NMO_CKOBJECT_HIERARCHICAL) {
             /* Hierarchically hidden */
-            nmo_chunk_write_identifier(chunk, CK_STATESAVE_OBJECTHIERAHIDDEN);
+            nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJECTHIERAHIDDEN);
         } else {
             /* Completely hidden */
-            nmo_chunk_write_identifier(chunk, CK_STATESAVE_OBJECTHIDDEN);
+            nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJECTHIDDEN);
         }
     }
     /* If visible (default), no identifier is written */
@@ -145,10 +150,11 @@ static nmo_result_t nmo_ckobject_vtable_read(
 static nmo_result_t nmo_ckobject_vtable_write(
     const nmo_schema_type_t *type,
     nmo_chunk_t *chunk,
-    const void *in_ptr)
+    const void *in_ptr,
+    nmo_arena_t *arena)
 {
     (void)type; /* Type info not needed for CKObject */
-    return nmo_ckobject_serialize(chunk, (const nmo_ckobject_state_t *)in_ptr);
+    return nmo_ckobject_serialize((const nmo_ckobject_state_t *)in_ptr, chunk, arena);
 }
 
 /**
@@ -184,10 +190,10 @@ nmo_result_t nmo_register_ckobject_schemas(
     }
 
     /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
     if (uint32_type == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required type uint32_t not found in registry"));
+            NMO_SEVERITY_ERROR, "Required type u32 not found in registry"));
     }
 
     /* Register CKObject state structure with vtable */
@@ -205,6 +211,15 @@ nmo_result_t nmo_register_ckobject_schemas(
     nmo_result_t result = nmo_builder_build(&builder, registry);
     if (result.code != NMO_OK) {
         return result;
+    }
+
+    /* Map class ID to schema */
+    const nmo_schema_type_t *ckobject_type = nmo_schema_registry_find_by_name(registry, "CKObjectState");
+    if (ckobject_type) {
+        result = nmo_schema_registry_map_class_id(registry, NMO_CID_OBJECT, ckobject_type);
+        if (result.code != NMO_OK) {
+            return result;
+        }
     }
 
     return nmo_result_ok();

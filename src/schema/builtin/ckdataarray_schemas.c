@@ -12,6 +12,8 @@
 #include "schema/nmo_ckbeobject_schemas.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -19,6 +21,7 @@
 #include "core/nmo_guid.h"
 #include "nmo_types.h"
 #include <stddef.h>
+#include <stdalign.h>
 #include <string.h>
 
 /* =============================================================================
@@ -247,105 +250,106 @@ static nmo_result_t nmo_ckdataarray_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckdataarray_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckdataarray_state_t *state)
+    const nmo_ckdataarray_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
     nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
     if (parent_serialize) {
-        nmo_result_t result = parent_serialize(chunk, &state->base);
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) return result;
     }
 
     nmo_result_t result;
 
     /* Write column formats */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_DATAARRAYFORMAT);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYFORMAT);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(chunk, (int32_t)state->column_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->column_count);
     if (result.code != NMO_OK) return result;
 
-    for (uint32_t i = 0; i < state->column_count; i++) {
-        const nmo_ckdataarray_column_format_t *fmt = &state->column_formats[i];
+    for (uint32_t i = 0; i < in_state->column_count; i++) {
+        const nmo_ckdataarray_column_format_t *fmt = &in_state->column_formats[i];
 
-        result = nmo_chunk_write_string(chunk, fmt->name ? fmt->name : "");
+        result = nmo_chunk_write_string(out_chunk, fmt->name ? fmt->name : "");
         if (result.code != NMO_OK) return result;
 
-        result = nmo_chunk_write_dword(chunk, (uint32_t)fmt->type);
+        result = nmo_chunk_write_dword(out_chunk, (uint32_t)fmt->type);
         if (result.code != NMO_OK) return result;
 
         if (fmt->type == NMO_ARRAYTYPE_PARAMETER) {
-            result = nmo_chunk_write_guid(chunk, fmt->parameter_type_guid);
+            result = nmo_chunk_write_guid(out_chunk, fmt->parameter_type_guid);
             if (result.code != NMO_OK) return result;
         }
     }
 
     /* Write data matrix */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_DATAARRAYDATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYDATA);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(chunk, (int32_t)state->row_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->row_count);
     if (result.code != NMO_OK) return result;
 
-    for (uint32_t row_idx = 0; row_idx < state->row_count; row_idx++) {
-        const nmo_ckdataarray_row_t *row = &state->rows[row_idx];
+    for (uint32_t row_idx = 0; row_idx < in_state->row_count; row_idx++) {
+        const nmo_ckdataarray_row_t *row = &in_state->rows[row_idx];
 
-        for (uint32_t col_idx = 0; col_idx < state->column_count; col_idx++) {
-            const nmo_ckdataarray_column_format_t *fmt = &state->column_formats[col_idx];
+        for (uint32_t col_idx = 0; col_idx < in_state->column_count; col_idx++) {
+            const nmo_ckdataarray_column_format_t *fmt = &in_state->column_formats[col_idx];
             const nmo_ckdataarray_cell_t *cell = &row->cells[col_idx];
 
             switch (fmt->type) {
             case NMO_ARRAYTYPE_INT:
-                result = nmo_chunk_write_int(chunk, cell->int_value);
+                result = nmo_chunk_write_int(out_chunk, cell->int_value);
                 if (result.code != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_FLOAT:
-                result = nmo_chunk_write_float(chunk, cell->float_value);
+                result = nmo_chunk_write_float(out_chunk, cell->float_value);
                 if (result.code != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_STRING:
-                result = nmo_chunk_write_string(chunk, cell->string_value ? cell->string_value : "");
+                result = nmo_chunk_write_string(out_chunk, cell->string_value ? cell->string_value : "");
                 if (result.code != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_OBJECT:
-                result = nmo_chunk_write_object_id(chunk, cell->object_id);
+                result = nmo_chunk_write_object_id(out_chunk, cell->object_id);
                 if (result.code != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_PARAMETER:
                 if (cell->parameter_chunk) {
-                    result = nmo_chunk_write_sub_chunk(chunk, cell->parameter_chunk);
+                    result = nmo_chunk_write_sub_chunk(out_chunk, cell->parameter_chunk);
                     if (result.code != NMO_OK) return result;
                 }
                 break;
 
             default:
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_VALIDATION_FAILED,
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                     NMO_SEVERITY_ERROR, "Unknown array type"));
             }
         }
     }
 
     /* Write metadata members */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_DATAARRAYMEMBERS);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYMEMBERS);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(chunk, state->order);
+    result = nmo_chunk_write_int(out_chunk, in_state->order);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_dword(chunk, state->column_index);
+    result = nmo_chunk_write_dword(out_chunk, in_state->column_index);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(chunk, state->key_column);
+    result = nmo_chunk_write_int(out_chunk, in_state->key_column);
     if (result.code != NMO_OK) return result;
 
     return nmo_result_ok();
@@ -364,6 +368,28 @@ static nmo_result_t nmo_ckdataarray_serialize(
  * @param arena Arena for schema allocations
  * @return Result indicating success or error
  */
+/* =============================================================================
+ * VTABLE IMPLEMENTATION
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_ckdataarray(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
+    (void)type;
+    return nmo_ckdataarray_deserialize(chunk, arena, (nmo_ckdataarray_state_t *)out_ptr);
+}
+
+static nmo_result_t vtable_write_ckdataarray(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
+    (void)type;
+    return nmo_ckdataarray_serialize((const nmo_ckdataarray_state_t *)in_ptr, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_ckdataarray_vtable = {
+    .read = vtable_read_ckdataarray,
+    .write = vtable_write_ckdataarray,
+    .validate = NULL
+};
+
 nmo_result_t nmo_register_ckdataarray_schemas(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena)
@@ -373,8 +399,17 @@ nmo_result_t nmo_register_ckdataarray_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckdataarray_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
+    /* Register minimal schema with vtable */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKDataArrayState",
+                                                      sizeof(nmo_ckdataarray_state_t),
+                                                      alignof(nmo_ckdataarray_state_t));
+    
+    nmo_builder_set_vtable(&builder, &nmo_ckdataarray_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
     
     return nmo_result_ok();
 }

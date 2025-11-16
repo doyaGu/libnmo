@@ -127,7 +127,7 @@ typedef struct nmo_ck2dentity_state {
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ck2dentity_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ck2dentity_state_t *out_state);
 
@@ -139,8 +139,9 @@ typedef nmo_result_t (*nmo_ck2dentity_deserialize_fn)(
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ck2dentity_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ck2dentity_state_t *state);
+    const nmo_ck2dentity_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -169,7 +170,7 @@ NMO_API nmo_result_t nmo_register_ck2dentity_schemas(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_ck2dentity_deserialize(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ck2dentity_state_t *out_state);
 
@@ -182,8 +183,8 @@ NMO_API nmo_result_t nmo_ck2dentity_deserialize(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_ck2dentity_serialize(
-    const nmo_ck2dentity_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ck2dentity_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena);
 
 #ifdef __cplusplus

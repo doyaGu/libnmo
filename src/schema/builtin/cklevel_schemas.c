@@ -16,6 +16,8 @@
 #include "schema/nmo_ckbeobject_schemas.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -248,79 +250,80 @@ static nmo_result_t nmo_cklevel_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_cklevel_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_cklevel_state_t *state)
+    const nmo_cklevel_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklevel_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
     nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
     if (parent_serialize) {
-        nmo_result_t result = parent_serialize(chunk, &state->base);
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) return result;
     }
 
     /* Section 1: LEVELDEFAULTDATA */
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
+    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result.code != NMO_OK) return result;
 
     /* Write two empty legacy arrays */
-    result = nmo_chunk_write_int(chunk, 0);
+    result = nmo_chunk_write_int(out_chunk, 0);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(chunk, 0);
+    result = nmo_chunk_write_int(out_chunk, 0);
     if (result.code != NMO_OK) return result;
 
     /* Write scene list */
-    result = nmo_chunk_write_int(chunk, (int32_t)state->scene_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->scene_count);
     if (result.code != NMO_OK) return result;
 
-    for (uint32_t i = 0; i < state->scene_count; i++) {
-        result = nmo_chunk_write_object_id(chunk, state->scene_ids[i]);
+    for (uint32_t i = 0; i < in_state->scene_count; i++) {
+        result = nmo_chunk_write_object_id(out_chunk, in_state->scene_ids[i]);
         if (result.code != NMO_OK) return result;
     }
 
     /* Section 2: LEVELSCENE */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LEVELSCENE);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELSCENE);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->current_scene_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->current_scene_id);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->level_scene_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->level_scene_id);
     if (result.code != NMO_OK) return result;
 
     /* Write level scene sub-chunk */
-    if (state->level_scene_chunk) {
-        result = nmo_chunk_write_sub_chunk(chunk, state->level_scene_chunk);
+    if (in_state->level_scene_chunk) {
+        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->level_scene_chunk);
         if (result.code != NMO_OK) return result;
     }
 
     /* Section 3: LEVELINACTIVEMAN (optional) */
-    if (state->inactive_manager_count > 0 && state->inactive_manager_guids) {
-        result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LEVELINACTIVEMAN);
+    if (in_state->inactive_manager_count > 0 && in_state->inactive_manager_guids) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELINACTIVEMAN);
         if (result.code != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < state->inactive_manager_count; i++) {
-            result = nmo_chunk_write_guid(chunk, state->inactive_manager_guids[i]);
+        for (uint32_t i = 0; i < in_state->inactive_manager_count; i++) {
+            result = nmo_chunk_write_guid(out_chunk, in_state->inactive_manager_guids[i]);
             if (result.code != NMO_OK) return result;
         }
 
         /* Section 4: LEVELDUPLICATEMAN (optional) */
-        if (state->duplicate_manager_count > 0 && state->duplicate_manager_names) {
-            result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
+        if (in_state->duplicate_manager_count > 0 && in_state->duplicate_manager_names) {
+            result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
             if (result.code != NMO_OK) return result;
 
-            for (uint32_t i = 0; i < state->duplicate_manager_count; i++) {
-                result = nmo_chunk_write_string(chunk, state->duplicate_manager_names[i]);
+            for (uint32_t i = 0; i < in_state->duplicate_manager_count; i++) {
+                result = nmo_chunk_write_string(out_chunk, in_state->duplicate_manager_names[i]);
                 if (result.code != NMO_OK) return result;
             }
 
             /* Write NULL terminator */
-            result = nmo_chunk_write_string(chunk, NULL);
+            result = nmo_chunk_write_string(out_chunk, NULL);
             if (result.code != NMO_OK) return result;
         }
     }
@@ -329,11 +332,50 @@ static nmo_result_t nmo_cklevel_serialize(
 }
 
 /* =============================================================================
+ * VTABLE WRAPPERS
+ * ============================================================================= */
+
+/**
+ * @brief Vtable read wrapper for CKLevel
+ */
+static nmo_result_t nmo_cklevel_vtable_read(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_ptr)
+{
+    (void)type; /* Type info not needed for CKLevel */
+    return nmo_cklevel_deserialize(chunk, arena, (nmo_cklevel_state_t *)out_ptr);
+}
+
+/**
+ * @brief Vtable write wrapper for CKLevel
+ */
+static nmo_result_t nmo_cklevel_vtable_write(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_ptr,
+    nmo_arena_t *arena)
+{
+    (void)type; /* Type info not needed for CKLevel */
+    return nmo_cklevel_serialize((const nmo_cklevel_state_t *)in_ptr, chunk, arena);
+}
+
+/**
+ * @brief Vtable for CKLevel schema
+ */
+static const nmo_schema_vtable_t nmo_cklevel_vtable = {
+    .read = nmo_cklevel_vtable_read,
+    .write = nmo_cklevel_vtable_write,
+    .validate = NULL
+};
+
+/* =============================================================================
  * SCHEMA REGISTRATION
  * ============================================================================= */
 
 /**
- * @brief Register CKLevel schema types
+ * @brief Register CKLevel schema types with vtable
  * 
  * Creates schema descriptors for CKLevel state structures.
  * 
@@ -350,8 +392,30 @@ nmo_result_t nmo_register_cklevel_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_cklevel_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
+    /* Get base types */
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
+    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
+    
+    if (!uint32_type || !object_id_type) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
+            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
+    }
+
+    /* Register CKLevel state structure with vtable */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKLevelState",
+                                                      sizeof(nmo_cklevel_state_t),
+                                                      alignof(nmo_cklevel_state_t));
+    
+    nmo_builder_add_field_ex(&builder, "scene_count", uint32_type,
+                            offsetof(nmo_cklevel_state_t, scene_count), 0);
+    
+    /* Attach vtable for optimized read/write */
+    nmo_builder_set_vtable(&builder, &nmo_cklevel_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
     
     return nmo_result_ok();
 }

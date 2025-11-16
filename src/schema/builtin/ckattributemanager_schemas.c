@@ -10,12 +10,15 @@
 
 #include "schema/nmo_ckattributemanager_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "nmo_types.h"
+#include <stdalign.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -175,70 +178,101 @@ static nmo_result_t nmo_ckattributemanager_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckattributemanager_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckattributemanager_state_t *state)
+    const nmo_ckattributemanager_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_serialize"));
     }
 
     nmo_result_t result;
 
     /* Write identifier */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
     if (result.code != NMO_OK) return result;
 
     /* Write counts */
-    result = nmo_chunk_write_int(chunk, (int32_t)state->category_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->category_count);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(chunk, (int32_t)state->attribute_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->attribute_count);
     if (result.code != NMO_OK) return result;
 
     /* Write categories */
-    for (uint32_t i = 0; i < state->category_count; i++) {
-        const nmo_ckattribute_category_t *cat = &state->categories[i];
+    for (uint32_t i = 0; i < in_state->category_count; i++) {
+        const nmo_ckattribute_category_t *cat = &in_state->categories[i];
 
-        result = nmo_chunk_write_int(chunk, cat->present ? 1 : 0);
+        result = nmo_chunk_write_int(out_chunk, cat->present ? 1 : 0);
         if (result.code != NMO_OK) return result;
 
         if (cat->present) {
-            result = nmo_chunk_write_string(chunk, cat->name ? cat->name : "");
+            result = nmo_chunk_write_string(out_chunk, cat->name ? cat->name : "");
             if (result.code != NMO_OK) return result;
 
-            result = nmo_chunk_write_dword(chunk, cat->flags);
+            result = nmo_chunk_write_dword(out_chunk, cat->flags);
             if (result.code != NMO_OK) return result;
         }
     }
 
     /* Write attributes */
-    for (uint32_t i = 0; i < state->attribute_count; i++) {
-        const nmo_ckattribute_descriptor_t *attr = &state->attributes[i];
+    for (uint32_t i = 0; i < in_state->attribute_count; i++) {
+        const nmo_ckattribute_descriptor_t *attr = &in_state->attributes[i];
 
-        result = nmo_chunk_write_int(chunk, attr->present ? 1 : 0);
+        result = nmo_chunk_write_int(out_chunk, attr->present ? 1 : 0);
         if (result.code != NMO_OK) return result;
 
         if (attr->present) {
-            result = nmo_chunk_write_string(chunk, attr->name ? attr->name : "");
+            result = nmo_chunk_write_string(out_chunk, attr->name ? attr->name : "");
             if (result.code != NMO_OK) return result;
 
-            result = nmo_chunk_write_guid(chunk, attr->parameter_type_guid);
+            result = nmo_chunk_write_guid(out_chunk, attr->parameter_type_guid);
             if (result.code != NMO_OK) return result;
 
-            result = nmo_chunk_write_int(chunk, attr->category_index);
+            result = nmo_chunk_write_int(out_chunk, attr->category_index);
             if (result.code != NMO_OK) return result;
 
-            result = nmo_chunk_write_int(chunk, attr->compatible_class_id);
+            result = nmo_chunk_write_int(out_chunk, attr->compatible_class_id);
             if (result.code != NMO_OK) return result;
 
-            result = nmo_chunk_write_dword(chunk, attr->flags);
+            result = nmo_chunk_write_dword(out_chunk, attr->flags);
             if (result.code != NMO_OK) return result;
         }
     }
 
     return nmo_result_ok();
 }
+
+/* =============================================================================
+ * VTABLE WRAPPERS
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_ckattributemanager(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_state)
+{
+    (void)type;
+    return nmo_ckattributemanager_deserialize(chunk, arena, (nmo_ckattributemanager_state_t *)out_state);
+}
+
+static nmo_result_t vtable_write_ckattributemanager(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_state,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    return nmo_ckattributemanager_serialize((const nmo_ckattributemanager_state_t *)in_state, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_ckattributemanager_vtable = {
+    .read = vtable_read_ckattributemanager,
+    .write = vtable_write_ckattributemanager,
+    .validate = NULL
+};
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -262,10 +296,13 @@ nmo_result_t nmo_register_ckattributemanager_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckattributemanager_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
-    
-    return nmo_result_ok();
+    nmo_schema_builder_t builder = nmo_builder_struct(
+        arena, "nmo_ckattributemanager_state_t",
+        sizeof(nmo_ckattributemanager_state_t), alignof(nmo_ckattributemanager_state_t));
+
+    nmo_builder_set_vtable(&builder, &nmo_ckattributemanager_vtable);
+
+    return nmo_builder_build(&builder, registry);
 }
 
 /* =============================================================================

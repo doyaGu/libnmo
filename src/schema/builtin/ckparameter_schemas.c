@@ -20,6 +20,8 @@
 #include "schema/nmo_ckparameter_schemas.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -170,57 +172,58 @@ static nmo_result_t nmo_ckparameter_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckparameter_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameter_state_t *state)
+    const nmo_ckparameter_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_serialize"));
     }
 
     /* Write parameter identifier */
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_PARAM_IDENTIFIER);
+    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_PARAM_IDENTIFIER);
     if (result.code != NMO_OK) return result;
 
     /* Write parameter type GUID */
-    result = nmo_chunk_write_guid(chunk, state->type_guid);
+    result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
     if (result.code != NMO_OK) return result;
 
     /* Write storage mode */
-    result = nmo_chunk_write_dword(chunk, (uint32_t)state->mode);
+    result = nmo_chunk_write_dword(out_chunk, (uint32_t)in_state->mode);
     if (result.code != NMO_OK) return result;
 
     /* Write data based on mode */
-    switch (state->mode) {
+    switch (in_state->mode) {
         case NMO_CKPARAM_MODE_NONE:
             /* No data to write */
             break;
 
         case NMO_CKPARAM_MODE_SUBCHUNK:
             /* Write sub-chunk data */
-            if (state->subchunk_data && state->subchunk_size > 0) {
-                result = nmo_chunk_write_buffer(chunk, state->subchunk_data, state->subchunk_size);
+            if (in_state->subchunk_data && in_state->subchunk_size > 0) {
+                result = nmo_chunk_write_buffer(out_chunk, in_state->subchunk_data, in_state->subchunk_size);
                 if (result.code != NMO_OK) return result;
             }
             break;
 
         case NMO_CKPARAM_MODE_OBJECT:
             /* Write object reference */
-            result = nmo_chunk_write_object_id(chunk, state->object_id);
+            result = nmo_chunk_write_object_id(out_chunk, in_state->object_id);
             if (result.code != NMO_OK) return result;
             break;
 
         case NMO_CKPARAM_MODE_MANAGER:
             /* Write manager int */
-            result = nmo_chunk_write_manager_int(chunk, state->manager_guid, state->manager_value);
+            result = nmo_chunk_write_manager_int(out_chunk, in_state->manager_guid, in_state->manager_value);
             if (result.code != NMO_OK) return result;
             break;
 
         case NMO_CKPARAM_MODE_BUFFER:
         default:
             /* Write buffer data */
-            if (state->buffer_data && state->buffer_size > 0) {
-                result = nmo_chunk_write_buffer(chunk, state->buffer_data, state->buffer_size);
+            if (in_state->buffer_data && in_state->buffer_size > 0) {
+                result = nmo_chunk_write_buffer(out_chunk, in_state->buffer_data, in_state->buffer_size);
                 if (result.code != NMO_OK) return result;
             }
             break;
@@ -232,6 +235,41 @@ static nmo_result_t nmo_ckparameter_serialize(
 /* =============================================================================
  * SCHEMA REGISTRATION
  * ============================================================================= */
+
+/**
+ * @brief Vtable read wrapper for CKParameter
+ */
+static nmo_result_t nmo_ckparameter_vtable_read(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_ptr)
+{
+    (void)type;
+    return nmo_ckparameter_deserialize(chunk, arena, (nmo_ckparameter_state_t *)out_ptr);
+}
+
+/**
+ * @brief Vtable write wrapper for CKParameter
+ */
+static nmo_result_t nmo_ckparameter_vtable_write(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_ptr,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    return nmo_ckparameter_serialize((const nmo_ckparameter_state_t *)in_ptr, chunk, arena);
+}
+
+/**
+ * @brief Vtable for CKParameter schema operations
+ */
+static const nmo_schema_vtable_t nmo_ckparameter_vtable = {
+    .read = nmo_ckparameter_vtable_read,
+    .write = nmo_ckparameter_vtable_write,
+    .validate = NULL
+};
 
 /**
  * @brief Register CKParameter schema types
@@ -251,8 +289,35 @@ nmo_result_t nmo_register_ckparameter_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckparameter_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
+    /* Get base types for fields */
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
+    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
+    
+    if (!uint32_type || !object_id_type) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
+            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
+    }
+
+    /* Create schema builder for CKParameter */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKParameterState",
+                                                      sizeof(nmo_ckparameter_state_t),
+                                                      alignof(nmo_ckparameter_state_t));
+    
+    /* Add parameter fields (simplified) */
+    nmo_builder_add_field_ex(&builder, "mode", uint32_type,
+                            offsetof(nmo_ckparameter_state_t, mode), 0);
+    nmo_builder_add_field_ex(&builder, "buffer_size", uint32_type,
+                            offsetof(nmo_ckparameter_state_t, buffer_size), 0);
+    nmo_builder_add_field_ex(&builder, "object_id", object_id_type,
+                            offsetof(nmo_ckparameter_state_t, object_id), 0);
+
+    /* Attach vtable for optimized read/write */
+    nmo_builder_set_vtable(&builder, &nmo_ckparameter_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
     
     return nmo_result_ok();
 }
@@ -333,31 +398,32 @@ static nmo_result_t nmo_ckparameterin_deserialize(
  * Reference: reference/src/CKParameterIn.cpp:142-162
  */
 static nmo_result_t nmo_ckparameterin_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameterin_state_t *state)
+    const nmo_ckparameterin_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
     /* Write identifier based on shared/direct source */
-    uint32_t identifier = state->is_shared 
+    uint32_t identifier = in_state->is_shared 
         ? CK_STATESAVE_PARAMETERIN_DATASHARED 
         : CK_STATESAVE_PARAMETERIN_DATASOURCE;
     
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, identifier);
+    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, identifier);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_guid(chunk, state->type_guid);
+    result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->source_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->source_id);
     if (result.code != NMO_OK) return result;
 
     /* Write disabled flag if needed */
-    if (state->is_disabled) {
-        result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED);
+    if (in_state->is_disabled) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETERIN_DISABLED);
         if (result.code != NMO_OK) return result;
     }
 
@@ -413,24 +479,25 @@ static nmo_result_t nmo_ckparameterout_deserialize(
  * Reference: reference/src/CKParameterOut.cpp:130-142
  */
 static nmo_result_t nmo_ckparameterout_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameterout_state_t *state)
+    const nmo_ckparameterout_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
     /* Write destinations if any */
-    if (state->destination_count > 0 && state->destination_ids) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
+    if (in_state->destination_count > 0 && in_state->destination_ids) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
         if (result.code != NMO_OK) return result;
 
-        result = nmo_chunk_write_int(chunk, (int32_t)state->destination_count);
+        result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->destination_count);
         if (result.code != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < state->destination_count; i++) {
-            result = nmo_chunk_write_object_id(chunk, state->destination_ids[i]);
+        for (uint32_t i = 0; i < in_state->destination_count; i++) {
+            result = nmo_chunk_write_object_id(out_chunk, in_state->destination_ids[i]);
             if (result.code != NMO_OK) return result;
         }
     }
@@ -481,23 +548,24 @@ static nmo_result_t nmo_ckparameterlocal_deserialize(
  * Reference: reference/src/CKParameterLocal.cpp:119-130
  */
 static nmo_result_t nmo_ckparameterlocal_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameterlocal_state_t *state)
+    const nmo_ckparameterlocal_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
     /* Write "myself" flag if needed */
-    if (state->is_myself) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PARAMETEROUT_MYSELF);
+    if (in_state->is_myself) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_MYSELF);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write setting flag if needed */
-    if (state->is_setting) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING);
+    if (in_state->is_setting) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING);
         if (result.code != NMO_OK) return result;
     }
 
@@ -609,32 +677,33 @@ static nmo_result_t nmo_ckparameteroperation_deserialize(
  * Reference: reference/src/CKParameterOperation.cpp:155-211
  */
 static nmo_result_t nmo_ckparameteroperation_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameteroperation_state_t *state)
+    const nmo_ckparameteroperation_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
     /* Write new data format (file context) */
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OPERATIONNEWDATA);
+    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONNEWDATA);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_guid(chunk, state->operation_guid);
+    result = nmo_chunk_write_guid(out_chunk, in_state->operation_guid);
     if (result.code != NMO_OK) return result;
 
     /* Write parameter sequence */
-    result = nmo_chunk_write_dword(chunk, 3); /* sequence count */
+    result = nmo_chunk_write_dword(out_chunk, 3); /* sequence count */
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->input1_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->input1_id);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->input2_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->input2_id);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->output_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->output_id);
     if (result.code != NMO_OK) return result;
 
     return nmo_result_ok();

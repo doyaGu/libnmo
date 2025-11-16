@@ -13,6 +13,7 @@
 #include "schema/nmo_ckspritetext_schemas.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -418,8 +419,8 @@ nmo_result_t nmo_register_ckspritetext_schemas(
     }
     
     /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
-    const nmo_schema_type_t *int32_type = nmo_schema_registry_find_by_name(registry, "int32_t");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
+    const nmo_schema_type_t *int32_type = nmo_schema_registry_find_by_name(registry, "i32");
     const nmo_schema_type_t *string_type = nmo_schema_registry_find_by_name(registry, "string");
     
     if (!uint32_type || !int32_type || !string_type) {

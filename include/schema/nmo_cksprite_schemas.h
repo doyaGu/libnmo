@@ -131,7 +131,7 @@ typedef struct nmo_cksprite_state {
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_cksprite_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_cksprite_state_t *out_state);
 
@@ -143,8 +143,9 @@ typedef nmo_result_t (*nmo_cksprite_deserialize_fn)(
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_cksprite_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_cksprite_state_t *state);
+    const nmo_cksprite_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -173,7 +174,7 @@ NMO_API nmo_result_t nmo_register_cksprite_schemas(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_cksprite_deserialize(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_cksprite_state_t *out_state);
 
@@ -186,8 +187,8 @@ NMO_API nmo_result_t nmo_cksprite_deserialize(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_cksprite_serialize(
-    const nmo_cksprite_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_cksprite_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena);
 
 #ifdef __cplusplus

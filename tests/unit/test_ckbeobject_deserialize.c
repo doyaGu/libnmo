@@ -175,7 +175,7 @@ TEST(ckbeobject_serialize, with_scripts) {
     nmo_ckbeobject_serialize_fn serialize = nmo_get_ckbeobject_serialize();
     ASSERT_NE(NULL, serialize);
 
-    nmo_result_t result = serialize(chunk, &state);
+    nmo_result_t result = serialize(&state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify SCRIPTS identifier was written */
@@ -215,7 +215,7 @@ TEST(ckbeobject_roundtrip, scripts_and_priority) {
 
     /* Serialize */
     nmo_ckbeobject_serialize_fn serialize = nmo_get_ckbeobject_serialize();
-    nmo_result_t result = serialize(chunk, &original_state);
+    nmo_result_t result = serialize(&original_state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Switch to read mode */

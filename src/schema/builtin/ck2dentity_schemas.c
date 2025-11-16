@@ -16,6 +16,7 @@
 #include "schema/nmo_ck2dentity_schemas.h"
 #include "schema/nmo_ckrenderobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -410,30 +411,30 @@ static nmo_result_t serialize_modern(
  * Always uses modern format (v5+) for simplicity.
  */
 nmo_result_t nmo_ck2dentity_serialize(
-    const nmo_ck2dentity_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ck2dentity_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena)
 {
-    if (!state || !chunk || !arena) {
+    if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_serialize"));
     }
     
     /* Serialize parent CKRenderObject data */
-    nmo_result_t result = nmo_ckrenderobject_serialize(chunk, &state->render_object);
+    nmo_result_t result = nmo_ckrenderobject_serialize(&in_state->render_object, out_chunk, arena);
     if (result.code != NMO_OK) {
         return result;
     }
     
     /* Serialize CK2dEntity data (always use modern format) */
-    result = serialize_modern(state, chunk);
+    result = serialize_modern(in_state, out_chunk);
     if (result.code != NMO_OK) {
         return result;
     }
     
     /* Write raw tail if present */
-    if (state->raw_tail && state->raw_tail_size > 0) {
-        result = nmo_chunk_write_buffer_no_size(chunk, state->raw_tail, state->raw_tail_size);
+    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
+        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
         if (result.code != NMO_OK) {
             return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                 NMO_SEVERITY_ERROR, "Failed to write raw tail"));

@@ -97,7 +97,7 @@ typedef struct nmo_ckparameter_state {
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckparameter_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckparameter_state_t *out_state);
 
@@ -109,8 +109,9 @@ typedef nmo_result_t (*nmo_ckparameter_deserialize_fn)(
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckparameter_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameter_state_t *state);
+    const nmo_ckparameter_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -232,40 +233,44 @@ typedef struct nmo_ckparameteroperation_state {
  * ============================================================================= */
 
 typedef nmo_result_t (*nmo_ckparameterin_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckparameterin_state_t *out_state);
 
 typedef nmo_result_t (*nmo_ckparameterin_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameterin_state_t *state);
+    const nmo_ckparameterin_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 typedef nmo_result_t (*nmo_ckparameterout_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckparameterout_state_t *out_state);
 
 typedef nmo_result_t (*nmo_ckparameterout_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameterout_state_t *state);
+    const nmo_ckparameterout_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 typedef nmo_result_t (*nmo_ckparameterlocal_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckparameterlocal_state_t *out_state);
 
 typedef nmo_result_t (*nmo_ckparameterlocal_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameterlocal_state_t *state);
+    const nmo_ckparameterlocal_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 typedef nmo_result_t (*nmo_ckparameteroperation_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckparameteroperation_state_t *out_state);
 
 typedef nmo_result_t (*nmo_ckparameteroperation_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckparameteroperation_state_t *state);
+    const nmo_ckparameteroperation_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * PUBLIC API - Derived Class Accessors

@@ -21,6 +21,7 @@
 #include "schema/nmo_cksceneobject_schemas.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -282,128 +283,129 @@ static nmo_result_t nmo_ckbehavior_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckbehavior_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckbehavior_state_t *state)
+    const nmo_ckbehavior_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (!in_state || !out_chunk || !arena) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_serialize"));
     }
 
     /* Write base class (CKSceneObject) data */
     nmo_cksceneobject_serialize_fn parent_serialize = nmo_get_cksceneobject_serialize();
     if (parent_serialize) {
-        nmo_result_t result = parent_serialize(chunk, &state->base);
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) return result;
     }
 
     nmo_result_t result;
 
     /* Optional: Interface chunk */
-    if (state->interface_chunk) {
-        result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_BEHAVIORINTERFACE);
+    if (in_state->interface_chunk) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORINTERFACE);
         if (result.code != NMO_OK) return result;
 
-        result = nmo_chunk_write_sub_chunk(chunk, state->interface_chunk);
+        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->interface_chunk);
         if (result.code != NMO_OK) return result;
     }
 
     /* Main behavior data */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_BEHAVIORNEWDATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORNEWDATA);
     if (result.code != NMO_OK) return result;
 
     /* Write behavior flags */
-    result = nmo_chunk_write_dword(chunk, state->flags);
+    result = nmo_chunk_write_dword(out_chunk, in_state->flags);
     if (result.code != NMO_OK) return result;
 
     /* Write building block data */
-    if (state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-        result = nmo_chunk_write_guid(chunk, state->block_guid);
+    if (in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+        result = nmo_chunk_write_guid(out_chunk, in_state->block_guid);
         if (result.code != NMO_OK) return result;
 
-        result = nmo_chunk_write_dword(chunk, state->block_version);
+        result = nmo_chunk_write_dword(out_chunk, in_state->block_version);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write priority */
-    if (state->flags & CKBEHAVIOR_PRIORITY) {
-        result = nmo_chunk_write_int(chunk, state->priority);
+    if (in_state->flags & CKBEHAVIOR_PRIORITY) {
+        result = nmo_chunk_write_int(out_chunk, in_state->priority);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write compatible class ID */
-    if (state->flags & CKBEHAVIOR_COMPATIBLECLASSID) {
-        result = nmo_chunk_write_int(chunk, state->compatible_class_id);
+    if (in_state->flags & CKBEHAVIOR_COMPATIBLECLASSID) {
+        result = nmo_chunk_write_int(out_chunk, in_state->compatible_class_id);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write target parameter */
-    if (state->flags & CKBEHAVIOR_TARGETABLE) {
-        result = nmo_chunk_write_object_id(chunk, state->target_parameter_id);
+    if (in_state->flags & CKBEHAVIOR_TARGETABLE) {
+        result = nmo_chunk_write_object_id(out_chunk, in_state->target_parameter_id);
         if (result.code != NMO_OK) return result;
     }
 
     /* Calculate save flags */
     uint32_t save_flags = 0;
-    if (state->sub_behavior_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
-    if (state->sub_behavior_link_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
-    if (state->operation_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
-    if (state->in_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
-    if (state->out_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPARAMS;
-    if (state->local_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS;
-    if (state->input_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
-    if (state->output_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
+    if (in_state->sub_behavior_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
+    if (in_state->sub_behavior_link_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
+    if (in_state->operation_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
+    if (in_state->in_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
+    if (in_state->out_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPARAMS;
+    if (in_state->local_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS;
+    if (in_state->input_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
+    if (in_state->output_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
 
-    result = nmo_chunk_write_dword(chunk, save_flags);
+    result = nmo_chunk_write_dword(out_chunk, save_flags);
     if (result.code != NMO_OK) return result;
 
     /* Write arrays */
     if (save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
-        result = write_object_array(chunk, state->sub_behaviors, state->sub_behavior_count);
+        result = write_object_array(out_chunk, in_state->sub_behaviors, in_state->sub_behavior_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
-        result = write_object_array(chunk, state->sub_behavior_links, state->sub_behavior_link_count);
+        result = write_object_array(out_chunk, in_state->sub_behavior_links, in_state->sub_behavior_link_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
-        result = write_object_array(chunk, state->operations, state->operation_count);
+        result = write_object_array(out_chunk, in_state->operations, in_state->operation_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORINPARAMS) {
-        result = write_object_array(chunk, state->in_parameters, state->in_parameter_count);
+        result = write_object_array(out_chunk, in_state->in_parameters, in_state->in_parameter_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIOROUTPARAMS) {
-        result = write_object_array(chunk, state->out_parameters, state->out_parameter_count);
+        result = write_object_array(out_chunk, in_state->out_parameters, in_state->out_parameter_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORLOCALPARAMS) {
-        result = write_object_array(chunk, state->local_parameters, state->local_parameter_count);
+        result = write_object_array(out_chunk, in_state->local_parameters, in_state->local_parameter_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORINPUTS) {
-        result = write_object_array(chunk, state->inputs, state->input_count);
+        result = write_object_array(out_chunk, in_state->inputs, in_state->input_count);
         if (result.code != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIOROUTPUTS) {
-        result = write_object_array(chunk, state->outputs, state->output_count);
+        result = write_object_array(out_chunk, in_state->outputs, in_state->output_count);
         if (result.code != NMO_OK) return result;
     }
 
     /* Optional: Single activity flags */
-    if (state->has_single_activity) {
-        result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_BEHAVIORSINGLEACTIVITY);
+    if (in_state->has_single_activity) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORSINGLEACTIVITY);
         if (result.code != NMO_OK) return result;
 
-        result = nmo_chunk_write_dword(chunk, state->single_activity_flags);
+        result = nmo_chunk_write_dword(out_chunk, in_state->single_activity_flags);
         if (result.code != NMO_OK) return result;
     }
 

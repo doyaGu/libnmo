@@ -193,7 +193,7 @@ typedef struct nmo_ck_texture_state {
  * - NMO_ERR_NOMEM: Arena allocation failure
  */
 typedef nmo_result_t (*nmo_cktexture_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ck_texture_state_t *out_state
 );
@@ -218,8 +218,8 @@ typedef nmo_result_t (*nmo_cktexture_deserialize_fn)(
  * - NMO_ERR_VALIDATION_FAILED: Invalid format or missing required data
  */
 typedef nmo_result_t (*nmo_cktexture_serialize_fn)(
-    const nmo_ck_texture_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ck_texture_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena
 );
 

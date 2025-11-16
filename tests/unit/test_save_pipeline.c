@@ -14,11 +14,44 @@
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"
 #include "format/nmo_object.h"
+#include "schema/nmo_builtin_types.h"       /* for nmo_register_builtin_types */
+#include "schema/nmo_ckobject_hierarchy.h"  /* for nmo_register_ckobject_hierarchy */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "miniz.h"
+
+/* Initialize schemas once for all tests */
+static void init_schemas_once(nmo_context_t *ctx) {
+    nmo_schema_registry_t *registry = nmo_context_get_schema_registry(ctx);
+    nmo_arena_t *arena = nmo_context_get_arena(ctx);
+    
+    if (!registry || !arena) {
+        fprintf(stderr, "ERROR: Cannot get registry or arena from context\n");
+        return;
+    }
+    
+    /* Register base types (scalar, math, virtools) */
+    nmo_result_t result = nmo_register_builtin_types(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "ERROR: Failed to register builtin types: %d\n", result.code);
+        if (result.error) {
+            fprintf(stderr, "       %s\n", result.error->message);
+        }
+        return;
+    }
+    
+    /* Register all CKObject class hierarchy schemas */
+    result = nmo_register_ckobject_hierarchy(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "ERROR: Failed to register CKObject hierarchy: %d\n", result.code);
+        if (result.error) {
+            fprintf(stderr, "       %s\n", result.error->message);
+        }
+        return;
+    }
+}
 
 typedef struct saved_section {
     void *data;
@@ -86,7 +119,8 @@ static void add_repeated_objects(nmo_session_t *session,
         nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
         ASSERT_NOT_NULL(obj);
         memset(obj, 0, sizeof(nmo_object_t));
-        obj->class_id = class_base + (uint32_t) i;
+        /* Use real class IDs: 1=CKObject (all objects use same class for simplicity) */
+        obj->class_id = 1;  /* CKCID_OBJECT */
 
         size_t name_len = strlen(name_template);
         char *name_copy = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
@@ -160,6 +194,7 @@ TEST(save_pipeline, single_object) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -172,7 +207,7 @@ TEST(save_pipeline, single_object) {
     ASSERT_NOT_NULL(obj);
 
     memset(obj, 0, sizeof(nmo_object_t));
-    obj->class_id = 0x12345678;
+    obj->class_id = 0x00000001;  /* CKCID_OBJECT */
     obj->name = "TestObject";
     obj->flags = 0;
     obj->arena = arena;
@@ -208,6 +243,7 @@ TEST(save_pipeline, multiple_objects) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -222,7 +258,7 @@ TEST(save_pipeline, multiple_objects) {
         ASSERT_NOT_NULL(obj);
 
         memset(obj, 0, sizeof(nmo_object_t));
-        obj->class_id = 0x10000000 + (uint32_t)i;
+        obj->class_id = 0x00000002;  /* CKCID_SCENEOBJECT */
 
         /* Create name */
         char* name = (char*)nmo_arena_alloc(arena, 32, 1);
@@ -263,6 +299,7 @@ TEST(save_pipeline, with_flags) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -275,7 +312,7 @@ TEST(save_pipeline, with_flags) {
     ASSERT_NOT_NULL(obj);
 
     memset(obj, 0, sizeof(nmo_object_t));
-    obj->class_id = 0xABCDEF00;
+    obj->class_id = 0x00000001;  /* CKCID_OBJECT */
     obj->name = "FlaggedObject";
     obj->arena = arena;
 
@@ -319,6 +356,7 @@ TEST(save_pipeline, id_remapping) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -335,7 +373,7 @@ TEST(save_pipeline, id_remapping) {
         ASSERT_NOT_NULL(obj);
 
         memset(obj, 0, sizeof(nmo_object_t));
-        obj->class_id = 0x20000000 + (uint32_t)i;
+        obj->class_id = 0x00000003;  /* CKCID_3DENTITY */
 
         char* name = (char*)nmo_arena_alloc(arena, 32, 1);
         snprintf(name, 32, "Object_ID_%u", runtime_ids[i]);
@@ -375,6 +413,7 @@ TEST(save_pipeline, null_arguments) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -400,6 +439,7 @@ TEST(save_pipeline, large_count) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -416,7 +456,7 @@ TEST(save_pipeline, large_count) {
         }
 
         memset(obj, 0, sizeof(nmo_object_t));
-        obj->class_id = 0x30000000 + (uint32_t)i;
+        obj->class_id = 0x00000001;  /* CKCID_OBJECT */
 
         char* name = (char*)nmo_arena_alloc(arena, 32, 1);
         snprintf(name, 32, "LargeTest_%zu", i);
@@ -454,6 +494,7 @@ TEST(save_pipeline, file_info_propagation) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -466,7 +507,7 @@ TEST(save_pipeline, file_info_propagation) {
     ASSERT_NOT_NULL(obj);
 
     memset(obj, 0, sizeof(nmo_object_t));
-    obj->class_id = 0x40000000;
+    obj->class_id = 0x00000001;  /* CKCID_OBJECT */
     obj->name = "FileInfoTest";
     obj->arena = arena;
 
@@ -515,10 +556,11 @@ TEST(save_pipeline, file_info_propagation) {
 
 TEST(save_pipeline, reference_only_save) {
     nmo_context_desc_t desc = {0};
-    nmo_context_t *ctx = nmo_context_create(&desc);
+    nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
-    nmo_session_t *session = nmo_session_create(ctx);
+    nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
 
     nmo_arena_t *arena = nmo_session_get_arena(session);
@@ -597,6 +639,7 @@ TEST(save_pipeline, included_files_round_trip) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_session_t *session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
@@ -607,7 +650,7 @@ TEST(save_pipeline, included_files_round_trip) {
     nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
     ASSERT_NOT_NULL(obj);
     memset(obj, 0, sizeof(nmo_object_t));
-    obj->class_id = 0x50000001;
+    obj->class_id = 0x00000001;  /* CKCID_OBJECT */
     obj->name = "IncludedCarrier";
     obj->arena = arena;
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
@@ -679,6 +722,7 @@ TEST(save_pipeline, plugin_dependencies_from_plugin_manager) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     nmo_plugin_manager_t *plugin_mgr = nmo_context_get_plugin_manager(ctx);
     ASSERT_NOT_NULL(plugin_mgr);
@@ -698,7 +742,7 @@ TEST(save_pipeline, plugin_dependencies_from_plugin_manager) {
     nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
     ASSERT_NOT_NULL(obj);
     memset(obj, 0, sizeof(nmo_object_t));
-    obj->class_id = 0x60000001;
+    obj->class_id = 0x00000001;  /* CKCID_OBJECT */
     obj->name = "PluginCarrier";
     obj->arena = arena;
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
@@ -757,6 +801,7 @@ TEST(save_pipeline, compression_modes) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
+    init_schemas_once(ctx);
 
     const size_t object_count = 64;
     const char *repeat_name = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
