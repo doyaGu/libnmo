@@ -68,34 +68,6 @@ nmo_result_t nmo_header_write(const nmo_header_t *header, void *io) {
 }
 
 /**
- * Get header info
- */
-nmo_result_t nmo_header_get_info(const nmo_header_t *header, nmo_file_header_info_t *out_info) {
-    if (header == NULL || out_info == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Header and output info cannot be NULL"));
-    }
-
-    /* Extract magic from signature (first 4 chars) */
-    memcpy(out_info->magic, header->data.signature, 4);
-    out_info->version = header->data.file_version;
-    out_info->flags = header->data.file_write_mode;
-    
-    /* Calculate total file size (approximate) */
-    out_info->file_size = 32;  /* Part0 */
-    if (header->data.file_version >= 5) {
-        out_info->file_size += 32;  /* Part1 */
-    }
-    out_info->file_size += header->data.hdr1_pack_size;
-    out_info->file_size += header->data.data_pack_size;
-    
-    out_info->header_size = (header->data.file_version >= 5) ? 64 : 32;
-
-    return nmo_result_ok();
-}
-
-/**
  * Get header size
  */
 uint32_t nmo_header_get_size(const nmo_header_t *header) {
