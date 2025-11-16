@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_logger.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -121,6 +122,38 @@ NMO_API nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx);
  * @return Logger
  */
 NMO_API nmo_logger_t *nmo_context_get_logger(const nmo_context_t *ctx);
+
+/**
+ * @brief Replace the context logger
+ *
+ * Copies the provided logger configuration into the context. Pass NULL to
+ * restore the default (null) logger.
+ *
+ * @param ctx Context
+ * @param logger Logger configuration to copy (NULL for default)
+ */
+NMO_API void nmo_context_set_logger(nmo_context_t *ctx, const nmo_logger_t *logger);
+
+/**
+ * @brief Enable or disable default logging to stderr
+ *
+ * Convenience wrapper that switches between the built-in stderr logger and the
+ * null logger.
+ *
+ * @param ctx Context
+ * @param enable Non-zero to enable logging, zero to disable
+ */
+NMO_API void nmo_context_enable_logging(nmo_context_t *ctx, int enable);
+
+/**
+ * @brief Set minimum log level for the current logger
+ *
+ * If the logger is not owned by the context it will be copied before adjusting.
+ *
+ * @param ctx Context
+ * @param level Minimum log level
+ */
+NMO_API void nmo_context_set_log_level(nmo_context_t *ctx, nmo_log_level_t level);
 
 /**
  * @brief Get the arena owned by the context

@@ -24,6 +24,7 @@
  *     .logger = nmo_logger_stderr(),
  *     .thread_pool_size = 4
  * });
+ * nmo_context_enable_logging(ctx, 1); // Optional: enable libnmo logs
  *
  * // Register built-in schemas
  * nmo_schema_registry_add_builtin(nmo_context_get_schema_registry(ctx));

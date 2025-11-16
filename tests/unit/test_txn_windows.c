@@ -7,6 +7,8 @@
 #include "io/nmo_txn.h"
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
 #include <windows.h>
 
 #define TEST_FILE "test_transaction.dat"
@@ -174,3 +176,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(txn_windows, multiple_writes);
     REGISTER_TEST(txn_windows, implicit_rollback);
 TEST_MAIN_END()
+
+#else
+int main(void) {
+    fprintf(stderr, "Skipping Windows-specific txn tests on this platform.\n");
+    return 0;
+}
+#endif

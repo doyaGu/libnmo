@@ -255,3 +255,16 @@ TEST(nmo_array, invalid_arguments) {
 
     nmo_array_dispose(&array);
 }
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(nmo_array, init_with_capacity);
+    REGISTER_TEST(nmo_array, alloc_sets_initial_count);
+    REGISTER_TEST(nmo_array, append_and_get);
+    REGISTER_TEST(nmo_array, set_insert_remove_pop);
+    REGISTER_TEST(nmo_array, append_array_and_extend);
+    REGISTER_TEST(nmo_array, reserve_and_ensure_space);
+    REGISTER_TEST(nmo_array, lifecycle_callbacks);
+    REGISTER_TEST(nmo_array, set_data_and_clone);
+    REGISTER_TEST(nmo_array, swap_resize_and_shrink);
+    REGISTER_TEST(nmo_array, invalid_arguments);
+TEST_MAIN_END()

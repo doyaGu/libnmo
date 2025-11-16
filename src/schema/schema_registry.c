@@ -4,6 +4,7 @@
  */
 
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_class_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_indexed_map.h"
@@ -391,4 +392,68 @@ nmo_result_t nmo_schema_registry_map_guid(
     }
     
     return nmo_result_ok();
+}
+
+/* =============================================================================
+ * EXTENDED LOOKUP WITH INHERITANCE
+ * ============================================================================= */
+
+const nmo_schema_type_t *nmo_schema_registry_find_by_class_id_inherited(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t class_id)
+{
+    if (registry == NULL || class_id == 0) {
+        return NULL;
+    }
+    
+    /* Try exact match first */
+    const nmo_schema_type_t *type = nmo_schema_registry_find_by_class_id(registry, class_id);
+    if (type != NULL) {
+        return type;
+    }
+    
+    /* Walk up inheritance chain looking for registered schema */
+    nmo_class_id_t current_id = class_id;
+    while (current_id != 0) {
+        nmo_class_id_t parent_id = nmo_class_get_parent(registry, current_id);
+        if (parent_id == 0) {
+            break; /* Reached root */
+        }
+        
+        type = nmo_schema_registry_find_by_class_id(registry, parent_id);
+        if (type != NULL) {
+            return type; /* Found schema for ancestor */
+        }
+        
+        current_id = parent_id;
+    }
+    
+    return NULL; /* No schema found in inheritance chain */
+}
+
+/* =============================================================================
+ * CLASS HIERARCHY INTEGRATION
+ * ============================================================================= */
+
+int nmo_schema_registry_uses_beobject_deserializer(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t class_id)
+{
+    if (registry == NULL || class_id == 0) {
+        return 0;
+    }
+    
+    return nmo_class_uses_beobject_deserializer(registry, class_id);
+}
+
+int nmo_schema_registry_is_derived_from(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t child_id,
+    nmo_class_id_t parent_id)
+{
+    if (registry == NULL || child_id == 0 || parent_id == 0) {
+        return 0;
+    }
+    
+    return nmo_class_is_derived_from(registry, child_id, parent_id);
 }

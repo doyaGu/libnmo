@@ -4,6 +4,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
 #include <string.h>
+#include <stdint.h>
 
 // =============================================================================
 // Internal Helpers
@@ -13,6 +14,10 @@ static nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
     if (!chunk) return NULL;
 
     if (!chunk->parser_state) {
+        if (!chunk->arena) {
+            return NULL;
+        }
+        
         chunk->parser_state = nmo_arena_alloc(chunk->arena,
                                               sizeof(nmo_chunk_parser_state_t),
                                               _Alignof(nmo_chunk_parser_state_t));
@@ -40,6 +45,7 @@ nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
     }
 
     state->current_pos = 0;
+    state->prev_identifier_pos = 0; // Reset to beginning
     return nmo_result_ok();
 }
 
@@ -116,6 +122,10 @@ uint32_t nmo_chunk_get_chunk_version(const nmo_chunk_t *chunk) {
 
 size_t nmo_chunk_get_data_size(const nmo_chunk_t *chunk) {
     return chunk ? (chunk->data_size * sizeof(uint32_t)) : 0;
+}
+
+uint32_t nmo_chunk_get_size(const nmo_chunk_t *chunk) {
+    return (uint32_t)nmo_chunk_get_data_size(chunk);
 }
 
 void nmo_chunk_update_data_size(nmo_chunk_t *chunk) {

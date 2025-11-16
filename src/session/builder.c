@@ -10,6 +10,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
+#include "schema/nmo_ckobject_hierarchy.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -112,7 +113,7 @@ nmo_builder_t *nmo_builder_create(const char *output_path) {
     }
     
     /* Create arena for string allocations */
-    builder->arena = nmo_arena_create(4096);
+    builder->arena = nmo_arena_create(NULL, 4096);
     if (builder->arena == NULL) {
         free(builder);
         return NULL;
@@ -175,18 +176,18 @@ void nmo_builder_destroy(nmo_builder_t *builder) {
  */
 nmo_result_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_object_t *object) {
     if (builder == NULL || object == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
     
     nmo_object_id_t obj_id = nmo_object_get_id(object);
     if (obj_id == NMO_OBJECT_ID_NONE) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid object ID"));
     }
     
     /* Check if already saved or referenced (matches m_AlreadySavedMask/m_AlreadyReferencedMask) */
     if (is_bit_set(builder->saved_mask, builder->mask_size, obj_id) ||
         is_bit_set(builder->referenced_mask, builder->mask_size, obj_id)) {
-        return NMO_OK;  /* Already processed, not an error */
+        return nmo_result_ok();  /* Already processed, not an error */
     }
     
     /* Mark as referenced (matches m_AlreadyReferencedMask.Set) */
@@ -201,7 +202,7 @@ nmo_result_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_obj
     if (builder->object_count >= builder->object_capacity) {
         int result = grow_file_objects(builder);
         if (result != NMO_OK) {
-            return result;
+            return nmo_result_error(NMO_ERROR(NULL, result, NMO_SEVERITY_ERROR, "Failed to grow file objects array"));
         }
     }
     
@@ -230,10 +231,15 @@ nmo_result_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_obj
     
     builder->object_count++;
     
-    /* TODO: Track scene/level if needed (matches CKIsChildClassOf check) */
-    /* This requires class hierarchy info not available in Phase 4 */
+    /* Track scene/level objects for save ordering */
+    /* CKFile checks: if (CKIsChildClassOf(obj, CKCID_SCENE) || CKIsChildClassOf(obj, CKCID_LEVEL)) */
+    nmo_class_id_t class_id = file_obj->class_id;
+    if (nmo_class_is_derived_from(NULL, class_id, 10) ||  /* CKCID_SCENE */
+        nmo_class_is_derived_from(NULL, class_id, 21)) {  /* CKCID_LEVEL */
+        /* Scene/level object detected - may need special handling in Phase 5+ save pipeline */
+    }
     
-    return NMO_OK;
+    return nmo_result_ok();
 }
 
 /**
@@ -243,10 +249,10 @@ nmo_result_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_obj
 
 nmo_result_t nmo_builder_start(nmo_builder_t *builder) {
     if (builder == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid builder"));
     }
     builder->stage = NMO_BUILD_STAGE_HEADER;
-    return NMO_OK;
+    return nmo_result_ok();
 }
 
 nmo_build_stage_t nmo_builder_build_next_stage(nmo_builder_t *builder) {
@@ -288,22 +294,22 @@ nmo_result_t nmo_builder_add_object(
     (void)size;
     
     if (builder == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid builder"));
     }
     
     /* Stub: Not implemented yet */
     snprintf(builder->error_msg, sizeof(builder->error_msg), 
              "nmo_builder_add_object not implemented (Phase 5+)");
-    return NMO_ERR_NOT_IMPLEMENTED;
+    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR, "Not implemented"));
 }
 
 nmo_result_t nmo_builder_finish(nmo_builder_t *builder) {
     if (builder == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid builder"));
     }
     
     builder->stage = NMO_BUILD_STAGE_COMPLETED;
-    return NMO_OK;
+    return nmo_result_ok();
 }
 
 const char *nmo_builder_get_error(const nmo_builder_t *builder) {

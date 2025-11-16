@@ -18,9 +18,14 @@ add_integration_test(test_chunk_special_cases)
 # Phase 5: FinishLoading and object index tests
 add_integration_test(test_finish_loading)
 
+# Phase 3A: Reference file compatibility test (ALL real Virtools files)
+add_integration_test(test_all_reference_files)
+
+# Phase 5+: Real file roundtrip with schema-based serialization
+add_integration_test(test_real_file_roundtrip)
+
 # Temporarily disabled tests (old API)
 # add_integration_test(test_roundtrip)
 # add_integration_test(test_round_trip)
-# add_integration_test(test_real_file_roundtrip)
 # add_integration_test(test_load_pipeline)
 # add_integration_test(test_save_pipeline)

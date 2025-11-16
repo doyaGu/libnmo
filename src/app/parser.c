@@ -27,6 +27,10 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_ckobject_schemas.h"
+#include "schema/nmo_ckbeobject_schemas.h"
+#include "schema/nmo_ckgroup_schemas.h"
+#include "schema/nmo_ckobject_hierarchy.h"
 #include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
@@ -68,33 +72,93 @@ static void nmo_format_guid_short(nmo_guid_t guid, char *buffer, size_t buffer_s
     }
 }
 
-static nmo_chunk_t* nmo_default_serialize_object(nmo_object_t *obj, nmo_arena_t *arena, nmo_logger_t *logger) {
-    if (!obj || !arena) {
+/**
+ * @brief Serialize object using schema-based vtable dispatch
+ * 
+ * Replaces the old nmo_default_serialize_object placeholder that only wrote object name.
+ * Now uses schema registry to find appropriate vtable and serialize complete object state.
+ * 
+ * @param obj Object to serialize
+ * @param arena Arena for allocations
+ * @param schema_reg Schema registry for vtable lookup
+ * @param logger Logger for diagnostics
+ * @return New chunk with serialized data, or NULL on error
+ */
+static nmo_chunk_t* nmo_serialize_object_with_schema(
+    nmo_object_t *obj,
+    nmo_arena_t *arena,
+    nmo_schema_registry_t *schema_reg,
+    nmo_logger_t *logger)
+{
+    if (!obj || !arena || !schema_reg) {
         return NULL;
     }
 
-    nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    if (!writer) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to create chunk writer for object %u", obj->id);
+    /* If object already has a chunk and no data (not modified), reuse it */
+    if (obj->chunk != NULL && obj->data == NULL) {
+        nmo_log(logger, NMO_LOG_DEBUG, "    Reusing existing chunk for object %u (unmodified)", obj->id);
+        return obj->chunk;
+    }
+
+    /* Find schema with inheritance fallback */
+    const nmo_schema_type_t *schema_type = 
+        nmo_schema_registry_find_by_class_id_inherited(schema_reg, obj->class_id);
+    
+    if (schema_type == NULL) {
+        nmo_log(logger, NMO_LOG_WARN, "    No schema found for class 0x%08X, preserving raw chunk", obj->class_id);
+        return obj->chunk; /* Preserve existing chunk if schema unavailable */
+    }
+
+    /* Check if schema has vtable with write function */
+    if (schema_type->vtable == NULL || schema_type->vtable->write == NULL) {
+        nmo_log(logger, NMO_LOG_WARN, "    Schema '%s' has no write vtable, preserving raw chunk", schema_type->name);
+        return obj->chunk; /* Preserve existing chunk if no serializer */
+    }
+
+    /* If object has data (deserialized state), serialize it */
+    if (obj->data == NULL) {
+        nmo_log(logger, NMO_LOG_WARN, "    Object %u has no data to serialize", obj->id);
+        return obj->chunk; /* Preserve existing chunk if no data */
+    }
+
+    /* Create new chunk for writing */
+    nmo_chunk_t *new_chunk = nmo_chunk_create(arena);
+    if (new_chunk == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "    Failed to create chunk for object %u", obj->id);
         return NULL;
     }
 
-    nmo_chunk_writer_start(writer, obj->class_id, 7); // Start with current chunk version
+    /* Set chunk class ID and version */
+    new_chunk->class_id = obj->class_id;
+    new_chunk->chunk_version = 7; /* Default to version 7 */
 
-    // Write object name as a string
-    if (obj->name) {
-        nmo_chunk_writer_write_string(writer, obj->name);
-    } else {
-        nmo_chunk_writer_write_string(writer, "");
-    }
-
-    nmo_chunk_t* new_chunk = nmo_chunk_writer_finalize(writer);
-    if (!new_chunk) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to finalize chunk for object %u", obj->id);
+    /* Start write mode */
+    nmo_result_t result = nmo_chunk_start_write(new_chunk);
+    if (result.code != NMO_OK) {
+        nmo_log(logger, NMO_LOG_ERROR, "    Failed to start chunk write for object %u", obj->id);
         return NULL;
     }
 
-    // The writer is managed by the arena, no need to destroy it.
+    /* Call vtable write function to serialize object state */
+    result = schema_type->vtable->write(schema_type, new_chunk, obj->data);
+    
+    if (result.code != NMO_OK) {
+        nmo_log(logger, NMO_LOG_ERROR, "    Failed to serialize object %u with schema '%s'",
+                obj->id, schema_type->name);
+        if (result.error != NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "      Error: code=%d, severity=%d",
+                    result.error->code, result.error->severity);
+        }
+        /* Fall back to existing chunk on error */
+        return obj->chunk;
+    }
+
+    /* Finalize chunk */
+    nmo_chunk_close(new_chunk);
+    
+    nmo_log(logger, NMO_LOG_DEBUG, "    Serialized object %u using schema '%s' (%zu bytes)",
+            obj->id, schema_type->name, new_chunk->data_size * 4);
+    
     return new_chunk;
 }
 
@@ -236,7 +300,7 @@ static int nmo_load_included_files(
     }
 
     if (expected > parsed) {
-        nmo_log(logger, NMO_LOG_WARN,
+        nmo_log(logger, NMO_LOG_INFO,
                 "  Header references %u included file(s), parsed %u entries",
                 expected, parsed);
 
@@ -258,8 +322,11 @@ static int nmo_load_included_files(
                     "  Recorded %u metadata-only include entries",
                     expected - parsed);
         } else {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Missing Header1 descriptors; cannot preserve include metadata");
+            /* This is expected behavior: Virtools writer never populates Header1
+             * included file descriptors. Files are appended after data section
+             * without metadata (see VIRTOOLS_FILE_FORMAT_SPEC.md Section 11.2) */
+            nmo_log(logger, NMO_LOG_DEBUG,
+                    "  Note: Header1 included file descriptors not populated (expected for Virtools format)");
         }
     }
 
@@ -630,7 +697,7 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
             nmo_log(logger, NMO_LOG_INFO, "  Manager %u: GUID={0x%08X,0x%08X}, DataSize=%u",
                     i, mgr_data->guid.d1, mgr_data->guid.d2, mgr_data->data_size);
 
-            /* TODO: Dispatch manager chunk to appropriate manager for deserialization */
+            /* Manager chunks are dispatched in Phase 13b for proper deserialization */
             if (mgr_data->chunk != NULL) {
                 nmo_log(logger, NMO_LOG_INFO, "    Manager chunk present (version %u)",
                         mgr_data->chunk->chunk_version);
@@ -763,18 +830,30 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     /* Phase 13: Remap IDs in All Chunks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 13: Remapping IDs in chunks");
     if (remap_table != NULL) {
+        size_t remap_error_count = 0;
         for (size_t i = 0; i < hdr1.object_count; i++) {
             if (created_objects[i] != NULL && created_objects[i]->chunk != NULL) {
-                nmo_chunk_remap_object_ids(created_objects[i]->chunk, remap_table);
+                nmo_result_t remap_result = nmo_chunk_remap_object_ids(created_objects[i]->chunk, remap_table);
+                if (remap_result.code != NMO_OK) {
+                    nmo_log(logger, NMO_LOG_ERROR, "  Failed to remap IDs in object %zu chunk", i);
+                    remap_error_count++;
+                }
             }
         }
         // Also remap manager chunks
         if (data_sect.managers != NULL) {
             for (uint32_t i = 0; i < data_sect.manager_count; i++) {
                 if (data_sect.managers[i].chunk != NULL) {
-                    nmo_chunk_remap_object_ids(data_sect.managers[i].chunk, remap_table);
+                    nmo_result_t remap_result = nmo_chunk_remap_object_ids(data_sect.managers[i].chunk, remap_table);
+                    if (remap_result.code != NMO_OK) {
+                        nmo_log(logger, NMO_LOG_ERROR, "  Failed to remap IDs in manager %u chunk", i);
+                        remap_error_count++;
+                    }
                 }
             }
+        }
+        if (remap_error_count > 0) {
+            nmo_log(logger, NMO_LOG_WARN, "  ID remapping completed with %zu errors", remap_error_count);
         }
     }
 
@@ -835,28 +914,204 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         nmo_log(logger, NMO_LOG_INFO, "  No manager chunks to dispatch");
     }
 
+    nmo_log(logger, NMO_LOG_INFO, "Phase 13b completed");
+    
     /* Phase 14: Deserialize Objects */
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Deserializing objects");
 
-    nmo_schema_registry_t *schema_reg = nmo_context_get_schema_registry(ctx);
     size_t repo_count = 0;
     nmo_object_t **objects = nmo_object_repository_get_all(repo, &repo_count);
+    
+    if (objects == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "  Failed to get objects from repository");
+        goto skip_object_processing;
+    }
+    
+    /* Get schema registry for schema-based deserialization with vtable dispatch */
+    nmo_schema_registry_t *schema_reg = nmo_context_get_schema_registry(ctx);
+    
+    if (schema_reg == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "Schema registry not initialized in context");
+        return -1; /* Parser function returns int, not nmo_result_t */
+    }
+
+    size_t deserialized_count = 0;
+    size_t skipped_count = 0;
+    size_t error_count = 0;
+    size_t no_schema_count = 0;
 
     for (size_t i = 0; i < repo_count; i++) {
         nmo_object_t *obj = objects[i];
-        /* TODO: Implement new schema-based deserialization
-         * Old API: nmo_schema_descriptor_t / deserialize_fn
-         * New API: nmo_schema_type_t / nmo_schema_read_struct
-         */
-        (void)schema_reg;  /* Suppress unused warning */
-        (void)obj;  /* Suppress unused warning */
+        
+        if (obj == NULL) {
+            nmo_log(logger, NMO_LOG_WARN, "  Object %zu is NULL, skipping", i);
+            skipped_count++;
+            continue;
+        }
+        
+        /* Skip objects without chunks (reference-only objects) */
+        if (obj->chunk == NULL) {
+            skipped_count++;
+            continue;
+        }
+
+        /* Prepare chunk for reading - wrap in error handler to prevent crash */
+        nmo_result_t read_result = {NMO_OK, NULL};
+        
+        /* Defensive: catch potential chunk corruption */
+        if (obj->chunk->data == NULL || obj->chunk->data_size == 0) {
+            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u): chunk has invalid data pointer or zero size, skipping",
+                    i, obj->id);
+            skipped_count++;
+            continue;
+        }
+        
+        if (obj->chunk->arena == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): chunk has NULL arena, skipping",
+                    i, obj->id);
+            error_count++;
+            continue;
+        }
+        
+        read_result = nmo_chunk_start_read(obj->chunk);
+        if (read_result.code != NMO_OK) {
+            error_count++;
+            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to start chunk read: %d",
+                    i, obj->id, read_result.code);
+            continue;
+        }
+
+        /* Query class hierarchy system for class info */
+        const char *class_name = nmo_ckclass_get_name_by_id(obj->class_id);
+        
+        if (class_name == NULL) {
+            /* Class ID not registered in hierarchy - no schema available */
+            no_schema_count++;
+            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X): unknown class ID, preserving raw chunk",
+                    i, obj->id, obj->class_id);
+            continue;
+        }
+        
+        /* Find schema type with inheritance-based fallback
+         * This searches up the class hierarchy until a schema is found */
+        const nmo_schema_type_t *schema_type = 
+            nmo_schema_registry_find_by_class_id_inherited(schema_reg, obj->class_id);
+        
+        if (schema_type == NULL) {
+            /* No schema found even after checking parent classes */
+            no_schema_count++;
+            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): no schema found in hierarchy",
+                    i, obj->id, obj->class_id, class_name);
+            continue;
+        }
+        
+        /* Check if schema has vtable with read function */
+        if (schema_type->vtable == NULL || schema_type->vtable->read == NULL) {
+            no_schema_count++;
+            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): schema '%s' has no vtable read function",
+                    i, obj->id, obj->class_id, class_name, schema_type->name);
+            continue;
+        }
+
+        /* Allocate state structure based on schema size */
+        void *state = nmo_arena_alloc(arena, schema_type->size, 8); /* 8-byte alignment for structs */
+        if (state == NULL) {
+            error_count++;
+            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to allocate %zu bytes for state",
+                    i, obj->id, schema_type->size);
+            continue;
+        }
+        memset(state, 0, schema_type->size);
+        
+        /* Call vtable read function (schema-driven deserialization) */
+        nmo_result_t result = schema_type->vtable->read(schema_type, obj->chunk, arena, state);
+        
+        /* Check result */
+        if (result.code == NMO_OK) {
+            /* Store state in object for later access */
+            nmo_object_set_data(obj, state);
+            deserialized_count++;
+            nmo_log(logger, NMO_LOG_DEBUG, "  Object %zu (ID=%u, class=0x%08X, type=%s): deserialized",
+                    i, obj->id, obj->class_id, class_name);
+        } else {
+            error_count++;
+            const char *error_msg = result.error ? result.error->message : "unknown error";
+            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u, class=0x%08X, type=%s): deserialization failed: %s",
+                    i, obj->id, obj->class_id, class_name, error_msg);
+            /* Chain the error for better debugging */
+            if (result.error != NULL) {
+                nmo_log(logger, NMO_LOG_ERROR, "    Error chain: code=%d, severity=%d",
+                        result.error->code, result.error->severity);
+            }
+        }
+        
+        i++; /* Increment loop counter */
     }
+
+    nmo_log(logger, NMO_LOG_INFO, "  Deserialization summary: %zu deserialized, %zu no schema, %zu skipped (no chunk), %zu errors",
+            deserialized_count, no_schema_count, skipped_count, error_count);
 
 skip_object_processing:
     /* Update repo_count after potential skip */
     nmo_object_repository_get_all(repo, &repo_count);
-    /* Phase 15: Manager Post-Load Hooks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 15: Executing manager post-load hooks");
+    
+    /* Phase 15: Object-Level FinishLoading (PostLoad equivalent) */
+    nmo_log(logger, NMO_LOG_INFO, "Phase 15: Executing object-level finish loading (PostLoad)");
+    
+    size_t finish_loading_count = 0;
+    size_t finish_loading_error_count = 0;
+    size_t finish_loading_skipped = 0;
+    
+    /* Iterate through all objects and call their finish_loading functions
+     * 
+     * Note: Current implementation uses direct function getters for known classes.
+     * Future enhancement: Add finish_loading function pointer to schema vtable
+     * and lookup via schema_registry_find_by_class_id() for proper layer separation.
+     * 
+     * This would eliminate hardcoded class checks and allow dynamic registration
+     * of finish_loading handlers by plugins/managers.
+     */
+    for (size_t i = 0; i < repo_count; i++) {
+        nmo_object_t *obj = objects[i];
+        if (!obj || !obj->data) {
+            finish_loading_skipped++;
+            continue;
+        }
+        
+        /* Get finish_loading function based on class_id
+         * TODO: Use schema registry lookup when vtable is extended with finish_loading.
+         * For now, use direct function access for implemented classes.
+         */
+        nmo_ckobject_finish_loading_fn finish_loading_fn = NULL;
+        nmo_class_id_t class_id = obj->class_id;
+        
+        /* CKGroup has specific finish_loading implementation */
+        if (class_id == 0x1E) {  /* CID_GROUP */
+            finish_loading_fn = nmo_get_ckgroup_finish_loading();
+        }
+        /* Note: Other classes use implicit no-op (no finish_loading needed yet) */
+        
+        if (finish_loading_fn) {
+            nmo_result_t result = finish_loading_fn(obj->data, arena, (void*)repo);
+            if (result.code == NMO_OK) {
+                finish_loading_count++;
+            } else {
+                finish_loading_error_count++;
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Object %u (class %u) finish_loading failed",
+                        obj->id, class_id);
+            }
+        } else {
+            finish_loading_skipped++;
+        }
+    }
+    
+    nmo_log(logger, NMO_LOG_INFO,
+            "  Finish loading summary: %zu processed, %zu errors, %zu skipped (no handler)",
+            finish_loading_count, finish_loading_error_count, finish_loading_skipped);
+    
+    /* Phase 16: Manager Post-Load Hooks */
+    nmo_log(logger, NMO_LOG_INFO, "Phase 16: Executing manager post-load hooks");
 
     if (manager_reg != NULL) {
         uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
@@ -887,16 +1142,11 @@ skip_object_processing:
 
     nmo_log(logger, NMO_LOG_INFO, "Load complete: %zu objects loaded", repo_count);
 
-    /* Phase 16: FinishLoading (Phase 5 integration) */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 16: Executing finish loading phase");
+    /* Phase 17: Session-Level FinishLoading (Reference Resolution & Indexing) */
+    nmo_log(logger, NMO_LOG_INFO, "Phase 17: Executing session-level finish loading");
     
     /* Determine finish loading flags based on load flags */
-    uint32_t finish_flags = 0;
-    
-    if (flags & NMO_LOAD_DEFAULT) {
-        /* Default: enable all finish loading operations */
-        finish_flags = NMO_FINISH_LOAD_DEFAULT;
-    }
+    uint32_t finish_flags = NMO_FINISH_LOAD_DEFAULT;
     
     if (flags & NMO_LOAD_SKIP_INDEX_BUILD) {
         /* Disable index building if requested */
@@ -1101,31 +1351,50 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     nmo_log(logger, NMO_LOG_INFO, "Phase 5: Serializing object chunks");
 
     nmo_schema_registry_t *schema_reg = nmo_context_get_schema_registry(ctx);
-    (void)schema_reg; // Suppress unused variable warning for now
+    if (schema_reg == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "Schema registry not available for serialization");
+        nmo_id_remap_plan_destroy(remap_plan);
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    size_t serialized_count = 0;
+    size_t reused_count = 0;
+    size_t skipped_count = 0;
 
     for (size_t i = 0; i < object_count; i++) {
         nmo_object_t *obj = objects[i];
 
         if (reference_map[i]) {
-            nmo_log(logger, NMO_LOG_INFO,
+            nmo_log(logger, NMO_LOG_DEBUG,
                     "  Skipping serialization for object %zu (reference placeholder)", i);
+            skipped_count++;
             continue;
         }
 
-        // In a full implementation, we would find the correct schema here.
-        // const nmo_schema_descriptor_t *schema =
-        //     nmo_schema_registry_find_by_id(schema_reg, obj->class_id);
-
-        // For now, we use a default serializer.
-        // If a chunk already exists (e.g. from a loaded file), we could reuse it.
-        // For now, we always re-serialize.
-        nmo_log(logger, NMO_LOG_INFO, "  Serializing object %zu (class 0x%08X)", i, obj->class_id);
-        obj->chunk = nmo_default_serialize_object(obj, arena, logger);
+        /* Use schema-based serialization with vtable dispatch */
+        nmo_log(logger, NMO_LOG_DEBUG, "  Serializing object %zu (ID=%u, class=0x%08X, name='%s')",
+                i, obj->id, obj->class_id, obj->name ? obj->name : "<unnamed>");
+        
+        nmo_chunk_t *old_chunk = obj->chunk;
+        obj->chunk = nmo_serialize_object_with_schema(obj, arena, schema_reg, logger);
+        
         if (obj->chunk == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to serialize object %u ('%s')", obj->id, obj->name ? obj->name : "");
-            // Decide on error handling: continue or abort? For now, continue.
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to serialize object %u ('%s')",
+                    obj->id, obj->name ? obj->name : "<unnamed>");
+            /* Critical error - cannot proceed without chunk */
+            nmo_id_remap_plan_destroy(remap_plan);
+            return NMO_ERR_INVALID_ARGUMENT; /* Use existing error code */
+        }
+        
+        if (obj->chunk == old_chunk) {
+            reused_count++;
+        } else {
+            serialized_count++;
         }
     }
+
+    nmo_log(logger, NMO_LOG_INFO, "  Serialization complete: %zu new, %zu reused, %zu skipped",
+            serialized_count, reused_count, skipped_count);
 
     /* Phase 6: Build and Compress Data Section */
     nmo_log(logger, NMO_LOG_INFO, "Phase 6: Building data section");

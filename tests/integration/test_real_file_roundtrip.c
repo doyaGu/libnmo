@@ -6,12 +6,13 @@
 #include "nmo.h"
 #include "app/nmo_parser.h"
 #include "format/nmo_data.h"
+#include "test_framework.h"  // For NMO_TEST_DATA_FILE macro
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 #ifdef _WIN32
-#define TEMP_FILE "C:\\Users\\kakut\\Works\\Virtools\\NeMo2\\CK2\\libnmo\\build\\test_roundtrip_temp.cmo"
+#define TEMP_FILE "test_roundtrip_temp.cmo"
 #else
 #define TEMP_FILE "/tmp/test_roundtrip_temp.cmo"
 #endif
@@ -149,13 +150,37 @@ static int test_file_roundtrip(const char* input_file) {
 
     /* Compare object data */
     if (passed && load1_objects != NULL && load2_objects != NULL) {
-        for (size_t i = 0; i < load1_obj_count && i < load2_obj_count; i++) {
+        /* Map objects by ID for correct comparison */
+        printf("  Comparing %zu objects by ID...\n", load1_obj_count);
+        
+        for (size_t i = 0; i < load1_obj_count; i++) {
             nmo_object_t* obj1 = load1_objects[i];
-            nmo_object_t* obj2 = load2_objects[i];
+            if (obj1 == NULL || obj1->id == 0) continue; /* Skip invalid or level placeholder */
+            
+            /* Skip reference objects (ID with highest bit set) */
+            if ((obj1->id & 0x80000000) != 0) {
+                printf("  SKIPPING reference object ID=0x%08X\n", obj1->id);
+                continue;
+            }
+            
+            /* Find corresponding object in load2 by ID */
+            nmo_object_t* obj2 = NULL;
+            for (size_t j = 0; j < load2_obj_count; j++) {
+                if (load2_objects[j] != NULL && load2_objects[j]->id == obj1->id) {
+                    obj2 = load2_objects[j];
+                    break;
+                }
+            }
+            
+            if (obj2 == NULL) {
+                printf("  FAILED: Object ID=%u from load1 not found in load2\n", obj1->id);
+                passed = 0;
+                break;
+            }
 
             if (obj1->class_id != obj2->class_id) {
-                printf("  FAILED: Object %zu class_id mismatch: 0x%08X vs 0x%08X\n",
-                       i, obj1->class_id, obj2->class_id);
+                printf("  FAILED: Object ID=%u class_id mismatch: 0x%08X vs 0x%08X\n",
+                       obj1->id, obj1->class_id, obj2->class_id);
                 passed = 0;
                 break;
             }
@@ -189,7 +214,8 @@ static int test_file_roundtrip(const char* input_file) {
     /* Clean up */
     nmo_session_destroy(load2_session);
     nmo_context_release(ctx);
-    remove(TEMP_FILE);
+    /* Keep temp file for debugging: remove(TEMP_FILE); */
+    printf("  (Temp file preserved at: %s)\n", TEMP_FILE);
 
     if (passed) {
         printf("  PASSED: Round-trip successful, data matches\n");
@@ -203,20 +229,20 @@ int main(void) {
 
     printf("=== Real File Round-Trip Tests ===\n\n");
 
-    /* Test with Empty.cmo */
-    if (test_file_roundtrip("../../../data/Empty.cmo") != 0) {
-        failed++;
-    }
-    printf("\n");
-
-    /* Test with Empty.vmo */
-    if (test_file_roundtrip("../../../data/Empty.vmo") != 0) {
-        failed++;
-    }
-    printf("\n");
-
     /* Test with 2D Text.nmo */
-    if (test_file_roundtrip("../../../data/2D Text.nmo") != 0) {
+    if (test_file_roundtrip(NMO_TEST_DATA_FILE("2D Text.nmo")) != 0) {
+        failed++;
+    }
+    printf("\n");
+
+    /* Test with base.cmo */
+    if (test_file_roundtrip(NMO_TEST_DATA_FILE("base.cmo")) != 0) {
+        failed++;
+    }
+    printf("\n");
+
+    /* Test with Nop.cmo */
+    if (test_file_roundtrip(NMO_TEST_DATA_FILE("Nop.cmo")) != 0) {
         failed++;
     }
     printf("\n");

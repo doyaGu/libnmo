@@ -7,6 +7,8 @@
 #include "io/nmo_txn.h"
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
 #include <windows.h>
 
 static int file_exists_utf8(const char* utf8_path) {
@@ -162,3 +164,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(txn_utf8, korean_filename);
     REGISTER_TEST(txn_utf8, emoji_filename);
 TEST_MAIN_END()
+
+#else
+int main(void) {
+    fprintf(stderr, "Skipping Windows UTF-8 txn tests on this platform.\n");
+    return 0;
+}
+#endif

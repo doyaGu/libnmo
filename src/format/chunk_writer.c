@@ -3,6 +3,7 @@
 #include "core/nmo_utils.h"
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #define LIST_SEQUENCE_MARKER 0xFFFFFFFFu
 

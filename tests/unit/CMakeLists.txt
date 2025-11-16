@@ -63,6 +63,8 @@ add_unit_test(test_stb_adapter)
 add_unit_test(test_schema)
 add_unit_test(test_schema_registry)
 add_unit_test(test_schema_builder)  # New fluent builder API tests
+add_unit_test(test_ckobject_deserialize)  # CKObject deserialization tests
+add_unit_test(test_ckbeobject_deserialize)  # CKBeObject deserialization tests
 add_unit_test(test_validator)  # Phase 1: Schema validator tests
 add_unit_test(test_migrator)   # Phase 1: Schema migrator tests
 add_unit_test(test_ckobject_hierarchy)  # CKObject class hierarchy tests

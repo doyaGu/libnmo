@@ -52,6 +52,7 @@ typedef struct nmo_context {
     nmo_logger_t logger_storage;
     nmo_allocator_t *allocator;
     nmo_logger_t *logger;
+    int logger_owned;
     nmo_schema_registry_t *schema_registry;
     nmo_manager_registry_t *manager_registry;
     nmo_plugin_manager_t *plugin_manager;
@@ -88,9 +89,11 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
 
     if (desc != NULL && desc->logger != NULL) {
         ctx->logger = desc->logger;
+        ctx->logger_owned = 0;
     } else {
         ctx->logger_storage = nmo_logger_stderr();
         ctx->logger = &ctx->logger_storage;
+        ctx->logger_owned = 1;
     }
 
     ctx->arena = nmo_arena_create(ctx->allocator, 0);
@@ -204,6 +207,44 @@ nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx) {
  */
 nmo_logger_t *nmo_context_get_logger(const nmo_context_t *ctx) {
     return ctx ? ctx->logger : NULL;
+}
+
+static void nmo_context_copy_logger(nmo_context_t *ctx, const nmo_logger_t *logger) {
+    if (!ctx) {
+        return;
+    }
+    if (logger == NULL) {
+        ctx->logger_storage = nmo_logger_null();
+    } else {
+        ctx->logger_storage = *logger;
+    }
+    ctx->logger = &ctx->logger_storage;
+    ctx->logger_owned = 1;
+}
+
+void nmo_context_set_logger(nmo_context_t *ctx, const nmo_logger_t *logger) {
+    nmo_context_copy_logger(ctx, logger);
+}
+
+void nmo_context_enable_logging(nmo_context_t *ctx, int enable) {
+    if (!ctx) {
+        return;
+    }
+    nmo_logger_t logger = enable ? nmo_logger_stderr() : nmo_logger_null();
+    nmo_context_copy_logger(ctx, &logger);
+}
+
+void nmo_context_set_log_level(nmo_context_t *ctx, nmo_log_level_t level) {
+    if (!ctx || ctx->logger == NULL) {
+        return;
+    }
+    if (!ctx->logger_owned) {
+        nmo_logger_t copy = *ctx->logger;
+        copy.level = level;
+        nmo_context_copy_logger(ctx, &copy);
+        return;
+    }
+    ctx->logger_storage.level = level;
 }
 
 /**
