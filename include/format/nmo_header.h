@@ -20,17 +20,6 @@ extern "C" {
 typedef struct nmo_header nmo_header_t;
 
 /**
- * @brief File header magic and version info
- */
-typedef struct nmo_file_header_info {
-    char magic[4];        /* NMO file magic */
-    uint32_t version;     /* File format version */
-    uint32_t flags;       /* File flags */
-    uint64_t file_size;   /* Total file size */
-    uint32_t header_size; /* Header size in bytes */
-} nmo_file_header_info_t;
-
-/**
  * @brief File write mode flags
  */
 typedef enum nmo_file_write_mode_flags {
@@ -94,14 +83,6 @@ NMO_API nmo_result_t nmo_header_parse(nmo_header_t *header, void *io);
  * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_header_write(const nmo_header_t *header, void *io);
-
-/**
- * Get header info
- * @param header Header context
- * @param out_info Output header info
- * @return NMO_OK on success
- */
-NMO_API nmo_result_t nmo_header_get_info(const nmo_header_t *header, nmo_file_header_info_t *out_info);
 
 /**
  * Get header size
