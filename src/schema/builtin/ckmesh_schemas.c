@@ -6,7 +6,7 @@
  * 
  * Serialization format (from CK2_3D.dll analysis):
  * 
- * Modern format (version ≥9):
+ * Modern format (version �?):
  * - Identifier 0x2000: Mesh flags (DWORD masked with 0x7FE39A)
  * 
  * - Identifier 0x100000: Material groups
@@ -62,6 +62,7 @@
 #include "schema/nmo_ckbeobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -561,19 +562,24 @@ static nmo_result_t nmo_ckmesh_deserialize(
 
 /**
  * @brief Serialize CKMesh state to chunk (placeholder)
+ * 
+ * @param in_state  Input state to serialize (must not be NULL)
+ * @param out_chunk Output chunk to write to (must not be NULL)
+ * @param arena     Arena for temporary allocations (must not be NULL)
+ * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckmesh_serialize(
-    const nmo_ck_mesh_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ck_mesh_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena)
 {
-    if (!state || !chunk || !arena) {
+    if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
                                           "Invalid arguments to serialize"));
     }
     
-    // Not implemented yet
+    /* Not implemented yet */
     return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_IMPLEMENTED,
                                       NMO_SEVERITY_ERROR,
                                       "CKMesh serialization not implemented"));
@@ -620,6 +626,44 @@ static nmo_result_t nmo_ckmesh_finish_loading(
  * ============================================================================= */
 
 /**
+ * @brief Vtable read wrapper for CKMesh
+ */
+static nmo_result_t nmo_ckmesh_vtable_read(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_ptr)
+{
+    (void)type;
+    return nmo_ckmesh_deserialize(chunk, arena, (nmo_ck_mesh_state_t *)out_ptr);
+}
+
+/**
+ * @brief Vtable write wrapper for CKMesh
+ */
+static nmo_result_t nmo_ckmesh_vtable_write(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_ptr,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    return nmo_ckmesh_serialize(
+        (const nmo_ck_mesh_state_t *)in_ptr,
+        chunk,
+        arena);
+}
+
+/**
+ * @brief Vtable for CKMesh schema operations
+ */
+static const nmo_schema_vtable_t nmo_ckmesh_vtable = {
+    .read = nmo_ckmesh_vtable_read,
+    .write = nmo_ckmesh_vtable_write,
+    .validate = NULL
+};
+
+/**
  * @brief Register CKMesh schema
  */
 nmo_result_t nmo_register_ckmesh_schemas(
@@ -633,8 +677,8 @@ nmo_result_t nmo_register_ckmesh_schemas(
     }
     
     // Get base types
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "float");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
+    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
     
     if (float_type == NULL || uint32_type == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
@@ -662,6 +706,9 @@ nmo_result_t nmo_register_ckmesh_schemas(
     nmo_builder_add_field_ex(&builder, "face_count", uint32_type,
                             offsetof(nmo_ck_mesh_state_t, face_count),
                             0);
+    
+    /* Attach vtable for optimized read/write */
+    nmo_builder_set_vtable(&builder, &nmo_ckmesh_vtable);
     
     nmo_result_t result = nmo_builder_build(&builder, registry);
     if (result.code != NMO_OK) {

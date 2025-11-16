@@ -16,10 +16,35 @@
 
 #include "schema/nmo_schema_builder.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_class_ids.h"
+#include "schema/nmo_ckobject_schemas.h"
+#include "schema/nmo_cksceneobject_schemas.h"
+#include "schema/nmo_ckbeobject_schemas.h"
+#include "schema/nmo_ckgroup_schemas.h"
+#include "schema/nmo_ck3dobject_schemas.h"
+#include "schema/nmo_ck3dentity_schemas.h"
+#include "schema/nmo_ck2dentity_schemas.h"
+#include "schema/nmo_ckrenderobject_schemas.h"
+#include "schema/nmo_ckcamera_schemas.h"
+#include "schema/nmo_cklight_schemas.h"
+#include "schema/nmo_ckmesh_schemas.h"
+#include "schema/nmo_cksprite_schemas.h"
+#include "schema/nmo_ckspritetext_schemas.h"
+#include "schema/nmo_cktexture_schemas.h"
+#include "schema/nmo_ckbehavior_schemas.h"
+#include "schema/nmo_ckbehaviorio_schemas.h"
+#include "schema/nmo_ckbehaviorlink_schemas.h"
+#include "schema/nmo_ckparameter_schemas.h"
+#include "schema/nmo_cklevel_schemas.h"
+#include "schema/nmo_ckscene_schemas.h"
+#include "schema/nmo_ckdataarray_schemas.h"
+#include "schema/nmo_ckattributemanager_schemas.h"
+#include "schema/nmo_ckmessagemanager_schemas.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include <stddef.h>
 #include <string.h>
+#include <stdio.h>
 
 /* =============================================================================
  * CLASS DEFINITION TABLE
@@ -103,45 +128,159 @@ static const ck_class_def_t CK_CLASSES[] = {
  * ============================================================================= */
 
 /**
- * @brief Register single class using builder API
- */
-static nmo_result_t register_class(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena,
-    const ck_class_def_t *class_def)
-{
-    /* All CKObject classes are currently defined as empty structs
-     * Fields will be added as their serialization formats are documented */
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena,
-        class_def->name,
-        0,  /* Variable size */
-        4   /* Default alignment */
-    );
-    
-    /* TODO: Add common CKObject fields:
-     * - object_id (u32)
-     * - name (string)
-     * - flags (u32)
-     * - class_id (u32)
-     */
-    
-    return nmo_builder_build(&builder, registry);
-}
-
-/**
  * @brief Register all CKObject hierarchy classes
+ * 
+ * This calls the individual register functions for each implemented schema.
+ * Each schema module registers its own state structure with serialize/deserialize vtables.
  */
 nmo_result_t nmo_register_ckobject_hierarchy(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena)
 {
-    /* Register all classes in order */
-    for (size_t i = 0; i < CK_CLASS_COUNT; i++) {
-        nmo_result_t result = register_class(registry, arena, &CK_CLASSES[i]);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+    nmo_result_t result;
+    
+    /* Core objects (all have vtables) */
+    result = nmo_register_ckobject_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKObject: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_cksceneobject_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKSceneObject: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckbeobject_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKBeObject: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckgroup_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKGroup: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckrenderobject_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKRenderObject: %d\n", result.code);
+        return result;
+    }
+    
+    /* 3D entities (all have vtables) */
+    result = nmo_register_ck3dobject_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CK3dObject: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ck3dentity_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CK3dEntity: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ck2dentity_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CK2dEntity: %d\n", result.code);
+        return result;
+    }
+    
+    /* Visual objects (all have vtables) */
+    result = nmo_register_ckcamera_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKCamera: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_cklight_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKLight: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckmesh_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKMesh: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_cksprite_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKSprite: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckspritetext_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKSpriteText: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_cktexture_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKTexture: %d\n", result.code);
+        return result;
+    }
+    
+    /* Behavior system (all have vtables) */
+    result = nmo_register_ckbehavior_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKBehavior: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckbehaviorio_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKBehaviorIO: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckbehaviorlink_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKBehaviorLink: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckparameter_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKParameter: %d\n", result.code);
+        return result;
+    }
+    
+    /* Scene management (all have vtables) */
+    result = nmo_register_cklevel_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKLevel: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckscene_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKScene: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckdataarray_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKDataArray: %d\n", result.code);
+        return result;
+    }
+    
+    /* Managers (all have vtables) */
+    result = nmo_register_ckattributemanager_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKAttributeManager: %d\n", result.code);
+        return result;
+    }
+    
+    result = nmo_register_ckmessagemanager_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKMessageManager: %d\n", result.code);
+        return result;
     }
     
     return nmo_result_ok();

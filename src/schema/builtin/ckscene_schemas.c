@@ -15,6 +15,8 @@
 #include "schema/nmo_ckbeobject_schemas.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -218,109 +220,110 @@ static nmo_result_t nmo_ckscene_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckscene_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckscene_state_t *state)
+    const nmo_ckscene_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckscene_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
     nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
     if (parent_serialize) {
-        nmo_result_t result = parent_serialize(chunk, &state->base);
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) return result;
     }
 
     /* Section 1: SCENENEWDATA */
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SCENENEWDATA);
+    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCENENEWDATA);
     if (result.code != NMO_OK) return result;
 
     /* Write level ID */
-    result = nmo_chunk_write_object_id(chunk, state->level_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->level_id);
     if (result.code != NMO_OK) return result;
 
     /* Write object count */
-    result = nmo_chunk_write_int(chunk, (int32_t)state->object_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_count);
     if (result.code != NMO_OK) return result;
 
-    if (state->object_count > 0) {
+    if (in_state->object_count > 0) {
         /* Write object ID sequence */
-        result = nmo_chunk_write_object_sequence_start(chunk, state->object_count);
+        result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->object_count);
         if (result.code != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < state->object_count; i++) {
-            result = nmo_chunk_write_object_id(chunk, state->object_descs[i].object_id);
+        for (uint32_t i = 0; i < in_state->object_count; i++) {
+            result = nmo_chunk_write_object_id(out_chunk, in_state->object_descs[i].object_id);
             if (result.code != NMO_OK) return result;
         }
 
         /* Write sub-chunk sequence (initial values + reserved NULLs) */
-        result = nmo_chunk_start_sub_chunk_sequence(chunk, state->object_count * 2);
+        result = nmo_chunk_start_sub_chunk_sequence(out_chunk, in_state->object_count * 2);
         if (result.code != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < state->object_count; i++) {
+        for (uint32_t i = 0; i < in_state->object_count; i++) {
             /* Write initial value chunk */
-            if (state->object_descs[i].initial_value) {
-                result = nmo_chunk_write_sub_chunk(chunk, state->object_descs[i].initial_value);
+            if (in_state->object_descs[i].initial_value) {
+                result = nmo_chunk_write_sub_chunk(out_chunk, in_state->object_descs[i].initial_value);
                 if (result.code != NMO_OK) return result;
             } else {
                 /* Write NULL chunk */
-                result = nmo_chunk_write_sub_chunk(chunk, NULL);
+                result = nmo_chunk_write_sub_chunk(out_chunk, NULL);
                 if (result.code != NMO_OK) return result;
             }
 
             /* Write reserved NULL chunk */
-            result = nmo_chunk_write_sub_chunk(chunk, NULL);
+            result = nmo_chunk_write_sub_chunk(out_chunk, NULL);
             if (result.code != NMO_OK) return result;
         }
 
         /* Write object flags */
-        for (uint32_t i = 0; i < state->object_count; i++) {
-            result = nmo_chunk_write_dword(chunk, state->object_descs[i].flags);
+        for (uint32_t i = 0; i < in_state->object_count; i++) {
+            result = nmo_chunk_write_dword(out_chunk, in_state->object_descs[i].flags);
             if (result.code != NMO_OK) return result;
         }
     }
 
     /* Section 2: SCENELAUNCHED */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SCENELAUNCHED);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCENELAUNCHED);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_dword(chunk, state->environment_settings);
+    result = nmo_chunk_write_dword(out_chunk, in_state->environment_settings);
     if (result.code != NMO_OK) return result;
 
     /* Section 3: SCENERENDERSETTINGS */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SCENERENDERSETTINGS);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCENERENDERSETTINGS);
     if (result.code != NMO_OK) return result;
 
     /* Background and ambient */
-    result = nmo_chunk_write_dword(chunk, state->background_color);
+    result = nmo_chunk_write_dword(out_chunk, in_state->background_color);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_dword(chunk, state->ambient_light_color);
+    result = nmo_chunk_write_dword(out_chunk, in_state->ambient_light_color);
     if (result.code != NMO_OK) return result;
 
     /* Fog settings */
-    result = nmo_chunk_write_dword(chunk, state->fog_mode);
+    result = nmo_chunk_write_dword(out_chunk, in_state->fog_mode);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_dword(chunk, state->fog_color);
+    result = nmo_chunk_write_dword(out_chunk, in_state->fog_color);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_float(chunk, state->fog_start);
+    result = nmo_chunk_write_float(out_chunk, in_state->fog_start);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_float(chunk, state->fog_end);
+    result = nmo_chunk_write_float(out_chunk, in_state->fog_end);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_float(chunk, state->fog_density);
+    result = nmo_chunk_write_float(out_chunk, in_state->fog_density);
     if (result.code != NMO_OK) return result;
 
     /* Scene references */
-    result = nmo_chunk_write_object_id(chunk, state->background_texture_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->background_texture_id);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->starting_camera_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->starting_camera_id);
     if (result.code != NMO_OK) return result;
 
     return nmo_result_ok();
@@ -329,6 +332,41 @@ static nmo_result_t nmo_ckscene_serialize(
 /* =============================================================================
  * SCHEMA REGISTRATION
  * ============================================================================= */
+
+/**
+ * @brief Vtable read wrapper for CKScene
+ */
+static nmo_result_t nmo_ckscene_vtable_read(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_ptr)
+{
+    (void)type;
+    return nmo_ckscene_deserialize(chunk, arena, (nmo_ckscene_state_t *)out_ptr);
+}
+
+/**
+ * @brief Vtable write wrapper for CKScene
+ */
+static nmo_result_t nmo_ckscene_vtable_write(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_ptr,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    return nmo_ckscene_serialize((const nmo_ckscene_state_t *)in_ptr, chunk, arena);
+}
+
+/**
+ * @brief Vtable for CKScene schema operations
+ */
+static const nmo_schema_vtable_t nmo_ckscene_vtable = {
+    .read = nmo_ckscene_vtable_read,
+    .write = nmo_ckscene_vtable_write,
+    .validate = NULL
+};
 
 /**
  * @brief Register CKScene schema types
@@ -348,8 +386,36 @@ nmo_result_t nmo_register_ckscene_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckscene_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
+    /* Get base types for fields */
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
+    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
+    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
+    
+    if (!uint32_type || !float_type || !object_id_type) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
+            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
+    }
+
+    /* Create schema builder for CKScene */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKSceneState",
+                                                      sizeof(nmo_ckscene_state_t),
+                                                      alignof(nmo_ckscene_state_t));
+    
+    /* Add scene fields (simplified) */
+    nmo_builder_add_field_ex(&builder, "level_id", object_id_type,
+                            offsetof(nmo_ckscene_state_t, level_id), 0);
+    nmo_builder_add_field_ex(&builder, "object_count", uint32_type,
+                            offsetof(nmo_ckscene_state_t, object_count), 0);
+    nmo_builder_add_field_ex(&builder, "background_color", uint32_type,
+                            offsetof(nmo_ckscene_state_t, background_color), 0);
+
+    /* Attach vtable for optimized read/write */
+    nmo_builder_set_vtable(&builder, &nmo_ckscene_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
     
     return nmo_result_ok();
 }

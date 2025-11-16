@@ -16,12 +16,15 @@
 #include "schema/nmo_cksprite_schemas.h"
 #include "schema/nmo_ck2dentity_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
 #include <stddef.h>
+#include <stdalign.h>
 #include <string.h>
 
 /* =============================================================================
@@ -307,32 +310,32 @@ nmo_result_t nmo_cksprite_deserialize(
  * Writes sprite data in original format (matches RCKSprite::Save behavior).
  */
 nmo_result_t nmo_cksprite_serialize(
-    const nmo_cksprite_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_cksprite_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena)
 {
-    if (!state || !chunk || !arena) {
+    if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_serialize"));
     }
     
     /* Serialize parent CK2dEntity data */
-    nmo_result_t result = nmo_ck2dentity_serialize(&state->entity, chunk, arena);
+    nmo_result_t result = nmo_ck2dentity_serialize(&in_state->entity, out_chunk, arena);
     if (result.code != NMO_OK) {
         return result;
     }
     
     /* Write sprite reference (identifier 0x80000) if present */
-    if (state->has_sprite_ref) {
-        result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITE_CHUNK_SPRITE_REF);
+    if (in_state->has_sprite_ref) {
+        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_SPRITE_REF);
         if (result.code != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(chunk, state->sprite_ref_id);
+        result = nmo_chunk_write_object_id(out_chunk, in_state->sprite_ref_id);
         if (result.code != NMO_OK) return result;
-    } else if (state->has_bitmap_data) {
+    } else if (in_state->has_bitmap_data) {
         /* Write bitmap data (simplified - preserve raw data for round-trip) */
-        if (state->bitmap_data.raw_data && state->bitmap_data.raw_data_size > 0) {
-            result = nmo_chunk_write_buffer_no_size(chunk, state->bitmap_data.raw_data,
-                state->bitmap_data.raw_data_size);
+        if (in_state->bitmap_data.raw_data && in_state->bitmap_data.raw_data_size > 0) {
+            result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->bitmap_data.raw_data,
+                in_state->bitmap_data.raw_data_size);
             if (result.code != NMO_OK) {
                 return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                     NMO_SEVERITY_ERROR, "Failed to write bitmap data"));
@@ -341,34 +344,34 @@ nmo_result_t nmo_cksprite_serialize(
     }
     
     /* Write transparency (identifier 0x20000) */
-    if (state->has_transparency) {
-        result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITE_CHUNK_TRANSPARENCY);
+    if (in_state->has_transparency) {
+        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_TRANSPARENCY);
         if (result.code != NMO_OK) return result;
-        result = nmo_chunk_write_dword(chunk, state->transparent_color);
+        result = nmo_chunk_write_dword(out_chunk, in_state->transparent_color);
         if (result.code != NMO_OK) return result;
-        result = nmo_chunk_write_dword(chunk, state->is_transparent ? 1 : 0);
+        result = nmo_chunk_write_dword(out_chunk, in_state->is_transparent ? 1 : 0);
         if (result.code != NMO_OK) return result;
     }
     
     /* Write current slot (identifier 0x10000) */
-    if (state->has_slot) {
-        result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITE_CHUNK_SLOT);
+    if (in_state->has_slot) {
+        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_SLOT);
         if (result.code != NMO_OK) return result;
-        result = nmo_chunk_write_dword(chunk, state->current_slot);
+        result = nmo_chunk_write_dword(out_chunk, in_state->current_slot);
         if (result.code != NMO_OK) return result;
     }
     
     /* Write save options (identifier 0x20000000) */
-    if (state->has_save_options) {
-        result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITE_CHUNK_SAVE_OPTIONS);
+    if (in_state->has_save_options) {
+        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_SAVE_OPTIONS);
         if (result.code != NMO_OK) return result;
-        result = nmo_chunk_write_dword(chunk, state->save_options);
+        result = nmo_chunk_write_dword(out_chunk, in_state->save_options);
         if (result.code != NMO_OK) return result;
         
         /* Write bitmap properties blob (v7+) */
-        if (state->bitmap_properties && state->bitmap_properties_size > 0) {
-            result = nmo_chunk_write_buffer_no_size(chunk, state->bitmap_properties,
-                state->bitmap_properties_size);
+        if (in_state->bitmap_properties && in_state->bitmap_properties_size > 0) {
+            result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->bitmap_properties,
+                in_state->bitmap_properties_size);
             if (result.code != NMO_OK) {
                 return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                     NMO_SEVERITY_ERROR, "Failed to write bitmap properties"));
@@ -377,8 +380,8 @@ nmo_result_t nmo_cksprite_serialize(
     }
     
     /* Write raw tail if present */
-    if (state->raw_tail && state->raw_tail_size > 0) {
-        result = nmo_chunk_write_buffer_no_size(chunk, state->raw_tail, state->raw_tail_size);
+    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
+        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
         if (result.code != NMO_OK) {
             return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                 NMO_SEVERITY_ERROR, "Failed to write raw tail"));
@@ -387,6 +390,28 @@ nmo_result_t nmo_cksprite_serialize(
     
     return nmo_result_ok();
 }
+
+/* =============================================================================
+ * VTABLE IMPLEMENTATION
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_cksprite(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
+    (void)type;
+    return nmo_cksprite_deserialize(chunk, arena, (nmo_cksprite_state_t *)out_ptr);
+}
+
+static nmo_result_t vtable_write_cksprite(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
+    (void)type;
+    return nmo_cksprite_serialize((const nmo_cksprite_state_t *)in_ptr, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_cksprite_vtable = {
+    .read = vtable_read_cksprite,
+    .write = vtable_write_cksprite,
+    .validate = NULL
+};
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -401,8 +426,18 @@ nmo_result_t nmo_register_cksprite_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_cksprite_schemas"));
     }
     
-    /* TODO: Register schema types when schema builder is ready */
-    /* For now, schemas are registered via deserialize/serialize functions */
+    /* Register minimal schema with vtable */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKSpriteState",
+                                                      sizeof(nmo_cksprite_state_t),
+                                                      alignof(nmo_cksprite_state_t));
+    
+    nmo_builder_set_vtable(&builder, &nmo_cksprite_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
     
     return nmo_result_ok();
 }
+

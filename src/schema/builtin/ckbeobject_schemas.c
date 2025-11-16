@@ -20,6 +20,7 @@
 #include "schema/nmo_schema.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -264,75 +265,76 @@ deserialize_done:
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckbeobject_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckbeobject_state_t *state)
+    const nmo_ckbeobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbeobject_serialize"));
     }
 
     /* Write base class (CKSceneObject) data */
     nmo_cksceneobject_serialize_fn parent_serialize = nmo_get_cksceneobject_serialize();
     if (parent_serialize) {
-        nmo_result_t result = parent_serialize(chunk, &state->base);
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write scripts if present */
-    if (state->script_count > 0 && state->script_ids) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SCRIPTS);
+    if (in_state->script_count > 0 && in_state->script_ids) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCRIPTS);
         if (result.code != NMO_OK) return result;
 
         /* Write script count */
-        result = nmo_chunk_write_dword(chunk, state->script_count);
+        result = nmo_chunk_write_dword(out_chunk, in_state->script_count);
         if (result.code != NMO_OK) return result;
 
         /* Write script IDs */
-        for (uint32_t i = 0; i < state->script_count; i++) {
-            result = nmo_chunk_write_object_id(chunk, state->script_ids[i]);
+        for (uint32_t i = 0; i < in_state->script_count; i++) {
+            result = nmo_chunk_write_object_id(out_chunk, in_state->script_ids[i]);
             if (result.code != NMO_OK) return result;
         }
     }
 
     /* Write priority data if non-zero */
-    if (state->priority != 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_DATAS);
+    if (in_state->priority != 0) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAS);
         if (result.code != NMO_OK) return result;
 
         /* Write version flag (modern format) */
-        result = nmo_chunk_write_dword(chunk, CK_DATAS_VERSION_FLAG);
+        result = nmo_chunk_write_dword(out_chunk, CK_DATAS_VERSION_FLAG);
         if (result.code != NMO_OK) return result;
 
         /* Write priority value */
-        result = nmo_chunk_write_int(chunk, state->priority);
+        result = nmo_chunk_write_int(out_chunk, in_state->priority);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write attributes if present */
-    if (state->attribute_count > 0 && state->attribute_parameter_ids && state->attribute_types) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_NEWATTRIBUTES);
+    if (in_state->attribute_count > 0 && in_state->attribute_parameter_ids && in_state->attribute_types) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_NEWATTRIBUTES);
         if (result.code != NMO_OK) return result;
 
         /* Start object ID sequence */
-        result = nmo_chunk_write_dword(chunk, state->attribute_count);
+        result = nmo_chunk_write_dword(out_chunk, in_state->attribute_count);
         if (result.code != NMO_OK) return result;
 
         /* Write attribute parameter object IDs */
-        for (uint32_t i = 0; i < state->attribute_count; i++) {
-            result = nmo_chunk_write_object_id(chunk, state->attribute_parameter_ids[i]);
+        for (uint32_t i = 0; i < in_state->attribute_count; i++) {
+            result = nmo_chunk_write_object_id(out_chunk, in_state->attribute_parameter_ids[i]);
             if (result.code != NMO_OK) return result;
         }
 
         /* Write manager sequence for attribute types */
         /* Note: We use a placeholder GUID - in real implementation this should be ATTRIBUTE_MANAGER_GUID */
         nmo_guid_t attr_mgr_guid = {0x6BED328B, 0x141F5148}; /* ATTRIBUTE_MANAGER_GUID */
-        result = nmo_chunk_start_manager_sequence(chunk, attr_mgr_guid, state->attribute_count);
+        result = nmo_chunk_start_manager_sequence(out_chunk, attr_mgr_guid, in_state->attribute_count);
         if (result.code != NMO_OK) return result;
 
         /* Write attribute types */
-        for (uint32_t i = 0; i < state->attribute_count; i++) {
-            result = nmo_chunk_write_dword(chunk, state->attribute_types[i]);
+        for (uint32_t i = 0; i < in_state->attribute_count; i++) {
+            result = nmo_chunk_write_dword(out_chunk, in_state->attribute_types[i]);
             if (result.code != NMO_OK) return result;
         }
     }
@@ -367,10 +369,11 @@ static nmo_result_t nmo_ckbeobject_vtable_read(
 static nmo_result_t nmo_ckbeobject_vtable_write(
     const nmo_schema_type_t *type,
     nmo_chunk_t *chunk,
-    const void *in_ptr)
+    const void *in_ptr,
+    nmo_arena_t *arena)
 {
     (void)type; /* Type info not needed for CKBeObject */
-    return nmo_ckbeobject_serialize(chunk, (const nmo_ckbeobject_state_t *)in_ptr);
+    return nmo_ckbeobject_serialize((const nmo_ckbeobject_state_t *)in_ptr, chunk, arena);
 }
 
 /**
@@ -406,9 +409,9 @@ nmo_result_t nmo_register_ckbeobject_schemas(
     }
 
     /* Get base types for fields */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
-    const nmo_schema_type_t *int32_type = nmo_schema_registry_find_by_name(registry, "int32_t");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "nmo_object_id_t");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
+    const nmo_schema_type_t *int32_type = nmo_schema_registry_find_by_name(registry, "i32");
+    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
     
     if (!uint32_type || !int32_type || !object_id_type) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
@@ -434,6 +437,15 @@ nmo_result_t nmo_register_ckbeobject_schemas(
     nmo_result_t result = nmo_builder_build(&builder, registry);
     if (result.code != NMO_OK) {
         return result;
+    }
+    
+    /* Map class ID to schema */
+    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKBeObjectState");
+    if (type) {
+        result = nmo_schema_registry_map_class_id(registry, NMO_CID_BEOBJECT, type);
+        if (result.code != NMO_OK) {
+            return result;
+        }
     }
     
     return nmo_result_ok();

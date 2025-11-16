@@ -141,7 +141,7 @@ TEST(ckobject_serialize, visible_object) {
     nmo_ckobject_serialize_fn serialize = nmo_get_ckobject_serialize();
     ASSERT_NE(NULL, serialize);
 
-    nmo_result_t result = serialize(chunk, &state);
+    nmo_result_t result = serialize(&state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify no identifiers written (chunk should be empty or minimal) */
@@ -177,7 +177,7 @@ TEST(ckobject_serialize, hidden_object) {
     nmo_ckobject_serialize_fn serialize = nmo_get_ckobject_serialize();
     ASSERT_NE(NULL, serialize);
 
-    nmo_result_t result = serialize(chunk, &state);
+    nmo_result_t result = serialize(&state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify OBJECTHIDDEN identifier was written */
@@ -214,7 +214,7 @@ TEST(ckobject_serialize, hierarchical_hidden_object) {
     nmo_ckobject_serialize_fn serialize = nmo_get_ckobject_serialize();
     ASSERT_NE(NULL, serialize);
 
-    nmo_result_t result = serialize(chunk, &state);
+    nmo_result_t result = serialize(&state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify OBJECTHIERAHIDDEN identifier was written */
@@ -249,7 +249,7 @@ TEST(ckobject_roundtrip, visible_object) {
 
     /* Serialize */
     nmo_ckobject_serialize_fn serialize = nmo_get_ckobject_serialize();
-    nmo_result_t result = serialize(chunk, &original_state);
+    nmo_result_t result = serialize(&original_state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Switch to read mode */
@@ -291,7 +291,7 @@ TEST(ckobject_roundtrip, hidden_object) {
 
     /* Serialize */
     nmo_ckobject_serialize_fn serialize = nmo_get_ckobject_serialize();
-    nmo_result_t result = serialize(chunk, &original_state);
+    nmo_result_t result = serialize(&original_state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Switch to read mode */
@@ -333,7 +333,7 @@ TEST(ckobject_roundtrip, hierarchical_hidden_object) {
 
     /* Serialize */
     nmo_ckobject_serialize_fn serialize = nmo_get_ckobject_serialize();
-    nmo_result_t result = serialize(chunk, &original_state);
+    nmo_result_t result = serialize(&original_state, chunk, arena);
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Switch to read mode */

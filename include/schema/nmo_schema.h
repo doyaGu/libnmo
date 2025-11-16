@@ -188,11 +188,13 @@ struct nmo_schema_vtable {
      * @param type Type descriptor
      * @param chunk Chunk to write to
      * @param in_ptr Input pointer (must point to valid data)
+     * @param arena Arena for error messages and temporary allocations
      * @return Result with error on failure
      */
     nmo_result_t (*write)(const nmo_schema_type_t *type,
                           nmo_chunk_t *chunk,
-                          const void *in_ptr);
+                          const void *in_ptr,
+                          nmo_arena_t *arena);
     
     /**
      * @brief Validate struct data
@@ -238,12 +240,14 @@ NMO_API nmo_result_t nmo_schema_read_struct(
  * @param type Type descriptor (must be NMO_TYPE_STRUCT)
  * @param chunk Chunk to write to
  * @param in_struct Input data (must be valid for type)
+ * @param arena Arena for error messages and temporary allocations
  * @return Result with error on failure
  */
 NMO_API nmo_result_t nmo_schema_write_struct(
     const nmo_schema_type_t *type,
     nmo_chunk_t *chunk,
-    const void *in_struct);
+    const void *in_struct,
+    nmo_arena_t *arena);
 
 /**
  * @brief Validate struct data against schema

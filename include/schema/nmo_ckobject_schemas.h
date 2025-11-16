@@ -102,20 +102,23 @@ NMO_API nmo_ckobject_deserialize_fn nmo_get_ckobject_deserialize(void);
  * Writes CKObject visibility state to chunk using identifier-based writing.
  * Symmetric to CKObject::Save in Virtools SDK.
  * 
- * @param chunk Chunk to write to
- * @param state Input state structure
+ * @param in_state  Input state structure to serialize
+ * @param out_chunk Output chunk to write to
+ * @param arena     Arena for temporary allocations
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckobject_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckobject_state_t *state);
+    const nmo_ckobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /**
  * @brief Serialize CKObject to chunk (implementation)
  */
 NMO_API nmo_result_t nmo_ckobject_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckobject_state_t *state);
+    const nmo_ckobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /**
  * @brief Get CKObject serialize function pointer

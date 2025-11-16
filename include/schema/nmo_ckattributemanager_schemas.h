@@ -167,7 +167,7 @@ typedef struct nmo_ckattributemanager_state {
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckattributemanager_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_ckattributemanager_state_t *out_state);
 
@@ -179,8 +179,9 @@ typedef nmo_result_t (*nmo_ckattributemanager_deserialize_fn)(
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_ckattributemanager_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_ckattributemanager_state_t *state);
+    const nmo_ckattributemanager_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * PUBLIC API

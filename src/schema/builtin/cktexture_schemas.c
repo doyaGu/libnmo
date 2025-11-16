@@ -13,6 +13,7 @@
 #include "schema/nmo_cktexture_schemas.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -523,7 +524,7 @@ nmo_result_t nmo_register_cktexture_schemas(
     }
     
     /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
     
     if (!uint32_type) {
         return nmo_result_error(NMO_ERROR(

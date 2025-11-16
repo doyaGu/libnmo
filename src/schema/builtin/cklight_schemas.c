@@ -39,6 +39,7 @@
 #include "schema/nmo_ck3dentity_schemas.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -671,8 +672,8 @@ nmo_result_t nmo_register_cklight_schemas(
     }
 
     /* Get base types */
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "float");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
+    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
     
     if (float_type == NULL || uint32_type == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,

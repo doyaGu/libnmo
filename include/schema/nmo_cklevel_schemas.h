@@ -81,7 +81,7 @@ typedef struct nmo_cklevel_state {
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_cklevel_deserialize_fn)(
-    nmo_chunk_t *chunk,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_cklevel_state_t *out_state);
 
@@ -93,8 +93,9 @@ typedef nmo_result_t (*nmo_cklevel_deserialize_fn)(
  * @return Result indicating success or error
  */
 typedef nmo_result_t (*nmo_cklevel_serialize_fn)(
-    nmo_chunk_t *chunk,
-    const nmo_cklevel_state_t *state);
+    const nmo_cklevel_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
 
 /* =============================================================================
  * SCHEMA REGISTRATION

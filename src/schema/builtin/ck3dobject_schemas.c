@@ -25,6 +25,7 @@
 #include "schema/nmo_ck3dentity_schemas.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -133,11 +134,11 @@ static nmo_result_t nmo_ck3dobject_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ck3dobject_serialize(
-    const nmo_ck3dobject_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ck3dobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena)
 {
-    if (!state || !chunk || !arena) {
+    if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
                                           "Invalid arguments to CK3dObject serialize"));
@@ -145,26 +146,26 @@ static nmo_result_t nmo_ck3dobject_serialize(
 
     // First serialize parent CK3dEntity data
     nmo_result_t result = nmo_ck3dentity_serialize(
-        &state->entity, chunk, arena);
+        &in_state->entity, out_chunk, arena);
     if (result.code != NMO_OK) {
         return result;
     }
 
     // Write mesh reference
-    result = nmo_chunk_write_object_id(chunk, state->mesh_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->mesh_id);
     if (result.code != NMO_OK) {
         return result;
     }
 
     // Write rendering flags
-    result = nmo_chunk_write_dword(chunk, state->rendering_flags);
+    result = nmo_chunk_write_dword(out_chunk, in_state->rendering_flags);
     if (result.code != NMO_OK) {
         return result;
     }
 
     // Write preserved tail data
-    if (state->raw_tail_size > 0 && state->raw_tail) {
-        result = nmo_chunk_write_buffer_no_size(chunk, state->raw_tail, state->raw_tail_size);
+    if (in_state->raw_tail_size > 0 && in_state->raw_tail) {
+        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -176,6 +177,28 @@ static nmo_result_t nmo_ck3dobject_serialize(
 /* =============================================================================
  * SCHEMA REGISTRATION
  * ============================================================================= */
+
+/* =============================================================================
+ * VTABLE IMPLEMENTATION
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_ck3dobject(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
+    (void)type;
+    return nmo_ck3dobject_deserialize(chunk, arena, (nmo_ck3dobject_state_t *)out_ptr);
+}
+
+static nmo_result_t vtable_write_ck3dobject(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
+    (void)type;
+    return nmo_ck3dobject_serialize((const nmo_ck3dobject_state_t *)in_ptr, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_ck3dobject_vtable = {
+    .read = vtable_read_ck3dobject,
+    .write = vtable_write_ck3dobject,
+    .validate = NULL
+};
 
 /**
  * @brief Register CK3dObject schema
@@ -200,7 +223,7 @@ nmo_result_t nmo_register_ck3dobject_schemas(
     }
 
     /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
     
     if (uint32_type == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
@@ -220,9 +243,21 @@ nmo_result_t nmo_register_ck3dobject_schemas(
                             offsetof(nmo_ck3dobject_state_t, rendering_flags),
                             0);
     
+    /* Set vtable for automated serialization */
+    nmo_builder_set_vtable(&builder, &nmo_ck3dobject_vtable);
+    
     nmo_result_t result = nmo_builder_build(&builder, registry);
     if (result.code != NMO_OK) {
         return result;
+    }
+
+    /* Map class ID to schema */
+    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CK3dObjectState");
+    if (type) {
+        result = nmo_schema_registry_map_class_id(registry, NMO_CID_3DOBJECT, type);
+        if (result.code != NMO_OK) {
+            return result;
+        }
     }
 
     return nmo_result_ok();
@@ -280,3 +315,4 @@ nmo_ck3dobject_finish_loading_fn nmo_get_ck3dobject_finish_loading(void)
 {
     return nmo_ck3dobject_finish_loading;
 }
+

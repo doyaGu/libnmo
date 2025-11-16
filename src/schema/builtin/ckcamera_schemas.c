@@ -27,6 +27,7 @@
 #include "schema/nmo_ck3dentity_schemas.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -185,11 +186,11 @@ static nmo_result_t nmo_ckcamera_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckcamera_serialize(
-    const nmo_ckcamera_state_t *state,
-    nmo_chunk_t *chunk,
+    const nmo_ckcamera_state_t *in_state,
+    nmo_chunk_t *out_chunk,
     nmo_arena_t *arena)
 {
-    if (!state || !chunk || !arena) {
+    if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
                                           "Invalid arguments to CKCamera serialize"));
@@ -197,36 +198,36 @@ static nmo_result_t nmo_ckcamera_serialize(
 
     // First serialize parent CK3dEntity data
     nmo_result_t result = nmo_ck3dentity_serialize(
-        &state->entity, chunk, arena);
+        &in_state->entity, out_chunk, arena);
     if (result.code != NMO_OK) {
         return result;
     }
 
     // Write projection parameters
-    result = nmo_chunk_write_dword(chunk, state->projection_type);
+    result = nmo_chunk_write_dword(out_chunk, in_state->projection_type);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, state->fov);
+    result = nmo_chunk_write_float(out_chunk, in_state->fov);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, state->aspect_ratio);
+    result = nmo_chunk_write_float(out_chunk, in_state->aspect_ratio);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, state->near_plane);
+    result = nmo_chunk_write_float(out_chunk, in_state->near_plane);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, state->far_plane);
+    result = nmo_chunk_write_float(out_chunk, in_state->far_plane);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, state->ortho_width);
+    result = nmo_chunk_write_float(out_chunk, in_state->ortho_width);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, state->ortho_height);
+    result = nmo_chunk_write_float(out_chunk, in_state->ortho_height);
     if (result.code != NMO_OK) return result;
 
     // Write preserved tail data
-    if (state->raw_tail_size > 0 && state->raw_tail) {
-        result = nmo_chunk_write_buffer_no_size(chunk, state->raw_tail, state->raw_tail_size);
+    if (in_state->raw_tail_size > 0 && in_state->raw_tail) {
+        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
         if (result.code != NMO_OK) return result;
     }
 
@@ -236,6 +237,44 @@ static nmo_result_t nmo_ckcamera_serialize(
 /* =============================================================================
  * SCHEMA REGISTRATION
  * ============================================================================= */
+
+/**
+ * @brief Vtable read wrapper for CKCamera
+ */
+static nmo_result_t nmo_ckcamera_vtable_read(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    void *out_ptr)
+{
+    (void)type;
+    return nmo_ckcamera_deserialize(chunk, arena, (nmo_ckcamera_state_t *)out_ptr);
+}
+
+/**
+ * @brief Vtable write wrapper for CKCamera
+ */
+static nmo_result_t nmo_ckcamera_vtable_write(
+    const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk,
+    const void *in_ptr,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    return nmo_ckcamera_serialize(
+        (const nmo_ckcamera_state_t *)in_ptr,
+        chunk,
+        arena);
+}
+
+/**
+ * @brief Vtable for CKCamera schema operations
+ */
+static const nmo_schema_vtable_t nmo_ckcamera_vtable = {
+    .read = nmo_ckcamera_vtable_read,
+    .write = nmo_ckcamera_vtable_write,
+    .validate = NULL
+};
 
 /**
  * @brief Register CKCamera state schema
@@ -257,8 +296,8 @@ nmo_result_t nmo_register_ckcamera_schemas(
     }
 
     /* Get base types */
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "float");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
+    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
     
     if (float_type == NULL || uint32_type == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
@@ -292,6 +331,9 @@ nmo_result_t nmo_register_ckcamera_schemas(
     nmo_builder_add_field_ex(&builder, "ortho_height", float_type,
                             offsetof(nmo_ckcamera_state_t, ortho_height),
                             0);
+    
+    /* Attach vtable for optimized read/write */
+    nmo_builder_set_vtable(&builder, &nmo_ckcamera_vtable);
     
     nmo_result_t result = nmo_builder_build(&builder, registry);
     if (result.code != NMO_OK) {
@@ -353,4 +395,5 @@ nmo_ckcamera_finish_loading_fn nmo_get_ckcamera_finish_loading(void)
 {
     return nmo_ckcamera_finish_loading;
 }
+
 

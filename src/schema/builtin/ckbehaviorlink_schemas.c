@@ -11,12 +11,15 @@
 #include "schema/nmo_ckbehaviorlink_schemas.h"
 #include "schema/nmo_ckobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
 #include <stddef.h>
+#include <stdalign.h>
 #include <string.h>
 
 /* =============================================================================
@@ -120,31 +123,32 @@ static nmo_result_t nmo_ckbehaviorlink_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckbehaviorlink_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckbehaviorlink_state_t *state)
+    const nmo_ckbehaviorlink_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorlink_serialize"));
     }
 
     nmo_result_t result;
 
     /* Write new format identifier */
-    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA);
     if (result.code != NMO_OK) return result;
 
     /* Pack delays into single DWORD (lower 16 bits = activation, upper 16 bits = initial) */
-    uint32_t delays = ((uint32_t)state->activation_delay & 0xFFFF) |
-                      (((uint32_t)state->initial_activation_delay & 0xFFFF) << 16);
-    result = nmo_chunk_write_dword(chunk, delays);
+    uint32_t delays = ((uint32_t)in_state->activation_delay & 0xFFFF) |
+                      (((uint32_t)in_state->initial_activation_delay & 0xFFFF) << 16);
+    result = nmo_chunk_write_dword(out_chunk, delays);
     if (result.code != NMO_OK) return result;
 
     /* Write I/O object references */
-    result = nmo_chunk_write_object_id(chunk, state->in_io_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->in_io_id);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_id(chunk, state->out_io_id);
+    result = nmo_chunk_write_object_id(out_chunk, in_state->out_io_id);
     if (result.code != NMO_OK) return result;
 
     return nmo_result_ok();
@@ -163,6 +167,28 @@ static nmo_result_t nmo_ckbehaviorlink_serialize(
  * @param arena Arena for schema allocations
  * @return Result indicating success or error
  */
+/* =============================================================================
+ * VTABLE IMPLEMENTATION
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_ckbehaviorlink(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
+    (void)type;
+    return nmo_ckbehaviorlink_deserialize(chunk, arena, (nmo_ckbehaviorlink_state_t *)out_ptr);
+}
+
+static nmo_result_t vtable_write_ckbehaviorlink(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
+    (void)type;
+    return nmo_ckbehaviorlink_serialize((const nmo_ckbehaviorlink_state_t *)in_ptr, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_ckbehaviorlink_vtable = {
+    .read = vtable_read_ckbehaviorlink,
+    .write = vtable_write_ckbehaviorlink,
+    .validate = NULL
+};
+
 nmo_result_t nmo_register_ckbehaviorlink_schemas(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena)
@@ -172,8 +198,17 @@ nmo_result_t nmo_register_ckbehaviorlink_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckbehaviorlink_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
+    /* Register minimal schema with vtable */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKBehaviorLinkState",
+                                                      sizeof(nmo_ckbehaviorlink_state_t),
+                                                      alignof(nmo_ckbehaviorlink_state_t));
+    
+    nmo_builder_set_vtable(&builder, &nmo_ckbehaviorlink_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
     
     return nmo_result_ok();
 }

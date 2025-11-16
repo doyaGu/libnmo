@@ -17,6 +17,7 @@
 #include "schema/nmo_schema.h"
 #include "schema/nmo_schema_registry.h"
 #include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -136,37 +137,38 @@ static nmo_result_t nmo_ckgroup_deserialize(
  * @return Result indicating success or error
  */
 static nmo_result_t nmo_ckgroup_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckgroup_state_t *state)
+    const nmo_ckgroup_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
     nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
     if (parent_serialize) {
-        nmo_result_t result = parent_serialize(chunk, &state->base);
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) return result;
     }
 
     /* Only write data if group is non-empty */
-    if (state->object_count == 0 || !state->object_ids) {
+    if (in_state->object_count == 0 || !in_state->object_ids) {
         return nmo_result_ok();
     }
 
     /* Write identifier */
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_GROUPALL);
+    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GROUPALL);
     if (result.code != NMO_OK) return result;
 
     /* Write object count */
-    result = nmo_chunk_write_int(chunk, (int32_t)state->object_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_count);
     if (result.code != NMO_OK) return result;
 
     /* Write object IDs */
-    for (uint32_t i = 0; i < state->object_count; i++) {
-        result = nmo_chunk_write_object_id(chunk, state->object_ids[i]);
+    for (uint32_t i = 0; i < in_state->object_count; i++) {
+        result = nmo_chunk_write_object_id(out_chunk, in_state->object_ids[i]);
         if (result.code != NMO_OK) return result;
     }
 
@@ -196,10 +198,11 @@ static nmo_result_t nmo_ckgroup_vtable_read(
 static nmo_result_t nmo_ckgroup_vtable_write(
     const nmo_schema_type_t *type,
     nmo_chunk_t *chunk,
-    const void *in_ptr)
+    const void *in_ptr,
+    nmo_arena_t *arena)
 {
     (void)type;
-    return nmo_ckgroup_serialize(chunk, (const nmo_ckgroup_state_t *)in_ptr);
+    return nmo_ckgroup_serialize((const nmo_ckgroup_state_t *)in_ptr, chunk, arena);
 }
 
 /**
@@ -234,8 +237,8 @@ nmo_result_t nmo_register_ckgroup_schemas(
     }
 
     /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "uint32_t");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "nmo_object_id_t");
+    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
+    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
     
     if (!uint32_type || !object_id_type) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
@@ -256,6 +259,15 @@ nmo_result_t nmo_register_ckgroup_schemas(
     nmo_result_t result = nmo_builder_build(&builder, registry);
     if (result.code != NMO_OK) {
         return result;
+    }
+    
+    /* Map class ID to schema */
+    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKGroupState");
+    if (type) {
+        result = nmo_schema_registry_map_class_id(registry, NMO_CID_GROUP, type);
+        if (result.code != NMO_OK) {
+            return result;
+        }
     }
     
     return nmo_result_ok();

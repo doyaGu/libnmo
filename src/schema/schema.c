@@ -113,7 +113,8 @@ static nmo_result_t read_field(
 static nmo_result_t write_field(
     const nmo_schema_field_t *field,
     nmo_chunk_t *chunk,
-    const void *struct_base);
+    const void *struct_base,
+    nmo_arena_t *arena);
 
 /* Read single value based on type kind */
 static nmo_result_t read_value(
@@ -298,13 +299,14 @@ static nmo_result_t read_field(
 static nmo_result_t write_value(
     const nmo_schema_type_t *type,
     nmo_chunk_t *chunk,
-    const void *in_ptr)
+    const void *in_ptr,
+    nmo_arena_t *arena)
 {
     nmo_result_t result;
     
     /* Check for vtable fast path */
     if (type->vtable != NULL && type->vtable->write != NULL) {
-        return type->vtable->write(type, chunk, in_ptr);
+        return type->vtable->write(type, chunk, in_ptr, arena);
     }
     
     switch (type->kind) {
@@ -337,7 +339,7 @@ static nmo_result_t write_value(
         case NMO_TYPE_STRUCT: {
             /* Write all fields */
             for (size_t i = 0; i < type->field_count; i++) {
-                result = write_field(&type->fields[i], chunk, in_ptr);
+                result = write_field(&type->fields[i], chunk, in_ptr, arena);
                 if (result.code != NMO_OK) return result;
             }
             result = nmo_result_ok();
@@ -356,7 +358,7 @@ static nmo_result_t write_value(
                 size_t elem_size = type->element_type->size;
                 for (uint32_t i = 0; i < count; i++) {
                     const void *elem_ptr = (const char*)array + i * elem_size;
-                    result = write_value(type->element_type, chunk, elem_ptr);
+                    result = write_value(type->element_type, chunk, elem_ptr, arena);
                     if (result.code != NMO_OK) return result;
                 }
             }
@@ -369,7 +371,7 @@ static nmo_result_t write_value(
             size_t elem_size = type->element_type->size;
             for (size_t i = 0; i < type->array_length; i++) {
                 const void *elem_ptr = (const char*)in_ptr + i * elem_size;
-                result = write_value(type->element_type, chunk, elem_ptr);
+                result = write_value(type->element_type, chunk, elem_ptr, arena);
                 if (result.code != NMO_OK) return result;
             }
             result = nmo_result_ok();
@@ -398,7 +400,7 @@ static nmo_result_t write_value(
         
         case NMO_TYPE_ENUM:
             /* Write underlying integer */
-            return write_value(type->element_type, chunk, in_ptr);
+            return write_value(type->element_type, chunk, in_ptr, arena);
         
         default:
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_VALIDATION_FAILED,
@@ -412,10 +414,11 @@ static nmo_result_t write_value(
 static nmo_result_t write_field(
     const nmo_schema_field_t *field,
     nmo_chunk_t *chunk,
-    const void *struct_base)
+    const void *struct_base,
+    nmo_arena_t *arena)
 {
     const void *field_ptr = (const char*)struct_base + field->offset;
-    return write_value(field->type, chunk, field_ptr);
+    return write_value(field->type, chunk, field_ptr, arena);
 }
 
 /* =============================================================================
@@ -453,25 +456,26 @@ nmo_result_t nmo_schema_read_struct(
 nmo_result_t nmo_schema_write_struct(
     const nmo_schema_type_t *type,
     nmo_chunk_t *chunk,
-    const void *in_struct)
+    const void *in_struct,
+    nmo_arena_t *arena)
 {
     if (type == NULL || chunk == NULL || in_struct == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "NULL argument to nmo_schema_write_struct"));
     }
     
     if (type->kind != NMO_TYPE_STRUCT) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Type is not a struct"));
     }
     
     /* Use vtable if available */
     if (type->vtable != NULL && type->vtable->write != NULL) {
-        return type->vtable->write(type, chunk, in_struct);
+        return type->vtable->write(type, chunk, in_struct, arena);
     }
     
     /* Generic reflection path */
-    return write_value(type, chunk, in_struct);
+    return write_value(type, chunk, in_struct, arena);
 }
 
 nmo_result_t nmo_schema_validate(

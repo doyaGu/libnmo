@@ -118,6 +118,17 @@ static nmo_chunk_t* nmo_serialize_object_with_schema(
     /* If object has data (deserialized state), serialize it */
     if (obj->data == NULL) {
         nmo_log(logger, NMO_LOG_WARN, "    Object %u has no data to serialize", obj->id);
+        /* If no existing chunk either, create an empty one */
+        if (obj->chunk == NULL) {
+            nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
+            if (empty_chunk) {
+                empty_chunk->class_id = obj->class_id;
+                empty_chunk->chunk_version = 7;
+                nmo_chunk_start_write(empty_chunk);
+                nmo_chunk_close(empty_chunk);
+                return empty_chunk;
+            }
+        }
         return obj->chunk; /* Preserve existing chunk if no data */
     }
 
@@ -140,7 +151,7 @@ static nmo_chunk_t* nmo_serialize_object_with_schema(
     }
 
     /* Call vtable write function to serialize object state */
-    result = schema_type->vtable->write(schema_type, new_chunk, obj->data);
+    result = schema_type->vtable->write(schema_type, new_chunk, obj->data, arena);
     
     if (result.code != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "    Failed to serialize object %u with schema '%s'",

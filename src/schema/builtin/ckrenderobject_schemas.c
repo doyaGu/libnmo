@@ -17,12 +17,15 @@
 #include "schema/nmo_ckrenderobject_schemas.h"
 #include "schema/nmo_ckbeobject_schemas.h"
 #include "schema/nmo_schema_registry.h"
+#include "schema/nmo_schema_builder.h"
+#include "schema/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
 #include <stddef.h>
+#include <stdalign.h>
 #include <string.h>
 
 /* =============================================================================
@@ -107,24 +110,26 @@ nmo_result_t nmo_ckrenderobject_deserialize(
  * 
  * Reference: reference/include/CKRenderObject.h (abstract class, no Save)
  * 
- * @param chunk Chunk to write to
- * @param state Input state structure
+ * @param in_state Input state structure
+ * @param out_chunk Chunk to write to
+ * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckrenderobject_serialize(
-    nmo_chunk_t *chunk,
-    const nmo_ckrenderobject_state_t *state)
+    const nmo_ckrenderobject_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
 {
-    if (chunk == NULL || state == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+    if (in_state == NULL || out_chunk == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_serialize"));
     }
 
     /* Write back preserved raw_tail data for round-trip */
-    if (state->raw_tail && state->raw_tail_size > 0) {
+    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
         /* Use no_size variant since we're writing back raw binary data */
-        nmo_result_t result = nmo_chunk_write_buffer_no_size(chunk, 
-            state->raw_tail, state->raw_tail_size);
+        nmo_result_t result = nmo_chunk_write_buffer_no_size(out_chunk, 
+            in_state->raw_tail, in_state->raw_tail_size);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -132,6 +137,28 @@ nmo_result_t nmo_ckrenderobject_serialize(
 
     return nmo_result_ok();
 }
+
+/* =============================================================================
+ * VTABLE IMPLEMENTATION
+ * ============================================================================= */
+
+static nmo_result_t vtable_read_ckrenderobject(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
+    (void)type;
+    return nmo_ckrenderobject_deserialize(chunk, arena, (nmo_ckrenderobject_state_t *)out_ptr);
+}
+
+static nmo_result_t vtable_write_ckrenderobject(const nmo_schema_type_t *type,
+    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
+    (void)type;
+    return nmo_ckrenderobject_serialize((const nmo_ckrenderobject_state_t *)in_ptr, chunk, arena);
+}
+
+static const nmo_schema_vtable_t nmo_ckrenderobject_vtable = {
+    .read = vtable_read_ckrenderobject,
+    .write = vtable_write_ckrenderobject,
+    .validate = NULL
+};
 
 /* =============================================================================
  * SCHEMA REGISTRATION
@@ -155,8 +182,27 @@ nmo_result_t nmo_register_ckrenderobject_schemas(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckrenderobject_schemas"));
     }
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
+    /* Register minimal schema with vtable for abstract base class */
+    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKRenderObjectState",
+                                                      sizeof(nmo_ckrenderobject_state_t),
+                                                      alignof(nmo_ckrenderobject_state_t));
+    
+    /* Set vtable for automated serialization */
+    nmo_builder_set_vtable(&builder, &nmo_ckrenderobject_vtable);
+    
+    nmo_result_t result = nmo_builder_build(&builder, registry);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+    
+    /* Map class ID to schema */
+    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKRenderObjectState");
+    if (type) {
+        result = nmo_schema_registry_map_class_id(registry, NMO_CID_RENDEROBJECT, type);
+        if (result.code != NMO_OK) {
+            return result;
+        }
+    }
     
     return nmo_result_ok();
 }
