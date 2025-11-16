@@ -775,7 +775,7 @@ TEST(buffer, typed_macros_basic) {
     
     uint32_t *p1 = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, 0);
     uint32_t *p2 = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, 1);
-    uint32_t *p3 = nmo_arena_array_get(uint32_t, &buffer, 2);
+    uint32_t *p3 = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, 2);
     
     ASSERT_NOT_NULL(p1);
     ASSERT_NOT_NULL(p2);
@@ -802,7 +802,7 @@ TEST(buffer, typed_data_macro) {
     }
     
     for (int i = 0; i < 5; i++) {
-        uint32_t *val = nmo_arena_array_get(uint32_t, &buffer, i);
+        uint32_t *val = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, i);
         ASSERT_EQ(*val, i * i);
     }
 
@@ -823,11 +823,11 @@ TEST(buffer, typed_macros_with_struct) {
     point_t p1 = {10, 20};
     point_t p2 = {30, 40};
     
-    nmo_arena_array_append(point_t, &buffer, p1);
-    nmo_arena_array_append(point_t, &buffer, p2);
+    NMO_ARENA_ARRAY_APPEND(point_t, &buffer, p1);
+    NMO_ARENA_ARRAY_APPEND(point_t, &buffer, p2);
 
-    point_t *pp1 = nmo_arena_array_get(point_t, &buffer, 0);
-    point_t *pp2 = nmo_arena_array_get(point_t, &buffer, 1);
+    point_t *pp1 = NMO_ARENA_ARRAY_GET(point_t, &buffer, 0);
+    point_t *pp2 = NMO_ARENA_ARRAY_GET(point_t, &buffer, 1);
     
     ASSERT_EQ(pp1->x, 10);
     ASSERT_EQ(pp1->y, 20);
@@ -850,7 +850,7 @@ TEST(buffer, extend_single_element) {
     ASSERT_EQ(result.code, NMO_OK);
 
     uint32_t *slot = NULL;
-    result = nmo_arena_array_extend(&buffer, 1, slot);
+    result = NMO_ARENA_ARRAY_EXTEND(&buffer, 1, slot);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(slot);
 
@@ -870,7 +870,7 @@ TEST(buffer, extend_multiple_elements) {
     ASSERT_EQ(result.code, NMO_OK);
 
     uint32_t *values = NULL;
-    result = nmo_arena_array_extend(&buffer, 5, values);
+    result = NMO_ARENA_ARRAY_EXTEND(&buffer, 5, values);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_EQ(buffer.count, 5);
     ASSERT_NOT_NULL(values);
@@ -898,7 +898,7 @@ TEST(buffer, extend_zero_returns_end_pointer) {
     nmo_arena_array_append(&buffer, &val);
 
     uint32_t *end_ptr = NULL;
-    nmo_result_t result = nmo_arena_array_extend(&buffer, 0, end_ptr);
+    nmo_result_t result = NMO_ARENA_ARRAY_EXTEND(&buffer, 0, end_ptr);
     ASSERT_EQ(result.code, NMO_OK);
     ASSERT_NOT_NULL(end_ptr);
     ASSERT_EQ((uintptr_t)end_ptr, (uintptr_t)((uint32_t *)buffer.data + buffer.count));
@@ -988,8 +988,8 @@ TEST(buffer, front_back_helpers) {
     nmo_arena_array_append(&buffer, &first);
     nmo_arena_array_append(&buffer, &second);
 
-    uint32_t *front = nmo_arena_array_front(uint32_t, &buffer);
-    uint32_t *back = nmo_arena_array_back(uint32_t, &buffer);
+    uint32_t *front = NMO_ARENA_ARRAY_FRONT(uint32_t, &buffer);
+    uint32_t *back = NMO_ARENA_ARRAY_BACK(uint32_t, &buffer);
     ASSERT_NOT_NULL(front);
     ASSERT_NOT_NULL(back);
     ASSERT_EQ(*front, 10U);

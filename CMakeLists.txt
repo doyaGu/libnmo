@@ -162,8 +162,32 @@ set(NMO_SCHEMA_SOURCES
     src/schema/schema_builder.c
     src/schema/validator.c
     src/schema/migrator.c
+    src/schema/class_hierarchy.c
     src/schema/builtin/builtin_types.c
     src/schema/builtin/ckobject_hierarchy.c
+    src/schema/builtin/ckobject_schemas.c
+    src/schema/builtin/ckbeobject_schemas.c
+    src/schema/builtin/cksceneobject_schemas.c
+    src/schema/builtin/ckrenderobject_schemas.c
+    src/schema/builtin/ckparameter_schemas.c
+    src/schema/builtin/ckgroup_schemas.c
+    src/schema/builtin/cklevel_schemas.c
+    src/schema/builtin/ckscene_schemas.c
+    src/schema/builtin/ckbehavior_schemas.c
+    src/schema/builtin/ckbehaviorio_schemas.c
+    src/schema/builtin/ckbehaviorlink_schemas.c
+    src/schema/builtin/ckdataarray_schemas.c
+    src/schema/builtin/ckmessagemanager_schemas.c
+    src/schema/builtin/ckattributemanager_schemas.c
+    src/schema/builtin/ck3dentity_schemas.c
+    src/schema/builtin/ckcamera_schemas.c
+    src/schema/builtin/ck3dobject_schemas.c
+    src/schema/builtin/ck2dentity_schemas.c
+    src/schema/builtin/cksprite_schemas.c
+    src/schema/builtin/ckspritetext_schemas.c
+    src/schema/builtin/cktexture_schemas.c
+    src/schema/builtin/cklight_schemas.c
+    src/schema/builtin/ckmesh_schemas.c
 )
 
 # Session layer sources
@@ -206,7 +230,7 @@ endif()
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
 if(YYJSON_FOUND)
-    target_link_libraries(nmo PUBLIC ${YYJSON_LIBRARIES})
+    target_link_libraries(nmo PUBLIC yyjson)
 endif()
 
 target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps)
@@ -214,6 +238,11 @@ target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps)
 # Enable threads support
 find_package(Threads REQUIRED)
 target_link_libraries(nmo PUBLIC Threads::Threads)
+
+# Link against math library on Unix-like platforms for pow()/friends
+if(UNIX)
+    target_link_libraries(nmo PUBLIC m)
+endif()
 
 # Set library properties
 set_target_properties(nmo PROPERTIES

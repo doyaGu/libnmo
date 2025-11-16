@@ -13,7 +13,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "io/nmo_txn.h"
-#include "core/nmo_allocator_t.h"
+#include "core/nmo_allocator.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,13 +40,13 @@ typedef enum nmo_txn_state {
  * @brief Transaction handle structure
  */
 struct nmo_txn_handle {
-    int fd;                        /**< File descriptor for temp file */
-    char *final_path;              /**< Final file path (allocated) */
-    char *temp_path;               /**< Temporary file path (allocated) */
-    nmo_txn_durability durability; /**< Durability mode */
+    int fd;                          /**< File descriptor for temp file */
+    char *final_path;                /**< Final file path (allocated) */
+    char *temp_path;                 /**< Temporary file path (allocated) */
+    nmo_txn_durability_t durability; /**< Durability mode */
     nmo_txn_state_t state;           /**< Current transaction state */
     nmo_allocator_t allocator;       /**< Allocator for memory management */
-} nmo_txn_handle_t;
+};
 
 /**
  * @brief Get directory path from file path
@@ -179,7 +179,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
     }
 
     // Get allocator
-    nmo_allocator_t allocator = nmo_allocator_t_default();
+    nmo_allocator_t allocator = nmo_allocator_default();
 
     // Allocate transaction handle
     nmo_txn_handle_t *txn = (nmo_txn_handle_t *) nmo_alloc(&allocator,

@@ -60,25 +60,34 @@ static int finish_loading_phase_9_resolve_references(nmo_finish_loading_context_
     nmo_log(ctx->logger, NMO_LOG_INFO, "FinishLoading Phase 9: Resolving references");
     
     /* Check if reference resolution is enabled */
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Checking flags...");
     if (!(ctx->flags & NMO_FINISH_LOAD_RESOLVE_REFERENCES)) {
         nmo_log(ctx->logger, NMO_LOG_INFO, "  Reference resolution disabled by flags");
         return NMO_OK;
     }
     
     /* Create reference resolver */
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Getting repository...");
     nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Creating reference resolver...");
     ctx->resolver = nmo_reference_resolver_create(repo, ctx->arena);
+    
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Reference resolver created: %p", (void*)ctx->resolver);
     
     if (ctx->resolver == NULL) {
         nmo_log(ctx->logger, NMO_LOG_ERROR, "  Failed to create reference resolver");
         return NMO_ERR_NOMEM;
     }
     
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Reference resolver created successfully");
+    
     /* TODO: Set resolver strategy based on flags */
     /* For now, use default name-based resolution */
     
     /* Resolve all references */
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Calling nmo_reference_resolver_resolve_all...");
     int result = nmo_reference_resolver_resolve_all(ctx->resolver);
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  nmo_reference_resolver_resolve_all returned %d", result);
     if (result != NMO_OK) {
         nmo_log(ctx->logger, NMO_LOG_ERROR, "  Reference resolution failed: %d", result);
         

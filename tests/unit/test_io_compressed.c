@@ -132,9 +132,9 @@ TEST(io_compressed, compress_large_data) {
         ASSERT_EQ(result, NMO_OK);
     }
 
-    nmo_io_close(compressed_io);
+    ASSERT_EQ(NMO_OK, nmo_io_flush(compressed_io));
 
-    /* Verify compression ratio */
+    /* Verify compression ratio before closing inner IO */
     size_t compressed_size = 0;
     const void *compressed_data = nmo_memory_io_get_data(mem_io, &compressed_size);
     ASSERT_NOT_NULL(compressed_data);
@@ -145,6 +145,8 @@ TEST(io_compressed, compress_large_data) {
     
     /* With best compression and repetitive data, expect high ratio */
     ASSERT_LT(compressed_size, original_size / 10); /* At least 10x compression */
+
+    nmo_io_close(compressed_io);
 }
 
 /* Test: Different compression levels */
@@ -170,11 +172,13 @@ TEST(io_compressed, compression_levels) {
 
         int result = nmo_io_write(compressed_io, data, data_size);
         ASSERT_EQ(result, NMO_OK);
-        nmo_io_close(compressed_io);
+        ASSERT_EQ(NMO_OK, nmo_io_flush(compressed_io));
 
         const void *compressed_data = nmo_memory_io_get_data(mem_io, &size_level1);
         ASSERT_NOT_NULL(compressed_data);
         ASSERT_GT(size_level1, 0);
+
+        nmo_io_close(compressed_io);
     }
 
     /* Test level 9 (best compression) */
@@ -192,11 +196,13 @@ TEST(io_compressed, compression_levels) {
 
         int result = nmo_io_write(compressed_io, data, data_size);
         ASSERT_EQ(result, NMO_OK);
-        nmo_io_close(compressed_io);
+        ASSERT_EQ(NMO_OK, nmo_io_flush(compressed_io));
 
         const void *compressed_data = nmo_memory_io_get_data(mem_io, &size_level9);
         ASSERT_NOT_NULL(compressed_data);
         ASSERT_GT(size_level9, 0);
+
+        nmo_io_close(compressed_io);
     }
 
     /* Level 9 should produce smaller or equal size compared to level 1 */
@@ -218,13 +224,15 @@ TEST(io_compressed, compress_empty_data) {
     ASSERT_NOT_NULL(compressed_io);
 
     /* Close without writing anything */
-    nmo_io_close(compressed_io);
+    ASSERT_EQ(NMO_OK, nmo_io_flush(compressed_io));
 
     /* Should still have header/footer data */
     size_t compressed_size = 0;
     const void *compressed_data = nmo_memory_io_get_data(mem_io, &compressed_size);
     ASSERT_NOT_NULL(compressed_data);
     ASSERT_GT(compressed_size, 0); /* zlib header is always present */
+
+    nmo_io_close(compressed_io);
 }
 
 /* Test: Invalid parameters */

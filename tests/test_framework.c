@@ -34,6 +34,27 @@ static int g_skip_count = 0;
 static double g_total_time = 0.0;
 
 /**
+ * Duplicate an error message so assertion buffers remain valid.
+ *
+ * The assertion macros build messages on the stack, so we must make a copy
+ * that outlives the macro invocation and free it during cleanup.
+ */
+static char *test_duplicate_message(const char *message) {
+    if (message == NULL) {
+        return NULL;
+    }
+
+    size_t len = strlen(message);
+    char *copy = (char *)malloc(len + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    memcpy(copy, message, len + 1);
+    return copy;
+}
+
+/**
  * Get current time in milliseconds (platform-specific implementation)
  */
 double test_get_time_ms(void) {
@@ -119,6 +140,11 @@ void test_framework_init(void) {
 void test_framework_cleanup(void) {
     if (g_test_suite != NULL) {
         if (g_test_suite->results != NULL) {
+            for (int i = 0; i < g_test_suite->count; ++i) {
+                if (g_test_suite->results[i].failure_message != NULL) {
+                    free((void *)g_test_suite->results[i].failure_message);
+                }
+            }
             free(g_test_suite->results);
         }
         free(g_test_suite);
@@ -212,11 +238,14 @@ void test_add_result_with_time(const char *suite, const char *name, int passed,
     result->test_name = name;
     result->passed = passed;
     result->failed = !passed;
-    result->failure_message = message;
+    result->failure_message = test_duplicate_message(message);
+    if (message != NULL && result->failure_message == NULL) {
+        result->failure_message = "Failed to record failure message (out of memory)";
+    }
     result->failure_file = file;
     result->failure_line = line;
     result->execution_time_ms = execution_time_ms;
-    
+
     /* Determine category from registry if possible */
     result->category = "unit";
     test_entry_t *entry = g_test_registry;

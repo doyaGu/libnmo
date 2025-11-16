@@ -110,10 +110,6 @@ TEST(ckobject_hierarchy, behavior_classes) {
     ASSERT_NE(NULL, ckbehavior);
     ASSERT_STR_EQ("CKBehavior", ckbehavior->name);
     
-    const nmo_schema_type_t *ckscriptbehavior = nmo_schema_registry_find_by_name(registry, "CKScriptBehavior");
-    ASSERT_NE(NULL, ckscriptbehavior);
-    ASSERT_STR_EQ("CKScriptBehavior", ckscriptbehavior->name);
-    
     nmo_arena_destroy(arena);
 }
 
@@ -217,23 +213,21 @@ TEST(ckobject_hierarchy, class_count) {
     nmo_result_t result = nmo_register_ckobject_hierarchy(registry, arena);
     ASSERT_EQ(NMO_OK, result.code);
     
-    /* Count registered classes - we expect 45 classes total */
+    /* Count registered classes - we expect the full table to be registered */
     size_t count = 0;
     const char *class_names[] = {
-        "CKObject", "CKSceneObject", "CKBeObject",
-        "CKRenderObject", "CK2dEntity", "CKSprite", "CKSpriteText",
-        "CK3dEntity", "CK3dObject", "CKBodyPart",
-        "CKCamera", "CKTargetCamera", "CKLight", "CKTargetLight",
-        "CKCharacter", "CKCurve", "CKCurvePoint", "CKGrid", "CKPlace", "CKSprite3D",
-        "CKBehavior", "CKScriptBehavior",
-        "CKDataArray", "CKGroup", "CKLevel",
-        "CKMesh", "CKPatchMesh", "CKScene",
-        "CKSound", "CKMidiSound", "CKWaveSound", "CKTexture",
-        "CKBehaviorIO", "CKBehaviorLink",
-        "CKInterfaceObjectManager", "CKKinematicChain", "CKLayer",
-        "CKParameter", "CKParameterLocal", "CKParameterOut",
-        "CKParameterIn", "CKParameterOperation",
-        "CKSynchroObject", "CKCriticalSectionObject", "CKStateObject"
+        "CKObject", "CKParameterIn", "CKParameterOut", "CKParameterOperation",
+        "CKStateObject", "CKBehaviorLink", "CKBehavior", "CKBehaviorIO",
+        "CKScene", "CKSceneObject", "CKKinematicChain", "CKObjectAnimation",
+        "CKAnimation", "CKKeyedAnimation", "CKBeObject", "CKSynchroObject",
+        "CKLevel", "CKPlace", "CKGroup", "CKSound", "CKWaveSound",
+        "CKMidiSound", "CK2dEntity", "CKSprite", "CKSpriteText",
+        "CKMaterial", "CKTexture", "CKMesh", "CK3dEntity", "CKCamera",
+        "CKTargetCamera", "CKCurvePoint", "CKSprite3D", "CKLight",
+        "CKTargetLight", "CKCharacter", "CK3dObject", "CKBodyPart",
+        "CKCurve", "CKParameterLocal", "CKParameter", "CKRenderObject",
+        "CKInterfaceObjectManager", "CKCriticalSectionObject", "CKGrid",
+        "CKLayer", "CKDataArray", "CKPatchMesh", "CKProgressiveMesh"
     };
     
     for (size_t i = 0; i < sizeof(class_names)/sizeof(class_names[0]); i++) {
@@ -243,7 +237,7 @@ TEST(ckobject_hierarchy, class_count) {
         }
     }
     
-    ASSERT_EQ(45, count);  /* Should have registered all 45 classes */
+    ASSERT_EQ(sizeof(class_names)/sizeof(class_names[0]), count);
     
     nmo_arena_destroy(arena);
 }

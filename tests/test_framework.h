@@ -29,6 +29,12 @@
 #include <sys/time.h>
 #endif
 
+#ifndef NMO_TEST_DATA_DIR
+#define NMO_TEST_DATA_DIR "../data"
+#endif
+
+#define NMO_TEST_DATA_FILE(name) NMO_TEST_DATA_DIR "/" name
+
 #ifdef __cplusplus
 extern "C" {
 #endif

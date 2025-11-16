@@ -18,6 +18,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "schema/nmo_schema.h"
+#include "schema/nmo_class_hierarchy.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,6 +115,24 @@ NMO_API const nmo_schema_type_t *nmo_schema_registry_find_by_name(
  * @return Type descriptor or NULL if not found
  */
 NMO_API const nmo_schema_type_t *nmo_schema_registry_find_by_class_id(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t class_id);
+
+/**
+ * @brief Find type by class ID with inheritance support
+ *
+ * Like find_by_class_id, but searches up the inheritance chain if no
+ * exact match is found. Useful for finding generic deserializers for
+ * derived classes.
+ *
+ * Example: If CKSprite(28) has no registered schema but CK2dEntity(27)
+ * does, this will return the CK2dEntity schema.
+ *
+ * @param registry Registry
+ * @param class_id Virtools class ID
+ * @return Type descriptor for class_id or its nearest ancestor, or NULL
+ */
+NMO_API const nmo_schema_type_t *nmo_schema_registry_find_by_class_id_inherited(
     const nmo_schema_registry_t *registry,
     nmo_class_id_t class_id);
 
@@ -219,6 +238,39 @@ NMO_API nmo_result_t nmo_schema_registry_map_guid(
     nmo_schema_registry_t *registry,
     nmo_guid_t guid,
     const nmo_schema_type_t *type);
+
+/* =============================================================================
+ * CLASS HIERARCHY INTEGRATION
+ * ============================================================================= */
+
+/**
+ * @brief Check if class should use CKBeObject deserialization
+ *
+ * Convenience wrapper around nmo_class_uses_beobject_deserializer().
+ * Replaces hardcoded checks like "class_id >= 0x0A" or "class_id >= 10".
+ *
+ * @param registry Registry
+ * @param class_id Class ID to check
+ * @return 1 if uses CKBeObject deserializer, 0 otherwise
+ */
+NMO_API int nmo_schema_registry_uses_beobject_deserializer(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t class_id);
+
+/**
+ * @brief Check if one class is derived from another
+ *
+ * Convenience wrapper around nmo_class_is_derived_from().
+ *
+ * @param registry Registry
+ * @param child_id Class ID to check
+ * @param parent_id Potential ancestor class ID
+ * @return 1 if child is derived from parent, 0 otherwise
+ */
+NMO_API int nmo_schema_registry_is_derived_from(
+    const nmo_schema_registry_t *registry,
+    nmo_class_id_t child_id,
+    nmo_class_id_t parent_id);
 
 #ifdef __cplusplus
 }

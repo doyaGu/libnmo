@@ -20,8 +20,7 @@
 #include "core/nmo_logger.h"
 
 /* Test configuration */
-#define TEST_DATA_DIR "data"
-#define TEST_FILE TEST_DATA_DIR "/base.cmo"
+#define TEST_FILE NMO_TEST_DATA_FILE("Empty.cmo")
 
 /**
  * Test: Basic finish loading execution

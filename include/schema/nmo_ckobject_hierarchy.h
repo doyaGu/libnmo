@@ -36,6 +36,34 @@ extern "C" {
  */
 nmo_result_t nmo_register_ckobject_hierarchy(nmo_schema_registry_t *registry, nmo_arena_t *arena);
 
+/**
+ * @brief Get class name by class ID
+ * @param class_id Virtools class ID (CKCID_* from CKDefines.h)
+ * @return Class name, or NULL if not found
+ */
+const char *nmo_ckclass_get_name_by_id(uint32_t class_id);
+
+/**
+ * @brief Get class ID by class name
+ * @param class_name Class name (e.g., "CKObject")
+ * @return Class ID, or 0 if not found
+ */
+uint32_t nmo_ckclass_get_id_by_name(const char *class_name);
+
+/**
+ * @brief Get parent class name by child class name
+ * @param class_name Child class name
+ * @return Parent class name, or NULL if root or not found
+ */
+const char *nmo_ckclass_get_parent(const char *class_name);
+
+/**
+ * @brief Check if class uses CKBeObject deserializer
+ * @param class_id Virtools class ID
+ * @return 1 if uses CKBeObject, 0 if uses CKObject, -1 if not found
+ */
+int nmo_ckclass_uses_beobject(uint32_t class_id);
+
 #ifdef __cplusplus
 }
 #endif

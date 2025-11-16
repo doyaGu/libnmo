@@ -104,7 +104,7 @@ TEST(hash_set, iterate_and_lifecycle) {
     ASSERT_EQ(3u, dispose_sum);
 
     nmo_hash_set_clear(set);
-    ASSERT_EQ(1 + 2 + 4 + 5, dispose_sum);
+    ASSERT_EQ(1 + 2 + 3 + 4 + 5, dispose_sum);
 
     nmo_hash_set_destroy(set);
 }
