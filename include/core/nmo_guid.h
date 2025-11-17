@@ -31,6 +31,16 @@ typedef struct nmo_guid {
 #define NMO_GUID_NULL ((nmo_guid_t){0, 0})
 
 /**
+ * @brief Helper macro for GUID creation
+ * 
+ * Creates a GUID from two 32-bit values using C99 compound literal syntax.
+ * Equivalent to nmo_guid_create() but usable in initializers.
+ * 
+ * Usage: nmo_guid_t my_guid = NMO_GUID(0x12345678, 0xABCDEF00);
+ */
+#define NMO_GUID(d1, d2) ((nmo_guid_t){(d1), (d2)})
+
+/**
  * @brief Check if two GUIDs are equal
  *
  * @param a First GUID

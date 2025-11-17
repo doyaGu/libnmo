@@ -69,6 +69,10 @@ add_unit_test(test_schema_roundtrip)  # Phase 2: All 23 schemas roundtrip tests
 add_unit_test(test_validator)  # Phase 1: Schema validator tests
 add_unit_test(test_migrator)   # Phase 1: Schema migrator tests
 add_unit_test(test_ckobject_hierarchy)  # CKObject class hierarchy tests
+add_unit_test(test_schema_macros)  # Phase 3: Declarative registration macro tests
+add_unit_test(test_version_management)  # Phase 4: Version management system tests
+add_unit_test(test_param_meta)  # Phase 5: Parameter metadata system tests
+add_unit_test(test_phase5_improvements)  # Phase 5: Improvements over Phase 3 limitations
 
 # Session layer tests
 add_unit_test(test_repository)

@@ -50,6 +50,17 @@ typedef struct nmo_schema_builder {
     nmo_enum_value_t *enum_buffer;
     size_t enum_capacity;
     size_t enum_count;
+    
+    /* Centralized error state (first error encountered) */
+    nmo_error_t *first_error;
+    
+    /* Version information */
+    uint32_t since_version;
+    uint32_t deprecated_version;
+    uint32_t removed_version;
+    
+    /* Parameter metadata (NULL if not a parameter type) */
+    const nmo_param_meta_t *param_meta;
 } nmo_schema_builder_t;
 
 /* =============================================================================
@@ -174,9 +185,19 @@ NMO_API nmo_schema_builder_t *nmo_builder_add_field_versioned(
     uint32_t since_version,
     uint32_t deprecated_version);
 
+/**
+ * @brief Add a complete field with all metadata (for macro system)
+ * @param builder Builder instance
+ * @param field Field structure with all metadata
+ * @return Result indicating success or error
+ */
+NMO_API nmo_result_t nmo_builder_add_field_manual(
+    nmo_schema_builder_t *builder,
+    const nmo_schema_field_t *field);
+
 /* =============================================================================
  * ENUM CONSTRUCTION
- * ============================================================================= */
+ * =============================================================================*/
 
 /**
  * @brief Add enum value
@@ -309,6 +330,68 @@ NMO_API nmo_result_t nmo_register_virtools_types(
 NMO_API nmo_result_t nmo_register_builtin_types(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena);
+
+/* =============================================================================
+ * VERSION MANAGEMENT API
+ * ============================================================================= */
+
+/**
+ * @brief Set version when type was introduced
+ * @param builder Builder instance
+ * @param version File format version (0 = existed from start)
+ * @return Builder pointer for chaining (even on error)
+ */
+NMO_API nmo_schema_builder_t *nmo_builder_set_since_version(
+    nmo_schema_builder_t *builder,
+    uint32_t version);
+
+/**
+ * @brief Set version when type was deprecated
+ * @param builder Builder instance
+ * @param version File format version (0 = not deprecated)
+ * @return Builder pointer for chaining (even on error)
+ */
+NMO_API nmo_schema_builder_t *nmo_builder_set_deprecated_version(
+    nmo_schema_builder_t *builder,
+    uint32_t version);
+
+/**
+ * @brief Set version when type was removed
+ * @param builder Builder instance
+ * @param version File format version (0 = not removed)
+ * @return Builder pointer for chaining (even on error)
+ */
+NMO_API nmo_schema_builder_t *nmo_builder_set_removed_version(
+    nmo_schema_builder_t *builder,
+    uint32_t version);
+
+/**
+ * @brief Set version range (convenience function)
+ * @param builder Builder instance
+ * @param since_version Version when introduced (0 = always existed)
+ * @param deprecated_version Version when deprecated (0 = not deprecated)
+ * @param removed_version Version when removed (0 = not removed)
+ * @return Builder pointer for chaining (even on error)
+ */
+NMO_API nmo_schema_builder_t *nmo_builder_set_version_range(
+    nmo_schema_builder_t *builder,
+    uint32_t since_version,
+    uint32_t deprecated_version,
+    uint32_t removed_version);
+
+/* =============================================================================
+ * PARAMETER METADATA API
+ * ============================================================================= */
+
+/**
+ * @brief Attach Parameter metadata to type
+ * @param builder Builder instance
+ * @param meta Parameter metadata structure (copied, can be stack-allocated)
+ * @return Builder pointer for chaining (even on error)
+ */
+NMO_API nmo_schema_builder_t *nmo_builder_set_param_meta(
+    nmo_schema_builder_t *builder,
+    const nmo_param_meta_t *meta);
 
 #ifdef __cplusplus
 }

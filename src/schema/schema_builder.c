@@ -277,6 +277,26 @@ nmo_schema_builder_t *nmo_builder_add_field_versioned(
     return builder;
 }
 
+nmo_result_t nmo_builder_add_field_manual(
+    nmo_schema_builder_t *builder,
+    const nmo_schema_field_t *field)
+{
+    if (!builder || !builder->type || !field) {
+        return nmo_result_error(NMO_ERROR(builder->arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_builder_add_field_manual"));
+    }
+    
+    nmo_result_t result = ensure_fields_capacity(builder, 1);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+    
+    /* Copy entire field structure */
+    builder->fields_buffer[builder->fields_count++] = *field;
+    
+    return nmo_result_ok();
+}
+
 /* =============================================================================
  * ENUM CONSTRUCTION
  * ============================================================================= */
@@ -338,6 +358,14 @@ const nmo_schema_type_t *nmo_builder_build_type(nmo_schema_builder_t *builder)
         builder->type->enum_value_count = builder->enum_count;
     }
     
+    /* Copy version information */
+    builder->type->since_version = builder->since_version;
+    builder->type->deprecated_version = builder->deprecated_version;
+    builder->type->removed_version = builder->removed_version;
+    
+    /* Copy parameter metadata */
+    builder->type->param_meta = builder->param_meta;
+    
     return builder->type;
 }
 
@@ -345,6 +373,11 @@ nmo_result_t nmo_builder_build(
     nmo_schema_builder_t *builder,
     nmo_schema_registry_t *registry)
 {
+    /* Check for accumulated errors */
+    if (builder && builder->first_error) {
+        return nmo_result_error(builder->first_error);
+    }
+    
     const nmo_schema_type_t *type = nmo_builder_build_type(builder);
     if (!type) {
         return nmo_result_error(NMO_ERROR(builder->arena, NMO_ERR_INVALID_ARGUMENT,
@@ -401,4 +434,108 @@ nmo_result_t nmo_register_scalar_types(
     }
     
     return nmo_result_ok();
+}
+
+/* =============================================================================
+ * VERSION MANAGEMENT API
+ * ============================================================================= */
+
+nmo_schema_builder_t *nmo_builder_set_since_version(
+    nmo_schema_builder_t *builder,
+    uint32_t version)
+{
+    if (!builder || !builder->type) {
+        return builder;
+    }
+    builder->since_version = version;
+    return builder;
+}
+
+nmo_schema_builder_t *nmo_builder_set_deprecated_version(
+    nmo_schema_builder_t *builder,
+    uint32_t version)
+{
+    if (!builder || !builder->type) {
+        return builder;
+    }
+    builder->deprecated_version = version;
+    return builder;
+}
+
+nmo_schema_builder_t *nmo_builder_set_removed_version(
+    nmo_schema_builder_t *builder,
+    uint32_t version)
+{
+    if (!builder || !builder->type) {
+        return builder;
+    }
+    builder->removed_version = version;
+    return builder;
+}
+
+nmo_schema_builder_t *nmo_builder_set_version_range(
+    nmo_schema_builder_t *builder,
+    uint32_t since_version,
+    uint32_t deprecated_version,
+    uint32_t removed_version)
+{
+    if (!builder || !builder->type) {
+        return builder;
+    }
+    builder->since_version = since_version;
+    builder->deprecated_version = deprecated_version;
+    builder->removed_version = removed_version;
+    return builder;
+}
+
+/* =============================================================================
+ * PARAMETER METADATA API
+ * ============================================================================= */
+
+nmo_schema_builder_t *nmo_builder_set_param_meta(
+    nmo_schema_builder_t *builder,
+    const nmo_param_meta_t *meta)
+{
+    if (!builder || !builder->type || !meta) {
+        if (builder && !builder->first_error) {
+            builder->first_error = NMO_ERROR(builder->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Invalid builder or param_meta pointer");
+        }
+        return builder;
+    }
+    
+    /* Copy metadata to arena */
+    nmo_param_meta_t *copied = nmo_arena_alloc(builder->arena, 
+        sizeof(nmo_param_meta_t), alignof(nmo_param_meta_t));
+    if (!copied) {
+        if (!builder->first_error) {
+            builder->first_error = NMO_ERROR(builder->arena, NMO_ERR_NOMEM,
+                NMO_SEVERITY_ERROR, "Failed to allocate param_meta");
+        }
+        return builder;
+    }
+    
+    memcpy(copied, meta, sizeof(nmo_param_meta_t));
+    
+    /* Copy strings if present */
+    if (meta->ui_name) {
+        size_t len = strlen(meta->ui_name) + 1;
+        char *name = nmo_arena_alloc(builder->arena, len, 1);
+        if (name) {
+            memcpy(name, meta->ui_name, len);
+            copied->ui_name = name;
+        }
+    }
+    
+    if (meta->description) {
+        size_t len = strlen(meta->description) + 1;
+        char *desc = nmo_arena_alloc(builder->arena, len, 1);
+        if (desc) {
+            memcpy(desc, meta->description, len);
+            copied->description = desc;
+        }
+    }
+    
+    builder->param_meta = copied;
+    return builder;
 }

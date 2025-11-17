@@ -95,6 +95,57 @@ NMO_API nmo_result_t nmo_schema_registry_add_builtin(
  * ============================================================================= */
 
 /**
+ * @brief Check if a type is compatible with a specific file version
+ *
+ * A type is compatible if:
+ * - file_version >= type->since_version (or since_version == 0)
+ * - file_version < type->removed_version (or removed_version == 0)
+ *
+ * @param type Type descriptor
+ * @param file_version File version to check
+ * @return 1 if compatible, 0 otherwise
+ */
+NMO_API int nmo_schema_is_compatible(
+    const nmo_schema_type_t *type,
+    uint32_t file_version);
+
+/**
+ * @brief Find type by name for a specific file version
+ *
+ * Searches for a type that is compatible with the given file version.
+ * If multiple versions exist, returns the most appropriate one.
+ *
+ * @param registry Registry
+ * @param name Type name
+ * @param file_version Target file version
+ * @return Type descriptor or NULL if not found or incompatible
+ */
+NMO_API const nmo_schema_type_t *nmo_schema_registry_find_for_version(
+    const nmo_schema_registry_t *registry,
+    const char *name,
+    uint32_t file_version);
+
+/**
+ * @brief Find all version variants of a type
+ *
+ * Retrieves all registered versions of a type with the given base name.
+ * Useful for version migration analysis.
+ *
+ * @param registry Registry
+ * @param base_name Base type name (without version suffix)
+ * @param arena Arena for output array allocation
+ * @param out_schemas Output array of type pointers (allocated in arena)
+ * @param out_count Output count of found variants
+ * @return Result with error on failure
+ */
+NMO_API nmo_result_t nmo_schema_registry_find_all_variants(
+    const nmo_schema_registry_t *registry,
+    const char *base_name,
+    nmo_arena_t *arena,
+    const nmo_schema_type_t ***out_schemas,
+    size_t *out_count);
+
+/**
  * @brief Find type by name
  *
  * @param registry Registry

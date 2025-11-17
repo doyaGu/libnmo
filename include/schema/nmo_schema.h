@@ -19,6 +19,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "schema/nmo_param_meta.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,6 +141,14 @@ struct nmo_schema_type {
     size_t enum_value_count;
     nmo_type_kind_t enum_base_type; /**< Usually NMO_TYPE_U32 or NMO_TYPE_I32 */
     
+    /* Version information (0 = all versions) */
+    uint32_t since_version;       /**< Version when type was added (0 = always existed) */
+    uint32_t deprecated_version;  /**< Version when deprecated (0 = not deprecated) */
+    uint32_t removed_version;     /**< Version when removed (0 = not removed) */
+    
+    /* Parameter system metadata (NULL if not a parameter type) */
+    const nmo_param_meta_t *param_meta;
+    
     /* Optional vtable for optimized read/write */
     const nmo_schema_vtable_t *vtable;
 };
@@ -156,6 +165,7 @@ struct nmo_schema_field {
     uint32_t annotations;       /**< Bitset of nmo_field_annotation_t */
     uint32_t since_version;     /**< Version when field was added (0 = always) */
     uint32_t deprecated_version; /**< Version when deprecated (0 = never) */
+    uint32_t removed_version;   /**< Version when removed (0 = not removed) */
 };
 
 /* =============================================================================
