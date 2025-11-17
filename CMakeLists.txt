@@ -160,10 +160,12 @@ set(NMO_SCHEMA_SOURCES
     src/schema/schema.c
     src/schema/schema_registry.c
     src/schema/schema_builder.c
+    src/schema/param_type_table.c
     src/schema/validator.c
     src/schema/migrator.c
     src/schema/class_hierarchy.c
     src/schema/builtin/builtin_types.c
+    src/schema/builtin/param_types.c
     src/schema/builtin/ckobject_hierarchy.c
     src/schema/builtin/ckobject_schemas.c
     src/schema/builtin/ckbeobject_schemas.c
@@ -186,6 +188,7 @@ set(NMO_SCHEMA_SOURCES
     src/schema/builtin/cksprite_schemas.c
     src/schema/builtin/ckspritetext_schemas.c
     src/schema/builtin/cktexture_schemas.c
+    src/schema/builtin/ckmaterial_schemas.c
     src/schema/builtin/cklight_schemas.c
     src/schema/builtin/ckmesh_schemas.c
 )

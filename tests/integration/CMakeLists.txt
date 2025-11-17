@@ -24,6 +24,9 @@ add_integration_test(test_all_reference_files)
 # Phase 5+: Real file roundtrip with schema-based serialization
 add_integration_test(test_real_file_roundtrip)
 
+# Phase 3: Declarative registration system integration test
+add_integration_test(test_macro_integration)
+
 # Temporarily disabled tests (old API)
 # add_integration_test(test_roundtrip)
 # add_integration_test(test_round_trip)
