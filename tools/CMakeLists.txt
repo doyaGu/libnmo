@@ -1,8 +1,12 @@
 # CLI tools
 
+if(NOT YYJSON_FOUND)
+    message(FATAL_ERROR "nmo-inspect requires yyjson. Ensure deps/yyjson is synced or provide a system installation.")
+endif()
+
 # Phase 7 tools
 add_executable(nmo-inspect nmo-inspect.c)
-target_link_libraries(nmo-inspect PRIVATE nmo)
+target_link_libraries(nmo-inspect PRIVATE nmo yyjson)
 
 add_executable(nmo-debug nmo-debug.c)
 target_link_libraries(nmo-debug PRIVATE nmo)
