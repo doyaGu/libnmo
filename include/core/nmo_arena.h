@@ -134,6 +134,18 @@ NMO_API int nmo_arena_reserve(nmo_arena_t *arena, size_t total_size);
  */
 NMO_API int nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config);
 
+/**
+ * @brief Duplicate a string into arena memory
+ * 
+ * Allocates memory from the arena and copies the string into it.
+ * This is a common utility to avoid repeating the pattern across the codebase.
+ * 
+ * @param arena Arena allocator
+ * @param str String to duplicate (NULL returns NULL)
+ * @return Pointer to duplicated string or NULL on failure/NULL input
+ */
+NMO_API const char* nmo_arena_strdup(nmo_arena_t *arena, const char *str);
+
 #ifdef __cplusplus
 }
 #endif

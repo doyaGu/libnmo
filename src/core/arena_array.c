@@ -7,16 +7,38 @@
 
 #include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
+#include <stddef.h>
+#include <stdalign.h>
 #include <string.h>
 #include <limits.h>
 
 static size_t nmo_array_alignment(size_t element_size) {
-    size_t alignment = element_size < sizeof(void*) ? sizeof(void*) : element_size;
-    /* Ensure power of two alignment */
-    if (alignment & (alignment - 1)) {
-        alignment = sizeof(void*);
+    (void)element_size;
+
+    /*
+     * We only know element *size*, not element *alignment*.
+     * Using max_align_t is the safest portable default for generic storage.
+     */
+    size_t alignment = (size_t)alignof(max_align_t);
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+        alignment = sizeof(void *);
     }
     return alignment;
+}
+
+static int nmo_size_mul_overflow(size_t a, size_t b, size_t *out) {
+    if (out == NULL) {
+        return 1;
+    }
+    if (a == 0 || b == 0) {
+        *out = 0;
+        return 0;
+    }
+    if (a > SIZE_MAX / b) {
+        return 1;
+    }
+    *out = a * b;
+    return 0;
 }
 
 static void nmo_arena_array_dispose_range(nmo_arena_array_t *array, size_t start, size_t count) {
@@ -93,7 +115,13 @@ nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) 
         return nmo_result_ok(); // Already have enough capacity
     }
 
-    size_t new_size = capacity * array->element_size;
+    size_t new_size = 0;
+    if (nmo_size_mul_overflow(capacity, array->element_size, &new_size)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "array byte size overflow"));
+    }
+
     size_t alignment = nmo_array_alignment(array->element_size);
     void *new_data = nmo_arena_alloc(array->arena, new_size, alignment);
     if (!new_data) {
@@ -104,7 +132,13 @@ nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) 
 
     // Copy existing data if any
     if (array->data && array->count > 0) {
-        memcpy(new_data, array->data, array->count * array->element_size);
+        size_t copy_size = 0;
+        if (nmo_size_mul_overflow(array->count, array->element_size, &copy_size)) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "array copy size overflow"));
+        }
+        memcpy(new_data, array->data, copy_size);
     }
 
     array->data = new_data;
@@ -134,6 +168,10 @@ nmo_result_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size_t addit
     // Exponential growth: start with 4, then double
     size_t new_capacity = array->capacity == 0 ? 4 : array->capacity;
     while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / 2) {
+            new_capacity = required;
+            break;
+        }
         new_capacity *= 2;
     }
 
@@ -178,7 +216,13 @@ nmo_result_t nmo_arena_array_append_array(nmo_arena_array_t *array,
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    memcpy(dest, elements, count * array->element_size);
+    size_t copy_size = 0;
+    if (nmo_size_mul_overflow(count, array->element_size, &copy_size)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "array append byte size overflow"));
+    }
+    memcpy(dest, elements, copy_size);
     array->count += count;
 
     return nmo_result_ok();
@@ -379,7 +423,12 @@ nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
     }
 
     // Allocate memory
-    size_t size = count * element_size;
+    size_t size = 0;
+    if (nmo_size_mul_overflow(count, element_size, &size)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "array byte size overflow"));
+    }
     size_t alignment = nmo_array_alignment(element_size);
     void *data = nmo_arena_alloc(arena, size, alignment);
     if (!data) {

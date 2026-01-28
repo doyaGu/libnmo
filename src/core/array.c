@@ -1,8 +1,8 @@
 /**
- * @file arena_array.c
+ * @file array.c
  * @brief Generic dynamic array implementation with allocator-based memory management
  * 
- * This file implements arena-backed arrays (nmo_array_*).
+ * This file implements allocator-backed arrays (nmo_array_*).
  */
 
 #include "core/nmo_array.h"

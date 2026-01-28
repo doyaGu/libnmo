@@ -290,3 +290,18 @@ int nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config) {
     
     return NMO_OK;
 }
+
+/**
+ * Duplicate string into arena memory
+ */
+const char *nmo_arena_strdup(nmo_arena_t *arena, const char *str) {
+    if (!str) return NULL;
+    if (!arena) return NULL;
+    
+    size_t len = strlen(str) + 1;
+    char *copy = (char*)nmo_arena_alloc(arena, len, 1);
+    if (!copy) return NULL;
+    
+    memcpy(copy, str, len);
+    return copy;
+}

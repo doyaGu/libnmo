@@ -39,6 +39,7 @@ typedef struct nmo_guid {
  * Usage: nmo_guid_t my_guid = NMO_GUID(0x12345678, 0xABCDEF00);
  */
 #define NMO_GUID(d1, d2) ((nmo_guid_t){(d1), (d2)})
+#define NMO_NULL_GUID NMO_GUID(0, 0)
 
 /**
  * @brief Check if two GUIDs are equal

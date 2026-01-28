@@ -19,7 +19,7 @@ extern "C" {
  * @brief Allocation function type
  * @param user_data User-defined data passed to allocator
  * @param size Number of bytes to allocate
- * @param alignment Alignment requirement (must be power of 2)
+ * @param alignment Alignment requirement (must be power of 2, 0 uses default)
  * @return Pointer to allocated memory or NULL on failure
  */
 typedef void *(*nmo_alloc_fn)(void *user_data, size_t size, size_t alignment);
@@ -67,7 +67,7 @@ NMO_API nmo_allocator_t nmo_allocator_custom(nmo_alloc_fn alloc, nmo_free_fn fre
  *
  * @param allocator Allocator to use
  * @param size Number of bytes to allocate
- * @param alignment Alignment requirement (must be power of 2)
+ * @param alignment Alignment requirement (must be power of 2, 0 uses default)
  * @return Pointer to allocated memory or NULL on failure
  */
 NMO_API void *nmo_alloc(nmo_allocator_t *allocator, size_t size, size_t alignment);
