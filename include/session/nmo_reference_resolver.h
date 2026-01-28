@@ -184,7 +184,8 @@ NMO_API int nmo_reference_resolver_has_unresolved(
  * Useful for error reporting and diagnostics.
  *
  * @param resolver Resolver instance (required)
- * @param out_refs Output array of reference pointers (allocated from arena)
+ * @param out_refs Output array of reference pointers (owned by resolver; valid until the
+ *                 next nmo_reference_resolver_resolve_all() or resolver destruction)
  * @param out_count Number of unresolved references
  * @return NMO_OK on success
  */
@@ -197,8 +198,8 @@ NMO_API int nmo_reference_resolver_get_unresolved(
 /**
  * @brief Destroy reference resolver
  *
- * Since the resolver uses arena allocation, this is mostly a no-op.
- * The arena cleanup will free all memory.
+ * Since the resolver mostly uses arena allocation, this is a light cleanup.
+ * The arena cleanup will free remaining memory.
  *
  * @param resolver Resolver to destroy
  */

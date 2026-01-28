@@ -37,7 +37,7 @@ typedef nmo_id_remap_t nmo_id_remap_table_t;
 typedef struct nmo_id_remap_plan nmo_id_remap_plan_t;
 
 /* ============================================================================
- * Load-time ID Remapping (file ID → runtime ID)
+ * Load-time ID Remapping (file ID -> runtime ID)
  * ============================================================================ */
 
 /**
@@ -73,13 +73,16 @@ NMO_API size_t nmo_id_remap_table_get_count(const nmo_id_remap_table_t *table);
 
 /**
  * @brief Destroy remap table
- * 
+ *
+ * Destroys the table created by nmo_build_remap_table(), including the
+ * internal arena used for its storage.
+ *
  * @param table Remap table to destroy
  */
 NMO_API void nmo_id_remap_table_destroy(nmo_id_remap_table_t *table);
 
 /* ============================================================================
- * Save-time ID Remapping (runtime ID → sequential file ID)
+ * Save-time ID Remapping (runtime ID -> sequential file ID)
  * ============================================================================ */
 
 /**
@@ -101,7 +104,7 @@ NMO_API nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *r
  * @brief Get remap table from plan
  * 
  * @param plan Remap plan
- * @return Remap table (runtime ID → file ID)
+ * @return Remap table (runtime ID -> file ID)
  */
 NMO_API nmo_id_remap_table_t *nmo_id_remap_plan_get_table(const nmo_id_remap_plan_t *plan);
 

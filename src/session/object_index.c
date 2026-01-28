@@ -39,13 +39,13 @@ struct nmo_object_index {
     /* Index flags */
     uint32_t active_indexes;
     
-    /* Class ID index: class_id → object_array_t */
+    /* Class ID index: class_id -> object_array_t */
     nmo_hash_table_t *class_index;
     
-    /* Name index: name → object_array_t */
+    /* Name index: name -> object_array_t */
     nmo_hash_table_t *name_index;
     
-    /* GUID index: guid → object_array_t */
+    /* GUID index: guid -> object_array_t */
     nmo_hash_table_t *guid_index;
     
     /* Cache for last query */
@@ -55,6 +55,24 @@ struct nmo_object_index {
 };
 
 /* ==================== Helper Functions ==================== */
+
+static void object_array_dispose(void *element, void *user_data) {
+    (void)user_data;
+    object_array_t *arr = *(object_array_t **)element;
+    if (arr == NULL) {
+        return;
+    }
+    free(arr->objects);
+    free(arr);
+}
+
+static void object_index_prepare_lifecycle(nmo_hash_table_t *table) {
+    nmo_container_lifecycle_t value_lifecycle = {
+        .dispose = object_array_dispose,
+        .user_data = NULL
+    };
+    nmo_hash_table_set_lifecycle(table, NULL, &value_lifecycle);
+}
 
 /**
  * Create object array
@@ -139,7 +157,7 @@ static int build_class_index(nmo_object_index_t *index) {
         nmo_hash_table_destroy(index->class_index);
     }
     
-    /* Create hash table: uint32_t → object_array_t* */
+    /* Create hash table: uint32_t -> object_array_t* */
     index->class_index = nmo_hash_table_create(
         NULL,
         sizeof(nmo_class_id_t),
@@ -152,6 +170,7 @@ static int build_class_index(nmo_object_index_t *index) {
     if (index->class_index == NULL) {
         return NMO_ERR_NOMEM;
     }
+    object_index_prepare_lifecycle(index->class_index);
     
     /* Get all objects from repository */
     size_t obj_count;
@@ -167,14 +186,24 @@ static int build_class_index(nmo_object_index_t *index) {
             /* Create new array for this class */
             arr = object_array_create(8);
             if (arr == NULL) {
+                nmo_hash_table_destroy(index->class_index);
+                index->class_index = NULL;
                 return NMO_ERR_NOMEM;
             }
-            nmo_hash_table_insert(index->class_index, &obj->class_id, &arr);
+            int insert_result = nmo_hash_table_insert(index->class_index, &obj->class_id, &arr);
+            if (insert_result != NMO_OK) {
+                object_array_dispose(&arr, NULL);
+                nmo_hash_table_destroy(index->class_index);
+                index->class_index = NULL;
+                return insert_result;
+            }
         }
         
         /* Add object to array */
         int result = object_array_add(arr, obj);
         if (result != NMO_OK) {
+            nmo_hash_table_destroy(index->class_index);
+            index->class_index = NULL;
             return result;
         }
     }
@@ -191,7 +220,7 @@ static int build_name_index(nmo_object_index_t *index) {
         nmo_hash_table_destroy(index->name_index);
     }
     
-    /* Create hash table: string → object_array_t* */
+    /* Create hash table: string -> object_array_t* */
     index->name_index = nmo_hash_table_create(
         NULL,
         sizeof(char *),
@@ -204,6 +233,7 @@ static int build_name_index(nmo_object_index_t *index) {
     if (index->name_index == NULL) {
         return NMO_ERR_NOMEM;
     }
+    object_index_prepare_lifecycle(index->name_index);
     
     /* Get all objects from repository */
     size_t obj_count;
@@ -226,14 +256,24 @@ static int build_name_index(nmo_object_index_t *index) {
             /* Create new array for this name */
             arr = object_array_create(4); /* Most names are unique */
             if (arr == NULL) {
+                nmo_hash_table_destroy(index->name_index);
+                index->name_index = NULL;
                 return NMO_ERR_NOMEM;
             }
-            nmo_hash_table_insert(index->name_index, &name, &arr);
+            int insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
+            if (insert_result != NMO_OK) {
+                object_array_dispose(&arr, NULL);
+                nmo_hash_table_destroy(index->name_index);
+                index->name_index = NULL;
+                return insert_result;
+            }
         }
         
         /* Add object to array */
         int result = object_array_add(arr, obj);
         if (result != NMO_OK) {
+            nmo_hash_table_destroy(index->name_index);
+            index->name_index = NULL;
             return result;
         }
     }
@@ -250,7 +290,7 @@ static int build_guid_index(nmo_object_index_t *index) {
         nmo_hash_table_destroy(index->guid_index);
     }
     
-    /* Create hash table: nmo_guid_t → object_array_t* */
+    /* Create hash table: nmo_guid_t -> object_array_t* */
     index->guid_index = nmo_hash_table_create(
         NULL,
         sizeof(nmo_guid_t),
@@ -263,6 +303,7 @@ static int build_guid_index(nmo_object_index_t *index) {
     if (index->guid_index == NULL) {
         return NMO_ERR_NOMEM;
     }
+    object_index_prepare_lifecycle(index->guid_index);
     
     /* Get all objects from repository */
     size_t obj_count;
@@ -284,14 +325,24 @@ static int build_guid_index(nmo_object_index_t *index) {
             /* Create new array for this GUID */
             arr = object_array_create(4);
             if (arr == NULL) {
+                nmo_hash_table_destroy(index->guid_index);
+                index->guid_index = NULL;
                 return NMO_ERR_NOMEM;
             }
-            nmo_hash_table_insert(index->guid_index, &obj->type_guid, &arr);
+            int insert_result = nmo_hash_table_insert(index->guid_index, &obj->type_guid, &arr);
+            if (insert_result != NMO_OK) {
+                object_array_dispose(&arr, NULL);
+                nmo_hash_table_destroy(index->guid_index);
+                index->guid_index = NULL;
+                return insert_result;
+            }
         }
         
         /* Add object to array */
         int result = object_array_add(arr, obj);
         if (result != NMO_OK) {
+            nmo_hash_table_destroy(index->guid_index);
+            index->guid_index = NULL;
             return result;
         }
     }
@@ -341,8 +392,6 @@ void nmo_object_index_destroy(nmo_object_index_t *index) {
     
     /* Destroy class index */
     if (index->class_index != NULL) {
-        /* Need to iterate and free object arrays */
-        /* TODO: Implement hash table iterator */
         nmo_hash_table_destroy(index->class_index);
     }
     
@@ -435,7 +484,11 @@ int nmo_object_index_add_object(
             if (arr == NULL) {
                 return NMO_ERR_NOMEM;
             }
-            nmo_hash_table_insert(index->class_index, &object->class_id, &arr);
+            int insert_result = nmo_hash_table_insert(index->class_index, &object->class_id, &arr);
+            if (insert_result != NMO_OK) {
+                object_array_dispose(&arr, NULL);
+                return insert_result;
+            }
         }
         
         result = object_array_add(arr, object);
@@ -455,7 +508,11 @@ int nmo_object_index_add_object(
                 if (arr == NULL) {
                     return NMO_ERR_NOMEM;
                 }
-                nmo_hash_table_insert(index->name_index, &name, &arr);
+                int insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
+                if (insert_result != NMO_OK) {
+                    object_array_dispose(&arr, NULL);
+                    return insert_result;
+                }
             }
             
             result = object_array_add(arr, object);
@@ -475,7 +532,11 @@ int nmo_object_index_add_object(
                 if (arr == NULL) {
                     return NMO_ERR_NOMEM;
                 }
-                nmo_hash_table_insert(index->guid_index, &object->type_guid, &arr);
+                int insert_result = nmo_hash_table_insert(index->guid_index, &object->type_guid, &arr);
+                if (insert_result != NMO_OK) {
+                    object_array_dispose(&arr, NULL);
+                    return insert_result;
+                }
             }
             
             result = object_array_add(arr, object);
@@ -690,7 +751,13 @@ nmo_object_t **nmo_object_index_get_by_name_all(
                 return NULL;
             }
             
-            /* Allocate result array (caller responsible for freeing) */
+            /* Allocate result array (owned by index, freed on next filtered query or destroy) */
+            nmo_object_index_t *mutable_index = (nmo_object_index_t *)index;
+            free(mutable_index->last_query_result);
+            mutable_index->last_query_result = NULL;
+            mutable_index->last_query_count = 0;
+            mutable_index->last_query_class = class_id;
+
             nmo_object_t **result = (nmo_object_t **)malloc(matching * sizeof(nmo_object_t *));
             if (result == NULL) {
                 return NULL;
@@ -704,6 +771,8 @@ nmo_object_t **nmo_object_index_get_by_name_all(
             }
             
             *out_count = matching;
+            mutable_index->last_query_result = result;
+            mutable_index->last_query_count = matching;
             return result;
         }
     }

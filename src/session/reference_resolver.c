@@ -46,6 +46,7 @@ struct nmo_reference_resolver {
     /* Resolution results */
     nmo_object_ref_t **unresolved_refs; /**< Array of unresolved reference pointers */
     size_t unresolved_count;           /**< Number of unresolved references */
+    size_t unresolved_capacity;        /**< Capacity of unresolved_refs */
     
     /* Statistics */
     nmo_reference_stats_t stats;       /**< Resolution statistics */
@@ -174,6 +175,9 @@ nmo_reference_resolver_t *nmo_reference_resolver_create(
     resolver->repo = repo;
     resolver->arena = arena;
     resolver->logger = NULL; /* Will be set by context if needed */
+    resolver->unresolved_refs = NULL;
+    resolver->unresolved_count = 0;
+    resolver->unresolved_capacity = 0;
     
     return resolver;
 }
@@ -308,15 +312,15 @@ int nmo_reference_resolver_resolve_all(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     
-    /* Allocate unresolved list */
-    resolver->unresolved_refs = nmo_arena_alloc(
-        resolver->arena,
-        sizeof(nmo_object_ref_t *) * resolver->pending_count,
-        1
-    );
-    
-    if (!resolver->unresolved_refs && resolver->pending_count > 0) {
-        return NMO_ERR_NOMEM;
+    if (resolver->pending_count > resolver->unresolved_capacity) {
+        nmo_object_ref_t **new_unresolved = (nmo_object_ref_t **)realloc(
+            resolver->unresolved_refs,
+            sizeof(nmo_object_ref_t *) * resolver->pending_count);
+        if (!new_unresolved) {
+            return NMO_ERR_NOMEM;
+        }
+        resolver->unresolved_refs = new_unresolved;
+        resolver->unresolved_capacity = resolver->pending_count;
     }
     
     resolver->unresolved_count = 0;
@@ -386,8 +390,12 @@ int nmo_reference_resolver_get_unresolved(
 void nmo_reference_resolver_destroy(
     nmo_reference_resolver_t *resolver
 ) {
-    /* Nothing to do - arena allocation handles cleanup */
-    (void)resolver;
+    if (resolver != NULL) {
+        free(resolver->unresolved_refs);
+        resolver->unresolved_refs = NULL;
+        resolver->unresolved_count = 0;
+        resolver->unresolved_capacity = 0;
+    }
 }
 
 /* ========================================================================

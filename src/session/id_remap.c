@@ -21,13 +21,13 @@ extern int nmo_load_session_get_mappings(const nmo_load_session_t *session,
  * @brief ID remap plan structure
  */
 typedef struct nmo_id_remap_plan {
-    nmo_id_remap_t *remap;   /**< Underlying remap table (runtime → file) */
+    nmo_id_remap_t *remap;   /**< Underlying remap table (runtime -> file) */
     nmo_arena_t *arena;      /**< Arena for allocations */
     size_t objects_remapped; /**< Number of objects remapped */
 } nmo_id_remap_plan_t;
 
 /* ============================================================================
- * Load-time ID Remapping (file ID → runtime ID)
+ * Load-time ID Remapping (file ID -> runtime ID)
  * ============================================================================ */
 
 nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
@@ -62,7 +62,7 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
         return NULL;
     }
 
-    /* Add all mappings (file ID → runtime ID) */
+    /* Add all mappings (file ID -> runtime ID) */
     for (size_t i = 0; i < count; i++) {
         nmo_result_t add_result = nmo_id_remap_add(remap, file_ids[i], runtime_ids[i]);
         if (add_result.code != NMO_OK) {
@@ -100,12 +100,12 @@ void nmo_id_remap_table_destroy(nmo_id_remap_table_t *table) {
         return;
     }
 
-    /* Destroy the remap and its arena */
-    nmo_id_remap_destroy(table);
+    /* Destroy the remap and its arena (created by nmo_build_remap_table) */
+    nmo_arena_destroy(table->arena);
 }
 
 /* ============================================================================
- * Save-time ID Remapping (runtime ID → sequential file ID)
+ * Save-time ID Remapping (runtime ID -> sequential file ID)
  * ============================================================================ */
 
 nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
@@ -139,7 +139,7 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
         return NULL;
     }
 
-    /* Build mapping: runtime ID → sequential file ID (0, 1, 2, ...) */
+    /* Build mapping: runtime ID -> sequential file ID (0, 1, 2, ...) */
     for (size_t i = 0; i < object_count; i++) {
         nmo_object_t *obj = objects_to_save[i];
         if (obj == NULL) {

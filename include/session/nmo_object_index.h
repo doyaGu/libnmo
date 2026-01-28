@@ -205,7 +205,11 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name(
  * @param name Object name
  * @param class_id Optional class filter (0 = any class)
  * @param out_count Output: number of objects found
- * @return Array of object pointers, or NULL if none found
+ * @return Array of object pointers, or NULL if none found.
+ *         If class_id == 0, the returned array is owned by the index and must not be freed.
+ *         If class_id != 0, the returned array is owned by the index and is valid until the
+ *         next call to nmo_object_index_get_by_name_all() with a non-zero class_id, or until
+ *         the index is destroyed.
  */
 NMO_API nmo_object_t **nmo_object_index_get_by_name_all(
     const nmo_object_index_t *index,

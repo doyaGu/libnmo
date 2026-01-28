@@ -36,6 +36,12 @@ typedef struct nmo_object_repository {
 
     /* Optional attached index for incremental maintenance */
     nmo_object_index_t *attached_index;
+
+    /* Scratch arrays for query results (caller must not free) */
+    nmo_object_t **scratch_all;
+    size_t scratch_all_capacity;
+    nmo_object_t **scratch_class;
+    size_t scratch_class_capacity;
 } nmo_object_repository_t;
 
 static uint32_t nmo_object_repository_get_active_index_flags(
@@ -118,6 +124,10 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
 
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
     repo->attached_index = NULL;
+    repo->scratch_all = NULL;
+    repo->scratch_all_capacity = 0;
+    repo->scratch_class = NULL;
+    repo->scratch_class_capacity = 0;
 
     return repo;
 }
@@ -130,6 +140,8 @@ void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
         /* Note: Objects are owned by arena, don't free them here */
         nmo_indexed_map_destroy(repo->id_map);
         nmo_hash_table_destroy(repo->name_table);
+        free(repo->scratch_all);
+        free(repo->scratch_class);
         free(repo);
     }
 }
@@ -299,7 +311,7 @@ nmo_object_t *nmo_object_repository_get_at(const nmo_object_repository_t *repo, 
 /**
  * Get all objects
  */
-nmo_object_t **nmo_object_repository_get_all(const nmo_object_repository_t *repo, size_t *count) {
+nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repo, size_t *count) {
     if (repo == NULL || count == NULL) {
         if (count != NULL) *count = 0;
         return NULL;
@@ -311,25 +323,30 @@ nmo_object_t **nmo_object_repository_get_all(const nmo_object_repository_t *repo
         return NULL;
     }
 
-    /* Allocate array */
-    nmo_object_t **objects = (nmo_object_t **) malloc(obj_count * sizeof(nmo_object_t *));
-    if (objects == NULL) {
-        *count = 0;
-        return NULL;
+    if (repo->scratch_all_capacity < obj_count) {
+        nmo_object_t **new_objects = (nmo_object_t **)realloc(
+            repo->scratch_all,
+            obj_count * sizeof(nmo_object_t *));
+        if (new_objects == NULL) {
+            *count = 0;
+            return NULL;
+        }
+        repo->scratch_all = new_objects;
+        repo->scratch_all_capacity = obj_count;
     }
 
     /* Fill array */
     for (size_t i = 0; i < obj_count; i++) {
         nmo_object_t *obj = NULL;
         if (nmo_indexed_map_get_value_at(repo->id_map, i, &obj)) {
-            objects[i] = obj;
+            repo->scratch_all[i] = obj;
         } else {
-            objects[i] = NULL;
+            repo->scratch_all[i] = NULL;
         }
     }
 
     *count = obj_count;
-    return objects;
+    return repo->scratch_all;
 }
 
 /**
@@ -383,7 +400,7 @@ nmo_arena_t *nmo_object_repository_get_arena(const nmo_object_repository_t *repo
 /**
  * Find objects by class
  */
-nmo_object_t **nmo_object_repository_find_by_class(const nmo_object_repository_t *repo,
+nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repo,
                                                            nmo_class_id_t class_id,
                                                            size_t *out_count) {
     if (repo == NULL || out_count == NULL) {
@@ -411,13 +428,16 @@ nmo_object_t **nmo_object_repository_find_by_class(const nmo_object_repository_t
         return NULL;
     }
 
-    // Allocate array for matching objects
-    nmo_object_t **objects = (nmo_object_t **) nmo_arena_alloc(repo->arena,
-                                                              match_count * sizeof(nmo_object_t *),
-                                                              sizeof(void *));
-    if (objects == NULL) {
-        *out_count = 0;
-        return NULL;
+    if (repo->scratch_class_capacity < match_count) {
+        nmo_object_t **new_objects = (nmo_object_t **)realloc(
+            repo->scratch_class,
+            match_count * sizeof(nmo_object_t *));
+        if (new_objects == NULL) {
+            *out_count = 0;
+            return NULL;
+        }
+        repo->scratch_class = new_objects;
+        repo->scratch_class_capacity = match_count;
     }
 
     // Second pass: fill the array
@@ -425,12 +445,12 @@ nmo_object_t **nmo_object_repository_find_by_class(const nmo_object_repository_t
     for (size_t i = 0; i < total_count; i++) {
         nmo_object_t *obj = NULL;
         if (nmo_indexed_map_get_value_at(repo->id_map, i, &obj) && obj->class_id == class_id) {
-            objects[current_match++] = obj;
+            repo->scratch_class[current_match++] = obj;
         }
     }
 
     *out_count = match_count;
-    return objects;
+    return repo->scratch_class;
 }
 
 /**

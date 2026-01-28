@@ -76,9 +76,11 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_reposi
  * @param repository Repository
  * @param class_id Class ID
  * @param out_count Output count of found objects
- * @return Array of objects or NULL (caller must not free)
+ * @return Array of objects or NULL (caller must not free).
+ *         The returned array is owned by the repository and is valid until the
+ *         next call to nmo_object_repository_find_by_class() or repository destruction.
  */
-NMO_API nmo_object_t **nmo_object_repository_find_by_class(const nmo_object_repository_t *repository,
+NMO_API nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repository,
                                                            nmo_class_id_t class_id,
                                                            size_t *out_count);
 
@@ -93,9 +95,11 @@ NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository_t *re
  * @brief Get all objects
  * @param repository Repository
  * @param out_count Output count
- * @return Array of objects (caller must not free)
+ * @return Array of objects (caller must not free).
+ *         The returned array is owned by the repository and is valid until the
+ *         next call to nmo_object_repository_get_all() or repository destruction.
  */
-NMO_API nmo_object_t **nmo_object_repository_get_all(const nmo_object_repository_t *repository,
+NMO_API nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repository,
                                                      size_t *out_count);
 
 /**
