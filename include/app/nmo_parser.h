@@ -15,6 +15,25 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_session nmo_session_t;
+typedef struct nmo_allocator nmo_allocator_t;
+
+/* ============================================================================
+ * Phase 2.1: Dual-Track IO Strategy
+ * ============================================================================ */
+
+/**
+ * @brief Load strategy for file reading
+ *
+ * Controls how the file data is loaded into memory:
+ * - AUTO: Automatically select based on file format (recommended)
+ * - COMPRESSED: Force malloc + full decompression (works for all formats)
+ * - MMAP: Force memory-mapped IO for uncompressed files (faster, lower memory)
+ */
+typedef enum nmo_load_strategy {
+    NMO_LOAD_STRATEGY_AUTO = 0,     /**< Auto-detect based on file format */
+    NMO_LOAD_STRATEGY_COMPRESSED,   /**< Force malloc + decompress (2x memory) */
+    NMO_LOAD_STRATEGY_MMAP,         /**< Force mmap for uncompressed (1x memory) */
+} nmo_load_strategy_t;
 
 /**
  * @brief Load flags
@@ -32,6 +51,31 @@ typedef enum nmo_load_flags {
     NMO_LOAD_SKIP_INDEX_BUILD       = 0x0040,  /* Skip object index building */
     NMO_LOAD_SKIP_REFERENCE_RESOLVE = 0x0080,  /* Skip reference resolution */
 } nmo_load_flags_t;
+
+/**
+ * @brief Extended load options (Phase 2.1)
+ *
+ * Provides fine-grained control over the loading process.
+ */
+typedef struct nmo_load_options {
+    nmo_load_strategy_t strategy;   /**< IO strategy selection */
+    int strict_crc;                 /**< Verify Adler-32 checksum (default: 0) */
+    int preserve_shadow;            /**< Enable shadow storage (default: 1) */
+    nmo_allocator_t *allocator;     /**< Custom allocator (NULL for default) */
+    nmo_load_flags_t flags;         /**< Standard load flags */
+} nmo_load_options_t;
+
+/**
+ * @brief Initialize load options with defaults
+ *
+ * @return Default load options:
+ *   - strategy: NMO_LOAD_STRATEGY_AUTO
+ *   - strict_crc: 0 (disabled)
+ *   - preserve_shadow: 1 (enabled)
+ *   - allocator: NULL (use default)
+ *   - flags: NMO_LOAD_DEFAULT
+ */
+NMO_API nmo_load_options_t nmo_load_options_default(void);
 
 /**
  * @brief Load file
@@ -63,6 +107,36 @@ NMO_API int nmo_load_file(nmo_session_t *session,
                           nmo_load_flags_t flags);
 
 /**
+ * @brief Load file with extended options (Phase 2.1)
+ *
+ * Extended version of nmo_load_file() that accepts load options
+ * for fine-grained control over the loading process, including:
+ * - IO strategy selection (auto/compressed/mmap)
+ * - CRC validation
+ * - Shadow storage preservation
+ * - Custom allocator
+ *
+ * @param session Session to load into
+ * @param path File path
+ * @param opts Load options (NULL for defaults)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_load_file_ex(nmo_session_t *session,
+                             const char *path,
+                             const nmo_load_options_t *opts);
+
+/**
+ * @brief Get the load strategy that was actually used
+ *
+ * After calling nmo_load_file_ex() with NMO_LOAD_STRATEGY_AUTO,
+ * this function returns which strategy was actually selected.
+ *
+ * @param session Session that was loaded
+ * @return Strategy that was used, or NMO_LOAD_STRATEGY_AUTO if unknown
+ */
+NMO_API nmo_load_strategy_t nmo_session_get_load_strategy(const nmo_session_t *session);
+
+/**
  * @brief Save flags
  */
 typedef enum nmo_save_flags {
@@ -81,7 +155,7 @@ typedef enum nmo_save_flags {
  * Implements the complete 14-phase save pipeline:
  * 1. Validate Session State
  * 2. Manager Pre-Save Hooks
- * 3. Build ID Remap Plan (runtime → file IDs)
+ * 3. Build ID Remap Plan (runtime -> file IDs)
  * 4. Serialize Manager Chunks
  * 5. Serialize Object Chunks with ID Remapping
  * 6. Compress Data Section

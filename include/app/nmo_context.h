@@ -18,6 +18,7 @@ extern "C" {
 typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_logger nmo_logger_t;
 typedef struct nmo_schema_registry nmo_schema_registry_t;
+typedef struct nmo_type_registry_t nmo_type_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_plugin_manager nmo_plugin_manager_t;
 typedef struct nmo_arena nmo_arena_t;
@@ -83,7 +84,7 @@ static inline void nmo_context_destroy(nmo_context_t *ctx) {
 }
 
 /**
- * @brief Get schema registry
+ * @brief Get schema registry (deprecated - use nmo_context_get_type_registry)
  *
  * Thread-safe access to the schema registry.
  *
@@ -91,6 +92,14 @@ static inline void nmo_context_destroy(nmo_context_t *ctx) {
  * @return Schema registry or NULL
  */
 NMO_API nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context_t *ctx);
+
+/**
+ * @brief Get type registry (schema v2)
+ *
+ * @param ctx Context
+ * @return Type registry, or NULL if not initialized
+ */
+NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx);
 
 /**
  * @brief Get manager registry

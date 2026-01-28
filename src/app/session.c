@@ -37,6 +37,7 @@ typedef struct nmo_session {
 
     /* Reference resolver (initialised on demand) */
     nmo_reference_resolver_t *reference_resolver;
+    nmo_arena_t *reference_resolver_arena;
 
     /* File information */
     nmo_file_info_t file_info;
@@ -176,6 +177,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 
     /* Initialize reference resolver */
     session->reference_resolver = NULL;
+    session->reference_resolver_arena = NULL;
     
     /* Initialize file header */
     session->file_header = NULL;
@@ -200,7 +202,12 @@ void nmo_session_destroy(nmo_session_t *session) {
         }
 
         if (session->reference_resolver != NULL) {
+            nmo_reference_resolver_destroy(session->reference_resolver);
             session->reference_resolver = NULL;
+        }
+        if (session->reference_resolver_arena != NULL) {
+            nmo_arena_destroy(session->reference_resolver_arena);
+            session->reference_resolver_arena = NULL;
         }
 
         if (session->chunk_pool != NULL) {
@@ -610,6 +617,9 @@ int nmo_session_get_objects(
  */
 void nmo_session_set_object_index(nmo_session_t *session, nmo_object_index_t *index) {
     if (session != NULL) {
+        if (session->object_index != NULL && session->object_index != index) {
+            nmo_object_index_destroy(session->object_index);
+        }
         session->object_index = index;
         nmo_object_repository_set_index(session->repository, index);
     }
@@ -977,9 +987,16 @@ nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
         return NULL;
     }
 
+    if (session->reference_resolver_arena == NULL) {
+        session->reference_resolver_arena = nmo_arena_create(NULL, 4096);
+        if (session->reference_resolver_arena == NULL) {
+            return NULL;
+        }
+    }
+
     nmo_reference_resolver_t *resolver = nmo_reference_resolver_create(
         session->repository,
-        session->arena
+        session->reference_resolver_arena
     );
 
     if (resolver != NULL) {
@@ -991,6 +1008,13 @@ nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
 
 void nmo_session_reset_reference_resolver(nmo_session_t *session) {
     if (session != NULL) {
-        session->reference_resolver = NULL;
+        if (session->reference_resolver != NULL) {
+            nmo_reference_resolver_destroy(session->reference_resolver);
+            session->reference_resolver = NULL;
+        }
+        if (session->reference_resolver_arena != NULL) {
+            nmo_arena_destroy(session->reference_resolver_arena);
+            session->reference_resolver_arena = NULL;
+        }
     }
 }

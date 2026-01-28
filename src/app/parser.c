@@ -1,9 +1,13 @@
 /**
  * @file parser.c
  * @brief Load and save pipeline implementation (Phase 9 & 10)
+ *
+ * The save pipeline has been refactored to use the two-phase commit
+ * architecture implemented in save_pipeline.c (Phase 1.4).
  */
 
 #include "app/nmo_parser.h"
+#include "app/nmo_save_pipeline.h"
 #include "app/nmo_session.h"
 #include "app/nmo_plugin.h"
 #include "app/nmo_context.h"
@@ -12,6 +16,7 @@
 #include "core/nmo_logger.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
+#include "io/nmo_io_mmap.h"
 #include "io/nmo_io_compressed.h"
 #include "format/nmo_header.h"
 #include "format/nmo_header1.h"
@@ -26,29 +31,15 @@
 #include "session/nmo_id_remap.h"
 #include "session/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
-#include "schema/nmo_schema_registry.h"
-#include "schema/nmo_ckobject_schemas.h"
-#include "schema/nmo_ckbeobject_schemas.h"
-#include "schema/nmo_ckgroup_schemas.h"
-#include "schema/nmo_ckobject_hierarchy.h"
+#include "type/type_system.h"
 #include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
 #include "miniz.h"  /* For compression/decompression */
 
-#define NMO_SAVE_COMPRESSION_LEVEL MZ_DEFAULT_COMPRESSION
-
 /**
- * @brief Default placeholder serialization function.
- *
- * This function serves as a stand-in for a proper, schema-based serialization.
- * It creates a simple chunk containing only the object's name.
- *
- * @param obj The object to serialize.
- * @param arena The arena for allocations.
- * @param logger The logger for messages.
- * @return A new nmo_chunk_t* on success, or NULL on failure.
+ * @brief Get plugin category label for logging
  */
 static const char *nmo_plugin_category_label(uint32_t category) {
     switch (category) {
@@ -63,6 +54,9 @@ static const char *nmo_plugin_category_label(uint32_t category) {
     }
 }
 
+/**
+ * @brief Format GUID to short string for logging
+ */
 static void nmo_format_guid_short(nmo_guid_t guid, char *buffer, size_t buffer_size) {
     if (buffer == NULL || buffer_size == 0) {
         return;
@@ -73,129 +67,8 @@ static void nmo_format_guid_short(nmo_guid_t guid, char *buffer, size_t buffer_s
 }
 
 /**
- * @brief Serialize object using schema-based vtable dispatch
- * 
- * Replaces the old nmo_default_serialize_object placeholder that only wrote object name.
- * Now uses schema registry to find appropriate vtable and serialize complete object state.
- * 
- * @param obj Object to serialize
- * @param arena Arena for allocations
- * @param schema_reg Schema registry for vtable lookup
- * @param logger Logger for diagnostics
- * @return New chunk with serialized data, or NULL on error
+ * @brief Register included file with metadata only (for Header1 metadata entries)
  */
-static nmo_chunk_t* nmo_serialize_object_with_schema(
-    nmo_object_t *obj,
-    nmo_arena_t *arena,
-    nmo_schema_registry_t *schema_reg,
-    nmo_logger_t *logger)
-{
-    if (!obj || !arena || !schema_reg) {
-        return NULL;
-    }
-
-    /* If object already has a chunk and no data (not modified), reuse it */
-    if (obj->chunk != NULL && obj->data == NULL) {
-        nmo_log(logger, NMO_LOG_DEBUG, "    Reusing existing chunk for object %u (unmodified)", obj->id);
-        return obj->chunk;
-    }
-
-    /* Find schema with inheritance fallback */
-    const nmo_schema_type_t *schema_type = 
-        nmo_schema_registry_find_by_class_id_inherited(schema_reg, obj->class_id);
-    
-    if (schema_type == NULL) {
-        nmo_log(logger, NMO_LOG_WARN, "    No schema found for class 0x%08X, preserving raw chunk", obj->class_id);
-        return obj->chunk; /* Preserve existing chunk if schema unavailable */
-    }
-
-    /* Check if schema has vtable with write function */
-    if (schema_type->vtable == NULL || schema_type->vtable->write == NULL) {
-        nmo_log(logger, NMO_LOG_WARN, "    Schema '%s' has no write vtable, preserving raw chunk", schema_type->name);
-        return obj->chunk; /* Preserve existing chunk if no serializer */
-    }
-
-    /* If object has data (deserialized state), serialize it */
-    if (obj->data == NULL) {
-        nmo_log(logger, NMO_LOG_WARN, "    Object %u has no data to serialize", obj->id);
-        /* If no existing chunk either, create an empty one */
-        if (obj->chunk == NULL) {
-            nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
-            if (empty_chunk) {
-                empty_chunk->class_id = obj->class_id;
-                empty_chunk->chunk_version = 7;
-                nmo_chunk_start_write(empty_chunk);
-                nmo_chunk_close(empty_chunk);
-                return empty_chunk;
-            }
-        }
-        return obj->chunk; /* Preserve existing chunk if no data */
-    }
-
-    /* Create new chunk for writing */
-    nmo_chunk_t *new_chunk = nmo_chunk_create(arena);
-    if (new_chunk == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "    Failed to create chunk for object %u", obj->id);
-        return NULL;
-    }
-
-    /* Set chunk class ID and version */
-    new_chunk->class_id = obj->class_id;
-    new_chunk->chunk_version = 7; /* Default to version 7 */
-
-    /* Start write mode */
-    nmo_result_t result = nmo_chunk_start_write(new_chunk);
-    if (result.code != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR, "    Failed to start chunk write for object %u", obj->id);
-        return NULL;
-    }
-
-    /* Call vtable write function to serialize object state */
-    result = schema_type->vtable->write(schema_type, new_chunk, obj->data, arena);
-    
-    if (result.code != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR, "    Failed to serialize object %u with schema '%s'",
-                obj->id, schema_type->name);
-        if (result.error != NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "      Error: code=%d, severity=%d",
-                    result.error->code, result.error->severity);
-        }
-        /* Fall back to existing chunk on error */
-        return obj->chunk;
-    }
-
-    /* Finalize chunk */
-    nmo_chunk_close(new_chunk);
-    
-    nmo_log(logger, NMO_LOG_DEBUG, "    Serialized object %u using schema '%s' (%zu bytes)",
-            obj->id, schema_type->name, new_chunk->data_size * 4);
-    
-    return new_chunk;
-}
-
-static int nmo_should_save_object_as_reference(
-    const nmo_object_t *obj,
-    nmo_save_flags_t flags
-) {
-    if (obj == NULL) {
-        return 0;
-    }
-
-    if (flags & NMO_SAVE_AS_OBJECTS) {
-        return 1;
-    }
-
-    if (obj->save_flags & NMO_OBJECT_REFERENCE_FLAG) {
-        return 1;
-    }
-
-    if (obj->flags & NMO_OBJECT_REFERENCE_FLAG) {
-        return 1;
-    }
-
-    return 0;
-}
-
 static int nmo_register_included_metadata(
     nmo_session_t *session,
     const char *name,
@@ -346,10 +219,15 @@ static int nmo_load_included_files(
 
 
 /**
- * Load file - 15-phase load pipeline
+ * Load file - 15-phase load pipeline (shared implementation)
  */
-int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t flags) {
-    if (session == NULL || path == NULL) {
+static int nmo_load_file_with_io(
+    nmo_session_t *session,
+    const char *path,
+    nmo_io_interface_t *io,
+    nmo_load_flags_t flags
+) {
+    if (session == NULL || path == NULL || io == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -362,14 +240,6 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
     nmo_session_reset_reference_resolver(session);
 
     const int enforce_plugin_dependencies = (flags & NMO_LOAD_CHECK_DEPENDENCIES) != 0;
-
-    /* Phase 1: Open IO */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
-    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
-    if (io == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to open file: %s", path);
-        return NMO_ERR_FILE_NOT_FOUND;
-    }
 
     /* Phase 2: Parse File Header */
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Parsing file header");
@@ -938,11 +808,11 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         goto skip_object_processing;
     }
     
-    /* Get schema registry for schema-based deserialization with vtable dispatch */
-    nmo_schema_registry_t *schema_reg = nmo_context_get_schema_registry(ctx);
+    /* Get type registry for schema-based deserialization with vtable dispatch */
+    nmo_type_registry_t *type_reg = nmo_context_get_type_registry(ctx);
     
-    if (schema_reg == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Schema registry not initialized in context");
+    if (type_reg == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
         return -1; /* Parser function returns int, not nmo_result_t */
     }
 
@@ -970,7 +840,7 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         nmo_result_t read_result = {NMO_OK, NULL};
         
         /* Defensive: catch potential chunk corruption */
-        if (obj->chunk->data == NULL || obj->chunk->data_size == 0) {
+        if (obj->chunk->data.count == 0 || obj->chunk->data.data == NULL) {
             nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u): chunk has invalid data pointer or zero size, skipping",
                     i, obj->id);
             skipped_count++;
@@ -993,7 +863,7 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         }
 
         /* Query class hierarchy system for class info */
-        const char *class_name = nmo_ckclass_get_name_by_id(obj->class_id);
+        const char *class_name = "Unknown";  /* Class name lookup removed */
         
         if (class_name == NULL) {
             /* Class ID not registered in hierarchy - no schema available */
@@ -1005,8 +875,8 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         
         /* Find schema type with inheritance-based fallback
          * This searches up the class hierarchy until a schema is found */
-        const nmo_schema_type_t *schema_type = 
-            nmo_schema_registry_find_by_class_id_inherited(schema_reg, obj->class_id);
+        const nmo_type_descriptor_t *schema_type = 
+            nmo_type_registry_find_by_class_id_inherited(type_reg, obj->class_id);
         
         if (schema_type == NULL) {
             /* No schema found even after checking parent classes */
@@ -1016,8 +886,8 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
             continue;
         }
         
-        /* Check if schema has vtable with read function */
-        if (schema_type->vtable == NULL || schema_type->vtable->read == NULL) {
+        /* Check if schema has vtable with deserialize function */
+        if (schema_type->vtable == NULL || schema_type->vtable->deserialize == NULL) {
             no_schema_count++;
             nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): schema '%s' has no vtable read function",
                     i, obj->id, obj->class_id, class_name, schema_type->name);
@@ -1035,7 +905,7 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         memset(state, 0, schema_type->size);
         
         /* Call vtable read function (schema-driven deserialization) */
-        nmo_result_t result = schema_type->vtable->read(schema_type, obj->chunk, arena, state);
+        nmo_result_t result = schema_type->vtable->deserialize(state, obj->chunk, schema_type, arena);
         
         /* Check result */
         if (result.code == NMO_OK) {
@@ -1070,7 +940,7 @@ skip_object_processing:
     nmo_log(logger, NMO_LOG_INFO, "Phase 15: Executing object-level finish loading (PostLoad)");
     
     size_t finish_loading_count = 0;
-    size_t finish_loading_error_count = 0;
+    // size_t finish_loading_error_count = 0; // Temporarily disabled during schema_v2 migration
     size_t finish_loading_skipped = 0;
     
     /* Iterate through all objects and call their finish_loading functions
@@ -1089,37 +959,15 @@ skip_object_processing:
             continue;
         }
         
-        /* Get finish_loading function based on class_id
-         * TODO: Use schema registry lookup when vtable is extended with finish_loading.
-         * For now, use direct function access for implemented classes.
-         */
-        nmo_ckobject_finish_loading_fn finish_loading_fn = NULL;
-        nmo_class_id_t class_id = obj->class_id;
-        
-        /* CKGroup has specific finish_loading implementation */
-        if (class_id == 0x1E) {  /* CID_GROUP */
-            finish_loading_fn = nmo_get_ckgroup_finish_loading();
-        }
-        /* Note: Other classes use implicit no-op (no finish_loading needed yet) */
-        
-        if (finish_loading_fn) {
-            nmo_result_t result = finish_loading_fn(obj->data, arena, (void*)repo);
-            if (result.code == NMO_OK) {
-                finish_loading_count++;
-            } else {
-                finish_loading_error_count++;
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Object %u (class %u) finish_loading failed",
-                        obj->id, class_id);
-            }
-        } else {
-            finish_loading_skipped++;
-        }
+        /* Phase 3: Post-load processing disabled - TODO: migrate to schema_v2 vtable
+        */
     }
     
+    /* Finish loading disabled
     nmo_log(logger, NMO_LOG_INFO,
             "  Finish loading summary: %zu processed, %zu errors, %zu skipped (no handler)",
             finish_loading_count, finish_loading_error_count, finish_loading_skipped);
+    */
     
     /* Phase 16: Manager Post-Load Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 16: Executing manager post-load hooks");
@@ -1180,725 +1028,205 @@ skip_object_processing:
 }
 
 /**
- * Save file - 14-phase save pipeline
+ * Load file - 15-phase load pipeline
+ */
+int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t flags) {
+    if (session == NULL || path == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    nmo_logger_t *logger = nmo_context_get_logger(ctx);
+
+    /* Phase 1: Open IO */
+    nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
+    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
+    if (io == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "Failed to open file: %s", path);
+        return NMO_ERR_FILE_NOT_FOUND;
+    }
+
+    return nmo_load_file_with_io(session, path, io, flags);
+}
+
+/**
+ * @brief Return default load options (Phase 2.1 Dual-Track IO)
+ */
+nmo_load_options_t nmo_load_options_default(void) {
+    nmo_load_options_t opts = {
+        .strategy = NMO_LOAD_STRATEGY_AUTO,
+        .strict_crc = 0,
+        .preserve_shadow = 1,
+        .allocator = NULL,
+        .flags = NMO_LOAD_DEFAULT
+    };
+    return opts;
+}
+
+/**
+ * @brief Detect if a file uses compression by reading its header
+ *
+ * @param path File path to inspect
+ * @return 1 if compressed, 0 if uncompressed, -1 on error
+ */
+static int nmo_detect_file_compression(const char *path) {
+    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
+    if (io == NULL) {
+        return -1;
+    }
+    
+    /* Parse the file header to check compression flags */
+    nmo_file_header_t header;
+    nmo_result_t result = nmo_file_header_parse(io, &header);
+    nmo_io_close(io);
+    
+    if (result.code != NMO_OK) {
+        return -1;
+    }
+    
+    /* Check if any compression is enabled */
+    const uint32_t compression_mask = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
+    int is_compressed = (header.file_write_mode & compression_mask) != 0;
+    
+    /* Also check if header1 is compressed (pack_size != unpack_size) */
+    if (header.hdr1_pack_size != header.hdr1_unpack_size) {
+        is_compressed = 1;
+    }
+    
+    /* And data section compression */
+    if (header.data_pack_size != header.data_unpack_size) {
+        is_compressed = 1;
+    }
+    
+    return is_compressed;
+}
+
+/**
+ * @brief Load file with extended options (Phase 2.1 Dual-Track IO)
+ *
+ * Extended version of nmo_load_file() that accepts load options for
+ * fine-grained control over the loading process. Currently supports:
+ * - Strategy selection (auto-detect, force compressed, or force mmap)
+ * - Flag passthrough to underlying loader
+ *
+ * Note: MMAP strategy is currently a no-op placeholder (falls back to
+ * compressed path). Full mmap support requires IO layer changes.
+ */
+int nmo_load_file_ex(nmo_session_t *session,
+                     const char *path,
+                     const nmo_load_options_t *opts) {
+    if (session == NULL || path == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    
+    /* Use defaults if no options provided */
+    nmo_load_options_t local_opts;
+    if (opts == NULL) {
+        local_opts = nmo_load_options_default();
+        opts = &local_opts;
+    }
+    
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    nmo_logger_t *logger = nmo_context_get_logger(ctx);
+    
+    /* Determine actual strategy based on AUTO detection */
+    nmo_load_strategy_t actual_strategy = opts->strategy;
+    
+    if (actual_strategy == NMO_LOAD_STRATEGY_AUTO) {
+        int is_compressed = nmo_detect_file_compression(path);
+        if (is_compressed < 0) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
+            return NMO_ERR_FILE_NOT_FOUND;
+        }
+        
+        actual_strategy = is_compressed ? NMO_LOAD_STRATEGY_COMPRESSED : NMO_LOAD_STRATEGY_MMAP;
+        nmo_log(logger, NMO_LOG_INFO, "Auto-detected load strategy: %s",
+                actual_strategy == NMO_LOAD_STRATEGY_COMPRESSED ? "COMPRESSED" : "MMAP");
+    }
+    
+    /* Store the detected strategy in session metadata */
+    /* TODO: Add session field for tracking load strategy once session.c is updated */
+    
+    /* Execute the appropriate loading path */
+    if (actual_strategy == NMO_LOAD_STRATEGY_MMAP) {
+        if (!nmo_io_mmap_supported()) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "MMAP strategy requested but not supported on this platform, "
+                    "falling back to standard loader");
+            return nmo_load_file(session, path, opts->flags);
+        }
+
+        int is_compressed = nmo_detect_file_compression(path);
+        if (is_compressed < 0) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
+            return NMO_ERR_FILE_NOT_FOUND;
+        }
+
+        if (is_compressed) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "MMAP strategy requested for compressed file; falling back to standard loader");
+            return nmo_load_file(session, path, opts->flags);
+        }
+
+        nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file (mmap): %s", path);
+        nmo_io_interface_t *io = nmo_mmap_io_open(path);
+        if (io == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Failed to open mmap for file: %s", path);
+            return NMO_ERR_FILE_NOT_FOUND;
+        }
+
+        return nmo_load_file_with_io(session, path, io, opts->flags);
+    }
+
+    /* Compressed/standard path */
+    return nmo_load_file(session, path, opts->flags);
+}
+
+/**
+ * @brief Get the load strategy that was actually used
+ *
+ * Note: Currently returns AUTO since we don't track strategy in session yet.
+ * TODO: Store detected strategy in session and return it here.
+ */
+nmo_load_strategy_t nmo_session_get_load_strategy(const nmo_session_t *session) {
+    (void)session;  /* Unused for now */
+    return NMO_LOAD_STRATEGY_AUTO;  /* TODO: Return actual strategy once tracked */
+}
+
+/**
+ * Save file - Two-phase commit save pipeline (Phase 1.4)
+ *
+ * This function now delegates to the new two-phase commit architecture:
+ *   Phase 1: Layout & Serialize (all data to memory)
+ *   Phase 2: Pack & Commit (compress, CRC, write atomically)
+ *
+ * The old 14-phase inline implementation has been refactored into
+ * save_pipeline.c for better separation of concerns and testability.
  */
 int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t flags) {
     if (session == NULL || path == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_context_t *ctx = nmo_session_get_context(session);
-    nmo_arena_t *arena = nmo_session_get_arena(session);
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    nmo_logger_t *logger = nmo_context_get_logger(ctx);
-    const int strip_included_files = (flags & NMO_SAVE_STRIP_INCLUDED_FILES) != 0;
-    uint32_t session_included_count = 0;
-    nmo_included_file_t *session_included_files = nmo_session_get_included_files(session, &session_included_count);
-    nmo_file_info_t file_info = nmo_session_get_file_info(session);
+    /* Build save options from flags */
+    nmo_save_options_t options = nmo_save_options_default();
+    options.flags = flags;
 
+    /* Determine compression settings from flags and file info */
+    nmo_file_info_t file_info = nmo_session_get_file_info(session);
     const uint32_t compression_mask = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
     uint32_t compression_flags = file_info.write_mode & compression_mask;
+
     if (flags & NMO_SAVE_COMPRESSED) {
         compression_flags = NMO_FILE_WRITE_COMPRESS_BOTH;
     }
-    int compress_header = (compression_flags & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
-    int compress_data = (compression_flags & NMO_FILE_WRITE_COMPRESS_DATA) != 0;
 
-    /* Phase 1: Validate Session State */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 1: Validating session state");
+    options.compress_header = (compression_flags & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
+    options.compress_data = (compression_flags & NMO_FILE_WRITE_COMPRESS_DATA) != 0;
+    options.validate_before_write = (flags & NMO_SAVE_VALIDATE_BEFORE) != 0;
 
-    size_t object_count;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    /* Delegate to two-phase commit implementation */
+    nmo_result_t result = nmo_save_file_ex(session, path, &options);
 
-    if (object_count == 0) {
-        nmo_log(logger, NMO_LOG_ERROR, "Cannot save empty session");
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_log(logger, NMO_LOG_INFO, "  Session has %zu objects to save", object_count);
-
-    /* Determine which objects should be serialized as references */
-    uint8_t *reference_map = NULL;
-    size_t reference_count = 0;
-
-    reference_map = (uint8_t *) nmo_arena_alloc(arena, object_count * sizeof(uint8_t), 1);
-    if (reference_map == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate reference map");
-        return NMO_ERR_NOMEM;
-    }
-    memset(reference_map, 0, object_count * sizeof(uint8_t));
-
-    for (size_t i = 0; i < object_count; i++) {
-        if (nmo_should_save_object_as_reference(objects[i], flags)) {
-            reference_map[i] = 1;
-            reference_count++;
-        }
-    }
-
-    if (reference_count > 0) {
-        nmo_log(logger, NMO_LOG_INFO, "  Objects marked as references: %zu", reference_count);
-    }
-
-    /* Phase 2: Manager Pre-Save Hooks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 2: Executing manager pre-save hooks");
-
-    nmo_manager_registry_t *manager_reg = nmo_context_get_manager_registry(ctx);
-    uint32_t registered_manager_count = 0;
-    if (manager_reg != NULL) {
-        registered_manager_count = nmo_manager_registry_get_count(manager_reg);
-        nmo_log(logger, NMO_LOG_INFO, "  Found %u registered managers", registered_manager_count);
-
-        for (uint32_t i = 0; i < registered_manager_count; i++) {
-            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
-            nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
-
-            if (manager != NULL) {
-                int hook_result = nmo_manager_invoke_pre_save(manager, session);
-                if (hook_result != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u pre-save hook failed: %d",
-                            manager_id, hook_result);
-                    /* Continue with other managers even if one fails */
-                } else {
-                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u pre-save hook executed", manager_id);
-                }
-            }
-        }
-    }
-
-    /* Phase 3: Build ID Remap Plan (runtime → file IDs) */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 3: Building ID remap plan");
-
-    nmo_id_remap_plan_t *remap_plan = nmo_id_remap_plan_create(repo, objects, object_count);
-    if (remap_plan == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to create ID remap plan");
-        return NMO_ERR_NOMEM;
-    }
-
-    nmo_id_remap_table_t *remap_table = nmo_id_remap_plan_get_table(remap_plan);
-    size_t remap_count = nmo_id_remap_table_get_count(remap_table);
-    nmo_log(logger, NMO_LOG_INFO, "  Created remap plan with %zu entries", remap_count);
-
-    /* Phase 4: Serialize Manager Chunks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 4: Serializing manager chunks");
-    uint32_t session_manager_count = 0;
-    nmo_manager_data_t *session_managers = nmo_session_get_manager_data(session, &session_manager_count);
-
-    uint32_t manager_capacity = registered_manager_count + session_manager_count;
-    nmo_manager_data_t *manager_entries = NULL;
-    uint32_t manager_entry_count = 0;
-
-    if (manager_capacity > 0) {
-        manager_entries = (nmo_manager_data_t *) nmo_arena_alloc(
-            arena,
-            sizeof(nmo_manager_data_t) * manager_capacity,
-            alignof(nmo_manager_data_t));
-        if (manager_entries == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate manager data array (%u entries)", manager_capacity);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_NOMEM;
-        }
-        memset(manager_entries, 0, sizeof(nmo_manager_data_t) * manager_capacity);
-    }
-
-    if (manager_reg != NULL && registered_manager_count > 0) {
-        for (uint32_t i = 0; i < registered_manager_count; i++) {
-            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
-            nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
-            if (manager == NULL) {
-                continue;
-            }
-
-            nmo_chunk_t *chunk = nmo_manager_invoke_save_data(manager, session);
-            if (chunk == NULL) {
-                nmo_log(logger, NMO_LOG_INFO,
-                        "  Manager %s produced no save chunk", manager->name ? manager->name : "<unnamed>");
-                continue;
-            }
-
-            if (manager_entries == NULL || manager_entry_count >= manager_capacity) {
-                nmo_log(logger, NMO_LOG_ERROR, "Manager data array overflow while storing generated chunk");
-                nmo_id_remap_plan_destroy(remap_plan);
-                return NMO_ERR_NOMEM;
-            }
-
-            nmo_manager_data_t *entry = &manager_entries[manager_entry_count++];
-            entry->guid = manager->guid;
-            entry->chunk = chunk;
-            entry->data_size = (chunk->raw_data != NULL) ? (uint32_t)chunk->raw_size : 0;
-            entry->flags = NMO_MANAGER_DATA_FLAG_DISPATCHED;
-
-            char guid_buffer[64];
-            nmo_format_guid_short(entry->guid, guid_buffer, sizeof(guid_buffer));
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Manager %s saved chunk (GUID=%s, size=%u)",
-                    manager->name ? manager->name : "<unnamed>", guid_buffer, entry->data_size);
-        }
-    }
-
-    if (session_managers != NULL && session_manager_count > 0) {
-        for (uint32_t i = 0; i < session_manager_count; i++) {
-            nmo_manager_data_t *fallback = &session_managers[i];
-            if ((fallback->flags & NMO_MANAGER_DATA_FLAG_DISPATCHED) != 0) {
-                continue; /* Already consumed by a manager */
-            }
-
-            if (manager_entries == NULL || manager_entry_count >= manager_capacity) {
-                nmo_log(logger, NMO_LOG_ERROR,
-                        "Insufficient capacity to preserve manager chunk %u", i);
-                nmo_id_remap_plan_destroy(remap_plan);
-                return NMO_ERR_NOMEM;
-            }
-
-            manager_entries[manager_entry_count++] = *fallback;
-
-            char guid_buffer[64];
-            nmo_format_guid_short(fallback->guid, guid_buffer, sizeof(guid_buffer));
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Preserving unmanaged chunk GUID=%s for round-trip", guid_buffer);
-        }
-    }
-
-    /* Phase 5: Serialize Object Chunks with ID Remapping */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 5: Serializing object chunks");
-
-    nmo_schema_registry_t *schema_reg = nmo_context_get_schema_registry(ctx);
-    if (schema_reg == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Schema registry not available for serialization");
-        nmo_id_remap_plan_destroy(remap_plan);
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    size_t serialized_count = 0;
-    size_t reused_count = 0;
-    size_t skipped_count = 0;
-
-    for (size_t i = 0; i < object_count; i++) {
-        nmo_object_t *obj = objects[i];
-
-        if (reference_map[i]) {
-            nmo_log(logger, NMO_LOG_DEBUG,
-                    "  Skipping serialization for object %zu (reference placeholder)", i);
-            skipped_count++;
-            continue;
-        }
-
-        /* Use schema-based serialization with vtable dispatch */
-        nmo_log(logger, NMO_LOG_DEBUG, "  Serializing object %zu (ID=%u, class=0x%08X, name='%s')",
-                i, obj->id, obj->class_id, obj->name ? obj->name : "<unnamed>");
-        
-        nmo_chunk_t *old_chunk = obj->chunk;
-        obj->chunk = nmo_serialize_object_with_schema(obj, arena, schema_reg, logger);
-        
-        if (obj->chunk == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to serialize object %u ('%s')",
-                    obj->id, obj->name ? obj->name : "<unnamed>");
-            /* Critical error - cannot proceed without chunk */
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_INVALID_ARGUMENT; /* Use existing error code */
-        }
-        
-        if (obj->chunk == old_chunk) {
-            reused_count++;
-        } else {
-            serialized_count++;
-        }
-    }
-
-    nmo_log(logger, NMO_LOG_INFO, "  Serialization complete: %zu new, %zu reused, %zu skipped",
-            serialized_count, reused_count, skipped_count);
-
-    /* Phase 6: Build and Compress Data Section */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 6: Building data section");
-
-    /* Build data section structure from objects */
-    nmo_data_section_t data_sect;
-    memset(&data_sect, 0, sizeof(nmo_data_section_t));
-    data_sect.manager_count = manager_entry_count;
-    data_sect.managers = (manager_entry_count > 0) ? manager_entries : NULL;
-    data_sect.object_count = (uint32_t) object_count;
-
-    /* Allocate object data array */
-    data_sect.objects = (nmo_object_data_t *) nmo_arena_alloc(arena,
-                                                            sizeof(nmo_object_data_t) * object_count, sizeof(void *));
-    if (data_sect.objects == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate object data array");
-        nmo_id_remap_plan_destroy(remap_plan);
-        return NMO_ERR_NOMEM;
-    }
-
-    /* Copy chunk pointers */
-    for (size_t i = 0; i < object_count; i++) {
-        if (reference_map[i]) {
-            data_sect.objects[i].chunk = NULL;
-            data_sect.objects[i].data_size = 0;
-        } else {
-            nmo_chunk_t *chunk = objects[i]->chunk;
-            data_sect.objects[i].chunk = chunk;
-            data_sect.objects[i].data_size = (chunk && chunk->raw_data != NULL)
-                ? (uint32_t)chunk->raw_size
-                : 0;
-        }
-    }
-
-    /* Calculate data section size */
-    size_t data_unpack_size = nmo_data_section_calculate_size(&data_sect, 8, arena);
-    nmo_log(logger, NMO_LOG_INFO, "  Data section unpack size: %zu bytes", data_unpack_size);
-
-    /* Allocate buffer for uncompressed data */
-    void *data_buffer = nmo_arena_alloc(arena, data_unpack_size, 16);
-    if (data_buffer == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate data buffer");
-        nmo_id_remap_plan_destroy(remap_plan);
-        return NMO_ERR_NOMEM;
-    }
-
-    /* Serialize data section */
-    size_t data_bytes_written = 0;
-    nmo_result_t result = nmo_data_section_serialize(&data_sect, 8, data_buffer,
-                                                     data_unpack_size, &data_bytes_written, arena);
-    if (result.code != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to serialize data section");
-        nmo_id_remap_plan_destroy(remap_plan);
-        return result.code;
-    }
-
-    nmo_log(logger, NMO_LOG_INFO, "  Data section serialized: %zu bytes", data_bytes_written);
-
-    /* Compress data section if requested */
-    void *data_packed = data_buffer;
-    uint32_t data_pack_size = (uint32_t) data_bytes_written;
-
-    if (compress_data && data_bytes_written > 0) {
-        mz_ulong bound = mz_compressBound((mz_ulong) data_bytes_written);
-        void *compressed = nmo_arena_alloc(arena, bound, 16);
-        if (compressed == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate compressed data buffer (%lu bytes)",
-                    (unsigned long)bound);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_NOMEM;
-        }
-
-        mz_ulong dest_len = bound;
-        int comp_result = mz_compress2((unsigned char *) compressed,
-                                       &dest_len,
-                                       (const unsigned char *) data_buffer,
-                                       (mz_ulong) data_bytes_written,
-                                       NMO_SAVE_COMPRESSION_LEVEL);
-        if (comp_result != MZ_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Data compression failed (code=%d)", comp_result);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_INTERNAL;
-        }
-
-        if (dest_len < (mz_ulong) data_bytes_written) {
-            data_packed = compressed;
-            data_pack_size = (uint32_t) dest_len;
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Data section compressed: %zu -> %u bytes (%.2fx)",
-                    data_bytes_written,
-                    data_pack_size,
-                    (double) data_pack_size / (double) data_bytes_written);
-        } else {
-            compress_data = 0;
-            compression_flags &= ~NMO_FILE_WRITE_COMPRESS_DATA;
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Data compression skipped (no gain, %zu bytes)", data_bytes_written);
-        }
-    }
-
-    if (!compress_data) {
-        nmo_log(logger, NMO_LOG_INFO,
-                "  Data section stored uncompressed (%u bytes)", data_pack_size);
-    }
-
-    /* Phase 7: Build Object Descriptors for Header1 */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 7: Building object descriptors");
-
-    nmo_object_desc_t *obj_descs = (nmo_object_desc_t *) nmo_arena_alloc(
-        arena, sizeof(nmo_object_desc_t) * object_count, sizeof(void *));
-
-    if (obj_descs == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate object descriptors");
-        nmo_id_remap_plan_destroy(remap_plan);
-        return NMO_ERR_NOMEM;
-    }
-
-    for (size_t i = 0; i < object_count; i++) {
-        nmo_object_t *obj = objects[i];
-
-        /* Get file ID from remap plan */
-        nmo_object_id_t file_id = 0;
-        int lookup_result = nmo_id_remap_lookup(remap_table, obj->id, &file_id);
-
-        if (lookup_result != NMO_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to lookup file ID for object %u", obj->id);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return lookup_result;
-        }
-
-        obj_descs[i].file_id = file_id;
-        obj_descs[i].class_id = obj->class_id;
-        obj_descs[i].name = (char *) obj->name; /* Cast away const */
-        obj_descs[i].file_index = i;            /* TODO: Calculate from hierarchy */
-
-        uint32_t descriptor_flags = obj->flags;
-        if (reference_map[i]) {
-            descriptor_flags |= NMO_OBJECT_REFERENCE_FLAG;
-        }
-        obj_descs[i].flags = descriptor_flags;
-
-        nmo_log(logger, NMO_LOG_INFO, "  Object %zu: runtime_id=%u → file_id=%u, class=0x%08X",
-                i, obj->id, file_id, obj->class_id);
-    }
-
-    /* Phase 8: Build Plugin Dependencies List */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 8: Building plugin dependencies");
-
-    uint32_t stored_plugin_count = 0;
-    nmo_plugin_dep_t *stored_plugin_deps = nmo_session_get_plugin_dependencies(session, &stored_plugin_count);
-
-    size_t plugin_count = 0;
-    nmo_plugin_dep_t *plugin_deps = NULL;
-
-    if (stored_plugin_deps != NULL && stored_plugin_count > 0) {
-        plugin_deps = stored_plugin_deps;
-        plugin_count = stored_plugin_count;
-        nmo_log(logger, NMO_LOG_INFO,
-                "  Using %zu plugin dependency entries preserved in session metadata",
-                plugin_count);
-    } else {
-        nmo_plugin_manager_t *plugin_manager = nmo_session_get_plugin_manager(session);
-        if (plugin_manager != NULL) {
-            size_t registered_count = 0;
-            const nmo_plugin_instance_info_t *instances =
-                nmo_plugin_manager_get_plugins(plugin_manager, &registered_count);
-
-            if (instances != NULL && registered_count > 0) {
-                size_t deps_size = registered_count * sizeof(nmo_plugin_dep_t);
-                plugin_deps = (nmo_plugin_dep_t *) nmo_arena_alloc(arena, deps_size, sizeof(void *));
-                if (plugin_deps == NULL) {
-                    nmo_log(logger, NMO_LOG_ERROR,
-                            "Failed to allocate plugin dependency table (%zu bytes)", deps_size);
-                    nmo_id_remap_plan_destroy(remap_plan);
-                    return NMO_ERR_NOMEM;
-                }
-
-                for (size_t i = 0; i < registered_count; ++i) {
-                    const nmo_plugin_t *plugin = instances[i].plugin;
-                    if (plugin != NULL) {
-                        plugin_deps[i].guid = plugin->guid;
-                        plugin_deps[i].category = plugin->category;
-                        plugin_deps[i].version = plugin->version;
-                    } else {
-                        plugin_deps[i].guid = NMO_GUID_NULL;
-                        plugin_deps[i].category = NMO_PLUGIN_CUSTOM_DLL;
-                        plugin_deps[i].version = 0;
-                    }
-                }
-
-                plugin_count = registered_count;
-                int dep_result = nmo_session_set_plugin_dependencies(session, plugin_deps, (uint32_t) plugin_count);
-                if (dep_result != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_WARN,
-                            "  Failed to refresh plugin diagnostics from plugin manager (code=%d)", dep_result);
-                }
-                nmo_log(logger, NMO_LOG_INFO,
-                        "  Derived %zu plugin dependency entries from plugin manager", plugin_count);
-            } else {
-                nmo_log(logger, NMO_LOG_INFO,
-                        "  Plugin manager reported no registered plugins; dependency table empty");
-                int dep_result = nmo_session_set_plugin_dependencies(session, NULL, 0);
-                if (dep_result != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_WARN,
-                            "  Failed to clear plugin dependency table (code=%d)", dep_result);
-                }
-            }
-        } else {
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Plugin manager unavailable; dependency table empty");
-            int dep_result = nmo_session_set_plugin_dependencies(session, NULL, 0);
-            if (dep_result != NMO_OK) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Failed to clear plugin dependency table (code=%d)", dep_result);
-            }
-        }
-    }
-
-    /* Phase 9: Build and Serialize Header1 */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 9: Building header1");
-
-    /* Build Header1 structure */
-    nmo_header1_t hdr1;
-    memset(&hdr1, 0, sizeof(nmo_header1_t));
-    hdr1.object_count = (uint32_t) object_count;
-    hdr1.objects = obj_descs;
-    hdr1.plugin_dep_count = plugin_count;
-    hdr1.plugin_deps = plugin_deps;
-
-    hdr1.included_file_count = 0;
-    hdr1.included_files = NULL;
-    if (!strip_included_files && session_included_files != NULL && session_included_count > 0) {
-        hdr1.included_file_count = session_included_count;
-        hdr1.included_files = (nmo_included_file_desc_t *) nmo_arena_alloc(
-            arena,
-            sizeof(nmo_included_file_desc_t) * session_included_count,
-            sizeof(void *)
-        );
-        if (hdr1.included_files == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate included file descriptors");
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_NOMEM;
-        }
-
-        for (uint32_t i = 0; i < session_included_count; i++) {
-            hdr1.included_files[i].name = (char *) session_included_files[i].name;
-            hdr1.included_files[i].data_size = session_included_files[i].size;
-        }
-    } else if (strip_included_files && session_included_count > 0) {
-        nmo_log(logger, NMO_LOG_INFO,
-                "  Stripping %u included file(s) per save flags", session_included_count);
-    }
-
-    /* Serialize Header1 */
-    void *hdr1_buffer = NULL;
-    size_t hdr1_unpack_size = 0;
-    result = nmo_header1_serialize(&hdr1, &hdr1_buffer, &hdr1_unpack_size, arena);
-    if (result.code != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to serialize header1");
-        nmo_id_remap_plan_destroy(remap_plan);
-        return result.code;
-    }
-
-    nmo_log(logger, NMO_LOG_INFO, "  Header1 serialized: %zu bytes", hdr1_unpack_size);
-
-    void *hdr1_packed = hdr1_buffer;
-    uint32_t hdr1_pack_size = (uint32_t) hdr1_unpack_size;
-
-    if (compress_header && hdr1_unpack_size > 0) {
-        mz_ulong bound = mz_compressBound((mz_ulong) hdr1_unpack_size);
-        void *compressed = nmo_arena_alloc(arena, bound, 16);
-        if (compressed == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR,
-                    "Failed to allocate compressed Header1 buffer (%lu bytes)",
-                    (unsigned long) bound);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_NOMEM;
-        }
-
-        mz_ulong dest_len = bound;
-        int comp_result = mz_compress2((unsigned char *) compressed,
-                                       &dest_len,
-                                       (const unsigned char *) hdr1_buffer,
-                                       (mz_ulong) hdr1_unpack_size,
-                                       NMO_SAVE_COMPRESSION_LEVEL);
-        if (comp_result != MZ_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Header1 compression failed (code=%d)", comp_result);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_INTERNAL;
-        }
-
-        if (dest_len < (mz_ulong) hdr1_unpack_size) {
-            hdr1_packed = compressed;
-            hdr1_pack_size = (uint32_t) dest_len;
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Header1 compressed: %zu -> %u bytes (%.2fx)",
-                    hdr1_unpack_size,
-                    hdr1_pack_size,
-                    (double) hdr1_pack_size / (double) hdr1_unpack_size);
-        } else {
-            compress_header = 0;
-            compression_flags &= ~NMO_FILE_WRITE_COMPRESS_HEADER;
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Header1 compression skipped (no gain, %zu bytes)", hdr1_unpack_size);
-        }
-    }
-
-    if (!compress_header) {
-        nmo_log(logger, NMO_LOG_INFO,
-                "  Header1 stored uncompressed (%u bytes)", hdr1_pack_size);
-    }
-
-    /* Phase 10: Calculate File Sizes */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 10: Calculating file sizes");
-
-    uint32_t file_size = sizeof(nmo_file_header_t) + hdr1_pack_size + data_pack_size;
-    nmo_log(logger, NMO_LOG_INFO, "  Total file size: %u bytes", file_size);
-
-    file_info.file_size = file_size;
-    file_info.object_count = (uint32_t) object_count;
-    file_info.manager_count = session_manager_count;
-    file_info.write_mode = (file_info.write_mode & ~compression_mask) | compression_flags;
-    (void) nmo_session_set_file_info(session, &file_info);
-
-    /* Phase 11: Build File Header */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 11: Building file header");
-
-    nmo_file_header_t header;
-    memset(&header, 0, sizeof(nmo_file_header_t));
-
-    /* Set signature */
-    memcpy(header.signature, "Nemo Fi\0", 8);
-
-    /* Set versions */
-    header.file_version = (file_info.file_version != 0) ? file_info.file_version : 8;
-    header.file_version2 = file_info.file_version2;
-    header.ck_version = (file_info.ck_version != 0) ? file_info.ck_version : 0x13022002;
-
-    /* Preserve product metadata when available */
-    header.product_version = file_info.product_version;
-    header.product_build = file_info.product_build;
-
-    /* Set counts */
-    header.object_count = (uint32_t) object_count;
-    header.manager_count = session_manager_count;
-
-    /* Set sizes */
-    header.hdr1_pack_size = hdr1_pack_size;
-    header.hdr1_unpack_size = hdr1_unpack_size;
-    header.data_pack_size = data_pack_size;
-    header.data_unpack_size = data_unpack_size;
-
-    /* Set max ID */
-    nmo_object_id_t max_file_id = 0;
-    for (size_t i = 0; i < object_count; i++) {
-        if (obj_descs[i].file_id > max_file_id) {
-            max_file_id = obj_descs[i].file_id;
-        }
-    }
-    header.max_id_saved = max_file_id;
-
-    /* Set write mode */
-    header.file_write_mode = file_info.write_mode;
-
-    /* Calculate CRC (adler32) over all sections */
-    uint32_t crc = 0;
-    crc = mz_adler32(crc, (const uint8_t *) &header, 32);              /* Part0 size (up to hdr1_pack_size) */
-    crc = mz_adler32(crc, (const uint8_t *) &header.object_count, 56); /* Part1 size (from object_count) */
-    crc = mz_adler32(crc, (const uint8_t *) hdr1_packed, hdr1_pack_size);
-    crc = mz_adler32(crc, (const uint8_t *) data_packed, data_pack_size);
-    header.crc = crc;
-
-    nmo_log(logger, NMO_LOG_INFO, "  File version: %u, CK version: 0x%08X",
-            header.file_version, header.ck_version);
-    nmo_log(logger, NMO_LOG_INFO, "  Objects: %u, Managers: %u, Max ID: %u",
-            header.object_count, header.manager_count, header.max_id_saved);
-    nmo_log(logger, NMO_LOG_INFO, "  CRC: 0x%08X", crc);
-
-    /* Phase 12: Open Output IO */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 12: Opening output file: %s", path);
-
-    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_WRITE | NMO_IO_CREATE);
-    if (io == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to open output file: %s", path);
-        nmo_id_remap_plan_destroy(remap_plan);
-        return NMO_ERR_FILE_NOT_FOUND;
-    }
-
-    /* Phase 13: Write File Header, Header1, Data Section */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 13: Writing file data");
-
-    /* Write file header using proper serialization */
-    nmo_log(logger, NMO_LOG_INFO, "  Writing file header (%zu bytes)", sizeof(nmo_file_header_t));
-    nmo_result_t header_result = nmo_file_header_serialize(&header, io);
-
-    if (header_result.code != NMO_OK) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to write file header");
-        nmo_io_close(io);
-        nmo_id_remap_plan_destroy(remap_plan);
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    /* Write header1 */
-    if (hdr1_pack_size > 0) {
-        nmo_log(logger, NMO_LOG_INFO, "  Writing header1 (%u bytes)", hdr1_pack_size);
-        int hdr1_write_result = nmo_io_write(io, hdr1_packed, hdr1_pack_size);
-        if (hdr1_write_result != NMO_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to write header1 data");
-            nmo_io_close(io);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_INVALID_ARGUMENT;
-        }
-        nmo_log(logger, NMO_LOG_INFO, "  Header1 written successfully");
-    }
-
-    /* Write data section */
-    if (data_pack_size > 0) {
-        nmo_log(logger, NMO_LOG_INFO, "  Writing data section (%u bytes)", data_pack_size);
-        int data_write_result = nmo_io_write(io, data_packed, data_pack_size);
-        if (data_write_result != NMO_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to write data section");
-            nmo_io_close(io);
-            nmo_id_remap_plan_destroy(remap_plan);
-            return NMO_ERR_INVALID_ARGUMENT;
-        }
-        nmo_log(logger, NMO_LOG_INFO, "  Data section written successfully");
-    }
-
-    /* Phase 14: Manager Post-Save Hooks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 14: Executing manager post-save hooks");
-
-    if (manager_reg != NULL) {
-        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
-
-        for (uint32_t i = 0; i < manager_count; i++) {
-            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
-            nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
-
-            if (manager != NULL) {
-                int hook_result = nmo_manager_invoke_post_save(manager, session);
-                if (hook_result != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u post-save hook failed: %d",
-                            manager_id, hook_result);
-                } else {
-                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u post-save hook executed", manager_id);
-                }
-            }
-        }
-    }
-
-    if (!strip_included_files && hdr1.included_file_count > 0) {
-        nmo_log(logger, NMO_LOG_INFO, "Phase 15: Writing %u included file(s)", hdr1.included_file_count);
-        if (session_included_files == NULL || session_included_count == 0) {
-            nmo_log(logger, NMO_LOG_WARN, "Header declares included files, but session has none");
-        } else {
-            for (uint32_t i = 0; i < session_included_count; i++) {
-                const char *name = session_included_files[i].name ? session_included_files[i].name : "";
-                uint32_t name_len = (uint32_t) strlen(name);
-
-                if (nmo_io_write_u32(io, name_len) != NMO_OK ||
-                    (name_len > 0 && nmo_io_write(io, name, name_len) != NMO_OK) ||
-                    nmo_io_write_u32(io, session_included_files[i].size) != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_ERROR, "Failed to write metadata for included file '%s'", name);
-                    nmo_io_close(io);
-                    nmo_id_remap_plan_destroy(remap_plan);
-                    return NMO_ERR_CANT_WRITE_FILE;
-                }
-
-                if (session_included_files[i].size > 0 && session_included_files[i].data != NULL) {
-                    if (nmo_io_write(io, session_included_files[i].data, session_included_files[i].size) != NMO_OK) {
-                        nmo_log(logger, NMO_LOG_ERROR,
-                                "Failed to write included payload for '%s'", name);
-                        nmo_io_close(io);
-                        nmo_id_remap_plan_destroy(remap_plan);
-                        return NMO_ERR_CANT_WRITE_FILE;
-                    }
-                }
-            }
-        }
-    } else if (strip_included_files && session_included_count > 0) {
-        nmo_log(logger, NMO_LOG_INFO, "Phase 15: Included files skipped (%u stripped)",
-                session_included_count);
-    }
-
-    /* Cleanup */
-    nmo_io_close(io);
-    nmo_id_remap_plan_destroy(remap_plan);
-
-    nmo_log(logger, NMO_LOG_INFO, "Save complete: %zu objects saved to %s",
-            object_count, path);
-
-    (void) plugin_deps;  /* Suppress unused warning */
-    (void) plugin_count; /* Suppress unused warning */
-
-    return NMO_OK;
+    return result.code;
 }

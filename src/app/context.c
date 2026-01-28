@@ -7,7 +7,8 @@
 #include "app/nmo_plugin.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
-#include "schema/nmo_schema_registry.h"
+// #include "object/nmo_schema_registry.h"  // Temporarily disabled during schema_v2 migration
+#include "type/type_system.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
@@ -53,7 +54,8 @@ typedef struct nmo_context {
     nmo_allocator_t *allocator;
     nmo_logger_t *logger;
     int logger_owned;
-    nmo_schema_registry_t *schema_registry;
+    // nmo_schema_registry_t *schema_registry;  /* Deprecated - disabled during migration */
+    nmo_type_registry_t *type_registry;      /* Schema v2 */
     nmo_manager_registry_t *manager_registry;
     nmo_plugin_manager_t *plugin_manager;
     nmo_arena_t *arena;
@@ -102,8 +104,9 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
-    ctx->schema_registry = nmo_schema_registry_create(ctx->arena);
-    if (ctx->schema_registry == NULL) {
+    /* Create type registry (Schema v2) */
+    ctx->type_registry = nmo_type_registry_create(ctx->arena);
+    if (ctx->type_registry == NULL) {
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
         return NULL;
@@ -111,7 +114,7 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
 
     ctx->manager_registry = nmo_manager_registry_create(ctx->arena);
     if (ctx->manager_registry == NULL) {
-        nmo_schema_registry_destroy(ctx->schema_registry);
+        nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
         return NULL;
@@ -120,7 +123,7 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     ctx->plugin_manager = nmo_plugin_manager_create(ctx);
     if (ctx->plugin_manager == NULL) {
         nmo_manager_registry_destroy(ctx->manager_registry);
-        nmo_schema_registry_destroy(ctx->schema_registry);
+        nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
         return NULL;
@@ -163,8 +166,9 @@ void nmo_context_release(nmo_context_t *ctx) {
             nmo_manager_registry_destroy(ctx->manager_registry);
         }
 
-        if (ctx->schema_registry != NULL) {
-            nmo_schema_registry_destroy(ctx->schema_registry);
+        /* Destroy type registry */
+        if (ctx->type_registry != NULL) {
+            nmo_type_registry_destroy(ctx->type_registry);
         }
 
         if (ctx->arena != NULL) {
@@ -178,10 +182,15 @@ void nmo_context_release(nmo_context_t *ctx) {
 }
 
 /**
- * Get schema registry
+ * Get schema registry (DEPRECATED - disabled during schema_v2 migration)
  */
 nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context_t *ctx) {
-    return ctx ? ctx->schema_registry : NULL;
+    (void)ctx;
+    return NULL;  // Always return NULL during migration
+}
+
+nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx) {
+    return ctx ? ctx->type_registry : NULL;
 }
 
 /**

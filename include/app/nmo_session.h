@@ -247,6 +247,7 @@ NMO_API const nmo_header_t *nmo_session_get_header(const nmo_session_t *session)
  * @brief Set object index
  *
  * Sets the object index for this session. Used by finish_loading phase.
+ * If an index is already set, it will be destroyed and replaced.
  *
  * @param session Session
  * @param index Object index (session takes ownership)
@@ -361,7 +362,7 @@ NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
     nmo_session_t *session);
 
 /**
- * @brief Reset reference resolver pointer
+ * @brief Reset reference resolver and release its resources
  */
 NMO_API void nmo_session_reset_reference_resolver(nmo_session_t *session);
 
