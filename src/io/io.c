@@ -1,4 +1,10 @@
+/**
+ * @file io.c
+ * @brief Base IO interface implementation
+ */
+
 #include "io/nmo_io.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_utils.h"
 #include <string.h>
 
@@ -67,11 +73,16 @@ int nmo_io_close(nmo_io_interface_t *io) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (io->close == NULL) {
-        return NMO_OK; // No-op if no close function
+    int result = NMO_OK;
+    if (io->close != NULL) {
+        result = io->close(io->handle);
     }
 
-    return io->close(io->handle);
+    // Free the interface struct itself
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, io);
+
+    return result;
 }
 
 int nmo_io_read_exact(nmo_io_interface_t *io, void *buffer, size_t size) {

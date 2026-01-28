@@ -149,6 +149,27 @@ static int64_t file_io_tell(void *handle) {
 }
 
 /**
+ * @brief Flush function for nmo_io_interface
+ */
+static int file_io_flush(void *handle) {
+    if (handle == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_file_handle_t *fh = (nmo_file_handle_t *) handle;
+
+    if (fh->fp == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    if (fflush(fh->fp) != 0) {
+        return NMO_ERR_CANT_WRITE_FILE;
+    }
+
+    return NMO_OK;
+}
+
+/**
  * @brief Close function for nmo_io_interface
  */
 static int file_io_close(void *handle) {
@@ -221,7 +242,7 @@ nmo_io_interface_t *nmo_file_io_open(const char *path, nmo_io_mode_t mode) {
     io->write = file_io_write;
     io->seek = file_io_seek;
     io->tell = file_io_tell;
-    io->flush = NULL; /* File IO doesn't need explicit flush */
+    io->flush = file_io_flush;
     io->close = file_io_close;
     io->handle = fh;
 

@@ -20,7 +20,7 @@ extern "C" {
  * - Transactional IO (atomic writes)
  *
  * IO interfaces can be composed in layers:
- * File → Checksum → Compression → Parser
+ * File -> Checksum -> Compression -> Parser
  */
 
 /**

@@ -143,9 +143,9 @@ static int checksummed_io_close(void *handle) {
     nmo_checksummed_io_handle_t *ctx = (nmo_checksummed_io_handle_t *) handle;
     int result = NMO_OK;
 
-    // Close inner IO
+    // Close inner IO (this frees both handle and interface)
     if (ctx->inner != NULL) {
-        result = ctx->inner->close(ctx->inner->handle);
+        result = nmo_io_close(ctx->inner);
         ctx->inner = NULL;
     }
 

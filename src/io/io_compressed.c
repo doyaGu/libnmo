@@ -242,9 +242,9 @@ static int compressed_io_close(void *handle) {
         }
     }
 
-    // Close inner IO
+    // Close inner IO (this frees both handle and interface)
     if (ctx->inner != NULL) {
-        int ret = ctx->inner->close(ctx->inner->handle);
+        int ret = nmo_io_close(ctx->inner);
         if (ret != NMO_OK && result == NMO_OK) {
             result = ret;
         }
