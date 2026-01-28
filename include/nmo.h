@@ -88,10 +88,10 @@
 #include "format/nmo_stb_adapter.h"
 
 // Schema layer
-#include "schema/nmo_schema.h"
-#include "schema/nmo_schema_registry.h"
-#include "schema/nmo_validator.h"
-#include "schema/nmo_migrator.h"
+#include "object/nmo_schema.h"
+#include "object/nmo_schema_registry.h"
+#include "object/nmo_validator.h"
+#include "object/nmo_migrator.h"
 
 // Session layer
 #include "session/nmo_object_repository.h"
@@ -104,9 +104,6 @@
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "app/nmo_plugin.h"
-
-// Built-in schemas
-#include "nmo_builtin_schemas.h"
 
 #ifdef __cplusplus
 extern "C" {
