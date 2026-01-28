@@ -4,6 +4,9 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define NMO_CHUNK_PARSER_DATA(p) (NMO_ARENA_ARRAY_DATA(uint32_t, &((p)->chunk->data)))
+#define NMO_CHUNK_PARSER_DATA_SIZE(p) ((p)->chunk->data.count)
+
 /* Helper functions for chunk parsing */
 static inline size_t dword_align(size_t bytes) {
     return nmo_align_dword(bytes);
@@ -32,7 +35,7 @@ static inline int check_bounds(nmo_chunk_parser_t *p, size_t dwords_needed) {
     if (p == NULL || p->chunk == NULL) {
         return 0;
     }
-    return (p->cursor + dwords_needed) <= p->chunk->data_size;
+    return (p->cursor + dwords_needed) <= NMO_CHUNK_PARSER_DATA_SIZE(p);
 }
 
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {
@@ -102,7 +105,7 @@ int nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (pos > p->chunk->data_size) {
+    if (pos > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
         return NMO_ERR_INVALID_OFFSET;
     }
 
@@ -115,7 +118,7 @@ int nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (p->cursor + dwords > p->chunk->data_size) {
+    if (p->cursor + dwords > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
         return NMO_ERR_INVALID_OFFSET;
     }
 
@@ -128,11 +131,11 @@ size_t nmo_chunk_parser_remaining(nmo_chunk_parser_t *p) {
         return 0;
     }
 
-    if (p->cursor > p->chunk->data_size) {
+    if (p->cursor > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
         return 0;
     }
 
-    return p->chunk->data_size - p->cursor;
+    return NMO_CHUNK_PARSER_DATA_SIZE(p) - p->cursor;
 }
 
 int nmo_chunk_parser_at_end(nmo_chunk_parser_t *p) {
@@ -149,7 +152,7 @@ int nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out) {
     }
 
     // Read byte from current DWORD (little-endian)
-    uint32_t dword = p->chunk->data[p->cursor];
+    uint32_t dword = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     *out = (uint8_t) (dword & 0xFF);
     p->cursor++;
 
@@ -166,7 +169,7 @@ int nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out) {
     }
 
     // Read word from current DWORD (little-endian)
-    uint32_t dword = p->chunk->data[p->cursor];
+    uint32_t dword = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     *out = (uint16_t) (dword & 0xFFFF);
     p->cursor++;
 
@@ -182,7 +185,7 @@ int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
         return NMO_ERR_EOF;
     }
 
-    *out = p->chunk->data[p->cursor];
+    *out = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     p->cursor++;
 
     return NMO_OK;
@@ -243,7 +246,7 @@ int nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     }
 
     // Reinterpret uint32 as int32
-    uint32_t value = p->chunk->data[p->cursor];
+    uint32_t value = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     memcpy(out, &value, sizeof(int32_t));
     p->cursor++;
 
@@ -260,7 +263,7 @@ int nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out) {
     }
 
     // Reinterpret uint32 as float
-    uint32_t value = p->chunk->data[p->cursor];
+    uint32_t value = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     memcpy(out, &value, sizeof(float));
     p->cursor++;
 
@@ -276,8 +279,8 @@ int nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out) {
         return NMO_ERR_EOF;
     }
 
-    out->d1 = p->chunk->data[p->cursor];
-    out->d2 = p->chunk->data[p->cursor + 1];
+    out->d1 = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
+    out->d2 = NMO_CHUNK_PARSER_DATA(p)[p->cursor + 1];
     p->cursor += 2;
 
     return NMO_OK;
@@ -305,15 +308,15 @@ int32_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p, nmo_guid_t *man
 
     // Read GUID if requested
     if (manager != NULL) {
-        manager->d1 = p->chunk->data[p->cursor];
-        manager->d2 = p->chunk->data[p->cursor + 1];
+        manager->d1 = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
+        manager->d2 = NMO_CHUNK_PARSER_DATA(p)[p->cursor + 1];
     }
 
     // Advance past GUID
     p->cursor += 2;
 
     // Read and return value
-    int32_t value = (int32_t) p->chunk->data[p->cursor++];
+    int32_t value = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     return value;
 }
 
@@ -339,7 +342,7 @@ int32_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p) {
         return 0;
     }
 
-    int32_t value = (int32_t) p->chunk->data[p->cursor++];
+    int32_t value = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     p->manager_sequence_remaining--;
     if (p->manager_sequence_remaining == 0) {
         p->in_manager_sequence = 0;
@@ -356,10 +359,10 @@ int nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p, nmo_guid_t *o
         return NMO_ERR_EOF;
     }
 
-    uint32_t count = p->chunk->data[p->cursor++];
+    uint32_t count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     nmo_guid_t guid;
-    guid.d1 = p->chunk->data[p->cursor++];
-    guid.d2 = p->chunk->data[p->cursor++];
+    guid.d1 = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    guid.d2 = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     p->current_manager_guid = guid;
     p->manager_sequence_remaining = count;
@@ -401,8 +404,8 @@ int nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p, void **array, nmo
     }
 
     // Read array metadata
-    int32_t data_size_bytes = (int32_t) p->chunk->data[p->cursor++];
-    int32_t element_count = (int32_t) p->chunk->data[p->cursor++];
+    int32_t data_size_bytes = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    int32_t element_count = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Check for valid parameters
     if (data_size_bytes <= 0 || element_count <= 0) {
@@ -424,7 +427,7 @@ int nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p, void **array, nmo
     }
 
     // Copy data
-    memcpy(array_data, &p->chunk->data[p->cursor], (size_t) data_size_bytes);
+    memcpy(array_data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], (size_t) data_size_bytes);
 
     // Update parser position
     p->cursor += (size_t) dword_count;
@@ -472,7 +475,7 @@ int nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p, void **array, n
     }
 
     // Copy data from chunk
-    memcpy(data, &p->chunk->data[p->cursor], size_bytes);
+    memcpy(data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], size_bytes);
     p->cursor += dwords_needed;
 
     // Perform 16-bit word swapping
@@ -501,7 +504,7 @@ int nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p, size_t bytes, 
     }
 
     // Copy bytes from DWORD buffer
-    memcpy(buffer, &p->chunk->data[p->cursor], bytes);
+    memcpy(buffer, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
     p->cursor += dwords_needed;
 
     // Perform 16-bit word swapping
@@ -528,7 +531,7 @@ int nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_t bytes)
     }
 
     // Copy bytes from DWORD buffer
-    memcpy(dest, &p->chunk->data[p->cursor], bytes);
+    memcpy(dest, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
     p->cursor += dwords_needed;
 
     return NMO_OK;
@@ -633,7 +636,7 @@ int nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, voi
     }
 
     // Copy bytes from DWORD buffer
-    memcpy(buffer, &p->chunk->data[p->cursor], bytes);
+    memcpy(buffer, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
     p->cursor += dwords_needed;
 
     return NMO_OK;
@@ -679,11 +682,11 @@ const uint32_t *nmo_chunk_parser_lock_read_buffer(nmo_chunk_parser_t *p) {
     }
 
     // Check if we're still within bounds
-    if (p->cursor >= p->chunk->data_size) {
+    if (p->cursor >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
         return NULL;
     }
 
-    return &p->chunk->data[p->cursor];
+    return &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
 }
 
 /**
@@ -708,7 +711,7 @@ int nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out)
         return NMO_ERR_EOF;
     }
 
-    uint32_t raw_id = p->chunk->data[p->cursor++];
+    uint32_t raw_id = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     nmo_object_id_t resolved_id = (nmo_object_id_t) raw_id;
 
     if ((p->chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0 &&
@@ -746,7 +749,7 @@ int nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p) {
         return NMO_ERR_EOF;
     }
 
-    uint32_t count = p->chunk->data[p->cursor++];
+    uint32_t count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     p->object_sequence_remaining = count;
     p->in_object_sequence = (count > 0);
     return (int) count;
@@ -766,7 +769,7 @@ int nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier
     }
 
     // Check bounds (need 2 DWORDs for [ID][NextPos])
-    if (p->cursor + 2 > p->chunk->data_size) {
+    if (p->cursor + 2 > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
         return NMO_ERR_EOF;
     }
 
@@ -774,7 +777,7 @@ int nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier
     p->prev_identifier_pos = p->cursor;
 
     // Read identifier (first DWORD)
-    *identifier = p->chunk->data[p->cursor];
+    *identifier = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
 
     // Advance cursor by 2 (skip [ID][NextPos] pair)
     p->cursor += 2;
@@ -806,19 +809,19 @@ int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier)
     }
 
     // Check for empty chunk first
-    if (p->chunk->data_size == 0 || p->chunk->data == NULL) {
+    if (NMO_CHUNK_PARSER_DATA_SIZE(p) == 0 || NMO_CHUNK_PARSER_DATA(p) == NULL) {
         return NMO_ERR_EOF;
     }
 
     // Check if prev_identifier_pos is out of bounds
     // Reference: if (m_ChunkParser->PrevIdentifierPos >= m_ChunkSize - 1) return FALSE;
-    if (p->prev_identifier_pos >= p->chunk->data_size - 1) {
+    if (p->prev_identifier_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p) - 1) {
         return NMO_ERR_EOF;
     }
 
     // Read the 'next' pointer from previous identifier position
     // Reference: int j = m_Data[m_ChunkParser->PrevIdentifierPos + 1];
-    uint32_t j = p->chunk->data[p->prev_identifier_pos + 1];
+    uint32_t j = NMO_CHUNK_PARSER_DATA(p)[p->prev_identifier_pos + 1];
     size_t i;
 
     // Reference implementation has two main branches based on j
@@ -829,22 +832,22 @@ int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier)
 
         // First search loop
         // Reference: while (i < m_ChunkSize && m_Data[i] != identifier)
-        while (i < p->chunk->data_size && p->chunk->data[i] != identifier) {
-            if (i + 1 >= p->chunk->data_size)
+        while (i < NMO_CHUNK_PARSER_DATA_SIZE(p) && NMO_CHUNK_PARSER_DATA(p)[i] != identifier) {
+            if (i + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p))
                 return NMO_ERR_EOF;
 
             // Move to next in chain
             // Reference: i = m_Data[i + 1];
-            i = p->chunk->data[i + 1];
+            i = NMO_CHUNK_PARSER_DATA(p)[i + 1];
 
             // If we hit 0, do a second search from position 0
             // Reference: if (i == 0) { ... }
             if (i == 0) {
-                while (i < p->chunk->data_size && p->chunk->data[i] != identifier) {
-                    if (i + 1 >= p->chunk->data_size)
+                while (i < NMO_CHUNK_PARSER_DATA_SIZE(p) && NMO_CHUNK_PARSER_DATA(p)[i] != identifier) {
+                    if (i + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p))
                         return NMO_ERR_EOF;
 
-                    i = p->chunk->data[i + 1];
+                    i = NMO_CHUNK_PARSER_DATA(p)[i + 1];
 
                     // Cycle detection: if we're back to j, we've looped
                     // Reference: if (i == j) return FALSE;
@@ -860,11 +863,11 @@ int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier)
 
         // Search from beginning
         // Reference: while (i < m_ChunkSize && m_Data[i] != identifier)
-        while (i < p->chunk->data_size && p->chunk->data[i] != identifier) {
-            if (i + 1 >= p->chunk->data_size)
+        while (i < NMO_CHUNK_PARSER_DATA_SIZE(p) && NMO_CHUNK_PARSER_DATA(p)[i] != identifier) {
+            if (i + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p))
                 return NMO_ERR_EOF;
 
-            i = p->chunk->data[i + 1];
+            i = NMO_CHUNK_PARSER_DATA(p)[i + 1];
 
             // Cycle detection: if we're back to j (which is 0), we've looped
             // Reference: if (i == j) return FALSE;
@@ -875,7 +878,7 @@ int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier)
 
     // Final bounds check
     // Reference: if (i >= m_ChunkSize) return FALSE;
-    if (i >= p->chunk->data_size)
+    if (i >= NMO_CHUNK_PARSER_DATA_SIZE(p))
         return NMO_ERR_EOF;
 
     // Found the identifier - update parser state
@@ -913,15 +916,15 @@ int nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p, uint32_t i
         size_t start_pos = p->cursor;
 
         // Check if there's a next identifier in the chain
-        if (p->prev_identifier_pos + 1 < p->chunk->data_size) {
-            uint32_t next_pos = p->chunk->data[p->prev_identifier_pos + 1];
+        if (p->prev_identifier_pos + 1 < NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+            uint32_t next_pos = NMO_CHUNK_PARSER_DATA(p)[p->prev_identifier_pos + 1];
 
-            if (next_pos != 0 && next_pos < p->chunk->data_size) {
+            if (next_pos != 0 && next_pos < NMO_CHUNK_PARSER_DATA_SIZE(p)) {
                 // Size is from current position to next identifier position
                 *out_size = next_pos - start_pos;
             } else {
                 // No next identifier, size is from current to end
-                *out_size = p->chunk->data_size - start_pos;
+                *out_size = NMO_CHUNK_PARSER_DATA_SIZE(p) - start_pos;
             }
         } else {
             // At end of chunk
@@ -953,7 +956,7 @@ int nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p) {
     }
 
     // Read the count
-    uint32_t count = p->chunk->data[p->cursor++];
+    uint32_t count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     p->subchunk_sequence_remaining = count;
     p->in_subchunk_sequence = (count > 0);
     return (int) count;
@@ -988,7 +991,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     }
 
     // Read size (in DWORDs, includes the size field itself - so actual data is size-1)
-    uint32_t size_dwords = p->chunk->data[p->cursor++];
+    uint32_t size_dwords = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     if (size_dwords == 0) {
         // Empty sub-chunk (NULL marker)
@@ -1005,7 +1008,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
-    nmo_class_id_t class_id = p->chunk->data[p->cursor++];
+    nmo_class_id_t class_id = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Create sub-chunk
     nmo_chunk_t *sub = nmo_chunk_create(arena);
@@ -1019,7 +1022,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
-    uint32_t version_info = p->chunk->data[p->cursor++];
+    uint32_t version_info = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     sub->data_version = (version_info) & 0xFF;
     sub->chunk_class_id = (version_info >> 8) & 0xFF;
     sub->chunk_version = (version_info >> 16) & 0xFF;
@@ -1029,26 +1032,26 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
-    uint32_t chunk_size = p->chunk->data[p->cursor++];
+    uint32_t chunk_size = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Read hasFile flag
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
-    uint32_t has_file = p->chunk->data[p->cursor++];
+    uint32_t has_file = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     (void) has_file; // Not used in non-file context
 
     // Read ID count
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
-    uint32_t id_count = p->chunk->data[p->cursor++];
+    uint32_t id_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Read chunk count
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
-    uint32_t chunk_count = p->chunk->data[p->cursor++];
+    uint32_t chunk_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Read manager count (if version > 4, meaning literal 4, not CHUNK_VERSION_4)
     // Note: CHUNK_VERSION_4 = 7, but the check is against the literal value 4
@@ -1057,7 +1060,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
         if (!check_bounds(p, 1)) {
             return NMO_ERR_EOF;
         }
-        manager_count = p->chunk->data[p->cursor++];
+        manager_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     }
 
     // Allocate and read data buffer
@@ -1066,14 +1069,15 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
             return NMO_ERR_EOF;
         }
 
-        sub->data = (uint32_t *) nmo_arena_alloc(arena, chunk_size * sizeof(uint32_t), sizeof(uint32_t));
-        if (sub->data == NULL) {
-            return NMO_ERR_NOMEM;
+        nmo_result_t result = nmo_arena_array_resize(&sub->data, chunk_size);
+        if (result.code != NMO_OK) {
+            return result.code;
         }
 
-        memcpy(sub->data, &p->chunk->data[p->cursor], chunk_size * sizeof(uint32_t));
-        sub->data_size = chunk_size;
-        sub->data_capacity = chunk_size;
+        uint32_t *sub_data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
+        memcpy(sub_data,
+               &NMO_CHUNK_PARSER_DATA(p)[p->cursor],
+               chunk_size * sizeof(uint32_t));
         p->cursor += chunk_size;
     }
 
@@ -1083,14 +1087,15 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
             return NMO_ERR_EOF;
         }
 
-        sub->ids = (uint32_t *) nmo_arena_alloc(arena, id_count * sizeof(uint32_t), sizeof(uint32_t));
-        if (sub->ids == NULL) {
-            return NMO_ERR_NOMEM;
+        nmo_result_t result = nmo_arena_array_resize(&sub->ids, id_count);
+        if (result.code != NMO_OK) {
+            return result.code;
         }
 
-        memcpy(sub->ids, &p->chunk->data[p->cursor], id_count * sizeof(uint32_t));
-        sub->id_count = id_count;
-        sub->id_capacity = id_count;
+        uint32_t *sub_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->ids);
+        memcpy(sub_ids,
+               &NMO_CHUNK_PARSER_DATA(p)[p->cursor],
+               id_count * sizeof(uint32_t));
         p->cursor += id_count;
     }
 
@@ -1100,8 +1105,16 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
             return NMO_ERR_EOF;
         }
 
-        // For now, we just skip the chunk positions
-        // In a full implementation, we would track these
+        // These are chunk refs/offsets in embedded sub-chunk encoding.
+        nmo_result_t result = nmo_arena_array_resize(&sub->chunk_refs, chunk_count);
+        if (result.code != NMO_OK) {
+            return result.code;
+        }
+
+        uint32_t *sub_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->chunk_refs);
+        memcpy(sub_refs,
+               &NMO_CHUNK_PARSER_DATA(p)[p->cursor],
+               chunk_count * sizeof(uint32_t));
         p->cursor += chunk_count;
     }
 
@@ -1111,14 +1124,15 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
             return NMO_ERR_EOF;
         }
 
-        sub->managers = (uint32_t *) nmo_arena_alloc(arena, manager_count * sizeof(uint32_t), sizeof(uint32_t));
-        if (sub->managers == NULL) {
-            return NMO_ERR_NOMEM;
+        nmo_result_t result = nmo_arena_array_resize(&sub->managers, manager_count);
+        if (result.code != NMO_OK) {
+            return result.code;
         }
 
-        memcpy(sub->managers, &p->chunk->data[p->cursor], manager_count * sizeof(uint32_t));
-        sub->manager_count = manager_count;
-        sub->manager_capacity = manager_count;
+        uint32_t *sub_mgrs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
+        memcpy(sub_mgrs,
+               &NMO_CHUNK_PARSER_DATA(p)[p->cursor],
+               manager_count * sizeof(uint32_t));
         p->cursor += manager_count;
     }
 
@@ -1139,7 +1153,7 @@ int nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *out) {
     }
 
     // Read 2 floats
-    float *data = (float *) &p->chunk->data[p->cursor];
+    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     out->x = data[0];
     out->y = data[1];
     p->cursor += 2;
@@ -1157,7 +1171,7 @@ int nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *out) {
     }
 
     // Read 3 floats
-    float *data = (float *) &p->chunk->data[p->cursor];
+    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     out->x = data[0];
     out->y = data[1];
     out->z = data[2];
@@ -1176,7 +1190,7 @@ int nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *out) {
     }
 
     // Read 4 floats
-    float *data = (float *) &p->chunk->data[p->cursor];
+    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     out->x = data[0];
     out->y = data[1];
     out->z = data[2];
@@ -1196,7 +1210,7 @@ int nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *out) {
     }
 
     // Read 16 floats (4x4 matrix)
-    memcpy(out->m, &p->chunk->data[p->cursor], 16 * sizeof(float));
+    memcpy(out->m, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], 16 * sizeof(float));
     p->cursor += 16;
 
     return NMO_OK;
@@ -1212,7 +1226,7 @@ int nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaternion_t *ou
     }
 
     // Read 4 floats (quaternion)
-    float *data = (float *) &p->chunk->data[p->cursor];
+    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     out->x = data[0];
     out->y = data[1];
     out->z = data[2];
@@ -1232,7 +1246,7 @@ int nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out) {
     }
 
     // Read 4 floats (RGBA color)
-    float *data = (float *) &p->chunk->data[p->cursor];
+    float *data = (float *) (void *) &NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     out->r = data[0];
     out->g = data[1];
     out->b = data[2];

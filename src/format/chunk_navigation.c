@@ -30,7 +30,7 @@ nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
                                           NMO_SEVERITY_ERROR, "Invalid chunk argument"));
     }
 
-    if (pos > chunk->data_size) {
+    if (pos > chunk->data.count) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS,
                                           NMO_SEVERITY_ERROR, "Position beyond data size"));
     }
@@ -57,7 +57,7 @@ nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
                                           NMO_SEVERITY_ERROR, "No parser state"));
     }
 
-    if (state->current_pos + dwords > chunk->data_size) {
+    if (state->current_pos + dwords > chunk->data.count) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
                                           NMO_SEVERITY_ERROR, "Skip beyond data size"));
     }
@@ -83,26 +83,16 @@ nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_dwords) {
     }
 
     size_t required_size = state->current_pos + needed_dwords;
-    if (required_size > chunk->data_capacity) {
-        size_t new_capacity = chunk->data_capacity * 2;
-        while (new_capacity < required_size) {
-            new_capacity *= 2;
+    if (required_size > chunk->data.capacity) {
+        /* Ensure reserve preserves everything up to the current cursor. */
+        if (chunk->data.count < state->current_pos) {
+            chunk->data.count = state->current_pos;
         }
 
-        uint32_t *new_data = (uint32_t *) nmo_arena_alloc(chunk->arena,
-                                                          new_capacity * sizeof(uint32_t),
-                                                          sizeof(uint32_t));
-        if (!new_data) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR, "Failed to grow chunk buffer"));
+        nmo_result_t reserve_result = nmo_arena_array_reserve(&chunk->data, required_size);
+        if (reserve_result.code != NMO_OK) {
+            return reserve_result;
         }
-
-        if (chunk->data && state->current_pos > 0) {
-            memcpy(new_data, chunk->data, state->current_pos * sizeof(uint32_t));
-        }
-
-        chunk->data = new_data;
-        chunk->data_capacity = new_capacity;
     }
 
     return nmo_result_ok();

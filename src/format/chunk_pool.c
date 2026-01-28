@@ -77,15 +77,16 @@ static void reset_chunk(nmo_chunk_t *chunk) {
     if (!chunk) return;
 
     // Clear data buffer (keep capacity)
-    chunk->data_size = 0;
-    if (chunk->data) {
-        memset(chunk->data, 0, chunk->data_capacity * sizeof(uint32_t));
+    chunk->data.count = 0;
+    if (chunk->data.data) {
+        memset(chunk->data.data, 0, chunk->data.capacity * chunk->data.element_size);
     }
 
     // Clear tracking lists
-    chunk->id_count = 0;
-    chunk->chunk_count = 0;
-    chunk->manager_count = 0;
+    chunk->ids.count = 0;
+    chunk->chunks.count = 0;
+    chunk->chunk_refs.count = 0;
+    chunk->managers.count = 0;
 
     // Reset metadata
     chunk->class_id = 0;

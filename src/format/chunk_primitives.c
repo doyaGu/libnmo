@@ -13,9 +13,13 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
     return (nmo_chunk_parser_state_t *) chunk->parser_state;
 }
 
+static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
+    return NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+}
+
 static inline bool can_read(nmo_chunk_t *chunk, size_t dwords) {
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    return state && (state->current_pos + dwords <= chunk->data_size);
+    return state && (state->current_pos + dwords <= chunk->data.count);
 }
 
 // =============================================================================
@@ -32,11 +36,12 @@ nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    chunk->data[state->current_pos++] = (uint32_t) value;
+    uint32_t *data = get_data_u32(chunk);
+    data[state->current_pos++] = (uint32_t) value;
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -52,11 +57,12 @@ nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    chunk->data[state->current_pos++] = (uint32_t) value;
+    uint32_t *data = get_data_u32(chunk);
+    data[state->current_pos++] = (uint32_t) value;
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -72,11 +78,12 @@ nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    chunk->data[state->current_pos++] = (uint32_t) value;
+    uint32_t *data = get_data_u32(chunk);
+    data[state->current_pos++] = (uint32_t) value;
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -97,11 +104,14 @@ nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     // Store float as raw bits
-    chunk->data[state->current_pos++] = *(uint32_t *) &value;
+    uint32_t raw = 0;
+    memcpy(&raw, &value, sizeof(raw));
+    uint32_t *data = get_data_u32(chunk);
+    data[state->current_pos++] = raw;
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -117,12 +127,13 @@ nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    chunk->data[state->current_pos++] = value.d1;
-    chunk->data[state->current_pos++] = value.d2;
+    uint32_t *data = get_data_u32(chunk);
+    data[state->current_pos++] = value.d1;
+    data[state->current_pos++] = value.d2;
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -144,7 +155,8 @@ nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    *out_value = (uint8_t) (chunk->data[state->current_pos++] & 0xFF);
+    uint32_t *data = get_data_u32(chunk);
+    *out_value = (uint8_t) (data[state->current_pos++] & 0xFF);
 
     return nmo_result_ok();
 }
@@ -161,7 +173,8 @@ nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    *out_value = (uint16_t) (chunk->data[state->current_pos++] & 0xFFFF);
+    uint32_t *data = get_data_u32(chunk);
+    *out_value = (uint16_t) (data[state->current_pos++] & 0xFFFF);
 
     return nmo_result_ok();
 }
@@ -178,7 +191,8 @@ nmo_result_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value) {
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    *out_value = (int32_t) chunk->data[state->current_pos++];
+    uint32_t *data = get_data_u32(chunk);
+    *out_value = (int32_t) data[state->current_pos++];
 
     return nmo_result_ok();
 }
@@ -200,7 +214,9 @@ nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     // Read float as raw bits
-    *out_value = *(float *) &chunk->data[state->current_pos++];
+    uint32_t *data = get_data_u32(chunk);
+    uint32_t raw = data[state->current_pos++];
+    memcpy(out_value, &raw, sizeof(raw));
 
     return nmo_result_ok();
 }
@@ -217,8 +233,9 @@ nmo_result_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    out_value->d1 = chunk->data[state->current_pos++];
-    out_value->d2 = chunk->data[state->current_pos++];
+    uint32_t *data = get_data_u32(chunk);
+    out_value->d1 = data[state->current_pos++];
+    out_value->d2 = data[state->current_pos++];
 
     return nmo_result_ok();
 }
@@ -242,17 +259,18 @@ nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    chunk->data[state->current_pos++] = (uint32_t) len;
+    uint32_t *data = get_data_u32(chunk);
+    data[state->current_pos++] = (uint32_t) len;
 
     // Write string data
     if (len > 0) {
-        memcpy(&chunk->data[state->current_pos], str, len);
+        memcpy(&data[state->current_pos], str, len);
         state->current_pos += dwords;
     }
 
     // Update data_size
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -269,7 +287,8 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    uint32_t len = chunk->data[state->current_pos++];
+    uint32_t *data = get_data_u32(chunk);
+    uint32_t len = data[state->current_pos++];
 
     if (len == 0) {
         *out_str = NULL;
@@ -289,7 +308,7 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
         return 0;
     }
 
-    memcpy(str, &chunk->data[state->current_pos], len);
+    memcpy(str, &data[state->current_pos], len);
     state->current_pos += dwords;
 
     *out_str = str;
@@ -315,17 +334,18 @@ nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    chunk->data[state->current_pos++] = (uint32_t) size;
+    uint32_t *data_dwords = get_data_u32(chunk);
+    data_dwords[state->current_pos++] = (uint32_t) size;
 
     // Write data
     if (size > 0 && data) {
-        memcpy(&chunk->data[state->current_pos], data, size);
+        memcpy(&data_dwords[state->current_pos], data, size);
         state->current_pos += dwords;
     }
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -349,12 +369,13 @@ nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
     if (result.code != NMO_OK) return result;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    memcpy(&chunk->data[state->current_pos], data, size);
+    uint32_t *data_dwords = get_data_u32(chunk);
+    memcpy(&data_dwords[state->current_pos], data, size);
     state->current_pos += dwords;
 
     // Update data_size
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -374,7 +395,8 @@ nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    uint32_t size = chunk->data[state->current_pos++];
+    uint32_t *data_dwords = get_data_u32(chunk);
+    uint32_t size = data_dwords[state->current_pos++];
 
     *out_size = size;
 
@@ -396,7 +418,7 @@ nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
                                           NMO_SEVERITY_ERROR, "Failed to allocate buffer"));
     }
 
-    memcpy(data, &chunk->data[state->current_pos], size);
+    memcpy(data, &data_dwords[state->current_pos], size);
     state->current_pos += dwords;
 
     *out_data = data;
@@ -415,7 +437,8 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    uint32_t size = chunk->data[state->current_pos++];
+    uint32_t *data_dwords = get_data_u32(chunk);
+    uint32_t size = data_dwords[state->current_pos++];
 
     if (size == 0) {
         return 0;
@@ -430,7 +453,7 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
         return 0;
     }
 
-    memcpy(buffer, &chunk->data[state->current_pos], size);
+    memcpy(buffer, &data_dwords[state->current_pos], size);
     state->current_pos += dwords;
 
     return size;
@@ -453,43 +476,20 @@ nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
 
     // Track position if ID is non-zero
     if (id != 0) {
-        // Ensure IDS list exists
-        if (!chunk->ids) {
-            size_t initial_capacity = 16;
-            chunk->ids = (uint32_t *) nmo_arena_alloc(chunk->arena,
-                                                      initial_capacity * sizeof(uint32_t), sizeof(uint32_t));
-            if (!chunk->ids) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                  NMO_SEVERITY_ERROR, "Failed to allocate IDS list"));
-            }
-            chunk->id_capacity = initial_capacity;
-            chunk->id_count = 0;
+        uint32_t pos = (uint32_t) state->current_pos;
+        nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
+        if (list_result.code != NMO_OK) {
+            return list_result;
         }
-
-        // Grow list if needed
-        if (chunk->id_count >= chunk->id_capacity) {
-            size_t new_capacity = chunk->id_capacity * 2;
-            uint32_t *new_ids = (uint32_t *) nmo_arena_alloc(chunk->arena,
-                                                             new_capacity * sizeof(uint32_t), sizeof(uint32_t));
-            if (!new_ids) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                  NMO_SEVERITY_ERROR, "Failed to grow IDS list"));
-            }
-            memcpy(new_ids, chunk->ids, chunk->id_count * sizeof(uint32_t));
-            chunk->ids = new_ids;
-            chunk->id_capacity = new_capacity;
-        }
-
-        // Record position
-        chunk->ids[chunk->id_count++] = (uint32_t) state->current_pos;
         chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
 
-    chunk->data[state->current_pos++] = id;
+    uint32_t *data_dwords = get_data_u32(chunk);
+    data_dwords[state->current_pos++] = id;
 
     // Update data_size to track written data
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -507,7 +507,8 @@ nmo_result_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_i
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    *out_id = chunk->data[state->current_pos++];
+    uint32_t *data_dwords = get_data_u32(chunk);
+    *out_id = data_dwords[state->current_pos++];
 
     return nmo_result_ok();
 }

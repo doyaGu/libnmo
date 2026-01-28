@@ -16,7 +16,7 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 static inline bool can_read(const nmo_chunk_t *chunk, size_t dwords) {
     nmo_chunk_parser_state_t *state = get_parser_state((nmo_chunk_t *) chunk);
     if (!state) return false;
-    return (state->current_pos + dwords) <= chunk->data_size;
+    return (state->current_pos + dwords) <= chunk->data.count;
 }
 
 // =============================================================================
@@ -33,6 +33,25 @@ nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
 
     // Set MAN flag
     chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    if (!state) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
+                                          NMO_SEVERITY_ERROR, "Failed to get parser state"));
+    }
+
+    // Track sequence start in manager list (CK2 AddEntries)
+    uint32_t sentinel = 0xFFFFFFFFu;
+    nmo_result_t list_result = nmo_arena_array_append(&chunk->managers, &sentinel);
+    if (list_result.code != NMO_OK) {
+        return list_result;
+    }
+
+    uint32_t pos = (uint32_t) state->current_pos;
+    list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    if (list_result.code != NMO_OK) {
+        return list_result;
+    }
 
     // Write count then manager GUID
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
@@ -59,37 +78,21 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
     }
 
     // Track manager position
-    if (!chunk->managers) {
-        chunk->manager_capacity = 16;
-        chunk->managers = (uint32_t *) nmo_arena_alloc(chunk->arena,
-                                                       chunk->manager_capacity * sizeof(uint32_t), sizeof(uint32_t));
-        if (!chunk->managers) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR, "Failed to allocate managers list"));
-        }
-    } else if (chunk->manager_count >= chunk->manager_capacity) {
-        size_t new_capacity = chunk->manager_capacity * 2;
-        uint32_t *new_managers = (uint32_t *) nmo_arena_alloc(chunk->arena,
-                                                              new_capacity * sizeof(uint32_t), sizeof(uint32_t));
-        if (!new_managers) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR, "Failed to grow managers list"));
-        }
-        memcpy(new_managers, chunk->managers, chunk->manager_count * sizeof(uint32_t));
-        chunk->managers = new_managers;
-        chunk->manager_capacity = new_capacity;
+    uint32_t pos = (uint32_t) state->current_pos;
+    nmo_result_t list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    if (list_result.code != NMO_OK) {
+        return list_result;
     }
 
-    chunk->managers[chunk->manager_count++] = state->current_pos;
-
     // Write manager GUID and value
-    chunk->data[state->current_pos++] = manager_guid.d1;
-    chunk->data[state->current_pos++] = manager_guid.d2;
-    chunk->data[state->current_pos++] = value;
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    data[state->current_pos++] = manager_guid.d1;
+    data[state->current_pos++] = manager_guid.d2;
+    data[state->current_pos++] = value;
 
     // Update data_size
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
     }
 
     return nmo_result_ok();
@@ -109,9 +112,10 @@ nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
     }
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    out_manager_guid->d1 = chunk->data[state->current_pos++];
-    out_manager_guid->d2 = chunk->data[state->current_pos++];
-    *out_value = chunk->data[state->current_pos++];
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    out_manager_guid->d1 = data[state->current_pos++];
+    out_manager_guid->d2 = data[state->current_pos++];
+    *out_value = data[state->current_pos++];
 
     return nmo_result_ok();
 }

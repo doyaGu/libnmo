@@ -80,6 +80,77 @@ static nmo_result_t remap_chunk_data_recursive(uint32_t *chunk_data,
     return nmo_result_ok();
 }
 
+static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
+                                                       size_t parent_dwords,
+                                                       size_t header_pos,
+                                                       const nmo_id_remap_t *remap,
+                                                       int *remapped_count) {
+    if (!parent_data || !remap || !remapped_count) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
+    }
+
+    /* Layout written by nmo_chunk_write_sub_chunk:
+     * [size][class_id][version_info][data_size][file_flag][id_count][chunk_count][manager_count]
+     * followed by: data[data_size], ids[id_count], chunk_refs[chunk_count], managers[manager_count]
+     */
+    if (header_pos + 8 > parent_dwords) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                          NMO_SEVERITY_ERROR, "Sub-chunk header out of bounds"));
+    }
+
+    uint32_t payload_dwords = parent_data[header_pos];
+    size_t total_dwords = 1u + (size_t)payload_dwords;
+    if (header_pos + total_dwords > parent_dwords) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                          NMO_SEVERITY_ERROR, "Sub-chunk payload out of bounds"));
+    }
+
+    uint32_t data_size = parent_data[header_pos + 3];
+    uint32_t id_count = parent_data[header_pos + 5];
+    uint32_t chunk_ref_count = parent_data[header_pos + 6];
+    uint32_t manager_count = parent_data[header_pos + 7];
+
+    size_t data_start = header_pos + 8;
+    size_t ids_start = data_start + (size_t)data_size;
+    size_t refs_start = ids_start + (size_t)id_count;
+    size_t managers_start = refs_start + (size_t)chunk_ref_count;
+
+    if (managers_start + (size_t)manager_count > header_pos + total_dwords) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
+                                          NMO_SEVERITY_ERROR, "Sub-chunk layout mismatch"));
+    }
+
+    if (data_size > 0 && id_count > 0) {
+        nmo_result_t result = remap_chunk_data_recursive(&parent_data[data_start],
+                                                         (size_t)data_size,
+                                                         &parent_data[ids_start],
+                                                         (size_t)id_count,
+                                                         remap,
+                                                         remapped_count);
+        if (result.code != NMO_OK) {
+            return result;
+        }
+    }
+
+    if (chunk_ref_count > 0) {
+        for (size_t i = 0; i < (size_t)chunk_ref_count; ++i) {
+            size_t rel = (size_t)parent_data[refs_start + i];
+            size_t child_header_pos = data_start + rel;
+            nmo_result_t result = remap_embedded_subchunk_recursive(parent_data,
+                                                                    parent_dwords,
+                                                                    child_header_pos,
+                                                                    remap,
+                                                                    remapped_count);
+            if (result.code != NMO_OK) {
+                return result;
+            }
+        }
+    }
+
+    return nmo_result_ok();
+}
+
 static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
                                                const nmo_id_remap_t *remap,
                                                int *remapped_count) {
@@ -89,6 +160,7 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
     }
 
     int local_count = 0;
+    nmo_result_t result = nmo_result_ok();
 
     // Only process chunks with version >= CHUNK_VERSION1 (4)
     if (chunk->chunk_version < NMO_CHUNK_VERSION1) {
@@ -96,19 +168,27 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
     }
 
     // Remap IDs in this chunk's data buffer
-    nmo_result_t result = remap_chunk_data_recursive(chunk->data, chunk->data_size,
-                                                     chunk->ids, chunk->id_count,
-                                                     remap, &local_count);
-    if (result.code != NMO_OK) return result;
+    if (chunk->data.count > 0 && chunk->ids.count > 0) {
+        uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+        uint32_t *chunk_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+        result = remap_chunk_data_recursive(chunk_data, chunk->data.count,
+                                            chunk_ids, chunk->ids.count,
+                                            remap, &local_count);
+        if (result.code != NMO_OK) return result;
+    }
 
-    // Recursively process sub-chunks
-    if (chunk->chunks && chunk->chunk_count > 0) {
-        for (size_t i = 0; i < chunk->chunk_count; i++) {
-            if (chunk->chunks[i]) {
-                int sub_remapped = 0;
-                result = remap_object_ids_recursive(chunk->chunks[i], remap, &sub_remapped);
-                if (result.code != NMO_OK) return result;
-                local_count += sub_remapped;
+    // Recursively process embedded sub-chunks in the serialized data stream
+    if (chunk->chunk_refs.count > 0 && chunk->data.count > 0) {
+        uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+        uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->chunk_refs);
+        for (size_t i = 0; i < chunk->chunk_refs.count; ++i) {
+            result = remap_embedded_subchunk_recursive(chunk_data,
+                                                       chunk->data.count,
+                                                       (size_t)chunk_refs[i],
+                                                       remap,
+                                                       &local_count);
+            if (result.code != NMO_OK) {
+                return result;
             }
         }
     }

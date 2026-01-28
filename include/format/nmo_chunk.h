@@ -12,6 +12,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_arena_array.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,27 +50,12 @@ typedef struct nmo_chunk {
     uint8_t chunk_class_id; /**< Legacy class ID (8-bit) */
     uint32_t chunk_options; /**< Option flags */
 
-    /* Data buffer (DWORD-aligned) */
-    uint32_t *data;       /**< Payload buffer */
-    size_t data_size;     /**< Size in DWORDs (not bytes!) */
-    size_t data_capacity; /**< Capacity in DWORDs */
-
-    /* Optional tracking lists */
-    uint32_t *ids; /**< Object ID list */
-    size_t id_count;
-    size_t id_capacity;
-
-    struct nmo_chunk **chunks; /**< Sub-chunk list */
-    size_t chunk_count;
-    size_t chunk_capacity;
-
-    uint32_t *chunk_refs; /**< Sub-chunk offset/int-list data */
-    size_t chunk_ref_count;
-    size_t chunk_ref_capacity;
-
-    uint32_t *managers; /**< Manager int list */
-    size_t manager_count;
-    size_t manager_capacity;
+    /* Data buffer and tracking lists (arena-backed) */
+    nmo_arena_array_t data;       /**< Payload buffer (uint32_t), count in DWORDs */
+    nmo_arena_array_t ids;        /**< Object ID tracking list (uint32_t) */
+    nmo_arena_array_t chunks;     /**< Sub-chunk list (nmo_chunk_t *) */
+    nmo_arena_array_t chunk_refs; /**< Sub-chunk offset/int-list data (uint32_t) */
+    nmo_arena_array_t managers;   /**< Manager int list (uint32_t) */
 
     /* Compression info (for statistics and pack/unpack) */
     size_t uncompressed_size; /**< Original size for stats */

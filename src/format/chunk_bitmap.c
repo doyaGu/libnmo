@@ -16,7 +16,7 @@ static inline nmo_chunk_parser_state_t *nmo_chunk_bitmap_get_state(nmo_chunk_t *
 
 static inline bool nmo_chunk_bitmap_can_read(nmo_chunk_t *chunk, size_t dwords) {
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
-    return state && (state->current_pos + dwords <= chunk->data_size);
+    return state && (state->current_pos + dwords <= chunk->data.count);
 }
 
 static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
@@ -37,7 +37,8 @@ static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
     }
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
-    const uint8_t *src = (const uint8_t *)&chunk->data[state->current_pos];
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const uint8_t *src = (const uint8_t *)&data[state->current_pos];
     *out_ptr = src;
     state->current_pos += dwords;
     return nmo_result_ok();
@@ -158,7 +159,15 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
         return make_error(NMO_ERR_INVALID_STATE, "Chunk parser state missing");
     }
 
-    uint8_t *dest = (uint8_t *)&chunk->data[state->current_pos];
+    if (state->current_pos + dwords > chunk->data.count) {
+        result = nmo_arena_array_resize(&chunk->data, state->current_pos + dwords);
+        if (result.code != NMO_OK) {
+            return result;
+        }
+    }
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    uint8_t *dest = (uint8_t *)&data[state->current_pos];
     memcpy(dest, signature, 5);
     if (encoded_size > 0 && encoded_data) {
         memcpy(dest + 5, encoded_data, encoded_size);
@@ -170,8 +179,11 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
     }
 
     state->current_pos += dwords;
-    if (state->current_pos > chunk->data_size) {
-        chunk->data_size = state->current_pos;
+    if (state->current_pos > chunk->data.count) {
+        result = nmo_arena_array_resize(&chunk->data, state->current_pos);
+        if (result.code != NMO_OK) {
+            return result;
+        }
     }
 
     return nmo_result_ok();

@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdio.h>   /* fprintf for IntList auditor */
+#include <assert.h>  /* assert for IntList auditor */
 
 #define LIST_SEQUENCE_MARKER 0xFFFFFFFFu
 
@@ -59,6 +61,15 @@ typedef struct nmo_chunk_writer {
 
     // Identifier linked-list tracking
     size_t prev_identifier_pos; // Position of previous identifier for linked-list chaining
+
+    // Version context stack (Phase 1.3)
+    nmo_chunk_version_context_t version_stack[NMO_CHUNK_WRITER_MAX_DEPTH];
+    int version_stack_top;  // -1 = empty, 0+ = current index
+
+    // IntList auditor (Phase 2.3, DEBUG mode only)
+#ifndef NDEBUG
+    nmo_intlist_audit_t intlist_audit;
+#endif
 
     // State
     int finalized;
@@ -281,6 +292,7 @@ nmo_chunk_writer_t *nmo_chunk_writer_create(nmo_arena_t *arena) {
     memset(w, 0, sizeof(nmo_chunk_writer_t));
     w->arena = arena;
     w->data_capacity = WRITER_INITIAL_CAPACITY;
+    w->version_stack_top = -1;  // Empty stack (Phase 1.3)
 
     // Allocate initial buffer
     w->data = (uint32_t *) nmo_arena_alloc(arena,
@@ -864,18 +876,18 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
 
     if (has_subchunk) {
         option_flags = sub->chunk_options;
-        if (sub->id_count > 0) {
+        if (sub->ids.count > 0) {
             option_flags |= NMO_CHUNK_OPTION_IDS;
         }
-        if (sub->chunk_ref_count > 0) {
+        if (sub->chunk_refs.count > 0) {
             option_flags |= NMO_CHUNK_OPTION_CHN;
         }
-        if (sub->manager_count > 0) {
+        if (sub->managers.count > 0) {
             option_flags |= NMO_CHUNK_OPTION_MAN;
         }
 
         const int include_manager_field = (sub->chunk_version > 4); /* literal 4 */
-        manager_count_field = include_manager_field ? (uint32_t) sub->manager_count : 0u;
+        manager_count_field = include_manager_field ? (uint32_t) sub->managers.count : 0u;
 
         size_t header_fields = 6; /* class_id, version, chunk_size, has_file, id_count, chunk_count */
         if (include_manager_field) {
@@ -883,12 +895,12 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
         }
 
         payload_dwords = header_fields;
-        payload_dwords += sub->data_size;
-        if (sub->id_count > 0) {
-            payload_dwords += sub->id_count;
+        payload_dwords += sub->data.count;
+        if (sub->ids.count > 0) {
+            payload_dwords += sub->ids.count;
         }
-        if (sub->chunk_ref_count > 0) {
-            payload_dwords += sub->chunk_ref_count;
+        if (sub->chunk_refs.count > 0) {
+            payload_dwords += sub->chunk_refs.count;
         }
         if (manager_count_field > 0) {
             payload_dwords += manager_count_field;
@@ -933,41 +945,45 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
         w->data[w->data_size++] = version_info;
 
         /* Chunk size in DWORDs */
-        w->data[w->data_size++] = (uint32_t) sub->data_size;
+        w->data[w->data_size++] = (uint32_t) sub->data.count;
 
         /* HasFile flag */
         uint32_t has_file = (option_flags & NMO_CHUNK_OPTION_FILE) ? 1u : 0u;
         w->data[w->data_size++] = has_file;
 
         /* ID and sub-chunk counts are always written */
-        w->data[w->data_size++] = (uint32_t) sub->id_count;
-        w->data[w->data_size++] = (uint32_t) sub->chunk_ref_count;
+        w->data[w->data_size++] = (uint32_t) sub->ids.count;
+        w->data[w->data_size++] = (uint32_t) sub->chunk_refs.count;
 
         if (sub->chunk_version > 4) {
             w->data[w->data_size++] = manager_count_field;
         }
 
         /* Data buffer */
-        if (sub->data_size > 0 && sub->data != NULL) {
-            memcpy(&w->data[w->data_size], sub->data, sub->data_size * sizeof(uint32_t));
-            w->data_size += sub->data_size;
+        if (sub->data.count > 0) {
+            const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
+            memcpy(&w->data[w->data_size], data, sub->data.count * sizeof(uint32_t));
+            w->data_size += sub->data.count;
         }
 
         /* IDs */
-        if (sub->id_count > 0 && sub->ids != NULL) {
-            memcpy(&w->data[w->data_size], sub->ids, sub->id_count * sizeof(uint32_t));
-            w->data_size += sub->id_count;
+        if (sub->ids.count > 0) {
+            const uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->ids);
+            memcpy(&w->data[w->data_size], ids, sub->ids.count * sizeof(uint32_t));
+            w->data_size += sub->ids.count;
         }
 
         /* Sub-chunk reference positions */
-        if (sub->chunk_ref_count > 0 && sub->chunk_refs != NULL) {
-            memcpy(&w->data[w->data_size], sub->chunk_refs, sub->chunk_ref_count * sizeof(uint32_t));
-            w->data_size += sub->chunk_ref_count;
+        if (sub->chunk_refs.count > 0) {
+            const uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->chunk_refs);
+            memcpy(&w->data[w->data_size], chunk_refs, sub->chunk_refs.count * sizeof(uint32_t));
+            w->data_size += sub->chunk_refs.count;
         }
 
         /* Manager data */
-        if (manager_count_field > 0 && sub->managers != NULL) {
-            memcpy(&w->data[w->data_size], sub->managers, manager_count_field * sizeof(uint32_t));
+        if (manager_count_field > 0) {
+            const uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
+            memcpy(&w->data[w->data_size], managers, manager_count_field * sizeof(uint32_t));
             w->data_size += manager_count_field;
         }
     }
@@ -1229,38 +1245,181 @@ int nmo_chunk_writer_write_identifier(nmo_chunk_writer_t *w, uint32_t identifier
     return NMO_OK;
 }
 
+/* ============================================================================
+ * Reserve-and-Patch API (Phase 2.2)
+ * ============================================================================ */
+
+nmo_patch_token_t nmo_chunk_writer_reserve_u32(nmo_chunk_writer_t *w) {
+    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
+
+    if (w == NULL || w->finalized) {
+        return token;
+    }
+
+    int result = ensure_data_capacity(w, 1);
+    if (result != NMO_OK) {
+        return token;
+    }
+
+    token.offset = w->data_size;
+    token.size = 1;
+    token.valid = 1;
+
+    /* Write placeholder zero */
+    w->data[w->data_size++] = 0;
+
+    return token;
+}
+
+nmo_patch_token_t nmo_chunk_writer_reserve_u64(nmo_chunk_writer_t *w) {
+    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
+
+    if (w == NULL || w->finalized) {
+        return token;
+    }
+
+    int result = ensure_data_capacity(w, 2);
+    if (result != NMO_OK) {
+        return token;
+    }
+
+    token.offset = w->data_size;
+    token.size = 2;
+    token.valid = 1;
+
+    /* Write placeholder zeros */
+    w->data[w->data_size++] = 0;
+    w->data[w->data_size++] = 0;
+
+    return token;
+}
+
+nmo_patch_token_t nmo_chunk_writer_reserve_dwords(nmo_chunk_writer_t *w, size_t dword_count) {
+    nmo_patch_token_t token = NMO_PATCH_TOKEN_INVALID;
+
+    if (w == NULL || w->finalized || dword_count == 0 || dword_count > 4) {
+        return token;
+    }
+
+    int result = ensure_data_capacity(w, dword_count);
+    if (result != NMO_OK) {
+        return token;
+    }
+
+    token.offset = w->data_size;
+    token.size = (uint8_t)dword_count;
+    token.valid = 1;
+
+    /* Write placeholder zeros */
+    for (size_t i = 0; i < dword_count; i++) {
+        w->data[w->data_size++] = 0;
+    }
+
+    return token;
+}
+
+int nmo_chunk_writer_patch_u32(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint32_t value) {
+    if (w == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!nmo_patch_token_valid(token)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (token.size != 1) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (token.offset >= w->data_size) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    w->data[token.offset] = value;
+    return NMO_OK;
+}
+
+int nmo_chunk_writer_patch_u64(nmo_chunk_writer_t *w, nmo_patch_token_t token, uint64_t value) {
+    if (w == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!nmo_patch_token_valid(token)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (token.size != 2) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (token.offset + 1 >= w->data_size) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    w->data[token.offset] = (uint32_t)(value & 0xFFFFFFFF);
+    w->data[token.offset + 1] = (uint32_t)(value >> 32);
+    return NMO_OK;
+}
+
+size_t nmo_chunk_writer_tell(const nmo_chunk_writer_t *w) {
+    if (w == NULL) {
+        return 0;
+    }
+    return w->data_size;
+}
+
 nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
     if (w == NULL || w->finalized || w->chunk == NULL) {
         return NULL;
     }
 
     // Copy data to chunk
-    w->chunk->data = w->data;
-    w->chunk->data_size = w->data_size;
-    w->chunk->data_capacity = w->data_capacity;
+    nmo_result_t result = nmo_arena_array_resize(&w->chunk->data, w->data_size);
+    if (result.code != NMO_OK) {
+        return NULL;
+    }
+    uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->data);
+    if (w->data_size > 0) {
+        memcpy(chunk_data, w->data, w->data_size * sizeof(uint32_t));
+    }
 
     // Copy ID list
     if (w->id_count > 0) {
-        w->chunk->ids = w->id_list;
-        w->chunk->id_count = w->id_count;
+        result = nmo_arena_array_resize(&w->chunk->ids, w->id_count);
+        if (result.code != NMO_OK) {
+            return NULL;
+        }
+        uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->ids);
+        memcpy(ids, w->id_list, w->id_count * sizeof(uint32_t));
     }
 
     // Copy manager list
     if (w->manager_count > 0) {
-        w->chunk->managers = w->manager_list;
-        w->chunk->manager_count = w->manager_count;
+        result = nmo_arena_array_resize(&w->chunk->managers, w->manager_count);
+        if (result.code != NMO_OK) {
+            return NULL;
+        }
+        uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->managers);
+        memcpy(managers, w->manager_list, w->manager_count * sizeof(uint32_t));
     }
 
     // Copy chunk list
     if (w->chunk_count > 0) {
-        w->chunk->chunks = w->chunk_list;
-        w->chunk->chunk_count = w->chunk_count;
+        result = nmo_arena_array_resize(&w->chunk->chunks, w->chunk_count);
+        if (result.code != NMO_OK) {
+            return NULL;
+        }
+        nmo_chunk_t **chunks = NMO_ARENA_ARRAY_DATA(nmo_chunk_t *, &w->chunk->chunks);
+        memcpy(chunks, w->chunk_list, w->chunk_count * sizeof(nmo_chunk_t *));
     }
 
     if (w->chunk_ref_count > 0) {
-        w->chunk->chunk_refs = w->chunk_ref_list;
-        w->chunk->chunk_ref_count = w->chunk_ref_count;
-        w->chunk->chunk_ref_capacity = w->chunk_ref_count;
+        result = nmo_arena_array_resize(&w->chunk->chunk_refs, w->chunk_ref_count);
+        if (result.code != NMO_OK) {
+            return NULL;
+        }
+        uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->chunk_refs);
+        memcpy(chunk_refs, w->chunk_ref_list, w->chunk_ref_count * sizeof(uint32_t));
     }
 
     w->finalized = 1;
@@ -1392,4 +1551,198 @@ int nmo_chunk_writer_write_color(nmo_chunk_writer_t *w, const nmo_color_t *c) {
     w->data_size += 4;
 
     return NMO_OK;
+}
+
+/* ========================================================================
+ * Phase 1.3: Version Context Stack Implementation
+ * ======================================================================== */
+
+int nmo_chunk_writer_push_context(nmo_chunk_writer_t *w, uint32_t version) {
+    if (w == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Check stack overflow */
+    if (w->version_stack_top >= NMO_CHUNK_WRITER_MAX_DEPTH - 1) {
+        return NMO_ERR_BUFFER_OVERRUN;
+    }
+
+    /* Push new context */
+    w->version_stack_top++;
+    nmo_chunk_version_context_t *ctx = &w->version_stack[w->version_stack_top];
+    ctx->chunk_version = version;
+    ctx->header_offset = w->data_size;  /* Current position as header start */
+    ctx->expected_ids = -1;             /* Not tracking by default */
+    ctx->written_ids = 0;
+
+    return NMO_OK;
+}
+
+int nmo_chunk_writer_pop_context(nmo_chunk_writer_t *w) {
+    if (w == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Check stack underflow */
+    if (w->version_stack_top < 0) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    /* Optionally validate ID count if tracking was enabled */
+    nmo_chunk_version_context_t *ctx = &w->version_stack[w->version_stack_top];
+    if (ctx->expected_ids >= 0 && ctx->expected_ids != ctx->written_ids) {
+        /* ID count mismatch - this is a validation error but we still pop */
+        /* The caller should check this via debug mode or logging */
+    }
+
+    w->version_stack_top--;
+    return NMO_OK;
+}
+
+uint32_t nmo_chunk_writer_parent_version(const nmo_chunk_writer_t *w) {
+    if (w == NULL) {
+        return 0;
+    }
+
+    /* Need at least 2 contexts: current (index 0+) and parent (index-1) */
+    if (w->version_stack_top < 1) {
+        return 0;  /* No parent available */
+    }
+
+    /* Return parent's version (one level up from current) */
+    return w->version_stack[w->version_stack_top - 1].chunk_version;
+}
+
+int nmo_chunk_writer_depth(const nmo_chunk_writer_t *w) {
+    if (w == NULL) {
+        return 0;
+    }
+
+    /* stack_top of -1 means 0 depth, 0 means depth 1, etc. */
+    return w->version_stack_top + 1;
+}
+
+void nmo_chunk_writer_set_expected_ids(nmo_chunk_writer_t *w, int expected_count) {
+    if (w == NULL || w->version_stack_top < 0) {
+        return;
+    }
+
+    w->version_stack[w->version_stack_top].expected_ids = expected_count;
+}
+
+/* ========================================================================
+ * Phase 2.3: IntList Auditor Implementation
+ * ======================================================================== */
+
+void nmo_chunk_writer_begin_intlist(nmo_chunk_writer_t *w,
+                                    int expected_count,
+                                    const char *context) {
+#ifndef NDEBUG
+    if (w == NULL) {
+        return;
+    }
+
+    /* Initialize audit state */
+    w->intlist_audit.expected_count = expected_count;
+    w->intlist_audit.written_count = 0;
+    w->intlist_audit.start_offset = w->data_size;
+    w->intlist_audit.active = 1;
+
+    /* Copy context string (truncate if too long) */
+    if (context != NULL) {
+        size_t len = strlen(context);
+        if (len >= NMO_INTLIST_CONTEXT_MAX) {
+            len = NMO_INTLIST_CONTEXT_MAX - 1;
+        }
+        memcpy(w->intlist_audit.context, context, len);
+        w->intlist_audit.context[len] = '\0';
+    } else {
+        w->intlist_audit.context[0] = '\0';
+    }
+#else
+    (void)w;
+    (void)expected_count;
+    (void)context;
+#endif
+}
+
+int nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t *w, nmo_object_id_t id) {
+    if (w == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+#ifndef NDEBUG
+    /* Increment audit counter if active */
+    if (w->intlist_audit.active) {
+        w->intlist_audit.written_count++;
+    }
+#endif
+
+    /* Delegate to regular write_object_id */
+    return nmo_chunk_writer_write_object_id(w, id);
+}
+
+int nmo_chunk_writer_end_intlist(nmo_chunk_writer_t *w) {
+#ifndef NDEBUG
+    if (w == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Check if audit was active */
+    if (!w->intlist_audit.active) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    /* Validate counts */
+    int expected = w->intlist_audit.expected_count;
+    int written = w->intlist_audit.written_count;
+
+    /* Clear audit state before potential assertion */
+    w->intlist_audit.active = 0;
+
+    if (expected != written) {
+        /* Log detailed error for debugging */
+        fprintf(stderr,
+                "[NMO IntList Auditor] Count mismatch in '%s': "
+                "expected %d, wrote %d (offset: %zu DWORDs)\n",
+                w->intlist_audit.context[0] ? w->intlist_audit.context : "<unknown>",
+                expected, written, w->intlist_audit.start_offset);
+
+#ifdef NMO_INTLIST_AUDIT_HARD
+        /* Hard mode: assertion failure (opt-in via compile flag) */
+        assert(expected == written && "IntList count mismatch - see stderr for details");
+#endif
+        /* Default: return error code for caller to handle */
+        return NMO_ERR_CORRUPT;
+    }
+
+    return NMO_OK;
+#else
+    (void)w;
+    return NMO_OK;
+#endif
+}
+
+int nmo_chunk_writer_intlist_audit_active(const nmo_chunk_writer_t *w) {
+#ifndef NDEBUG
+    if (w == NULL) {
+        return 0;
+    }
+    return w->intlist_audit.active;
+#else
+    (void)w;
+    return 0;
+#endif
+}
+
+const char* nmo_chunk_writer_intlist_audit_context(const nmo_chunk_writer_t *w) {
+#ifndef NDEBUG
+    if (w == NULL || !w->intlist_audit.active) {
+        return NULL;
+    }
+    return w->intlist_audit.context;
+#else
+    (void)w;
+    return NULL;
+#endif
 }

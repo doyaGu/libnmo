@@ -15,7 +15,7 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 
 static inline bool can_read(nmo_chunk_t *chunk, size_t dwords) {
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    return state && (state->current_pos + dwords <= chunk->data_size);
+    return state && (state->current_pos + dwords <= chunk->data.count);
 }
 
 // =============================================================================
@@ -81,7 +81,8 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
 
     // Copy data
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    memcpy(array, &chunk->data[state->current_pos], total_size);
+    uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    memcpy(array, &chunk_data[state->current_pos], total_size);
     state->current_pos += dwords;
 
     *out_array = array;
@@ -149,13 +150,13 @@ nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
                                           NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
     }
 
-    // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    // Write count with sequence marker
+    nmo_result_t result = nmo_chunk_write_object_sequence_start(chunk, count);
     if (result.code != NMO_OK) return result;
 
     // Write IDs
     for (size_t i = 0; i < count; i++) {
-        result = nmo_chunk_write_object_id(chunk, ids[i]);
+        result = nmo_chunk_write_object_sequence_item(chunk, ids[i]);
         if (result.code != NMO_OK) return result;
     }
 
