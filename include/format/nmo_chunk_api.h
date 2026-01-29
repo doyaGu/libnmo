@@ -1143,8 +1143,8 @@ NMO_API nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
 /**
  * @brief Write generic array
  *
- * Writes count, element size, then array data.
- * Lower-level API than typed array functions.
+ * Writes total bytes, element count, then array data.
+ * Matches CKStateChunk::WriteArray_LEndian layout.
  *
  * @param chunk Chunk (required)
  * @param array Array data (required)
@@ -1160,13 +1160,13 @@ NMO_API nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
 /**
  * @brief Read generic array
  *
- * Reads count, element size, then array data.
- * Lower-level API than typed array functions.
+ * Reads total bytes, element count, then array data.
+ * Matches CKStateChunk::ReadArray_LEndian layout.
  *
  * @param chunk Chunk (required)
  * @param out_array Output array pointer (allocated from arena) (required)
  * @param out_count Output element count (required)
- * @param out_elem_size Output element size (required)
+ * @param out_elem_size Output element size (derived from total_bytes / count)
  * @return NMO_OK on success, error code on failure
  */
 NMO_API nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,

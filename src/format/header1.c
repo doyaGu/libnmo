@@ -7,6 +7,7 @@
 #include "core/nmo_utils.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* Helper macros for safe buffer reading */
 #define CHECK_BUFFER_SIZE(pos, needed, size) \
@@ -49,28 +50,28 @@ static nmo_result_t parse_objects(
         nmo_object_desc_t *obj = &header->objects[i];
 
         /* Read file ID (Object) - may have bit 23 set for reference-only */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         obj->file_id = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Extract reference-only flag from bit 23 */
         obj->flags = (obj->file_id & NMO_OBJECT_REFERENCE_FLAG) ? NMO_OBJECT_REFERENCE_FLAG : 0;
         obj->file_id &= ~NMO_OBJECT_REFERENCE_FLAG; /* Clear flag bit from ID */
 
         /* Read class ID (ObjectCid) */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         obj->class_id = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Read file index (FileIndex) */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         obj->file_index = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Read name length (does NOT include null terminator in buffer) */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         uint32_t name_len = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Allocate for name + null terminator */
         obj->name = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
@@ -103,9 +104,9 @@ static nmo_result_t parse_plugin_deps(
     nmo_header1_t *header,
     nmo_arena_t *arena) {
     /* Read category count */
-    CHECK_BUFFER_SIZE(*pos, 4, size);
+    CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
     uint32_t category_count = nmo_read_u32_le(data + *pos);
-    *pos += 4;
+    *pos += sizeof(uint32_t);
 
     if (category_count == 0) {
         header->plugin_dep_count = 0;
@@ -119,19 +120,19 @@ static nmo_result_t parse_plugin_deps(
 
     for (uint32_t i = 0; i < category_count; i++) {
         /* Read category type */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
-        *pos += 4;
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
+        *pos += sizeof(uint32_t);
 
         /* Read GUID count for this category */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         uint32_t guid_count = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         total_plugins += guid_count;
 
-        /* Skip GUIDs (8 bytes each) */
-        CHECK_BUFFER_SIZE(*pos, guid_count * 8, size);
-        *pos += guid_count * 8;
+        /* Skip GUIDs (sizeof(nmo_guid_t) each) */
+        CHECK_BUFFER_SIZE(*pos, guid_count * sizeof(nmo_guid_t), size);
+        *pos += guid_count * sizeof(nmo_guid_t);
     }
 
     /* Reset position to start of categories */
@@ -155,27 +156,71 @@ static nmo_result_t parse_plugin_deps(
     uint32_t plugin_index = 0;
     for (uint32_t i = 0; i < category_count; i++) {
         /* Read category type */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         uint32_t category = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Read GUID count */
-        CHECK_BUFFER_SIZE(*pos, 4, size);
+        CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
         uint32_t guid_count = nmo_read_u32_le(data + *pos);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Read each GUID */
         for (uint32_t j = 0; j < guid_count; j++) {
-            CHECK_BUFFER_SIZE(*pos, 8, size);
+            CHECK_BUFFER_SIZE(*pos, sizeof(nmo_guid_t), size);
 
             nmo_plugin_dep_t *dep = &header->plugin_deps[plugin_index++];
             dep->category = category;
             dep->guid.d1 = nmo_read_u32_le(data + *pos);
-            *pos += 4;
+            *pos += sizeof(uint32_t);
             dep->guid.d2 = nmo_read_u32_le(data + *pos);
-            *pos += 4;
+            *pos += sizeof(uint32_t);
             dep->version = 0; /* Version not stored in format */
         }
+    }
+
+    return nmo_result_ok();
+}
+
+/**
+ * @brief Parse included files metadata from buffer
+ */
+static nmo_result_t parse_included_files(
+    const uint8_t *data,
+    size_t size,
+    size_t *pos,
+    nmo_header1_t *header,
+    nmo_arena_t *arena) {
+    (void) arena;
+    if (*pos + sizeof(uint32_t) > size) {
+        return nmo_result_ok();
+    }
+
+    CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
+    uint32_t payload_size = nmo_read_u32_le(data + *pos);
+    *pos += sizeof(uint32_t);
+
+    header->included_file_count = 0;
+    header->included_files = NULL;
+
+    if (payload_size == 0) {
+        return nmo_result_ok();
+    }
+
+    if (payload_size < sizeof(uint32_t)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid included files payload size"));
+    }
+
+    CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
+    header->included_file_count = nmo_read_u32_le(data + *pos);
+    *pos += sizeof(uint32_t);
+
+    size_t payload_remaining = (size_t) payload_size - sizeof(uint32_t);
+    CHECK_BUFFER_SIZE(*pos, payload_remaining, size);
+    if (payload_remaining > 0) {
+        *pos += payload_remaining;
     }
 
     return nmo_result_ok();
@@ -223,94 +268,10 @@ nmo_result_t nmo_header1_parse(
     header->included_file_count = 0;
     header->included_files = NULL;
 
-    if (pos + 8 <= size) {
-        uint32_t included_count = nmo_read_u32_le(buffer + pos);
-        pos += 4;
-
-        uint32_t included_table_size = nmo_read_u32_le(buffer + pos);
-        pos += 4;
-
-        header->included_file_count = included_count;
-
-        if (included_table_size > 0 && pos + included_table_size > size) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                              NMO_SEVERITY_ERROR,
-                                              "Buffer too small for included file table"));
-        }
-
-        if (included_count == 0 || included_table_size == 0) {
-            /* Table descriptors are absent; metadata lives outside Header1 */
-            pos += included_table_size;
-        } else {
-            header->included_files = (nmo_included_file_desc_t *) nmo_arena_alloc(
-                arena,
-                sizeof(nmo_included_file_desc_t) * included_count,
-                sizeof(void *)
-            );
-
-            if (header->included_files == NULL) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to allocate included file descriptors"));
-            }
-
-            memset(header->included_files, 0,
-                   sizeof(nmo_included_file_desc_t) * included_count);
-
-            size_t table_end = pos + included_table_size;
-
-            for (uint32_t i = 0; i < included_count; i++) {
-                if (pos + 4 > table_end) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                      NMO_SEVERITY_ERROR,
-                                                      "Buffer too small for included name length"));
-                }
-
-                uint32_t name_len = nmo_read_u32_le(buffer + pos);
-                pos += 4;
-
-                char *name_ptr = NULL;
-                if (name_len > 0) {
-                    if (pos + name_len > table_end) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                          NMO_SEVERITY_ERROR,
-                                                          "Buffer too small for included filename"));
-                    }
-
-                    name_ptr = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
-                    if (name_ptr == NULL) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                          NMO_SEVERITY_ERROR,
-                                                          "Failed to allocate included filename"));
-                    }
-
-                    memcpy(name_ptr, buffer + pos, name_len);
-                    name_ptr[name_len] = '\0';
-                    pos += name_len;
-                } else {
-                    name_ptr = (char *) nmo_arena_alloc(arena, 1, 1);
-                    if (name_ptr == NULL) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                          NMO_SEVERITY_ERROR,
-                                                          "Failed to allocate empty filename"));
-                    }
-                    name_ptr[0] = '\0';
-                }
-
-                if (pos + 4 > table_end) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                      NMO_SEVERITY_ERROR,
-                                                      "Buffer too small for included size"));
-                }
-
-                uint32_t data_size = nmo_read_u32_le(buffer + pos);
-                pos += 4;
-
-                header->included_files[i].name = name_ptr;
-                header->included_files[i].data_size = data_size;
-            }
-
-            pos = table_end;
+    if (pos < size) {
+        result = parse_included_files(buffer, size, &pos, header, arena);
+        if (result.code != NMO_OK) {
+            return result;
         }
     }
 
@@ -333,7 +294,7 @@ static nmo_result_t serialize_objects(
         const nmo_object_desc_t *obj = &header->objects[i];
 
         /* Write file ID (Object) - with reference flag if set */
-        if (*pos + 4 > buffer_size) {
+        if (*pos + sizeof(uint32_t) > buffer_size) {
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                               NMO_SEVERITY_ERROR, "Buffer too small for file ID"));
         }
@@ -342,34 +303,34 @@ static nmo_result_t serialize_objects(
             file_id |= NMO_OBJECT_REFERENCE_FLAG;
         }
         nmo_write_u32_le(buffer + *pos, file_id);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Write class ID (ObjectCid) */
-        if (*pos + 4 > buffer_size) {
+        if (*pos + sizeof(uint32_t) > buffer_size) {
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                               NMO_SEVERITY_ERROR, "Buffer too small for class ID"));
         }
         nmo_write_u32_le(buffer + *pos, obj->class_id);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Write file index (FileIndex) */
-        if (*pos + 4 > buffer_size) {
+        if (*pos + sizeof(uint32_t) > buffer_size) {
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                               NMO_SEVERITY_ERROR, "Buffer too small for file index"));
         }
         nmo_write_u32_le(buffer + *pos, obj->file_index);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Calculate name length (does NOT include null terminator) */
         uint32_t name_len = obj->name ? (uint32_t) strlen(obj->name) : 0;
 
         /* Write name length */
-        if (*pos + 4 > buffer_size) {
+        if (*pos + sizeof(uint32_t) > buffer_size) {
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                               NMO_SEVERITY_ERROR, "Buffer too small for name length"));
         }
         nmo_write_u32_le(buffer + *pos, name_len);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Write name string (without null terminator) */
         if (name_len > 0) {
@@ -395,78 +356,93 @@ static nmo_result_t serialize_plugin_deps(
     size_t *pos) {
     if (header->plugin_dep_count == 0) {
         /* Write category count of 0 */
-        if (*pos + 4 > buffer_size) {
+        if (*pos + sizeof(uint32_t) > buffer_size) {
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                               NMO_SEVERITY_ERROR, "Buffer too small for category count"));
         }
         nmo_write_u32_le(buffer + *pos, 0);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
         return nmo_result_ok();
     }
 
-    /* Group plugins by category */
-    uint32_t category_counts[5] = {0}; /* 5 standard categories */
-    for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
-        uint32_t cat = header->plugin_deps[i].category;
-        if (cat < 5) {
-            category_counts[cat]++;
-        }
+    /* Build unique category list in first-seen order (CK2 preserves array order). */
+    nmo_result_t result = nmo_result_ok();
+    uint32_t unique_count = 0;
+    uint32_t *category_ordering = (uint32_t *) malloc(header->plugin_dep_count * sizeof(uint32_t));
+    if (category_ordering == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR, "Failed to allocate plugin category order"));
     }
 
-    /* Count non-empty categories */
-    uint32_t num_categories = 0;
-    for (int i = 0; i < 5; i++) {
-        if (category_counts[i] > 0) {
-            num_categories++;
+    for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
+        uint32_t cat = header->plugin_deps[i].category;
+        int found = 0;
+        for (uint32_t j = 0; j < unique_count; j++) {
+            if (category_ordering[j] == cat) {
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            category_ordering[unique_count++] = cat;
         }
     }
 
     /* Write category count */
-    if (*pos + 4 > buffer_size) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                          NMO_SEVERITY_ERROR, "Buffer too small for category count"));
+    if (*pos + sizeof(uint32_t) > buffer_size) {
+        result = nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                            NMO_SEVERITY_ERROR, "Buffer too small for category count"));
+        goto cleanup;
     }
-    nmo_write_u32_le(buffer + *pos, num_categories);
-    *pos += 4;
+    nmo_write_u32_le(buffer + *pos, unique_count);
+    *pos += sizeof(uint32_t);
 
-    /* Write each category */
-    for (uint32_t cat = 0; cat < 5; cat++) {
-        if (category_counts[cat] == 0) {
-            continue;
+    /* Write each category in recorded order */
+    for (uint32_t c = 0; c < unique_count; c++) {
+        uint32_t cat = category_ordering[c];
+        uint32_t cat_count = 0;
+        for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
+            if (header->plugin_deps[i].category == cat) {
+                cat_count++;
+            }
         }
 
         /* Write category type */
-        if (*pos + 4 > buffer_size) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                              NMO_SEVERITY_ERROR, "Buffer too small for category type"));
+        if (*pos + sizeof(uint32_t) > buffer_size) {
+            result = nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                                                NMO_SEVERITY_ERROR, "Buffer too small for category type"));
+            goto cleanup;
         }
         nmo_write_u32_le(buffer + *pos, cat);
-        *pos += 4;
+        *pos += sizeof(uint32_t);
 
         /* Write GUID count */
-        if (*pos + 4 > buffer_size) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                              NMO_SEVERITY_ERROR, "Buffer too small for GUID count"));
+        if (*pos + sizeof(uint32_t) > buffer_size) {
+            result = nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                                                NMO_SEVERITY_ERROR, "Buffer too small for GUID count"));
+            goto cleanup;
         }
-        nmo_write_u32_le(buffer + *pos, category_counts[cat]);
-        *pos += 4;
+        nmo_write_u32_le(buffer + *pos, cat_count);
+        *pos += sizeof(uint32_t);
 
         /* Write GUIDs for this category */
         for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
             if (header->plugin_deps[i].category == cat) {
-                if (*pos + 8 > buffer_size) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                      NMO_SEVERITY_ERROR, "Buffer too small for GUID"));
+                if (*pos + sizeof(nmo_guid_t) > buffer_size) {
+                    result = nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                                                        NMO_SEVERITY_ERROR, "Buffer too small for GUID"));
+                    goto cleanup;
                 }
                 nmo_write_u32_le(buffer + *pos, header->plugin_deps[i].guid.d1);
-                *pos += 4;
+                *pos += sizeof(uint32_t);
                 nmo_write_u32_le(buffer + *pos, header->plugin_deps[i].guid.d2);
-                *pos += 4;
+                *pos += sizeof(uint32_t);
             }
         }
     }
-
-    return nmo_result_ok();
+cleanup:
+    free(category_ordering);
+    return result;
 }
 
 /**
@@ -479,47 +455,56 @@ static size_t calculate_serialize_size(const nmo_header1_t *header) {
 
     /* Object descriptors */
     for (uint32_t i = 0; i < header->object_count; i++) {
-        size += 4; /* file_id */
-        size += 4; /* class_id */
-        size += 4; /* file_index */
-        size += 4; /* name_len */
+        size += sizeof(uint32_t); /* file_id */
+        size += sizeof(uint32_t); /* class_id */
+        size += sizeof(uint32_t); /* file_index */
+        size += sizeof(uint32_t); /* name_len */
         uint32_t name_len = header->objects[i].name ? (uint32_t) strlen(header->objects[i].name) : 0;
         size += name_len; /* name string (without null) */
     }
 
     /* Plugin dependencies */
-    size += 4; /* category count */
+    size += sizeof(uint32_t); /* category count */
     if (header->plugin_dep_count > 0) {
-        /* Count categories */
-        uint32_t category_counts[5] = {0};
-        for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
-            uint32_t cat = header->plugin_deps[i].category;
-            if (cat < 5) {
-                category_counts[cat]++;
+        uint32_t unique_count = 0;
+        uint32_t *category_ordering = (uint32_t *) malloc(header->plugin_dep_count * sizeof(uint32_t));
+        if (category_ordering != NULL) {
+            for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
+                uint32_t cat = header->plugin_deps[i].category;
+                int found = 0;
+                for (uint32_t j = 0; j < unique_count; j++) {
+                    if (category_ordering[j] == cat) {
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) {
+                    category_ordering[unique_count++] = cat;
+                }
             }
-        }
 
-        /* Add size for each category */
-        for (int i = 0; i < 5; i++) {
-            if (category_counts[i] > 0) {
-                size += 4;                      /* category type */
-                size += 4;                      /* GUID count */
-                size += category_counts[i] * 8; /* GUIDs */
+            for (uint32_t c = 0; c < unique_count; c++) {
+                uint32_t cat = category_ordering[c];
+                uint32_t cat_count = 0;
+                for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
+                    if (header->plugin_deps[i].category == cat) {
+                        cat_count++;
+                    }
+                }
+                size += sizeof(uint32_t);                /* category type */
+                size += sizeof(uint32_t);                /* GUID count */
+                size += cat_count * sizeof(nmo_guid_t);  /* GUIDs */
             }
+
+            free(category_ordering);
+        } else {
+            /* Fallback: assume each dep is its own category (over-allocate) */
+            size += header->plugin_dep_count * (sizeof(uint32_t) + sizeof(uint32_t) + sizeof(nmo_guid_t));
         }
     }
 
-    size += 4;
-    size += 4;
-
-    for (uint32_t i = 0; i < header->included_file_count; i++) {
-        uint32_t name_len = header->included_files[i].name
-                              ? (uint32_t) strlen(header->included_files[i].name)
-                              : 0;
-        size += 4;
-        size += name_len;
-        size += 4;
-    }
+    size += sizeof(uint32_t); /* payload size */
+    size += sizeof(uint32_t); /* count */
 
     return size;
 }
@@ -561,56 +546,17 @@ nmo_result_t nmo_header1_serialize(
         return result;
     }
 
-    if (pos + 8 > buffer_size) {
+    if (pos + (2 * sizeof(uint32_t)) > buffer_size) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                           NMO_SEVERITY_ERROR,
                                           "Buffer too small for included metadata"));
     }
+
+    uint32_t payload_size = (uint32_t) sizeof(uint32_t);
+    nmo_write_u32_le(buffer + pos, payload_size);
+    pos += sizeof(uint32_t);
     nmo_write_u32_le(buffer + pos, header->included_file_count);
-    pos += 4;
-
-    size_t block_size = 0;
-    for (uint32_t i = 0; i < header->included_file_count; i++) {
-        uint32_t name_len = header->included_files[i].name
-                              ? (uint32_t) strlen(header->included_files[i].name)
-                              : 0;
-        block_size += 4;
-        block_size += name_len;
-        block_size += 4;
-    }
-    nmo_write_u32_le(buffer + pos, (uint32_t) block_size);
-    pos += 4;
-
-    for (uint32_t i = 0; i < header->included_file_count; i++) {
-        const char *name = header->included_files[i].name;
-        uint32_t name_len = name ? (uint32_t) strlen(name) : 0;
-
-        if (pos + 4 > buffer_size) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                              NMO_SEVERITY_ERROR,
-                                              "Buffer too small for included name length"));
-        }
-        nmo_write_u32_le(buffer + pos, name_len);
-        pos += 4;
-
-        if (name_len > 0) {
-            if (pos + name_len > buffer_size) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Buffer too small for included filename"));
-            }
-            memcpy(buffer + pos, name, name_len);
-            pos += name_len;
-        }
-
-        if (pos + 4 > buffer_size) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                                              NMO_SEVERITY_ERROR,
-                                              "Buffer too small for included size"));
-        }
-        nmo_write_u32_le(buffer + pos, header->included_files[i].data_size);
-        pos += 4;
-    }
+    pos += sizeof(uint32_t);
 
     *out_data = buffer;
     *out_size = pos;

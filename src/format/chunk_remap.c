@@ -83,6 +83,7 @@ static nmo_result_t remap_chunk_data_recursive(uint32_t *chunk_data,
 static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                        size_t parent_dwords,
                                                        size_t header_pos,
+                                                       uint32_t parent_chunk_version,
                                                        const nmo_id_remap_t *remap,
                                                        int *remapped_count) {
     if (!parent_data || !remap || !remapped_count) {
@@ -90,11 +91,23 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                           NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
+    size_t header_bytes =
+        sizeof(uint32_t) + /* size */
+        sizeof(uint32_t) + /* class_id */
+        sizeof(uint32_t) + /* version_info */
+        sizeof(uint32_t) + /* data_size */
+        sizeof(uint32_t) + /* file_flag */
+        sizeof(uint32_t) + /* id_count */
+        sizeof(uint32_t);  /* chunk_count */
+    if (parent_chunk_version > 4) {
+        header_bytes += sizeof(uint32_t); /* manager_count */
+    }
+    const size_t header_dwords = header_bytes / sizeof(uint32_t);
     /* Layout written by nmo_chunk_write_sub_chunk:
-     * [size][class_id][version_info][data_size][file_flag][id_count][chunk_count][manager_count]
+     * [size][class_id][version_info][data_size][file_flag][id_count][chunk_count][manager_count?]
      * followed by: data[data_size], ids[id_count], chunk_refs[chunk_count], managers[manager_count]
      */
-    if (header_pos + 8 > parent_dwords) {
+    if (header_pos + header_dwords > parent_dwords) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
                                           NMO_SEVERITY_ERROR, "Sub-chunk header out of bounds"));
     }
@@ -106,12 +119,17 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                           NMO_SEVERITY_ERROR, "Sub-chunk payload out of bounds"));
     }
 
+    uint32_t version_info = parent_data[header_pos + 2];
+    uint32_t child_chunk_version = (version_info >> 16) & 0xFFFFu;
     uint32_t data_size = parent_data[header_pos + 3];
     uint32_t id_count = parent_data[header_pos + 5];
     uint32_t chunk_ref_count = parent_data[header_pos + 6];
-    uint32_t manager_count = parent_data[header_pos + 7];
+    uint32_t manager_count = 0;
+    if (parent_chunk_version > 4) {
+        manager_count = parent_data[header_pos + 7];
+    }
 
-    size_t data_start = header_pos + 8;
+    size_t data_start = header_pos + header_dwords;
     size_t ids_start = data_start + (size_t)data_size;
     size_t refs_start = ids_start + (size_t)id_count;
     size_t managers_start = refs_start + (size_t)chunk_ref_count;
@@ -140,6 +158,7 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
             nmo_result_t result = remap_embedded_subchunk_recursive(parent_data,
                                                                     parent_dwords,
                                                                     child_header_pos,
+                                                                    child_chunk_version,
                                                                     remap,
                                                                     remapped_count);
             if (result.code != NMO_OK) {
@@ -185,6 +204,7 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
             result = remap_embedded_subchunk_recursive(chunk_data,
                                                        chunk->data.count,
                                                        (size_t)chunk_refs[i],
+                                                       chunk->chunk_version,
                                                        remap,
                                                        &local_count);
             if (result.code != NMO_OK) {

@@ -196,7 +196,13 @@ nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     }
 
     const uint32_t *src_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    mz_ulong src_len = (mz_ulong)(chunk->data.count * sizeof(uint32_t));
+    size_t available_bytes = chunk->data.count * sizeof(uint32_t);
+    size_t used_bytes = (chunk->compressed_size > 0) ? chunk->compressed_size : available_bytes;
+    if (used_bytes > available_bytes) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
+                                          NMO_SEVERITY_ERROR, "Compressed size exceeds buffer"));
+    }
+    mz_ulong src_len = (mz_ulong) used_bytes;
 
     mz_ulong dest_len = chunk->unpack_size * sizeof(uint32_t);
     uint32_t *decompressed = (uint32_t *) nmo_arena_alloc(chunk->arena,

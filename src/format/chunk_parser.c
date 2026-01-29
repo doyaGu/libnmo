@@ -191,51 +191,6 @@ int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
     return NMO_OK;
 }
 
-int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out) {
-    if (p == NULL || out == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    // Read low 16 bits, then high 16 bits, each from a DWORD
-    // Matches CKStateChunk::ReadDwordAsWords behavior
-    uint16_t low, high;
-
-    int result = nmo_chunk_parser_read_word(p, &low);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    result = nmo_chunk_parser_read_word(p, &high);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    *out = ((uint32_t)high << 16) | (uint32_t)low;
-    return NMO_OK;
-}
-
-int nmo_chunk_parser_read_dword_array_as_words(
-    nmo_chunk_parser_t *p,
-    uint32_t *out_values,
-    size_t count) {
-    if (count == 0) {
-        return NMO_OK;
-    }
-
-    if (p == NULL || out_values == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    for (size_t i = 0; i < count; ++i) {
-        int result = nmo_chunk_parser_read_dword_as_words(p, &out_values[i]);
-        if (result != NMO_OK) {
-            return result;
-        }
-    }
-
-    return NMO_OK;
-}
-
 int nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     if (p == NULL || out == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -442,74 +397,55 @@ int nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p, void **array, n
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Read array size (in bytes) and element count
-    uint32_t size_bytes;
-    int result = nmo_chunk_parser_read_dword(p, &size_bytes);
-    if (result != NMO_OK) {
-        return result;
+    // Need at least 2 DWORDs for [dataSizeBytes][elementCount]
+    if (!check_bounds(p, 2)) {
+        return 0;
     }
 
-    uint32_t element_count;
-    result = nmo_chunk_parser_read_dword(p, &element_count);
-    if (result != NMO_OK) {
-        return result;
-    }
+    int32_t data_size_bytes = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    int32_t element_count = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
-    // Handle empty array
-    if (size_bytes == 0 || element_count == 0) {
+    if (data_size_bytes <= 0 || element_count <= 0) {
         *array = NULL;
         return 0;
     }
 
-    // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(size_bytes) / 4;
-
-    if (!check_bounds(p, dwords_needed)) {
-        return NMO_ERR_EOF;
+    int32_t dword_count = (data_size_bytes + 3) / 4;
+    if (!check_bounds(p, (size_t) dword_count)) {
+        *array = NULL;
+        return 0;
     }
 
-    // Allocate buffer
-    void *data = nmo_arena_alloc(arena, size_bytes, 4);
-    if (data == NULL) {
-        return NMO_ERR_NOMEM;
+    void *array_data = nmo_arena_alloc(arena, (size_t) data_size_bytes, 1);
+    if (array_data == NULL) {
+        *array = NULL;
+        return 0;
     }
 
-    // Copy data from chunk
-    memcpy(data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], size_bytes);
-    p->cursor += dwords_needed;
+    memcpy(array_data, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], (size_t) data_size_bytes);
+    p->cursor += (size_t) dword_count;
 
-    // Perform 16-bit word swapping
-    // Swap every 16-bit word in the entire buffer
-    size_t word_count = size_bytes / 2; // Number of 16-bit words
-    nmo_swap_16bit_words(data, word_count);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (data_size_bytes >= 2) {
+        nmo_swap_16bit_words(array_data, (size_t) data_size_bytes / 2);
+    }
+#endif
 
-    *array = data;
-    return (int)element_count;
+    *array = array_data;
+    return element_count;
 }
 
 int nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p, size_t bytes, void *buffer) {
-    if (p == NULL || buffer == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    int result = nmo_chunk_parser_read_buffer_nosize(p, bytes, buffer);
+    if (result != NMO_OK) {
+        return result;
     }
 
-    if (bytes == 0) {
-        return NMO_OK;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (bytes > 1 && buffer != NULL) {
+        nmo_swap_16bit_words(buffer, bytes / 2);
     }
-
-    // Calculate DWORDs needed (with padding)
-    size_t dwords_needed = nmo_align_dword(bytes) / 4;
-
-    if (!check_bounds(p, dwords_needed)) {
-        return NMO_ERR_EOF;
-    }
-
-    // Copy bytes from DWORD buffer
-    memcpy(buffer, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
-    p->cursor += dwords_needed;
-
-    // Perform 16-bit word swapping
-    size_t word_count = bytes / 2; // Number of 16-bit words
-    nmo_swap_16bit_words(buffer, word_count);
+#endif
 
     return NMO_OK;
 }
@@ -647,17 +583,71 @@ int nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p, size_t 
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (value_count == 0 || buffer == NULL) {
-        // Nothing to read if zero count or NULL buffer
+    if (value_count == 0) {
         return NMO_OK;
     }
 
-    // Each 16-bit value is read as a separate DWORD-aligned word
-    // This matches CKStateChunk::ReadAndFillBuffer_LEndian16 behavior
-    uint16_t *values = (uint16_t *)buffer;
+    if (buffer == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
-    for (size_t i = 0; i < value_count; ++i) {
-        int result = nmo_chunk_parser_read_word(p, &values[i]);
+    if (!check_bounds(p, value_count)) {
+        return NMO_ERR_EOF;
+    }
+
+    uint16_t *out = (uint16_t *)buffer;
+    for (size_t i = 0; i < value_count; i++) {
+        uint32_t word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+        uint16_t value = (uint16_t)(word & 0xFFFFu);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        value = (uint16_t)((value >> 8) | (value << 8));
+#endif
+        out[i] = value;
+    }
+
+    return NMO_OK;
+}
+
+int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out) {
+    if (p == NULL || out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (!check_bounds(p, 2)) {
+        return NMO_ERR_EOF;
+    }
+
+    uint32_t low_word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    uint32_t high_word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    uint16_t low = (uint16_t)(low_word & 0xFFFFu);
+    uint16_t high = (uint16_t)(high_word & 0xFFFFu);
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    low = (uint16_t)((low >> 8) | (low << 8));
+    high = (uint16_t)((high >> 8) | (high << 8));
+#endif
+
+    *out = (uint32_t)low | ((uint32_t)high << 16);
+    return NMO_OK;
+}
+
+int nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
+                                               uint32_t *out,
+                                               size_t count) {
+    if (p == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (count == 0) {
+        return NMO_OK;
+    }
+
+    if (out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        int result = nmo_chunk_parser_read_dword_as_words(p, &out[i]);
         if (result != NMO_OK) {
             return result;
         }
@@ -1017,16 +1007,16 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     }
 
     sub->class_id = class_id;
+    sub->chunk_class_id = (uint8_t) (class_id & 0xFFu);
 
     // Read version info
     if (!check_bounds(p, 1)) {
         return NMO_ERR_EOF;
     }
     uint32_t version_info = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
-    sub->data_version = (version_info) & 0xFF;
-    sub->chunk_class_id = (version_info >> 8) & 0xFF;
-    sub->chunk_version = (version_info >> 16) & 0xFF;
-    sub->chunk_options = (version_info >> 24) & 0xFF;
+    sub->data_version = version_info & 0xFFFFu;
+    sub->chunk_version = (version_info >> 16) & 0xFFFFu;
+    sub->chunk_options = 0;
 
     // Read chunk size
     if (!check_bounds(p, 1)) {
@@ -1056,7 +1046,7 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
     // Read manager count (if version > 4, meaning literal 4, not CHUNK_VERSION_4)
     // Note: CHUNK_VERSION_4 = 7, but the check is against the literal value 4
     uint32_t manager_count = 0;
-    if (sub->chunk_version > 4) {
+    if (p->chunk->chunk_version > 4) {
         if (!check_bounds(p, 1)) {
             return NMO_ERR_EOF;
         }
@@ -1135,6 +1125,11 @@ int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nm
                manager_count * sizeof(uint32_t));
         p->cursor += manager_count;
     }
+
+    if (has_file) sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    if (id_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_IDS;
+    if (chunk_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    if (manager_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
     *out_chunk = sub;
     consume_subchunk_slot(p);

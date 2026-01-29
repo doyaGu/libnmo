@@ -5,6 +5,7 @@
 
 #include "format/nmo_data.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_pool.h"
 #include "core/nmo_utils.h"
 #include <string.h>
@@ -430,8 +431,7 @@ void nmo_data_section_free(nmo_data_section_t *data_section) {
     if (data_section->managers != NULL) {
         for (uint32_t i = 0; i < data_section->manager_count; i++) {
             if (data_section->managers[i].chunk != NULL) {
-                /* TODO: Free chunk when chunk implementation is done */
-                /* nmo_chunk_free(data_section->managers[i].chunk); */
+                nmo_chunk_clear(data_section->managers[i].chunk);
             }
         }
     }
@@ -440,8 +440,7 @@ void nmo_data_section_free(nmo_data_section_t *data_section) {
     if (data_section->objects != NULL) {
         for (uint32_t i = 0; i < data_section->object_count; i++) {
             if (data_section->objects[i].chunk != NULL) {
-                /* TODO: Free chunk when chunk implementation is done */
-                /* nmo_chunk_free(data_section->objects[i].chunk); */
+                nmo_chunk_clear(data_section->objects[i].chunk);
             }
         }
     }

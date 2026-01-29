@@ -4,6 +4,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include <string.h>
+#include <limits.h>
 
 // =============================================================================
 // Internal Helpers
@@ -26,21 +27,47 @@ nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
                                    const void *array,
                                    size_t count,
                                    size_t elem_size) {
-    if (!chunk || !array) {
+    if (!chunk) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
-    // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    if (array == NULL && count > 0 && elem_size > 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
+    }
 
-    // Write element size
-    result = nmo_chunk_write_dword(chunk, (uint32_t) elem_size);
-    if (result.code != NMO_OK) return result;
+    if (count == 0 || elem_size == 0) {
+        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        if (result.code != NMO_OK) return result;
+        return nmo_chunk_write_dword(chunk, 0);
+    }
 
-    // Write array data
+    if (count > (size_t) INT_MAX || elem_size > (size_t) INT_MAX) {
+        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        if (result.code != NMO_OK) return result;
+        return nmo_chunk_write_dword(chunk, 0);
+    }
+
+    if (count > SIZE_MAX / elem_size) {
+        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        if (result.code != NMO_OK) return result;
+        return nmo_chunk_write_dword(chunk, 0);
+    }
+
     size_t total_size = count * elem_size;
+    if (total_size > (size_t) INT_MAX) {
+        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        if (result.code != NMO_OK) return result;
+        return nmo_chunk_write_dword(chunk, 0);
+    }
+
+    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
+    if (result.code != NMO_OK) return result;
+
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    if (result.code != NMO_OK) return result;
+
     return nmo_chunk_write_buffer_no_size(chunk, array, total_size);
 }
 
@@ -53,19 +80,28 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
                                           NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
-    // Read count
-    uint32_t count;
-    nmo_result_t result = nmo_chunk_read_dword(chunk, &count);
+    uint32_t total_size = 0;
+    nmo_result_t result = nmo_chunk_read_dword(chunk, &total_size);
     if (result.code != NMO_OK) return result;
 
-    // Read element size
-    uint32_t elem_size;
-    result = nmo_chunk_read_dword(chunk, &elem_size);
+    uint32_t count = 0;
+    result = nmo_chunk_read_dword(chunk, &count);
     if (result.code != NMO_OK) return result;
 
-    // Calculate total size
-    size_t total_size = count * elem_size;
-    size_t dwords = (total_size + 3) / 4;
+    if (total_size == 0 || count == 0) {
+        *out_array = NULL;
+        *out_count = 0;
+        *out_elem_size = 0;
+        return nmo_result_ok();
+    }
+
+    if (total_size % count != 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
+                                          NMO_SEVERITY_ERROR, "Array size is not divisible by count"));
+    }
+
+    size_t total_size_bytes = (size_t) total_size;
+    size_t dwords = (total_size_bytes + 3) / 4;
 
     if (!can_read(chunk, dwords)) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
@@ -73,7 +109,7 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     }
 
     // Allocate array
-    void *array = nmo_arena_alloc(chunk->arena, total_size, 4);
+    void *array = nmo_arena_alloc(chunk->arena, total_size_bytes, 4);
     if (!array) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
                                           NMO_SEVERITY_ERROR, "Failed to allocate array"));
@@ -82,12 +118,12 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     // Copy data
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    memcpy(array, &chunk_data[state->current_pos], total_size);
+    memcpy(array, &chunk_data[state->current_pos], total_size_bytes);
     state->current_pos += dwords;
 
     *out_array = array;
     *out_count = count;
-    *out_elem_size = elem_size;
+    *out_elem_size = total_size / count;
 
     return nmo_result_ok();
 }

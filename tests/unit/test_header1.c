@@ -67,11 +67,11 @@ TEST(header1, included_metadata_only) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
     ASSERT_NOT_NULL(arena);
 
-    /* Header layout: [category_count=0][included_count=2][table_size=0] */
+    /* Header layout: [category_count=0][payload_size=4][included_count=2] */
     uint32_t buffer[] = {
         0, /* plugin categories */
-        2, /* included files referenced */
-        0  /* no inline descriptor table */
+        4, /* included files payload size (count only) */
+        2  /* included files referenced */
     };
 
     nmo_header1_t header;

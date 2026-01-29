@@ -48,7 +48,9 @@ typedef struct nmo_included_file_desc {
 /**
  * @brief Header1 structure
  *
- * Contains object descriptors, plugin dependencies, and included files metadata.
+ * Contains object descriptors, plugin dependencies, and included files metadata
+ * as stored by CK2. Included files only carry a count in Header1; filenames and
+ * payload sizes live in the data section.
  * This section is present in file version 7+ and may be compressed.
  */
 typedef struct nmo_header1 {
@@ -60,9 +62,9 @@ typedef struct nmo_header1 {
     uint32_t plugin_dep_count;
     nmo_plugin_dep_t *plugin_deps; /**< Array allocated from arena */
 
-    /* Included files */
+    /* Included files (Header1 stores only the count) */
     uint32_t included_file_count;
-    nmo_included_file_desc_t *included_files; /**< Array allocated from arena */
+    nmo_included_file_desc_t *included_files; /**< Optional descriptors (not serialized in Header1) */
 } nmo_header1_t;
 
 /**

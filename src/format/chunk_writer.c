@@ -397,59 +397,6 @@ int nmo_chunk_writer_write_dword(nmo_chunk_writer_t *w, uint32_t value) {
     return NMO_OK;
 }
 
-int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    // Write low 16 bits, then high 16 bits, each padded to DWORD
-    // Matches CKStateChunk::WriteDwordAsWords behavior
-    uint16_t low = (uint16_t)(value & 0xFFFF);
-    uint16_t high = (uint16_t)((value >> 16) & 0xFFFF);
-
-    int result = nmo_chunk_writer_write_word(w, low);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    return nmo_chunk_writer_write_word(w, high);
-}
-
-int nmo_chunk_writer_write_array_dword_as_words(
-    nmo_chunk_writer_t *w,
-    const uint32_t *values,
-    size_t count) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (count == 0) {
-        return NMO_OK;
-    }
-
-    if (values == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (count > (SIZE_MAX / 2)) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    size_t dwords_needed = count * 2;
-    int result = ensure_data_capacity(w, dwords_needed);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    for (size_t i = 0; i < count; ++i) {
-        uint32_t value = values[i];
-        w->data[w->data_size++] = (uint32_t) (value & 0xFFFF);
-        w->data[w->data_size++] = (uint32_t) ((value >> 16) & 0xFFFF);
-    }
-
-    return NMO_OK;
-}
-
 int nmo_chunk_writer_write_int(nmo_chunk_writer_t *w, int32_t value) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -575,20 +522,26 @@ int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t *w, size_t
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (value_count == 0 || data == NULL) {
-        // Nothing to write if NULL or zero count
+    if (value_count == 0) {
         return NMO_OK;
     }
 
-    // Each 16-bit value is written as a separate DWORD-aligned word
-    // This matches CKStateChunk::WriteBufferNoSize_LEndian16 behavior
-    const uint16_t *values = (const uint16_t *)data;
+    if (data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
-    for (size_t i = 0; i < value_count; ++i) {
-        int result = nmo_chunk_writer_write_word(w, values[i]);
-        if (result != NMO_OK) {
-            return result;
-        }
+    int result = ensure_data_capacity(w, value_count);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    const uint16_t *values = (const uint16_t *)data;
+    for (size_t i = 0; i < value_count; i++) {
+        uint16_t value = values[i];
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        value = (uint16_t)((value >> 8) | (value << 8));
+#endif
+        w->data[w->data_size++] = (uint32_t)value;
     }
 
     return NMO_OK;
@@ -869,24 +822,13 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
         w->chunk_list[w->chunk_count++] = (nmo_chunk_t *)sub;
     }
 
-    uint32_t option_flags = 0;
     uint32_t manager_count_field = 0;
     size_t payload_dwords = 0;
     const int has_subchunk = (sub != NULL);
 
     if (has_subchunk) {
-        option_flags = sub->chunk_options;
-        if (sub->ids.count > 0) {
-            option_flags |= NMO_CHUNK_OPTION_IDS;
-        }
-        if (sub->chunk_refs.count > 0) {
-            option_flags |= NMO_CHUNK_OPTION_CHN;
-        }
-        if (sub->managers.count > 0) {
-            option_flags |= NMO_CHUNK_OPTION_MAN;
-        }
-
-        const int include_manager_field = (sub->chunk_version > 4); /* literal 4 */
+        const int include_manager_field =
+            (w->chunk != NULL && w->chunk->chunk_version > 4); /* literal 4 */
         manager_count_field = include_manager_field ? (uint32_t) sub->managers.count : 0u;
 
         size_t header_fields = 6; /* class_id, version, chunk_size, has_file, id_count, chunk_count */
@@ -931,24 +873,16 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
         /* Class ID (full 32-bit) */
         w->data[w->data_size++] = sub->class_id;
 
-        /* VERSION4 packed header matches top-level chunk serialization */
-        uint8_t chunk_class_byte = sub->chunk_class_id != 0 ?
-                                   sub->chunk_class_id :
-                                   (uint8_t) (sub->class_id & 0xFFu);
-        uint8_t data_version = (uint8_t) (sub->data_version & 0xFFu);
-        uint8_t chunk_version = (uint8_t) (sub->chunk_version & 0xFFu);
-        uint8_t chunk_options = (uint8_t) (option_flags & 0xFFu);
-
-        uint16_t data_packed = (uint16_t) (data_version | (chunk_class_byte << 8));
-        uint16_t version_packed = (uint16_t) (chunk_version | (chunk_options << 8));
-        uint32_t version_info = (uint32_t) data_packed | ((uint32_t) version_packed << 16);
+        /* CK2 sub-chunk header: version dword stores 16-bit data/chunk versions */
+        uint32_t version_info = (uint32_t) (sub->data_version & 0xFFFFu) |
+                    ((uint32_t) (sub->chunk_version & 0xFFFFu) << 16);
         w->data[w->data_size++] = version_info;
 
         /* Chunk size in DWORDs */
         w->data[w->data_size++] = (uint32_t) sub->data.count;
 
         /* HasFile flag */
-        uint32_t has_file = (option_flags & NMO_CHUNK_OPTION_FILE) ? 1u : 0u;
+        uint32_t has_file = (sub->chunk_options & NMO_CHUNK_OPTION_FILE) ? 1u : 0u;
         w->data[w->data_size++] = has_file;
 
         /* ID and sub-chunk counts are always written */
@@ -1112,58 +1046,83 @@ int nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int element_coun
 
 int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_count, int element_size,
                                            const void *src_data) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Handle empty array
     if (src_data == NULL || element_count <= 0 || element_size <= 0) {
-        // Write empty array marker
-        int result = ensure_data_capacity(w, 2);
-        if (result != NMO_OK) {
-            return result;
-        }
-        w->data[w->data_size++] = 0;
-        w->data[w->data_size++] = 0;
-        return NMO_OK;
+        return nmo_chunk_writer_write_array_lendian(w, element_count, element_size, src_data);
     }
 
-    // Calculate total bytes and DWORDs needed
     size_t total_bytes = (size_t) element_count * (size_t) element_size;
-    size_t dword_count = nmo_align_dword(total_bytes) / 4;
+    void *temp = malloc(total_bytes);
+    if (temp == NULL) {
+        return NMO_ERR_NOMEM;
+    }
 
-    // Ensure capacity (size + count + data)
-    int result = ensure_data_capacity(w, 2 + dword_count);
+    memcpy(temp, src_data, total_bytes);
+    if (total_bytes > 1) {
+        nmo_swap_16bit_words(temp, total_bytes / 2);
+    }
+
+    int result = nmo_chunk_writer_write_array_lendian(w, element_count, element_size, temp);
+    free(temp);
+    return result;
+#else
+    return nmo_chunk_writer_write_array_lendian(w, element_count, element_size, src_data);
+#endif
+}
+
+int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t *w, uint32_t value) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int result = ensure_data_capacity(w, 2);
     if (result != NMO_OK) {
         return result;
     }
 
-    // Write array header
-    w->data[w->data_size++] = (uint32_t) total_bytes;
-    w->data[w->data_size++] = (uint32_t) element_count;
+    uint16_t low = (uint16_t)(value & 0xFFFFu);
+    uint16_t high = (uint16_t)((value >> 16) & 0xFFFFu);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    low = (uint16_t)((low >> 8) | (low << 8));
+    high = (uint16_t)((high >> 8) | (high << 8));
+#endif
+    w->data[w->data_size++] = (uint32_t)low;
+    w->data[w->data_size++] = (uint32_t)high;
 
-    // Allocate temporary buffer for byte swapping
-    void *temp_buffer = malloc(total_bytes);
-    if (temp_buffer == NULL) {
-        return NMO_ERR_NOMEM;
+    return NMO_OK;
+}
+
+int nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
+                                                const uint32_t *values,
+                                                size_t count) {
+    if (w == NULL || w->finalized) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Copy data to temporary buffer
-    memcpy(temp_buffer, src_data, total_bytes);
+    if (count == 0) {
+        return NMO_OK;
+    }
 
-    // Perform 16-bit word swapping
-    size_t word_count = total_bytes / 2;
-    nmo_swap_16bit_words(temp_buffer, word_count);
+    if (values == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
-    // Copy swapped data to chunk
-    memcpy(&w->data[w->data_size], temp_buffer, total_bytes);
-    w->data_size += dword_count;
+    for (size_t i = 0; i < count; i++) {
+        int result = nmo_chunk_writer_write_dword_as_words(w, values[i]);
+        if (result != NMO_OK) {
+            return result;
+        }
+    }
 
-    free(temp_buffer);
     return NMO_OK;
 }
 
 int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes, const void *data) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     if (w == NULL || w->finalized || data == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1172,37 +1131,22 @@ int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes,
         return NMO_OK;
     }
 
-    // Calculate DWORDs needed (round up)
-    size_t dword_count = nmo_align_dword(bytes) / 4;
-
-    // Ensure capacity
-    int result = ensure_data_capacity(w, dword_count);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Allocate temporary buffer for byte swapping
-    void *temp_buffer = malloc(bytes);
-    if (temp_buffer == NULL) {
+    void *temp = malloc(bytes);
+    if (temp == NULL) {
         return NMO_ERR_NOMEM;
     }
 
-    // Copy data to temporary buffer
-    memcpy(temp_buffer, data, bytes);
+    memcpy(temp, data, bytes);
+    if (bytes > 1) {
+        nmo_swap_16bit_words(temp, bytes / 2);
+    }
 
-    // Perform 16-bit word swapping
-    size_t word_count = bytes / 2;
-    nmo_swap_16bit_words(temp_buffer, word_count);
-
-    // Clear the destination area (for padding)
-    memset(&w->data[w->data_size], 0, dword_count * sizeof(uint32_t));
-
-    // Copy swapped data to chunk
-    memcpy(&w->data[w->data_size], temp_buffer, bytes);
-    w->data_size += dword_count;
-
-    free(temp_buffer);
-    return NMO_OK;
+    int result = nmo_chunk_writer_write_buffer_nosize(w, bytes, temp);
+    free(temp);
+    return result;
+#else
+    return nmo_chunk_writer_write_buffer_nosize(w, bytes, data);
+#endif
 }
 
 /**

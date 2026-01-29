@@ -39,11 +39,27 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
         return list_result;
     }
 
-    // Calculate total size
-    size_t total_size = 8;        // Header: 8 DWORDs
+    // Calculate total size (in DWORDs)
+    const bool include_manager = (chunk->chunk_version > 4);
+    size_t header_bytes =
+        sizeof(uint32_t) + /* size */
+        sizeof(uint32_t) + /* class_id */
+        sizeof(uint32_t) + /* version */
+        sizeof(uint32_t) + /* data_size */
+        sizeof(uint32_t) + /* file_flag */
+        sizeof(uint32_t) + /* id_count */
+        sizeof(uint32_t);  /* chunk_count */
+    if (include_manager) {
+        header_bytes += sizeof(uint32_t); /* manager_count */
+    }
+    size_t header_dwords = header_bytes / sizeof(uint32_t);
+    size_t total_size = header_dwords;
     total_size += sub->data.count;
     total_size += sub->ids.count;
     total_size += sub->chunk_refs.count;
+    if (include_manager) {
+        total_size += sub->managers.count;
+    }
 
     nmo_result_t result;
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -65,14 +81,17 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     result = nmo_chunk_write_dword(chunk, (uint32_t) sub->class_id);
     if (result.code != NMO_OK) return result;
 
-    uint32_t version_info = sub->data_version | (sub->chunk_version << 16);
+    uint32_t version_info = (uint32_t)(sub->data_version & 0xFFFFu) |
+                            ((uint32_t)(sub->chunk_version & 0xFFFFu) << 16);
     result = nmo_chunk_write_dword(chunk, version_info);
     if (result.code != NMO_OK) return result;
 
     result = nmo_chunk_write_dword(chunk, (uint32_t) sub->data.count);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_dword(chunk, 0); // file_flag
+    result = nmo_chunk_write_dword(
+        chunk,
+        (sub->chunk_options & NMO_CHUNK_OPTION_FILE) ? 1u : 0u);
     if (result.code != NMO_OK) return result;
 
     result = nmo_chunk_write_dword(chunk, (uint32_t) sub->ids.count);
@@ -81,8 +100,10 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     result = nmo_chunk_write_dword(chunk, (uint32_t) sub->chunk_refs.count);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_dword(chunk, 0); // manager_count
-    if (result.code != NMO_OK) return result;
+    if (include_manager) {
+        result = nmo_chunk_write_dword(chunk, (uint32_t) sub->managers.count);
+        if (result.code != NMO_OK) return result;
+    }
 
     // Write data
     if (sub->data.count > 0) {
@@ -104,6 +125,15 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
         result = nmo_chunk_write_buffer_no_size(chunk,
                                                 sub_refs,
                                                 sub->chunk_refs.count * sizeof(uint32_t));
+        if (result.code != NMO_OK) return result;
+    }
+
+    // Write managers list
+    if (include_manager && sub->managers.count > 0) {
+        const uint32_t *sub_mgrs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
+        result = nmo_chunk_write_buffer_no_size(chunk,
+                                                sub_mgrs,
+                                                sub->managers.count * sizeof(uint32_t));
         if (result.code != NMO_OK) return result;
     }
 
@@ -141,7 +171,7 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     // Read header
     uint32_t total_size, version_info, data_size, file_flag;
-    uint32_t id_count, chunk_count, manager_count;
+    uint32_t id_count, chunk_count, manager_count = 0;
     uint32_t class_id;  // CK2 reads as full DWORD
 
     result = nmo_chunk_read_dword(chunk, &total_size);
@@ -166,8 +196,10 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     result = nmo_chunk_read_dword(chunk, &chunk_count);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_read_dword(chunk, &manager_count);
-    if (result.code != NMO_OK) return result;
+    if (chunk->chunk_version > 4) {
+        result = nmo_chunk_read_dword(chunk, &manager_count);
+        if (result.code != NMO_OK) return result;
+    }
 
     // Create sub-chunk
     nmo_chunk_t *sub = nmo_chunk_create(chunk->arena);
@@ -177,8 +209,11 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     }
 
     sub->class_id = class_id;  // Use 32-bit class_id field for sub-chunks
-    sub->data_version = (uint8_t) (version_info & 0xFF);
-    sub->chunk_version = (uint8_t) ((version_info >> 16) & 0xFF);
+    sub->chunk_class_id = (uint8_t) (class_id & 0xFFu);
+    sub->data_version = (uint16_t) (version_info & 0xFFFFu);
+    sub->chunk_version = (uint16_t) ((version_info >> 16) & 0xFFFFu);
+    sub->chunk_options = 0;
+    if (file_flag) sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
 
     // Read data
     if (data_size > 0) {
@@ -242,6 +277,31 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
                chunk_count * sizeof(uint32_t));
         state->current_pos += chunk_count;
     }
+
+    // Read managers list
+    if (manager_count > 0) {
+        if (!can_read(chunk, manager_count)) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                              NMO_SEVERITY_ERROR, "Insufficient manager refs data"));
+        }
+
+        result = nmo_arena_array_resize(&sub->managers, manager_count);
+        if (result.code != NMO_OK) {
+            return result;
+        }
+
+        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+        uint32_t *parent_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+        uint32_t *sub_mgrs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
+        memcpy(sub_mgrs,
+               &parent_data[state->current_pos],
+               manager_count * sizeof(uint32_t));
+        state->current_pos += manager_count;
+    }
+
+    if (id_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_IDS;
+    if (chunk_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    if (manager_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
     *out_sub = sub;
     return nmo_result_ok();

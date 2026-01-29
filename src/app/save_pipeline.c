@@ -136,6 +136,8 @@ static nmo_chunk_t *serialize_object_with_schema(
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
 
+static const char *nmo_basename(const char *path);
+
 /* ============================================================================
  * Public API Implementation
  * ============================================================================ */
@@ -150,6 +152,27 @@ nmo_save_options_t nmo_save_options_default(void) {
     opts.compression_level = DEFAULT_COMPRESSION_LEVEL;
     return opts;
 }
+
+static const char *nmo_basename(const char *path) {
+    if (path == NULL) {
+        return "";
+    }
+
+    const char *last_slash = strrchr(path, '/');
+    const char *last_backslash = strrchr(path, '\\');
+
+    const char *base = path;
+    if (last_slash && last_backslash) {
+        base = (last_slash > last_backslash) ? last_slash + 1 : last_backslash + 1;
+    } else if (last_slash) {
+        base = last_slash + 1;
+    } else if (last_backslash) {
+        base = last_backslash + 1;
+    }
+
+    return base;
+}
+
 
 nmo_save_context_t *nmo_save_context_create(
     nmo_session_t *session,
@@ -669,8 +692,18 @@ static nmo_result_t save_build_header1(nmo_save_context_t *ctx) {
         }
 
         for (uint32_t i = 0; i < session_included_count; i++) {
-            hdr1.included_files[i].name = (char *)session_included_files[i].name;
-            hdr1.included_files[i].data_size = session_included_files[i].size;
+            const nmo_included_file_t *entry = &session_included_files[i];
+            const char *base_name = nmo_basename(entry->name);
+            const char *name_copy = nmo_arena_strdup(ctx->arena, base_name);
+            if (name_copy == NULL) {
+                return SAVE_ERR(NMO_ERR_NOMEM, "Included file name allocation failed");
+            }
+
+            const int metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
+            uint32_t data_size = (entry->data != NULL && !metadata_only) ? entry->size : 0u;
+
+            hdr1.included_files[i].name = (char *)name_copy;
+            hdr1.included_files[i].data_size = data_size;
         }
     }
 
@@ -912,21 +945,27 @@ static nmo_result_t save_write_file(nmo_save_context_t *ctx, const char *path) {
         nmo_log(ctx->logger, NMO_LOG_INFO, "  Writing %u included files", session_included_count);
 
         for (uint32_t i = 0; i < session_included_count; i++) {
-            const char *name = session_included_files[i].name ? session_included_files[i].name : "";
+            const nmo_included_file_t *entry = &session_included_files[i];
+            const char *name = nmo_basename(entry->name ? entry->name : "");
             uint32_t name_len = (uint32_t)strlen(name);
+            const int metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
+            uint32_t payload_size = (entry->data != NULL && !metadata_only) ? entry->size : 0u;
 
             if (nmo_io_write_u32(io, name_len) != NMO_OK ||
                 (name_len > 0 && nmo_io_write(io, name, name_len) != NMO_OK) ||
-                nmo_io_write_u32(io, session_included_files[i].size) != NMO_OK) {
+                nmo_io_write_u32(io, payload_size) != NMO_OK) {
                 nmo_io_close(io);
                 return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included file metadata write failed");
             }
 
-            if (session_included_files[i].size > 0 && session_included_files[i].data != NULL) {
-                if (nmo_io_write(io, session_included_files[i].data, session_included_files[i].size) != NMO_OK) {
+            if (payload_size > 0 && entry->data != NULL) {
+                if (nmo_io_write(io, entry->data, payload_size) != NMO_OK) {
                     nmo_io_close(io);
                     return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included file payload write failed");
                 }
+            } else if (entry->size > 0 && metadata_only) {
+                nmo_log(ctx->logger, NMO_LOG_WARN,
+                        "  Included file '%s' metadata-only; payload omitted", name);
             }
         }
     }

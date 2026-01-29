@@ -115,37 +115,7 @@ NMO_API int nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out);
 NMO_API int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out);
 
 /**
- * @brief Read 32-bit value stored as two 16-bit words
- *
- * Reads a 32-bit value that was written as two separate 16-bit writes (each padded to DWORD).
- * Used for compressed animation data formats. Inverse of write_dword_as_words.
- * Matches CKStateChunk::ReadDwordAsWords behavior.
- *
- * @param p Parser
- * @param out Output value (reconstructed from low and high words)
- * @return NMO_OK on success
- */
-NMO_API int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out);
-
-/**
- * @brief Read array of 32-bit values stored as 16-bit word pairs
- *
- * Helper for bulk decoding of sequences written via
- * `nmo_chunk_writer_write_array_dword_as_words`. Automatically iterates the
- * parser cursor and reconstructs each DWORD.
- *
- * @param p Parser
- * @param out_values Destination buffer (must contain @p count entries)
- * @param count Number of DWORD values to reconstruct
- * @return NMO_OK on success
- */
-NMO_API int nmo_chunk_parser_read_dword_array_as_words(
-	nmo_chunk_parser_t *p,
-	uint32_t *out_values,
-	size_t count);
-
-/**
- * @brief Read int32_t (exactly one DWORD)
+ * @brief Read 32-bit signed integer
  *
  * @param p Parser
  * @param out Output value
@@ -345,9 +315,34 @@ NMO_API int nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p, void **
 NMO_API int nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p, size_t bytes, void *buffer);
 
 /**
+ * @brief Read a 32-bit value stored as two 16-bit words
+ *
+ * Reads two DWORD slots containing the low/high 16-bit words.
+ * Matches CKStateChunk::ReadDwordAsWords behavior.
+ *
+ * @param p Parser
+ * @param out Output value
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out);
+
+/**
+ * @brief Read an array of 32-bit values stored as 16-bit word pairs
+ *
+ * @param p Parser
+ * @param out Output array (count entries)
+ * @param count Number of values to read
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
+													   uint32_t *out,
+													   size_t count);
+
+/**
  * @brief Seek to identifier
  *
- * Scans forward for identifier DWORD and positions cursor after it.
+ * Follows the identifier linked list ([ID][NextPos]) and positions the cursor
+ * after the matching identifier pair.
  *
  * @param p Parser
  * @param identifier Identifier to find

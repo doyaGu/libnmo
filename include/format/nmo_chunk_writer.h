@@ -153,38 +153,6 @@ NMO_API int nmo_chunk_writer_write_word(nmo_chunk_writer_t* w, uint16_t value);
 NMO_API int nmo_chunk_writer_write_dword(nmo_chunk_writer_t* w, uint32_t value);
 
 /**
- * @brief Write uint32_t as two 16-bit words (Phase 7)
- *
- * Writes a 32-bit value as two consecutive 16-bit values (low word first).
- * Used for compressed animation data and specific file format requirements.
- * Matches CKStateChunk::WriteDwordAsWords behavior.
- *
- * Format: [16-bit low][16-bit high] (both padded to DWORD boundaries)
- *
- * @param w Writer
- * @param value 32-bit value to split and write
- * @return NMO_OK on success
- */
-NMO_API int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_t value);
-
-/**
- * @brief Write array of uint32_t values as 16-bit word pairs
- *
- * Convenience helper for bulk writing of `count` DWORDs via the
- * `WriteDwordAsWords` encoding. Performs a single buffer reservation to
- * minimize reallocation churn compared to looping manually.
- *
- * @param w Writer
- * @param values Source array (must contain @p count entries)
- * @param count Number of DWORD values to encode
- * @return NMO_OK on success
- */
-NMO_API int nmo_chunk_writer_write_array_dword_as_words(
-	nmo_chunk_writer_t* w,
-	const uint32_t* values,
-	size_t count);
-
-/**
  * @brief Write int32_t (exactly one DWORD)
  *
  * @param w Writer
@@ -272,6 +240,30 @@ NMO_API int nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t* w, size_t b
  * @return NMO_OK on success
  */
 NMO_API int nmo_chunk_writer_write_buffer_nosize_lendian16(nmo_chunk_writer_t* w, size_t value_count, const void* data);
+
+/**
+ * @brief Write a 32-bit value as two 16-bit words
+ *
+ * Writes a DWORD as two words stored in separate DWORD slots.
+ * Matches CKStateChunk::WriteDwordAsWords behavior.
+ *
+ * @param w Writer context
+ * @param value Value to write
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_dword_as_words(nmo_chunk_writer_t* w, uint32_t value);
+
+/**
+ * @brief Write an array of 32-bit values as 16-bit word pairs
+ *
+ * @param w Writer context
+ * @param values Array of DWORD values
+ * @param count Number of values
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t* w,
+                                                       const uint32_t* values,
+                                                       size_t count);
 
 /**
  * @brief Lock write buffer for direct writing

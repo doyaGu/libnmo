@@ -562,6 +562,9 @@ static int nmo_load_file_with_io(
         nmo_log(logger, NMO_LOG_INFO, "  Managers parsed: %u", data_sect.manager_count);
         nmo_log(logger, NMO_LOG_INFO, "  Objects parsed: %u", data_sect.object_count);
 
+    }
+
+    {
         int included_result = nmo_load_included_files(session, io, &hdr1, logger);
         if (included_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_WARN,

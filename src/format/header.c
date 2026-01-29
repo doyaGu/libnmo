@@ -152,11 +152,25 @@ nmo_result_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *he
                                           "Unsupported file version (must be 2-9)"));
     }
 
+    /* CK2 expects FileVersion2 to be zero */
+    if (header->file_version2 != 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_UNSUPPORTED_VERSION,
+                                          NMO_SEVERITY_ERROR,
+                                          "Unsupported legacy file header (FileVersion2 != 0)"));
+    }
+
     result = nmo_io_read_u32(io, &header->file_version2);
     if (result != NMO_OK) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
                                           NMO_SEVERITY_ERROR,
                                           "Failed to read file version2"));
+    }
+
+    /* CK2 treats non-zero FileVersion2 as an incompatible/legacy header */
+    if (header->file_version2 != 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_UNSUPPORTED_VERSION,
+                                          NMO_SEVERITY_ERROR,
+                                          "Unsupported legacy file header (FileVersion2 != 0)"));
     }
 
     result = nmo_io_read_u32(io, &header->file_write_mode);

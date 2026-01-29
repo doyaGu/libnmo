@@ -80,9 +80,28 @@ void nmo_chunk_close(nmo_chunk_t *chunk) {
 
 void nmo_chunk_clear(nmo_chunk_t *chunk) {
     if (chunk) {
+        chunk->class_id = 0;
+        chunk->chunk_class_id = 0;
+        chunk->data_version = 0;
+        chunk->chunk_version = NMO_CHUNK_VERSION_4;
+        chunk->chunk_options = 0;
+
         chunk->data.count = 0;
-        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-        if (state) {
+        chunk->ids.count = 0;
+        chunk->chunks.count = 0;
+        chunk->chunk_refs.count = 0;
+        chunk->managers.count = 0;
+
+        chunk->uncompressed_size = 0;
+        chunk->compressed_size = 0;
+        chunk->is_compressed = 0;
+        chunk->unpack_size = 0;
+
+        chunk->raw_data = NULL;
+        chunk->raw_size = 0;
+
+        if (chunk->parser_state) {
+            nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
             state->current_pos = 0;
             state->prev_identifier_pos = 0;
             state->data_size = 0;

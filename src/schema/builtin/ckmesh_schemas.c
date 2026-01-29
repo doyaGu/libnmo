@@ -31,6 +31,7 @@
  * 
  * - Identifier 0x40000: Line data (optional)
  *   - int: Line count
+ *   - int: Byte size
  *   - Line indices (WORD array)
  * 
  * - Identifier 0x4000: Material channels (optional)
@@ -45,7 +46,8 @@
  * 
  * - Identifier 0x80000: Vertex weights (skinning, optional)
  *   - int: Weight count
- *   - Data: float array OR single float (optimization)
+ *   - Optional buffer: [byteSize][float[count] ...]
+ *   - float: first weight (always written; may be the only value)
  * 
  * - Identifier 0x8000: Face channel masks (optional)
  *   - int: Face count
@@ -67,6 +69,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -384,10 +387,20 @@ static nmo_result_t nmo_ckmesh_deserialize_modern(
                 arena, sizeof(uint16_t) * line_count * 2, alignof(uint16_t));
             
             if (out_state->line_indices) {
-                for (uint32_t i = 0; i < out_state->line_count * 2; i++) {
-                    result = nmo_chunk_read_word(chunk, &out_state->line_indices[i]);
-                    if (result.code != NMO_OK) break;
+                size_t expected_bytes = (size_t) out_state->line_count * 2u * sizeof(uint16_t);
+                size_t read_bytes = nmo_chunk_read_and_fill_buffer(chunk,
+                                                                    out_state->line_indices,
+                                                                    expected_bytes);
+                if (read_bytes != expected_bytes) {
+                    return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_FORMAT,
+                                                      NMO_SEVERITY_ERROR,
+                                                      "Line index buffer size mismatch"));
                 }
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+                if (read_bytes >= 2) {
+                    nmo_swap_16bit_words(out_state->line_indices, read_bytes / 2);
+                }
+#endif
             }
         }
     }
@@ -452,29 +465,58 @@ static nmo_result_t nmo_ckmesh_deserialize_modern(
                 arena, sizeof(float) * weight_count, alignof(float));
             
             if (out_state->vertex_weights) {
-                // Read first weight
-                float first_weight;
-                result = nmo_chunk_read_float(chunk, &first_weight);
-                if (result.code == NMO_OK) {
-                    out_state->vertex_weights[0] = first_weight;
-                    
-                    // Try to read second weight to determine format
-                    if (weight_count > 1) {
-                        float second_weight;
-                        result = nmo_chunk_read_float(chunk, &second_weight);
-                        if (result.code == NMO_OK) {
-                            // Full array format
-                            out_state->vertex_weights[1] = second_weight;
-                            for (int32_t i = 2; i < weight_count; i++) {
-                                result = nmo_chunk_read_float(chunk, &out_state->vertex_weights[i]);
-                                if (result.code != NMO_OK) break;
-                            }
-                        } else {
-                            // Single value format (all same)
-                            for (int32_t i = 1; i < weight_count; i++) {
-                                out_state->vertex_weights[i] = first_weight;
-                            }
-                        }
+                nmo_chunk_parser_state_t *state =
+                    (nmo_chunk_parser_state_t *) chunk->parser_state;
+                if (!state) {
+                    return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR,
+                                                      "Chunk parser state missing"));
+                }
+
+                uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+                size_t start_pos = state->current_pos;
+                size_t block_end = chunk->data.count;
+                if (state->prev_identifier_pos + 1 < chunk->data.count) {
+                    uint32_t next_pos = data[state->prev_identifier_pos + 1];
+                    if (next_pos != 0 && next_pos < chunk->data.count) {
+                        block_end = next_pos;
+                    }
+                }
+
+                size_t remaining_dwords = (block_end > start_pos) ? (block_end - start_pos) : 0;
+                if (remaining_dwords == 0) {
+                    return nmo_result_ok();
+                }
+
+                size_t expected_bytes = (size_t) weight_count * sizeof(float);
+                size_t expected_dwords = (expected_bytes + sizeof(uint32_t) - 1) / sizeof(uint32_t);
+
+                uint32_t size_or_weight = 0;
+                result = nmo_chunk_read_dword(chunk, &size_or_weight);
+                if (result.code != NMO_OK) {
+                    return result;
+                }
+
+                if (size_or_weight == expected_bytes && remaining_dwords >= 1 + expected_dwords) {
+                    if (state->current_pos + expected_dwords > chunk->data.count) {
+                        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_EOF,
+                                                          NMO_SEVERITY_ERROR,
+                                                          "Insufficient weight buffer data"));
+                    }
+
+                    memcpy(out_state->vertex_weights,
+                           &data[state->current_pos],
+                           expected_bytes);
+                    state->current_pos += expected_dwords;
+
+                    if (remaining_dwords >= 1 + expected_dwords + 1) {
+                        (void) nmo_chunk_read_float(chunk, &out_state->vertex_weights[0]);
+                    }
+                } else {
+                    float weight0;
+                    memcpy(&weight0, &size_or_weight, sizeof(float));
+                    for (int32_t i = 0; i < weight_count; i++) {
+                        out_state->vertex_weights[i] = weight0;
                     }
                 }
             }

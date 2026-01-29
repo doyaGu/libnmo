@@ -48,6 +48,7 @@ typedef enum nmo_diff_type {
     NMO_DIFF_OBJECT_COUNT,          /**< Different number of objects */
     NMO_DIFF_MANAGER_COUNT,         /**< Different number of managers */
     NMO_DIFF_OBJECT_MISSING,        /**< Object exists in one but not other */
+    NMO_DIFF_OBJECT_ID,             /**< Object ID mismatch */
     NMO_DIFF_OBJECT_NAME,           /**< Object name mismatch */
     NMO_DIFF_OBJECT_CLASS_ID,       /**< Object class ID mismatch */
     NMO_DIFF_OBJECT_CHUNK_SIZE,     /**< Chunk data size mismatch */

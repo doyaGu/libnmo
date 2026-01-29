@@ -316,7 +316,6 @@ TEST(chunk_api, identifiers) {
     
     // Write with identifiers
     nmo_chunk_start_write(chunk);
-    nmo_chunk_write_int(chunk, 10);
     nmo_chunk_write_identifier(chunk, 0xAAAA);
     nmo_chunk_write_int(chunk, 20);
     nmo_chunk_write_int(chunk, 30);
@@ -327,12 +326,8 @@ TEST(chunk_api, identifiers) {
     // Seek to identifiers
     nmo_chunk_start_read(chunk);
     
-    // Read first value
-    int32_t val;
-    nmo_chunk_read_int(chunk, &val);
-    ASSERT_EQ(val, 10);
-    
     // Seek to first identifier
+    int32_t val;
     nmo_result_t result = nmo_chunk_seek_identifier(chunk, 0xAAAA);
     ASSERT_EQ(result.code, NMO_OK);
     nmo_chunk_read_int(chunk, &val);

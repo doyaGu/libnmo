@@ -5,7 +5,7 @@
 
 #include "nmo.h"
 #include "app/nmo_parser.h"
-#include "format/nmo_data.h"
+#include "app/nmo_comparison.h"
 #include "test_framework.h"  // For NMO_TEST_DATA_FILE macro
 #include <stdio.h>
 #include <string.h>
@@ -17,25 +17,10 @@
 #define TEMP_FILE "/tmp/test_roundtrip_temp.cmo"
 #endif
 
-/**
- * Compare two file info structures
- */
-static int compare_file_info(const nmo_file_info_t* info1, const nmo_file_info_t* info2) {
-    if (info1->object_count != info2->object_count) {
-        printf("    Object count mismatch: %u vs %u\n",
-               info1->object_count, info2->object_count);
-        return 0;
-    }
-    if (info1->manager_count != info2->manager_count) {
-        printf("    Manager count mismatch: %u vs %u\n",
-               info1->manager_count, info2->manager_count);
-        return 0;
-    }
-    if (info1->file_version != info2->file_version) {
-        printf("    File version mismatch: %u vs %u\n",
-               info1->file_version, info2->file_version);
-        return 0;
-    }
+static int file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (f == NULL) return 0;
+    fclose(f);
     return 1;
 }
 
@@ -44,6 +29,11 @@ static int compare_file_info(const nmo_file_info_t* info1, const nmo_file_info_t
  */
 static int test_file_roundtrip(const char* input_file) {
     printf("Testing round-trip for: %s\n", input_file);
+
+    if (!file_exists(input_file)) {
+        printf("  SKIPPED: File not found\n");
+        return 0;
+    }
 
     /* Generate unique temp file name based on input filename */
     static char temp_file[512];
@@ -83,19 +73,6 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    /* Get file info from first load */
-    nmo_file_info_t load1_info = nmo_session_get_file_info(load1_session);
-
-    printf("  Original file:\n");
-    printf("    Objects: %u\n", load1_info.object_count);
-    printf("    Managers: %u\n", load1_info.manager_count);
-    printf("    Version: %u\n", load1_info.file_version);
-
-    /* Get object repository */
-    nmo_object_repository_t* load1_repo = nmo_session_get_repository(load1_session);
-    size_t load1_obj_count = 0;
-    nmo_object_t** load1_objects = nmo_object_repository_get_all(load1_repo, &load1_obj_count);
-
     /* === SAVE: Save to temporary file === */
     result = nmo_save_file(load1_session, temp_file, NMO_SAVE_DEFAULT);
     if (result != NMO_OK) {
@@ -128,95 +105,24 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    /* Get file info from second load */
-    nmo_file_info_t load2_info = nmo_session_get_file_info(load2_session);
-
-    printf("  Reloaded file:\n");
-    printf("    Objects: %u\n", load2_info.object_count);
-    printf("    Managers: %u\n", load2_info.manager_count);
-    printf("    Version: %u\n", load2_info.file_version);
-
-    /* Get object repository from second load */
-    nmo_object_repository_t* load2_repo = nmo_session_get_repository(load2_session);
-    size_t load2_obj_count = 0;
-    nmo_object_t** load2_objects = nmo_object_repository_get_all(load2_repo, &load2_obj_count);
-
     /* === VERIFICATION === */
-    int passed = 1;
+    nmo_comparison_result_t compare_result;
+    nmo_comparison_result_init(&compare_result);
+    int compare_err = nmo_session_compare(
+        load1_session,
+        load2_session,
+        NMO_COMPARE_FILE_INFO | NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS |
+            NMO_COMPARE_CHUNKS | NMO_COMPARE_IGNORE_ORDER | NMO_COMPARE_VERBOSE,
+        &compare_result);
 
-    /* Compare file info */
-    if (!compare_file_info(&load1_info, &load2_info)) {
-        printf("  FAILED: File info mismatch\n");
-        passed = 0;
-    }
+    int passed = (compare_err == NMO_OK) && compare_result.match;
 
-    /* Compare object counts */
-    if (load1_obj_count != load2_obj_count) {
-        printf("  FAILED: Object count mismatch: %zu vs %zu\n",
-               load1_obj_count, load2_obj_count);
-        passed = 0;
-    }
-
-    /* Compare object data */
-    if (passed && load1_objects != NULL && load2_objects != NULL) {
-        /* Map objects by ID for correct comparison */
-        printf("  Comparing %zu objects by ID...\n", load1_obj_count);
-        
-        for (size_t i = 0; i < load1_obj_count; i++) {
-            nmo_object_t* obj1 = load1_objects[i];
-            if (obj1 == NULL || obj1->id == 0) continue; /* Skip invalid or level placeholder */
-            
-            /* Skip reference objects (ID with highest bit set) */
-            if ((obj1->id & 0x80000000) != 0) {
-                printf("  SKIPPING reference object ID=0x%08X\n", obj1->id);
-                continue;
-            }
-            
-            /* Find corresponding object in load2 by ID */
-            nmo_object_t* obj2 = NULL;
-            for (size_t j = 0; j < load2_obj_count; j++) {
-                if (load2_objects[j] != NULL && load2_objects[j]->id == obj1->id) {
-                    obj2 = load2_objects[j];
-                    break;
-                }
-            }
-            
-            if (obj2 == NULL) {
-                printf("  FAILED: Object ID=%u from load1 not found in load2\n", obj1->id);
-                passed = 0;
-                break;
-            }
-
-            if (obj1->class_id != obj2->class_id) {
-                printf("  FAILED: Object ID=%u class_id mismatch: 0x%08X vs 0x%08X\n",
-                       obj1->id, obj1->class_id, obj2->class_id);
-                passed = 0;
-                break;
-            }
-
-            /* Compare chunk data sizes */
-            if (obj1->chunk != NULL && obj2->chunk != NULL) {
-                if (obj1->chunk->raw_size != obj2->chunk->raw_size) {
-                    printf("  FAILED: Object %zu chunk size mismatch: %zu vs %zu\n",
-                           i, obj1->chunk->raw_size, obj2->chunk->raw_size);
-                    passed = 0;
-                    break;
-                }
-
-                /* Compare raw chunk data */
-                if (obj1->chunk->raw_data != NULL && obj2->chunk->raw_data != NULL) {
-                    if (memcmp(obj1->chunk->raw_data, obj2->chunk->raw_data,
-                               obj1->chunk->raw_size) != 0) {
-                        printf("  FAILED: Object %zu chunk data mismatch\n", i);
-                        passed = 0;
-                        break;
-                    }
-                }
-            } else if (obj1->chunk != obj2->chunk) {
-                printf("  FAILED: Object %zu chunk presence mismatch\n", i);
-                passed = 0;
-                break;
-            }
+    if (!passed) {
+        if (compare_err != NMO_OK) {
+            printf("  FAILED: Comparison error %d\n", compare_err);
+        } else {
+            printf("  FAILED: Comparison mismatch\n");
+            printf("%s", compare_result.report);
         }
     }
 
@@ -224,8 +130,11 @@ static int test_file_roundtrip(const char* input_file) {
     nmo_session_destroy(load2_session);
     nmo_session_destroy(load1_session); /* Now clean up load1_session */
     nmo_context_release(ctx);
-    /* Keep temp file for debugging: remove(temp_file); */
-    printf("  (Temp file preserved at: %s)\n", temp_file);
+    if (passed) {
+        remove(temp_file);
+    } else {
+        printf("  (Temp file preserved at: %s)\n", temp_file);
+    }
 
     if (passed) {
         printf("  PASSED: Round-trip successful, data matches\n");
