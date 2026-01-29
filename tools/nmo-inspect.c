@@ -8,8 +8,8 @@
 #include "nmo.h"
 #include "app/nmo_stats.h"
 #include "app/nmo_inspector.h"
-#include "schema/nmo_ckobject_hierarchy.h"
-#include "schema/nmo_class_hierarchy.h"
+#include "object/nmo_ckobject_hierarchy.h"
+#include "object/nmo_class_hierarchy.h"
 #include "format/nmo_data.h"
 #include "core/nmo_guid.h"
 
