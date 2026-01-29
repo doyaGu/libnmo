@@ -135,7 +135,7 @@ nmo_result_t nmo_type_registry_register_enum(
     
     /* Validate enum values */
     nmo_result_t result = validate_enum_values(enum_def->values, enum_def->value_count);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -232,7 +232,7 @@ nmo_result_t nmo_type_registry_register_enum(
     
     /* Register type in registry */
     result = nmo_type_registry_register(type_registry, type_desc);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -242,12 +242,17 @@ nmo_result_t nmo_type_registry_register_enum(
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
     nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (append_res.code != NMO_OK) {
+    if (nmo_result_is_error(append_res)) {
         return append_res;
     }
     
     /* Add to type_id -> metadata_index hash table */
-    nmo_hash_table_insert(type_registry->type_to_metadata, &type_desc->id, &metadata_index);
+    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+                                                    &type_desc->id,
+                                                    &metadata_index);
+    if (nmo_result_is_error(map_result)) {
+        return map_result;
+    }
     
     /* Update specialized_index (1-based, 0 means no metadata) */
     type_desc->specialized_index = (uint32_t)(metadata_index + 1);
@@ -283,7 +288,7 @@ nmo_result_t nmo_type_registry_register_flags(
     
     /* Validate flags bits */
     nmo_result_t result = validate_flags_bits(flags_def->bits, flags_def->bit_count);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -380,7 +385,7 @@ nmo_result_t nmo_type_registry_register_flags(
     
     /* Register type in registry */
     result = nmo_type_registry_register(type_registry, type_desc);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -390,12 +395,17 @@ nmo_result_t nmo_type_registry_register_flags(
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
     nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (append_res.code != NMO_OK) {
+    if (nmo_result_is_error(append_res)) {
         return append_res;
     }
     
     /* Add to type_id -> metadata_index hash table */
-    nmo_hash_table_insert(type_registry->type_to_metadata, &type_desc->id, &metadata_index);
+    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+                                                    &type_desc->id,
+                                                    &metadata_index);
+    if (nmo_result_is_error(map_result)) {
+        return map_result;
+    }
     
     /* Update specialized_index (1-based, 0 means no metadata) */
     type_desc->specialized_index = (uint32_t)(metadata_index + 1);
@@ -437,7 +447,7 @@ nmo_result_t nmo_type_registry_register_enum_string(
     size_t value_count = 0;
     nmo_result_t result = nmo_parse_enum_string(enum_data, &values, &value_count, temp_arena);
     
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
@@ -493,7 +503,7 @@ nmo_result_t nmo_type_registry_register_flags_string(
     size_t value_count = 0;
     nmo_result_t result = nmo_parse_flags_string(flags_data, &parsed_values, &value_count, temp_arena);
     
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         nmo_arena_destroy(temp_arena);
         return result;
     }

@@ -65,7 +65,7 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
     /* Add all mappings (file ID -> runtime ID) */
     for (size_t i = 0; i < count; i++) {
         nmo_result_t add_result = nmo_id_remap_add(remap, file_ids[i], runtime_ids[i]);
-        if (add_result.code != NMO_OK) {
+        if (nmo_result_is_error(add_result)) {
             /* Continue even if one fails */
         }
     }
@@ -150,7 +150,7 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
         nmo_object_id_t file_id = (nmo_object_id_t) i; // Sequential file IDs
 
         nmo_result_t result = nmo_id_remap_add(plan->remap, runtime_id, file_id);
-        if (result.code == NMO_OK) {
+        if (nmo_result_is_ok(result)) {
             plan->objects_remapped++;
         }
     }

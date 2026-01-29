@@ -1,6 +1,8 @@
 /**
  * @file nmo_hash_table.h
  * @brief Generic hash table implementation with linear probing
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_HASH_TABLE_H
@@ -11,6 +13,7 @@
 #include "core/nmo_hash_common.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_container_lifecycle.h"
+#include "core/nmo_error.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -70,26 +73,26 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
  * @param table Hash table
  * @param key Key pointer
  * @param value Value pointer
- * @return NMO_OK on success, error code on failure
+ * @return Result with NMO_OK on success or error code on failure
  */
-int nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value);
+nmo_result_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value);
 
 /**
  * @brief Get value by key
  * @param table Hash table
  * @param key Key pointer
  * @param value_out Output value pointer (can be NULL to just check existence)
- * @return 1 if found, 0 if not found
+ * @return Result with NMO_OK if found, NMO_ERR_NOT_FOUND if not found
  */
-int nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, void *value_out);
+nmo_result_t nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, void *value_out);
 
 /**
  * @brief Remove entry by key
  * @param table Hash table
  * @param key Key pointer
- * @return 1 if removed, 0 if not found
+ * @return Result with NMO_OK if removed, NMO_ERR_NOT_FOUND if not found
  */
-int nmo_hash_table_remove(nmo_hash_table_t *table, const void *key);
+nmo_result_t nmo_hash_table_remove(nmo_hash_table_t *table, const void *key);
 
 /**
  * @brief Check if key exists
@@ -121,9 +124,35 @@ size_t nmo_hash_table_get_capacity(const nmo_hash_table_t *table);
  * 
  * @param table Hash table
  * @param capacity Minimum desired capacity
- * @return NMO_OK on success
+ * @return Result with NMO_OK on success or error code on failure
  */
-int nmo_hash_table_reserve(nmo_hash_table_t *table, size_t capacity);
+nmo_result_t nmo_hash_table_reserve(nmo_hash_table_t *table, size_t capacity);
+
+/**
+ * @brief Rehash to a new capacity (rounded to power of two).
+ *
+ * @param table Hash table
+ * @param capacity Desired capacity (must be >= current count)
+ * @return Result with NMO_OK on success or error code on failure
+ */
+nmo_result_t nmo_hash_table_rehash(nmo_hash_table_t *table, size_t capacity);
+
+/**
+ * @brief Resize table capacity (alias of rehash).
+ *
+ * @param table Hash table
+ * @param capacity Desired capacity (must be >= current count)
+ * @return Result with NMO_OK on success or error code on failure
+ */
+nmo_result_t nmo_hash_table_resize(nmo_hash_table_t *table, size_t capacity);
+
+/**
+ * @brief Get current load factor (count / capacity).
+ *
+ * @param table Hash table
+ * @return Load factor (0.0f if table is NULL or capacity is 0)
+ */
+float nmo_hash_table_load_factor(const nmo_hash_table_t *table);
 
 /**
  * @brief Get table size (alias for get_count, for compatibility)

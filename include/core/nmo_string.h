@@ -6,6 +6,8 @@
  * contents null-terminated while tracking its logical length separately.
  * The API is intentionally rich to ease porting code that previously relied
  * on Virtools' XString helper (formatting, trimming, case conversions, etc.).
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_STRING_H
@@ -79,6 +81,16 @@ static inline nmo_string_view_t nmo_string_view_from_string(const nmo_string_t *
 /* ------------------------------------------------------------------------- */
 /* Initialization / lifetime                                                  */
 /* ------------------------------------------------------------------------- */
+
+/**
+ * @brief Quick start
+ *
+ * Typical usage:
+ * - nmo_string_init(&str, NULL)
+ * - nmo_string_assign(&str, "hello")
+ * - nmo_string_append(&str, " world")
+ * - nmo_string_dispose(&str)
+ */
 
 NMO_API nmo_result_t nmo_string_init(nmo_string_t *string,
                                      const nmo_allocator_t *allocator);

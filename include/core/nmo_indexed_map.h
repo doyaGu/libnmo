@@ -1,6 +1,8 @@
 /**
  * @file nmo_indexed_map.h
  * @brief Generic indexed map (hash table + dense array for iteration)
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_INDEXED_MAP_H
@@ -10,6 +12,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_container_lifecycle.h"
+#include "core/nmo_error.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -83,26 +86,26 @@ void nmo_indexed_map_destroy(nmo_indexed_map_t *map);
  * @param map Indexed map
  * @param key Key pointer
  * @param value Value pointer
- * @return NMO_OK on success, error code on failure
+ * @return Result with NMO_OK on success or error code on failure
  */
-int nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *value);
+nmo_result_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *value);
 
 /**
  * @brief Get value by key
  * @param map Indexed map
  * @param key Key pointer
  * @param value_out Output value pointer (can be NULL to just check existence)
- * @return 1 if found, 0 if not found
+ * @return Result with NMO_OK if found or NMO_ERR_NOT_FOUND if not found
  */
-int nmo_indexed_map_get(const nmo_indexed_map_t *map, const void *key, void *value_out);
+nmo_result_t nmo_indexed_map_get(const nmo_indexed_map_t *map, const void *key, void *value_out);
 
 /**
  * @brief Remove entry by key
  * @param map Indexed map
  * @param key Key pointer
- * @return 1 if removed, 0 if not found
+ * @return Result with NMO_OK if removed or NMO_ERR_NOT_FOUND if not found
  */
-int nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key);
+nmo_result_t nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key);
 
 /**
  * @brief Check if key exists

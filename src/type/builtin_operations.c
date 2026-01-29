@@ -43,7 +43,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     nmo_result_t result = nmo_type_registry_register(type_registry, &int_type);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
@@ -66,7 +66,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &float_type);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
@@ -89,7 +89,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &bool_type);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
@@ -115,31 +115,31 @@ nmo_result_t nmo_register_builtin_operations(
 
     /* Register arithmetic operations (16 operations: 8 INT + 8 FLOAT) */
     result = nmo_register_arithmetic_operations(operation_registry, type_registry);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
     /* Register logic operations (4 operations: BOOL only) */
     result = nmo_register_logic_operations(operation_registry, type_registry);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
     /* Register comparison operations (16 operations: 8 INT + 8 FLOAT) */
     result = nmo_register_comparison_operations(operation_registry, type_registry);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
     /* Register bitwise operations (7 operations: INT only) */
     result = nmo_register_bitwise_operations(operation_registry, type_registry);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 
     /* Register trigonometry operations (6 operations: FLOAT only) */
     result = nmo_register_trigonometry_operations(operation_registry, type_registry);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
 

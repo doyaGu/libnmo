@@ -13,6 +13,8 @@ extern "C" {
  *
  * Provides a customizable memory allocation interface that allows
  * users to plug in their own allocators or use the default system allocator.
+ *
+ * @note Thread safety: Allocator implementations must be synchronized by the caller.
  */
 
 /**
@@ -44,6 +46,27 @@ typedef struct nmo_allocator {
 } nmo_allocator_t;
 
 /**
+ * @brief Allocation statistics snapshot
+ */
+typedef struct nmo_allocator_stats {
+    size_t total_allocations; /**< Total successful allocations */
+    size_t total_frees;       /**< Total frees */
+    size_t total_bytes;       /**< Total bytes allocated over lifetime */
+    size_t current_bytes;     /**< Bytes currently allocated */
+    size_t peak_bytes;        /**< Peak allocation watermark */
+} nmo_allocator_stats_t;
+
+/**
+ * @brief Tracking allocator context
+ *
+ * The context must stay alive as long as the allocator is used.
+ */
+typedef struct nmo_allocator_tracking {
+    nmo_allocator_t base;            /**< Base allocator to wrap */
+    nmo_allocator_stats_t *stats;    /**< Stats sink (optional) */
+} nmo_allocator_tracking_t;
+
+/**
  * @brief Create default system allocator
  *
  * Returns an allocator that uses malloc/free.
@@ -61,6 +84,26 @@ NMO_API nmo_allocator_t nmo_allocator_default(void);
  * @return Custom allocator instance
  */
 NMO_API nmo_allocator_t nmo_allocator_custom(nmo_alloc_fn alloc, nmo_free_fn free, void *user_data);
+
+/**
+ * @brief Create a tracking allocator wrapper
+ *
+ * The returned allocator delegates to @p base and updates @p stats if provided.
+ * The @p tracking context must remain valid for the allocator's lifetime.
+ *
+ * @param tracking Tracking context storage (required)
+ * @param base Base allocator to wrap
+ * @param stats Stats sink to update (NULL to disable)
+ * @return Tracking allocator instance
+ */
+NMO_API nmo_allocator_t nmo_allocator_tracking_init(nmo_allocator_tracking_t *tracking,
+                                                     nmo_allocator_t base,
+                                                     nmo_allocator_stats_t *stats);
+
+/**
+ * @brief Reset allocator statistics to zero.
+ */
+NMO_API void nmo_allocator_stats_reset(nmo_allocator_stats_t *stats);
 
 /**
  * @brief Allocate memory

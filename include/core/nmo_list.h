@@ -5,6 +5,8 @@
  * The list allocates nodes from an arena, providing fast allocation and
  * predictable lifetimes. Removed nodes are kept on an internal free-list so
  * they can be reused without further arena growth.
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_LIST_H
@@ -13,6 +15,7 @@
 #include "nmo_types.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_container_lifecycle.h"
+#include "core/nmo_error.h"
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -81,14 +84,14 @@ nmo_list_node_t *nmo_list_insert_before(nmo_list_t *list,
  *
  * @param list List to modify.
  * @param out_element Optional pointer receiving the removed value.
- * @return 1 on success, 0 if list is empty.
+ * @return NMO_OK on success, NMO_ERR_NOT_FOUND if list is empty.
  */
-int nmo_list_pop_back(nmo_list_t *list, void *out_element);
+nmo_result_t nmo_list_pop_back(nmo_list_t *list, void *out_element);
 
 /**
  * @brief Pop the element at the front of the list.
  */
-int nmo_list_pop_front(nmo_list_t *list, void *out_element);
+nmo_result_t nmo_list_pop_front(nmo_list_t *list, void *out_element);
 
 /**
  * @brief Remove a node from the list.

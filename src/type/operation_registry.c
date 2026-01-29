@@ -81,7 +81,9 @@ static nmo_operation_family_t *find_or_create_family(
 ) {
     /* Search in hash map first (O(1)) */
     uint32_t family_index = 0;
-    if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(registry->family_map,
+                                           operation_guid,
+                                           &family_index))) {
         return registry->families[family_index];
     }
     
@@ -133,7 +135,11 @@ static nmo_operation_family_t *find_or_create_family(
     registry->families[family_index] = family;
     
     /* Add to hash map */
-    nmo_hash_table_insert(registry->family_map, operation_guid, &family_index);
+    if (nmo_result_is_error(nmo_hash_table_insert(registry->family_map,
+                                                  operation_guid,
+                                                  &family_index))) {
+        return NULL;
+    }
     
     return family;
 }
@@ -438,7 +444,7 @@ nmo_result_t nmo_operation_registry_register(
         registry, p2_layer, desc, p1_type, p2_type, result_type
     );
     
-    if (result.code == NMO_OK) {
+    if (nmo_result_is_ok(result)) {
         /* Update family metadata */
         if (!family->name) {
             family->name = desc->name;
@@ -469,7 +475,7 @@ nmo_result_t nmo_operation_registry_register_bulk(
             registry, &descs[i], type_registry
         );
         
-        if (result.code != NMO_OK) {
+        if (nmo_result_is_error(result)) {
             /* Log error if logger provided */
             if (logger) {
                 nmo_log_warn(logger, "Failed to register operation %u (%s): %s", 
@@ -554,7 +560,9 @@ nmo_result_t nmo_operation_registry_find(
     
     /* Step 1: Find operation family by GUID (O(1) hash lookup) */
     uint32_t family_index = 0;
-    if (!nmo_hash_table_get(registry->family_map, operation_guid, &family_index)) {
+    if (nmo_result_is_error(nmo_hash_table_get(registry->family_map,
+                                               operation_guid,
+                                               &family_index))) {
         return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                  "Operation family not found");
     }
@@ -697,7 +705,7 @@ nmo_result_t nmo_operation_registry_execute(
         registry, operation_guid, p1_type, p2_type, type_registry, &cell
     );
     
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -729,7 +737,9 @@ const nmo_operation_family_t *nmo_operation_registry_get_family(
     
     /* Lookup in hash map */
     uint32_t family_index = 0;
-    if (!nmo_hash_table_get(registry->family_map, operation_guid, &family_index)) {
+    if (nmo_result_is_error(nmo_hash_table_get(registry->family_map,
+                                               operation_guid,
+                                               &family_index))) {
         return NULL;
     }
     
@@ -761,7 +771,7 @@ nmo_result_t nmo_operation_family_enumerate(
                 const nmo_operation_tree_cell_t *cell = &p2_layer->cells[k];
                 
                 nmo_result_t result = callback(cell, user_data);
-                if (result.code != NMO_OK) {
+                if (nmo_result_is_error(result)) {
                     return result;  /* Stop on error */
                 }
             }

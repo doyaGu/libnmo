@@ -524,7 +524,7 @@ nmo_result_t nmo_arena_array_clone(const nmo_arena_array_t *src,
     return nmo_result_ok();
 }
 
-void nmo_arena_array_dispose(nmo_arena_array_t *array) {
+void nmo_arena_array_reset(nmo_arena_array_t *array) {
     if (array == NULL) {
         return;
     }
@@ -534,6 +534,10 @@ void nmo_arena_array_dispose(nmo_arena_array_t *array) {
     array->data = NULL;
     array->count = 0;
     array->capacity = 0;
+}
+
+void nmo_arena_array_dispose(nmo_arena_array_t *array) {
+    nmo_arena_array_reset(array);
 }
 
 /* Accessor functions */

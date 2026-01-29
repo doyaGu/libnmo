@@ -100,9 +100,9 @@ int nmo_load_session_register(nmo_load_session_t *session,
     }
 
     /* Add mapping */
-    int result = nmo_hash_table_insert(session->id_mappings, &file_id, &obj->id);
-    if (result != NMO_OK) {
-        return result;
+    nmo_result_t result = nmo_hash_table_insert(session->id_mappings, &file_id, &obj->id);
+    if (nmo_result_is_error(result)) {
+        return result.code;
     }
 
     return NMO_OK;
@@ -162,7 +162,7 @@ int nmo_load_session_lookup_runtime_id(const nmo_load_session_t *session,
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (nmo_hash_table_get(session->id_mappings, &file_id, runtime_id)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(session->id_mappings, &file_id, runtime_id))) {
         return NMO_OK;
     }
 

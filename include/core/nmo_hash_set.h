@@ -1,6 +1,8 @@
 /**
  * @file nmo_hash_set.h
  * @brief Generic hash set implementation with allocator-based storage.
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_HASH_SET_H
@@ -10,6 +12,7 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_hash_common.h"
 #include "core/nmo_container_lifecycle.h"
+#include "core/nmo_error.h"
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -67,18 +70,18 @@ void nmo_hash_set_set_lifecycle(nmo_hash_set_t *set,
  *
  * @param set Hash set.
  * @param key Pointer to key data.
- * @return NMO_OK on success, NMO_ERR_ALREADY_EXISTS if the key is present.
+ * @return Result with NMO_OK on success or NMO_ERR_ALREADY_EXISTS if present.
  */
-int nmo_hash_set_insert(nmo_hash_set_t *set, const void *key);
+nmo_result_t nmo_hash_set_insert(nmo_hash_set_t *set, const void *key);
 
 /**
  * @brief Remove a key from the set.
  *
  * @param set Hash set.
  * @param key Pointer to key data.
- * @return 1 if removed, 0 if key was not present.
+ * @return Result with NMO_OK if removed or NMO_ERR_NOT_FOUND if absent.
  */
-int nmo_hash_set_remove(nmo_hash_set_t *set, const void *key);
+nmo_result_t nmo_hash_set_remove(nmo_hash_set_t *set, const void *key);
 
 /**
  * @brief Check if a key exists inside the set.
@@ -98,7 +101,33 @@ size_t nmo_hash_set_get_capacity(const nmo_hash_set_t *set);
 /**
  * @brief Reserve storage for at least the specified number of keys.
  */
-int nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity);
+nmo_result_t nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity);
+
+/**
+ * @brief Rehash to a new capacity (rounded to power of two).
+ *
+ * @param set Hash set
+ * @param capacity Desired capacity (must be >= current count)
+ * @return Result with NMO_OK on success or error code on failure
+ */
+nmo_result_t nmo_hash_set_rehash(nmo_hash_set_t *set, size_t capacity);
+
+/**
+ * @brief Resize set capacity (alias of rehash).
+ *
+ * @param set Hash set
+ * @param capacity Desired capacity (must be >= current count)
+ * @return Result with NMO_OK on success or error code on failure
+ */
+nmo_result_t nmo_hash_set_resize(nmo_hash_set_t *set, size_t capacity);
+
+/**
+ * @brief Get current load factor (count / capacity).
+ *
+ * @param set Hash set
+ * @return Load factor (0.0f if set is NULL or capacity is 0)
+ */
+float nmo_hash_set_load_factor(const nmo_hash_set_t *set);
 
 /**
  * @brief Clear all keys from the set.

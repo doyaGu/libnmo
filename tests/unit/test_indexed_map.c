@@ -26,12 +26,12 @@ TEST(indexed_map, basic) {
     // Insert some entries
     uint32_t key1 = 100;
     uint32_t value1 = 200;
-    ASSERT_EQ(nmo_indexed_map_insert(map, &key1, &value1), NMO_OK);
+    ASSERT_EQ(nmo_indexed_map_insert(map, &key1, &value1).code, NMO_OK);
     ASSERT_EQ(nmo_indexed_map_get_count(map), 1);
 
     // Get value by key
     uint32_t retrieved = 0;
-    ASSERT_EQ(nmo_indexed_map_get(map, &key1, &retrieved), 1);
+    ASSERT_EQ(nmo_indexed_map_get(map, &key1, &retrieved).code, NMO_OK);
     ASSERT_EQ(retrieved, value1);
 
     // Get value by index
@@ -62,7 +62,7 @@ TEST(indexed_map, multiple) {
     for (uint32_t i = 0; i < 50; i++) {
         uint32_t key = i;
         uint32_t value = i * 10;
-        ASSERT_EQ(nmo_indexed_map_insert(map, &key, &value), NMO_OK);
+        ASSERT_EQ(nmo_indexed_map_insert(map, &key, &value).code, NMO_OK);
     }
 
     ASSERT_EQ(nmo_indexed_map_get_count(map), 50);
@@ -71,7 +71,7 @@ TEST(indexed_map, multiple) {
     for (uint32_t i = 0; i < 50; i++) {
         uint32_t key = i;
         uint32_t value = 0;
-        ASSERT_EQ(nmo_indexed_map_get(map, &key, &value), 1);
+        ASSERT_EQ(nmo_indexed_map_get(map, &key, &value).code, NMO_OK);
         ASSERT_EQ(value, i * 10);
     }
 
@@ -158,7 +158,7 @@ TEST(indexed_map, remove) {
 
     // Remove some entries
     uint32_t key5 = 5;
-    ASSERT_EQ(nmo_indexed_map_remove(map, &key5), 1);
+    ASSERT_EQ(nmo_indexed_map_remove(map, &key5).code, NMO_OK);
     ASSERT_EQ(nmo_indexed_map_get_count(map), 9);
     ASSERT_EQ(nmo_indexed_map_contains(map, &key5), 0);
 
@@ -197,15 +197,15 @@ TEST(indexed_map, lifecycle_hooks) {
 
     uint32_t key1 = 1, key2 = 2, key3 = 3;
     uint32_t val1 = 10, val2 = 20, val3 = 30;
-    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key1, &val1));
-    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key2, &val2));
-    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key3, &val3));
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key1, &val1).code);
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key2, &val2).code);
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key3, &val3).code);
 
     uint32_t updated = 100;
-    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key1, &updated));
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key1, &updated).code);
     ASSERT_EQ(value_total, 10u);
 
-    ASSERT_EQ(1, nmo_indexed_map_remove(map, &key2));
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_remove(map, &key2).code);
     ASSERT_EQ(key_total, 2u);
     ASSERT_EQ(value_total, 30u);
 
@@ -214,8 +214,8 @@ TEST(indexed_map, lifecycle_hooks) {
     ASSERT_EQ(value_total, 160u);
 
     nmo_indexed_map_set_lifecycle(map, NULL, NULL);
-    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key1, &val1));
-    ASSERT_EQ(1, nmo_indexed_map_remove(map, &key1));
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_insert(map, &key1, &val1).code);
+    ASSERT_EQ(NMO_OK, nmo_indexed_map_remove(map, &key1).code);
     ASSERT_EQ(key_total, 6u);
     ASSERT_EQ(value_total, 160u);
 

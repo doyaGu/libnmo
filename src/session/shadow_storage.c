@@ -156,10 +156,10 @@ int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
         .size = tail_size
     };
 
-    int result = nmo_hash_table_insert(storage->chunk_tails, &chunk_id, &entry);
-    if (result != NMO_OK) {
+    nmo_result_t result = nmo_hash_table_insert(storage->chunk_tails, &chunk_id, &entry);
+    if (nmo_result_is_error(result)) {
         free(copy);
-        return result;
+        return result.code;
     }
 
     return NMO_OK;
@@ -188,7 +188,7 @@ const void *nmo_shadow_get_chunk_tail(const nmo_shadow_storage_t *storage,
     }
 
     shadow_entry_t entry;
-    if (nmo_hash_table_get(storage->chunk_tails, &chunk_id, &entry)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(storage->chunk_tails, &chunk_id, &entry))) {
         if (out_size) *out_size = entry.size;
         return entry.data;
     }

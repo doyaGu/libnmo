@@ -98,16 +98,16 @@ int nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
 
     uint32_t clean_runtime = nmo_id_sanitize(runtime_id);
 
-    int result = nmo_hash_table_insert(sanitizer->file_to_runtime, &file_index, &clean_runtime);
-    if (result != NMO_OK) {
-        return result;
+    nmo_result_t result = nmo_hash_table_insert(sanitizer->file_to_runtime, &file_index, &clean_runtime);
+    if (nmo_result_is_error(result)) {
+        return result.code;
     }
 
     result = nmo_hash_table_insert(sanitizer->runtime_to_file, &clean_runtime, &file_index);
-    if (result != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         /* Roll back the first insert to keep tables consistent */
         nmo_hash_table_remove(sanitizer->file_to_runtime, &file_index);
-        return result;
+        return result.code;
     }
 
     return NMO_OK;
@@ -128,8 +128,8 @@ int32_t nmo_id_register_external(nmo_id_sanitizer_t *sanitizer, int32_t negative
     }
 
     uint32_t runtime_id = (uint32_t) (-negative_id);
-    int result = nmo_hash_table_insert(sanitizer->negative_refs, &runtime_id, &negative_id);
-    if (result != NMO_OK) {
+    nmo_result_t result = nmo_hash_table_insert(sanitizer->negative_refs, &runtime_id, &negative_id);
+    if (nmo_result_is_error(result)) {
         return (int32_t) NMO_OBJECT_ID_INVALID;
     }
 
@@ -162,7 +162,9 @@ uint32_t nmo_id_file_to_runtime(const nmo_id_sanitizer_t *sanitizer, uint32_t fi
     }
 
     uint32_t runtime_id = 0;
-    if (nmo_hash_table_get(sanitizer->file_to_runtime, &file_index, &runtime_id)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(sanitizer->file_to_runtime,
+                                           &file_index,
+                                           &runtime_id))) {
         return runtime_id;
     }
 
@@ -176,7 +178,7 @@ uint32_t nmo_id_runtime_to_file(const nmo_id_sanitizer_t *sanitizer, uint32_t ru
 
     uint32_t file_index = 0;
     uint32_t key = nmo_id_sanitize(runtime_id);
-    if (nmo_hash_table_get(sanitizer->runtime_to_file, &key, &file_index)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(sanitizer->runtime_to_file, &key, &file_index))) {
         return file_index;
     }
 
@@ -190,7 +192,7 @@ int32_t nmo_id_original_external(const nmo_id_sanitizer_t *sanitizer, uint32_t r
 
     int32_t original = 0;
     uint32_t key = nmo_id_sanitize(runtime_id);
-    if (nmo_hash_table_get(sanitizer->negative_refs, &key, &original)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(sanitizer->negative_refs, &key, &original))) {
         return original;
     }
 

@@ -136,7 +136,7 @@ static void nmo_hash_set_dispose_key(nmo_hash_set_t *set, size_t slot) {
     }
 }
 
-static int nmo_hash_set_rehash(nmo_hash_set_t *set, size_t new_capacity) {
+static int nmo_hash_set_rehash_internal(nmo_hash_set_t *set, size_t new_capacity) {
     uint8_t *old_states = set->states;
     uint8_t *old_keys = set->keys;
     size_t old_capacity = set->capacity;
@@ -259,55 +259,71 @@ static int nmo_hash_set_should_grow(const nmo_hash_set_t *set) {
     return (double)(set->count + 1) > max_entries;
 }
 
-int nmo_hash_set_insert(nmo_hash_set_t *set, const void *key) {
+nmo_result_t nmo_hash_set_insert(nmo_hash_set_t *set, const void *key) {
     if (!set || !key) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid hash set insert arguments"));
     }
 
     if (set->capacity == 0) {
         size_t new_capacity = nmo_hash_set_next_capacity(HASH_SET_DEFAULT_CAPACITY);
-        int result = nmo_hash_set_rehash(set, new_capacity);
+        int result = nmo_hash_set_rehash_internal(set, new_capacity);
         if (result != NMO_OK) {
-            return result;
+            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
+                                              NMO_SEVERITY_ERROR,
+                                              "Failed to grow hash set"));
         }
     }
 
     if (nmo_hash_set_should_grow(set)) {
         size_t new_capacity = set->capacity << 1;
         if (new_capacity == 0 || new_capacity <= set->capacity) {
-            return NMO_ERR_NOMEM;
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "Hash set capacity overflow"));
         }
         int result = nmo_hash_set_rehash(set, new_capacity);
         if (result != NMO_OK) {
-            return result;
+            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
+                                              NMO_SEVERITY_ERROR,
+                                              "Failed to rehash hash set"));
         }
     }
 
     int found = 0;
     int slot = nmo_hash_set_find_slot(set, key, &found);
     if (slot < 0) {
-        return NMO_ERR_INVALID_STATE;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                          NMO_SEVERITY_ERROR,
+                                          "Failed to find hash set slot"));
     }
     if (found) {
-        return NMO_ERR_ALREADY_EXISTS;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_ALREADY_EXISTS,
+                                          NMO_SEVERITY_INFO,
+                                          "Key already exists"));
     }
 
     uint8_t *dest = set->keys + ((size_t)slot * set->key_size);
     nmo_hash_set_copy_key(set, dest, key);
     set->states[slot] = NMO_HASH_SET_ENTRY_OCCUPIED;
     set->count++;
-    return NMO_OK;
+    return nmo_result_ok();
 }
 
-int nmo_hash_set_remove(nmo_hash_set_t *set, const void *key) {
+nmo_result_t nmo_hash_set_remove(nmo_hash_set_t *set, const void *key) {
     if (!set || !key) {
-        return 0;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid hash set remove arguments"));
     }
 
     int found = 0;
     int slot = nmo_hash_set_find_slot(set, key, &found);
     if (slot < 0 || !found) {
-        return 0;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
+                                          NMO_SEVERITY_INFO,
+                                          "Key not found"));
     }
 
     nmo_hash_set_dispose_key(set, (size_t)slot);
@@ -315,7 +331,7 @@ int nmo_hash_set_remove(nmo_hash_set_t *set, const void *key) {
     if (set->count > 0) {
         set->count--;
     }
-    return 1;
+    return nmo_result_ok();
 }
 
 int nmo_hash_set_contains(const nmo_hash_set_t *set, const void *key) {
@@ -336,19 +352,70 @@ size_t nmo_hash_set_get_capacity(const nmo_hash_set_t *set) {
     return set ? set->capacity : 0;
 }
 
-int nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity) {
+nmo_result_t nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity) {
     if (!set) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid hash set reserve arguments"));
     }
     if (capacity <= set->capacity) {
-        return NMO_OK;
+        return nmo_result_ok();
     }
 
     size_t target = nmo_hash_set_next_capacity(capacity);
     if (target == 0) {
-        return NMO_ERR_NOMEM;
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid hash set reserve capacity"));
     }
-    return nmo_hash_set_rehash(set, target);
+    int result = nmo_hash_set_rehash_internal(set, target);
+    if (result != NMO_OK) {
+        return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
+                                          NMO_SEVERITY_ERROR,
+                                          "Failed to reserve hash set capacity"));
+    }
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_hash_set_rehash(nmo_hash_set_t *set, size_t capacity) {
+    if (!set) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid hash set rehash arguments"));
+    }
+
+    if (capacity < set->count) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Rehash capacity smaller than count"));
+    }
+
+    size_t target = nmo_hash_set_next_capacity(capacity);
+    if (target == 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Hash set rehash capacity overflow"));
+    }
+
+    int result = nmo_hash_set_rehash_internal(set, target);
+    if (result != NMO_OK) {
+        return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
+                                          NMO_SEVERITY_ERROR,
+                                          "Failed to rehash hash set"));
+    }
+
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_hash_set_resize(nmo_hash_set_t *set, size_t capacity) {
+    return nmo_hash_set_rehash(set, capacity);
+}
+
+float nmo_hash_set_load_factor(const nmo_hash_set_t *set) {
+    if (!set || set->capacity == 0) {
+        return 0.0f;
+    }
+    return (float)set->count / (float)set->capacity;
 }
 
 void nmo_hash_set_clear(nmo_hash_set_t *set) {

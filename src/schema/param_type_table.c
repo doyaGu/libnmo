@@ -67,7 +67,10 @@ static int collect_param_type_callback(
     const nmo_schema_type_t *type_ptr = type;
     
     /* Insert into hash table */
-    nmo_hash_table_insert(ctx->map, &guid, &type_ptr);
+    nmo_result_t insert_result = nmo_hash_table_insert(ctx->map, &guid, &type_ptr);
+    if (nmo_result_is_error(insert_result)) {
+        return 0;
+    }
     ctx->count++;
     
     return 1; /* Continue */
@@ -139,9 +142,9 @@ const nmo_schema_type_t *nmo_param_type_table_find(
     
     /* Lookup by GUID (direct key comparison) */
     const nmo_schema_type_t *type_ptr = NULL;
-    int found = nmo_hash_table_get(table->guid_to_type_map, &guid, &type_ptr);
-    
-    return found ? type_ptr : NULL;
+    nmo_result_t found = nmo_hash_table_get(table->guid_to_type_map, &guid, &type_ptr);
+
+    return nmo_result_is_ok(found) ? type_ptr : NULL;
 }
 
 size_t nmo_param_type_table_get_count(
@@ -224,7 +227,7 @@ const nmo_schema_type_t *nmo_param_type_table_find_by_guid(
     
     const nmo_schema_type_t *result = NULL;
     /* Hash table stores nmo_schema_type_t* as value */
-    if (nmo_hash_table_get(table->guid_to_type_map, &guid, &result)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(table->guid_to_type_map, &guid, &result))) {
         return result;
     }
     

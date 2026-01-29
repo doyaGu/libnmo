@@ -6,6 +6,8 @@
  * Requires explicit dispose() call to free memory.
  * 
  * For arena-backed arrays with automatic management, use nmo_arena_array.h
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_ARRAY_H
@@ -199,6 +201,10 @@ NMO_API nmo_result_t nmo_array_resize(nmo_array_t *array, size_t new_count);
 /* Convenience macros */
 #define NMO_ARRAY_GET(type, array_ptr, index) \
     ((type *)nmo_array_get(array_ptr, index))
+
+#define NMO_ARRAY_GET_SAFE(type, array_ptr, index) \
+    (((array_ptr) && (index) < (array_ptr)->count) ? \
+        ((type *)nmo_array_get((array_ptr), (index))) : NULL)
 
 #define NMO_ARRAY_APPEND(type, array_ptr, value_expr)            \
     do {                                                         \

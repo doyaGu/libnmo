@@ -269,9 +269,16 @@ nmo_list_node_t *nmo_list_insert_before(nmo_list_t *list,
     return node;
 }
 
-int nmo_list_pop_back(nmo_list_t *list, void *out_element) {
-    if (!list || !list->tail) {
-        return 0;
+nmo_result_t nmo_list_pop_back(nmo_list_t *list, void *out_element) {
+    if (!list) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "NULL list"));
+    }
+    if (!list->tail) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
+                                          NMO_SEVERITY_INFO,
+                                          "List is empty"));
     }
 
     nmo_list_node_t *node = list->tail;
@@ -281,12 +288,19 @@ int nmo_list_pop_back(nmo_list_t *list, void *out_element) {
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);
     nmo_list_release_node(list, node);
-    return 1;
+    return nmo_result_ok();
 }
 
-int nmo_list_pop_front(nmo_list_t *list, void *out_element) {
-    if (!list || !list->head) {
-        return 0;
+nmo_result_t nmo_list_pop_front(nmo_list_t *list, void *out_element) {
+    if (!list) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "NULL list"));
+    }
+    if (!list->head) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
+                                          NMO_SEVERITY_INFO,
+                                          "List is empty"));
     }
 
     nmo_list_node_t *node = list->head;
@@ -296,7 +310,7 @@ int nmo_list_pop_front(nmo_list_t *list, void *out_element) {
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);
     nmo_list_release_node(list, node);
-    return 1;
+    return nmo_result_ok();
 }
 
 void nmo_list_remove(nmo_list_t *list, nmo_list_node_t *node, void *out_element) {

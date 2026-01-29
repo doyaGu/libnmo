@@ -1,6 +1,8 @@
 /**
  * @file nmo_bit_array.h
  * @brief Dynamic bitset primitive mirroring Virtools XBitArray.
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_BIT_ARRAY_H

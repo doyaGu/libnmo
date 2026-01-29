@@ -38,8 +38,11 @@ nmo_result_t nmo_type_registry_register_plugin(
     }
 
     // Insert plugin pointer into map
-    nmo_hash_table_insert(registry->plugin_map, &plugin->guid, &plugin);
-    
+    nmo_result_t insert_result = nmo_hash_table_insert(registry->plugin_map, &plugin->guid, &plugin);
+    if (nmo_result_is_error(insert_result)) {
+        return insert_result;
+    }
+
     return nmo_result_ok();
 }
 
@@ -50,9 +53,9 @@ const nmo_plugin_t* nmo_type_registry_get_plugin(
     if (!registry) return NULL;
 
     const nmo_plugin_t *plugin = NULL;
-    int found = nmo_hash_table_get(registry->plugin_map, &plugin_guid, &plugin);
-    
-    return found ? plugin : NULL;
+    nmo_result_t found = nmo_hash_table_get(registry->plugin_map, &plugin_guid, &plugin);
+
+    return nmo_result_is_ok(found) ? plugin : NULL;
 }
 
 /* ============================================================================
@@ -81,13 +84,13 @@ nmo_result_t nmo_type_registry_unregister_derived(
         if (nmo_guid_equals(type->base_type, base_guid)) {
             // Recursively unregister all types derived from this one
             nmo_result_t result = nmo_type_registry_unregister_derived(registry, type->guid);
-            if (result.code != NMO_OK) {
+            if (nmo_result_is_error(result)) {
                 return result;
             }
 
             // Then unregister this type
             result = nmo_type_registry_unregister(registry, type->guid);
-            if (result.code != NMO_OK) {
+            if (nmo_result_is_error(result)) {
                 return result;
             }
         }
@@ -123,9 +126,9 @@ nmo_result_t nmo_type_registry_unregister_plugin_types(
 
         // Check if this type belongs to the plugin
         nmo_guid_t stored_plugin_guid;
-        int found = nmo_hash_table_get(registry->type_to_plugin, &type->id, &stored_plugin_guid);
-        
-        if (found && nmo_guid_equals(stored_plugin_guid, plugin_guid)) {
+        nmo_result_t found = nmo_hash_table_get(registry->type_to_plugin, &type->id, &stored_plugin_guid);
+
+        if (nmo_result_is_ok(found) && nmo_guid_equals(stored_plugin_guid, plugin_guid)) {
             // Expand array if needed
             if (remove_count >= remove_capacity) {
                 remove_capacity = remove_capacity == 0 ? 16 : remove_capacity * 2;
@@ -149,13 +152,13 @@ nmo_result_t nmo_type_registry_unregister_plugin_types(
     for (size_t i = 0; i < remove_count; i++) {
         // Unregister derived types first
         nmo_result_t result = nmo_type_registry_unregister_derived(registry, types_to_remove[i]);
-        if (result.code != NMO_OK) {
+        if (nmo_result_is_error(result)) {
             return result;
         }
 
         // Then unregister the type itself
         result = nmo_type_registry_unregister(registry, types_to_remove[i]);
-        if (result.code != NMO_OK) {
+        if (nmo_result_is_error(result)) {
             return result;
         }
     }
@@ -243,10 +246,15 @@ nmo_result_t nmo_type_registry_register_metadata(
     // Store in array and create index mapping
     size_t index = registry->metadata.count;
     nmo_result_t res = nmo_arena_array_append(&registry->metadata, &meta_copy);
-    if (res.code != NMO_OK) return res;
+    if (nmo_result_is_error(res)) return res;
 
     // Create fast lookup mapping (type_id -> metadata_index)
-    nmo_hash_table_insert(registry->type_to_metadata, &metadata->type_id, &index);
+    nmo_result_t insert_result = nmo_hash_table_insert(registry->type_to_metadata,
+                                                       &metadata->type_id,
+                                                       &index);
+    if (nmo_result_is_error(insert_result)) {
+        return insert_result;
+    }
 
     // Update type descriptor's specialized_index (1-based index, 0 means no metadata)
     if (metadata->type_id >= 0 && (size_t)metadata->type_id < registry->types.count) {
@@ -267,8 +275,8 @@ const nmo_specialized_metadata_t* nmo_type_registry_get_metadata(
 
     // Fast lookup via hash table
     size_t index;
-    int found = nmo_hash_table_get(registry->type_to_metadata, &type_id, &index);
-    if (!found || index >= registry->metadata.count) {
+    nmo_result_t found = nmo_hash_table_get(registry->type_to_metadata, &type_id, &index);
+    if (nmo_result_is_error(found) || index >= registry->metadata.count) {
         return NULL;
     }
 

@@ -234,7 +234,7 @@ nmo_schema_builder_t *nmo_builder_add_field_ex(
     }
     
     nmo_result_t result = ensure_fields_capacity(builder, 1);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return builder;
     }
     
@@ -262,7 +262,7 @@ nmo_schema_builder_t *nmo_builder_add_field_versioned(
     }
     
     nmo_result_t result = ensure_fields_capacity(builder, 1);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return builder;
     }
     
@@ -287,7 +287,7 @@ nmo_result_t nmo_builder_add_field_manual(
     }
     
     nmo_result_t result = ensure_fields_capacity(builder, 1);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -311,7 +311,7 @@ nmo_schema_builder_t *nmo_builder_add_enum_value(
     }
     
     nmo_result_t result = ensure_enum_capacity(builder, 1);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return builder;
     }
     
@@ -420,7 +420,7 @@ nmo_result_t nmo_register_scalar_types(
         nmo_schema_builder_t builder = nmo_builder_scalar(
             arena, scalars[i].name, scalars[i].kind, scalars[i].size);
         result = nmo_builder_build(&builder, registry);
-        if (result.code != NMO_OK) {
+        if (nmo_result_is_error(result)) {
             return result;
         }
     }
@@ -429,7 +429,7 @@ nmo_result_t nmo_register_scalar_types(
     nmo_schema_builder_t string_builder = nmo_builder_scalar(arena, "string", NMO_TYPE_STRING, 0);
     string_builder.type->align = 1;
     result = nmo_builder_build(&string_builder, registry);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     

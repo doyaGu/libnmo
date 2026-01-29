@@ -178,22 +178,22 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) 
     }
 
     /* Add to ID map */
-    int result = nmo_indexed_map_insert(repo->id_map, &obj->id, &obj);
-    if (result != NMO_OK) {
-        return result;
+    nmo_result_t insert_result = nmo_indexed_map_insert(repo->id_map, &obj->id, &obj);
+    if (nmo_result_is_error(insert_result)) {
+        return insert_result.code;
     }
 
     /* Add to name table if object has a name */
     if (obj->name != NULL && obj->name[0] != '\0') {
-        result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
-        if (result != NMO_OK) {
+        nmo_result_t name_result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
+        if (nmo_result_is_error(name_result)) {
             /* Rollback ID insertion */
             nmo_indexed_map_remove(repo->id_map, &obj->id);
-            return result;
+            return name_result.code;
         }
     }
 
-    result = nmo_object_repository_notify_add(repo, obj);
+    int result = nmo_object_repository_notify_add(repo, obj);
     if (result != NMO_OK) {
         /* Keep structures consistent if index update fails */
         if (obj->name != NULL && obj->name[0] != '\0') {
@@ -216,7 +216,7 @@ nmo_object_t *nmo_object_repository_find_by_id(const nmo_object_repository_t *re
     }
 
     nmo_object_t *obj = NULL;
-    if (nmo_indexed_map_get(repo->id_map, &id, &obj)) {
+    if (nmo_result_is_ok(nmo_indexed_map_get(repo->id_map, &id, &obj))) {
         return obj;
     }
 
@@ -233,7 +233,7 @@ nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_repository_t *
     }
 
     nmo_object_t *obj = NULL;
-    if (nmo_hash_table_get(repo->name_table, &name, &obj)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(repo->name_table, &name, &obj))) {
         return obj;
     }
 
@@ -250,7 +250,7 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
 
     /* Get object before removing */
     nmo_object_t *obj = NULL;
-    if (!nmo_indexed_map_get(repo->id_map, &id, &obj)) {
+    if (nmo_result_is_error(nmo_indexed_map_get(repo->id_map, &id, &obj))) {
         return NMO_ERR_INVALID_ARGUMENT; /* Not found */
     }
 

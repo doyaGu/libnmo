@@ -135,7 +135,7 @@ static nmo_result_t read_value(
         case NMO_TYPE_I8: {
             uint8_t value;
             result = nmo_chunk_read_byte(chunk, &value);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             *(uint8_t*)out_ptr = value;
             break;
         }
@@ -144,7 +144,7 @@ static nmo_result_t read_value(
         case NMO_TYPE_I16: {
             uint16_t value;
             result = nmo_chunk_read_word(chunk, &value);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             *(uint16_t*)out_ptr = value;
             break;
         }
@@ -154,7 +154,7 @@ static nmo_result_t read_value(
         case NMO_TYPE_BOOL: {
             uint32_t value;
             result = nmo_chunk_read_dword(chunk, &value);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             *(uint32_t*)out_ptr = value;
             break;
         }
@@ -162,7 +162,7 @@ static nmo_result_t read_value(
         case NMO_TYPE_F32: {
             float value;
             result = nmo_chunk_read_float(chunk, &value);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             *(float*)out_ptr = value;
             break;
         }
@@ -182,7 +182,7 @@ static nmo_result_t read_value(
             /* Read all fields */
             for (size_t i = 0; i < type->field_count; i++) {
                 result = read_field(&type->fields[i], chunk, arena, out_ptr);
-                if (result.code != NMO_OK) return result;
+                if (nmo_result_is_error(result)) return result;
             }
             break;
         }
@@ -191,7 +191,7 @@ static nmo_result_t read_value(
             /* Read count, then elements */
             uint32_t count;
             result = nmo_chunk_read_dword(chunk, &count);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             
             if (count == 0) {
                 *(void**)out_ptr = NULL;
@@ -216,7 +216,7 @@ static nmo_result_t read_value(
             for (uint32_t i = 0; i < count; i++) {
                 void *elem_ptr = (char*)array + i * elem_size;
                 result = read_value(type->element_type, chunk, arena, elem_ptr);
-                if (result.code != NMO_OK) return result;
+                if (nmo_result_is_error(result)) return result;
             }
             
             *(void**)out_ptr = array;
@@ -230,7 +230,7 @@ static nmo_result_t read_value(
             for (size_t i = 0; i < type->array_length; i++) {
                 void *elem_ptr = (char*)out_ptr + i * elem_size;
                 result = read_value(type->element_type, chunk, arena, elem_ptr);
-                if (result.code != NMO_OK) return result;
+                if (nmo_result_is_error(result)) return result;
             }
             break;
         }
@@ -239,7 +239,7 @@ static nmo_result_t read_value(
             /* Read size, then bytes */
             uint32_t size;
             result = nmo_chunk_read_dword(chunk, &size);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             
             if (size == 0) {
                 *(void**)out_ptr = NULL;
@@ -255,7 +255,7 @@ static nmo_result_t read_value(
             
             size_t actual_size = size;
             result = nmo_chunk_read_buffer(chunk, data, &actual_size);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             
             *(void**)out_ptr = data;
             *((uint32_t*)out_ptr + 1) = size;
@@ -266,7 +266,7 @@ static nmo_result_t read_value(
             /* Read object ID */
             nmo_object_id_t id;
             result = nmo_chunk_read_object_id(chunk, &id);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             *(nmo_object_id_t*)out_ptr = id;
             break;
         }
@@ -340,7 +340,7 @@ static nmo_result_t write_value(
             /* Write all fields */
             for (size_t i = 0; i < type->field_count; i++) {
                 result = write_field(&type->fields[i], chunk, in_ptr, arena);
-                if (result.code != NMO_OK) return result;
+                if (nmo_result_is_error(result)) return result;
             }
             result = nmo_result_ok();
             break;
@@ -352,14 +352,14 @@ static nmo_result_t write_value(
             uint32_t count = *((const uint32_t*)in_ptr + 1);
             
             result = nmo_chunk_write_dword(chunk, count);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             
             if (count > 0 && array != NULL) {
                 size_t elem_size = type->element_type->size;
                 for (uint32_t i = 0; i < count; i++) {
                     const void *elem_ptr = (const char*)array + i * elem_size;
                     result = write_value(type->element_type, chunk, elem_ptr, arena);
-                    if (result.code != NMO_OK) return result;
+                    if (nmo_result_is_error(result)) return result;
                 }
             }
             result = nmo_result_ok();
@@ -372,7 +372,7 @@ static nmo_result_t write_value(
             for (size_t i = 0; i < type->array_length; i++) {
                 const void *elem_ptr = (const char*)in_ptr + i * elem_size;
                 result = write_value(type->element_type, chunk, elem_ptr, arena);
-                if (result.code != NMO_OK) return result;
+                if (nmo_result_is_error(result)) return result;
             }
             result = nmo_result_ok();
             break;
@@ -384,11 +384,11 @@ static nmo_result_t write_value(
             uint32_t size = *((const uint32_t*)in_ptr + 1);
             
             result = nmo_chunk_write_dword(chunk, size);
-            if (result.code != NMO_OK) return result;
+            if (nmo_result_is_error(result)) return result;
             
             if (size > 0 && data != NULL) {
                 result = nmo_chunk_write_buffer(chunk, data, size);
-                if (result.code != NMO_OK) return result;
+                if (nmo_result_is_error(result)) return result;
             }
             result = nmo_result_ok();
             break;

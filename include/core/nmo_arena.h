@@ -28,6 +28,8 @@ extern "C" {
  * - O(1) bulk deallocation
  * - Automatic growth in chunks
  * - Alignment support
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 /**

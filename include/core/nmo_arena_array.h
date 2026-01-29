@@ -6,6 +6,8 @@
  * Memory is managed by the arena's reset/destroy operations.
  * 
  * For allocator-backed arrays with explicit memory management, use nmo_array.h
+ *
+ * @note Thread safety: This module is not thread-safe. Synchronize access.
  */
 
 #ifndef NMO_ARENA_ARRAY_H
@@ -246,10 +248,17 @@ NMO_API nmo_result_t nmo_arena_array_clone(const nmo_arena_array_t *src,
                                             nmo_arena_t *arena);
 
 /**
- * @brief Release bookkeeping and reset the array
+ * @brief Reset the array bookkeeping (arena memory is retained).
  *
  * For arena-backed arrays this only clears bookkeeping fields.
  * The actual memory is managed by the arena.
+ */
+NMO_API void nmo_arena_array_reset(nmo_arena_array_t *array);
+
+/**
+ * @brief Release bookkeeping and reset the array (deprecated name).
+ *
+ * Use nmo_arena_array_reset() for clearer semantics.
  */
 NMO_API void nmo_arena_array_dispose(nmo_arena_array_t *array);
 
@@ -356,6 +365,15 @@ NMO_API nmo_result_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new
  */
 #define NMO_ARENA_ARRAY_GET(type, array_ptr, index) \
     ((type *)nmo_arena_array_get(array_ptr, index))
+
+/**
+ * @brief Get typed element with bounds checking
+ *
+ * Returns NULL when out of bounds.
+ */
+#define NMO_ARENA_ARRAY_GET_SAFE(type, array_ptr, index) \
+    (((array_ptr) && (index) < (array_ptr)->count) ? \
+        ((type *)nmo_arena_array_get((array_ptr), (index))) : NULL)
 
 /**
  * @brief Append typed element to array

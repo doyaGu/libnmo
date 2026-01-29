@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdalign.h>
 
 static int nmo_is_power_of_two(size_t value) {
@@ -114,4 +115,95 @@ void nmo_free(nmo_allocator_t *allocator, void *ptr) {
         return;
     }
     allocator->free(allocator->user_data, ptr);
+}
+
+typedef struct nmo_tracking_header {
+    void *raw;
+    size_t size;
+} nmo_tracking_header_t;
+
+static void *tracking_alloc(void *user_data, size_t size, size_t alignment) {
+    nmo_allocator_tracking_t *tracking = (nmo_allocator_tracking_t *)user_data;
+    if (tracking == NULL || tracking->base.alloc == NULL) {
+        return NULL;
+    }
+
+    if (size == 0) {
+        return NULL;
+    }
+
+    if (alignment == 0) {
+        alignment = alignof(max_align_t);
+    }
+
+    if (!nmo_is_power_of_two(alignment)) {
+        return NULL;
+    }
+
+    size_t header_size = sizeof(nmo_tracking_header_t);
+    if (size > SIZE_MAX - header_size - (alignment - 1)) {
+        return NULL;
+    }
+    size_t total = size + header_size + (alignment - 1);
+
+    void *raw = tracking->base.alloc(tracking->base.user_data, total, alignof(max_align_t));
+    if (raw == NULL) {
+        return NULL;
+    }
+
+    uintptr_t start = (uintptr_t)raw + header_size;
+    uintptr_t aligned = (start + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
+    nmo_tracking_header_t *header = (nmo_tracking_header_t *)(aligned - header_size);
+    header->raw = raw;
+    header->size = size;
+
+    if (tracking->stats) {
+        tracking->stats->total_allocations += 1;
+        tracking->stats->total_bytes += size;
+        tracking->stats->current_bytes += size;
+        if (tracking->stats->current_bytes > tracking->stats->peak_bytes) {
+            tracking->stats->peak_bytes = tracking->stats->current_bytes;
+        }
+    }
+
+    return (void *)aligned;
+}
+
+static void tracking_free(void *user_data, void *ptr) {
+    nmo_allocator_tracking_t *tracking = (nmo_allocator_tracking_t *)user_data;
+    if (tracking == NULL || tracking->base.free == NULL || ptr == NULL) {
+        return;
+    }
+
+    nmo_tracking_header_t *header = (nmo_tracking_header_t *)((uint8_t *)ptr - sizeof(nmo_tracking_header_t));
+    if (tracking->stats) {
+        if (tracking->stats->current_bytes >= header->size) {
+            tracking->stats->current_bytes -= header->size;
+        } else {
+            tracking->stats->current_bytes = 0;
+        }
+        tracking->stats->total_frees += 1;
+    }
+
+    tracking->base.free(tracking->base.user_data, header->raw);
+}
+
+nmo_allocator_t nmo_allocator_tracking_init(nmo_allocator_tracking_t *tracking,
+                                            nmo_allocator_t base,
+                                            nmo_allocator_stats_t *stats) {
+    if (tracking == NULL) {
+        return nmo_allocator_custom(NULL, NULL, NULL);
+    }
+
+    tracking->base = base;
+    tracking->stats = stats;
+
+    return nmo_allocator_custom(tracking_alloc, tracking_free, tracking);
+}
+
+void nmo_allocator_stats_reset(nmo_allocator_stats_t *stats) {
+    if (stats == NULL) {
+        return;
+    }
+    memset(stats, 0, sizeof(*stats));
 }

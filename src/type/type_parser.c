@@ -541,7 +541,7 @@ nmo_result_t nmo_parse_flags_string(
     nmo_result_t result = nmo_parse_enum_flags_string(
         flags_str, out_values, out_count, arena);
     
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     

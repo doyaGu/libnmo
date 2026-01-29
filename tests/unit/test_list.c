@@ -33,11 +33,11 @@ TEST(list, push_and_pop) {
     }
 
     uint32_t out = 0;
-    ASSERT_EQ(1, nmo_list_pop_front(list, &out));
+    ASSERT_EQ(NMO_OK, nmo_list_pop_front(list, &out).code);
     ASSERT_EQ(0u, out);
     ASSERT_EQ(4u, nmo_list_get_count(list));
 
-    ASSERT_EQ(1, nmo_list_pop_back(list, &out));
+    ASSERT_EQ(NMO_OK, nmo_list_pop_back(list, &out).code);
     ASSERT_EQ(4u, out);
     ASSERT_EQ(3u, nmo_list_get_count(list));
 
@@ -93,7 +93,7 @@ TEST(list, lifecycle_tracking) {
     }
 
     uint32_t tmp = 0;
-    ASSERT_EQ(1, nmo_list_pop_front(list, &tmp));
+    ASSERT_EQ(NMO_OK, nmo_list_pop_front(list, &tmp).code);
     ASSERT_EQ(1u, tmp);
     ASSERT_EQ(1u, total); // disposed once
 

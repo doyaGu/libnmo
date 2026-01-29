@@ -152,6 +152,27 @@ NMO_API nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
                                        nmo_severity_t severity,
                                        const char *fmt, ...);
 
+/**
+ * @brief Check whether a result indicates success
+ */
+static inline int nmo_result_is_ok(nmo_result_t result) {
+    return result.code == NMO_OK;
+}
+
+/**
+ * @brief Check whether a result indicates failure
+ */
+static inline int nmo_result_is_error(nmo_result_t result) {
+    return result.code != NMO_OK;
+}
+
+/**
+ * @brief Check whether a result indicates a not-found condition
+ */
+static inline int nmo_result_is_not_found(nmo_result_t result) {
+    return result.code == NMO_ERR_NOT_FOUND;
+}
+
 // Convenience macros
 #define NMO_ERROR(arena, code, severity, message) \
     nmo_error_create(arena, code, severity, message, __FILE__, __LINE__)

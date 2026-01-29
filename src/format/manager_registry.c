@@ -126,18 +126,18 @@ nmo_result_t nmo_manager_registry_register(
     }
 
     /* Insert manager */
-    int insert_result = nmo_indexed_map_insert(registry->managers_by_id, &manager_id, &mgr);
-    if (insert_result != NMO_OK) {
-        result.code = insert_result;
+    nmo_result_t insert_result = nmo_indexed_map_insert(registry->managers_by_id, &manager_id, &mgr);
+    if (insert_result.code != NMO_OK) {
+        result.code = insert_result.code;
         result.error = NULL;
         return result;
     }
 
     insert_result = nmo_indexed_map_insert(registry->managers_by_guid, &mgr->guid, &mgr);
-    if (insert_result != NMO_OK) {
+    if (insert_result.code != NMO_OK) {
         /* Roll back ID map insert */
         nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
-        result.code = insert_result;
+        result.code = insert_result.code;
         result.error = NULL;
         return result;
     }
@@ -159,7 +159,7 @@ nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, u
 
     /* Get manager before removing */
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager) && manager != NULL) {
+    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager).code == NMO_OK && manager != NULL) {
         nmo_manager_destroy(manager);
         nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
         nmo_indexed_map_remove(registry->managers_by_guid, &manager->guid);
@@ -180,7 +180,7 @@ void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, uint32_t 
     }
 
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager)) {
+    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager).code == NMO_OK) {
         return manager;
     }
 
@@ -259,7 +259,7 @@ void *nmo_manager_registry_find_by_guid(
     }
 
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers_by_guid, &guid, &manager)) {
+    if (nmo_indexed_map_get(registry->managers_by_guid, &guid, &manager).code == NMO_OK) {
         return manager;
     }
 

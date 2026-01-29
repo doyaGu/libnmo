@@ -144,9 +144,9 @@ nmo_result_t nmo_schema_registry_add(
     }
     
     /* Add to name index */
-    int result = nmo_hash_table_insert(registry->by_name, &type->name, &type);
-    if (result != NMO_OK) {
-        return nmo_result_error(NMO_ERROR(registry->arena, result,
+    nmo_result_t result = nmo_hash_table_insert(registry->by_name, &type->name, &type);
+    if (nmo_result_is_error(result)) {
+        return nmo_result_error(NMO_ERROR(registry->arena, result.code,
             NMO_SEVERITY_ERROR, "Failed to add type to name index"));
     }
     
@@ -182,7 +182,7 @@ const nmo_schema_type_t *nmo_schema_registry_find_by_name(
     }
     
     const nmo_schema_type_t *type = NULL;
-    if (nmo_hash_table_get(registry->by_name, &name, &type)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(registry->by_name, &name, &type))) {
         return type;
     }
     
@@ -198,7 +198,7 @@ const nmo_schema_type_t *nmo_schema_registry_find_by_class_id(
     }
     
     const nmo_schema_type_t *type = NULL;
-    if (nmo_indexed_map_get(registry->by_class_id, &class_id, &type)) {
+    if (nmo_result_is_ok(nmo_indexed_map_get(registry->by_class_id, &class_id, &type))) {
         return type;
     }
     
@@ -214,7 +214,7 @@ const nmo_schema_type_t *nmo_schema_registry_find_by_guid(
     }
     
     const nmo_schema_type_t *type = NULL;
-    if (nmo_hash_table_get(registry->by_guid, &guid, &type)) {
+    if (nmo_result_is_ok(nmo_hash_table_get(registry->by_guid, &guid, &type))) {
         return type;
     }
     
@@ -488,9 +488,9 @@ nmo_result_t nmo_schema_registry_map_class_id(
     }
     
     /* Add to index */
-    int result = nmo_indexed_map_insert(registry->by_class_id, &class_id, &type);
-    if (result != NMO_OK) {
-        return nmo_result_error(NMO_ERROR(registry->arena, result,
+    nmo_result_t result = nmo_indexed_map_insert(registry->by_class_id, &class_id, &type);
+    if (nmo_result_is_error(result)) {
+        return nmo_result_error(NMO_ERROR(registry->arena, result.code,
             NMO_SEVERITY_ERROR, "Failed to map class ID"));
     }
     
@@ -515,9 +515,9 @@ nmo_result_t nmo_schema_registry_map_guid(
     }
     
     /* Add to index */
-    int result = nmo_hash_table_insert(registry->by_guid, &guid, &type);
-    if (result != NMO_OK) {
-        return nmo_result_error(NMO_ERROR(registry->arena, result,
+    nmo_result_t result = nmo_hash_table_insert(registry->by_guid, &guid, &type);
+    if (nmo_result_is_error(result)) {
+        return nmo_result_error(NMO_ERROR(registry->arena, result.code,
             NMO_SEVERITY_ERROR, "Failed to map GUID"));
     }
     

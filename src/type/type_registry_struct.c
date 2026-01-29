@@ -106,7 +106,7 @@ nmo_result_t nmo_type_calculate_layout(
             nmo_type_parse_result_t parse_result;
             nmo_result_t result = nmo_type_registry_parse_type_name(
                 type_registry, field->type_name, &parse_result);
-            if (result.code != NMO_OK) {
+            if (nmo_result_is_error(result)) {
                 return result;
             }
             field_type_guid = parse_result.base_type_guid;
@@ -238,7 +238,7 @@ nmo_result_t nmo_type_registry_register_struct(
         type_registry, fields, struct_def->field_count,
         struct_def->alignment, struct_def->packed,
         &total_size, &struct_alignment);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -274,7 +274,7 @@ nmo_result_t nmo_type_registry_register_struct(
             nmo_type_parse_result_t parse_result;
             nmo_result_t parse_res = nmo_type_registry_parse_type_name(
                 type_registry, field_def->type_name, &parse_result);
-            if (parse_res.code == NMO_OK) {
+            if (nmo_result_is_ok(parse_res)) {
                 field_type_guid = parse_result.base_type_guid;
                 array_count = parse_result.array_count;
             }
@@ -365,7 +365,7 @@ nmo_result_t nmo_type_registry_register_struct(
     
     /* Register type in registry */
     result = nmo_type_registry_register(type_registry, type_desc);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -489,7 +489,7 @@ nmo_result_t nmo_type_registry_begin_struct(
     
     /* Register placeholder (will be updated on finalize) */
     nmo_result_t result = nmo_type_registry_register(type_registry, type_desc);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -619,7 +619,7 @@ nmo_result_t nmo_type_registry_finalize_struct(
             nmo_type_parse_result_t parse_result;
             nmo_result_t parse_res = nmo_type_registry_parse_type_name(
                 type_registry, field->type_name, &parse_result);
-            if (parse_res.code != NMO_OK) {
+            if (nmo_result_is_error(parse_res)) {
                 return parse_res;
             }
             field->type_guid = parse_result.base_type_guid;
@@ -631,7 +631,7 @@ nmo_result_t nmo_type_registry_finalize_struct(
     nmo_result_t result = nmo_type_calculate_layout(
         type_registry, incomplete->fields, incomplete->field_count,
         0, false, &total_size, &struct_alignment);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -694,7 +694,7 @@ nmo_result_t nmo_type_registry_finalize_struct(
     /* Add to registry metadata array */
     uint32_t metadata_index = (uint32_t)type_registry->metadata.count;
     nmo_result_t res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (res.code != NMO_OK) return res;
+    if (nmo_result_is_error(res)) return res;
     
     /* Update type descriptor to mark as valid */
     nmo_type_descriptor_t *type_desc = *(nmo_type_descriptor_t **)nmo_arena_array_get(&type_registry->types, struct_type_id);
@@ -769,7 +769,7 @@ nmo_result_t nmo_type_registry_register_struct_string(
         nmo_result_t parse_res = nmo_type_registry_parse_type_name(
             type_registry, type_name_str, &parse_result);
         
-        if (parse_res.code != NMO_OK) {
+        if (nmo_result_is_error(parse_res)) {
             nmo_arena_destroy(temp_arena);
             return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
                                      NMO_SEVERITY_ERROR,

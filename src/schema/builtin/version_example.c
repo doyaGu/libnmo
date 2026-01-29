@@ -212,13 +212,13 @@ nmo_result_t nmo_register_multi_version_example(
     
     /* Register legacy version (v2-v4) */
     result = register_mesh_v2_schema(registry, arena);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
     /* Register modern version (v5+) */
     result = register_mesh_v5_schema(registry, arena);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -260,7 +260,7 @@ nmo_result_t load_mesh_data(
     
     /* Read using the version-appropriate schema */
     nmo_result_t result = nmo_schema_read_struct(schema, chunk, arena, data);
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     
@@ -280,7 +280,7 @@ nmo_result_t analyze_mesh_versions(nmo_schema_registry_t *registry, nmo_arena_t 
     nmo_result_t result = nmo_schema_registry_find_all_variants(
         registry, "MeshData", arena, &variants, &count);
     
-    if (result.code != NMO_OK) {
+    if (nmo_result_is_error(result)) {
         return result;
     }
     

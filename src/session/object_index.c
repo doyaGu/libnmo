@@ -182,7 +182,8 @@ static int build_class_index(nmo_object_index_t *index) {
         object_array_t *arr = NULL;
         
         /* Check if class already has an array */
-        if (!nmo_hash_table_get(index->class_index, &obj->class_id, &arr)) {
+        nmo_result_t lookup_result = nmo_hash_table_get(index->class_index, &obj->class_id, &arr);
+        if (nmo_result_is_not_found(lookup_result)) {
             /* Create new array for this class */
             arr = object_array_create(8);
             if (arr == NULL) {
@@ -190,13 +191,17 @@ static int build_class_index(nmo_object_index_t *index) {
                 index->class_index = NULL;
                 return NMO_ERR_NOMEM;
             }
-            int insert_result = nmo_hash_table_insert(index->class_index, &obj->class_id, &arr);
-            if (insert_result != NMO_OK) {
+            nmo_result_t insert_result = nmo_hash_table_insert(index->class_index, &obj->class_id, &arr);
+            if (nmo_result_is_error(insert_result)) {
                 object_array_dispose(&arr, NULL);
                 nmo_hash_table_destroy(index->class_index);
                 index->class_index = NULL;
-                return insert_result;
+                return insert_result.code;
             }
+        } else if (nmo_result_is_error(lookup_result)) {
+            nmo_hash_table_destroy(index->class_index);
+            index->class_index = NULL;
+            return lookup_result.code;
         }
         
         /* Add object to array */
@@ -252,7 +257,8 @@ static int build_name_index(nmo_object_index_t *index) {
         object_array_t *arr = NULL;
         
         /* Check if name already has an array */
-        if (!nmo_hash_table_get(index->name_index, &name, &arr)) {
+        nmo_result_t lookup_result = nmo_hash_table_get(index->name_index, &name, &arr);
+        if (nmo_result_is_not_found(lookup_result)) {
             /* Create new array for this name */
             arr = object_array_create(4); /* Most names are unique */
             if (arr == NULL) {
@@ -260,13 +266,17 @@ static int build_name_index(nmo_object_index_t *index) {
                 index->name_index = NULL;
                 return NMO_ERR_NOMEM;
             }
-            int insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
-            if (insert_result != NMO_OK) {
+            nmo_result_t insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
+            if (nmo_result_is_error(insert_result)) {
                 object_array_dispose(&arr, NULL);
                 nmo_hash_table_destroy(index->name_index);
                 index->name_index = NULL;
-                return insert_result;
+                return insert_result.code;
             }
+        } else if (nmo_result_is_error(lookup_result)) {
+            nmo_hash_table_destroy(index->name_index);
+            index->name_index = NULL;
+            return lookup_result.code;
         }
         
         /* Add object to array */
@@ -321,7 +331,8 @@ static int build_guid_index(nmo_object_index_t *index) {
         object_array_t *arr = NULL;
         
         /* Check if GUID already has an array */
-        if (!nmo_hash_table_get(index->guid_index, &obj->type_guid, &arr)) {
+        nmo_result_t lookup_result = nmo_hash_table_get(index->guid_index, &obj->type_guid, &arr);
+        if (nmo_result_is_not_found(lookup_result)) {
             /* Create new array for this GUID */
             arr = object_array_create(4);
             if (arr == NULL) {
@@ -329,13 +340,17 @@ static int build_guid_index(nmo_object_index_t *index) {
                 index->guid_index = NULL;
                 return NMO_ERR_NOMEM;
             }
-            int insert_result = nmo_hash_table_insert(index->guid_index, &obj->type_guid, &arr);
-            if (insert_result != NMO_OK) {
+            nmo_result_t insert_result = nmo_hash_table_insert(index->guid_index, &obj->type_guid, &arr);
+            if (nmo_result_is_error(insert_result)) {
                 object_array_dispose(&arr, NULL);
                 nmo_hash_table_destroy(index->guid_index);
                 index->guid_index = NULL;
-                return insert_result;
+                return insert_result.code;
             }
+        } else if (nmo_result_is_error(lookup_result)) {
+            nmo_hash_table_destroy(index->guid_index);
+            index->guid_index = NULL;
+            return lookup_result.code;
         }
         
         /* Add object to array */
@@ -478,17 +493,20 @@ int nmo_object_index_add_object(
     /* Add to class index */
     if ((flags & NMO_INDEX_BUILD_CLASS) && index->class_index != NULL) {
         object_array_t *arr = NULL;
-        
-        if (!nmo_hash_table_get(index->class_index, &object->class_id, &arr)) {
+
+        nmo_result_t lookup_result = nmo_hash_table_get(index->class_index, &object->class_id, &arr);
+        if (nmo_result_is_not_found(lookup_result)) {
             arr = object_array_create(8);
             if (arr == NULL) {
                 return NMO_ERR_NOMEM;
             }
-            int insert_result = nmo_hash_table_insert(index->class_index, &object->class_id, &arr);
-            if (insert_result != NMO_OK) {
+            nmo_result_t insert_result = nmo_hash_table_insert(index->class_index, &object->class_id, &arr);
+            if (nmo_result_is_error(insert_result)) {
                 object_array_dispose(&arr, NULL);
-                return insert_result;
+                return insert_result.code;
             }
+        } else if (nmo_result_is_error(lookup_result)) {
+            return lookup_result.code;
         }
         
         result = object_array_add(arr, object);
@@ -502,17 +520,20 @@ int nmo_object_index_add_object(
         const char *name = nmo_object_get_name(object);
         if (name != NULL && name[0] != '\0') {
             object_array_t *arr = NULL;
-            
-            if (!nmo_hash_table_get(index->name_index, &name, &arr)) {
+
+            nmo_result_t lookup_result = nmo_hash_table_get(index->name_index, &name, &arr);
+            if (nmo_result_is_not_found(lookup_result)) {
                 arr = object_array_create(4);
                 if (arr == NULL) {
                     return NMO_ERR_NOMEM;
                 }
-                int insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
-                if (insert_result != NMO_OK) {
+                nmo_result_t insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
+                if (nmo_result_is_error(insert_result)) {
                     object_array_dispose(&arr, NULL);
-                    return insert_result;
+                    return insert_result.code;
                 }
+            } else if (nmo_result_is_error(lookup_result)) {
+                return lookup_result.code;
             }
             
             result = object_array_add(arr, object);
@@ -526,17 +547,20 @@ int nmo_object_index_add_object(
     if ((flags & NMO_INDEX_BUILD_GUID) && index->guid_index != NULL) {
         if (!nmo_guid_is_null(object->type_guid)) {
             object_array_t *arr = NULL;
-            
-            if (!nmo_hash_table_get(index->guid_index, &object->type_guid, &arr)) {
+
+            nmo_result_t lookup_result = nmo_hash_table_get(index->guid_index, &object->type_guid, &arr);
+            if (nmo_result_is_not_found(lookup_result)) {
                 arr = object_array_create(4);
                 if (arr == NULL) {
                     return NMO_ERR_NOMEM;
                 }
-                int insert_result = nmo_hash_table_insert(index->guid_index, &object->type_guid, &arr);
-                if (insert_result != NMO_OK) {
+                nmo_result_t insert_result = nmo_hash_table_insert(index->guid_index, &object->type_guid, &arr);
+                if (nmo_result_is_error(insert_result)) {
                     object_array_dispose(&arr, NULL);
-                    return insert_result;
+                    return insert_result.code;
                 }
+            } else if (nmo_result_is_error(lookup_result)) {
+                return lookup_result.code;
             }
             
             result = object_array_add(arr, object);
@@ -570,7 +594,7 @@ int nmo_object_index_remove_object(
     /* Remove from class index */
     if ((flags & NMO_INDEX_BUILD_CLASS) && index->class_index != NULL) {
         object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->class_index, &object->class_id, &arr)) {
+        if (nmo_result_is_ok(nmo_hash_table_get(index->class_index, &object->class_id, &arr))) {
             object_array_remove(arr, object_id);
         }
     }
@@ -580,7 +604,7 @@ int nmo_object_index_remove_object(
         const char *name = nmo_object_get_name(object);
         if (name != NULL && name[0] != '\0') {
             object_array_t *arr = NULL;
-            if (nmo_hash_table_get(index->name_index, &name, &arr)) {
+            if (nmo_result_is_ok(nmo_hash_table_get(index->name_index, &name, &arr))) {
                 object_array_remove(arr, object_id);
             }
         }
@@ -590,7 +614,7 @@ int nmo_object_index_remove_object(
     if ((flags & NMO_INDEX_BUILD_GUID) && index->guid_index != NULL) {
         if (!nmo_guid_is_null(object->type_guid)) {
             object_array_t *arr = NULL;
-            if (nmo_hash_table_get(index->guid_index, &object->type_guid, &arr)) {
+            if (nmo_result_is_ok(nmo_hash_table_get(index->guid_index, &object->type_guid, &arr))) {
                 object_array_remove(arr, object_id);
             }
         }
@@ -654,7 +678,7 @@ nmo_object_t **nmo_object_index_get_by_class(
     /* Use index if available */
     if (index->class_index != NULL) {
         object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->class_index, &class_id, &arr)) {
+        if (nmo_result_is_ok(nmo_hash_table_get(index->class_index, &class_id, &arr))) {
             *out_count = arr->count;
             return arr->objects;
         }
@@ -694,7 +718,7 @@ nmo_object_t *nmo_object_index_find_by_name(
     /* Use index if available */
     if (index->name_index != NULL) {
         object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->name_index, &name, &arr)) {
+        if (nmo_result_is_ok(nmo_hash_table_get(index->name_index, &name, &arr))) {
             /* Filter by class if specified */
             if (class_id != 0) {
                 for (size_t i = 0; i < arr->count; i++) {
@@ -731,7 +755,7 @@ nmo_object_t **nmo_object_index_get_by_name_all(
     
     if (index->name_index != NULL) {
         object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->name_index, &name, &arr)) {
+        if (nmo_result_is_ok(nmo_hash_table_get(index->name_index, &name, &arr))) {
             /* No class filter */
             if (class_id == 0) {
                 *out_count = arr->count;
@@ -828,7 +852,7 @@ nmo_object_t *nmo_object_index_find_by_guid(
     /* Use index if available */
     if (index->guid_index != NULL) {
         object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->guid_index, &guid, &arr)) {
+        if (nmo_result_is_ok(nmo_hash_table_get(index->guid_index, &guid, &arr))) {
             return arr->count > 0 ? arr->objects[0] : NULL;
         }
         return NULL;
@@ -867,7 +891,7 @@ nmo_object_t **nmo_object_index_get_by_guid_all(
     
     if (index->guid_index != NULL) {
         object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->guid_index, &guid, &arr)) {
+        if (nmo_result_is_ok(nmo_hash_table_get(index->guid_index, &guid, &arr))) {
             *out_count = arr->count;
             return arr->objects;
         }
