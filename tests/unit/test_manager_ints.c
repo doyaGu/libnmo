@@ -54,7 +54,7 @@ TEST(manager_ints, write_and_read_manager_ints) {
     ASSERT_NOT_NULL(chunk);
 
     // Verify manager tracking
-    ASSERT_EQ(chunk->manager_count, 3);
+    ASSERT_EQ(chunk->managers.count, 3);
 
     // Create parser
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);

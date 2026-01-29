@@ -136,7 +136,7 @@ TEST(chunk_id_remap, sequence_id_remap) {
     
     // Verify the remapping worked by checking the data directly
     // The sequence should have been remapped from [100,101,102,103] to [200,201,202,203]
-    ASSERT_NOT_NULL(chunk->data);
+    ASSERT_NOT_NULL(chunk->data.data);
     // The sequence format is: [count, id1, id2, id3, id4]
     // We can verify by checking if the remap function modified the IDs
     

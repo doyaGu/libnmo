@@ -6,10 +6,10 @@
  */
 
 #include "test_framework.h"
-#include "schema/nmo_param_meta.h"
-#include "schema/param_type_table.h"
-#include "schema/nmo_schema_registry.h"
-#include "schema/nmo_schema_builder.h"
+#include "object/nmo_param_meta.h"
+#include "object/param_type_table.h"
+#include "object/nmo_schema_registry.h"
+#include "object/nmo_schema_builder.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include <string.h>

@@ -14,8 +14,8 @@
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"
 #include "format/nmo_object.h"
-#include "schema/nmo_builtin_types.h"       /* for nmo_register_builtin_types */
-#include "schema/nmo_ckobject_hierarchy.h"  /* for nmo_register_ckobject_hierarchy */
+#include "object/nmo_builtin_types.h"       /* for nmo_register_builtin_types */
+#include "object/nmo_ckobject_hierarchy.h"  /* for nmo_register_ckobject_hierarchy */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

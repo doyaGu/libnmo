@@ -62,12 +62,13 @@ TEST(object_ids, write_and_read_object_ids) {
 
     // Verify ID tracking: should have 3 positions (for IDs 1001, 2002, 3003)
     // but not for ID 0
-    ASSERT_EQ(chunk->id_count, 3);
+    ASSERT_EQ(chunk->ids.count, 3);
 
     // Verify tracked positions
-    ASSERT_EQ(chunk->ids[0], 0);
-    ASSERT_EQ(chunk->ids[1], 2);
-    ASSERT_EQ(chunk->ids[2], 6);
+    uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+    ASSERT_EQ(ids[0], 0);
+    ASSERT_EQ(ids[1], 2);
+    ASSERT_EQ(ids[2], 6);
 
     // Create parser
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
@@ -144,10 +145,11 @@ TEST(object_ids, file_context_roundtrip) {
     nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
     ASSERT_NE(0u, chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
-    ASSERT_EQ(0u, chunk->id_count);
-    ASSERT_EQ(2u, chunk->data_size);
-    ASSERT_EQ(5u, chunk->data[0]);
-    ASSERT_EQ(6u, chunk->data[1]);
+    ASSERT_EQ(0u, chunk->ids.count);
+    ASSERT_EQ(2u, chunk->data.count);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_EQ(5u, data[0]);
+    ASSERT_EQ(6u, data[1]);
 
     nmo_id_remap_t* file_to_runtime = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(file_to_runtime);

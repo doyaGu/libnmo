@@ -4,8 +4,8 @@
  */
 
 #include "../../tests/test_framework.h"
-#include "schema/nmo_builtin_types.h"
-#include "schema/nmo_schema_registry.h"
+#include "object/nmo_builtin_types.h"
+#include "object/nmo_schema_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include <string.h>

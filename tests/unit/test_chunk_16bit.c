@@ -32,7 +32,7 @@ TEST(chunk_16bit, dword_as_words_basic) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(test_count * 2, chunk->data_size);
+    ASSERT_EQ(test_count * 2, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -111,7 +111,7 @@ TEST(chunk_16bit, dword_as_words_array_helper) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(value_count * 2, chunk->data_size);
+    ASSERT_EQ(value_count * 2, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -156,7 +156,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_basic) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(value_count, chunk->data_size);
+    ASSERT_EQ(value_count, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -187,7 +187,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_single) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(1, chunk->data_size);
+    ASSERT_EQ(1, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -222,7 +222,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_large) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(value_count, chunk->data_size);
+    ASSERT_EQ(value_count, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -261,7 +261,7 @@ TEST(chunk_16bit, mixed_operations) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(9, chunk->data_size);
+    ASSERT_EQ(9, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);

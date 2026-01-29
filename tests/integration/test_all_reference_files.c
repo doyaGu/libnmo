@@ -303,12 +303,12 @@ TEST(reference_files, parse_all) {
     printf("Success rate: %.1f%%\n", success_rate);
     
     if (success_rate < 50.0) {
-        printf("ï¿½?FAIL: Less than 50%% success rate\n");
+        printf("ï¿?FAIL: Less than 50%% success rate\n");
         ASSERT_TRUE(0);
     } else if (success_rate < 90.0) {
         printf("âš ï¸  WARN: Success rate below 90%%\n");
     } else {
-        printf("ï¿½?PASS: Good compatibility\n");
+        printf("ï¿?PASS: Good compatibility\n");
     }
 }
 

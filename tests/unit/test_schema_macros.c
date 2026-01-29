@@ -11,9 +11,9 @@
  */
 
 #include "test_framework.h"
-#include "schema/nmo_schema_macros.h"
-#include "schema/nmo_schema_registry.h"
-#include "schema/nmo_schema_builder.h"
+#include "object/nmo_schema_macros.h"
+#include "object/nmo_schema_registry.h"
+#include "object/nmo_schema_builder.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include <string.h>

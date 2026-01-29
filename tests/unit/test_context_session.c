@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
-#include "schema/nmo_schema_registry.h"
+#include "type/type_system.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include <stdio.h>
@@ -24,9 +24,9 @@ TEST(context_session, create_default) {
     int refcount = nmo_context_get_refcount(ctx);
     ASSERT_EQ(1, refcount);
 
-    /* Check that we have a schema registry */
-    nmo_schema_registry_t* schema_reg = nmo_context_get_schema_registry(ctx);
-    ASSERT_NOT_NULL(schema_reg);
+    /* Check that we have a type registry (replaces deprecated schema_registry) */
+    nmo_type_registry_t* type_reg = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(type_reg);
 
     /* Check allocator and logger */
     nmo_allocator_t* allocator = nmo_context_get_allocator(ctx);
@@ -272,14 +272,14 @@ TEST(context_session, null_inputs) {
 }
 
 /**
- * Test schema registry access from context
+ * Test type registry access from context (replaces deprecated schema_registry_access)
  */
-TEST(context_session, schema_registry_access) {
+TEST(context_session, type_registry_access) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_schema_registry_t* registry = nmo_context_get_schema_registry(ctx);
+    nmo_type_registry_t* registry = nmo_context_get_type_registry(ctx);
     ASSERT_NOT_NULL(registry);
 
     /* Registry should be shared across all sessions using this context */
@@ -289,8 +289,8 @@ TEST(context_session, schema_registry_access) {
     nmo_context_t* ctx1 = nmo_session_get_context(session1);
     nmo_context_t* ctx2 = nmo_session_get_context(session2);
 
-    nmo_schema_registry_t* reg1 = nmo_context_get_schema_registry(ctx1);
-    nmo_schema_registry_t* reg2 = nmo_context_get_schema_registry(ctx2);
+    nmo_type_registry_t* reg1 = nmo_context_get_type_registry(ctx1);
+    nmo_type_registry_t* reg2 = nmo_context_get_type_registry(ctx2);
 
     ASSERT_EQ(registry, reg1);
     ASSERT_EQ(registry, reg2);
@@ -309,5 +309,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, multiple_sessions);
     REGISTER_TEST(context_session, session_file_info);
     REGISTER_TEST(context_session, null_inputs);
-    REGISTER_TEST(context_session, schema_registry_access);
+    REGISTER_TEST(context_session, type_registry_access);
 TEST_MAIN_END()

@@ -4,8 +4,8 @@
  */
 
 #include "../test_framework.h"
-#include "schema/nmo_migrator.h"
-#include "schema/nmo_schema_registry.h"
+#include "object/nmo_migrator.h"
+#include "object/nmo_schema_registry.h"
 #include "core/nmo_arena.h"
 
 TEST(migrator, create_destroy) {

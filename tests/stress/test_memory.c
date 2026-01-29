@@ -58,7 +58,7 @@ TEST(memory_stress, chunk_pool_reuse) {
             chunk->class_id = (nmo_class_id_t)((wave + i) & 0xFFFF);
             chunk->data_version = (uint32_t)wave;
             chunk->chunk_options = NMO_CHUNK_OPTION_IDS;
-            chunk->data_size = 0;
+            nmo_arena_array_clear(&chunk->data);
 
             active[i] = chunk;
         }

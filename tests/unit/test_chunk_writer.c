@@ -38,7 +38,7 @@ TEST(chunk_writer, primitives) {
     ASSERT_NOT_NULL(chunk);
 
     // Verify we wrote 7 DWORDs (byte, word, dword, int, float, guid1, guid2)
-    ASSERT_EQ(7, chunk->data_size);
+    ASSERT_EQ(7, chunk->data.count);
 
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);
@@ -116,12 +116,14 @@ TEST(chunk_writer, object_ids) {
     ASSERT_TRUE(chunk->chunk_options & NMO_CHUNK_OPTION_IDS);
 
     // ID tracking now captures sequence marker + write positions
-    ASSERT_EQ(5u, chunk->id_count);
-    ASSERT_EQ(0xFFFFFFFFu, chunk->ids[0]);
-    ASSERT_EQ(0u, chunk->ids[1]);        // Sequence starts before count write
-    ASSERT_EQ(1u, chunk->ids[2]);        // First ID location
-    ASSERT_EQ(2u, chunk->ids[3]);        // Second ID location
-    ASSERT_EQ(3u, chunk->ids[4]);        // Third ID location (duplicate allowed)
+    ASSERT_EQ(5u, chunk->ids.count);
+    uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+    ASSERT_NOT_NULL(ids);
+    ASSERT_EQ(0xFFFFFFFFu, ids[0]);
+    ASSERT_EQ(0u, ids[1]);        // Sequence starts before count write
+    ASSERT_EQ(1u, ids[2]);        // First ID location
+    ASSERT_EQ(2u, ids[3]);        // Second ID location
+    ASSERT_EQ(3u, ids[4]);        // Third ID location (duplicate allowed)
 
     nmo_chunk_writer_destroy(writer);
     nmo_arena_destroy(arena);
@@ -148,11 +150,13 @@ TEST(chunk_writer, growth) {
     ASSERT_NOT_NULL(chunk);
 
     // Verify we wrote 200 DWORDs
-    ASSERT_EQ(200, chunk->data_size);
+    ASSERT_EQ(200, chunk->data.count);
 
     // Verify data
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
     for (size_t i = 0; i < 200; i++) {
-        ASSERT_EQ((uint32_t)i, chunk->data[i]);
+        ASSERT_EQ((uint32_t)i, data[i]);
     }
 
     nmo_chunk_writer_destroy(writer);

@@ -39,15 +39,19 @@ TEST(chunk_serialization, version_info_packing) {
     chunk->chunk_options = 0x0F;      // Some options (will be OR'd with actual flags)
 
     // Add some data
-    chunk->data_size = 2;
-    chunk->data = (uint32_t *)nmo_arena_alloc(arena, 8, 4);
-    chunk->data[0] = 0xAABBCCDD;
-    chunk->data[1] = 0x11223344;
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    data[0] = 0xAABBCCDD;
+    data[1] = 0x11223344;
 
     // Add IDs to trigger CHNK_OPTION_IDS
-    chunk->id_count = 1;
-    chunk->ids = (uint32_t *)nmo_arena_alloc(arena, 4, 4);
-    chunk->ids[0] = 0x99887766;
+    resize_result = nmo_arena_array_resize(&chunk->ids, 1);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+    ASSERT_NOT_NULL(ids);
+    ids[0] = 0x99887766;
 
     // Serialize
     void *buffer = NULL;
@@ -72,13 +76,17 @@ TEST(chunk_serialization, version_info_packing) {
     ASSERT_NE((chunk2->chunk_options & NMO_CHUNK_OPTION_IDS), 0);
 
     // Verify data
-    ASSERT_EQ(chunk2->data_size, 2);
-    ASSERT_EQ(chunk2->data[0], 0xAABBCCDD);
-    ASSERT_EQ(chunk2->data[1], 0x11223344);
+    ASSERT_EQ(chunk2->data.count, 2);
+    uint32_t *data2 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk2->data);
+    ASSERT_NOT_NULL(data2);
+    ASSERT_EQ(data2[0], 0xAABBCCDD);
+    ASSERT_EQ(data2[1], 0x11223344);
 
     // Verify IDs
-    ASSERT_EQ(chunk2->id_count, 1);
-    ASSERT_EQ(chunk2->ids[0], 0x99887766);
+    ASSERT_EQ(chunk2->ids.count, 1);
+    uint32_t *ids2 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk2->ids);
+    ASSERT_NOT_NULL(ids2);
+    ASSERT_EQ(ids2[0], 0x99887766);
 
     nmo_arena_destroy(arena);
 }
@@ -98,22 +106,28 @@ TEST(chunk_serialization, full_serialization) {
     chunk->chunk_version = 7;
 
     // Add data
-    chunk->data_size = 3;
-    chunk->data = (uint32_t *)nmo_arena_alloc(arena, 12, 4);
-    chunk->data[0] = 100;
-    chunk->data[1] = 200;
-    chunk->data[2] = 300;
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    data[0] = 100;
+    data[1] = 200;
+    data[2] = 300;
 
     // Add IDs
-    chunk->id_count = 2;
-    chunk->ids = (uint32_t *)nmo_arena_alloc(arena, 8, 4);
-    chunk->ids[0] = 1001;
-    chunk->ids[1] = 1002;
+    resize_result = nmo_arena_array_resize(&chunk->ids, 2);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+    ASSERT_NOT_NULL(ids);
+    ids[0] = 1001;
+    ids[1] = 1002;
 
     // Add managers
-    chunk->manager_count = 1;
-    chunk->managers = (uint32_t *)nmo_arena_alloc(arena, 4, 4);
-    chunk->managers[0] = 999;
+    resize_result = nmo_arena_array_resize(&chunk->managers, 1);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->managers);
+    ASSERT_NOT_NULL(managers);
+    managers[0] = 999;
 
     // Set chunk options to indicate presence of IDs and managers
     chunk->chunk_options = NMO_CHUNK_OPTION_IDS | NMO_CHUNK_OPTION_MAN;
@@ -133,17 +147,23 @@ TEST(chunk_serialization, full_serialization) {
     ASSERT_EQ(chunk2->chunk_class_id, 0x42);
     ASSERT_EQ(chunk2->chunk_version, 7);
 
-    ASSERT_EQ(chunk2->data_size, 3);
-    ASSERT_EQ(chunk2->data[0], 100);
-    ASSERT_EQ(chunk2->data[1], 200);
-    ASSERT_EQ(chunk2->data[2], 300);
+    ASSERT_EQ(chunk2->data.count, 3);
+    uint32_t *data2 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk2->data);
+    ASSERT_NOT_NULL(data2);
+    ASSERT_EQ(data2[0], 100);
+    ASSERT_EQ(data2[1], 200);
+    ASSERT_EQ(data2[2], 300);
 
-    ASSERT_EQ(chunk2->id_count, 2);
-    ASSERT_EQ(chunk2->ids[0], 1001);
-    ASSERT_EQ(chunk2->ids[1], 1002);
+    ASSERT_EQ(chunk2->ids.count, 2);
+    uint32_t *ids2 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk2->ids);
+    ASSERT_NOT_NULL(ids2);
+    ASSERT_EQ(ids2[0], 1001);
+    ASSERT_EQ(ids2[1], 1002);
 
-    ASSERT_EQ(chunk2->manager_count, 1);
-    ASSERT_EQ(chunk2->managers[0], 999);
+    ASSERT_EQ(chunk2->managers.count, 1);
+    uint32_t *managers2 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk2->managers);
+    ASSERT_NOT_NULL(managers2);
+    ASSERT_EQ(managers2[0], 999);
 
     // Check options flags
     ASSERT_NE((chunk2->chunk_options & NMO_CHUNK_OPTION_IDS), 0);
@@ -182,9 +202,9 @@ TEST(chunk_serialization, empty_chunk) {
     ASSERT_EQ(chunk2->data_version, 1);
     ASSERT_EQ(chunk2->chunk_class_id, 0xFF);
     ASSERT_EQ(chunk2->chunk_version, 7);
-    ASSERT_EQ(chunk2->data_size, 0);
-    ASSERT_EQ(chunk2->id_count, 0);
-    ASSERT_EQ(chunk2->manager_count, 0);
+    ASSERT_EQ(chunk2->data.count, 0);
+    ASSERT_EQ(chunk2->ids.count, 0);
+    ASSERT_EQ(chunk2->managers.count, 0);
 
     nmo_arena_destroy(arena);
 }

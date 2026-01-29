@@ -33,9 +33,10 @@ TEST(chunk_parser, cursor_operations) {
     ASSERT_NOT_NULL(chunk);
 
     // Add 10 DWORDs of data
-    chunk->data_size = 10;
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, 10 * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -63,16 +64,17 @@ TEST(chunk_parser, primitive_reads) {
     ASSERT_NOT_NULL(chunk);
 
     // Create test data
-    chunk->data_size = 10;
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, 10 * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
 
-    chunk->data[0] = 0x12345678;  // For byte/word/dword tests
-    chunk->data[1] = 0xDEADBEEF;  // For int test
+    data[0] = 0x12345678;  // For byte/word/dword tests
+    data[1] = 0xDEADBEEF;  // For int test
     float test_float = 3.14159f;
-    memcpy(&chunk->data[2], &test_float, sizeof(float));  // For float test
-    chunk->data[3] = 0x11111111;  // GUID part 1
-    chunk->data[4] = 0x22222222;  // GUID part 2
+    memcpy(&data[2], &test_float, sizeof(float));  // For float test
+    data[3] = 0x11111111;  // GUID part 1
+    data[4] = 0x22222222;  // GUID part 2
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -124,12 +126,13 @@ TEST(chunk_parser, string_read) {
     const char* test_str = "Hello";
     uint32_t str_len = (uint32_t)strlen(test_str);
 
-    chunk->data_size = 3;  // 1 for length + 2 for "Hello" (5 bytes -> 2 DWORDs)
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, 3 * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
 
-    chunk->data[0] = str_len;
-    memcpy(&chunk->data[1], test_str, str_len);
+    data[0] = str_len;
+    memcpy(&data[1], test_str, str_len);
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -150,16 +153,17 @@ TEST(chunk_parser, object_sequence_state) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    chunk->data_size = 6;
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, chunk->data_size * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 6);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
 
-    chunk->data[0] = 3;           // sequence count
-    chunk->data[1] = 101;         // id #1
-    chunk->data[2] = 202;         // id #2
-    chunk->data[3] = 303;         // id #3
-    chunk->data[4] = 0xDEADBEEF;  // sentinel after sequence
-    chunk->data[5] = 0x01020304;  // trailing data for further reads
+    data[0] = 3;           // sequence count
+    data[1] = 101;         // id #1
+    data[2] = 202;         // id #2
+    data[3] = 303;         // id #3
+    data[4] = 0xDEADBEEF;  // sentinel after sequence
+    data[5] = 0x01020304;  // trailing data for further reads
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -194,17 +198,18 @@ TEST(chunk_parser, manager_sequence_state) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    chunk->data_size = 6;
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, chunk->data_size * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 6);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
 
     nmo_guid_t guid = {0xAAAAAAAA, 0xBBBBBBBB};
-    chunk->data[0] = 2;             // sequence count
-    chunk->data[1] = guid.d1;
-    chunk->data[2] = guid.d2;
-    chunk->data[3] = 0x11111111;    // entry #1
-    chunk->data[4] = 0x22222222;    // entry #2
-    chunk->data[5] = 0x33333333;    // trailing payload
+    data[0] = 2;             // sequence count
+    data[1] = guid.d1;
+    data[2] = guid.d2;
+    data[3] = 0x11111111;    // entry #1
+    data[4] = 0x22222222;    // entry #2
+    data[5] = 0x33333333;    // trailing payload
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -242,16 +247,17 @@ TEST(chunk_parser, identifier_navigation) {
     // Pos 4: [0xID2, 8]
     // Pos 6: [payload]
     // Pos 8: [0xID3, 0]
-    chunk->data_size = 10;
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, 10 * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
-    memset(chunk->data, 0, 10 * sizeof(uint32_t));
-    chunk->data[0] = 0x1D1D1D1D;
-    chunk->data[1] = 4;
-    chunk->data[4] = 0x2D2D2D2D;
-    chunk->data[5] = 8;
-    chunk->data[8] = 0x3D3D3D3D;
-    chunk->data[9] = 0; // End of list
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    memset(data, 0, 10 * sizeof(uint32_t));
+    data[0] = 0x1D1D1D1D;
+    data[1] = 4;
+    data[4] = 0x2D2D2D2D;
+    data[5] = 8;
+    data[8] = 0x3D3D3D3D;
+    data[9] = 0; // End of list
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
@@ -280,10 +286,11 @@ TEST(chunk_parser, bounds_checking) {
     ASSERT_NOT_NULL(chunk);
 
     // Create chunk with 1 DWORD
-    chunk->data_size = 1;
-    chunk->data = (uint32_t*)nmo_arena_alloc(arena, 1 * sizeof(uint32_t), sizeof(uint32_t));
-    ASSERT_NOT_NULL(chunk->data);
-    chunk->data[0] = 0x12345678;
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 1);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    data[0] = 0x12345678;
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);

@@ -41,7 +41,7 @@ TEST(chunk_special_cases, array_helpers_round_trip) {
 
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
-    ASSERT_EQ(dword_count * 2 + sample_count, chunk->data_size);
+    ASSERT_EQ(dword_count * 2 + sample_count, chunk->data.count);
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);

@@ -4,7 +4,7 @@
  */
 
 #include "../../tests/test_framework.h"
-#include "schema/nmo_ckbeobject_schemas.h"
+#include "object/nmo_ckbeobject_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_arena.h"

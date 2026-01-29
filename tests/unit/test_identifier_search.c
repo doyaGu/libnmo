@@ -244,8 +244,6 @@ TEST(identifier_search, empty_chunk) {
 
     chunk->data_version = 1;
     chunk->chunk_version = 7;
-    chunk->data_size = 0;
-    chunk->data = NULL;
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);

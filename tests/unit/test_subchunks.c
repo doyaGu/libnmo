@@ -92,15 +92,17 @@ TEST(subchunks, create_and_write_subchunks) {
 
     // Verify CHN option flag and chunk ref IntList layout
     ASSERT_TRUE((parent->chunk_options & NMO_CHUNK_OPTION_CHN) != 0);
-    ASSERT_NOT_NULL(parent->chunk_refs);
-    ASSERT_EQ(4u, parent->chunk_ref_count);
-    ASSERT_EQ(0xFFFFFFFFu, parent->chunk_refs[0]);  // Sentinel before packed list
-    ASSERT_EQ(0u, parent->chunk_refs[1]);          // Sequence header offset
-    ASSERT_NE(0xFFFFFFFFu, parent->chunk_refs[2]);
-    ASSERT_NE(0xFFFFFFFFu, parent->chunk_refs[3]);
-    ASSERT_LT(parent->chunk_refs[2], parent->data_size);
-    ASSERT_LT(parent->chunk_refs[3], parent->data_size);
-    ASSERT_GT(parent->chunk_refs[3], parent->chunk_refs[2]);
+    ASSERT_NOT_NULL(parent->chunk_refs.data);
+    ASSERT_EQ(4u, parent->chunk_refs.count);
+    uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &parent->chunk_refs);
+    ASSERT_NOT_NULL(refs);
+    ASSERT_EQ(0xFFFFFFFFu, refs[0]);  // Sentinel before packed list
+    ASSERT_EQ(0u, refs[1]);          // Sequence header offset
+    ASSERT_NE(0xFFFFFFFFu, refs[2]);
+    ASSERT_NE(0xFFFFFFFFu, refs[3]);
+    ASSERT_LT(refs[2], parent->data.count);
+    ASSERT_LT(refs[3], parent->data.count);
+    ASSERT_GT(refs[3], refs[2]);
 
     // Cleanup
     nmo_chunk_writer_destroy(parent_writer);
@@ -205,8 +207,8 @@ TEST(subchunks, read_subchunks) {
     ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(read_sub1);
     ASSERT_EQ(read_sub1->class_id, 0xAABBCCDD);
-    ASSERT_EQ(read_sub1->data_size, 3);
-    ASSERT_EQ(read_sub1->id_count, 1);
+    ASSERT_EQ(read_sub1->data.count, 3);
+    ASSERT_EQ(read_sub1->ids.count, 1);
 
     // Parse sub-chunk 1 data
     nmo_chunk_parser_t* sub_parser1 = nmo_chunk_parser_create(read_sub1);
@@ -233,7 +235,7 @@ TEST(subchunks, read_subchunks) {
     ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(read_sub2);
     ASSERT_EQ(read_sub2->class_id, 0x11223344);
-    ASSERT_EQ(read_sub2->data_size, 2);
+    ASSERT_EQ(read_sub2->data.count, 2);
 
     // Parse sub-chunk 2 data
     nmo_chunk_parser_t* sub_parser2 = nmo_chunk_parser_create(read_sub2);
@@ -288,11 +290,13 @@ TEST(subchunks, standalone_subchunk_refs) {
     ASSERT_NOT_NULL(parent);
 
     ASSERT_TRUE((parent->chunk_options & NMO_CHUNK_OPTION_CHN) != 0);
-    ASSERT_EQ(1u, parent->chunk_ref_count);
-    ASSERT_NOT_NULL(parent->chunk_refs);
-    ASSERT_NE(0xFFFFFFFFu, parent->chunk_refs[0]);
-    ASSERT_EQ(0u, parent->chunk_refs[0]);  // First entry starts at beginning
-    ASSERT_LT(parent->chunk_refs[0], parent->data_size);
+    ASSERT_EQ(1u, parent->chunk_refs.count);
+    ASSERT_NOT_NULL(parent->chunk_refs.data);
+    uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &parent->chunk_refs);
+    ASSERT_NOT_NULL(refs);
+    ASSERT_NE(0xFFFFFFFFu, refs[0]);
+    ASSERT_EQ(0u, refs[0]);  // First entry starts at beginning
+    ASSERT_LT(refs[0], parent->data.count);
 
     nmo_chunk_writer_destroy(parent_writer);
     nmo_chunk_writer_destroy(sub_writer);

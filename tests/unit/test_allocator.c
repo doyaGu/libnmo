@@ -70,19 +70,12 @@ TEST(allocator, invalid_alignment) {
     
     // Test non-power-of-2 alignment
     void *ptr = nmo_alloc(&allocator, 256, 3);  // 3 is not power of 2
-    // Behavior may vary - either NULL or rounded up
-    // We just verify it doesn't crash
-    if (ptr != NULL) {
-        nmo_free(&allocator, ptr);
-    }
+    ASSERT_NULL(ptr);
     
     // Test zero alignment
     ptr = nmo_alloc(&allocator, 256, 0);  // 0 alignment
-    // Behavior may vary - either NULL or default alignment
-    // We just verify it doesn't crash
-    if (ptr != NULL) {
-        nmo_free(&allocator, ptr);
-    }
+    ASSERT_NOT_NULL(ptr);
+    nmo_free(&allocator, ptr);
 }
 
 TEST(allocator, null_pointer_free) {

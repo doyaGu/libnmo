@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file test_chunk_serialize.c
  * @brief Unit tests for chunk serialization
  */
@@ -99,7 +99,7 @@ TEST(chunk_serialize, empty_chunk) {
     ASSERT_NOT_NULL(chunk);
 
     /* Verify empty */
-    ASSERT_EQ(chunk->data_size, 0);
+    ASSERT_EQ(chunk->data.count, 0);
 
     /* Cleanup */
     nmo_arena_destroy(arena);

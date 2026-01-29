@@ -4,11 +4,11 @@
  */
 
 #include "test_framework.h"
-#include "schema/nmo_schema_macros.h"
-#include "schema/nmo_schema.h"
-#include "schema/nmo_schema_registry.h"
-#include "schema/nmo_param_meta.h"
-#include "schema/param_type_table.h"
+#include "object/nmo_schema_macros.h"
+#include "object/nmo_schema.h"
+#include "object/nmo_schema_registry.h"
+#include "object/nmo_param_meta.h"
+#include "object/param_type_table.h"
 #include "core/nmo_arena.h"
 #include <string.h>
 

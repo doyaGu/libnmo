@@ -368,15 +368,9 @@ TEST(chunk_api, manager_sequence) {
     ASSERT_EQ(result.code, NMO_OK);
     // Note: Can't directly access chunk_options, but functionality is verified by successful manager operations
     
-    // Write manager ints
-    nmo_guid_t entry_guids[3] = {
-        {0xDEADBEEF, 0x01020304},
-        {0xFEEDFACE, 0x05060708},
-        {0xCAFEBABE, 0x0A0B0C0D}
-    };
     uint32_t entry_values[3] = {0xAABBCCDD, 0x11223344, 0x55667788};
     for (int i = 0; i < 3; ++i) {
-        result = nmo_chunk_write_manager_int(chunk, entry_guids[i], entry_values[i]);
+        result = nmo_chunk_write_dword(chunk, entry_values[i]);
         ASSERT_EQ(result.code, NMO_OK);
     }
     
@@ -393,14 +387,11 @@ TEST(chunk_api, manager_sequence) {
     ASSERT_EQ(read_guid.d2, mgr_guid.d2);
     ASSERT_EQ(count, 3u);
 
-    // Read manager ints
-    nmo_guid_t mgr_entry;
+    // Read manager sequence values
     uint32_t value;
     for (int i = 0; i < 3; ++i) {
-        result = nmo_chunk_read_manager_int(chunk, &mgr_entry, &value);
+        result = nmo_chunk_read_dword(chunk, &value);
         ASSERT_EQ(result.code, NMO_OK);
-        ASSERT_EQ(mgr_entry.d1, entry_guids[i].d1);
-        ASSERT_EQ(mgr_entry.d2, entry_guids[i].d2);
         ASSERT_EQ(value, entry_values[i]);
     }
     

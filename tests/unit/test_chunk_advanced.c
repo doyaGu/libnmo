@@ -242,7 +242,7 @@ TEST(chunk_advanced, chunk_clone) {
 
     nmo_chunk_t *src = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(src);
-    ASSERT_EQ(src->chunk_count, 1);
+    ASSERT_EQ(src->chunks.count, 1);
 
     // Clone the chunk
     nmo_chunk_t *clone = nmo_chunk_clone(src, arena);
@@ -250,21 +250,29 @@ TEST(chunk_advanced, chunk_clone) {
 
     // Verify basic fields
     ASSERT_EQ(clone->class_id, src->class_id);
-    ASSERT_EQ(clone->data_size, src->data_size);
+    ASSERT_EQ(clone->data.count, src->data.count);
 
     // Verify data content
-    for (size_t i = 0; i < src->data_size; i++) {
-        ASSERT_EQ(clone->data[i], src->data[i]);
+    uint32_t *src_data = NMO_ARENA_ARRAY_DATA(uint32_t, &src->data);
+    uint32_t *clone_data = NMO_ARENA_ARRAY_DATA(uint32_t, &clone->data);
+    ASSERT_NOT_NULL(src_data);
+    ASSERT_NOT_NULL(clone_data);
+    for (size_t i = 0; i < src->data.count; i++) {
+        ASSERT_EQ(clone_data[i], src_data[i]);
     }
 
     // Verify sub-chunks
-    ASSERT_EQ(clone->chunk_count, src->chunk_count);
-    ASSERT_NOT_NULL(clone->chunks);
-    ASSERT_TRUE(clone->chunks[0] != src->chunks[0]);
-    ASSERT_EQ(clone->chunks[0]->class_id, 0x3002);
+    ASSERT_EQ(clone->chunks.count, src->chunks.count);
+    ASSERT_NOT_NULL(clone->chunks.data);
+    nmo_chunk_t **src_chunks = NMO_ARENA_ARRAY_DATA(nmo_chunk_t*, &src->chunks);
+    nmo_chunk_t **clone_chunks = NMO_ARENA_ARRAY_DATA(nmo_chunk_t*, &clone->chunks);
+    ASSERT_NOT_NULL(src_chunks);
+    ASSERT_NOT_NULL(clone_chunks);
+    ASSERT_TRUE(clone_chunks[0] != src_chunks[0]);
+    ASSERT_EQ(clone_chunks[0]->class_id, 0x3002);
 
     // Verify it's a deep copy (different pointers)
-    ASSERT_TRUE(clone->data != src->data);
+    ASSERT_TRUE(clone->data.data != src->data.data);
 
     nmo_arena_destroy(arena);
 }
