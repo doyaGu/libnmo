@@ -41,6 +41,57 @@ static int nmo_size_mul_overflow(size_t a, size_t b, size_t *out) {
     return 0;
 }
 
+static void nmo_arena_array_copy_range(nmo_arena_array_t *array,
+                                       uint8_t *dest,
+                                       const uint8_t *src,
+                                       size_t count) {
+    if (array == NULL || dest == NULL || src == NULL || count == 0) {
+        return;
+    }
+
+    if (array->lifecycle.copy) {
+        size_t stride = array->element_size;
+        for (size_t i = 0; i < count; ++i) {
+            nmo_container_copy_element(&array->lifecycle,
+                                       dest + (i * stride),
+                                       src + (i * stride),
+                                       stride);
+        }
+    } else {
+        memcpy(dest, src, count * array->element_size);
+    }
+}
+
+static void nmo_arena_array_move_range(nmo_arena_array_t *array,
+                                       uint8_t *dest,
+                                       uint8_t *src,
+                                       size_t count) {
+    if (array == NULL || dest == NULL || src == NULL || count == 0 || dest == src) {
+        return;
+    }
+
+    if (array->lifecycle.move) {
+        size_t stride = array->element_size;
+        if (dest < src) {
+            for (size_t i = 0; i < count; ++i) {
+                nmo_container_move_element(&array->lifecycle,
+                                           dest + (i * stride),
+                                           src + (i * stride),
+                                           stride);
+            }
+        } else {
+            for (size_t i = count; i > 0; --i) {
+                nmo_container_move_element(&array->lifecycle,
+                                           dest + ((i - 1) * stride),
+                                           src + ((i - 1) * stride),
+                                           stride);
+            }
+        }
+    } else {
+        memmove(dest, src, count * array->element_size);
+    }
+}
+
 static void nmo_arena_array_dispose_range(nmo_arena_array_t *array, size_t start, size_t count) {
     if (array == NULL || array->data == NULL || array->lifecycle.dispose == NULL || count == 0) {
         return;
@@ -68,6 +119,8 @@ void nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
     if (lifecycle) {
         array->lifecycle = *lifecycle;
     } else {
+        array->lifecycle.copy = NULL;
+        array->lifecycle.move = NULL;
         array->lifecycle.dispose = NULL;
         array->lifecycle.user_data = NULL;
     }
@@ -88,6 +141,8 @@ nmo_result_t nmo_arena_array_init(nmo_arena_array_t *array,
     array->capacity = 0;
     array->element_size = element_size;
     array->arena = arena;
+    array->lifecycle.copy = NULL;
+    array->lifecycle.move = NULL;
     array->lifecycle.dispose = NULL;
     array->lifecycle.user_data = NULL;
 
@@ -130,15 +185,12 @@ nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) 
                                           "Failed to allocate array memory"));
     }
 
-    // Copy existing data if any
+    // Move existing data if any
     if (array->data && array->count > 0) {
-        size_t copy_size = 0;
-        if (nmo_size_mul_overflow(array->count, array->element_size, &copy_size)) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "array copy size overflow"));
-        }
-        memcpy(new_data, array->data, copy_size);
+        nmo_arena_array_move_range(array,
+                                   (uint8_t *)new_data,
+                                   (uint8_t *)array->data,
+                                   array->count);
     }
 
     array->data = new_data;
@@ -191,7 +243,7 @@ nmo_result_t nmo_arena_array_append(nmo_arena_array_t *array, const void *elemen
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    memcpy(dest, element, array->element_size);
+    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
     array->count++;
 
     return nmo_result_ok();
@@ -216,13 +268,7 @@ nmo_result_t nmo_arena_array_append_array(nmo_arena_array_t *array,
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    size_t copy_size = 0;
-    if (nmo_size_mul_overflow(count, array->element_size, &copy_size)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "array append byte size overflow"));
-    }
-    memcpy(dest, elements, copy_size);
+    nmo_arena_array_copy_range(array, dest, (const uint8_t *)elements, count);
     array->count += count;
 
     return nmo_result_ok();
@@ -276,7 +322,7 @@ nmo_result_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index, const v
 
     uint8_t *dest = (uint8_t *)array->data + (index * array->element_size);
     nmo_arena_array_dispose_range(array, index, 1);
-    memcpy(dest, element, array->element_size);
+    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
 
     return nmo_result_ok();
 }
@@ -315,11 +361,14 @@ nmo_result_t nmo_arena_array_insert(nmo_arena_array_t *array,
     uint8_t *dest = base + (index * array->element_size);
 
     if (index < array->count) {
-        size_t move_bytes = (array->count - index) * array->element_size;
-        memmove(dest + array->element_size, dest, move_bytes);
+        size_t move_count = array->count - index;
+        nmo_arena_array_move_range(array,
+                                   dest + array->element_size,
+                                   dest,
+                                   move_count);
     }
 
-    memcpy(dest, element, array->element_size);
+    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
     array->count++;
 
     return nmo_result_ok();
@@ -344,8 +393,11 @@ nmo_result_t nmo_arena_array_remove(nmo_arena_array_t *array,
     nmo_arena_array_dispose_range(array, index, 1);
 
     if (index < array->count - 1) {
-        size_t move_bytes = (array->count - index - 1) * array->element_size;
-        memmove(target, target + array->element_size, move_bytes);
+        size_t move_count = array->count - index - 1;
+        nmo_arena_array_move_range(array,
+                                   target,
+                                   target + array->element_size,
+                                   move_count);
     }
 
     array->count--;
@@ -415,6 +467,8 @@ nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
     array->count = 0;
     array->capacity = 0;
     array->data = NULL;
+    array->lifecycle.copy = NULL;
+    array->lifecycle.move = NULL;
     array->lifecycle.dispose = NULL;
     array->lifecycle.user_data = NULL;
 

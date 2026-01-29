@@ -53,6 +53,9 @@ void nmo_hash_set_destroy(nmo_hash_set_t *set);
 /**
  * @brief Configure lifecycle hooks for stored keys.
  *
+ * Copy callbacks are invoked when keys are written into the set. Move
+ * callbacks are invoked when keys are relocated during rehash.
+ *
  * @param set Hash set to configure.
  * @param key_lifecycle Lifecycle callbacks (NULL to clear).
  */

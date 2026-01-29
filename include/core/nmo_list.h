@@ -39,6 +39,9 @@ void nmo_list_destroy(nmo_list_t *list);
 /**
  * @brief Configure lifecycle hooks for stored elements.
  *
+ * Copy callbacks are invoked when elements are written into the list.
+ * Move callbacks are reserved for internal relocation (currently unused).
+ *
  * @param list List to configure.
  * @param lifecycle Lifecycle callbacks (NULL to clear).
  */

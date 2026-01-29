@@ -170,6 +170,8 @@ nmo_list_t *nmo_list_create(nmo_arena_t *arena, size_t element_size) {
     list->head = NULL;
     list->tail = NULL;
     list->free_nodes = NULL;
+    list->lifecycle.copy = NULL;
+    list->lifecycle.move = NULL;
     list->lifecycle.dispose = NULL;
     list->lifecycle.user_data = NULL;
 
@@ -199,6 +201,8 @@ void nmo_list_set_lifecycle(nmo_list_t *list,
     if (lifecycle) {
         list->lifecycle = *lifecycle;
     } else {
+        list->lifecycle.copy = NULL;
+        list->lifecycle.move = NULL;
         list->lifecycle.dispose = NULL;
         list->lifecycle.user_data = NULL;
     }
@@ -214,7 +218,7 @@ nmo_list_node_t *nmo_list_push_back(nmo_list_t *list, const void *element) {
         return NULL;
     }
 
-    memcpy(node->data, element, list->element_size);
+    nmo_container_copy_element(&list->lifecycle, node->data, element, list->element_size);
     nmo_list_attach_back(list, node);
     return node;
 }
@@ -228,7 +232,7 @@ nmo_list_node_t *nmo_list_push_front(nmo_list_t *list, const void *element) {
     if (!node) {
         return NULL;
     }
-    memcpy(node->data, element, list->element_size);
+    nmo_container_copy_element(&list->lifecycle, node->data, element, list->element_size);
     nmo_list_attach_front(list, node);
     return node;
 }
@@ -244,7 +248,7 @@ nmo_list_node_t *nmo_list_insert_after(nmo_list_t *list,
     if (!node) {
         return NULL;
     }
-    memcpy(node->data, element, list->element_size);
+    nmo_container_copy_element(&list->lifecycle, node->data, element, list->element_size);
     nmo_list_attach_after(list, pos, node);
     return node;
 }
@@ -260,7 +264,7 @@ nmo_list_node_t *nmo_list_insert_before(nmo_list_t *list,
     if (!node) {
         return NULL;
     }
-    memcpy(node->data, element, list->element_size);
+    nmo_container_copy_element(&list->lifecycle, node->data, element, list->element_size);
     nmo_list_attach_before(list, pos, node);
     return node;
 }

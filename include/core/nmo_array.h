@@ -51,6 +51,10 @@ NMO_API nmo_result_t nmo_array_init(nmo_array_t *array,
 
 /**
  * @brief Configure lifecycle callbacks for stored elements.
+ *
+ * Copy callbacks are invoked when elements are written into the array
+ * (append/insert/set/clone). Move callbacks are invoked when elements
+ * are relocated inside the array (reserve/insert/remove/shrink).
  */
 NMO_API void nmo_array_set_lifecycle(nmo_array_t *array,
                                       const nmo_container_lifecycle_t *lifecycle);
@@ -130,6 +134,9 @@ NMO_API void nmo_array_clear(nmo_array_t *array);
 
 /**
  * @brief Set array data directly
+ *
+ * Disposes existing elements and frees the previous backing store before
+ * taking ownership of the new data buffer.
  */
 NMO_API nmo_result_t nmo_array_set_data(nmo_array_t *array,
                                          void *data,

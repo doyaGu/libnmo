@@ -60,7 +60,9 @@ nmo_indexed_map_t *nmo_indexed_map_create(
  * @brief Configure lifecycle hooks for stored keys and values.
  *
  * Dispose callbacks run whenever an element leaves the map (remove, clear,
- * destroy) or a value is overwritten. Passing NULL resets the lifecycle.
+ * destroy) or a value is overwritten. Copy callbacks run when keys/values
+ * are written into the map or copied out, and move callbacks run when
+ * dense storage is compacted or reallocated. Passing NULL resets the lifecycle.
  *
  * @param map Indexed map
  * @param key_lifecycle Lifecycle hooks for keys (optional)

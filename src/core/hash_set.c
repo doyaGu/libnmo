@@ -42,6 +42,14 @@ static size_t nmo_hash_set_alignment(size_t size) {
     return alignment;
 }
 
+static void nmo_hash_set_copy_key(nmo_hash_set_t *set, void *dest, const void *src) {
+    nmo_container_copy_element(&set->key_lifecycle, dest, src, set->key_size);
+}
+
+static void nmo_hash_set_move_key(nmo_hash_set_t *set, void *dest, void *src) {
+    nmo_container_move_element(&set->key_lifecycle, dest, src, set->key_size);
+}
+
 static size_t nmo_hash_set_next_capacity(size_t min_capacity) {
     size_t capacity = HASH_SET_DEFAULT_CAPACITY;
     if (capacity < min_capacity) {
@@ -148,9 +156,9 @@ static int nmo_hash_set_rehash(nmo_hash_set_t *set, size_t new_capacity) {
                 int found = 0;
                 int slot = nmo_hash_set_find_slot(set, key_ptr, &found);
                 if (slot >= 0) {
-                    memcpy(set->keys + ((size_t)slot * set->key_size),
-                           key_ptr,
-                           set->key_size);
+                    nmo_hash_set_move_key(set,
+                                          set->keys + ((size_t)slot * set->key_size),
+                                          (void *)key_ptr);
                     set->states[slot] = NMO_HASH_SET_ENTRY_OCCUPIED;
                     set->count++;
                 }
@@ -193,6 +201,8 @@ nmo_hash_set_t *nmo_hash_set_create(const nmo_allocator_t *allocator,
     set->key_size = key_size;
     set->hash_func = hash_func ? hash_func : nmo_hash_fnv1a;
     set->compare_func = compare_func ? compare_func : nmo_hash_set_default_compare;
+    set->key_lifecycle.copy = NULL;
+    set->key_lifecycle.move = NULL;
     set->key_lifecycle.dispose = NULL;
     set->key_lifecycle.user_data = NULL;
 
@@ -237,6 +247,8 @@ void nmo_hash_set_set_lifecycle(nmo_hash_set_t *set,
     if (key_lifecycle) {
         set->key_lifecycle = *key_lifecycle;
     } else {
+        set->key_lifecycle.copy = NULL;
+        set->key_lifecycle.move = NULL;
         set->key_lifecycle.dispose = NULL;
         set->key_lifecycle.user_data = NULL;
     }
@@ -281,7 +293,7 @@ int nmo_hash_set_insert(nmo_hash_set_t *set, const void *key) {
     }
 
     uint8_t *dest = set->keys + ((size_t)slot * set->key_size);
-    memcpy(dest, key, set->key_size);
+    nmo_hash_set_copy_key(set, dest, key);
     set->states[slot] = NMO_HASH_SET_ENTRY_OCCUPIED;
     set->count++;
     return NMO_OK;

@@ -64,6 +64,58 @@ static size_t indexed_map_alignment(size_t size) {
     return alignment;
 }
 
+static void indexed_map_copy_key(nmo_indexed_map_t *map, void *dest, const void *src) {
+    nmo_container_copy_element(&map->key_lifecycle, dest, src, map->key_size);
+}
+
+static void indexed_map_copy_value(nmo_indexed_map_t *map, void *dest, const void *src) {
+    nmo_container_copy_element(&map->value_lifecycle, dest, src, map->value_size);
+}
+
+static void indexed_map_move_key(nmo_indexed_map_t *map, void *dest, void *src) {
+    nmo_container_move_element(&map->key_lifecycle, dest, src, map->key_size);
+}
+
+static void indexed_map_move_value(nmo_indexed_map_t *map, void *dest, void *src) {
+    nmo_container_move_element(&map->value_lifecycle, dest, src, map->value_size);
+}
+
+static void indexed_map_move_key_range(nmo_indexed_map_t *map,
+                                       uint8_t *dest,
+                                       uint8_t *src,
+                                       size_t count) {
+    if (map == NULL || dest == NULL || src == NULL || count == 0) {
+        return;
+    }
+
+    if (map->key_lifecycle.move) {
+        size_t stride = map->key_size;
+        for (size_t i = 0; i < count; ++i) {
+            indexed_map_move_key(map, dest + (i * stride), src + (i * stride));
+        }
+    } else {
+        memmove(dest, src, count * map->key_size);
+    }
+}
+
+static void indexed_map_move_value_range(nmo_indexed_map_t *map,
+                                         uint8_t *dest,
+                                         uint8_t *src,
+                                         size_t count) {
+    if (map == NULL || dest == NULL || src == NULL || count == 0) {
+        return;
+    }
+
+    if (map->value_lifecycle.move) {
+        size_t stride = map->value_size;
+        for (size_t i = 0; i < count; ++i) {
+            indexed_map_move_value(map, dest + (i * stride), src + (i * stride));
+        }
+    } else {
+        memmove(dest, src, count * map->value_size);
+    }
+}
+
 static size_t indexed_map_next_capacity(size_t min_capacity) {
     size_t capacity = DEFAULT_INITIAL_CAPACITY;
     if (capacity < min_capacity) {
@@ -129,10 +181,10 @@ static int indexed_map_allocate_dense(nmo_indexed_map_t *map, size_t capacity) {
     }
 
     if (map->dense_keys != NULL) {
-        memcpy(keys, map->dense_keys, map->count * map->key_size);
+        indexed_map_move_key_range(map, keys, map->dense_keys, map->count);
     }
     if (map->dense_values != NULL) {
-        memcpy(values, map->dense_values, map->count * map->value_size);
+        indexed_map_move_value_range(map, values, map->dense_values, map->count);
     }
 
     map->dense_keys = keys;
@@ -268,8 +320,12 @@ nmo_indexed_map_t *nmo_indexed_map_create(
     map->value_size = value_size;
     map->hash_func = hash_func ? hash_func : indexed_map_hash_default;
     map->compare_func = compare_func ? compare_func : indexed_map_default_compare;
+    map->key_lifecycle.copy = NULL;
+    map->key_lifecycle.move = NULL;
     map->key_lifecycle.dispose = NULL;
     map->key_lifecycle.user_data = NULL;
+    map->value_lifecycle.copy = NULL;
+    map->value_lifecycle.move = NULL;
     map->value_lifecycle.dispose = NULL;
     map->value_lifecycle.user_data = NULL;
 
@@ -343,6 +399,8 @@ void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
     if (key_lifecycle) {
         map->key_lifecycle = *key_lifecycle;
     } else {
+        map->key_lifecycle.copy = NULL;
+        map->key_lifecycle.move = NULL;
         map->key_lifecycle.dispose = NULL;
         map->key_lifecycle.user_data = NULL;
     }
@@ -350,6 +408,8 @@ void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
     if (value_lifecycle) {
         map->value_lifecycle = *value_lifecycle;
     } else {
+        map->value_lifecycle.copy = NULL;
+        map->value_lifecycle.move = NULL;
         map->value_lifecycle.dispose = NULL;
         map->value_lifecycle.user_data = NULL;
     }
@@ -402,13 +462,15 @@ int nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *
             void *value_ptr = map->dense_values + (dense_index * map->value_size);
             map->value_lifecycle.dispose(value_ptr, map->value_lifecycle.user_data);
         }
-        memcpy(map->dense_values + (dense_index * map->value_size), value, map->value_size);
+        indexed_map_copy_value(map,
+                               map->dense_values + (dense_index * map->value_size),
+                               value);
         return NMO_OK;
     }
 
     size_t dense_index = map->count;
-    memcpy(map->dense_keys + (dense_index * map->key_size), key, map->key_size);
-    memcpy(map->dense_values + (dense_index * map->value_size), value, map->value_size);
+    indexed_map_copy_key(map, map->dense_keys + (dense_index * map->key_size), key);
+    indexed_map_copy_value(map, map->dense_values + (dense_index * map->value_size), value);
     map->states[slot] = INDEXED_MAP_ENTRY_OCCUPIED;
     map->hash_to_dense[slot] = dense_index;
     map->count++;
@@ -428,7 +490,9 @@ int nmo_indexed_map_get(const nmo_indexed_map_t *map, const void *key, void *val
 
     size_t dense_index = map->hash_to_dense[slot];
     if (value_out != NULL) {
-        memcpy(value_out, map->dense_values + (dense_index * map->value_size), map->value_size);
+        indexed_map_copy_value(map,
+                               value_out,
+                               map->dense_values + (dense_index * map->value_size));
     }
     return 1;
 }
@@ -449,12 +513,12 @@ int nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key) {
 
     size_t last_index = map->count - 1;
     if (dense_index != last_index) {
-        memcpy(map->dense_keys + (dense_index * map->key_size),
-               map->dense_keys + (last_index * map->key_size),
-               map->key_size);
-        memcpy(map->dense_values + (dense_index * map->value_size),
-               map->dense_values + (last_index * map->value_size),
-               map->value_size);
+         indexed_map_move_key(map,
+                     map->dense_keys + (dense_index * map->key_size),
+                     map->dense_keys + (last_index * map->key_size));
+         indexed_map_move_value(map,
+                       map->dense_values + (dense_index * map->value_size),
+                       map->dense_values + (last_index * map->value_size));
 
         int last_slot = indexed_map_slot_for_dense(map, last_index);
         if (last_slot >= 0) {
@@ -479,7 +543,7 @@ int nmo_indexed_map_get_key_at(const nmo_indexed_map_t *map, size_t index, void 
     if (map == NULL || key_out == NULL || index >= map->count) {
         return 0;
     }
-    memcpy(key_out, map->dense_keys + (index * map->key_size), map->key_size);
+    indexed_map_copy_key(map, key_out, map->dense_keys + (index * map->key_size));
     return 1;
 }
 
@@ -487,7 +551,7 @@ int nmo_indexed_map_get_value_at(const nmo_indexed_map_t *map, size_t index, voi
     if (map == NULL || value_out == NULL || index >= map->count) {
         return 0;
     }
-    memcpy(value_out, map->dense_values + (index * map->value_size), map->value_size);
+    indexed_map_copy_value(map, value_out, map->dense_values + (index * map->value_size));
     return 1;
 }
 
@@ -496,10 +560,10 @@ int nmo_indexed_map_get_at(const nmo_indexed_map_t *map, size_t index, void *key
         return 0;
     }
     if (key_out) {
-        memcpy(key_out, map->dense_keys + (index * map->key_size), map->key_size);
+        indexed_map_copy_key(map, key_out, map->dense_keys + (index * map->key_size));
     }
     if (value_out) {
-        memcpy(value_out, map->dense_values + (index * map->value_size), map->value_size);
+        indexed_map_copy_value(map, value_out, map->dense_values + (index * map->value_size));
     }
     return 1;
 }

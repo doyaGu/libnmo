@@ -52,8 +52,10 @@ void nmo_hash_table_destroy(nmo_hash_table_t *table);
  * @brief Configure lifecycle hooks for keys and values.
  *
  * The provided callbacks execute whenever an element leaves the table
- * (remove, clear, destroy) or a value is overwritten. Passing NULL resets
- * the lifecycle for that side to the default no-op.
+ * (remove, clear, destroy) or a value is overwritten. Copy callbacks are
+ * invoked when keys/values are written into the table (insert, update, get).
+ * Move callbacks are invoked when entries are relocated (rehash).
+ * Passing NULL resets the lifecycle for that side to the default no-op.
  *
  * @param table Hash table
  * @param key_lifecycle Lifecycle hooks for key storage (optional)

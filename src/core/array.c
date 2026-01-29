@@ -19,6 +19,57 @@ static size_t nmo_array_alignment(size_t element_size) {
     return alignment;
 }
 
+static void nmo_array_copy_range(nmo_array_t *array,
+                                 uint8_t *dest,
+                                 const uint8_t *src,
+                                 size_t count) {
+    if (array == NULL || dest == NULL || src == NULL || count == 0) {
+        return;
+    }
+
+    if (array->lifecycle.copy) {
+        size_t stride = array->element_size;
+        for (size_t i = 0; i < count; ++i) {
+            nmo_container_copy_element(&array->lifecycle,
+                                       dest + (i * stride),
+                                       src + (i * stride),
+                                       stride);
+        }
+    } else {
+        memcpy(dest, src, count * array->element_size);
+    }
+}
+
+static void nmo_array_move_range(nmo_array_t *array,
+                                 uint8_t *dest,
+                                 uint8_t *src,
+                                 size_t count) {
+    if (array == NULL || dest == NULL || src == NULL || count == 0 || dest == src) {
+        return;
+    }
+
+    if (array->lifecycle.move) {
+        size_t stride = array->element_size;
+        if (dest < src) {
+            for (size_t i = 0; i < count; ++i) {
+                nmo_container_move_element(&array->lifecycle,
+                                           dest + (i * stride),
+                                           src + (i * stride),
+                                           stride);
+            }
+        } else {
+            for (size_t i = count; i > 0; --i) {
+                nmo_container_move_element(&array->lifecycle,
+                                           dest + ((i - 1) * stride),
+                                           src + ((i - 1) * stride),
+                                           stride);
+            }
+        }
+    } else {
+        memmove(dest, src, count * array->element_size);
+    }
+}
+
 static void nmo_array_dispose_range(nmo_array_t *array, size_t start, size_t count) {
     if (array == NULL || array->data == NULL || array->lifecycle.dispose == NULL || count == 0) {
         return;
@@ -46,6 +97,8 @@ void nmo_array_set_lifecycle(nmo_array_t *array,
     if (lifecycle) {
         array->lifecycle = *lifecycle;
     } else {
+        array->lifecycle.copy = NULL;
+        array->lifecycle.move = NULL;
         array->lifecycle.dispose = NULL;
         array->lifecycle.user_data = NULL;
     }
@@ -66,6 +119,8 @@ nmo_result_t nmo_array_init(nmo_array_t *array,
     array->capacity = 0;
     array->element_size = element_size;
     array->allocator = allocator ? *allocator : nmo_allocator_default();
+    array->lifecycle.copy = NULL;
+    array->lifecycle.move = NULL;
     array->lifecycle.dispose = NULL;
     array->lifecycle.user_data = NULL;
 
@@ -98,9 +153,9 @@ nmo_result_t nmo_array_reserve(nmo_array_t *array, size_t capacity) {
                                           "Failed to allocate array memory"));
     }
 
-    // Copy existing data if any
+    // Move existing data if any
     if (array->data && array->count > 0) {
-        memcpy(new_data, array->data, array->count * array->element_size);
+        nmo_array_move_range(array, (uint8_t *)new_data, (uint8_t *)array->data, array->count);
     }
 
     // Free old data
@@ -154,7 +209,7 @@ nmo_result_t nmo_array_append(nmo_array_t *array, const void *element) {
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    memcpy(dest, element, array->element_size);
+    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
     array->count++;
 
     return nmo_result_ok();
@@ -179,7 +234,7 @@ nmo_result_t nmo_array_append_array(nmo_array_t *array,
     }
 
     uint8_t *dest = (uint8_t *)array->data + (array->count * array->element_size);
-    memcpy(dest, elements, count * array->element_size);
+    nmo_array_copy_range(array, dest, (const uint8_t *)elements, count);
     array->count += count;
 
     return nmo_result_ok();
@@ -233,7 +288,7 @@ nmo_result_t nmo_array_set(nmo_array_t *array, size_t index, const void *element
 
     uint8_t *dest = (uint8_t *)array->data + (index * array->element_size);
     nmo_array_dispose_range(array, index, 1);
-    memcpy(dest, element, array->element_size);
+    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
 
     return nmo_result_ok();
 }
@@ -272,11 +327,14 @@ nmo_result_t nmo_array_insert(nmo_array_t *array,
     uint8_t *dest = base + (index * array->element_size);
 
     if (index < array->count) {
-        size_t move_bytes = (array->count - index) * array->element_size;
-        memmove(dest + array->element_size, dest, move_bytes);
+        size_t move_count = array->count - index;
+        nmo_array_move_range(array,
+                             dest + array->element_size,
+                             dest,
+                             move_count);
     }
 
-    memcpy(dest, element, array->element_size);
+    nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
     array->count++;
 
     return nmo_result_ok();
@@ -301,8 +359,11 @@ nmo_result_t nmo_array_remove(nmo_array_t *array,
     nmo_array_dispose_range(array, index, 1);
 
     if (index < array->count - 1) {
-        size_t move_bytes = (array->count - index - 1) * array->element_size;
-        memmove(target, target + array->element_size, move_bytes);
+        size_t move_count = array->count - index - 1;
+        nmo_array_move_range(array,
+                             target,
+                             target + array->element_size,
+                             move_count);
     }
 
     array->count--;
@@ -349,6 +410,9 @@ nmo_result_t nmo_array_set_data(nmo_array_t *array,
     }
 
     nmo_array_dispose_range(array, 0, array->count);
+    if (array->data && array->data != data) {
+        nmo_free(&array->allocator, array->data);
+    }
     array->data = data;
     array->count = count;
     array->capacity = count; // Set capacity to count since data is pre-allocated
@@ -372,6 +436,8 @@ nmo_result_t nmo_array_alloc(nmo_array_t *array,
     array->count = 0;
     array->capacity = 0;
     array->data = NULL;
+    array->lifecycle.copy = NULL;
+    array->lifecycle.move = NULL;
     array->lifecycle.dispose = NULL;
     array->lifecycle.user_data = NULL;
 
@@ -534,7 +600,7 @@ nmo_result_t nmo_array_shrink_to_fit(nmo_array_t *array) {
                                           "Failed to shrink array"));
     }
 
-    memcpy(new_data, array->data, new_size);
+    nmo_array_move_range(array, (uint8_t *)new_data, (uint8_t *)array->data, array->count);
     nmo_free(&array->allocator, array->data);
     array->data = new_data;
     array->capacity = array->count;

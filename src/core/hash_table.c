@@ -45,6 +45,22 @@ static size_t nmo_hash_table_alignment(size_t element_size) {
     return alignment;
 }
 
+static void nmo_hash_table_copy_key(nmo_hash_table_t *table, void *dest, const void *src) {
+    nmo_container_copy_element(&table->key_lifecycle, dest, src, table->key_size);
+}
+
+static void nmo_hash_table_copy_value(nmo_hash_table_t *table, void *dest, const void *src) {
+    nmo_container_copy_element(&table->value_lifecycle, dest, src, table->value_size);
+}
+
+static void nmo_hash_table_move_key(nmo_hash_table_t *table, void *dest, void *src) {
+    nmo_container_move_element(&table->key_lifecycle, dest, src, table->key_size);
+}
+
+static void nmo_hash_table_move_value(nmo_hash_table_t *table, void *dest, void *src) {
+    nmo_container_move_element(&table->value_lifecycle, dest, src, table->value_size);
+}
+
 static size_t nmo_hash_table_next_capacity(size_t min_capacity) {
     size_t capacity = DEFAULT_INITIAL_CAPACITY;
     if (capacity < min_capacity) {
@@ -192,8 +208,8 @@ static void nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key,
 
     uint8_t *key_dest = table->keys + ((size_t)slot * table->key_size);
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
-    memcpy(key_dest, key, table->key_size);
-    memcpy(value_dest, value, table->value_size);
+    nmo_hash_table_move_key(table, key_dest, (void *)key);
+    nmo_hash_table_move_value(table, value_dest, (void *)value);
     table->states[slot] = NMO_HASH_ENTRY_OCCUPIED;
     table->count++;
 }
@@ -245,8 +261,12 @@ nmo_hash_table_t *nmo_hash_table_create(
     table->value_size = value_size;
     table->hash_func = hash_func ? hash_func : nmo_hash_fnv1a;
     table->compare_func = compare_func ? compare_func : nmo_hash_table_default_compare;
+    table->key_lifecycle.copy = NULL;
+    table->key_lifecycle.move = NULL;
     table->key_lifecycle.dispose = NULL;
     table->key_lifecycle.user_data = NULL;
+    table->value_lifecycle.copy = NULL;
+    table->value_lifecycle.move = NULL;
     table->value_lifecycle.dispose = NULL;
     table->value_lifecycle.user_data = NULL;
 
@@ -296,6 +316,8 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
     if (key_lifecycle) {
         table->key_lifecycle = *key_lifecycle;
     } else {
+        table->key_lifecycle.copy = NULL;
+        table->key_lifecycle.move = NULL;
         table->key_lifecycle.dispose = NULL;
         table->key_lifecycle.user_data = NULL;
     }
@@ -303,6 +325,8 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
     if (value_lifecycle) {
         table->value_lifecycle = *value_lifecycle;
     } else {
+        table->value_lifecycle.copy = NULL;
+        table->value_lifecycle.move = NULL;
         table->value_lifecycle.dispose = NULL;
         table->value_lifecycle.user_data = NULL;
     }
@@ -341,13 +365,13 @@ int nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
     if (found) {
         nmo_hash_table_dispose_value(table, (size_t)slot);
-        memcpy(value_dest, value, table->value_size);
+        nmo_hash_table_copy_value(table, value_dest, value);
         return NMO_OK;
     }
 
     uint8_t *key_dest = table->keys + ((size_t)slot * table->key_size);
-    memcpy(key_dest, key, table->key_size);
-    memcpy(value_dest, value, table->value_size);
+    nmo_hash_table_copy_key(table, key_dest, key);
+    nmo_hash_table_copy_value(table, value_dest, value);
     table->states[slot] = NMO_HASH_ENTRY_OCCUPIED;
     table->count++;
     return NMO_OK;
@@ -365,7 +389,9 @@ int nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, void *val
     }
 
     if (value_out != NULL) {
-        memcpy(value_out, table->values + ((size_t)slot * table->value_size), table->value_size);
+        nmo_hash_table_copy_value(table,
+                                  value_out,
+                                  table->values + ((size_t)slot * table->value_size));
     }
     return 1;
 }

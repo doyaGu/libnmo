@@ -54,6 +54,8 @@ NMO_API nmo_result_t nmo_arena_array_init(nmo_arena_array_t *array,
  *
  * When a dispose callback is provided it is invoked for every element that
  * leaves the array (overwrite, remove, pop, clear, dispose, set_data).
+ * Copy callbacks run when elements are written into the array and move
+ * callbacks run when elements are relocated inside the array.
  * Passing NULL resets the lifecycle to a no-op configuration.
  *
  * @param array  Array to configure (required)
