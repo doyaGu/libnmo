@@ -1,0 +1,297 @@
+/**
+ * @file type_string.h
+ * @brief Type-to-string and string-to-type conversion system (Phase 6.4)
+ *
+ * Provides human-readable string representation for all parameter types.
+ * Supports bidirectional conversion for debugging, UI display, and serialization.
+ *
+ * Design references:
+ * - CKParameterTypeDesc::ToString (CKParameterManager.cpp:1345-1389)
+ * - CKParameterTypeDesc::FromString (CKParameterManager.cpp:1391-1435)
+ *
+ * Format specifications:
+ * - Float:      [-]digits[.digits][e[+-]digits]  e.g., "3.14159", "-2.5e-3"
+ * - Int:        [-]digits | 0xhex                e.g., "42", "-100", "0x2A"
+ * - Bool:       true | false | 1 | 0             e.g., "true", "0"
+ * - Vector:     (x, y, z)                        e.g., "(1.0, 2.0, 3.0)"
+ * - Quaternion: (x, y, z, w)                     e.g., "(0.707, 0, 0.707, 0)"
+ * - Enum:       name | integer                   e.g., "RED", "1"
+ * - Flags:      name1|name2 | 0xvalue            e.g., "READ|WRITE", "0x03"
+ * - String:     "..." (supports escaping)        e.g., "\"Hello\\nWorld\""
+ * - ObjectID:   #id | name                       e.g., "#12345", "Ball_01"
+ */
+
+#ifndef NMO_TYPE_STRING_H
+#define NMO_TYPE_STRING_H
+
+#include "nmo_types.h"
+#include "core/nmo_error.h"
+#include "type/type_system.h"
+
+/* Forward declarations */
+struct nmo_session;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ============================================================================
+ * General-Purpose String Conversion API
+ * ============================================================================ */
+
+/**
+ * @brief Convert a value to its string representation
+ *
+ * @param value          Pointer to value data
+ * @param type           Type descriptor
+ * @param registry       Type registry for enum/flags metadata (optional)
+ * @param buffer         Output string buffer
+ * @param buffer_size    Buffer capacity in bytes
+ * @return NMO_OK on success, error code otherwise
+ *
+ * @note
+ * - Buffer must be at least 32 bytes for primitive types
+ * - Complex types (Vector, Quaternion) need 64+ bytes
+ * - Enum/Flags need space for longest name combination
+ * - Returns NMO_ERROR_BUFFER_TOO_SMALL if insufficient
+ *
+ * Reference: CKParameterTypeDesc::ToString (CKParameterManager.cpp:1345)
+ */
+NMO_API nmo_result_t nmo_type_value_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size
+);
+
+/**
+ * @brief Parse a string into a typed value
+ *
+ * @param value          Pointer to value buffer (output)
+ * @param type           Type descriptor
+ * @param registry       Type registry for enum/flags metadata (optional)
+ * @param string         Input string
+ * @return NMO_OK on success, error code otherwise
+ *
+ * @note
+ * - value must be pre-allocated to type->size bytes
+ * - Supports multiple input formats (see format specs above)
+ * - Returns NMO_ERROR_PARSE_INVALID_FORMAT on syntax error
+ *
+ * Reference: CKParameterTypeDesc::FromString (CKParameterManager.cpp:1391)
+ */
+NMO_API nmo_result_t nmo_type_value_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string
+);
+
+/* ============================================================================
+ * Type-Specific String Converters
+ * ============================================================================ */
+
+/**
+ * @brief Float to string: "3.14159" or "-2.5e-3"
+ */
+NMO_API nmo_result_t nmo_float_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size
+);
+
+NMO_API nmo_result_t nmo_float_from_string(
+    void *value,
+    const char *string
+);
+
+/**
+ * @brief Int to string: "42" or "0x2A"
+ */
+NMO_API nmo_result_t nmo_int_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size,
+    bool use_hex  /**< true for "0x..." format */
+);
+
+NMO_API nmo_result_t nmo_int_from_string(
+    void *value,
+    const char *string
+);
+
+/**
+ * @brief Bool to string: "true" or "false"
+ */
+NMO_API nmo_result_t nmo_bool_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size
+);
+
+NMO_API nmo_result_t nmo_bool_from_string(
+    void *value,
+    const char *string
+);
+
+/**
+ * @brief Vector (3D) to string: "(1.0, 2.0, 3.0)"
+ */
+NMO_API nmo_result_t nmo_vector_to_string(
+    const void *value,  /**< float[3] */
+    char *buffer,
+    size_t buffer_size
+);
+
+NMO_API nmo_result_t nmo_vector_from_string(
+    void *value,  /**< float[3] */
+    const char *string
+);
+
+/**
+ * @brief Quaternion to string: "(x, y, z, w)"
+ */
+NMO_API nmo_result_t nmo_quaternion_to_string(
+    const void *value,  /**< float[4] */
+    char *buffer,
+    size_t buffer_size
+);
+
+NMO_API nmo_result_t nmo_quaternion_from_string(
+    void *value,  /**< float[4] */
+    const char *string
+);
+
+/**
+ * @brief Enum to string: "RED" (name) or "1" (value)
+ *
+ * @param value          Pointer to enum value (int32_t)
+ * @param type           Type descriptor (must be ENUM category)
+ * @param registry       Type registry for metadata access
+ * @param buffer         Output buffer
+ * @param buffer_size    Buffer capacity
+ * @param use_name       true to output name, false for numeric value
+ * @return NMO_OK on success
+ *
+ * Reference: CKEnumStruct::GetEnumEntry (CKParameterManager.cpp:298-304)
+ */
+NMO_API nmo_result_t nmo_enum_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    bool use_name
+);
+
+NMO_API nmo_result_t nmo_enum_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string
+);
+
+/**
+ * @brief Flags to string: "READ|WRITE" or "0x03"
+ *
+ * @param value          Pointer to flags value (uint32_t)
+ * @param type           Type descriptor (must be FLAGS category)
+ * @param registry       Type registry for metadata access
+ * @param buffer         Output buffer
+ * @param buffer_size    Buffer capacity
+ * @param use_names      true to output names, false for hex value
+ * @return NMO_OK on success
+ *
+ * Reference: CKFlagsStruct (CKParameterManager.cpp:298-304)
+ */
+NMO_API nmo_result_t nmo_flags_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    bool use_names
+);
+
+NMO_API nmo_result_t nmo_flags_from_string(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string
+);
+
+/**
+ * @brief String to string: "\"Hello\\nWorld\"" (with escaping)
+ */
+NMO_API nmo_result_t nmo_string_to_string(
+    const void *value,  /**< const char* */
+    char *buffer,
+    size_t buffer_size
+);
+
+NMO_API nmo_result_t nmo_string_from_string(
+    void *value,  /**< char** (arena-allocated) */
+    const char *string,
+    nmo_arena_t *arena
+);
+
+/**
+ * @brief Object ID to string: "#12345" or "ObjectName"
+ *
+ * @param value          Pointer to object ID (nmo_id_t)
+ * @param buffer         Output buffer
+ * @param buffer_size    Buffer capacity
+ * @param session        Session for object name lookup (can be NULL)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_result_t nmo_object_id_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size,
+    struct nmo_session *session  /**< Optional - for name lookup */
+);
+
+NMO_API nmo_result_t nmo_object_id_from_string(
+    void *value,
+    const char *string,
+    struct nmo_session *session  /**< Optional - for name lookup */
+);
+
+/* ============================================================================
+ * Utility Functions
+ * ============================================================================ */
+
+/**
+ * @brief Escape string for output (add quotes, escape special chars)
+ *
+ * @param src            Source string
+ * @param dst            Destination buffer
+ * @param dst_size       Buffer capacity
+ * @return Number of bytes written (excluding null terminator)
+ */
+NMO_API size_t nmo_string_escape(
+    const char *src,
+    char *dst,
+    size_t dst_size
+);
+
+/**
+ * @brief Unescape string (remove quotes, process escape sequences)
+ *
+ * @param src            Source string (with quotes)
+ * @param dst            Destination buffer
+ * @param dst_size       Buffer capacity
+ * @return Number of bytes written (excluding null terminator)
+ */
+NMO_API size_t nmo_string_unescape(
+    const char *src,
+    char *dst,
+    size_t dst_size
+);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NMO_TYPE_STRING_H */
