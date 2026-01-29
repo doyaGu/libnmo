@@ -199,6 +199,17 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
         }                                                                      \
     } while (0)
 
+#define ASSERT(condition)                                                      \
+    do {                                                                       \
+        if (!(condition)) {                                                    \
+            char _msg[512];                                                    \
+            test_format_error(_msg, sizeof(_msg),                              \
+                             "Assertion failed: " #condition);                  \
+            test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__);  \
+            return;                                                             \
+        }                                                                       \
+    } while (0)
+
 #define ASSERT_NE(a, b)                                                        \
     do {                                                                       \
         if (!((a) != (b))) {                                                  \
