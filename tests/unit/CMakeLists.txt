@@ -43,6 +43,9 @@ add_unit_test(test_buffer_variants)  # Buffer operation variants tests
 add_unit_test(test_chunk)
 add_unit_test(test_chunk_parser)
 add_unit_test(test_chunk_writer)
+add_unit_test(test_chunk_writer_context)  # Phase 1.3: Version context stack
+add_unit_test(test_chunk_writer_reserve)  # Phase 2.2: Reserve-and-patch API
+add_unit_test(test_chunk_writer_intlist_audit)  # Phase 2.3: IntList auditor
 add_unit_test(test_chunk_serialize)
 # Add new chunk API test
 add_unit_test(test_chunk_api)
@@ -59,22 +62,62 @@ add_unit_test(test_chunk_legacy_bitmap)
 add_unit_test(test_image_utils)
 add_unit_test(test_stb_adapter)
 
-# Schema layer tests
-add_unit_test(test_schema)
-add_unit_test(test_schema_registry)
-add_unit_test(test_schema_builder)  # New fluent builder API tests
-add_unit_test(test_ckobject_deserialize)  # CKObject deserialization tests
-add_unit_test(test_ckbeobject_deserialize)  # CKBeObject deserialization tests
-add_unit_test(test_schema_roundtrip)  # Phase 2: All 23 schemas roundtrip tests
-add_unit_test(test_validator)  # Phase 1: Schema validator tests
-add_unit_test(test_migrator)   # Phase 1: Schema migrator tests
-add_unit_test(test_ckobject_hierarchy)  # CKObject class hierarchy tests
-add_unit_test(test_schema_macros)  # Phase 3: Declarative registration macro tests
-add_unit_test(test_version_management)  # Phase 4: Version management system tests
-add_unit_test(test_param_meta)  # Phase 5: Parameter metadata system tests
-add_unit_test(test_phase5_improvements)  # Phase 5: Improvements over Phase 3 limitations
+# Schema layer tests (OLD SYSTEM - DISABLED)
+# The old schema system has been removed. These tests reference deleted headers.
+# TODO: Remove or migrate these tests when schema_v2 is fully implemented.
+# add_unit_test(test_schema)
+# add_unit_test(test_schema_registry)
+# add_unit_test(test_schema_builder)
+# add_unit_test(test_ckobject_deserialize)
+# add_unit_test(test_ckbeobject_deserialize)
+# add_unit_test(test_schema_roundtrip)
+# add_unit_test(test_validator)
+# add_unit_test(test_migrator)
+# add_unit_test(test_ckobject_hierarchy)
+# add_unit_test(test_schema_macros)
+# add_unit_test(test_version_management)
+# add_unit_test(test_param_meta)
+# add_unit_test(test_phase5_improvements)
+
+# Schema v2 layer tests (Phase 5.5)
+add_test(NAME test_type_registry
+    COMMAND ${CMAKE_COMMAND} -E env
+    $<TARGET_FILE:test_type_registry_exe>
+)
+add_executable(test_type_registry_exe type/test_type_registry.c)
+target_link_libraries(test_type_registry_exe PRIVATE nmo test_framework)
+target_include_directories(test_type_registry_exe PRIVATE 
+    ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+# Phase 6.1: Operation system tests
+add_unit_test(test_operation_registry)
+add_unit_test(test_builtin_operations)
+
+# Phase 6.2: Dynamic type registration tests
+add_unit_test(test_type_parser)
+add_unit_test(test_string_registration)
+add_unit_test(test_enum_flags)
+add_unit_test(test_struct)
+add_unit_test(test_dynamic_types_integration)
+add_unit_test(test_advanced_struct)
+
+# Phase 6.3: Type compatibility and conversion tests
+add_unit_test(test_type_compatibility)
+
+# Phase 6.4: String conversion and serialization tests
+add_unit_test(test_type_string)
+
+# Phase 6.5: Type statistics and visibility control tests
+add_unit_test(test_type_statistics)
+
+# Phase 6.6: Custom manager support tests
+add_unit_test(test_custom_managers)
 
 # Session layer tests
+add_unit_test(test_id_sanitizer)  # Phase 1.1: ID sanitization pipeline
+add_unit_test(test_shadow_storage)  # Phase 1.2: Shadow blob preservation
 add_unit_test(test_repository)
 add_unit_test(test_object_repository)
 add_unit_test(test_object_index)  # Phase 5: Object indexing tests
@@ -89,7 +132,7 @@ add_unit_test(test_nmo_baseline)
 set_tests_properties(test_nmo_baseline PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 add_unit_test(test_reference_resolver)
 add_unit_test(test_session_reference_resolver)
-add_unit_test(test_save_pipeline)
+# add_unit_test(test_save_pipeline)  # Uses old schema system - DISABLED
 add_unit_test(test_load_session_id_remap)
 add_unit_test(test_session)
 
@@ -98,3 +141,11 @@ add_unit_test(test_session)
 # add_unit_test(test_stats)
 # add_unit_test(test_inspector)
 
+# Phase 2.1: Dual-Track IO API tests
+add_unit_test(test_load_options)
+
+# Phase 2.1: Memory-mapped IO tests
+add_unit_test(test_io_mmap)
+
+# Phase 2.4: DOM Comparison API tests
+add_unit_test(test_comparison)

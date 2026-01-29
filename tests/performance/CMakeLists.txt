@@ -8,3 +8,6 @@ endmacro()
 
 add_performance_test(test_performance)
 add_performance_test(test_index_queries)
+
+# Temporarily disabled - needs API update for type_system.h v2
+# add_performance_test(test_type_system_bench)

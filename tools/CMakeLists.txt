@@ -5,8 +5,9 @@ if(NOT YYJSON_FOUND)
 endif()
 
 # Phase 7 tools
-add_executable(nmo-inspect nmo-inspect.c)
-target_link_libraries(nmo-inspect PRIVATE nmo yyjson)
+# TODO: nmo-inspect uses nmo_class_is_derived_from() from old schema system - needs update for schema_v2
+# add_executable(nmo-inspect nmo-inspect.c)
+# target_link_libraries(nmo-inspect PRIVATE nmo yyjson)
 
 add_executable(nmo-debug nmo-debug.c)
 target_link_libraries(nmo-debug PRIVATE nmo)
@@ -22,7 +23,7 @@ target_link_libraries(nmo-debug PRIVATE nmo)
 # target_link_libraries(nmo-diff PRIVATE nmo)
 
 # Installation
-install(TARGETS nmo-inspect nmo-debug
+install(TARGETS nmo-debug
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 

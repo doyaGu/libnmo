@@ -114,6 +114,7 @@ set(NMO_IO_SOURCES
     src/io/io_memory.c
     src/io/io_compressed.c
     src/io/io_checksum.c
+    src/io/io_mmap.c
 )
 
 # Platform-specific IO sources
@@ -155,42 +156,57 @@ set(NMO_FORMAT_SOURCES
     src/format/nmo_stb_adapter.c
 )
 
-# Schema layer sources
+# Schema layer sources (DEPRECATED - being migrated to schema_v2)
+# Temporarily disabled during migration
 set(NMO_SCHEMA_SOURCES
-    src/schema/schema.c
-    src/schema/schema_registry.c
-    src/schema/schema_builder.c
-    src/schema/param_type_table.c
-    src/schema/validator.c
-    src/schema/migrator.c
-    src/schema/class_hierarchy.c
-    src/schema/builtin/builtin_types.c
-    src/schema/builtin/param_types.c
-    src/schema/builtin/ckobject_hierarchy.c
-    src/schema/builtin/ckobject_schemas.c
-    src/schema/builtin/ckbeobject_schemas.c
-    src/schema/builtin/cksceneobject_schemas.c
-    src/schema/builtin/ckrenderobject_schemas.c
-    src/schema/builtin/ckparameter_schemas.c
-    src/schema/builtin/ckgroup_schemas.c
-    src/schema/builtin/cklevel_schemas.c
-    src/schema/builtin/ckscene_schemas.c
-    src/schema/builtin/ckbehavior_schemas.c
-    src/schema/builtin/ckbehaviorio_schemas.c
-    src/schema/builtin/ckbehaviorlink_schemas.c
-    src/schema/builtin/ckdataarray_schemas.c
-    src/schema/builtin/ckmessagemanager_schemas.c
-    src/schema/builtin/ckattributemanager_schemas.c
-    src/schema/builtin/ck3dentity_schemas.c
-    src/schema/builtin/ckcamera_schemas.c
-    src/schema/builtin/ck3dobject_schemas.c
-    src/schema/builtin/ck2dentity_schemas.c
-    src/schema/builtin/cksprite_schemas.c
-    src/schema/builtin/ckspritetext_schemas.c
-    src/schema/builtin/cktexture_schemas.c
-    src/schema/builtin/ckmaterial_schemas.c
-    src/schema/builtin/cklight_schemas.c
-    src/schema/builtin/ckmesh_schemas.c
+    # src/object/schema_registry.c
+    # src/object/class_hierarchy.c
+)
+
+# Type System sources (Phase 5.5+)
+set(NMO_TYPE_SOURCES
+    src/type/type_registry.c
+    src/type/plugin_support.c
+    src/type/operation_registry.c
+    src/type/type_parser.c
+    src/type/type_registry_enum.c
+    src/type/type_registry_struct.c
+    src/type/type_string_converters.c
+    src/type/ckclass_stubs.c
+    src/type/builtin_operations.c
+    src/type/builtin_arithmetic.c
+    src/type/builtin_logic.c
+    src/type/builtin_bitwise.c
+    src/type/builtin_trigonometry.c
+    # Builtin schemas temporarily disabled during migration to schema_v2
+    # TODO: Migrate these to use schema_v2 API (remove nmo_schema.h dependencies)
+    # src/object/builtin/builtin_types.c
+    # src/object/builtin/param_types.c
+    # src/object/builtin/ckobject_hierarchy.c
+    # src/object/builtin/ckobject_schemas.c
+    # src/object/builtin/ckbeobject_schemas.c
+    # src/object/builtin/cksceneobject_schemas.c
+    # src/object/builtin/ckrenderobject_schemas.c
+    # src/object/builtin/ckparameter_schemas.c
+    # src/object/builtin/ckgroup_schemas.c
+    # src/object/builtin/cklevel_schemas.c
+    # src/object/builtin/ckscene_schemas.c
+    # src/object/builtin/ckbehavior_schemas.c
+    # src/object/builtin/ckbehaviorio_schemas.c
+    # src/object/builtin/ckbehaviorlink_schemas.c
+    # src/object/builtin/ckdataarray_schemas.c
+    # src/object/builtin/ckmessagemanager_schemas.c
+    # src/object/builtin/ckattributemanager_schemas.c
+    # src/object/builtin/ck3dentity_schemas.c
+    # src/object/builtin/ckcamera_schemas.c
+    # src/object/builtin/ck3dobject_schemas.c
+    # src/object/builtin/ck2dentity_schemas.c
+    # src/object/builtin/cksprite_schemas.c
+    # src/object/builtin/ckspritetext_schemas.c
+    # src/object/builtin/cktexture_schemas.c
+    # src/object/builtin/ckmaterial_schemas.c
+    # src/object/builtin/cklight_schemas.c
+    # src/object/builtin/ckmesh_schemas.c
 )
 
 # Session layer sources
@@ -199,6 +215,8 @@ set(NMO_SESSION_SOURCES
     src/session/object_index.c
     src/session/load_session.c
     src/session/id_remap.c
+    src/session/id_sanitizer.c
+    src/session/shadow_storage.c
     src/session/reference_resolver.c
 )
 
@@ -207,7 +225,10 @@ set(NMO_APP_SOURCES
     src/app/context.c
     src/app/session.c
     src/app/parser.c
+    src/app/save_pipeline.c
+    src/app/save_buffer.c
     src/app/finish_loading.c
+    src/app/comparison.c
     src/app/stats.c
     src/app/inspector.c
     src/app/nmo_plugin_manager.c
@@ -219,6 +240,7 @@ set(NMO_SOURCES
     ${NMO_IO_SOURCES}
     ${NMO_FORMAT_SOURCES}
     ${NMO_SCHEMA_SOURCES}
+    ${NMO_TYPE_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_APP_SOURCES}
 )
