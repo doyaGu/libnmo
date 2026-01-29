@@ -35,7 +35,6 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
         return NULL;
     }
 
-    nmo_arena_t *arena = nmo_object_repository_get_arena(repo);
     nmo_load_session_t *session = (nmo_load_session_t *) malloc(sizeof(nmo_load_session_t));
     if (session == NULL) {
         return NULL;

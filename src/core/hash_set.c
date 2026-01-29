@@ -283,7 +283,7 @@ nmo_result_t nmo_hash_set_insert(nmo_hash_set_t *set, const void *key) {
                                               NMO_SEVERITY_ERROR,
                                               "Hash set capacity overflow"));
         }
-        int result = nmo_hash_set_rehash(set, new_capacity);
+        int result = nmo_hash_set_rehash_internal(set, new_capacity);
         if (result != NMO_OK) {
             return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
                                               NMO_SEVERITY_ERROR,

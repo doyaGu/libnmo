@@ -5,7 +5,6 @@ if(NOT YYJSON_FOUND)
 endif()
 
 # Phase 7 tools
-# TODO: nmo-inspect uses nmo_class_is_derived_from() from old schema system - needs update for schema_v2
 # add_executable(nmo-inspect nmo-inspect.c)
 # target_link_libraries(nmo-inspect PRIVATE nmo yyjson)
 

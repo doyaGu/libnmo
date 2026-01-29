@@ -43,9 +43,9 @@ TEST(enum_flags, register_enum_success) {
     
     /* Define enum values */
     nmo_enum_value_def_t values[] = {
-        { "RED",   0 },
-        { "GREEN", 1 },
-        { "BLUE",  2 }
+        { "RED",   0, NULL },
+        { "GREEN", 1, NULL },
+        { "BLUE",  2, NULL }
     };
     
     /* Define enum type */
@@ -62,7 +62,7 @@ TEST(enum_flags, register_enum_success) {
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Lookup registered type */
-    nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type_desc);
     ASSERT_EQ(NMO_TYPE_CATEGORY_ENUM, type_desc->category);
     ASSERT_STR_EQ("Color", type_desc->name);
@@ -74,7 +74,7 @@ TEST(enum_flags, register_enum_success) {
 TEST(enum_flags, register_enum_null_params) {
     setup();
     
-    nmo_enum_value_def_t values[] = {{ "A", 0 }};
+    nmo_enum_value_def_t values[] = {{ "A", 0, NULL }};
     nmo_enum_type_def_t enum_def = {
         .name = "TestEnum",
         .values = values,
@@ -97,7 +97,7 @@ TEST(enum_flags, register_enum_null_params) {
 TEST(enum_flags, register_enum_empty_name) {
     setup();
     
-    nmo_enum_value_def_t values[] = {{ "A", 0 }};
+    nmo_enum_value_def_t values[] = {{ "A", 0, NULL }};
     nmo_enum_type_def_t enum_def = {
         .name = "",  /* Empty name */
         .values = values,
@@ -133,8 +133,8 @@ TEST(enum_flags, register_enum_duplicate_names) {
     setup();
     
     nmo_enum_value_def_t values[] = {
-        { "SAME", 0 },
-        { "SAME", 1 }  /* Duplicate name */
+        { "SAME", 0, NULL },
+        { "SAME", 1, NULL }  /* Duplicate name */
     };
     
     nmo_enum_type_def_t enum_def = {
@@ -154,7 +154,7 @@ TEST(enum_flags, register_enum_duplicate_names) {
 TEST(enum_flags, register_enum_already_exists) {
     setup();
     
-    nmo_enum_value_def_t values[] = {{ "VAL", 0 }};
+    nmo_enum_value_def_t values[] = {{ "VAL", 0, NULL }};
     nmo_enum_type_def_t enum_def = {
         .name = "MyEnum",
         .values = values,
@@ -179,9 +179,9 @@ TEST(enum_flags, register_enum_with_negative_values) {
     setup();
     
     nmo_enum_value_def_t values[] = {
-        { "NEGATIVE", -1 },
-        { "ZERO",      0 },
-        { "POSITIVE",  1 }
+        { "NEGATIVE", -1, NULL },
+        { "ZERO",      0, NULL },
+        { "POSITIVE",  1, NULL }
     };
     
     nmo_enum_type_def_t enum_def = {
@@ -196,7 +196,7 @@ TEST(enum_flags, register_enum_with_negative_values) {
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Verify type registered successfully */
-    nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type_desc);
     ASSERT_EQ(NMO_TYPE_CATEGORY_ENUM, type_desc->category);
     
@@ -212,9 +212,9 @@ TEST(enum_flags, register_flags_success) {
     
     /* Define flags bits */
     nmo_flags_bit_def_t bits[] = {
-        { "READ",    0x01 },  /* Bit 0 */
-        { "WRITE",   0x02 },  /* Bit 1 */
-        { "EXECUTE", 0x04 }   /* Bit 2 */
+        { "READ",    0x01, NULL },  /* Bit 0 */
+        { "WRITE",   0x02, NULL },  /* Bit 1 */
+        { "EXECUTE", 0x04, NULL }   /* Bit 2 */
     };
     
     /* Define flags type */
@@ -231,7 +231,7 @@ TEST(enum_flags, register_flags_success) {
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Lookup registered type */
-    nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type_desc);
     ASSERT_EQ(NMO_TYPE_CATEGORY_FLAGS, type_desc->category);
     ASSERT_STR_EQ("Permissions", type_desc->name);
@@ -243,7 +243,7 @@ TEST(enum_flags, register_flags_success) {
 TEST(enum_flags, register_flags_null_params) {
     setup();
     
-    nmo_flags_bit_def_t bits[] = {{ "BIT", 0x01 }};
+    nmo_flags_bit_def_t bits[] = {{ "BIT", 0x01, NULL }};
     nmo_flags_type_def_t flags_def = {
         .name = "TestFlags",
         .bits = bits,
@@ -266,7 +266,7 @@ TEST(enum_flags, register_flags_null_params) {
 TEST(enum_flags, register_flags_empty_name) {
     setup();
     
-    nmo_flags_bit_def_t bits[] = {{ "BIT", 0x01 }};
+    nmo_flags_bit_def_t bits[] = {{ "BIT", 0x01, NULL }};
     nmo_flags_type_def_t flags_def = {
         .name = "",  /* Empty name */
         .bits = bits,
@@ -302,8 +302,8 @@ TEST(enum_flags, register_flags_duplicate_names) {
     setup();
     
     nmo_flags_bit_def_t bits[] = {
-        { "SAME", 0 },
-        { "SAME", 1 }  /* Duplicate name */
+        { "SAME", 0, NULL },
+        { "SAME", 1, NULL }  /* Duplicate name */
     };
     
     nmo_flags_type_def_t flags_def = {
@@ -324,8 +324,8 @@ TEST(enum_flags, register_flags_duplicate_masks) {
     setup();
     
     nmo_flags_bit_def_t bits[] = {
-        { "BIT_A", 0x01 },
-        { "BIT_B", 0x01 }  /* Duplicate mask */
+        { "BIT_A", 0x01, NULL },
+        { "BIT_B", 0x01, NULL }  /* Duplicate mask */
     };
     
     nmo_flags_type_def_t flags_def = {
@@ -346,7 +346,7 @@ TEST(enum_flags, register_flags_invalid_mask) {
     setup();
     
     nmo_flags_bit_def_t bits[] = {
-        { "INVALID", 0x03 }  /* Not a power of 2 */
+        { "INVALID", 0x03, NULL }  /* Not a power of 2 */
     };
     
     nmo_flags_type_def_t flags_def = {
@@ -367,9 +367,9 @@ TEST(enum_flags, register_flags_with_default_value) {
     setup();
     
     nmo_flags_bit_def_t bits[] = {
-        { "FLAG_A", 0x01 },  /* Bit 0 */
-        { "FLAG_B", 0x02 },  /* Bit 1 */
-        { "FLAG_C", 0x04 }   /* Bit 2 */
+        { "FLAG_A", 0x01, NULL },  /* Bit 0 */
+        { "FLAG_B", 0x02, NULL },  /* Bit 1 */
+        { "FLAG_C", 0x04, NULL }   /* Bit 2 */
     };
     
     nmo_flags_type_def_t flags_def = {
@@ -384,7 +384,7 @@ TEST(enum_flags, register_flags_with_default_value) {
     ASSERT_EQ(NMO_OK, result.code);
     
     /* Verify registration successful */
-    nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type_desc);
     ASSERT_EQ(NMO_TYPE_CATEGORY_FLAGS, type_desc->category);
     

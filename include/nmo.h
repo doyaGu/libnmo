@@ -12,30 +12,24 @@
  * - Core Layer: allocator, arena, error, logger, GUID
  * - IO Layer: file, memory, compressed, checksum, transactional IO
  * - Format Layer: headers, chunks, objects, managers
- * - Schema Layer: registry, validation, migration
  * - Object Layer: repository, ID remapping
  * - Session Layer: context, session, parser, builder
  *
  * Basic usage:
  * @code
  * // Create context
- * nmo_context* ctx = nmo_context_create(&(nmo_context_desc){
+ * nmo_context_desc_t desc = {
  *     .allocator = NULL,  // Use default
  *     .logger = nmo_logger_stderr(),
  *     .thread_pool_size = 4
- * });
+ * };
+ * nmo_context_t *ctx = nmo_context_create(&desc);
  * nmo_context_enable_logging(ctx, 1); // Optional: enable libnmo logs
  *
- * // Register built-in schemas
- * nmo_schema_registry_add_builtin(nmo_context_get_schema_registry(ctx));
- *
- * // Create session
- * nmo_session* session = nmo_session_create(ctx);
- *
- * // Load file
- * nmo_result result = nmo_load_file(session, "file.nmo", NMO_LOAD_DEFAULT);
- * if (result.code != NMO_OK) {
- *     fprintf(stderr, "Error: %s\n", result.error->message);
+ * // Load file (creates a session)
+ * nmo_session_t *session = nmo_session_load(ctx, "file.nmo");
+ * if (!session) {
+ *     fprintf(stderr, "Error: failed to load file\n");
  * }
  *
  * // Clean up
@@ -86,12 +80,6 @@
 #include "format/nmo_image.h"
 #include "format/nmo_image_codec.h"
 #include "format/nmo_stb_adapter.h"
-
-// Schema layer
-#include "object/nmo_schema.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_validator.h"
-#include "object/nmo_migrator.h"
 
 // Session layer
 #include "session/nmo_object_repository.h"

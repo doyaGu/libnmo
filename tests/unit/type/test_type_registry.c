@@ -1,5 +1,4 @@
 #include "type/type_system.h"
-#include "object/nmo_param_meta.h"  // For CKPGUID macro
 #include "test_framework.h"
 #include <string.h>
 

@@ -125,6 +125,7 @@ static void collect_reference_stats(
     nmo_object_repository_t *repo,
     nmo_file_stats_t *stats
 ) {
+    (void)repo;
     memset(&stats->references, 0, sizeof(stats->references));
     
     /* TODO: Implement when reference system is available */

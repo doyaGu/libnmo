@@ -143,10 +143,10 @@ static int cmd_help(debug_context_t *dbg, int argc, char **argv) {
 }
 
 static int cmd_list(debug_context_t *dbg, int argc, char **argv) {
-    nmo_class_id_t filter = -1;
+    int filter = -1;
     
     if (argc > 1) {
-        filter = (nmo_class_id_t)atoi(argv[1]);
+        filter = atoi(argv[1]);
     }
     
     size_t object_count;

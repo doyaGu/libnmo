@@ -36,43 +36,6 @@ static int guid_compare_wrapper(const void *key1, const void *key2, size_t key_s
  * ============================================================================ */
 
 /**
- * @brief Compare GUIDs for sorting
- */
-static int compare_guids(const nmo_guid_t *a, const nmo_guid_t *b) {
-    if (a->d1 != b->d1) return (a->d1 < b->d1) ? -1 : 1;
-    if (a->d2 != b->d2) return (a->d2 < b->d2) ? -1 : 1;
-    return 0;
-}
-
-/**
- * @brief Binary search for GUID in sorted array
- *
- * @param guids  Array of GUIDs
- * @param count  Array size
- * @param target Target GUID
- * @return Index if found, -1 if not found
- */
-static int binary_search_guid(const nmo_guid_t *guids, int count, const nmo_guid_t *target) {
-    int left = 0;
-    int right = count - 1;
-    
-    while (left <= right) {
-        int mid = left + (right - left) / 2;
-        int cmp = compare_guids(&guids[mid], target);
-        
-        if (cmp == 0) {
-            return mid;
-        } else if (cmp < 0) {
-            left = mid + 1;
-        } else {
-            right = mid - 1;
-        }
-    }
-    
-    return -1;
-}
-
-/**
  * @brief Find or create operation family by GUID
  */
 static nmo_operation_family_t *find_or_create_family(
@@ -499,23 +462,6 @@ nmo_result_t nmo_operation_registry_register_bulk(
 /* ============================================================================
  * Operation Lookup
  * ============================================================================ */
-
-/**
- * @brief Find operation cell by exact type match
- */
-static const nmo_operation_tree_cell_t *find_cell_exact(
-    const nmo_operation_p2_layer_t *p2_layer,
-    const nmo_guid_t *result_type_guid
-) {
-    /* Linear search in cells (typically < 5 elements) */
-    for (uint32_t i = 0; i < p2_layer->cell_count; i++) {
-        const nmo_operation_tree_cell_t *cell = &p2_layer->cells[i];
-        if (nmo_guid_equals(cell->desc.result_type_guid, *result_type_guid)) {
-            return cell;
-        }
-    }
-    return NULL;
-}
 
 /**
  * @brief Find best matching cell (any result type, highest priority)

@@ -43,8 +43,6 @@ add_integration_test(test_type_system_complete)
 # Temporarily disabled - test_phase6_integration uses deprecated API
 # add_integration_test(test_phase6_integration)
 
-# Temporarily disabled tests (old API)
-# add_integration_test(test_roundtrip)
+# Legacy integration tests (removed or disabled)
+# The deprecated test_roundtrip/load_pipeline/save_pipeline sources have been deleted.
 # add_integration_test(test_round_trip)
-# add_integration_test(test_load_pipeline)
-# add_integration_test(test_save_pipeline)

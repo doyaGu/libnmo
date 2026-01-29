@@ -20,20 +20,6 @@
 #include <string.h>
 #include <stdint.h>
 
-/* Test fixture */
-static nmo_arena_t *g_arena = NULL;
-
-static void setup_buffer_test(void) {
-    g_arena = nmo_arena_create(NULL, 4096);
-}
-
-static void teardown_buffer_test(void) {
-    if (g_arena) {
-        nmo_arena_destroy(g_arena);
-        g_arena = NULL;
-    }
-}
-
 typedef struct tracked_value {
     uint32_t id;
 } tracked_value_t;
@@ -304,7 +290,7 @@ TEST(buffer, get_valid_index) {
     for (int i = 0; i < 5; i++) {
         uint32_t *val = (uint32_t *)nmo_arena_array_get(&buffer, i);
         ASSERT_NOT_NULL(val);
-        ASSERT_EQ(*val, i * 10);
+        ASSERT_EQ(*val, (uint32_t)(i * 10));
     }
 
     nmo_arena_destroy(arena);

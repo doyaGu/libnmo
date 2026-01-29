@@ -7,12 +7,10 @@
 #include "app/nmo_plugin.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
-// #include "object/nmo_schema_registry.h"  // Temporarily disabled during schema_v2 migration
 #include "type/type_system.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
-#include "core/nmo_logger.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -54,7 +52,6 @@ typedef struct nmo_context {
     nmo_allocator_t *allocator;
     nmo_logger_t *logger;
     int logger_owned;
-    // nmo_schema_registry_t *schema_registry;  /* Deprecated - disabled during migration */
     nmo_type_registry_t *type_registry;      /* Schema v2 */
     nmo_manager_registry_t *manager_registry;
     nmo_plugin_manager_t *plugin_manager;
@@ -179,14 +176,6 @@ void nmo_context_release(nmo_context_t *ctx) {
             nmo_free(ctx->allocator, ctx);
         }
     }
-}
-
-/**
- * Get schema registry (DEPRECATED - disabled during schema_v2 migration)
- */
-nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context_t *ctx) {
-    (void)ctx;
-    return NULL;  // Always return NULL during migration
 }
 
 nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx) {

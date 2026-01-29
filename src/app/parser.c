@@ -391,6 +391,7 @@ static int nmo_load_file_with_io(
     const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(session);
     size_t missing_plugins = (diag != NULL) ? diag->missing_count : 0;
     size_t outdated_plugins = (diag != NULL) ? diag->outdated_count : 0;
+    (void)outdated_plugins;
     if (diag != NULL && diag->entries != NULL) {
         for (size_t i = 0; i < diag->entry_count; i++) {
             const nmo_session_plugin_dependency_status_t *entry = &diag->entries[i];
@@ -935,40 +936,7 @@ static int nmo_load_file_with_io(
 skip_object_processing:
     /* Update repo_count after potential skip */
     nmo_object_repository_get_all(repo, &repo_count);
-    
-    /* Phase 15: Object-Level FinishLoading (PostLoad equivalent) */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 15: Executing object-level finish loading (PostLoad)");
-    
-    size_t finish_loading_count = 0;
-    // size_t finish_loading_error_count = 0; // Temporarily disabled during schema_v2 migration
-    size_t finish_loading_skipped = 0;
-    
-    /* Iterate through all objects and call their finish_loading functions
-     * 
-     * Note: Current implementation uses direct function getters for known classes.
-     * Future enhancement: Add finish_loading function pointer to schema vtable
-     * and lookup via schema_registry_find_by_class_id() for proper layer separation.
-     * 
-     * This would eliminate hardcoded class checks and allow dynamic registration
-     * of finish_loading handlers by plugins/managers.
-     */
-    for (size_t i = 0; i < repo_count; i++) {
-        nmo_object_t *obj = objects[i];
-        if (!obj || !obj->data) {
-            finish_loading_skipped++;
-            continue;
-        }
-        
-        /* Phase 3: Post-load processing disabled - TODO: migrate to schema_v2 vtable
-        */
-    }
-    
-    /* Finish loading disabled
-    nmo_log(logger, NMO_LOG_INFO,
-            "  Finish loading summary: %zu processed, %zu errors, %zu skipped (no handler)",
-            finish_loading_count, finish_loading_error_count, finish_loading_skipped);
-    */
-    
+
     /* Phase 16: Manager Post-Load Hooks */
     nmo_log(logger, NMO_LOG_INFO, "Phase 16: Executing manager post-load hooks");
 

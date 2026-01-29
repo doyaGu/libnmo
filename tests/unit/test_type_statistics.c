@@ -96,7 +96,7 @@ TEST(type_statistics, get_flags_count) {
     
     size_t count = nmo_type_registry_get_flags_count(registry);
     // Builtins may or may not include flags types
-    ASSERT_GE(count, 0);
+    (void)count;
     
     teardown();
 }
@@ -106,7 +106,7 @@ TEST(type_statistics, get_enum_count) {
     
     size_t count = nmo_type_registry_get_enum_count(registry);
     // Builtins may or may not include enum types
-    ASSERT_GE(count, 0);
+    (void)count;
     
     teardown();
 }
@@ -116,7 +116,7 @@ TEST(type_statistics, get_struct_count) {
     
     size_t count = nmo_type_registry_get_struct_count(registry);
     // Builtins may or may not include struct types (Vector, Matrix, etc)
-    ASSERT_GE(count, 0);
+    (void)count;
     
     teardown();
 }
@@ -451,7 +451,6 @@ TEST(type_statistics, comprehensive_stats) {
     ASSERT_GT(total, 0);
     ASSERT_GT(builtin, 0);
     ASSERT_EQ(0, plugin);  // No plugins yet
-    ASSERT_GE(structs, 0);
     ASSERT_GT(memory, 0);
     
     // Category counts should not exceed total

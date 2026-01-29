@@ -261,7 +261,8 @@ nmo_result_t nmo_data_section_serialize(
             pos += 4;
 
             /* Serialize chunk to get its data and size */
-            void *chunk_data = NULL;
+            const void *chunk_data = NULL;
+            void *serialized_data = NULL;
             size_t chunk_size = 0;
             if (mgr->chunk != NULL) {
                 /* Use raw_data if available, otherwise serialize */
@@ -269,10 +270,11 @@ nmo_result_t nmo_data_section_serialize(
                     chunk_data = mgr->chunk->raw_data;
                     chunk_size = mgr->chunk->raw_size;
                 } else {
-                    nmo_result_t result = nmo_chunk_serialize(mgr->chunk, &chunk_data, &chunk_size, arena);
+                    nmo_result_t result = nmo_chunk_serialize(mgr->chunk, &serialized_data, &chunk_size, arena);
                     if (result.code != NMO_OK) {
                         return result;
                     }
+                    chunk_data = serialized_data;
                 }
             }
 
@@ -313,7 +315,8 @@ nmo_result_t nmo_data_section_serialize(
             }
 
             /* Serialize chunk to get its data and size */
-            void *chunk_data = NULL;
+            const void *chunk_data = NULL;
+            void *serialized_data = NULL;
             size_t chunk_size = 0;
             if (obj->chunk != NULL) {
                 /* Use raw_data if available, otherwise serialize */
@@ -321,10 +324,11 @@ nmo_result_t nmo_data_section_serialize(
                     chunk_data = obj->chunk->raw_data;
                     chunk_size = obj->chunk->raw_size;
                 } else {
-                    nmo_result_t result = nmo_chunk_serialize(obj->chunk, &chunk_data, &chunk_size, arena);
+                    nmo_result_t result = nmo_chunk_serialize(obj->chunk, &serialized_data, &chunk_size, arena);
                     if (result.code != NMO_OK) {
                         return result;
                     }
+                    chunk_data = serialized_data;
                 }
             }
 

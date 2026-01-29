@@ -18,7 +18,6 @@ static const nmo_guid_t GUID_BASE = {0x10000000, 0x00000001};
 static const nmo_guid_t GUID_DERIVED1 = {0x20000000, 0x00000002};
 static const nmo_guid_t GUID_DERIVED2 = {0x30000000, 0x00000003};
 static const nmo_guid_t GUID_DERIVED1_1 = {0x40000000, 0x00000004};
-static const nmo_guid_t GUID_DERIVED1_2 = {0x50000000, 0x00000005};
 static const nmo_guid_t GUID_DERIVED2_1 = {0x60000000, 0x00000006};
 static const nmo_guid_t GUID_INDEPENDENT = {0x70000000, 0x00000007};
 

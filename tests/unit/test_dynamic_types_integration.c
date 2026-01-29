@@ -92,7 +92,7 @@ TEST(dynamic_types_integration, register_all_type_kinds) {
     
     /* Register enum */
     nmo_enum_value_def_t colors[] = {
-        { "RED", 0 }, { "GREEN", 1 }, { "BLUE", 2 }
+        { "RED", 0, NULL }, { "GREEN", 1, NULL }, { "BLUE", 2, NULL }
     };
     nmo_enum_type_def_t color_enum = {
         .name = "Color",
@@ -106,7 +106,7 @@ TEST(dynamic_types_integration, register_all_type_kinds) {
     
     /* Register flags */
     nmo_flags_bit_def_t perms[] = {
-        { "READ", 0x01 }, { "WRITE", 0x02 }, { "EXECUTE", 0x04 }
+        { "READ", 0x01, NULL }, { "WRITE", 0x02, NULL }, { "EXECUTE", 0x04, NULL }
     };
     nmo_flags_type_def_t perm_flags = {
         .name = "Permissions",
@@ -153,7 +153,7 @@ TEST(dynamic_types_integration, lookup_by_name_across_types) {
     setup();
     
     /* Register multiple types */
-    nmo_enum_value_def_t states[] = { { "IDLE", 0 }, { "RUNNING", 1 } };
+    nmo_enum_value_def_t states[] = { { "IDLE", 0, NULL }, { "RUNNING", 1, NULL } };
     nmo_enum_type_def_t state_enum = {
         .name = "State",
         .values = states,
@@ -193,7 +193,7 @@ TEST(dynamic_types_integration, struct_with_multiple_field_types) {
     
     /* Register enum for field */
     nmo_enum_value_def_t sizes[] = {
-        { "SMALL", 0 }, { "MEDIUM", 1 }, { "LARGE", 2 }
+        { "SMALL", 0, NULL }, { "MEDIUM", 1, NULL }, { "LARGE", 2, NULL }
     };
     nmo_enum_type_def_t size_enum = {
         .name = "Size",
@@ -333,7 +333,7 @@ TEST(dynamic_types_integration, prevent_duplicate_names_across_types) {
     setup();
     
     /* Register enum with name "Status" */
-    nmo_enum_value_def_t values[] = { { "OK", 0 }, { "ERROR", 1 } };
+    nmo_enum_value_def_t values[] = { { "OK", 0, NULL }, { "ERROR", 1, NULL } };
     nmo_enum_type_def_t status_enum = {
         .name = "Status",
         .values = values,
@@ -375,9 +375,9 @@ TEST(dynamic_types_integration, benchmark_type_registration) {
         snprintf(name, sizeof(name), "TestEnum%d", i);
         
         nmo_enum_value_def_t values[] = {
-            { "VALUE_0", 0 },
-            { "VALUE_1", 1 },
-            { "VALUE_2", 2 }
+            { "VALUE_0", 0, NULL },
+            { "VALUE_1", 1, NULL },
+            { "VALUE_2", 2, NULL }
         };
         
         nmo_enum_type_def_t enum_def = {
@@ -451,7 +451,7 @@ TEST(dynamic_types_integration, get_type_statistics) {
     setup();
     
     /* Register various types */
-    nmo_enum_value_def_t colors[] = { { "RED", 0 }, { "BLUE", 1 } };
+    nmo_enum_value_def_t colors[] = { { "RED", 0, NULL }, { "BLUE", 1, NULL } };
     nmo_enum_type_def_t color_enum = {
         .name = "Color",
         .values = colors,
@@ -460,7 +460,7 @@ TEST(dynamic_types_integration, get_type_statistics) {
     nmo_guid_t color_guid;
     nmo_type_registry_register_enum(test_registry, &color_enum, &color_guid);
     
-    nmo_flags_bit_def_t flags[] = { { "BIT0", 0x01 }, { "BIT1", 0x02 } };
+    nmo_flags_bit_def_t flags[] = { { "BIT0", 0x01, NULL }, { "BIT1", 0x02, NULL } };
     nmo_flags_type_def_t flag_def = {
         .name = "Flags",
         .bits = flags,

@@ -275,6 +275,10 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 /* Enhanced assertion macros with detailed error messages */
 #include <math.h>
 
+static inline const char *test_safe_cstr(const char *str) {
+    return str ? str : "(null)";
+}
+
 #define ASSERT_FLOAT_EQ(a, b, epsilon)                                         \
     do {                                                                       \
         double _diff = fabs((double)(a) - (double)(b));                       \
@@ -292,13 +296,15 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 
 #define ASSERT_STR_EQ(s1, s2)                                                  \
     do {                                                                       \
-        if ((s1) == NULL || (s2) == NULL || strcmp((s1), (s2)) != 0) {       \
+        const char *_s1 = (s1);                                                \
+        const char *_s2 = (s2);                                                \
+        if (_s1 == NULL || _s2 == NULL || strcmp(_s1, _s2) != 0) {            \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "String assertion failed: %s == %s\n"            \
                              "  Expected: \"%s\"\n  Actual: \"%s\"",         \
                              #s1, #s2,                                        \
-                             (s2) ? (s2) : "(null)", (s1) ? (s1) : "(null)"); \
+                             test_safe_cstr(_s2), test_safe_cstr(_s1));       \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -306,13 +312,15 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 
 #define ASSERT_STR_CONTAINS(haystack, needle)                                  \
     do {                                                                       \
-        if ((haystack) == NULL || strstr((haystack), (needle)) == NULL) {     \
+        const char *_haystack = (haystack);                                   \
+        const char *_needle = (needle);                                       \
+        if (_haystack == NULL || strstr(_haystack, _needle) == NULL) {       \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "String contains assertion failed: '%s' should contain '%s'\n" \
                              "  Actual: %s",                                  \
                              #haystack, #needle,                              \
-                             (haystack) ? (haystack) : "(null)");             \
+                             test_safe_cstr(_haystack));                      \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \

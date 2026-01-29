@@ -62,22 +62,9 @@ add_unit_test(test_chunk_legacy_bitmap)
 add_unit_test(test_image_utils)
 add_unit_test(test_stb_adapter)
 
-# Schema layer tests (OLD SYSTEM - DISABLED)
-# The old schema system has been removed. These tests reference deleted headers.
-# TODO: Remove or migrate these tests when schema_v2 is fully implemented.
-# add_unit_test(test_schema)
-# add_unit_test(test_schema_registry)
-# add_unit_test(test_schema_builder)
-# add_unit_test(test_ckobject_deserialize)
-# add_unit_test(test_ckbeobject_deserialize)
-# add_unit_test(test_schema_roundtrip)
-# add_unit_test(test_validator)
-# add_unit_test(test_migrator)
-# add_unit_test(test_ckobject_hierarchy)
-# add_unit_test(test_schema_macros)
-# add_unit_test(test_version_management)
-# add_unit_test(test_param_meta)
-# add_unit_test(test_phase5_improvements)
+# Legacy schema layer tests (REMOVED)
+# The legacy schema_v1 test sources have been deleted as part of the migration.
+# New Phase 6 / type system suites replace their coverage.
 
 # Schema v2 layer tests (Phase 5.5)
 add_test(NAME test_type_registry

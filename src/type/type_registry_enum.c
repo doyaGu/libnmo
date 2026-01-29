@@ -148,7 +148,7 @@ nmo_result_t nmo_type_registry_register_enum(
     }
     
     /* Check if type already exists */
-    nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
+    const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (existing) {
         return nmo_result_errorf(NULL, NMO_ERR_ALREADY_EXISTS,
                                  NMO_SEVERITY_ERROR,
@@ -301,7 +301,7 @@ nmo_result_t nmo_type_registry_register_flags(
     }
     
     /* Check if type already exists */
-    nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
+    const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (existing) {
         return nmo_result_errorf(NULL, NMO_ERR_ALREADY_EXISTS,
                                  NMO_SEVERITY_ERROR,

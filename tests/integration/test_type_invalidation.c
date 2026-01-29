@@ -296,6 +296,7 @@ TEST(type_invalidation, reregistration_after_invalidation) {
         nmo_type_registry_find_by_guid(registry, GUID_TYPE1);
     ASSERT_NE(NULL, first_reg);
     nmo_type_id_t first_id = first_reg->id;
+    (void)first_id;
     
     /* Fully unregister to free slot */
     result = nmo_type_registry_unregister(registry, GUID_TYPE1);

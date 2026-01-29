@@ -64,11 +64,11 @@ static size_t indexed_map_alignment(size_t size) {
     return alignment;
 }
 
-static void indexed_map_copy_key(nmo_indexed_map_t *map, void *dest, const void *src) {
+static void indexed_map_copy_key(const nmo_indexed_map_t *map, void *dest, const void *src) {
     nmo_container_copy_element(&map->key_lifecycle, dest, src, map->key_size);
 }
 
-static void indexed_map_copy_value(nmo_indexed_map_t *map, void *dest, const void *src) {
+static void indexed_map_copy_value(const nmo_indexed_map_t *map, void *dest, const void *src) {
     nmo_container_copy_element(&map->value_lifecycle, dest, src, map->value_size);
 }
 

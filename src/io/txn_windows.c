@@ -62,40 +62,6 @@ static wchar_t* utf8_to_utf16(const char* utf8, nmo_allocator_t* allocator) {
 }
 
 /**
- * @brief Convert UTF-16 (wide char) to UTF-8 string
- *
- * @param utf16 UTF-16 string
- * @param allocator Allocator for memory
- * @return Allocated UTF-8 string or NULL on error
- */
-static char* utf16_to_utf8(const wchar_t* utf16, nmo_allocator_t* allocator) {
-    if (!utf16) {
-        return NULL;
-    }
-
-    // Get required buffer size
-    int size = WideCharToMultiByte(CP_UTF8, 0, utf16, -1, NULL, 0, NULL, NULL);
-    if (size <= 0) {
-        return NULL;
-    }
-
-    // Allocate buffer
-    char* str = (char*)nmo_alloc(allocator, size, 1);
-    if (!str) {
-        return NULL;
-    }
-
-    // Perform conversion
-    int result = WideCharToMultiByte(CP_UTF8, 0, utf16, -1, str, size, NULL, NULL);
-    if (result <= 0) {
-        nmo_free(allocator, str);
-        return NULL;
-    }
-
-    return str;
-}
-
-/**
  * @brief Transaction handle structure
  */
 struct nmo_txn_handle {

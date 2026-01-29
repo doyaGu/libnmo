@@ -17,7 +17,6 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_logger nmo_logger_t;
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_type_registry_t nmo_type_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_plugin_manager nmo_plugin_manager_t;
@@ -82,16 +81,6 @@ NMO_API void nmo_context_release(nmo_context_t *ctx);
 static inline void nmo_context_destroy(nmo_context_t *ctx) {
     nmo_context_release(ctx);
 }
-
-/**
- * @brief Get schema registry (deprecated - use nmo_context_get_type_registry)
- *
- * Thread-safe access to the schema registry.
- *
- * @param ctx Context
- * @return Schema registry or NULL
- */
-NMO_API nmo_schema_registry_t *nmo_context_get_schema_registry(const nmo_context_t *ctx);
 
 /**
  * @brief Get type registry (schema v2)

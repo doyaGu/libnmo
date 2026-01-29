@@ -73,6 +73,7 @@ static void test_file_io_roundtrip(void) {
     nmo_object_repository_t* load_repo = nmo_session_get_repository(load_session);
     size_t object_count = 0;
     nmo_object_t** loaded_objects = nmo_object_repository_get_all(load_repo, &object_count);
+    (void)loaded_objects;
 
     ASSERT_EQ(object_count, 2);
 

@@ -82,11 +82,13 @@ else()
 endif()
 
 # Include directories
-include_directories(
-    ${PROJECT_SOURCE_DIR}/include
-    ${ZLIB_INCLUDE_DIRS}
-    ${YYJSON_INCLUDE_DIRS}
-)
+include_directories(${PROJECT_SOURCE_DIR}/include)
+if(ZLIB_INCLUDE_DIRS)
+    include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
+endif()
+if(YYJSON_INCLUDE_DIRS)
+    include_directories(SYSTEM ${YYJSON_INCLUDE_DIRS})
+endif()
 
 # Core library sources
 set(NMO_CORE_SOURCES
@@ -104,6 +106,8 @@ set(NMO_CORE_SOURCES
     src/core/hash_set.c
     src/core/indexed_map.c
     src/core/list.c
+    src/core/pool.c
+    src/core/refcount.c
     src/core/shared_library.c
 )
 

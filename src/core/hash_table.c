@@ -45,11 +45,11 @@ static size_t nmo_hash_table_alignment(size_t element_size) {
     return alignment;
 }
 
-static void nmo_hash_table_copy_key(nmo_hash_table_t *table, void *dest, const void *src) {
+static void nmo_hash_table_copy_key(const nmo_hash_table_t *table, void *dest, const void *src) {
     nmo_container_copy_element(&table->key_lifecycle, dest, src, table->key_size);
 }
 
-static void nmo_hash_table_copy_value(nmo_hash_table_t *table, void *dest, const void *src) {
+static void nmo_hash_table_copy_value(const nmo_hash_table_t *table, void *dest, const void *src) {
     nmo_container_copy_element(&table->value_lifecycle, dest, src, table->value_size);
 }
 
@@ -352,7 +352,9 @@ nmo_result_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, con
     if (nmo_hash_table_should_grow(table)) {
         size_t new_capacity = table->capacity << 1;
         if (new_capacity == 0 || new_capacity <= table->capacity) {
-            return NMO_ERR_NOMEM;
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "Hash table capacity overflow"));
         }
         int result = nmo_hash_table_rehash_internal(table, new_capacity);
         if (result != NMO_OK) {
@@ -490,7 +492,7 @@ nmo_result_t nmo_hash_table_rehash(nmo_hash_table_t *table, size_t capacity) {
                                           "Hash table rehash capacity overflow"));
     }
 
-    int result = nmo_hash_table_rehash(table, target);
+    int result = nmo_hash_table_rehash_internal(table, target);
     if (result != NMO_OK) {
         return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
                                           NMO_SEVERITY_ERROR,

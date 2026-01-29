@@ -149,7 +149,6 @@ typedef struct {
 typedef struct {
     nmo_context_t *ctx;
     nmo_session_t *session;
-    nmo_schema_registry_t *registry;
     nmo_object_t **objects;
     size_t object_count;
     nmo_file_info_t file_info;
@@ -679,6 +678,7 @@ static bool object_is_under_root(const nmo_object_t *object, nmo_object_id_t roo
 }
 
 static bool object_matches_filters(const inspect_state_t *state, const inspect_options_t *opts, const nmo_object_t *object) {
+    (void)state;
     const inspect_filters_t *filters = &opts->filters;
     if (filters->object_id_count > 0) {
         if (!contains_object_id(filters->object_ids, filters->object_id_count, nmo_object_get_id(object))) {
@@ -686,10 +686,7 @@ static bool object_matches_filters(const inspect_state_t *state, const inspect_o
         }
     }
     if (filters->has_class_filter) {
-        if (!state->registry) {
-            return false;
-        }
-        if (!nmo_class_is_derived_from(state->registry, nmo_object_get_class_id(object), filters->class_id)) {
+        if (!nmo_class_is_derived_from(NULL, nmo_object_get_class_id(object), filters->class_id)) {
             return false;
         }
     }
@@ -1138,10 +1135,6 @@ static void resolve_scene_root(inspect_state_t *state, inspect_options_t *opts) 
     if (!opts->filters.scene_name || opts->filters.root_specified) {
         return;
     }
-    if (!state->registry) {
-        log_message(opts, LOG_WARN, "Scene filtering requested but schema registry unavailable");
-        return;
-    }
     nmo_class_id_t scene_class = nmo_ckclass_get_id_by_name("CKScene");
     nmo_class_id_t level_class = nmo_ckclass_get_id_by_name("CKLevel");
     for (size_t i = 0; i < state->object_count; ++i) {
@@ -1151,8 +1144,8 @@ static void resolve_scene_root(inspect_state_t *state, inspect_options_t *opts) 
             continue;
         }
         nmo_class_id_t class_id = nmo_object_get_class_id(object);
-        if ((scene_class && nmo_class_is_derived_from(state->registry, class_id, scene_class)) ||
-            (level_class && nmo_class_is_derived_from(state->registry, class_id, level_class))) {
+        if ((scene_class && nmo_class_is_derived_from(NULL, class_id, scene_class)) ||
+            (level_class && nmo_class_is_derived_from(NULL, class_id, level_class))) {
             opts->filters.root_object_id = nmo_object_get_id(object);
             opts->filters.root_specified = true;
             break;
@@ -1516,9 +1509,6 @@ static void print_manager_section(FILE *out, const inspect_state_t *state, const
 }
 
 static bool behavior_matches(const inspect_state_t *state, const inspect_options_t *opts, const nmo_object_t *object) {
-    if (!state->registry) {
-        return false;
-    }
     nmo_class_id_t class_id = nmo_object_get_class_id(object);
     static nmo_class_id_t behavior_id = 0;
     static nmo_class_id_t script_behavior_id = 0;
@@ -1529,10 +1519,10 @@ static bool behavior_matches(const inspect_state_t *state, const inspect_options
         script_behavior_id = nmo_ckclass_get_id_by_name("CKScriptBehavior");
     }
     bool is_behavior = false;
-    if (behavior_id && nmo_class_is_derived_from(state->registry, class_id, behavior_id)) {
+    if (behavior_id && nmo_class_is_derived_from(NULL, class_id, behavior_id)) {
         is_behavior = true;
     }
-    if (!is_behavior && script_behavior_id && nmo_class_is_derived_from(state->registry, class_id, script_behavior_id)) {
+    if (!is_behavior && script_behavior_id && nmo_class_is_derived_from(NULL, class_id, script_behavior_id)) {
         is_behavior = true;
     }
     if (!is_behavior) {
@@ -1568,9 +1558,6 @@ static void print_behavior_section(FILE *out, const inspect_state_t *state, cons
 }
 
 static bool parameter_matches(const inspect_state_t *state, const inspect_options_t *opts, const nmo_object_t *object) {
-    if (!state->registry) {
-        return false;
-    }
     nmo_class_id_t class_id = nmo_object_get_class_id(object);
     static nmo_class_id_t parameter_id = 0;
     if (!parameter_id) {
@@ -1579,7 +1566,7 @@ static bool parameter_matches(const inspect_state_t *state, const inspect_option
     if (!parameter_id) {
         return false;
     }
-    if (!nmo_class_is_derived_from(state->registry, class_id, parameter_id)) {
+    if (!nmo_class_is_derived_from(NULL, class_id, parameter_id)) {
         return false;
     }
     return object_matches_filters(state, opts, object);
@@ -1868,7 +1855,6 @@ int main(int argc, char **argv) {
     memset(&state, 0, sizeof(state));
     state.ctx = ctx;
     state.session = session;
-    state.registry = nmo_context_get_schema_registry(ctx);
     state.file_info = nmo_session_get_file_info(session);
     if (nmo_session_get_objects(session, &state.objects, &state.object_count) != 0) {
         log_message(&opts, LOG_ERROR, "Failed to query objects from session");
