@@ -18,13 +18,14 @@ int main(int argc, char *argv[]) {
 
     // Step 1: Create context
     printf("Creating context...\n");
-    nmo_context_desc ctx_desc = {
+    nmo_logger_t logger = nmo_logger_stderr();
+    nmo_context_desc_t ctx_desc = {
         .allocator = NULL,
-        .logger = nmo_logger_stderr(),
+        .logger = &logger,
         .thread_pool_size = 4,
     };
 
-    nmo_context *ctx = nmo_context_create(&ctx_desc);
+    nmo_context_t *ctx = nmo_context_create(&ctx_desc);
     if (ctx == NULL) {
         fprintf(stderr, "Error: Failed to create context\n");
         return 1;
@@ -33,7 +34,7 @@ int main(int argc, char *argv[]) {
 
     // Step 2: Get manager registry
     printf("Accessing manager registry...\n");
-    nmo_manager_registry *manager_registry =
+    nmo_manager_registry_t *manager_registry =
         nmo_context_get_manager_registry(ctx);
     if (manager_registry == NULL) {
         fprintf(stderr, "Error: Failed to get manager registry\n");
@@ -44,15 +45,10 @@ int main(int argc, char *argv[]) {
 
     // Step 3: Create a custom manager
     printf("Creating custom manager...\n");
-    nmo_guid manager_guid = nmo_guid_create();
+    nmo_guid_t manager_guid = NMO_GUID(0x12345678, 0x9ABCDEF0);
 
-    nmo_manager_desc manager_desc = {
-        .type = NMO_MANAGER_TYPE_DEFAULT,
-        .guid = manager_guid,
-    };
-
-    nmo_manager *custom_manager =
-        nmo_manager_create(nmo_context_get_allocator(ctx), &manager_desc);
+    nmo_manager_t *custom_manager =
+        nmo_manager_create(manager_guid, "CustomManager", NMO_PLUGIN_CUSTOM_DLL);
 
     if (custom_manager == NULL) {
         fprintf(stderr, "Error: Failed to create custom manager\n");
@@ -62,25 +58,25 @@ int main(int argc, char *argv[]) {
     printf("Custom manager created with GUID: ");
 
     char guid_str[37];
-    nmo_guid_to_string(&manager_guid, guid_str, sizeof(guid_str));
+    nmo_guid_format(manager_guid, guid_str, sizeof(guid_str));
     printf("%s\n\n", guid_str);
 
     // Step 4: Register the manager
     printf("Registering manager with registry...\n");
-    nmo_error *reg_error =
-        nmo_manager_registry_add_manager(manager_registry, custom_manager);
+    nmo_manager_id_t manager_id = 1;
+    nmo_result_t reg_result =
+        nmo_manager_registry_register(manager_registry, manager_id, custom_manager);
 
-    if (reg_error != NULL) {
-        fprintf(stderr, "Warning: Failed to register manager: %s\n",
-                nmo_error_message(reg_error));
-        nmo_error_destroy(reg_error);
+    if (reg_result.code != NMO_OK) {
+        fprintf(stderr, "Warning: Failed to register manager (%s)\n",
+                nmo_error_string(reg_result.code));
     } else {
         printf("Manager registered successfully\n\n");
     }
 
     // Step 5: Create a session and use the manager
     printf("Creating session...\n");
-    nmo_session *session = nmo_session_create(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
     if (session == NULL) {
         fprintf(stderr, "Error: Failed to create session\n");
         nmo_manager_destroy(custom_manager);
@@ -91,19 +87,22 @@ int main(int argc, char *argv[]) {
 
     // Step 6: Create objects with the custom manager
     printf("Creating objects with custom manager...\n");
-    nmo_object_desc obj_desc = {
-        .type = NMO_OBJECT_TYPE_DEFAULT,
-        .id = 1,
-        .name = "CustomObject",
-    };
-
-    nmo_object *obj = nmo_object_create(nmo_context_get_allocator(ctx),
-                                        &obj_desc);
+    nmo_object_id_t object_id = 1;
+    nmo_class_id_t class_id = 1; /* CKObject */
+    nmo_object_t *obj = nmo_object_create(nmo_session_get_arena(session),
+                                          object_id,
+                                          class_id);
 
     if (obj == NULL) {
         fprintf(stderr, "Error: Failed to create object\n");
     } else {
-        printf("Object created successfully (ID: %u)\n\n", obj.id);
+        nmo_object_set_name(obj, "CustomObject", nmo_session_get_arena(session));
+        nmo_object_repository_t *repo = nmo_session_get_repository(session);
+        if (repo != NULL) {
+            nmo_object_repository_add(repo, obj);
+        }
+        printf("Object created successfully (ID: %u)\n\n",
+               nmo_object_get_id(obj));
     }
 
     // Clean up

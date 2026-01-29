@@ -4,6 +4,7 @@
  */
 
 #include "nmo.h"
+#include "app/nmo_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,13 +20,14 @@ int main(int argc, char *argv[]) {
 
     // Step 1: Create context
     printf("Creating context...\n");
-    nmo_context_desc ctx_desc = {
+    nmo_logger_t logger = nmo_logger_stderr();
+    nmo_context_desc_t ctx_desc = {
         .allocator = NULL,  // Use default allocator
-        .logger = nmo_logger_stderr(),
+        .logger = &logger,
         .thread_pool_size = 4,
     };
 
-    nmo_context *ctx = nmo_context_create(&ctx_desc);
+    nmo_context_t *ctx = nmo_context_create(&ctx_desc);
     if (ctx == NULL) {
         fprintf(stderr, "Error: Failed to create context\n");
         return 1;
@@ -34,7 +36,7 @@ int main(int argc, char *argv[]) {
 
     // Step 2: Create a session
     printf("Creating session...\n");
-    nmo_session *session = nmo_session_create(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
     if (session == NULL) {
         fprintf(stderr, "Error: Failed to create session\n");
         nmo_context_release(ctx);
@@ -49,18 +51,11 @@ int main(int argc, char *argv[]) {
 
     // Step 4: Save the file
     printf("Saving file: %s\n", output_file);
-    nmo_result result =
-        nmo_save_file(session, output_file, NMO_SAVE_DEFAULT);
+    int result = nmo_save_file(session, output_file, NMO_SAVE_DEFAULT);
 
-    if (result.code != NMO_OK) {
-        if (result.error != NULL) {
-            fprintf(stderr, "Error: %s\n",
-                    nmo_error_message(result.error));
-            nmo_error_destroy(result.error);
-        } else {
-            fprintf(stderr, "Error: Failed to save file (error code %d)\n",
-                    result.code);
-        }
+    if (result != NMO_OK) {
+        fprintf(stderr, "Error: Failed to save file (%s)\n",
+                nmo_error_string(result));
         nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;

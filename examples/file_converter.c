@@ -9,6 +9,7 @@
  */
 
 #include "nmo.h"
+#include "app/nmo_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,20 +55,21 @@ int main(int argc, char *argv[]) {
 
     // Create context
     printf("Creating context...\n");
-    nmo_context_desc ctx_desc = {
+    nmo_logger_t logger = opts.verbose ? nmo_logger_stderr() : nmo_logger_null();
+    nmo_context_desc_t ctx_desc = {
         .allocator = NULL,
-        .logger = opts.verbose ? nmo_logger_stderr() : nmo_logger_null(),
+        .logger = &logger,
         .thread_pool_size = 4,
     };
 
-    nmo_context *ctx = nmo_context_create(&ctx_desc);
+    nmo_context_t *ctx = nmo_context_create(&ctx_desc);
     if (ctx == NULL) {
         fprintf(stderr, "Error: Failed to create context\n");
         return 1;
     }
 
     // Create session
-    nmo_session *session = nmo_session_create(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
     if (session == NULL) {
         fprintf(stderr, "Error: Failed to create session\n");
         nmo_context_release(ctx);
@@ -78,20 +80,14 @@ int main(int argc, char *argv[]) {
     printf("Loading input file...\n");
     int load_flags = NMO_LOAD_DEFAULT;
     if (opts.validate) {
-        load_flags |= NMO_LOAD_VALIDATE;
+        load_flags |= NMO_LOAD_CHECK_DEPENDENCIES;
     }
 
-    nmo_result load_result =
-        nmo_load_file(session, input_file, load_flags);
+    int load_result = nmo_load_file(session, input_file, load_flags);
 
-    if (load_result.code != NMO_OK) {
-        if (load_result.error != NULL) {
-            fprintf(stderr, "Error loading file: %s\n",
-                    nmo_error_message(load_result.error));
-            nmo_error_destroy(load_result.error);
-        } else {
-            fprintf(stderr, "Error loading file (code %d)\n", load_result.code);
-        }
+    if (load_result != NMO_OK) {
+        fprintf(stderr, "Error loading file (%s)\n",
+                nmo_error_string(load_result));
         nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;
@@ -107,20 +103,17 @@ int main(int argc, char *argv[]) {
     printf("Saving output file...\n");
     int save_flags = NMO_SAVE_DEFAULT;
     if (opts.compress) {
-        save_flags |= NMO_SAVE_COMPRESS;
+        save_flags |= NMO_SAVE_COMPRESSED;
+    }
+    if (opts.validate) {
+        save_flags |= NMO_SAVE_VALIDATE_BEFORE;
     }
 
-    nmo_result save_result =
-        nmo_save_file(session, output_file, save_flags);
+    int save_result = nmo_save_file(session, output_file, save_flags);
 
-    if (save_result.code != NMO_OK) {
-        if (save_result.error != NULL) {
-            fprintf(stderr, "Error saving file: %s\n",
-                    nmo_error_message(save_result.error));
-            nmo_error_destroy(save_result.error);
-        } else {
-            fprintf(stderr, "Error saving file (code %d)\n", save_result.code);
-        }
+    if (save_result != NMO_OK) {
+        fprintf(stderr, "Error saving file (%s)\n",
+                nmo_error_string(save_result));
         nmo_session_destroy(session);
         nmo_context_release(ctx);
         return 1;

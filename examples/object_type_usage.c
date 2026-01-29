@@ -17,6 +17,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -239,9 +240,10 @@ void example_3d_entity(void) {
     
     if (result.code == NMO_OK) {
         printf("✓ Serialized CK3dEntity\n");
-        printf("  Chunk size: %zu bytes (%zu DWORDs)\n", 
-               nmo_chunk_get_data_size(chunk),
-               chunk->data_size);
+         size_t chunk_bytes = nmo_chunk_get_data_size(chunk);
+         printf("  Chunk size: %zu bytes (%zu DWORDs)\n", 
+             chunk_bytes,
+             chunk_bytes / 4);
     } else {
         printf("✗ Serialization failed with code %d\n", result.code);
         nmo_arena_destroy(arena);
