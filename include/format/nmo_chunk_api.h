@@ -53,6 +53,77 @@ typedef struct nmo_chunk_parser_state {
 } nmo_chunk_parser_state_t;
 
 // =============================================================================
+// BOUNDS CHECKING
+// =============================================================================
+
+#define NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, on_fail) \
+    do { \
+        nmo_chunk_t *chunk__ = (chunk); \
+        size_t dwords__ = (dwords); \
+        nmo_chunk_parser_state_t *state__ = \
+            chunk__ ? (nmo_chunk_parser_state_t *)chunk__->parser_state : NULL; \
+        if (!state__ || (state__->current_pos + dwords__ > chunk__->data.count)) { \
+            on_fail; \
+        } \
+    } while (0)
+
+#define NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, message) \
+    NMO_CHUNK_CHECK_BOUNDS_OR((chunk), (dwords), \
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF, \
+                                          NMO_SEVERITY_ERROR, (message))));
+
+#define NMO_CHUNK_CHECK_BOUNDS(chunk, dwords) \
+    NMO_CHUNK_CHECK_BOUNDS_MSG((chunk), (dwords), "Cannot read beyond data")
+
+#define NMO_CHUNK_RETURN_ERROR(code, severity, message) \
+    return nmo_result_error(NMO_ERROR(NULL, (code), (severity), (message)))
+
+#define NMO_CHUNK_RETURN_INVALID_ARGUMENT(message) \
+    NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, (message))
+
+#define NMO_CHUNK_CHECK_PTR(ptr, message) \
+    do { \
+        if (!(ptr)) { \
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(message); \
+        } \
+    } while (0)
+
+#define NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, message) \
+    do { \
+        if ((count) > 0 && !(array)) { \
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(message); \
+        } \
+    } while (0)
+
+#define NMO_CHUNK_CHECK_ARG(chunk, message) \
+    do { \
+        if (!(chunk)) { \
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(message); \
+        } \
+    } while (0)
+
+#define NMO_CHUNK_CHECK_ARGS(chunk, out, message) \
+    do { \
+        if (!(chunk) || !(out)) { \
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(message); \
+        } \
+    } while (0)
+
+#define NMO_CHUNK_CHECK_ARGS2(chunk, out1, out2, message) \
+    do { \
+        if (!(chunk) || !(out1) || !(out2)) { \
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(message); \
+        } \
+    } while (0)
+
+#define NMO_CHUNK_CHECK_ARGS3(chunk, out1, out2, out3, message) \
+    do { \
+        if (!(chunk) || !(out1) || !(out2) || !(out3)) { \
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(message); \
+        } \
+    } while (0)
+
+// =============================================================================
 // LIFECYCLE & MODE MANAGEMENT
 // =============================================================================
 

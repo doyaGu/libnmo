@@ -25,10 +25,7 @@ size_t nmo_chunk_get_position(const nmo_chunk_t *chunk) {
 }
 
 nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (pos > chunk->data.count) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS,
@@ -46,10 +43,7 @@ nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
 }
 
 nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
@@ -71,10 +65,7 @@ nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
 // =============================================================================
 
 nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_dwords) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
@@ -90,9 +81,7 @@ nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_dwords) {
         }
 
         nmo_result_t reserve_result = nmo_arena_array_reserve(&chunk->data, required_size);
-        if (reserve_result.code != NMO_OK) {
-            return reserve_result;
-        }
+        NMO_RETURN_IF_ERROR(reserve_result);
     }
 
     return nmo_result_ok();

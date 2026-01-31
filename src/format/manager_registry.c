@@ -127,20 +127,11 @@ nmo_result_t nmo_manager_registry_register(
 
     /* Insert manager */
     nmo_result_t insert_result = nmo_indexed_map_insert(registry->managers_by_id, &manager_id, &mgr);
-    if (insert_result.code != NMO_OK) {
-        result.code = insert_result.code;
-        result.error = NULL;
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(insert_result);
 
     insert_result = nmo_indexed_map_insert(registry->managers_by_guid, &mgr->guid, &mgr);
-    if (insert_result.code != NMO_OK) {
-        /* Roll back ID map insert */
-        nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
-        result.code = insert_result.code;
-        result.error = NULL;
-        return result;
-    }
+    NMO_RETURN_IF_ERROR_DO(insert_result,
+        nmo_indexed_map_remove(registry->managers_by_id, &manager_id));
 
     return nmo_result_ok();
 }

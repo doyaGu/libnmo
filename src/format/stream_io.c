@@ -197,9 +197,7 @@ static nmo_result_t reader_copy_bytes(nmo_stream_reader_t *reader, void *dst, si
             reader->out_pos = 0;
             reader->out_filled = 0;
             nmo_result_t fill_result = reader_fill_output(reader);
-            if (fill_result.code != NMO_OK) {
-                return fill_result;
-            }
+            NMO_RETURN_IF_ERROR(fill_result);
             available = reader->out_filled;
         }
 
@@ -226,9 +224,7 @@ static nmo_result_t reader_skip_bytes(nmo_stream_reader_t *reader, size_t size) 
             reader->out_pos = 0;
             reader->out_filled = 0;
             nmo_result_t fill_result = reader_fill_output(reader);
-            if (fill_result.code != NMO_OK) {
-                return fill_result;
-            }
+            NMO_RETURN_IF_ERROR(fill_result);
             available = reader->out_filled;
         }
 
@@ -243,9 +239,7 @@ static nmo_result_t reader_skip_bytes(nmo_stream_reader_t *reader, size_t size) 
 static nmo_result_t reader_read_u32(nmo_stream_reader_t *reader, uint32_t *value) {
     uint32_t tmp = 0;
     nmo_result_t result = reader_copy_bytes(reader, &tmp, sizeof(uint32_t));
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
     *value = nmo_read_u32_le((const uint8_t *)&tmp);
     return nmo_result_ok();
 }
@@ -345,24 +339,22 @@ nmo_stream_reader_t *nmo_stream_reader_create(const char *path,
     }
 
     nmo_result_t result = nmo_file_header_parse(reader->io, &reader->header);
-    if (result.code != NMO_OK) {
+    NMO_RETURN_NULL_IF_ERROR_DO(result, {
         nmo_io_close(reader->io);
         if (reader->owns_arena) {
             nmo_arena_destroy(reader->arena);
         }
         free(reader);
-        return NULL;
-    }
+    });
 
     result = nmo_file_header_validate(&reader->header);
-    if (result.code != NMO_OK) {
+    NMO_RETURN_NULL_IF_ERROR_DO(result, {
         nmo_io_close(reader->io);
         if (reader->owns_arena) {
             nmo_arena_destroy(reader->arena);
         }
         free(reader);
-        return NULL;
-    }
+    });
 
     memset(&reader->header1, 0, sizeof(reader->header1));
     reader->header1.object_count = reader->header.object_count;
@@ -401,10 +393,7 @@ nmo_stream_reader_t *nmo_stream_reader_create(const char *path,
 
         result = nmo_header1_parse(hdr1_buffer, reader->header.hdr1_unpack_size,
                                    &reader->header1, reader->arena);
-        if (result.code != NMO_OK) {
-            nmo_stream_reader_destroy(reader);
-            return NULL;
-        }
+        NMO_RETURN_NULL_IF_ERROR_DO(result, nmo_stream_reader_destroy(reader));
     }
 
     reader->data_compressed = (reader->header.data_pack_size != reader->header.data_unpack_size);
@@ -427,10 +416,7 @@ nmo_stream_reader_t *nmo_stream_reader_create(const char *path,
     }
 
     result = reader_load_managers(reader);
-    if (result.code != NMO_OK) {
-        nmo_stream_reader_destroy(reader);
-        return NULL;
-    }
+    NMO_RETURN_NULL_IF_ERROR_DO(result, nmo_stream_reader_destroy(reader));
 
     return reader;
 }
@@ -778,10 +764,7 @@ nmo_stream_writer_t *nmo_stream_writer_create(const char *path,
     }
 
     nmo_result_t header_result = nmo_file_header_serialize(&writer->header, writer->io);
-    if (header_result.code != NMO_OK) {
-        nmo_stream_writer_destroy(writer);
-        return NULL;
-    }
+    NMO_RETURN_NULL_IF_ERROR_DO(header_result, nmo_stream_writer_destroy(writer));
 
     if (options && options->header1_data && options->header1_size > 0) {
         int io_res = nmo_io_write(writer->io, options->header1_data, options->header1_size);

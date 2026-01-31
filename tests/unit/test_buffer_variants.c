@@ -48,21 +48,21 @@ TEST(buffer_variants, write_read_buffer_nosize) {
 
     // Read int before buffer
     int32_t value = 0;
-    result = nmo_chunk_parser_read_int(parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_int(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 111);
 
     // Read buffer without size (must provide size)
     uint8_t read_data[sizeof(test_data)];
-    result = nmo_chunk_parser_read_buffer_nosize(parser, sizeof(read_data), read_data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_buffer_nosize(parser, sizeof(read_data), read_data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     // Verify buffer content
     ASSERT_EQ(memcmp(test_data, read_data, sizeof(test_data)), 0);
 
     // Read int after buffer
-    result = nmo_chunk_parser_read_int(parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 222);
 
     nmo_chunk_parser_destroy(parser);
@@ -109,8 +109,8 @@ TEST(buffer_variants, lock_write_read_buffer) {
 
     // Read marker before locked buffer
     int32_t value = 0;
-    result = nmo_chunk_parser_read_int(parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_int(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 333);
 
     // Lock read buffer
@@ -127,12 +127,12 @@ TEST(buffer_variants, lock_write_read_buffer) {
     // Manually advance cursor (since we used lock)
     // We need to read the data normally to advance cursor
     uint32_t locked_data[5];
-    result = nmo_chunk_parser_read_buffer_nosize(parser, 5 * sizeof(uint32_t), locked_data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_buffer_nosize(parser, 5 * sizeof(uint32_t), locked_data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     // Read marker after locked buffer
-    result = nmo_chunk_parser_read_int(parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 444);
 
     nmo_chunk_parser_destroy(parser);
@@ -170,8 +170,8 @@ TEST(buffer_variants, edge_cases) {
 
     // Read marker (should be first)
     int32_t value = 0;
-    result = nmo_chunk_parser_read_int(parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_int(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 555);
 
     nmo_chunk_parser_destroy(parser);

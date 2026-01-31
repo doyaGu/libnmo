@@ -44,10 +44,12 @@ TEST(chunk_parser, cursor_operations) {
     // Test tell/seek/skip
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0);
 
-    ASSERT_EQ(nmo_chunk_parser_seek(parser, 5), NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_seek(parser, 5);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 5);
 
-    ASSERT_EQ(nmo_chunk_parser_skip(parser, 3), NMO_OK);
+    parse_result = nmo_chunk_parser_skip(parser, 3);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 8);
 
     ASSERT_EQ(nmo_chunk_parser_remaining(parser), 2);
@@ -81,33 +83,41 @@ TEST(chunk_parser, primitive_reads) {
 
     // Test byte read
     uint8_t byte_val;
-    ASSERT_EQ(nmo_chunk_parser_read_byte(parser, &byte_val), NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_byte(parser, &byte_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(byte_val, 0x78);
 
     // Reset for word test
-    nmo_chunk_parser_seek(parser, 0);
+    parse_result = nmo_chunk_parser_seek(parser, 0);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     uint16_t word_val;
-    ASSERT_EQ(nmo_chunk_parser_read_word(parser, &word_val), NMO_OK);
+    parse_result = nmo_chunk_parser_read_word(parser, &word_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(word_val, 0x5678);
 
     // Reset for dword test
-    nmo_chunk_parser_seek(parser, 0);
+    parse_result = nmo_chunk_parser_seek(parser, 0);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     uint32_t dword_val;
-    ASSERT_EQ(nmo_chunk_parser_read_dword(parser, &dword_val), NMO_OK);
+    parse_result = nmo_chunk_parser_read_dword(parser, &dword_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(dword_val, 0x12345678);
 
     // Test int read
     int32_t int_val;
-    ASSERT_EQ(nmo_chunk_parser_read_int(parser, &int_val), NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &int_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     // Test float read
     float float_val;
-    ASSERT_EQ(nmo_chunk_parser_read_float(parser, &float_val), NMO_OK);
+    parse_result = nmo_chunk_parser_read_float(parser, &float_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_TRUE(float_val >= 3.14f && float_val <= 3.15f);
 
     // Test GUID read
     nmo_guid_t guid_val;
-    ASSERT_EQ(nmo_chunk_parser_read_guid(parser, &guid_val), NMO_OK);
+    parse_result = nmo_chunk_parser_read_guid(parser, &guid_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(guid_val.d1, 0x11111111);
     ASSERT_EQ(guid_val.d2, 0x22222222);
 
@@ -140,7 +150,8 @@ TEST(chunk_parser, string_read) {
     ASSERT_NOT_NULL(parser);
 
     char* read_str = NULL;
-    ASSERT_EQ(nmo_chunk_parser_read_string(parser, &read_str, arena), NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_string(parser, &read_str, arena);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_NOT_NULL(read_str);
     ASSERT_TRUE(strcmp(read_str, test_str) == 0);
 
@@ -170,23 +181,30 @@ TEST(chunk_parser, object_sequence_state) {
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
 
-    int count = nmo_chunk_parser_start_object_sequence(parser);
-    ASSERT_EQ(3, count);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_start_object_sequence(parser, &count);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(3u, count);
 
     nmo_object_id_t obj_id = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_object_id(parser, &obj_id));
+    parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ((nmo_object_id_t)101, obj_id);
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_object_id(parser, &obj_id));
+    parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ((nmo_object_id_t)202, obj_id);
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_object_id(parser, &obj_id));
+    parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ((nmo_object_id_t)303, obj_id);
 
     uint32_t sentinel = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_dword(parser, &sentinel));
+    parse_result = nmo_chunk_parser_read_dword(parser, &sentinel);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(0xDEADBEEF, sentinel);
 
     uint32_t tail = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_dword(parser, &tail));
+    parse_result = nmo_chunk_parser_read_dword(parser, &tail);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(0x01020304, tail);
 
     nmo_chunk_parser_destroy(parser);
@@ -217,18 +235,24 @@ TEST(chunk_parser, manager_sequence_state) {
     ASSERT_NOT_NULL(parser);
 
     nmo_guid_t header_guid;
-    int count = nmo_chunk_parser_start_manager_sequence(parser, &header_guid);
-    ASSERT_EQ(2, count);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_start_manager_sequence(parser, &header_guid, &count);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(2u, count);
     ASSERT_EQ(guid.d1, header_guid.d1);
     ASSERT_EQ(guid.d2, header_guid.d2);
 
-    int32_t value = nmo_chunk_parser_read_manager_int_sequence(parser);
+    int32_t value = 0;
+    parse_result = nmo_chunk_parser_read_manager_int_sequence(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(0x11111111, value);
-    value = nmo_chunk_parser_read_manager_int_sequence(parser);
+    parse_result = nmo_chunk_parser_read_manager_int_sequence(parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(0x22222222, value);
 
     uint32_t tail = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_dword(parser, &tail));
+    parse_result = nmo_chunk_parser_read_dword(parser, &tail);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(0x33333333, tail);
 
     nmo_chunk_parser_destroy(parser);
@@ -266,15 +290,18 @@ TEST(chunk_parser, identifier_navigation) {
 
     // Read the first identifier to set the initial state
     uint32_t id;
-    ASSERT_EQ(nmo_chunk_parser_read_identifier(parser, &id), NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_identifier(parser, &id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(id, 0x1D1D1D1D);
 
     // Seek to the third identifier (0x3D3D3D3D)
-    ASSERT_EQ(nmo_chunk_parser_seek_identifier(parser, 0x3D3D3D3D), NMO_OK);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x3D3D3D3D);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 10); // Cursor should be after the [ID, NextPos] pair
 
     // Try to seek a non-existent ID
-    ASSERT_EQ(nmo_chunk_parser_seek_identifier(parser, 0xBADBAD), NMO_ERR_EOF);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0xBADBAD);
+    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -299,10 +326,12 @@ TEST(chunk_parser, bounds_checking) {
 
     // First read should succeed
     uint32_t val;
-    ASSERT_EQ(nmo_chunk_parser_read_dword(parser, &val), NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_dword(parser, &val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     // Second read should fail (EOF)
-    ASSERT_EQ(nmo_chunk_parser_read_dword(parser, &val), NMO_ERR_EOF);
+    parse_result = nmo_chunk_parser_read_dword(parser, &val);
+    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
 
     // at_end should return true
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));

@@ -93,9 +93,7 @@ static nmo_result_t parse_manager_data(
 
             /* Parse chunk from buffer */
             nmo_result_t result = nmo_chunk_parse(mgr->chunk, data + *pos, mgr->data_size);
-            if (result.code != NMO_OK) {
-                return result;
-            }
+            NMO_RETURN_IF_ERROR(result);
 
             *pos += mgr->data_size;
         } else {
@@ -173,9 +171,7 @@ static nmo_result_t parse_object_data(
 
             /* Parse chunk from buffer */
             nmo_result_t result = nmo_chunk_parse(obj->chunk, data + *pos, obj->data_size);
-            if (result.code != NMO_OK) {
-                return result;
-            }
+            NMO_RETURN_IF_ERROR(result);
 
             *pos += obj->data_size;
         } else {
@@ -215,17 +211,13 @@ nmo_result_t nmo_data_section_parse(
     /* Parse manager data (file_version >= 6) */
     if (file_version >= 6 && manager_count > 0) {
         nmo_result_t result = parse_manager_data(buffer, size, &pos, data_section, chunk_pool, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     /* Parse object data (file_version >= 4) */
     if (file_version >= 4 && object_count > 0) {
         nmo_result_t result = parse_object_data(buffer, size, &pos, file_version, data_section, chunk_pool, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -272,9 +264,7 @@ nmo_result_t nmo_data_section_serialize(
                     chunk_size = mgr->chunk->raw_size;
                 } else {
                     nmo_result_t result = nmo_chunk_serialize(mgr->chunk, &serialized_data, &chunk_size, arena);
-                    if (result.code != NMO_OK) {
-                        return result;
-                    }
+                    NMO_RETURN_IF_ERROR(result);
                     chunk_data = serialized_data;
                 }
             }
@@ -326,9 +316,7 @@ nmo_result_t nmo_data_section_serialize(
                     chunk_size = obj->chunk->raw_size;
                 } else {
                     nmo_result_t result = nmo_chunk_serialize(obj->chunk, &serialized_data, &chunk_size, arena);
-                    if (result.code != NMO_OK) {
-                        return result;
-                    }
+                    NMO_RETURN_IF_ERROR(result);
                     chunk_data = serialized_data;
                 }
             }

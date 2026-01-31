@@ -14,11 +14,6 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
     return (nmo_chunk_parser_state_t *) chunk->parser_state;
 }
 
-static inline bool can_read(nmo_chunk_t *chunk, size_t dwords) {
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    return state && (state->current_pos + dwords <= chunk->data.count);
-}
-
 // =============================================================================
 // Generic Arrays
 // =============================================================================
@@ -27,46 +22,42 @@ nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
                                    const void *array,
                                    size_t count,
                                    size_t elem_size) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid arguments");
 
     if (array == NULL && count > 0 && elem_size > 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Non-zero count with NULL array");
     }
 
     if (count == 0 || elem_size == 0) {
         nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     if (count > (size_t) INT_MAX || elem_size > (size_t) INT_MAX) {
         nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     if (count > SIZE_MAX / elem_size) {
         nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     size_t total_size = count * elem_size;
     if (total_size > (size_t) INT_MAX) {
         nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     return nmo_chunk_write_buffer_no_size(chunk, array, total_size);
 }
@@ -75,18 +66,15 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
                                   void **out_array,
                                   size_t *out_count,
                                   size_t *out_elem_size) {
-    if (!chunk || !out_array || !out_count || !out_elem_size) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS3(chunk, out_array, out_count, out_elem_size, "Invalid arguments");
 
     uint32_t total_size = 0;
     nmo_result_t result = nmo_chunk_read_dword(chunk, &total_size);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     uint32_t count = 0;
     result = nmo_chunk_read_dword(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     if (total_size == 0 || count == 0) {
         *out_array = NULL;
@@ -103,10 +91,7 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     size_t total_size_bytes = (size_t) total_size;
     size_t dwords = (total_size_bytes + 3) / 4;
 
-    if (!can_read(chunk, dwords)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Insufficient data for array"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, "Insufficient data for array");
 
     // Allocate array
     void *array = nmo_arena_alloc(chunk->arena, total_size_bytes, 4);
@@ -136,15 +121,13 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
                                              nmo_object_id_t **out_ids,
                                              size_t *out_count,
                                              nmo_arena_t *arena) {
-    if (!chunk || !out_ids || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_ids, out_count, "Invalid arguments");
+    NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
 
     // Start sequence and get count
     size_t count = 0;
     nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
 
@@ -166,7 +149,7 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
     // Read IDs
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_read_object_id(chunk, &ids[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     *out_ids = ids;
@@ -176,24 +159,18 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
                                               const nmo_object_id_t *ids,
                                               size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    if (count > 0 && !ids) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
-    }
+    NMO_CHUNK_CHECK_COUNT_ARRAY(count, ids, "Non-zero count with NULL array");
 
     // Write count with sequence marker
     nmo_result_t result = nmo_chunk_write_object_sequence_start(chunk, count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     // Write IDs
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_write_object_sequence_item(chunk, ids[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -207,15 +184,13 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
                                        int32_t **out_array,
                                        size_t *out_count,
                                        nmo_arena_t *arena) {
-    if (!chunk || !out_array || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
+    NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
 
     // Start sequence and get count
     size_t count = 0;
     nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
 
@@ -238,7 +213,7 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
     for (size_t i = 0; i < count; i++) {
         int32_t value;
         result = nmo_chunk_read_int(chunk, &value);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
         array[i] = value;
     }
 
@@ -249,24 +224,18 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
                                         const int32_t *array,
                                         size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    if (count > 0 && !array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
-    }
+    NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     // Write ints
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_write_int(chunk, array[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -280,15 +249,13 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
                                          float **out_array,
                                          size_t *out_count,
                                          nmo_arena_t *arena) {
-    if (!chunk || !out_array || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
+    NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
 
     // Start sequence and get count
     size_t count = 0;
     nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
 
@@ -311,7 +278,7 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
     for (size_t i = 0; i < count; i++) {
         float value;
         result = nmo_chunk_read_float(chunk, &value);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
         array[i] = value;
     }
 
@@ -322,24 +289,18 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
                                           const float *array,
                                           size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    if (count > 0 && !array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
-    }
+    NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     // Write floats
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_write_float(chunk, array[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -353,15 +314,13 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
                                          uint32_t **out_array,
                                          size_t *out_count,
                                          nmo_arena_t *arena) {
-    if (!chunk || !out_array || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
+    NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
 
     // Start sequence and get count
     size_t count = 0;
     nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
 
@@ -383,7 +342,7 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
     // Read dwords
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_read_dword(chunk, &array[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     *out_array = array;
@@ -393,24 +352,18 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
                                           const uint32_t *array,
                                           size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    if (count > 0 && !array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
-    }
+    NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     // Write dwords
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_write_dword(chunk, array[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -424,15 +377,13 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
                                         uint8_t **out_array,
                                         size_t *out_count,
                                         nmo_arena_t *arena) {
-    if (!chunk || !out_array || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
+    NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
 
     // Start sequence and get count
     size_t count = 0;
     nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
 
@@ -454,7 +405,7 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
     // Read bytes
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_read_byte(chunk, &array[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     *out_array = array;
@@ -464,24 +415,17 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
                                          const uint8_t *array,
                                          size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
-
-    if (count > 0 && !array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     // Write bytes
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_write_byte(chunk, array[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -495,15 +439,13 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
                                           char ***out_strings,
                                           size_t *out_count,
                                           nmo_arena_t *arena) {
-    if (!chunk || !out_strings || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_strings, out_count, "Invalid arguments");
+    NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
 
     // Start sequence and get count
     size_t count = 0;
     nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
 
@@ -538,24 +480,18 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
                                            const char * const *strings,
                                            size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    if (count > 0 && !strings) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Non-zero count with NULL array"));
-    }
+    NMO_CHUNK_CHECK_COUNT_ARRAY(count, strings, "Non-zero count with NULL array");
 
     // Write count
     nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     // Write strings
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_write_string(chunk, strings[i]);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();

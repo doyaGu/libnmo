@@ -65,13 +65,13 @@ TEST(chunk_serialize, serialize_and_deserialize) {
 
     /* Read and verify data */
     int32_t int_val = 0;
-    result = nmo_chunk_parser_read_int(parser, &int_val);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_int(parser, &int_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(int_val, 42);
 
     float float_val = 0.0f;
-    result = nmo_chunk_parser_read_float(parser, &float_val);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_float(parser, &float_val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_FLOAT_EQ(float_val, 3.14f, 0.001f);
 
     /* Cleanup */

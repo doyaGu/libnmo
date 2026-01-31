@@ -236,6 +236,32 @@ static inline int nmo_result_is_not_found(nmo_result_t result) {
         } \
     } while (0)
 
+#define NMO_RETURN_IF_ERROR_DO(result, on_error) \
+    do { \
+        nmo_result_t _r = (result); \
+        if (_r.code != NMO_OK) { \
+            on_error; \
+            return _r; \
+        } \
+    } while (0)
+
+#define NMO_RETURN_NULL_IF_ERROR(result) \
+    do { \
+        nmo_result_t _r = (result); \
+        if (_r.code != NMO_OK) { \
+            return NULL; \
+        } \
+    } while (0)
+
+#define NMO_RETURN_NULL_IF_ERROR_DO(result, on_error) \
+    do { \
+        nmo_result_t _r = (result); \
+        if (_r.code != NMO_OK) { \
+            on_error; \
+            return NULL; \
+        } \
+    } while (0)
+
 #define NMO_RETURN_ERROR(error) \
     return nmo_result_error(error)
 

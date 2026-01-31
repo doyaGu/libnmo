@@ -193,18 +193,20 @@ TEST(subchunks, read_subchunks) {
 
     // Read data before sub-chunks
     int32_t value = 0;
-    result = nmo_chunk_parser_read_int(parent_parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_int(parent_parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 999);
 
     // Start reading sub-chunk sequence
-    int count = nmo_chunk_parser_start_read_sequence(parent_parser);
-    ASSERT_EQ(count, 2);
+    size_t count = 0;
+    parse_result = nmo_chunk_parser_start_read_sequence(parent_parser, &count);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(count, 2u);
 
     // Read sub-chunk 1
     nmo_chunk_t* read_sub1 = NULL;
-    result = nmo_chunk_parser_read_subchunk(parent_parser, sub_arena, &read_sub1);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_subchunk(parent_parser, sub_arena, &read_sub1);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_NOT_NULL(read_sub1);
     ASSERT_EQ(read_sub1->class_id, 0xAABBCCDD);
     ASSERT_EQ(read_sub1->data.count, 3);
@@ -214,25 +216,25 @@ TEST(subchunks, read_subchunks) {
     nmo_chunk_parser_t* sub_parser1 = nmo_chunk_parser_create(read_sub1);
     ASSERT_NOT_NULL(sub_parser1);
 
-    result = nmo_chunk_parser_read_int(sub_parser1, &value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(sub_parser1, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 1000);
 
-    result = nmo_chunk_parser_read_int(sub_parser1, &value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(sub_parser1, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 2000);
 
     nmo_object_id_t obj_id = 0;
-    result = nmo_chunk_parser_read_object_id(sub_parser1, &obj_id);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_object_id(sub_parser1, &obj_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(obj_id, 5001);
 
     nmo_chunk_parser_destroy(sub_parser1);
 
     // Read sub-chunk 2
     nmo_chunk_t* read_sub2 = NULL;
-    result = nmo_chunk_parser_read_subchunk(parent_parser, sub_arena, &read_sub2);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_subchunk(parent_parser, sub_arena, &read_sub2);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_NOT_NULL(read_sub2);
     ASSERT_EQ(read_sub2->class_id, 0x11223344);
     ASSERT_EQ(read_sub2->data.count, 2);
@@ -241,20 +243,20 @@ TEST(subchunks, read_subchunks) {
     nmo_chunk_parser_t* sub_parser2 = nmo_chunk_parser_create(read_sub2);
     ASSERT_NOT_NULL(sub_parser2);
 
-    result = nmo_chunk_parser_read_int(sub_parser2, &value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(sub_parser2, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 3000);
 
     float float_value = 0.0f;
-    result = nmo_chunk_parser_read_float(sub_parser2, &float_value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_float(sub_parser2, &float_value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_TRUE(float_value == 42.5f);
 
     nmo_chunk_parser_destroy(sub_parser2);
 
     // Read data after sub-chunks
-    result = nmo_chunk_parser_read_int(parent_parser, &value);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parent_parser, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 888);
 
     // Cleanup

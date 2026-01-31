@@ -12,24 +12,15 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
     return (nmo_chunk_parser_state_t *) chunk->parser_state;
 }
 
-static inline bool can_read(const nmo_chunk_t *chunk, size_t dwords) {
-    nmo_chunk_parser_state_t *state = get_parser_state((nmo_chunk_t *) chunk);
-    if (!state) return false;
-    return (state->current_pos + dwords) <= chunk->data.count;
-}
-
 // =============================================================================
 // Identifiers
 // =============================================================================
 
 nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 2);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
 
@@ -51,15 +42,9 @@ nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
 }
 
 nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
-    if (!chunk || !out_id) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
-    if (!can_read(chunk, 2)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 2);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -72,10 +57,7 @@ nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
 }
 
 nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     

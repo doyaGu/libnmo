@@ -42,8 +42,13 @@ TEST(arrays, write_read_int_array) {
 
     // Read int array
     void* read_array = NULL;
-    int count = nmo_chunk_parser_read_array_lendian(parser, &read_array, arena);
-    ASSERT_EQ(count, 5);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser,
+                                                                    &read_array,
+                                                                    &count,
+                                                                    arena);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(count, 5u);
     ASSERT_NOT_NULL(read_array);
 
     int32_t* read_ints = (int32_t*)read_array;
@@ -86,8 +91,13 @@ TEST(arrays, write_read_float_array) {
 
     // Read float array
     void* read_array = NULL;
-    int count = nmo_chunk_parser_read_array_lendian(parser, &read_array, arena);
-    ASSERT_EQ(count, 3);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser,
+                                                                    &read_array,
+                                                                    &count,
+                                                                    arena);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(count, 3u);
     ASSERT_NOT_NULL(read_array);
 
     float* read_floats = (float*)read_array;
@@ -128,8 +138,13 @@ TEST(arrays, write_read_byte_array) {
 
     // Read byte array
     void* read_array = NULL;
-    int count = nmo_chunk_parser_read_array_lendian(parser, &read_array, arena);
-    ASSERT_EQ(count, 7);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser,
+                                                                    &read_array,
+                                                                    &count,
+                                                                    arena);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(count, 7u);
     ASSERT_NOT_NULL(read_array);
 
     uint8_t* read_bytes = (uint8_t*)read_array;
@@ -173,8 +188,13 @@ TEST(arrays, write_read_null_array) {
 
     // Read NULL array
     void* read_array = NULL;
-    int count = nmo_chunk_parser_read_array_lendian(parser, &read_array, arena);
-    ASSERT_EQ(count, 0);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser,
+                                                                    &read_array,
+                                                                    &count,
+                                                                    arena);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(count, 0u);
     ASSERT_NULL(read_array);
 
     // Cleanup
@@ -210,8 +230,13 @@ TEST(arrays, write_read_zero_count_array) {
 
     // Read zero-count array
     void* read_array = NULL;
-    int count = nmo_chunk_parser_read_array_lendian(parser, &read_array, arena);
-    ASSERT_EQ(count, 0);
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser,
+                                                                    &read_array,
+                                                                    &count,
+                                                                    arena);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(count, 0u);
     ASSERT_NULL(read_array);
 
     // Cleanup

@@ -76,39 +76,39 @@ TEST(object_ids, write_and_read_object_ids) {
 
     // Read object ID 1
     nmo_object_id_t read_id = 0;
-    result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)1001);
 
     // Read separator 1
     uint32_t data = 0;
-    result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_dword(parser, &data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(data, 0xABCDEF00);
 
     // Read object ID 2
-    result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)2002);
 
     // Read separator 2
-    result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_dword(parser, &data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(data, 0x12345678);
 
     // Read object ID 0
-    result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)0);
 
     // Read separator 3
-    result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_dword(parser, &data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(data, 0xDEADBEEF);
 
     // Read object ID 3
-    result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)3003);
 
     // Cleanup
@@ -165,9 +165,11 @@ TEST(object_ids, file_context_roundtrip) {
     nmo_chunk_parser_set_file_context(parser, &ctx);
 
     nmo_object_id_t read_id = 0;
-    ASSERT_EQ(nmo_chunk_parser_read_object_id(parser, &read_id), NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)1001);
-    ASSERT_EQ(nmo_chunk_parser_read_object_id(parser, &read_id), NMO_OK);
+    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)2002);
 
     nmo_chunk_parser_destroy(parser);

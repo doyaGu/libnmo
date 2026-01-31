@@ -52,45 +52,45 @@ TEST(identifier_search, basic) {
     ASSERT_NOT_NULL(parser);
 
     // Test seeking to identifier 1
-    int result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     int32_t val1, val2;
-    result = nmo_chunk_parser_read_int(parser, &val1);
-    ASSERT_EQ(result, NMO_OK);
-    result = nmo_chunk_parser_read_int(parser, &val2);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val1);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val2);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     ASSERT_EQ(val1, 100);
     ASSERT_EQ(val2, 200);
 
     // Test seeking to identifier 2
-    result = nmo_chunk_parser_seek_identifier(parser, 0x00000002);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000002);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
-    result = nmo_chunk_parser_read_int(parser, &val1);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val1);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(val1, 300);
 
     // Test seeking to identifier 3
-    result = nmo_chunk_parser_seek_identifier(parser, 0x00000003);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000003);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
-    result = nmo_chunk_parser_read_int(parser, &val1);
-    ASSERT_EQ(result, NMO_OK);
-    result = nmo_chunk_parser_read_int(parser, &val2);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val1);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val2);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     int32_t val3;
-    result = nmo_chunk_parser_read_int(parser, &val3);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val3);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     ASSERT_EQ(val1, 400);
     ASSERT_EQ(val2, 500);
     ASSERT_EQ(val3, 600);
 
     // Test seeking to non-existent identifier
-    result = nmo_chunk_parser_seek_identifier(parser, 0x99999999);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x99999999);
+    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -125,26 +125,26 @@ TEST(identifier_search, seek_backwards) {
     ASSERT_NOT_NULL(parser);
 
     // Seek forward
-    int result = nmo_chunk_parser_seek_identifier(parser, 0x00000002);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000002);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     int32_t val;
-    result = nmo_chunk_parser_read_int(parser, &val);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(val, 222);
 
     // Now seek back to ID 1 (this tests cycle detection logic)
-    result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
-    ASSERT_EQ(result, NMO_OK);
-    result = nmo_chunk_parser_read_int(parser, &val);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(val, 111);
 
     // Seek forward again to ID 3
-    result = nmo_chunk_parser_seek_identifier(parser, 0x00000003);
-    ASSERT_EQ(result, NMO_OK);
-    result = nmo_chunk_parser_read_int(parser, &val);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000003);
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(val, 333);
 
     nmo_chunk_parser_destroy(parser);
@@ -172,17 +172,17 @@ TEST(identifier_search, single) {
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
 
-    int result = nmo_chunk_parser_seek_identifier(parser, 0xABCDEF01);
-    ASSERT_EQ(result, NMO_OK);
+    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0xABCDEF01);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     int32_t val;
-    result = nmo_chunk_parser_read_int(parser, &val);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_int(parser, &val);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(val, 999);
 
     // Try to seek to non-existent identifier
-    result = nmo_chunk_parser_seek_identifier(parser, 0x12345678);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    parse_result = nmo_chunk_parser_seek_identifier(parser, 0x12345678);
+    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -215,14 +215,14 @@ TEST(identifier_search, multiple_seeks_same_id) {
 
     // Seek to ID 1 multiple times
     for (int i = 0; i < 3; i++) {
-        int result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
-        ASSERT_EQ(result, NMO_OK);
+        nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
+        ASSERT_EQ(parse_result.code, NMO_OK);
 
         int32_t val1, val2;
-        result = nmo_chunk_parser_read_int(parser, &val1);
-        ASSERT_EQ(result, NMO_OK);
-        result = nmo_chunk_parser_read_int(parser, &val2);
-        ASSERT_EQ(result, NMO_OK);
+        parse_result = nmo_chunk_parser_read_int(parser, &val1);
+        ASSERT_EQ(parse_result.code, NMO_OK);
+        parse_result = nmo_chunk_parser_read_int(parser, &val2);
+        ASSERT_EQ(parse_result.code, NMO_OK);
 
         ASSERT_EQ(val1, 10);
         ASSERT_EQ(val2, 20);
@@ -248,8 +248,8 @@ TEST(identifier_search, empty_chunk) {
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
 
-    int result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
-    ASSERT_TRUE(result == NMO_ERR_EOF || result == NMO_ERR_NOT_FOUND);  // Should return EOF or NOT_FOUND for empty chunk
+    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
+    ASSERT_TRUE(parse_result.code == NMO_ERR_EOF || parse_result.code == NMO_ERR_NOT_FOUND);  // Should return EOF or NOT_FOUND for empty chunk
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -282,23 +282,23 @@ TEST(identifier_search, many_identifiers) {
 
     // Test seeking to each identifier
     for (int i = 0; i < num_ids; i++) {
-        int result = nmo_chunk_parser_seek_identifier(parser, 0x1000 + i);
-        ASSERT_EQ(result, NMO_OK);
+        nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x1000 + i);
+        ASSERT_EQ(parse_result.code, NMO_OK);
 
         int32_t val;
-        result = nmo_chunk_parser_read_int(parser, &val);
-        ASSERT_EQ(result, NMO_OK);
+        parse_result = nmo_chunk_parser_read_int(parser, &val);
+        ASSERT_EQ(parse_result.code, NMO_OK);
         ASSERT_EQ(val, i * 100);
     }
 
     // Test seeking in reverse order
     for (int i = num_ids - 1; i >= 0; i--) {
-        int result = nmo_chunk_parser_seek_identifier(parser, 0x1000 + i);
-        ASSERT_EQ(result, NMO_OK);
+        nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x1000 + i);
+        ASSERT_EQ(parse_result.code, NMO_OK);
 
         int32_t val;
-        result = nmo_chunk_parser_read_int(parser, &val);
-        ASSERT_EQ(result, NMO_OK);
+        parse_result = nmo_chunk_parser_read_int(parser, &val);
+        ASSERT_EQ(parse_result.code, NMO_OK);
         ASSERT_EQ(val, i * 100);
     }
 

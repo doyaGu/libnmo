@@ -1346,9 +1346,7 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
 
     // Copy data to chunk
     nmo_result_t result = nmo_arena_array_resize(&w->chunk->data, w->data_size);
-    if (result.code != NMO_OK) {
-        return NULL;
-    }
+    NMO_RETURN_NULL_IF_ERROR(result);
     uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->data);
     if (w->data_size > 0) {
         memcpy(chunk_data, w->data, w->data_size * sizeof(uint32_t));
@@ -1357,9 +1355,7 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
     // Copy ID list
     if (w->id_count > 0) {
         result = nmo_arena_array_resize(&w->chunk->ids, w->id_count);
-        if (result.code != NMO_OK) {
-            return NULL;
-        }
+        NMO_RETURN_NULL_IF_ERROR(result);
         uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->ids);
         memcpy(ids, w->id_list, w->id_count * sizeof(uint32_t));
     }
@@ -1367,9 +1363,7 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
     // Copy manager list
     if (w->manager_count > 0) {
         result = nmo_arena_array_resize(&w->chunk->managers, w->manager_count);
-        if (result.code != NMO_OK) {
-            return NULL;
-        }
+        NMO_RETURN_NULL_IF_ERROR(result);
         uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->managers);
         memcpy(managers, w->manager_list, w->manager_count * sizeof(uint32_t));
     }
@@ -1377,18 +1371,14 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
     // Copy chunk list
     if (w->chunk_count > 0) {
         result = nmo_arena_array_resize(&w->chunk->chunks, w->chunk_count);
-        if (result.code != NMO_OK) {
-            return NULL;
-        }
+        NMO_RETURN_NULL_IF_ERROR(result);
         nmo_chunk_t **chunks = NMO_ARENA_ARRAY_DATA(nmo_chunk_t *, &w->chunk->chunks);
         memcpy(chunks, w->chunk_list, w->chunk_count * sizeof(nmo_chunk_t *));
     }
 
     if (w->chunk_ref_count > 0) {
         result = nmo_arena_array_resize(&w->chunk->chunk_refs, w->chunk_ref_count);
-        if (result.code != NMO_OK) {
-            return NULL;
-        }
+        NMO_RETURN_NULL_IF_ERROR(result);
         uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->chunk_refs);
         memcpy(chunk_refs, w->chunk_ref_list, w->chunk_ref_count * sizeof(uint32_t));
     }

@@ -10,10 +10,7 @@
 // =============================================================================
 
 nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Set IDS option
     chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
@@ -27,15 +24,11 @@ nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
     if (count > 0) {
         uint32_t sentinel = 0xFFFFFFFFu;
         nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
-        if (list_result.code != NMO_OK) {
-            return list_result;
-        }
+        NMO_RETURN_IF_ERROR(list_result);
 
         uint32_t pos = (uint32_t) state->current_pos;
         list_result = nmo_arena_array_append(&chunk->ids, &pos);
-        if (list_result.code != NMO_OK) {
-            return list_result;
-        }
+        NMO_RETURN_IF_ERROR(list_result);
     }
 
     // Write count
@@ -43,24 +36,18 @@ nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
 }
 
 nmo_result_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t id) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Sequence items should not add entries to the IDs list (CK2 behavior)
     return nmo_chunk_write_int(chunk, (int32_t) id);
 }
 
 nmo_result_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {
-    if (!chunk || !out_count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_count, "Invalid arguments");
 
     int32_t count;
     nmo_result_t result = nmo_chunk_read_int(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     *out_count = (size_t) count;
     return nmo_result_ok();

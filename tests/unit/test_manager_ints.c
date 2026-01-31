@@ -62,30 +62,34 @@ TEST(manager_ints, write_and_read_manager_ints) {
 
     // Read manager int 1
     nmo_guid_t read_guid = {0, 0};
-    int32_t value = nmo_chunk_parser_read_manager_int(parser, &read_guid);
+    int32_t value = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_manager_int(parser, &read_guid, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 100);
     ASSERT_EQ(read_guid.d1, 0x1111);
     ASSERT_EQ(read_guid.d2, 0x2222);
 
     // Read data 1
     uint32_t data = 0;
-    result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_dword(parser, &data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(data, 0xAAAA);
 
     // Read manager int 2
-    value = nmo_chunk_parser_read_manager_int(parser, &read_guid);
+    parse_result = nmo_chunk_parser_read_manager_int(parser, &read_guid, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, 200);
     ASSERT_EQ(read_guid.d1, 0x3333);
     ASSERT_EQ(read_guid.d2, 0x4444);
 
     // Read data 2
-    result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(result, NMO_OK);
+    parse_result = nmo_chunk_parser_read_dword(parser, &data);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(data, 0xBBBB);
 
     // Read manager int 3 without GUID
-    value = nmo_chunk_parser_read_manager_int(parser, NULL);
+    parse_result = nmo_chunk_parser_read_manager_int(parser, NULL, &value);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(value, -50);
 
     // Cleanup

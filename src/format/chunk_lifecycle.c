@@ -33,10 +33,7 @@ static nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // =============================================================================
 
 nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
@@ -51,10 +48,7 @@ nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
 }
 
 nmo_result_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {

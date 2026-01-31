@@ -12,10 +12,7 @@
 nmo_result_t nmo_chunk_compute_crc(nmo_chunk_t *chunk,
                                    uint32_t initial_crc,
                                    uint32_t *out_crc) {
-    if (!chunk || !out_crc) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_crc, "Invalid arguments");
 
     if (chunk->data.count == 0) {
         *out_crc = initial_crc;

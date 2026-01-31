@@ -312,16 +312,12 @@ nmo_result_t nmo_header1_parse(
 
     /* Parse object descriptors */
     nmo_result_t result = parse_objects(buffer, size, &pos, header, arena);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     /* Parse plugin dependencies (if data remains) */
     if (pos < size) {
         result = parse_plugin_deps(buffer, size, &pos, header, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     header->included_file_count = 0;
@@ -329,9 +325,7 @@ nmo_result_t nmo_header1_parse(
 
     if (pos < size) {
         result = parse_included_files(buffer, size, &pos, header, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
@@ -610,15 +604,11 @@ nmo_result_t nmo_header1_serialize(
 
     /* Serialize object descriptors */
     nmo_result_t result = serialize_objects(header, buffer, buffer_size, &pos);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     /* Serialize plugin dependencies */
     result = serialize_plugin_deps(header, buffer, buffer_size, &pos);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     if (pos + (2 * sizeof(uint32_t)) > buffer_size) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,

@@ -146,9 +146,7 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                          (size_t)id_count,
                                                          remap,
                                                          remapped_count);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     if (chunk_ref_count > 0) {
@@ -161,9 +159,7 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                                     child_chunk_version,
                                                                     remap,
                                                                     remapped_count);
-            if (result.code != NMO_OK) {
-                return result;
-            }
+            NMO_RETURN_IF_ERROR(result);
         }
     }
 
@@ -193,7 +189,7 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
         result = remap_chunk_data_recursive(chunk_data, chunk->data.count,
                                             chunk_ids, chunk->ids.count,
                                             remap, &local_count);
-        if (result.code != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(result);
     }
 
     // Recursively process embedded sub-chunks in the serialized data stream
@@ -207,9 +203,7 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
                                                        chunk->chunk_version,
                                                        remap,
                                                        &local_count);
-            if (result.code != NMO_OK) {
-                return result;
-            }
+            NMO_RETURN_IF_ERROR(result);
         }
     }
 

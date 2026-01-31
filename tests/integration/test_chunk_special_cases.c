@@ -109,10 +109,10 @@ TEST(chunk_special_cases, identifier_navigation_with_clone) {
     ASSERT_NOT_NULL(parser);
 
     size_t section_size = 0;
-    ASSERT_EQ(NMO_OK,
-              nmo_chunk_parser_seek_identifier_with_size(parser,
-                                                          section_a_id,
-                                                          &section_size));
+    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier_with_size(parser,
+                                                                           section_a_id,
+                                                                           &section_size);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     const size_t expected_a_size = (sizeof(times) / sizeof(times[0])) * 2
                                  + (sizeof(values) / sizeof(values[0]));
@@ -121,14 +121,14 @@ TEST(chunk_special_cases, identifier_navigation_with_clone) {
     uint32_t decoded_times[sizeof(times) / sizeof(times[0])];
     uint16_t decoded_values[sizeof(values) / sizeof(values[0])];
 
-    ASSERT_EQ(NMO_OK,
-              nmo_chunk_parser_read_dword_array_as_words(parser,
-                                                         decoded_times,
-                                                         sizeof(times) / sizeof(times[0])));
-    ASSERT_EQ(NMO_OK,
-              nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
-                                                             sizeof(values) / sizeof(values[0]),
-                                                             decoded_values));
+    parse_result = nmo_chunk_parser_read_dword_array_as_words(parser,
+                                                              decoded_times,
+                                                              sizeof(times) / sizeof(times[0]));
+    ASSERT_EQ(parse_result.code, NMO_OK);
+    parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
+                                                                 sizeof(values) / sizeof(values[0]),
+                                                                 decoded_values);
+    ASSERT_EQ(parse_result.code, NMO_OK);
 
     for (size_t i = 0; i < sizeof(times) / sizeof(times[0]); ++i) {
         ASSERT_EQ(times[i], decoded_times[i]);
@@ -136,18 +136,20 @@ TEST(chunk_special_cases, identifier_navigation_with_clone) {
     }
 
     size_t section_b_size = 0;
-    ASSERT_EQ(NMO_OK,
-              nmo_chunk_parser_seek_identifier_with_size(parser,
-                                                          section_b_id,
-                                                          &section_b_size));
+    parse_result = nmo_chunk_parser_seek_identifier_with_size(parser,
+                                                              section_b_id,
+                                                              &section_b_size);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(2u, section_b_size);  // dword + int
 
     uint32_t tag = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_dword(parser, &tag));
+    parse_result = nmo_chunk_parser_read_dword(parser, &tag);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(0xCAFEBABE, tag);
 
     int32_t sentinel = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_parser_read_int(parser, &sentinel));
+    parse_result = nmo_chunk_parser_read_int(parser, &sentinel);
+    ASSERT_EQ(parse_result.code, NMO_OK);
     ASSERT_EQ(-42, sentinel);
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));

@@ -60,7 +60,7 @@ NMO_API size_t nmo_chunk_parser_tell(nmo_chunk_parser_t *p);
  * @param pos Position in DWORDs
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos);
+NMO_API nmo_result_t nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos);
 
 /**
  * @brief Skip forward by offset
@@ -69,7 +69,7 @@ NMO_API int nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos);
  * @param dwords Number of DWORDs to skip
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords);
+NMO_API nmo_result_t nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords);
 
 /**
  * @brief Get remaining DWORDs
@@ -94,7 +94,7 @@ NMO_API int nmo_chunk_parser_at_end(nmo_chunk_parser_t *p);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out);
 
 /**
  * @brief Read uint16_t (padded to DWORD)
@@ -103,7 +103,7 @@ NMO_API int nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out);
 
 /**
  * @brief Read uint32_t (exactly one DWORD)
@@ -112,7 +112,7 @@ NMO_API int nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out);
 
 /**
  * @brief Read 32-bit signed integer
@@ -121,7 +121,7 @@ NMO_API int nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out);
 
 /**
  * @brief Read float (exactly one DWORD)
@@ -130,7 +130,7 @@ NMO_API int nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out);
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out);
 
 /**
  * @brief Read GUID (two DWORDs)
@@ -139,7 +139,7 @@ NMO_API int nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out);
  * @param out Output GUID
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out);
 
 /**
  * @brief Read raw bytes (DWORD-aligned)
@@ -151,7 +151,7 @@ NMO_API int nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out);
  * @param bytes Number of bytes to read
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_t bytes);
+NMO_API nmo_result_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_t bytes);
 
 /**
  * @brief Read null-terminated string
@@ -163,7 +163,7 @@ NMO_API int nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_
  * @param arena Arena for allocation
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t *arena);
 
 /**
  * @brief Read binary buffer
@@ -176,7 +176,7 @@ NMO_API int nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_
  * @param arena Arena for allocation
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p, void **out, size_t *size, nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p, void **out, size_t *size, nmo_arena_t *arena);
 
 /**
  * @brief Read buffer without size prefix
@@ -189,7 +189,7 @@ NMO_API int nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p, void **out, size
  * @param buffer Destination buffer (must be pre-allocated)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, void *buffer);
+NMO_API nmo_result_t nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, void *buffer);
 
 /**
  * @brief Read buffer without size prefix with 16-bit endian conversion (Phase 6)
@@ -203,7 +203,7 @@ NMO_API int nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t by
  * @param buffer Destination buffer (must be pre-allocated to value_count * 2 bytes)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p, size_t value_count, void *buffer);
+NMO_API nmo_result_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p, size_t value_count, void *buffer);
 
 /**
  * @brief Lock read buffer for direct reading
@@ -225,7 +225,7 @@ NMO_API const uint32_t *nmo_chunk_parser_lock_read_buffer(nmo_chunk_parser_t *p)
  * @param out Output object ID
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out);
 
 /**
  * @brief Start reading an object ID sequence
@@ -234,9 +234,10 @@ NMO_API int nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id
  * calls to ReadObjectID automatically advance the sequence state.
  *
  * @param p Parser
- * @return Number of objects in the sequence, or negative error code on failure
+ * @param out_count Output count for sequence length
+ * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p);
+NMO_API nmo_result_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_t *out_count);
 
 /**
  * @brief Read manager int with GUID
@@ -246,9 +247,12 @@ NMO_API int nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p);
  *
  * @param p Parser
  * @param manager Output manager GUID (can be NULL)
- * @return Manager int value, or 0 on error
+ * @param out_value Output value
+ * @return NMO_OK on success
  */
-NMO_API int32_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p, nmo_guid_t *manager);
+NMO_API nmo_result_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
+													   nmo_guid_t *manager,
+													   int32_t *out_value);
 
 /**
  * @brief Read manager int sequence value
@@ -257,9 +261,11 @@ NMO_API int32_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p, nmo_gui
  * Matches CKStateChunk::ReadManagerIntSequence behavior.
  *
  * @param p Parser
- * @return Manager int value, or 0 on error
+ * @param out_value Output value
+ * @return NMO_OK on success
  */
-NMO_API int32_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p);
+NMO_API nmo_result_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p,
+																int32_t *out_value);
 
 /**
  * @brief Start reading a manager int sequence
@@ -269,9 +275,12 @@ NMO_API int32_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p
  *
  * @param p Parser
  * @param out_manager Optional pointer to receive the manager GUID
- * @return Number of entries in the sequence, or negative error code on failure
+ * @param out_count Output count for sequence length
+ * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p, nmo_guid_t *out_manager);
+NMO_API nmo_result_t nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p,
+															 nmo_guid_t *out_manager,
+															 size_t *out_count);
 
 /**
  * @brief Read array with little-endian byte order
@@ -281,11 +290,15 @@ NMO_API int nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p, nmo_g
  * Matches CKStateChunk::ReadArray_LEndian behavior.
  *
  * @param p Parser
- * @param array Output pointer to allocated array data (NULL on error)
+ * @param array Output pointer to allocated array data (NULL on empty array)
+ * @param out_count Output element count
  * @param arena Arena for allocation
- * @return Element count, or 0 on error/empty array
+ * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p, void **array, nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
+														 void **array,
+														 size_t *out_count,
+														 nmo_arena_t *arena);
 
 /**
  * @brief Read array with 16-bit little-endian byte order
@@ -295,11 +308,15 @@ NMO_API int nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p, void **ar
  * Matches CKStateChunk::ReadArray_LEndian16 behavior.
  *
  * @param p Parser
- * @param array Output pointer to allocated array data (NULL on error)
+ * @param array Output pointer to allocated array data (NULL on empty array)
+ * @param out_count Output element count
  * @param arena Arena for allocation
- * @return Element count, or 0 on error/empty array
+ * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p, void **array, nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
+														   void **array,
+														   size_t *out_count,
+														   nmo_arena_t *arena);
 
 /**
  * @brief Read buffer with 16-bit little-endian conversion
@@ -312,7 +329,9 @@ NMO_API int nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p, void **
  * @param buffer Destination buffer (must be pre-allocated)
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p, size_t bytes, void *buffer);
+NMO_API nmo_result_t nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p,
+															size_t bytes,
+															void *buffer);
 
 /**
  * @brief Read a 32-bit value stored as two 16-bit words
@@ -324,7 +343,7 @@ NMO_API int nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p, size_t
  * @param out Output value
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out);
 
 /**
  * @brief Read an array of 32-bit values stored as 16-bit word pairs
@@ -334,9 +353,9 @@ NMO_API int nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t
  * @param count Number of values to read
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
-													   uint32_t *out,
-													   size_t count);
+NMO_API nmo_result_t nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
+																uint32_t *out,
+																size_t count);
 
 /**
  * @brief Seek to identifier
@@ -348,7 +367,7 @@ NMO_API int nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
  * @param identifier Identifier to find
  * @return NMO_OK if found, NMO_ERR_EOF if not found
  */
-NMO_API int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier);
+NMO_API nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier);
 
 /**
  * @brief Seek to identifier and return size until next
@@ -362,7 +381,9 @@ NMO_API int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t ide
  * @param out_size Output size in DWORDs until next identifier (can be NULL)
  * @return NMO_OK if found, NMO_ERR_EOF if not found
  */
-NMO_API int nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p, uint32_t identifier, size_t *out_size);
+NMO_API nmo_result_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
+																uint32_t identifier,
+																size_t *out_size);
 
 /**
  * @brief Read identifier
@@ -371,7 +392,7 @@ NMO_API int nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p, ui
  * @param identifier Output identifier
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier);
+NMO_API nmo_result_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier);
 
 /**
  * @brief Start reading sub-chunk sequence
@@ -380,9 +401,10 @@ NMO_API int nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *id
  * Matches CKStateChunk::StartReadSequence behavior.
  *
  * @param p Parser
- * @return Number of sub-chunks, or negative error code on failure
+ * @param out_count Output count for sequence length
+ * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p);
+NMO_API nmo_result_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t *out_count);
 
 /**
  * @brief Read sub-chunk from parent chunk
@@ -395,7 +417,9 @@ NMO_API int nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p);
  * @param out_chunk Output sub-chunk pointer
  * @return NMO_OK on success, error code on failure
  */
-NMO_API int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *arena, nmo_chunk_t **out_chunk);
+NMO_API nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
+													nmo_arena_t *arena,
+													nmo_chunk_t **out_chunk);
 
 /**
  * @brief Read 2D vector (2 floats = 2 DWORDs)
@@ -404,7 +428,7 @@ NMO_API int nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p, nmo_arena_t *a
  * @param out Output vector
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *out);
 
 /**
  * @brief Read 3D vector (3 floats = 3 DWORDs)
@@ -413,7 +437,7 @@ NMO_API int nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *
  * @param out Output vector
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *out);
 
 /**
  * @brief Read 4D vector (4 floats = 4 DWORDs)
@@ -422,7 +446,7 @@ NMO_API int nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *ou
  * @param out Output vector
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *out);
 
 /**
  * @brief Read 4x4 matrix (16 floats = 16 DWORDs)
@@ -431,7 +455,7 @@ NMO_API int nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *
  * @param out Output matrix
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *out);
 
 /**
  * @brief Read quaternion (4 floats = 4 DWORDs)
@@ -440,7 +464,7 @@ NMO_API int nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *ou
  * @param out Output quaternion
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaternion_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaternion_t *out);
 
 /**
  * @brief Read RGBA color (4 floats = 4 DWORDs)
@@ -449,7 +473,7 @@ NMO_API int nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaterni
  * @param out Output color
  * @return NMO_OK on success
  */
-NMO_API int nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out);
+NMO_API nmo_result_t nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out);
 
 /**
  * @brief Destroy parser

@@ -25,10 +25,7 @@ static nmo_result_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
                                                     int compression_level,
                                                     uint8_t **out_bytes,
                                                     size_t *out_size) {
-    if (chunk == NULL || out_bytes == NULL || out_size == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS3(chunk, out_bytes, out_size, "Invalid arguments");
 
     size_t src_size = chunk->data.count * sizeof(uint32_t);
     if (src_size == 0) {
@@ -70,9 +67,7 @@ static nmo_result_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
     size_t dest_bytes = dest_dwords * sizeof(uint32_t);
 
     nmo_result_t result = nmo_arena_array_resize(&chunk->data, dest_dwords);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     uint32_t *new_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 
@@ -91,10 +86,7 @@ static nmo_result_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
 }
 
 nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (chunk->data.count == 0) {
         return nmo_result_ok();
@@ -108,9 +100,7 @@ nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
     size_t compressed_size = 0;
     nmo_result_t result = chunk_generate_compressed_bytes(chunk, compression_level,
                                                           &compressed, &compressed_size);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     if (compressed == NULL || compressed_size == 0) {
         if (compressed != NULL) {
@@ -132,14 +122,10 @@ nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
                                               int compression_level,
                                               float min_ratio) {
     if (min_ratio <= 0.0f || min_ratio > 1.0f) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "min_ratio must be within (0,1]"));
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("min_ratio must be within (0,1]");
     }
 
-    if (chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) {
         return nmo_result_ok();
@@ -154,9 +140,7 @@ nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
     size_t compressed_size = 0;
     nmo_result_t result = chunk_generate_compressed_bytes(chunk, compression_level,
                                                           &compressed, &compressed_size);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     double ratio = (double)compressed_size / (double)original_size;
     if (compressed == NULL || compressed_size == 0) {
@@ -181,10 +165,7 @@ nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
 }
 
 nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (!(chunk->chunk_options & NMO_CHUNK_OPTION_PACKED)) {
         return nmo_result_ok();
@@ -228,9 +209,7 @@ nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     }
 
     nmo_result_t set_result = nmo_arena_array_set_data(&chunk->data, decompressed, chunk->unpack_size);
-    if (set_result.code != NMO_OK) {
-        return set_result;
-    }
+    NMO_RETURN_IF_ERROR(set_result);
     chunk->chunk_options &= ~NMO_CHUNK_OPTION_PACKED;
     chunk->compressed_size = 0;
     chunk->uncompressed_size = chunk->data.count * sizeof(uint32_t);

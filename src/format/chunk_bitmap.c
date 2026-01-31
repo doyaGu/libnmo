@@ -14,11 +14,6 @@ static inline nmo_chunk_parser_state_t *nmo_chunk_bitmap_get_state(nmo_chunk_t *
     return chunk ? (nmo_chunk_parser_state_t *)chunk->parser_state : NULL;
 }
 
-static inline bool nmo_chunk_bitmap_can_read(nmo_chunk_t *chunk, size_t dwords) {
-    nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
-    return state && (state->current_pos + dwords <= chunk->data.count);
-}
-
 static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
                                                size_t size,
                                                const uint8_t **out_ptr) {
@@ -32,9 +27,9 @@ static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
     }
 
     size_t dwords = (size + 3u) / 4u;
-    if (!nmo_chunk_bitmap_can_read(chunk, dwords)) {
+    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
         return make_error(NMO_ERR_EOF, "Insufficient chunk data");
-    }
+    });
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
     const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -150,9 +145,7 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
 
     size_t dwords = (total_size + 3u) / 4u;
     nmo_result_t result = nmo_chunk_check_size(chunk, dwords);
-    if (result.code != NMO_OK) {
-        return result;
-    }
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
     if (!state) {
@@ -161,9 +154,7 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
 
     if (state->current_pos + dwords > chunk->data.count) {
         result = nmo_arena_array_resize(&chunk->data, state->current_pos + dwords);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -181,9 +172,7 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
     state->current_pos += dwords;
     if (state->current_pos > chunk->data.count) {
         result = nmo_arena_array_resize(&chunk->data, state->current_pos);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+        NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();

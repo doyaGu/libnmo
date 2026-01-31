@@ -17,23 +17,15 @@ static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
     return NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 }
 
-static inline bool can_read(nmo_chunk_t *chunk, size_t dwords) {
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    return state && (state->current_pos + dwords <= chunk->data.count);
-}
-
 // =============================================================================
 // Primitive Types - Write
 // =============================================================================
 
 nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 1);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -48,13 +40,10 @@ nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
 }
 
 nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 1);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -69,13 +58,10 @@ nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
 }
 
 nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 1);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -94,13 +80,10 @@ nmo_result_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value) {
 }
 
 nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 1);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     // Store float as raw bits
@@ -118,13 +101,10 @@ nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
 }
 
 nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 2);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -144,15 +124,9 @@ nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
 // =============================================================================
 
 nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
-    if (!chunk || !out_value) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
-    if (!can_read(chunk, 1)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -162,15 +136,9 @@ nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
 }
 
 nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
-    if (!chunk || !out_value) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
-    if (!can_read(chunk, 1)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -180,15 +148,9 @@ nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
 }
 
 nmo_result_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value) {
-    if (!chunk || !out_value) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
-    if (!can_read(chunk, 1)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -202,15 +164,9 @@ nmo_result_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_value) {
 }
 
 nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
-    if (!chunk || !out_value) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
-    if (!can_read(chunk, 1)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     // Read float as raw bits
@@ -222,15 +178,9 @@ nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
 }
 
 nmo_result_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
-    if (!chunk || !out_value) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
-    if (!can_read(chunk, 2)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 2);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -245,10 +195,7 @@ nmo_result_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
 // =============================================================================
 
 nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Calculate size
     size_t len = str ? strlen(str) + 1 : 0; // Include null terminator
@@ -256,7 +203,7 @@ nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
 
     // Write length
     nmo_result_t result = nmo_chunk_check_size(chunk, 1 + dwords);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -281,10 +228,10 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
         return 0;
     }
 
-    if (!can_read(chunk, 1)) {
+    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, 1, {
         *out_str = NULL;
         return 0;
-    }
+    });
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
@@ -296,10 +243,10 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
     }
 
     size_t dwords = (len + 3) / 4;
-    if (!can_read(chunk, dwords)) {
+    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
         *out_str = NULL;
         return 0;
-    }
+    });
 
     // Allocate from arena
     char *str = (char *) nmo_arena_alloc(chunk->arena, len, 1);
@@ -322,16 +269,13 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
 nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
                                     const void *data,
                                     size_t size) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     size_t dwords = (size + 3) / 4;
 
     // Write size
     nmo_result_t result = nmo_chunk_check_size(chunk, 1 + dwords);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
@@ -354,10 +298,7 @@ nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
                                             const void *data,
                                             size_t size) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (size == 0) {
         return nmo_result_ok();
@@ -366,7 +307,7 @@ nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
     size_t dwords = (size + 3) / 4;
 
     nmo_result_t result = nmo_chunk_check_size(chunk, dwords);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
@@ -384,15 +325,9 @@ nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
                                    void **out_data,
                                    size_t *out_size) {
-    if (!chunk || !out_data || !out_size) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_data, out_size, "Invalid arguments");
 
-    if (!can_read(chunk, 1)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
@@ -406,10 +341,7 @@ nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     }
 
     size_t dwords = (size + 3) / 4;
-    if (!can_read(chunk, dwords)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, dwords);
 
     // Allocate from arena
     void *data = nmo_arena_alloc(chunk->arena, size, 1);
@@ -432,9 +364,9 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
         return 0;
     }
 
-    if (!can_read(chunk, 1)) {
+    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, 1, {
         return 0;
-    }
+    });
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
@@ -449,9 +381,9 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
     }
 
     size_t dwords = (size + 3) / 4;
-    if (!can_read(chunk, dwords)) {
+    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
         return 0;
-    }
+    });
 
     memcpy(buffer, &data_dwords[state->current_pos], size);
     state->current_pos += dwords;
@@ -464,13 +396,10 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
 // =============================================================================
 
 nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
-    if (!chunk) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid chunk argument"));
-    }
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_result_t result = nmo_chunk_check_size(chunk, 1);
-    if (result.code != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
 
@@ -478,9 +407,7 @@ nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     if (id != 0) {
         uint32_t pos = (uint32_t) state->current_pos;
         nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
-        if (list_result.code != NMO_OK) {
-            return list_result;
-        }
+        NMO_RETURN_IF_ERROR(list_result);
         chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
 
@@ -496,15 +423,9 @@ nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
 }
 
 nmo_result_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
-    if (!chunk || !out_id) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
-    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
-    if (!can_read(chunk, 1)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Cannot read beyond data"));
-    }
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
