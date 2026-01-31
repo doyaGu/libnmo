@@ -102,7 +102,6 @@ static int test_mmap_load_files(void) {
         }
 
         nmo_load_options_t opts = nmo_load_options_default();
-        opts.strategy = NMO_LOAD_STRATEGY_MMAP;
 
         printf("  Loading (mmap): %s... ", filename);
         fflush(stdout);

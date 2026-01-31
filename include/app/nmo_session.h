@@ -23,6 +23,8 @@ typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 typedef struct nmo_included_file nmo_included_file_t;
 typedef struct nmo_plugin_manager nmo_plugin_manager_t;
 typedef struct nmo_plugin_dep nmo_plugin_dep_t;
+typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
+typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 
 /**
  * @brief Session structure
@@ -110,6 +112,26 @@ NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t 
  * pool has not been created yet or failed to initialize.
  */
 NMO_API nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session);
+
+/**
+ * @brief Get ID sanitizer
+ *
+ * Returns the session-owned ID sanitizer used during load/save remapping.
+ *
+ * @param session Session
+ * @return ID sanitizer or NULL
+ */
+NMO_API nmo_id_sanitizer_t *nmo_session_get_id_sanitizer(const nmo_session_t *session);
+
+/**
+ * @brief Get shadow storage
+ *
+ * Returns the session-owned shadow storage used for included files and chunk tails.
+ *
+ * @param session Session
+ * @return Shadow storage or NULL
+ */
+NMO_API nmo_shadow_storage_t *nmo_session_get_shadow_storage(const nmo_session_t *session);
 
 /**
  * @brief Ensure chunk pool exists

@@ -648,6 +648,13 @@ int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_id_t id) 
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+#ifndef NDEBUG
+    /* Increment audit counter if active */
+    if (w->intlist_audit.active) {
+        w->intlist_audit.written_count++;
+    }
+#endif
+
     // Ensure capacity for the ID (1 DWORD)
     int result = ensure_data_capacity(w, 1);
     if (result != NMO_OK) {
@@ -675,12 +682,24 @@ int nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_id_t id) 
     }
 
     w->data[w->data_size++] = encoded_value;
+
+    if (w->version_stack_top >= 0) {
+        nmo_chunk_version_context_t *ctx = &w->version_stack[w->version_stack_top];
+        if (ctx->expected_ids >= 0) {
+            ctx->written_ids++;
+        }
+    }
+
     return NMO_OK;
 }
 
 int nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_t count) {
     if (w == NULL || w->finalized) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (w->version_stack_top >= 0 && count <= (size_t)INT_MAX) {
+        nmo_chunk_writer_set_expected_ids(w, (int)count);
     }
 
     // Set the IDS option flag
@@ -1622,13 +1641,6 @@ int nmo_chunk_writer_write_object_id_audited(nmo_chunk_writer_t *w, nmo_object_i
     if (w == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-
-#ifndef NDEBUG
-    /* Increment audit counter if active */
-    if (w->intlist_audit.active) {
-        w->intlist_audit.written_count++;
-    }
-#endif
 
     /* Delegate to regular write_object_id */
     return nmo_chunk_writer_write_object_id(w, id);

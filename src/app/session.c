@@ -12,6 +12,8 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_object_index.h"
 #include "session/nmo_reference_resolver.h"
+#include "session/nmo_id_sanitizer.h"
+#include "session/nmo_shadow_storage.h"
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
@@ -38,6 +40,13 @@ typedef struct nmo_session {
     /* Reference resolver (initialised on demand) */
     nmo_reference_resolver_t *reference_resolver;
     nmo_arena_t *reference_resolver_arena;
+
+    /* ID sanitizer */
+    nmo_id_sanitizer_t *id_sanitizer;
+
+    /* Shadow storage (included files + chunk tails) */
+    nmo_shadow_storage_t *shadow_storage;
+
 
     /* File information */
     nmo_file_info_t file_info;
@@ -178,6 +187,26 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     /* Initialize reference resolver */
     session->reference_resolver = NULL;
     session->reference_resolver_arena = NULL;
+
+    /* Initialize ID sanitizer */
+    session->id_sanitizer = nmo_id_sanitizer_create(session->arena);
+    if (session->id_sanitizer == NULL) {
+        nmo_object_repository_destroy(session->repository);
+        nmo_arena_destroy(session->arena);
+        free(session);
+        return NULL;
+    }
+
+    /* Initialize shadow storage */
+    session->shadow_storage = nmo_shadow_storage_create(session->arena);
+    if (session->shadow_storage == NULL) {
+        nmo_id_sanitizer_destroy(session->id_sanitizer);
+        session->id_sanitizer = NULL;
+        nmo_object_repository_destroy(session->repository);
+        nmo_arena_destroy(session->arena);
+        free(session);
+        return NULL;
+    }
     
     /* Initialize file header */
     session->file_header = NULL;
@@ -208,6 +237,16 @@ void nmo_session_destroy(nmo_session_t *session) {
         if (session->reference_resolver_arena != NULL) {
             nmo_arena_destroy(session->reference_resolver_arena);
             session->reference_resolver_arena = NULL;
+        }
+
+        if (session->id_sanitizer != NULL) {
+            nmo_id_sanitizer_destroy(session->id_sanitizer);
+            session->id_sanitizer = NULL;
+        }
+
+        if (session->shadow_storage != NULL) {
+            nmo_shadow_storage_destroy(session->shadow_storage);
+            session->shadow_storage = NULL;
         }
 
         if (session->chunk_pool != NULL) {
@@ -256,6 +295,14 @@ nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session
 
 nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session) {
     return session ? session->chunk_pool : NULL;
+}
+
+nmo_id_sanitizer_t *nmo_session_get_id_sanitizer(const nmo_session_t *session) {
+    return session ? session->id_sanitizer : NULL;
+}
+
+nmo_shadow_storage_t *nmo_session_get_shadow_storage(const nmo_session_t *session) {
+    return session ? session->shadow_storage : NULL;
 }
 
 nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(

@@ -13,17 +13,17 @@
 
 TEST(load_options, default_strategy) {
     nmo_load_options_t opts = nmo_load_options_default();
-    ASSERT_EQ(opts.strategy, NMO_LOAD_STRATEGY_AUTO);
+    ASSERT_EQ(opts.flags, NMO_LOAD_DEFAULT);
 }
 
-TEST(load_options, default_strict_crc) {
+TEST(load_options, default_skip_crc_flag) {
     nmo_load_options_t opts = nmo_load_options_default();
-    ASSERT_EQ(opts.strict_crc, 0);  /* Disabled by default */
+    ASSERT_TRUE((opts.flags & NMO_LOAD_SKIP_CRC) == 0);
 }
 
 TEST(load_options, default_preserve_shadow) {
     nmo_load_options_t opts = nmo_load_options_default();
-    ASSERT_EQ(opts.preserve_shadow, 1);  /* Enabled by default */
+    ASSERT_TRUE((opts.flags & NMO_LOAD_DISCARD_SHADOW) == 0);
 }
 
 TEST(load_options, default_allocator) {
@@ -34,21 +34,6 @@ TEST(load_options, default_allocator) {
 TEST(load_options, default_flags) {
     nmo_load_options_t opts = nmo_load_options_default();
     ASSERT_EQ(opts.flags, NMO_LOAD_DEFAULT);
-}
-
-/* ============================================================================
- * nmo_load_strategy_t Enum Value Tests
- * ============================================================================ */
-
-TEST(load_strategy, auto_is_zero) {
-    /* AUTO should be 0 so it's the default for zero-initialized structs */
-    ASSERT_EQ(NMO_LOAD_STRATEGY_AUTO, 0);
-}
-
-TEST(load_strategy, values_distinct) {
-    ASSERT_NE(NMO_LOAD_STRATEGY_AUTO, NMO_LOAD_STRATEGY_COMPRESSED);
-    ASSERT_NE(NMO_LOAD_STRATEGY_AUTO, NMO_LOAD_STRATEGY_MMAP);
-    ASSERT_NE(NMO_LOAD_STRATEGY_COMPRESSED, NMO_LOAD_STRATEGY_MMAP);
 }
 
 /* ============================================================================
@@ -79,13 +64,9 @@ TEST(load_file_ex, null_opts_accepted) {
  * Load Options Custom Configuration Tests
  * ============================================================================ */
 
-TEST(load_options, custom_strategy) {
+TEST(load_options, custom_options) {
     nmo_load_options_t opts = nmo_load_options_default();
-    opts.strategy = NMO_LOAD_STRATEGY_COMPRESSED;
-    ASSERT_EQ(opts.strategy, NMO_LOAD_STRATEGY_COMPRESSED);
-    
-    opts.strategy = NMO_LOAD_STRATEGY_MMAP;
-    ASSERT_EQ(opts.strategy, NMO_LOAD_STRATEGY_MMAP);
+    ASSERT_EQ(opts.flags, NMO_LOAD_DEFAULT);
 }
 
 TEST(load_options, custom_flags) {
@@ -97,27 +78,16 @@ TEST(load_options, custom_flags) {
     ASSERT_TRUE((opts.flags & NMO_LOAD_SKIP_REFERENCE_RESOLVE) == 0);
 }
 
-TEST(load_options, strict_crc_enable) {
+TEST(load_options, skip_crc_enable) {
     nmo_load_options_t opts = nmo_load_options_default();
-    opts.strict_crc = 1;
-    ASSERT_EQ(opts.strict_crc, 1);
+    opts.flags |= NMO_LOAD_SKIP_CRC;
+    ASSERT_TRUE((opts.flags & NMO_LOAD_SKIP_CRC) != 0);
 }
 
 TEST(load_options, preserve_shadow_disable) {
     nmo_load_options_t opts = nmo_load_options_default();
-    opts.preserve_shadow = 0;
-    ASSERT_EQ(opts.preserve_shadow, 0);
-}
-
-/* ============================================================================
- * nmo_session_get_load_strategy() Tests
- * ============================================================================ */
-
-TEST(load_strategy, null_session_get) {
-    /* Should not crash with NULL session */
-    nmo_load_strategy_t strategy = nmo_session_get_load_strategy(NULL);
-    /* Currently returns AUTO as placeholder */
-    ASSERT_EQ(strategy, NMO_LOAD_STRATEGY_AUTO);
+    opts.flags |= NMO_LOAD_DISCARD_SHADOW;
+    ASSERT_TRUE((opts.flags & NMO_LOAD_DISCARD_SHADOW) != 0);
 }
 
 /* ============================================================================
@@ -127,14 +97,10 @@ TEST(load_strategy, null_session_get) {
 TEST_MAIN_BEGIN()
     /* nmo_load_options_default() tests */
     REGISTER_TEST(load_options, default_strategy);
-    REGISTER_TEST(load_options, default_strict_crc);
+    REGISTER_TEST(load_options, default_skip_crc_flag);
     REGISTER_TEST(load_options, default_preserve_shadow);
     REGISTER_TEST(load_options, default_allocator);
     REGISTER_TEST(load_options, default_flags);
-    
-    /* Strategy enum tests */
-    REGISTER_TEST(load_strategy, auto_is_zero);
-    REGISTER_TEST(load_strategy, values_distinct);
     
     /* nmo_load_file_ex() validation tests */
     REGISTER_TEST(load_file_ex, null_session);
@@ -142,11 +108,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_file_ex, null_opts_accepted);
     
     /* Custom configuration tests */
-    REGISTER_TEST(load_options, custom_strategy);
+    REGISTER_TEST(load_options, custom_options);
     REGISTER_TEST(load_options, custom_flags);
-    REGISTER_TEST(load_options, strict_crc_enable);
+    REGISTER_TEST(load_options, skip_crc_enable);
     REGISTER_TEST(load_options, preserve_shadow_disable);
     
-    /* Strategy getter tests */
-    REGISTER_TEST(load_strategy, null_session_get);
 TEST_MAIN_END()

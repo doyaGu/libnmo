@@ -48,6 +48,7 @@ typedef enum nmo_error_code {
     NMO_ERR_NOT_FOUND,            /**< Item not found */
     NMO_ERR_ALREADY_EXISTS,       /**< Item already exists */
     NMO_ERR_CORRUPT,              /**< Corrupted data */
+    NMO_ERR_CANCELLED,            /**< Operation cancelled */
 } nmo_error_code_t;
 
 /**
@@ -104,6 +105,28 @@ NMO_API nmo_error_t *nmo_error_create(nmo_arena_t *arena,
                                       int line);
 
 /**
+ * @brief Create formatted error with message and explicit file/line
+ *
+ * Allocates storage for the formatted message using the provided arena or
+ * the default allocator when arena is NULL.
+ *
+ * @param arena Arena for allocation (NULL for malloc)
+ * @param code Error code
+ * @param severity Severity level
+ * @param file Source file (__FILE__)
+ * @param line Source line (__LINE__)
+ * @param fmt printf-style format string
+ * @param ... Arguments for format string
+ * @return Error structure or NULL on allocation failure
+ */
+NMO_API nmo_error_t *nmo_error_createf_at(nmo_arena_t *arena,
+                                         nmo_error_code_t code,
+                                         nmo_severity_t severity,
+                                         const char *file,
+                                         int line,
+                                         const char *fmt, ...);
+
+/**
  * @brief Add causal error to error chain
  *
  * @param error Parent error
@@ -153,6 +176,28 @@ NMO_API nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
                                        const char *fmt, ...);
 
 /**
+ * @brief Create formatted error result with explicit file/line
+ *
+ * Allocates storage for the error message using the provided arena or the
+ * default allocator when arena is NULL.
+ *
+ * @param arena Arena for allocations (optional)
+ * @param code Error code
+ * @param severity Severity level
+ * @param file Source file (__FILE__)
+ * @param line Source line (__LINE__)
+ * @param fmt printf-style format string
+ * @param ... Arguments for format string
+ * @return Result describing the error
+ */
+NMO_API nmo_result_t nmo_result_errorf_at(nmo_arena_t *arena,
+                                         nmo_error_code_t code,
+                                         nmo_severity_t severity,
+                                         const char *file,
+                                         int line,
+                                         const char *fmt, ...);
+
+/**
  * @brief Check whether a result indicates success
  */
 static inline int nmo_result_is_ok(nmo_result_t result) {
@@ -176,6 +221,12 @@ static inline int nmo_result_is_not_found(nmo_result_t result) {
 // Convenience macros
 #define NMO_ERROR(arena, code, severity, message) \
     nmo_error_create(arena, code, severity, message, __FILE__, __LINE__)
+
+#define NMO_ERRORF(arena, code, severity, ...) \
+    nmo_error_createf_at((arena), (code), (severity), __FILE__, __LINE__, __VA_ARGS__)
+
+#define nmo_result_errorf(arena, code, severity, ...) \
+    nmo_result_errorf_at((arena), (code), (severity), __FILE__, __LINE__, __VA_ARGS__)
 
 #define NMO_RETURN_IF_ERROR(result) \
     do { \

@@ -132,11 +132,16 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
     nmo_type_registry_t *type_reg,
     nmo_arena_t *arena,
-    nmo_logger_t *logger);
+    nmo_logger_t *logger,
+    const nmo_shadow_storage_t *shadow_storage);
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
 
 static const char *nmo_basename(const char *path);
+static nmo_result_t save_report_progress(nmo_save_context_t *ctx,
+                                         nmo_save_phase_t phase,
+                                         float progress,
+                                         const char *status);
 
 /* ============================================================================
  * Public API Implementation
@@ -150,6 +155,9 @@ nmo_save_options_t nmo_save_options_default(void) {
     opts.compute_crc = true;
     opts.validate_before_write = false;
     opts.compression_level = DEFAULT_COMPRESSION_LEVEL;
+    opts.progress_fn = NULL;
+    opts.progress_user_data = NULL;
+    opts.allow_cancel = false;
     return opts;
 }
 
@@ -171,6 +179,27 @@ static const char *nmo_basename(const char *path) {
     }
 
     return base;
+}
+
+static nmo_result_t save_report_progress(nmo_save_context_t *ctx,
+                                         nmo_save_phase_t phase,
+                                         float progress,
+                                         const char *status) {
+    if (ctx == NULL || ctx->options.progress_fn == NULL) {
+        return nmo_result_ok();
+    }
+
+    bool keep_going = ctx->options.progress_fn(
+        ctx->options.progress_user_data,
+        phase,
+        progress,
+        status);
+
+    if (!keep_going && ctx->options.allow_cancel) {
+        return SAVE_ERR(NMO_ERR_CANCELLED, "Save cancelled by callback");
+    }
+
+    return nmo_result_ok();
 }
 
 
@@ -243,32 +272,64 @@ nmo_result_t nmo_save_phase1_layout(nmo_save_context_t *ctx) {
 
     nmo_result_t result;
 
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.0f,
+                                  "Validating session");
+    if (result.code != NMO_OK) return result;
+
     /* Step 1.1: Validate session state */
     result = save_validate_session(ctx);
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.1f,
+                                  "Executing pre-save hooks");
     if (result.code != NMO_OK) return result;
 
     /* Step 1.2: Execute manager pre-save hooks */
     result = save_execute_pre_hooks(ctx);
     if (result.code != NMO_OK) return result;
 
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.2f,
+                                  "Building ID remap plan");
+    if (result.code != NMO_OK) return result;
+
     /* Step 1.3: Build ID remap plan */
     result = save_build_remap_plan(ctx);
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.35f,
+                                  "Serializing managers");
     if (result.code != NMO_OK) return result;
 
     /* Step 1.4: Serialize managers */
     result = save_serialize_managers(ctx);
     if (result.code != NMO_OK) return result;
 
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.55f,
+                                  "Serializing objects");
+    if (result.code != NMO_OK) return result;
+
     /* Step 1.5: Serialize objects */
     result = save_serialize_objects(ctx);
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.75f,
+                                  "Building data section");
     if (result.code != NMO_OK) return result;
 
     /* Step 1.6: Build data section buffer */
     result = save_build_data_section(ctx);
     if (result.code != NMO_OK) return result;
 
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 0.9f,
+                                  "Building header1 section");
+    if (result.code != NMO_OK) return result;
+
     /* Step 1.7: Build header1 buffer */
     result = save_build_header1(ctx);
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_SERIALIZE, 1.0f,
+                                  "Phase 1 complete");
     if (result.code != NMO_OK) return result;
 
     ctx->phase1_complete = 1;
@@ -293,16 +354,44 @@ nmo_result_t nmo_save_phase2_commit(nmo_save_context_t *ctx, const char *path) {
 
     nmo_result_t result;
 
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_COMPRESS, 0.0f,
+                                  "Compressing sections");
+    if (result.code != NMO_OK) return result;
+
     /* Step 2.1: Compress sections (optional) */
     result = save_compress_sections(ctx);
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_COMPRESS, 1.0f,
+                                  "Compression complete");
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_CRC, 0.0f,
+                                  "Computing CRC");
     if (result.code != NMO_OK) return result;
 
     /* Step 2.2: Write to file with CRC */
     result = save_write_file(ctx, path);
     if (result.code != NMO_OK) return result;
 
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_CRC, 1.0f,
+                                  "CRC complete");
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_WRITE, 1.0f,
+                                  "Write complete");
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_POST_HOOKS, 0.0f,
+                                  "Executing post-save hooks");
+    if (result.code != NMO_OK) return result;
+
     /* Step 2.3: Execute post-save hooks */
     result = save_execute_post_hooks(ctx);
+    if (result.code != NMO_OK) return result;
+
+    result = save_report_progress(ctx, NMO_SAVE_PHASE_POST_HOOKS, 1.0f,
+                                  "Post-save hooks complete");
     if (result.code != NMO_OK) return result;
 
     ctx->phase2_complete = 1;
@@ -516,6 +605,7 @@ static nmo_result_t save_serialize_objects(nmo_save_context_t *ctx) {
     size_t serialized_count = 0;
     size_t reused_count = 0;
     size_t skipped_count = 0;
+    const nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(ctx->session);
 
     for (size_t i = 0; i < ctx->object_count; i++) {
         nmo_object_t *obj = ctx->objects[i];
@@ -527,7 +617,8 @@ static nmo_result_t save_serialize_objects(nmo_save_context_t *ctx) {
         }
 
         nmo_chunk_t *old_chunk = obj->chunk;
-        obj->chunk = serialize_object_with_schema(obj, ctx->type_reg, ctx->arena, ctx->logger);
+        obj->chunk = serialize_object_with_schema(
+            obj, ctx->type_reg, ctx->arena, ctx->logger, shadow_storage);
 
         if (obj->chunk == NULL) {
             nmo_log(ctx->logger, NMO_LOG_ERROR,
@@ -940,8 +1031,36 @@ static nmo_result_t save_write_file(nmo_save_context_t *ctx, const char *path) {
     nmo_included_file_t *session_included_files = nmo_session_get_included_files(
         ctx->session, &session_included_count);
     bool strip_included = (ctx->options.flags & NMO_SAVE_STRIP_INCLUDED_FILES) != 0;
+    const nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(ctx->session);
+    size_t shadow_size = 0;
+    const void *shadow_blob = NULL;
+    bool use_shadow_included = false;
 
-    if (!strip_included && session_included_files != NULL && session_included_count > 0) {
+    if (!strip_included && shadow_storage != NULL && nmo_shadow_has_included_files(shadow_storage)) {
+        bool all_borrowed = true;
+        for (uint32_t i = 0; i < session_included_count; i++) {
+            if ((session_included_files[i].attributes & NMO_INCLUDED_FILE_ATTR_BORROWED) == 0) {
+                all_borrowed = false;
+                break;
+            }
+        }
+
+        if (all_borrowed) {
+            shadow_blob = nmo_shadow_get_included_files(shadow_storage, &shadow_size);
+            if (shadow_blob != NULL && shadow_size > 0) {
+                use_shadow_included = true;
+            }
+        }
+    }
+
+    if (!strip_included && use_shadow_included) {
+        nmo_log(ctx->logger, NMO_LOG_INFO, "  Writing shadow included files blob (%zu bytes)",
+                shadow_size);
+        if (nmo_io_write(io, shadow_blob, shadow_size) != NMO_OK) {
+            nmo_io_close(io);
+            return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included files shadow blob write failed");
+        }
+    } else if (!strip_included && session_included_files != NULL && session_included_count > 0) {
         nmo_log(ctx->logger, NMO_LOG_INFO, "  Writing %u included files", session_included_count);
 
         for (uint32_t i = 0; i < session_included_count; i++) {
@@ -1031,7 +1150,8 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
     nmo_type_registry_t *type_reg,
     nmo_arena_t *arena,
-    nmo_logger_t *logger)
+    nmo_logger_t *logger,
+    const nmo_shadow_storage_t *shadow_storage)
 {
     if (!obj || !arena || !type_reg) {
         return NULL;
@@ -1102,6 +1222,19 @@ static nmo_chunk_t *serialize_object_with_schema(
                 "    Failed to serialize object %u with schema '%s'",
                 obj->id, schema_type->name);
         return obj->chunk;  /* Fall back to existing chunk */
+    }
+
+    if (shadow_storage != NULL) {
+        size_t tail_size = 0;
+        const void *tail = nmo_shadow_get_chunk_tail(shadow_storage, obj->id, &tail_size);
+        if (tail != NULL && tail_size > 0) {
+            nmo_result_t tail_result = nmo_chunk_write_buffer_no_size(new_chunk, tail, tail_size);
+            if (tail_result.code != NMO_OK) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "    Failed to append shadow tail for object %u (code=%d)",
+                        obj->id, tail_result.code);
+            }
+        }
     }
 
     nmo_chunk_close(new_chunk);

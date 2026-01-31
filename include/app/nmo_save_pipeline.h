@@ -40,6 +40,28 @@ typedef struct nmo_save_context nmo_save_context_t;
 typedef struct nmo_save_buffer nmo_save_buffer_t;
 
 /**
+ * @brief Save phase identifiers for progress callbacks
+ */
+typedef enum nmo_save_phase {
+    NMO_SAVE_PHASE_SERIALIZE,  /**< Phase 1: Layout & Serialize */
+    NMO_SAVE_PHASE_COMPRESS,   /**< Phase 2.1: Compress sections */
+    NMO_SAVE_PHASE_CRC,        /**< Phase 2.2: CRC calculation */
+    NMO_SAVE_PHASE_WRITE,      /**< Phase 2.2: Write file */
+    NMO_SAVE_PHASE_POST_HOOKS  /**< Phase 2.3: Post-save hooks */
+} nmo_save_phase_t;
+
+/**
+ * @brief Save progress callback
+ *
+ * Return false to request cancellation when allow_cancel is enabled.
+ */
+typedef bool (*nmo_save_progress_callback_t)(
+    void *user_data,
+    nmo_save_phase_t phase,
+    float progress,
+    const char *status_text);
+
+/**
  * @brief Save pipeline options
  */
 typedef struct nmo_save_options {
@@ -49,6 +71,9 @@ typedef struct nmo_save_options {
     bool compute_crc;            /**< Compute and write CRC (default: true) */
     bool validate_before_write;  /**< Validate buffer before IO (default: false) */
     int compression_level;       /**< zlib compression level (0-9, default: 6) */
+    nmo_save_progress_callback_t progress_fn; /**< Progress callback (optional) */
+    void *progress_user_data;     /**< User data for progress callback */
+    bool allow_cancel;            /**< Allow cancellation via callback */
 } nmo_save_options_t;
 
 /**

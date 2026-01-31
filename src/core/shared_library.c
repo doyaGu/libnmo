@@ -29,21 +29,11 @@ static nmo_result_t nmo_shared_library_make_error(
     const char *context,
     const char *detail)
 {
-    char message[512];
-
     if (detail != NULL && detail[0] != '\0') {
-        (void)snprintf(message, sizeof(message), "%s: %s", context, detail);
-    } else {
-        (void)snprintf(message, sizeof(message), "%s", context);
+        return nmo_result_errorf(NULL, code, NMO_SEVERITY_ERROR, "%s: %s", context, detail);
     }
 
-    nmo_error_t *err = NMO_ERROR(NULL, code, NMO_SEVERITY_ERROR, message);
-    if (err == NULL) {
-        nmo_result_t result = { code, NULL };
-        return result;
-    }
-
-    return nmo_result_error(err);
+    return nmo_result_errorf(NULL, code, NMO_SEVERITY_ERROR, "%s", context);
 }
 
 #ifdef _WIN32

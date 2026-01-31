@@ -29,8 +29,10 @@
 #include "format/nmo_manager_registry.h"
 #include "session/nmo_load_session.h"
 #include "session/nmo_id_remap.h"
+#include "session/nmo_id_sanitizer.h"
 #include "session/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
+#include "session/nmo_shadow_storage.h"
 #include "type/type_system.h"
 #include "core/nmo_guid.h"
 #include <stdlib.h>
@@ -87,11 +89,54 @@ static int nmo_register_included_metadata(
         &meta);
 }
 
+static int nmo_shadow_buffer_append(uint8_t **buffer,
+                                    size_t *size,
+                                    size_t *capacity,
+                                    const void *data,
+                                    size_t data_size) {
+    if (data_size == 0) {
+        return NMO_OK;
+    }
+
+    if (*size + data_size > *capacity) {
+        size_t new_capacity = (*capacity != 0) ? (*capacity * 2) : 256;
+        while (new_capacity < *size + data_size) {
+            new_capacity *= 2;
+        }
+
+        void *new_buffer = realloc(*buffer, new_capacity);
+        if (new_buffer == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+
+        *buffer = (uint8_t *)new_buffer;
+        *capacity = new_capacity;
+    }
+
+    memcpy(*buffer + *size, data, data_size);
+    *size += data_size;
+    return NMO_OK;
+}
+
+static int nmo_shadow_buffer_append_u32(uint8_t **buffer,
+                                        size_t *size,
+                                        size_t *capacity,
+                                        uint32_t value) {
+    uint8_t bytes[4];
+    bytes[0] = (uint8_t)(value & 0xFFu);
+    bytes[1] = (uint8_t)((value >> 8) & 0xFFu);
+    bytes[2] = (uint8_t)((value >> 16) & 0xFFu);
+    bytes[3] = (uint8_t)((value >> 24) & 0xFFu);
+    return nmo_shadow_buffer_append(buffer, size, capacity, bytes, sizeof(bytes));
+}
+
 static int nmo_load_included_files(
     nmo_session_t *session,
     nmo_io_interface_t *io,
     const nmo_header1_t *hdr1,
-    nmo_logger_t *logger
+    nmo_logger_t *logger,
+    nmo_shadow_storage_t *shadow_storage,
+    int preserve_shadow
 ) {
     if (session == NULL || io == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -100,6 +145,16 @@ static int nmo_load_included_files(
     uint32_t expected = (hdr1 != NULL) ? hdr1->included_file_count : 0;
     uint32_t parsed = 0;
     nmo_arena_t *arena = nmo_session_get_arena(session);
+
+    uint8_t *shadow_blob = NULL;
+    size_t shadow_size = 0;
+    size_t shadow_capacity = 0;
+
+    if (!preserve_shadow || shadow_storage == NULL) {
+        shadow_storage = NULL;
+    }
+
+    int result = NMO_OK;
 
     while (1) {
         uint32_t name_len = 0;
@@ -115,12 +170,23 @@ static int nmo_load_included_files(
 
             nmo_log(logger, NMO_LOG_WARN,
                     "Failed to read included filename length: %d", read_result);
-            return read_result;
+            result = read_result;
+            goto cleanup;
+        }
+
+        if (shadow_storage != NULL) {
+            int append_result = nmo_shadow_buffer_append_u32(
+                &shadow_blob, &shadow_size, &shadow_capacity, name_len);
+            if (append_result != NMO_OK) {
+                result = append_result;
+                goto cleanup;
+            }
         }
 
         char *name_buf = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
         if (name_buf == NULL) {
-            return NMO_ERR_NOMEM;
+            result = NMO_ERR_NOMEM;
+            goto cleanup;
         }
 
         if (name_len > 0) {
@@ -129,23 +195,44 @@ static int nmo_load_included_files(
             if (name_read != NMO_OK || bytes_read != name_len) {
                 nmo_log(logger, NMO_LOG_ERROR,
                         "Failed to read included filename payload");
-                return (name_read != NMO_OK) ? name_read : NMO_ERR_EOF;
+                result = (name_read != NMO_OK) ? name_read : NMO_ERR_EOF;
+                goto cleanup;
             }
         }
         name_buf[name_len] = '\0';
+
+        if (shadow_storage != NULL && name_len > 0) {
+            int append_result = nmo_shadow_buffer_append(
+                &shadow_blob, &shadow_size, &shadow_capacity, name_buf, name_len);
+            if (append_result != NMO_OK) {
+                result = append_result;
+                goto cleanup;
+            }
+        }
 
         uint32_t data_size = 0;
         if (nmo_io_read_u32(io, &data_size) != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to read included file size for '%s'", name_buf);
-            return NMO_ERR_EOF;
+            result = NMO_ERR_EOF;
+            goto cleanup;
+        }
+
+        if (shadow_storage != NULL) {
+            int append_result = nmo_shadow_buffer_append_u32(
+                &shadow_blob, &shadow_size, &shadow_capacity, data_size);
+            if (append_result != NMO_OK) {
+                result = append_result;
+                goto cleanup;
+            }
         }
 
         void *payload = NULL;
         if (data_size > 0) {
             payload = nmo_arena_alloc(arena, data_size, 1);
             if (payload == NULL) {
-                return NMO_ERR_NOMEM;
+                result = NMO_ERR_NOMEM;
+                goto cleanup;
             }
 
             size_t bytes_read = 0;
@@ -153,7 +240,17 @@ static int nmo_load_included_files(
             if (data_result != NMO_OK || bytes_read != data_size) {
                 nmo_log(logger, NMO_LOG_ERROR,
                         "Failed to read included payload for '%s'", name_buf);
-                return (data_result != NMO_OK) ? data_result : NMO_ERR_EOF;
+                result = (data_result != NMO_OK) ? data_result : NMO_ERR_EOF;
+                goto cleanup;
+            }
+        }
+
+        if (shadow_storage != NULL && data_size > 0) {
+            int append_result = nmo_shadow_buffer_append(
+                &shadow_blob, &shadow_size, &shadow_capacity, payload, data_size);
+            if (append_result != NMO_OK) {
+                result = append_result;
+                goto cleanup;
             }
         }
 
@@ -163,7 +260,8 @@ static int nmo_load_included_files(
             payload,
             data_size);
         if (add_result != NMO_OK) {
-            return add_result;
+            result = add_result;
+            goto cleanup;
         }
 
         if (hdr1 != NULL && hdr1->included_files != NULL && parsed < hdr1->included_file_count) {
@@ -199,7 +297,8 @@ static int nmo_load_included_files(
                     meta_name,
                     desc != NULL ? desc->data_size : 0u);
                 if (meta_result != NMO_OK) {
-                    return meta_result;
+                    result = meta_result;
+                    goto cleanup;
                 }
             }
             nmo_log(logger, NMO_LOG_INFO,
@@ -214,7 +313,20 @@ static int nmo_load_included_files(
         }
     }
 
-    return NMO_OK;
+cleanup:
+    if (shadow_storage != NULL && result == NMO_OK) {
+        int shadow_result = nmo_shadow_capture_included_files(
+            shadow_storage, shadow_blob, shadow_size);
+        if (shadow_result != NMO_OK) {
+            result = shadow_result;
+        }
+    }
+
+    if (shadow_blob != NULL) {
+        free(shadow_blob);
+    }
+
+    return result;
 }
 
 
@@ -236,8 +348,27 @@ static int nmo_load_file_with_io(
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_chunk_pool_t *chunk_pool = NULL;
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
+    nmo_id_sanitizer_t *id_sanitizer = nmo_session_get_id_sanitizer(session);
+    nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(session);
+
+    void *header1_packed = NULL;
+    size_t header1_pack_size = 0;
+    void *data_packed = NULL;
+    size_t data_pack_size = 0;
+
+    const int preserve_shadow = (flags & NMO_LOAD_DISCARD_SHADOW) == 0;
+
+    if (shadow_storage != NULL) {
+        nmo_shadow_storage_reset(shadow_storage);
+        if (!preserve_shadow) {
+            shadow_storage = NULL;
+        }
+    }
 
     nmo_session_reset_reference_resolver(session);
+    if (id_sanitizer != NULL) {
+        nmo_id_sanitizer_reset(id_sanitizer);
+    }
 
     const int enforce_plugin_dependencies = (flags & NMO_LOAD_CHECK_DEPENDENCIES) != 0;
 
@@ -304,6 +435,9 @@ static int nmo_load_file_with_io(
             nmo_io_close(io);
             return NMO_ERR_INVALID_ARGUMENT;
         }
+
+        header1_packed = packed_hdr1;
+        header1_pack_size = header.hdr1_pack_size;
 
         /* Decompress if needed */
         void *hdr1_data = NULL;
@@ -495,6 +629,9 @@ static int nmo_load_file_with_io(
             return NMO_ERR_INVALID_ARGUMENT;
         }
 
+        data_packed = packed_buffer;
+        data_pack_size = header.data_pack_size;
+
         /* Decompress if needed */
         void *data_buffer = NULL;
         size_t data_size = 0;
@@ -564,8 +701,35 @@ static int nmo_load_file_with_io(
 
     }
 
+    if ((flags & NMO_LOAD_SKIP_CRC) == 0) {
+        uint32_t expected_crc = header.crc;
+        nmo_file_header_t crc_header = header;
+        crc_header.crc = 0;
+
+        uint32_t actual_crc = 0;
+        actual_crc = mz_adler32(actual_crc, (const uint8_t *)&crc_header, 32);
+        if (crc_header.file_version >= 5) {
+            actual_crc = mz_adler32(actual_crc, (const uint8_t *)&crc_header.object_count, 56);
+        }
+        if (header1_pack_size > 0 && header1_packed != NULL) {
+            actual_crc = mz_adler32(actual_crc, (const uint8_t *)header1_packed, header1_pack_size);
+        }
+        if (data_pack_size > 0 && data_packed != NULL) {
+            actual_crc = mz_adler32(actual_crc, (const uint8_t *)data_packed, data_pack_size);
+        }
+
+        if (actual_crc != expected_crc) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "CRC mismatch: expected 0x%08X, got 0x%08X", expected_crc, actual_crc);
+            nmo_load_session_destroy(load_session);
+            nmo_io_close(io);
+            return NMO_ERR_CHECKSUM_MISMATCH;
+        }
+    }
+
     {
-        int included_result = nmo_load_included_files(session, io, &hdr1, logger);
+        int included_result = nmo_load_included_files(
+            session, io, &hdr1, logger, shadow_storage, preserve_shadow);
         if (included_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_WARN,
                     "Failed to load included files (code=%d)", included_result);
@@ -624,12 +788,40 @@ static int nmo_load_file_with_io(
     for (size_t i = 0; i < hdr1.object_count; i++) {
         nmo_object_desc_t *desc = &hdr1.objects[i];
 
+        uint32_t raw_id = desc->file_id;
+        if (desc->flags & NMO_OBJECT_REFERENCE_FLAG) {
+            raw_id |= NMO_ID_REF_MASK;
+        }
+
+        int32_t signed_raw_id = (int32_t) raw_id;
+        if (id_sanitizer != NULL && signed_raw_id < 0) {
+            int32_t runtime_ext = nmo_id_register_external(id_sanitizer, signed_raw_id);
+            if (runtime_ext != NMO_OBJECT_ID_INVALID) {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "  Object %zu: external reference %d registered as runtime %d",
+                        i, signed_raw_id, runtime_ext);
+            } else {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Object %zu: failed to register external reference %d",
+                        i, signed_raw_id);
+            }
+        }
+
         /* Skip reference-only objects */
-        if (desc->file_id & NMO_OBJECT_REFERENCE_FLAG) {
+        if (desc->flags & NMO_OBJECT_REFERENCE_FLAG) {
             nmo_log(logger, NMO_LOG_INFO, "  Object %zu: reference-only, skipping", i);
             created_objects[i] = NULL;
             continue;
         }
+
+        if (signed_raw_id < 0) {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Object %zu: external reference, skipping object creation", i);
+            created_objects[i] = NULL;
+            continue;
+        }
+
+        nmo_object_id_t sanitized_id = nmo_id_sanitize(raw_id);
 
         /* Create object */
         nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t),
@@ -656,8 +848,20 @@ static int nmo_load_file_with_io(
             return add_result;
         }
 
+        /* Record original file index (0-based) */
+        nmo_object_set_file_index(obj, desc->file_index);
+
+        if (id_sanitizer != NULL) {
+            int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, desc->file_index, obj->id);
+            if (sanitize_result != NMO_OK) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Failed to register ID sanitizer mapping (file_index=%u, runtime_id=%u)",
+                        desc->file_index, obj->id);
+            }
+        }
+
         /* Register with load session (file ID -> runtime ID mapping) */
-        int reg_result = nmo_load_session_register(load_session, obj, desc->file_id);
+        int reg_result = nmo_load_session_register(load_session, obj, sanitized_id);
         if (reg_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to register object in load session");
             nmo_load_session_destroy(load_session);
@@ -669,7 +873,7 @@ static int nmo_load_file_with_io(
         created_objects[i] = obj;
 
         nmo_log(logger, NMO_LOG_INFO, "  Created object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                i, desc->file_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+            i, sanitized_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
     }
 
     /* Phase 11: Attach Object Chunks */
@@ -918,6 +1122,28 @@ static int nmo_load_file_with_io(
             deserialized_count++;
             nmo_log(logger, NMO_LOG_DEBUG, "  Object %zu (ID=%u, class=0x%08X, type=%s): deserialized",
                     i, obj->id, obj->class_id, class_name);
+
+            if (shadow_storage != NULL) {
+                size_t data_size = nmo_chunk_get_data_size(obj->chunk);
+                size_t pos_dwords = nmo_chunk_get_position(obj->chunk);
+                size_t pos_bytes = pos_dwords * sizeof(uint32_t);
+
+                if (pos_bytes < data_size) {
+                    size_t tail_size = data_size - pos_bytes;
+                    size_t buffer_size = 0;
+                    const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(obj->chunk, &buffer_size);
+
+                    if (data != NULL && pos_bytes + tail_size <= buffer_size) {
+                        int tail_result = nmo_shadow_capture_chunk_tail(
+                            shadow_storage, obj->id, data + pos_bytes, tail_size);
+                        if (tail_result != NMO_OK) {
+                            nmo_log(logger, NMO_LOG_WARN,
+                                    "  Object %zu (ID=%u): failed to capture chunk tail (code=%d)",
+                                    i, obj->id, tail_result);
+                        }
+                    }
+                }
+            }
         } else {
             error_count++;
             const char *error_msg = result.error ? result.error->message : "unknown error";
@@ -1025,9 +1251,6 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
  */
 nmo_load_options_t nmo_load_options_default(void) {
     nmo_load_options_t opts = {
-        .strategy = NMO_LOAD_STRATEGY_AUTO,
-        .strict_crc = 0,
-        .preserve_shadow = 1,
         .allocator = NULL,
         .flags = NMO_LOAD_DEFAULT
     };
@@ -1077,11 +1300,9 @@ static int nmo_detect_file_compression(const char *path) {
  *
  * Extended version of nmo_load_file() that accepts load options for
  * fine-grained control over the loading process. Currently supports:
- * - Strategy selection (auto-detect, force compressed, or force mmap)
+ * - CRC validation
+ * - Shadow preservation
  * - Flag passthrough to underlying loader
- *
- * Note: MMAP strategy is currently a no-op placeholder (falls back to
- * compressed path). Full mmap support requires IO layer changes.
  */
 int nmo_load_file_ex(nmo_session_t *session,
                      const char *path,
@@ -1100,45 +1321,14 @@ int nmo_load_file_ex(nmo_session_t *session,
     nmo_context_t *ctx = nmo_session_get_context(session);
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
     
-    /* Determine actual strategy based on AUTO detection */
-    nmo_load_strategy_t actual_strategy = opts->strategy;
-    
-    if (actual_strategy == NMO_LOAD_STRATEGY_AUTO) {
-        int is_compressed = nmo_detect_file_compression(path);
-        if (is_compressed < 0) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
-            return NMO_ERR_FILE_NOT_FOUND;
-        }
-        
-        actual_strategy = is_compressed ? NMO_LOAD_STRATEGY_COMPRESSED : NMO_LOAD_STRATEGY_MMAP;
-        nmo_log(logger, NMO_LOG_INFO, "Auto-detected load strategy: %s",
-                actual_strategy == NMO_LOAD_STRATEGY_COMPRESSED ? "COMPRESSED" : "MMAP");
+    /* Select best IO path automatically (mmap for uncompressed, fallback to standard) */
+    int is_compressed = nmo_detect_file_compression(path);
+    if (is_compressed < 0) {
+        nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
+        return NMO_ERR_FILE_NOT_FOUND;
     }
-    
-    /* Store the detected strategy in session metadata */
-    /* TODO: Add session field for tracking load strategy once session.c is updated */
-    
-    /* Execute the appropriate loading path */
-    if (actual_strategy == NMO_LOAD_STRATEGY_MMAP) {
-        if (!nmo_io_mmap_supported()) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "MMAP strategy requested but not supported on this platform, "
-                    "falling back to standard loader");
-            return nmo_load_file(session, path, opts->flags);
-        }
 
-        int is_compressed = nmo_detect_file_compression(path);
-        if (is_compressed < 0) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
-            return NMO_ERR_FILE_NOT_FOUND;
-        }
-
-        if (is_compressed) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "MMAP strategy requested for compressed file; falling back to standard loader");
-            return nmo_load_file(session, path, opts->flags);
-        }
-
+    if (!is_compressed && nmo_io_mmap_supported()) {
         nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file (mmap): %s", path);
         nmo_io_interface_t *io = nmo_mmap_io_open(path);
         if (io == NULL) {
@@ -1149,19 +1339,14 @@ int nmo_load_file_ex(nmo_session_t *session,
         return nmo_load_file_with_io(session, path, io, opts->flags);
     }
 
-    /* Compressed/standard path */
-    return nmo_load_file(session, path, opts->flags);
-}
+    nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
+    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
+    if (io == NULL) {
+        nmo_log(logger, NMO_LOG_ERROR, "Failed to open file: %s", path);
+        return NMO_ERR_FILE_NOT_FOUND;
+    }
 
-/**
- * @brief Get the load strategy that was actually used
- *
- * Note: Currently returns AUTO since we don't track strategy in session yet.
- * TODO: Store detected strategy in session and return it here.
- */
-nmo_load_strategy_t nmo_session_get_load_strategy(const nmo_session_t *session) {
-    (void)session;  /* Unused for now */
-    return NMO_LOAD_STRATEGY_AUTO;  /* TODO: Return actual strategy once tracked */
+    return nmo_load_file_with_io(session, path, io, opts->flags);
 }
 
 /**

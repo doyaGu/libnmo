@@ -5,6 +5,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#ifdef nmo_result_errorf
+#undef nmo_result_errorf
+#endif
+
 // Error message table
 static const char *error_messages[] = {
     [NMO_OK] = "Success",
@@ -33,6 +37,7 @@ static const char *error_messages[] = {
     [NMO_ERR_NOT_FOUND] = "Item not found",
     [NMO_ERR_ALREADY_EXISTS] = "Item already exists",
     [NMO_ERR_CORRUPT] = "Corrupted data",
+    [NMO_ERR_CANCELLED] = "Operation cancelled",
 };
 
 nmo_error_t *nmo_error_create(nmo_arena_t *arena,
@@ -111,43 +116,112 @@ static char *nmo_error_alloc_message(nmo_arena_t *arena, size_t length) {
     return (char *) nmo_alloc(&alloc, bytes, 1);
 }
 
-nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
-                               nmo_error_code_t code,
-                               nmo_severity_t severity,
-                               const char *fmt, ...) {
-    if (fmt == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, code, severity,
-                                          "Invalid error format string"));
+static char *nmo_error_format_message(nmo_arena_t *arena,
+                                      const char *fmt,
+                                      va_list args,
+                                      int *message_allocated) {
+    if (message_allocated != NULL) {
+        *message_allocated = 0;
     }
 
-    va_list args;
-    va_start(args, fmt);
+    if (fmt == NULL) {
+        return NULL;
+    }
+
     va_list args_copy;
     va_copy(args_copy, args);
     int needed = vsnprintf(NULL, 0, fmt, args_copy);
     va_end(args_copy);
 
-    char *message = NULL;
-    int message_allocated = 0;
-    if (needed >= 0) {
-        message = nmo_error_alloc_message(arena, (size_t)needed);
-        if (message != NULL) {
-            (void)vsnprintf(message, (size_t)needed + 1, fmt, args);
-            message_allocated = 1;
-        }
+    if (needed < 0) {
+        return NULL;
     }
-    va_end(args);
 
+    char *message = nmo_error_alloc_message(arena, (size_t)needed);
+    if (message == NULL) {
+        return NULL;
+    }
+
+    (void)vsnprintf(message, (size_t)needed + 1, fmt, args);
+    if (message_allocated != NULL) {
+        *message_allocated = 1;
+    }
+    return message;
+}
+
+static nmo_error_t *nmo_error_createf_at_v(nmo_arena_t *arena,
+                                           nmo_error_code_t code,
+                                           nmo_severity_t severity,
+                                           const char *file,
+                                           int line,
+                                           const char *fmt,
+                                           va_list args) {
+    if (fmt == NULL) {
+        return nmo_error_create(arena, code, severity,
+                                "Invalid error format string",
+                                file, line);
+    }
+
+    int message_allocated = 0;
+    char *message = nmo_error_format_message(arena, fmt, args, &message_allocated);
     if (message == NULL) {
         message = "Failed to format error message";
     }
 
-    nmo_error_t *error = NMO_ERROR(arena, code, severity, message);
+    nmo_error_t *error = nmo_error_create(arena, code, severity, message, file, line);
     if (error == NULL) {
         if (message_allocated && arena == NULL) {
             nmo_allocator_t alloc = nmo_allocator_default();
             nmo_free(&alloc, message);
         }
+        return NULL;
+    }
+
+    return error;
+}
+
+nmo_error_t *nmo_error_createf_at(nmo_arena_t *arena,
+                                 nmo_error_code_t code,
+                                 nmo_severity_t severity,
+                                 const char *file,
+                                 int line,
+                                 const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    nmo_error_t *error = nmo_error_createf_at_v(arena, code, severity, file, line, fmt, args);
+    va_end(args);
+    return error;
+}
+
+nmo_result_t nmo_result_errorf_at(nmo_arena_t *arena,
+                                 nmo_error_code_t code,
+                                 nmo_severity_t severity,
+                                 const char *file,
+                                 int line,
+                                 const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    nmo_error_t *error = nmo_error_createf_at_v(arena, code, severity, file, line, fmt, args);
+    va_end(args);
+
+    if (error == NULL) {
+        nmo_result_t result = { code, NULL };
+        return result;
+    }
+
+    return nmo_result_error(error);
+}
+
+nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
+                               nmo_error_code_t code,
+                               nmo_severity_t severity,
+                               const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    nmo_error_t *error = nmo_error_createf_at_v(arena, code, severity, NULL, 0, fmt, args);
+    va_end(args);
+
+    if (error == NULL) {
         nmo_result_t result = { code, NULL };
         return result;
     }
