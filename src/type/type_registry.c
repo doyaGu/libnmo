@@ -472,7 +472,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     if (type) return type;
 
     // Walk up class hierarchy to find parent with schema
-    // Uses nmo_ckclass API (from include/schema/nmo_ckobject_hierarchy.h)
+    // Uses nmo_ckclass API (from include/object/nmo_ckobject_hierarchy.h)
     extern const char *nmo_ckclass_get_name_by_id(uint32_t class_id);
     extern const char *nmo_ckclass_get_parent(const char *class_name);
     extern uint32_t nmo_ckclass_get_id_by_name(const char *class_name);

@@ -160,11 +160,41 @@ set(NMO_FORMAT_SOURCES
     src/format/nmo_stb_adapter.c
 )
 
-# Schema layer sources (DEPRECATED - being migrated to schema_v2)
-# Temporarily disabled during migration
-set(NMO_SCHEMA_SOURCES
-    # src/object/schema_registry.c
-    # src/object/class_hierarchy.c
+# Object layer sources (Phase 6)
+set(NMO_OBJECT_SOURCES
+    src/object/schema_registry.c
+    src/object/class_hierarchy.c
+    src/object/object_types.c
+    src/object/builtin/builtin_types.c
+    src/object/builtin/builtin_types_macro_example.c
+    src/object/builtin/param_types.c
+    src/object/builtin/ckobject_hierarchy.c
+    src/object/builtin/ckobject_schemas.c
+    src/object/builtin/ckbeobject_schemas.c
+    src/object/builtin/cksceneobject_schemas.c
+    src/object/builtin/ckrenderobject_schemas.c
+    src/object/builtin/ckparameter_schemas.c
+    src/object/builtin/ckgroup_schemas.c
+    src/object/builtin/cklevel_schemas.c
+    src/object/builtin/ckscene_schemas.c
+    src/object/builtin/ckbehavior_schemas.c
+    src/object/builtin/ckbehaviorio_schemas.c
+    src/object/builtin/ckbehaviorlink_schemas.c
+    src/object/builtin/ckdataarray_schemas.c
+    src/object/builtin/ckmessagemanager_schemas.c
+    src/object/builtin/ckattributemanager_schemas.c
+    src/object/builtin/ck3dentity_schemas.c
+    src/object/builtin/ckcamera_schemas.c
+    src/object/builtin/ck3dobject_schemas.c
+    src/object/builtin/ck2dentity_schemas.c
+    src/object/builtin/cksprite_schemas.c
+    src/object/builtin/ckspritetext_schemas.c
+    src/object/builtin/cktexture_schemas.c
+    src/object/builtin/ckmaterial_schemas.c
+    src/object/builtin/cklight_schemas.c
+    src/object/builtin/ckmesh_schemas.c
+    src/object/builtin/context_macro_example.c
+    src/object/builtin/version_example.c
 )
 
 # Type System sources (Phase 5.5+)
@@ -182,35 +212,6 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_logic.c
     src/type/builtin_bitwise.c
     src/type/builtin_trigonometry.c
-    # Builtin schemas temporarily disabled during migration to schema_v2
-    # TODO: Migrate these to use schema_v2 API (remove nmo_schema.h dependencies)
-    # src/object/builtin/builtin_types.c
-    # src/object/builtin/param_types.c
-    # src/object/builtin/ckobject_hierarchy.c
-    # src/object/builtin/ckobject_schemas.c
-    # src/object/builtin/ckbeobject_schemas.c
-    # src/object/builtin/cksceneobject_schemas.c
-    # src/object/builtin/ckrenderobject_schemas.c
-    # src/object/builtin/ckparameter_schemas.c
-    # src/object/builtin/ckgroup_schemas.c
-    # src/object/builtin/cklevel_schemas.c
-    # src/object/builtin/ckscene_schemas.c
-    # src/object/builtin/ckbehavior_schemas.c
-    # src/object/builtin/ckbehaviorio_schemas.c
-    # src/object/builtin/ckbehaviorlink_schemas.c
-    # src/object/builtin/ckdataarray_schemas.c
-    # src/object/builtin/ckmessagemanager_schemas.c
-    # src/object/builtin/ckattributemanager_schemas.c
-    # src/object/builtin/ck3dentity_schemas.c
-    # src/object/builtin/ckcamera_schemas.c
-    # src/object/builtin/ck3dobject_schemas.c
-    # src/object/builtin/ck2dentity_schemas.c
-    # src/object/builtin/cksprite_schemas.c
-    # src/object/builtin/ckspritetext_schemas.c
-    # src/object/builtin/cktexture_schemas.c
-    # src/object/builtin/ckmaterial_schemas.c
-    # src/object/builtin/cklight_schemas.c
-    # src/object/builtin/ckmesh_schemas.c
 )
 
 # Session layer sources
@@ -243,7 +244,7 @@ set(NMO_SOURCES
     ${NMO_CORE_SOURCES}
     ${NMO_IO_SOURCES}
     ${NMO_FORMAT_SOURCES}
-    ${NMO_SCHEMA_SOURCES}
+    ${NMO_OBJECT_SOURCES}
     ${NMO_TYPE_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_APP_SOURCES}
@@ -291,7 +292,7 @@ install(TARGETS nmo
 
 install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h"
+    FILES_MATCHING PATTERN "*.h" PATTERN "schema" EXCLUDE
 )
 
 # Build tests

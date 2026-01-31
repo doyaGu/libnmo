@@ -8,7 +8,7 @@
 
 #include "object/nmo_object_types.h"
 #include "type/type_system.h"
-#include "object/legacy/nmo_class_ids.h"
+#include "object/nmo_class_ids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_chunk.h"

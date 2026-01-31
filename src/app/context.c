@@ -8,6 +8,7 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include "type/type_system.h"
+#include "object/nmo_object_types.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
@@ -104,6 +105,15 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     /* Create type registry (Schema v2) */
     ctx->type_registry = nmo_type_registry_create(ctx->arena);
     if (ctx->type_registry == NULL) {
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    /* Register built-in object types in type registry */
+    nmo_result_t type_result = nmo_register_object_types(ctx->type_registry);
+    if (type_result.code != NMO_OK) {
+        nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
         return NULL;
