@@ -230,6 +230,68 @@ static nmo_result_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
     return nmo_result_ok();
 }
 
+static nmo_result_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
+                                               const nmo_arena_array_t *list,
+                                               const char *label) {
+    if (chunk == NULL || list == NULL || label == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid arguments to offset list validation"));
+    }
+
+    (void)label;
+
+    if (list->count == 0) {
+        return nmo_result_ok();
+    }
+
+    if (chunk->data.count == 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                          NMO_SEVERITY_ERROR,
+                                          "Offset list present but chunk has no data"));
+    }
+
+    const uint32_t *entries = NMO_ARENA_ARRAY_DATA(uint32_t, list);
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t entry_count = list->count;
+
+    for (size_t i = 0; i < entry_count; i++) {
+        uint32_t value = entries[i];
+
+        if (value == 0xFFFFFFFFu) {
+            if (i + 1 >= entry_count) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Sequence marker missing offset in offset list"));
+            }
+
+            uint32_t seq_pos = entries[++i];
+            if (seq_pos >= chunk->data.count) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Sequence offset out of bounds in offset list"));
+            }
+
+            uint32_t seq_count = data[seq_pos];
+            if (seq_pos + 1u + seq_count > chunk->data.count) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Sequence count exceeds chunk data bounds"));
+            }
+
+            continue;
+        }
+
+        if (value >= chunk->data.count) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                              NMO_SEVERITY_ERROR,
+                                              "Offset entry out of bounds"));
+        }
+    }
+
+    return nmo_result_ok();
+}
+
 /**
  * @brief Serialize chunk recursively
  */
@@ -1226,9 +1288,22 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
     }
 
     if (chunk->chunk_refs.count > 0) {
+        nmo_result_t validate_refs = chunk_validate_offset_list(chunk, &chunk->chunk_refs,
+                                                                "chunk_refs");
+        if (validate_refs.code != NMO_OK) {
+            return validate_refs;
+        }
+
         nmo_result_t sub_result = chunk_build_subchunks_from_refs(chunk, chunk->arena);
         if (sub_result.code != NMO_OK) {
             return sub_result;
+        }
+    }
+
+    if (chunk->ids.count > 0) {
+        nmo_result_t validate_ids = chunk_validate_offset_list(chunk, &chunk->ids, "ids");
+        if (validate_ids.code != NMO_OK) {
+            return validate_ids;
         }
     }
 

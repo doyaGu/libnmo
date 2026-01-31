@@ -122,17 +122,19 @@ TEST(chunk_parser, string_read) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    // Create string data: [length][data padded to DWORD]
+    // Create string data: [size][data padded to DWORD]
+    // CK2 format: size includes null terminator
     const char* test_str = "Hello";
     uint32_t str_len = (uint32_t)strlen(test_str);
+    uint32_t str_size = str_len + 1;  // Include null terminator
 
     nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
     ASSERT_EQ(resize_result.code, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
-    data[0] = str_len;
-    memcpy(&data[1], test_str, str_len);
+    data[0] = str_size;  // Size includes null terminator
+    memcpy(&data[1], test_str, str_size);  // Copy including null terminator
 
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);

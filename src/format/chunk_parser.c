@@ -478,29 +478,39 @@ int nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t 
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Read string length (4 bytes)
-    uint32_t length;
-    int result = nmo_chunk_parser_read_dword(p, &length);
+    // CK2 WriteString stores size = strlen + 1 (includes null terminator)
+    // Reference: CKStateChunk::ReadString() (CKStateChunk.cpp:1218-1244)
+    uint32_t size;
+    int result = nmo_chunk_parser_read_dword(p, &size);
     if (result != NMO_OK) {
         return result;
     }
 
-    // Allocate string buffer (including null terminator)
-    char *str = (char *) nmo_arena_alloc(arena, length + 1, 1);
+    if (size == 0) {
+        // Empty string case
+        char *str = (char *) nmo_arena_alloc(arena, 1, 1);
+        if (str == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        str[0] = '\0';
+        *out = str;
+        return NMO_OK;
+    }
+
+    // Allocate buffer for string (size already includes null terminator)
+    char *str = (char *) nmo_arena_alloc(arena, size, 1);
     if (str == NULL) {
         return NMO_ERR_NOMEM;
     }
 
-    // Read string data (DWORD-aligned)
-    if (length > 0) {
-        result = nmo_chunk_parser_read_bytes(p, str, length);
-        if (result != NMO_OK) {
-            return result;
-        }
+    // Read string data (includes null terminator from file)
+    result = nmo_chunk_parser_read_bytes(p, str, size);
+    if (result != NMO_OK) {
+        return result;
     }
 
-    // Ensure null termination
-    str[length] = '\0';
+    // Ensure null termination (in case file data is corrupted)
+    str[size - 1] = '\0';
     *out = str;
 
     return NMO_OK;
@@ -685,7 +695,11 @@ const uint32_t *nmo_chunk_parser_lock_read_buffer(nmo_chunk_parser_t *p) {
  * Reads an object ID from the chunk. In file context mode, the value would
  * be converted from file index to runtime ID, but without file context we
  * just return the raw value.
- * Reference: CKStateChunk::ReadObjectID() (CKStateChunk.cpp:605-633)
+ *
+ * Handles both VERSION1+ format (single DWORD) and legacy pre-VERSION1 format
+ * (4 DWORDs: flag, skip, skip, actual_id).
+ *
+ * Reference: CKStateChunk::ReadObjectID() (CKStateChunk.cpp:602-628)
  *
  * @param p Parser
  * @param out Output object ID
@@ -704,6 +718,25 @@ int nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out)
     uint32_t raw_id = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     nmo_object_id_t resolved_id = (nmo_object_id_t) raw_id;
 
+    // Handle legacy pre-VERSION1 format (chunk version < 4)
+    // Reference: CKStateChunk.cpp:618-627
+    if (p->chunk->chunk_version < NMO_CHUNK_VERSION1) {
+        if (raw_id != 0) {
+            // Legacy format: [flag][skip][skip][actual_id]
+            // Need 3 more DWORDs after the flag
+            if (!check_bounds(p, 3)) {
+                return NMO_ERR_EOF;
+            }
+            p->cursor += 2;  // Skip 2 DWORDs
+            resolved_id = (nmo_object_id_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+        } else {
+            resolved_id = 0;
+        }
+        *out = resolved_id;
+        return NMO_OK;
+    }
+
+    // VERSION1+ format: single DWORD, possibly remapped via file context
     if ((p->chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0 &&
         p->file_context != NULL &&
         p->file_context->file_to_runtime != NULL &&
@@ -782,12 +815,10 @@ int nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier
  * Each identifier is stored as [ID][NextPos], forming a chain.
  *
  * This implementation precisely matches CKStateChunk::SeekIdentifier:
- * - Reads next pointer from prev_identifier_pos + 1
- * - If next != 0, searches from that position
- * - If next == 0, searches from position 0
- * - Includes cycle detection logic
+ * Phase 1: Search from startPos following the chain until found or hit 0
+ * Phase 2: If hit 0, wrap around from position 0 until reaching startPos
  *
- * Reference: CKStateChunk::SeekIdentifier() (CKStateChunk.cpp:234-284)
+ * Reference: CKStateChunk::SeekIdentifier() (CKStateChunk.cpp:234-275)
  *
  * @param p Parser context
  * @param identifier Target identifier to find
@@ -799,84 +830,48 @@ int nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier)
     }
 
     // Check for empty chunk first
+    // Reference: if (!m_Data || m_ChunkSize == 0) return FALSE;
     if (NMO_CHUNK_PARSER_DATA_SIZE(p) == 0 || NMO_CHUNK_PARSER_DATA(p) == NULL) {
         return NMO_ERR_EOF;
     }
 
-    // Check if prev_identifier_pos is out of bounds
-    // Reference: if (m_ChunkParser->PrevIdentifierPos >= m_ChunkSize - 1) return FALSE;
-    if (p->prev_identifier_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p) - 1) {
-        return NMO_ERR_EOF;
-    }
+    // Read the start position from previous identifier's next pointer
+    // Reference: int startPos = m_Data[m_ChunkParser->PrevIdentifierPos + 1];
+    size_t start_pos = NMO_CHUNK_PARSER_DATA(p)[p->prev_identifier_pos + 1];
+    size_t current_pos = start_pos;
 
-    // Read the 'next' pointer from previous identifier position
-    // Reference: int j = m_Data[m_ChunkParser->PrevIdentifierPos + 1];
-    uint32_t j = NMO_CHUNK_PARSER_DATA(p)[p->prev_identifier_pos + 1];
-    size_t i;
-
-    // Reference implementation has two main branches based on j
-    if (j != 0) {
-        // Start from the next pointer position
-        // Reference: i = j;
-        i = j;
-
-        // First search loop
-        // Reference: while (i < m_ChunkSize && m_Data[i] != identifier)
-        while (i < NMO_CHUNK_PARSER_DATA_SIZE(p) && NMO_CHUNK_PARSER_DATA(p)[i] != identifier) {
-            if (i + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p))
-                return NMO_ERR_EOF;
-
-            // Move to next in chain
-            // Reference: i = m_Data[i + 1];
-            i = NMO_CHUNK_PARSER_DATA(p)[i + 1];
-
-            // If we hit 0, do a second search from position 0
-            // Reference: if (i == 0) { ... }
-            if (i == 0) {
-                while (i < NMO_CHUNK_PARSER_DATA_SIZE(p) && NMO_CHUNK_PARSER_DATA(p)[i] != identifier) {
-                    if (i + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p))
-                        return NMO_ERR_EOF;
-
-                    i = NMO_CHUNK_PARSER_DATA(p)[i + 1];
-
-                    // Cycle detection: if we're back to j, we've looped
-                    // Reference: if (i == j) return FALSE;
-                    if (i == j)
-                        return NMO_ERR_EOF;
-                }
-            }
+    // Phase 1: Search from startPos to the end of the chain
+    // Reference: if (currentPos != 0) { ... }
+    if (current_pos != 0) {
+        // Search following the chain
+        while (NMO_CHUNK_PARSER_DATA(p)[current_pos] != identifier) {
+            current_pos = NMO_CHUNK_PARSER_DATA(p)[current_pos + 1];
+            if (current_pos == 0)
+                break;
         }
-    } else {
-        // Next pointer is 0, start from position 0
-        // Reference: i = 0;
-        i = 0;
 
-        // Search from beginning
-        // Reference: while (i < m_ChunkSize && m_Data[i] != identifier)
-        while (i < NMO_CHUNK_PARSER_DATA_SIZE(p) && NMO_CHUNK_PARSER_DATA(p)[i] != identifier) {
-            if (i + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p))
-                return NMO_ERR_EOF;
-
-            i = NMO_CHUNK_PARSER_DATA(p)[i + 1];
-
-            // Cycle detection: if we're back to j (which is 0), we've looped
-            // Reference: if (i == j) return FALSE;
-            if (i == j)
-                return NMO_ERR_EOF;
+        // Check if found
+        if (current_pos != 0) {
+            p->prev_identifier_pos = current_pos;
+            p->cursor = current_pos + 2;
+            return NMO_OK;
         }
     }
 
-    // Final bounds check
-    // Reference: if (i >= m_ChunkSize) return FALSE;
-    if (i >= NMO_CHUNK_PARSER_DATA_SIZE(p))
-        return NMO_ERR_EOF;
+    // Phase 2: Search from beginning of list until reaching startPos
+    // Reference: currentPos = 0; while (m_Data[currentPos] != identifier) { ... }
+    current_pos = 0;
+    while (NMO_CHUNK_PARSER_DATA(p)[current_pos] != identifier) {
+        current_pos = NMO_CHUNK_PARSER_DATA(p)[current_pos + 1];
+        // Cycle detection: back to start means not found
+        // Reference: if (currentPos == startPos) return FALSE;
+        if (current_pos == start_pos)
+            return NMO_ERR_EOF;
+    }
 
     // Found the identifier - update parser state
-    // Reference:
-    //   m_ChunkParser->PrevIdentifierPos = i;
-    //   m_ChunkParser->CurrentPos = i + 2;
-    p->prev_identifier_pos = i;
-    p->cursor = i + 2;  // Position after [identifier][next_pos]
+    p->prev_identifier_pos = current_pos;
+    p->cursor = current_pos + 2;
 
     return NMO_OK;
 }

@@ -579,17 +579,25 @@ int nmo_chunk_writer_write_string(nmo_chunk_writer_t *w, const char *str) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    uint32_t length = str != NULL ? (uint32_t) strlen(str) : 0;
+    // CK2 WriteString writes size = strlen + 1 (includes null terminator)
+    // Reference: CKStateChunk::WriteString() (CKStateChunk.cpp:1204-1214)
+    if (str == NULL) {
+        // Write size = 0 for NULL string
+        return nmo_chunk_writer_write_dword(w, 0);
+    }
 
-    // Write length
-    int result = nmo_chunk_writer_write_dword(w, length);
+    uint32_t len = (uint32_t) strlen(str);
+    uint32_t size = len + 1;  // Include null terminator in size
+
+    // Write size (includes null terminator)
+    int result = nmo_chunk_writer_write_dword(w, size);
     if (result != NMO_OK) {
         return result;
     }
 
-    // Write string data (if not empty)
-    if (length > 0) {
-        result = nmo_chunk_writer_write_bytes(w, str, length);
+    // Write string data including null terminator
+    if (size > 0) {
+        result = nmo_chunk_writer_write_bytes(w, str, size);
         if (result != NMO_OK) {
             return result;
         }

@@ -191,7 +191,6 @@ static nmo_result_t parse_included_files(
     size_t *pos,
     nmo_header1_t *header,
     nmo_arena_t *arena) {
-    (void) arena;
     if (*pos + sizeof(uint32_t) > size) {
         return nmo_result_ok();
     }
@@ -214,13 +213,73 @@ static nmo_result_t parse_included_files(
     }
 
     CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
-    header->included_file_count = nmo_read_u32_le(data + *pos);
+    uint32_t file_count = nmo_read_u32_le(data + *pos);
     *pos += sizeof(uint32_t);
 
+    header->included_file_count = file_count;
+
     size_t payload_remaining = (size_t) payload_size - sizeof(uint32_t);
+    size_t payload_end = *pos + payload_remaining;
     CHECK_BUFFER_SIZE(*pos, payload_remaining, size);
-    if (payload_remaining > 0) {
-        *pos += payload_remaining;
+
+    if (file_count == 0) {
+        *pos = payload_end;
+        return nmo_result_ok();
+    }
+
+    header->included_files = (nmo_included_file_desc_t *)nmo_arena_alloc(
+        arena, file_count * sizeof(nmo_included_file_desc_t), 8);
+    if (header->included_files == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Failed to allocate included files array"));
+    }
+
+    for (uint32_t i = 0; i < file_count; i++) {
+        nmo_included_file_desc_t *entry = &header->included_files[i];
+        entry->name = NULL;
+        entry->data_size = 0;
+
+        if (*pos + sizeof(uint32_t) > payload_end) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                              NMO_SEVERITY_ERROR,
+                                              "Included files payload truncated (name length)"));
+        }
+
+        uint32_t name_len = nmo_read_u32_le(data + *pos);
+        *pos += sizeof(uint32_t);
+
+        if (name_len > 0) {
+            if (*pos + name_len > payload_end) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Included files payload truncated (name)"));
+            }
+
+            entry->name = (char *)nmo_arena_alloc(arena, name_len + 1, 1);
+            if (entry->name == NULL) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Failed to allocate included file name"));
+            }
+
+            memcpy(entry->name, data + *pos, name_len);
+            entry->name[name_len] = '\0';
+            *pos += name_len;
+        }
+
+        if (*pos + sizeof(uint32_t) > payload_end) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                              NMO_SEVERITY_ERROR,
+                                              "Included files payload truncated (data size)"));
+        }
+
+        entry->data_size = nmo_read_u32_le(data + *pos);
+        *pos += sizeof(uint32_t);
+    }
+
+    if (*pos < payload_end) {
+        *pos = payload_end;
     }
 
     return nmo_result_ok();
@@ -506,6 +565,15 @@ static size_t calculate_serialize_size(const nmo_header1_t *header) {
     size += sizeof(uint32_t); /* payload size */
     size += sizeof(uint32_t); /* count */
 
+    for (uint32_t i = 0; i < header->included_file_count; i++) {
+        uint32_t name_len = header->included_files && header->included_files[i].name
+                           ? (uint32_t) strlen(header->included_files[i].name)
+                           : 0;
+        size += sizeof(uint32_t); /* name length */
+        size += name_len;         /* name bytes */
+        size += sizeof(uint32_t); /* data size */
+    }
+
     return size;
 }
 
@@ -520,6 +588,12 @@ nmo_result_t nmo_header1_serialize(
     if (header == NULL || out_data == NULL || out_size == NULL || arena == NULL) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR, "NULL pointer passed to nmo_header1_serialize"));
+    }
+
+    if (header->included_file_count > 0 && header->included_files == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Included file count set without descriptors"));
     }
 
     /* Calculate required buffer size */
@@ -552,11 +626,44 @@ nmo_result_t nmo_header1_serialize(
                                           "Buffer too small for included metadata"));
     }
 
-    uint32_t payload_size = (uint32_t) sizeof(uint32_t);
+    size_t payload_start = pos + sizeof(uint32_t);
+    size_t payload_pos = payload_start + sizeof(uint32_t);
+    size_t payload_end = payload_pos;
+
+    if (header->included_file_count > 0 && header->included_files != NULL) {
+        for (uint32_t i = 0; i < header->included_file_count; i++) {
+            const nmo_included_file_desc_t *entry = &header->included_files[i];
+            uint32_t name_len = entry->name ? (uint32_t) strlen(entry->name) : 0;
+
+            if (payload_end + sizeof(uint32_t) + name_len + sizeof(uint32_t) > buffer_size) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                                                  NMO_SEVERITY_ERROR,
+                                                  "Buffer too small for included file entry"));
+            }
+
+            nmo_write_u32_le(buffer + payload_end, name_len);
+            payload_end += sizeof(uint32_t);
+
+            if (name_len > 0) {
+                memcpy(buffer + payload_end, entry->name, name_len);
+                payload_end += name_len;
+            }
+
+            nmo_write_u32_le(buffer + payload_end, entry->data_size);
+            payload_end += sizeof(uint32_t);
+        }
+    }
+
+    uint32_t payload_size = (uint32_t) (payload_end - payload_start);
     nmo_write_u32_le(buffer + pos, payload_size);
     pos += sizeof(uint32_t);
     nmo_write_u32_le(buffer + pos, header->included_file_count);
     pos += sizeof(uint32_t);
+
+    if (payload_end > pos) {
+        memmove(buffer + pos, buffer + payload_pos, payload_end - payload_pos);
+        pos += payload_end - payload_pos;
+    }
 
     *out_data = buffer;
     *out_size = pos;
