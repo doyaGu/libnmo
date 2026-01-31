@@ -12,6 +12,9 @@ add_integration_test(test_file_roundtrip)
 # Phase 2.1: MMAP load strategy integration test
 add_integration_test(test_mmap_load)
 
+# Phase 3.3: Strict CRC validation integration test
+add_integration_test(test_crc_validation)
+
 # Existing tests
 add_integration_test(test_data_roundtrip)
 add_integration_test(test_file_io)

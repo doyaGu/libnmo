@@ -184,8 +184,8 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     // Create sub-chunk
     nmo_chunk_t *sub = nmo_chunk_create(chunk->arena);
     if (!sub) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to create sub-chunk"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to create sub-chunk");
     }
 
     sub->class_id = class_id;  // Use 32-bit class_id field for sub-chunks
@@ -273,8 +273,8 @@ nmo_result_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR, "Failed to get parser state"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                               "Failed to get parser state");
     }
 
     // Track sequence start (CK2 AddEntries)

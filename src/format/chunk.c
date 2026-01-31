@@ -153,23 +153,25 @@ static nmo_result_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
                 continue;
             }
 
-            if (nmo_chunk_parser_seek(parser, seq_pos) != NMO_OK) {
+            nmo_result_t seek_result = nmo_chunk_parser_seek(parser, seq_pos);
+            if (seek_result.code != NMO_OK) {
                 continue;
             }
 
-            int seq_count = nmo_chunk_parser_start_read_sequence(parser);
-            if (seq_count < 0) {
+            size_t seq_count = 0;
+            nmo_result_t seq_result = nmo_chunk_parser_start_read_sequence(parser, &seq_count);
+            if (seq_result.code != NMO_OK) {
                 nmo_chunk_parser_destroy(parser);
-                return nmo_result_error(NMO_ERROR(NULL, seq_count, NMO_SEVERITY_ERROR,
+                return nmo_result_error(NMO_ERROR(NULL, seq_result.code, NMO_SEVERITY_ERROR,
                                                   "Failed to start sub-chunk sequence"));
             }
 
-            for (int s = 0; s < seq_count; s++) {
+            for (size_t s = 0; s < seq_count; s++) {
                 nmo_chunk_t *sub = NULL;
-                int read_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
-                if (read_result != NMO_OK) {
+                nmo_result_t read_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
+                if (read_result.code != NMO_OK) {
                     nmo_chunk_parser_destroy(parser);
-                    return nmo_result_error(NMO_ERROR(NULL, read_result, NMO_SEVERITY_ERROR,
+                    return nmo_result_error(NMO_ERROR(NULL, read_result.code, NMO_SEVERITY_ERROR,
                                                       "Failed to read sub-chunk"));
                 }
 
@@ -191,15 +193,16 @@ static nmo_result_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
             continue;
         }
 
-        if (nmo_chunk_parser_seek(parser, ref) != NMO_OK) {
+        nmo_result_t seek_result = nmo_chunk_parser_seek(parser, ref);
+        if (seek_result.code != NMO_OK) {
             continue;
         }
 
         nmo_chunk_t *sub = NULL;
-        int read_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
-        if (read_result != NMO_OK) {
+        nmo_result_t read_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
+        if (read_result.code != NMO_OK) {
             nmo_chunk_parser_destroy(parser);
-            return nmo_result_error(NMO_ERROR(NULL, read_result, NMO_SEVERITY_ERROR,
+            return nmo_result_error(NMO_ERROR(NULL, read_result.code, NMO_SEVERITY_ERROR,
                                               "Failed to read sub-chunk"));
         }
 

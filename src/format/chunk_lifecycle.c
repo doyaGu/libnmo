@@ -37,8 +37,8 @@ nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate parser state"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate parser state");
     }
 
     state->current_pos = 0;
@@ -52,8 +52,8 @@ nmo_result_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate parser state"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate parser state");
     }
 
     state->current_pos = 0;

@@ -128,7 +128,7 @@ TEST(chunk_16bit, dword_as_words_array_helper) {
                                                                            value_count);
     ASSERT_EQ(parse_result.code, NMO_OK);
     parse_result = nmo_chunk_parser_read_dword_array_as_words(parser, NULL, 0);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result.code, NMO_ERR_INVALID_ARGUMENT);
 
     for (size_t i = 0; i < value_count; ++i) {
         ASSERT_EQ(values[i], decoded[i]);

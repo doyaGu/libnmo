@@ -63,8 +63,8 @@ nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     
     // Empty chunk cannot have identifiers
     if (chunk->data.count == 0 || chunk->data.data == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO, "Identifier not found in empty chunk"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
+                               "Identifier not found in empty chunk");
     }
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -94,14 +94,14 @@ nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     while (current_pos < chunk->data.count && data[current_pos] != id) {
         current_pos = data[current_pos + 1];
         if (current_pos == start_pos) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                              NMO_SEVERITY_INFO, "Identifier not found"));
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
+                                   "Identifier not found");
         }
     }
 
     if (current_pos >= chunk->data.count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO, "Identifier not found"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
+                               "Identifier not found");
     }
 
     state->prev_identifier_pos = current_pos;

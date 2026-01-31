@@ -84,8 +84,8 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     }
 
     if (total_size % count != 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                                          NMO_SEVERITY_ERROR, "Array size is not divisible by count"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Array size is not divisible by count");
     }
 
     size_t total_size_bytes = (size_t) total_size;
@@ -96,8 +96,8 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     // Allocate array
     void *array = nmo_arena_alloc(chunk->arena, total_size_bytes, 4);
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate array");
     }
 
     // Copy data
@@ -142,8 +142,8 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
                                                                 count * sizeof(nmo_object_id_t),
                                                                 _Alignof(nmo_object_id_t));
     if (!ids) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate ID array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate ID array");
     }
 
     // Read IDs
@@ -205,8 +205,8 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
                                                   count * sizeof(int32_t),
                                                   _Alignof(int32_t));
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate int array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate int array");
     }
 
     // Read ints
@@ -270,8 +270,8 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
                                              count * sizeof(float),
                                              _Alignof(float));
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate float array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate float array");
     }
 
     // Read floats
@@ -335,8 +335,8 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
                                                     count * sizeof(uint32_t),
                                                     _Alignof(uint32_t));
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate dword array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate dword array");
     }
 
     // Read dwords
@@ -398,8 +398,8 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
                                                   count * sizeof(uint8_t),
                                                   _Alignof(uint8_t));
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate byte array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate byte array");
     }
 
     // Read bytes
@@ -460,16 +460,16 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
                                                 count * sizeof(char *),
                                                 _Alignof(char *));
     if (!strings) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate string array"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate string array");
     }
 
     // Read strings
     for (size_t i = 0; i < count; i++) {
         size_t len = nmo_chunk_read_string(chunk, &strings[i]);
         if (len == 0 && strings[i] == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                                              NMO_SEVERITY_ERROR, "Failed to read string"));
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                   "Failed to read string");
         }
     }
 

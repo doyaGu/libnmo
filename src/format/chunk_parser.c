@@ -878,7 +878,7 @@ nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
         if (current_pos != 0) {
             p->prev_identifier_pos = current_pos;
             p->cursor = current_pos + 2;
-            return NMO_OK;
+            return nmo_result_ok();
         }
     }
 

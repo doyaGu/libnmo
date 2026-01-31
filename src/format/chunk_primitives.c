@@ -346,8 +346,8 @@ nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     // Allocate from arena
     void *data = nmo_arena_alloc(chunk->arena, size, 1);
     if (!data) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate buffer"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate buffer");
     }
 
     memcpy(data, &data_dwords[state->current_pos], size);

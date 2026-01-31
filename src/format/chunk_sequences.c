@@ -17,8 +17,8 @@ nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
 
     nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *) chunk->parser_state;
     if (!state) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR, "Parser state not initialized"));
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                               "Parser state not initialized");
     }
 
     if (count > 0) {

@@ -25,7 +25,7 @@ static nmo_result_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
                                                     int compression_level,
                                                     uint8_t **out_bytes,
                                                     size_t *out_size) {
-    NMO_CHUNK_CHECK_ARGS3(chunk, out_bytes, out_size, "Invalid arguments");
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_bytes, out_size, "Invalid arguments");
 
     size_t src_size = chunk->data.count * sizeof(uint32_t);
     if (src_size == 0) {
