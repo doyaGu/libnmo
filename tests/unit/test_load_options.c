@@ -23,7 +23,7 @@ TEST(load_options, default_skip_crc_flag) {
 
 TEST(load_options, default_preserve_shadow) {
     nmo_load_options_t opts = nmo_load_options_default();
-    ASSERT_TRUE((opts.flags & NMO_LOAD_DISCARD_SHADOW) == 0);
+    ASSERT_TRUE((opts.flags & NMO_LOAD_PRESERVE_SHADOW) == 0);
 }
 
 TEST(load_options, default_allocator) {
@@ -84,10 +84,10 @@ TEST(load_options, skip_crc_enable) {
     ASSERT_TRUE((opts.flags & NMO_LOAD_SKIP_CRC) != 0);
 }
 
-TEST(load_options, preserve_shadow_disable) {
+TEST(load_options, preserve_shadow_enable) {
     nmo_load_options_t opts = nmo_load_options_default();
-    opts.flags |= NMO_LOAD_DISCARD_SHADOW;
-    ASSERT_TRUE((opts.flags & NMO_LOAD_DISCARD_SHADOW) != 0);
+    opts.flags |= NMO_LOAD_PRESERVE_SHADOW;
+    ASSERT_TRUE((opts.flags & NMO_LOAD_PRESERVE_SHADOW) != 0);
 }
 
 /* ============================================================================
@@ -111,6 +111,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, custom_options);
     REGISTER_TEST(load_options, custom_flags);
     REGISTER_TEST(load_options, skip_crc_enable);
-    REGISTER_TEST(load_options, preserve_shadow_disable);
+    REGISTER_TEST(load_options, preserve_shadow_enable);
     
 TEST_MAIN_END()

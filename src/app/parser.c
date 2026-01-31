@@ -356,7 +356,7 @@ static int nmo_load_file_with_io(
     void *data_packed = NULL;
     size_t data_pack_size = 0;
 
-    const int preserve_shadow = (flags & NMO_LOAD_DISCARD_SHADOW) == 0;
+    const int preserve_shadow = (flags & NMO_LOAD_PRESERVE_SHADOW) != 0;
 
     if (shadow_storage != NULL) {
         nmo_shadow_storage_reset(shadow_storage);
