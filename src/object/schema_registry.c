@@ -7,10 +7,12 @@
 #include "object/nmo_schema_macros.h"
 #include "object/nmo_schema_builder.h"
 #include "object/nmo_class_hierarchy.h"
+#include "object/nmo_ckobject_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -142,6 +144,29 @@ nmo_result_t nmo_schema_registry_add(
         return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Type with this name already registered"));
     }
+
+    /* Check for duplicate GUID */
+    if (!nmo_guid_is_null(type->guid)) {
+        existing = nmo_schema_registry_find_by_guid(registry, type->guid);
+        if (existing != NULL) {
+            return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Type with this GUID already registered"));
+        }
+    }
+
+    /* Check for duplicate class ID */
+    nmo_class_id_t class_id_to_map = type->class_id;
+    if (class_id_to_map == 0 && type->name != NULL && strncmp(type->name, "CK", 2) == 0) {
+        class_id_to_map = nmo_ckclass_get_id_by_name(type->name);
+    }
+
+    if (class_id_to_map != 0) {
+        const nmo_schema_type_t *existing_class = NULL;
+        if (nmo_indexed_map_get(registry->by_class_id, &class_id_to_map, &existing_class).code == NMO_OK) {
+            return nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Type with this class ID already registered"));
+        }
+    }
     
     /* Add to name index */
     nmo_result_t result = nmo_hash_table_insert(registry->by_name, &type->name, &type);
@@ -150,8 +175,193 @@ nmo_result_t nmo_schema_registry_add(
             NMO_SEVERITY_ERROR, "Failed to add type to name index"));
     }
     
+    /* Add to GUID index */
+    if (!nmo_guid_is_null(type->guid)) {
+        result = nmo_hash_table_insert(registry->by_guid, &type->guid, &type);
+        if (result.code != NMO_OK) {
+            nmo_hash_table_remove(registry->by_name, &type->name);
+            return nmo_result_error(NMO_ERROR(registry->arena, result.code,
+                NMO_SEVERITY_ERROR, "Failed to add type to GUID index"));
+        }
+    }
+
+    /* Add to class ID index */
+    if (class_id_to_map != 0) {
+        result = nmo_indexed_map_insert(registry->by_class_id, &class_id_to_map, &type);
+        if (result.code != NMO_OK) {
+            if (!nmo_guid_is_null(type->guid)) {
+                nmo_hash_table_remove(registry->by_guid, &type->guid);
+            }
+            nmo_hash_table_remove(registry->by_name, &type->name);
+            return nmo_result_error(NMO_ERROR(registry->arena, result.code,
+                NMO_SEVERITY_ERROR, "Failed to add type to class ID index"));
+        }
+    }
+
     registry->count++;
     return nmo_result_ok();
+}
+
+static int stats_iterate(const void *key, void *value, void *user_data) {
+    (void)key;
+    nmo_schema_registry_stats_t *out = (nmo_schema_registry_stats_t *)user_data;
+    const nmo_schema_type_t *type = *(const nmo_schema_type_t **)value;
+    if (!type) {
+        return 1;
+    }
+    switch (type->kind) {
+        case NMO_TYPE_STRUCT: out->struct_types++; break;
+        case NMO_TYPE_ENUM: out->enum_types++; break;
+        case NMO_TYPE_ARRAY:
+        case NMO_TYPE_FIXED_ARRAY: out->array_types++; break;
+        case NMO_TYPE_U8:
+        case NMO_TYPE_U16:
+        case NMO_TYPE_U32:
+        case NMO_TYPE_U64:
+        case NMO_TYPE_I8:
+        case NMO_TYPE_I16:
+        case NMO_TYPE_I32:
+        case NMO_TYPE_I64:
+        case NMO_TYPE_F32:
+        case NMO_TYPE_F64:
+        case NMO_TYPE_BOOL:
+        case NMO_TYPE_STRING:
+            out->scalar_types++;
+            break;
+        default:
+            break;
+    }
+
+    if (!nmo_guid_is_null(type->guid)) {
+        out->guid_mapped++;
+    }
+    if (type->class_id != 0 || (type->name != NULL && strncmp(type->name, "CK", 2) == 0)) {
+        out->object_types++;
+    }
+    return 1;
+}
+
+nmo_result_t nmo_schema_registry_add_batch(
+    nmo_schema_registry_t *registry,
+    const nmo_schema_type_t *const *types,
+    size_t type_count,
+    nmo_schema_register_report_t *report)
+{
+    if (report) {
+        memset(report, 0, sizeof(*report));
+        report->last_error = nmo_result_ok();
+        report->last_conflict_reason = NMO_SCHEMA_CONFLICT_NONE;
+        report->last_conflict_guid = NMO_GUID_NULL;
+    }
+
+    if (registry == NULL || types == NULL) {
+        nmo_result_t err = nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_schema_registry_add_batch"));
+        if (report) {
+            report->attempted = type_count;
+            report->failed = type_count;
+            report->last_error = err;
+        }
+        return err;
+    }
+
+    nmo_result_t last_result = nmo_result_ok();
+
+    for (size_t i = 0; i < type_count; i++) {
+        const nmo_schema_type_t *type = types[i];
+        if (report) {
+            report->attempted++;
+        }
+
+        if (type == NULL || type->name == NULL) {
+            last_result = nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Invalid type in batch"));
+            if (report) {
+                report->failed++;
+                report->last_error = last_result;
+            }
+            continue;
+        }
+
+        if (nmo_schema_registry_find_by_name(registry, type->name) != NULL) {
+            last_result = nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Type with this name already registered"));
+            if (report) {
+                report->failed++;
+                report->last_error = last_result;
+                report->last_conflict_reason = NMO_SCHEMA_CONFLICT_NAME;
+                report->last_conflict_name = type->name;
+            }
+            continue;
+        }
+
+        if (!nmo_guid_is_null(type->guid) &&
+            nmo_schema_registry_find_by_guid(registry, type->guid) != NULL) {
+            last_result = nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Type with this GUID already registered"));
+            if (report) {
+                report->failed++;
+                report->last_error = last_result;
+                report->last_conflict_reason = NMO_SCHEMA_CONFLICT_GUID;
+                report->last_conflict_guid = type->guid;
+            }
+            continue;
+        }
+
+        nmo_class_id_t class_id_to_check = type->class_id;
+        if (class_id_to_check == 0 && type->name != NULL && strncmp(type->name, "CK", 2) == 0) {
+            class_id_to_check = nmo_ckclass_get_id_by_name(type->name);
+        }
+
+        if (class_id_to_check != 0 &&
+            nmo_schema_registry_find_by_class_id(registry, class_id_to_check) != NULL) {
+            last_result = nmo_result_error(NMO_ERROR(registry->arena, NMO_ERR_INVALID_ARGUMENT,
+                NMO_SEVERITY_ERROR, "Type with this class ID already registered"));
+            if (report) {
+                report->failed++;
+                report->last_error = last_result;
+                report->last_conflict_reason = NMO_SCHEMA_CONFLICT_CLASS_ID;
+                report->last_conflict_class_id = class_id_to_check;
+            }
+            continue;
+        }
+
+        nmo_result_t result = nmo_schema_registry_add(registry, type);
+        if (result.code != NMO_OK) {
+            last_result = result;
+            if (report) {
+                report->failed++;
+                report->last_error = result;
+            }
+            continue;
+        }
+
+        if (report) {
+            report->registered++;
+        }
+    }
+
+    return last_result;
+}
+
+void nmo_schema_registry_get_stats(
+    const nmo_schema_registry_t *registry,
+    nmo_schema_registry_stats_t *stats)
+{
+    if (stats == NULL) {
+        return;
+    }
+
+    memset(stats, 0, sizeof(*stats));
+    if (registry == NULL) {
+        return;
+    }
+
+    stats->total_types = registry->count;
+
+    nmo_hash_table_iterate(registry->by_name, stats_iterate, stats);
+
+    stats->class_id_mapped = nmo_indexed_map_get_count(registry->by_class_id);
 }
 
 /* Forward declaration */
@@ -254,6 +464,27 @@ int nmo_schema_is_compatible(
     return 1;  /* Compatible */
 }
 
+static int parse_version_suffix(const char *name, const char *base_name, uint32_t *out_version) {
+    size_t base_len = strlen(base_name);
+    if (strncmp(name, base_name, base_len) != 0) {
+        return 0;
+    }
+
+    const char *suffix = name + base_len;
+    if (suffix[0] != '_' || suffix[1] != 'v') {
+        return 0;
+    }
+
+    char *end_ptr = NULL;
+    unsigned long parsed = strtoul(suffix + 2, &end_ptr, 10);
+    if (end_ptr == suffix + 2 || *end_ptr != '\0') {
+        return 0;
+    }
+
+    *out_version = (uint32_t)parsed;
+    return 1;
+}
+
 const nmo_schema_type_t *nmo_schema_registry_find_for_version(
     const nmo_schema_registry_t *registry,
     const char *name,
@@ -262,18 +493,41 @@ const nmo_schema_type_t *nmo_schema_registry_find_for_version(
     if (registry == NULL || name == NULL) {
         return NULL;
     }
-    
+
     /* First try exact name match */
     const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, name);
     if (type != NULL && nmo_schema_is_compatible(type, file_version)) {
         return type;
     }
-    
-    /* TODO: In future, implement version-suffixed name lookup
-     * e.g., "CKMesh_v5", "CKMesh_v2" for multi-version support
-     * For now, just return the exact match if compatible */
-    
-    return NULL;
+
+    /* Try version-suffixed variants (name_vN) */
+    nmo_arena_t *arena = registry->arena;
+    const nmo_schema_type_t **variants = NULL;
+    size_t variant_count = 0;
+    nmo_result_t result = nmo_schema_registry_find_all_variants(
+        registry, name, arena, &variants, &variant_count);
+    if (result.code != NMO_OK || variant_count == 0) {
+        return NULL;
+    }
+
+    const nmo_schema_type_t *best = NULL;
+    uint32_t best_version = 0;
+    for (size_t i = 0; i < variant_count; i++) {
+        const nmo_schema_type_t *candidate = variants[i];
+        if (!nmo_schema_is_compatible(candidate, file_version)) {
+            continue;
+        }
+
+        uint32_t candidate_version = 0;
+        if (parse_version_suffix(candidate->name, name, &candidate_version)) {
+            if (candidate_version <= file_version && candidate_version >= best_version) {
+                best = candidate;
+                best_version = candidate_version;
+            }
+        }
+    }
+
+    return best;
 }
 
 /**
@@ -402,10 +656,14 @@ static int check_circular(
         return 1; /* Not a struct, no recursion */
     }
     
+    if (type->fields == NULL) {
+        return 1;
+    }
+
     /* Check all fields */
     for (size_t i = 0; i < type->field_count; i++) {
         const nmo_schema_field_t *field = &type->fields[i];
-        if (field->type->kind == NMO_TYPE_STRUCT) {
+        if (field->type != NULL && field->type->kind == NMO_TYPE_STRUCT) {
             if (!check_circular(field->type, root, depth + 1)) {
                 return 0;
             }
@@ -413,6 +671,22 @@ static int check_circular(
     }
     
     return 1;
+}
+
+static int is_valid_enum_base_type(nmo_type_kind_t kind) {
+    switch (kind) {
+        case NMO_TYPE_U8:
+        case NMO_TYPE_U16:
+        case NMO_TYPE_U32:
+        case NMO_TYPE_U64:
+        case NMO_TYPE_I8:
+        case NMO_TYPE_I16:
+        case NMO_TYPE_I32:
+        case NMO_TYPE_I64:
+            return 1;
+        default:
+            return 0;
+    }
 }
 
 /* Callback for verification */
@@ -424,25 +698,200 @@ typedef struct {
 
 static int verify_callback(const nmo_schema_type_t *type, void *user_data) {
     verify_context_t *ctx = (verify_context_t *)user_data;
+
+    if (type == NULL) {
+        ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "NULL type in registry"));
+        return 0;
+    }
+
+    if (type->name == NULL || type->name[0] == '\0') {
+        ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Type name is missing"));
+        return 0;
+    }
+
+    if (type->size > 0 && type->align == 0) {
+        ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Type alignment is zero"));
+        return 0;
+    }
+
+    if (!nmo_guid_is_null(type->base_type)) {
+        if (nmo_schema_registry_find_by_guid(ctx->registry, type->base_type) == NULL) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Base type GUID is not registered"));
+            return 0;
+        }
+    }
+
+    if (type->since_version != 0 && type->removed_version != 0 &&
+        type->removed_version <= type->since_version) {
+        ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Type removed_version is not after since_version"));
+        return 0;
+    }
+
+    if (type->since_version != 0 && type->deprecated_version != 0 &&
+        type->deprecated_version < type->since_version) {
+        ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Type deprecated_version is before since_version"));
+        return 0;
+    }
+
+    if (type->deprecated_version != 0 && type->removed_version != 0 &&
+        type->removed_version < type->deprecated_version) {
+        ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Type removed_version is before deprecated_version"));
+        return 0;
+    }
+
+    switch (type->kind) {
+        case NMO_TYPE_U8:
+        case NMO_TYPE_U16:
+        case NMO_TYPE_U32:
+        case NMO_TYPE_U64:
+        case NMO_TYPE_I8:
+        case NMO_TYPE_I16:
+        case NMO_TYPE_I32:
+        case NMO_TYPE_I64:
+        case NMO_TYPE_F32:
+        case NMO_TYPE_F64:
+        case NMO_TYPE_BOOL:
+        case NMO_TYPE_STRING:
+        case NMO_TYPE_BINARY:
+        case NMO_TYPE_RESOURCE_REF:
+        case NMO_TYPE_STRUCT:
+        case NMO_TYPE_ENUM:
+        case NMO_TYPE_ARRAY:
+        case NMO_TYPE_FIXED_ARRAY:
+            break;
+        default:
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Invalid type kind"));
+            return 0;
+    }
     
     /* Check circular dependencies for structs */
     if (type->kind == NMO_TYPE_STRUCT) {
-        if (!check_circular(type, type, 0)) {
+        if (type->field_count > 0 && type->fields == NULL) {
             ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                "Circular dependency detected in type"));
-            return 0; /* Stop iteration */
+                "Struct has fields but no field descriptors"));
+            return 0;
         }
-        
+
         /* Check field offsets */
         for (size_t i = 0; i < type->field_count; i++) {
             const nmo_schema_field_t *field = &type->fields[i];
+            if (field->name == NULL || field->name[0] == '\0') {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field name is missing"));
+                return 0;
+            }
+            if (field->type == NULL) {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field type is NULL"));
+                return 0;
+            }
+            if (field->type->align > 0 && field->offset % field->type->align != 0) {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field offset is misaligned"));
+                return 0;
+            }
+            if (field->since_version != 0 && field->removed_version != 0 &&
+                field->removed_version <= field->since_version) {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field removed_version is not after since_version"));
+                return 0;
+            }
+            if (field->since_version != 0 && field->deprecated_version != 0 &&
+                field->deprecated_version < field->since_version) {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field deprecated_version is before since_version"));
+                return 0;
+            }
+            if (field->deprecated_version != 0 && field->removed_version != 0 &&
+                field->removed_version < field->deprecated_version) {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Field removed_version is before deprecated_version"));
+                return 0;
+            }
             if (field->offset + field->type->size > type->size && type->size > 0) {
                 ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
                     NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                     "Field exceeds struct bounds"));
                 return 0;
             }
+        }
+
+        if (!check_circular(type, type, 0)) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Circular dependency detected in type"));
+            return 0; /* Stop iteration */
+        }
+    }
+
+    if (type->kind == NMO_TYPE_ENUM) {
+        if (!is_valid_enum_base_type(type->enum_base_type)) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Enum base type is not an integer type"));
+            return 0;
+        }
+        if (type->enum_value_count == 0 || type->enum_values == NULL) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Enum has no values"));
+            return 0;
+        }
+        for (size_t i = 0; i < type->enum_value_count; i++) {
+            const nmo_enum_value_t *value = &type->enum_values[i];
+            if (value->name == NULL || value->name[0] == '\0') {
+                ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Enum value name is missing"));
+                return 0;
+            }
+            for (size_t j = i + 1; j < type->enum_value_count; j++) {
+                if (type->enum_values[j].name != NULL &&
+                    strcmp(value->name, type->enum_values[j].name) == 0) {
+                    ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                        NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                        "Duplicate enum value name"));
+                    return 0;
+                }
+            }
+        }
+    }
+
+    if (type->kind == NMO_TYPE_ARRAY || type->kind == NMO_TYPE_FIXED_ARRAY) {
+        if (type->element_type == NULL) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Array element type is NULL"));
+            return 0;
+        }
+        if (type->kind == NMO_TYPE_FIXED_ARRAY && type->array_length == 0) {
+            ctx->error = nmo_result_error(NMO_ERROR(ctx->arena,
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Fixed array length is zero"));
+            return 0;
         }
     }
     

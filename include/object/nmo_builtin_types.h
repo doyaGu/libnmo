@@ -29,7 +29,7 @@ typedef struct nmo_arena nmo_arena_t;
  * @param arena Arena for allocations (must remain valid for registry lifetime)
  * @return Result indicating success or error
  */
-NMO_API nmo_result_t nmo_register_builtin_types(nmo_schema_registry_t *registry, nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_register_builtin_schema_types(nmo_schema_registry_t *registry, nmo_arena_t *arena);
 
 /**
  * @brief Register all CKObject class hierarchy schemas

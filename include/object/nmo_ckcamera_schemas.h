@@ -29,17 +29,13 @@ typedef struct nmo_ckcamera_state {
     nmo_ck3dentity_state_t entity;  ///< Parent CK3dEntity state
     
     // Camera projection parameters
-    uint32_t projection_type;  ///< 0=perspective, 1=orthographic
-    float fov;                 ///< Field of view angle (degrees)
-    float aspect_ratio;        ///< Width/height ratio
+    uint32_t projection_type;  ///< CK_PERSPECTIVEPROJECTION or CK_ORTHOGRAPHICPROJECTION
+    float fov;                 ///< Field of view angle (radians)
+    float orthographic_zoom;   ///< Orthographic zoom factor
+    int32_t width;             ///< Viewport width
+    int32_t height;            ///< Viewport height
     float near_plane;          ///< Near clipping plane distance
     float far_plane;           ///< Far clipping plane distance
-    float ortho_width;         ///< Orthographic view width
-    float ortho_height;        ///< Orthographic view height
-    
-    // Preserved unknown data for future schema refinement
-    void *raw_tail;           ///< Remaining chunk data (target, roll, etc)
-    size_t raw_tail_size;     ///< Size of preserved data
 } nmo_ckcamera_state_t;
 
 /* Function pointer types for vtable */

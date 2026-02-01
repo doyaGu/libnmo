@@ -235,27 +235,39 @@ nmo_result_t nmo_type_registry_register_enum(
     if (nmo_result_is_error(result)) {
         return result;
     }
-    
+
+    /* Fetch registered descriptor to get assigned ID */
+    nmo_type_descriptor_t *registered =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!registered) {
+        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
+                                 NMO_SEVERITY_ERROR,
+                                 "Failed to find registered enum type");
+    }
+
     /* Update type_id in metadata */
-    spec_meta->type_id = type_desc->id;
-    
+    spec_meta->type_id = registered->id;
+
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
     nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
     if (nmo_result_is_error(append_res)) {
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
         return append_res;
     }
-    
+
     /* Add to type_id -> metadata_index hash table */
     nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &type_desc->id,
+                                                    &registered->id,
                                                     &metadata_index);
     if (nmo_result_is_error(map_result)) {
+        nmo_arena_array_pop(&type_registry->metadata, NULL);
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
         return map_result;
     }
-    
-    /* Update specialized_index (1-based, 0 means no metadata) */
-    type_desc->specialized_index = (uint32_t)(metadata_index + 1);
+
+    /* Update specialized_index (0-based) */
+    registered->specialized_index = (uint32_t)metadata_index;
     
     /* Return GUID */
     if (out_guid) {
@@ -388,27 +400,39 @@ nmo_result_t nmo_type_registry_register_flags(
     if (nmo_result_is_error(result)) {
         return result;
     }
-    
+
+    /* Fetch registered descriptor to get assigned ID */
+    nmo_type_descriptor_t *registered =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!registered) {
+        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
+                                 NMO_SEVERITY_ERROR,
+                                 "Failed to find registered flags type");
+    }
+
     /* Update type_id in metadata */
-    spec_meta->type_id = type_desc->id;
-    
+    spec_meta->type_id = registered->id;
+
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
     nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
     if (nmo_result_is_error(append_res)) {
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
         return append_res;
     }
-    
+
     /* Add to type_id -> metadata_index hash table */
     nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &type_desc->id,
+                                                    &registered->id,
                                                     &metadata_index);
     if (nmo_result_is_error(map_result)) {
+        nmo_arena_array_pop(&type_registry->metadata, NULL);
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
         return map_result;
     }
-    
-    /* Update specialized_index (1-based, 0 means no metadata) */
-    type_desc->specialized_index = (uint32_t)(metadata_index + 1);
+
+    /* Update specialized_index (0-based) */
+    registered->specialized_index = (uint32_t)metadata_index;
     
     /* Return GUID */
     if (out_guid) {

@@ -17,6 +17,214 @@
 #include <assert.h>
 
 /* ============================================================================
+ * Metadata Deep Copy Helpers
+ * ============================================================================ */
+
+static const char *nmo_arena_strdup_optional(nmo_arena_t *arena, const char *src) {
+    if (!src) {
+        return NULL;
+    }
+    return nmo_arena_strdup(arena, src);
+}
+
+static nmo_result_t nmo_copy_enum_metadata(
+    nmo_type_registry_t *registry,
+    const nmo_specialized_metadata_t *metadata,
+    nmo_specialized_metadata_t *out_copy
+) {
+    if (!metadata->enum_meta.values || metadata->enum_meta.value_count == 0) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Enum metadata must include values"));
+    }
+
+    nmo_enum_descriptor_t *values_copy = (nmo_enum_descriptor_t *)nmo_arena_alloc(
+        registry->arena,
+        metadata->enum_meta.value_count * sizeof(nmo_enum_descriptor_t),
+        _Alignof(nmo_enum_descriptor_t));
+    if (!values_copy) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+            "Failed to allocate enum metadata values"));
+    }
+
+    for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
+        const nmo_enum_descriptor_t *src = &metadata->enum_meta.values[i];
+        nmo_enum_descriptor_t *dst = &values_copy[i];
+        dst->name = nmo_arena_strdup_optional(registry->arena, src->name);
+        if (src->name && !dst->name) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to copy enum value name"));
+        }
+        dst->description = nmo_arena_strdup_optional(registry->arena, src->description);
+        if (src->description && !dst->description) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to copy enum value description"));
+        }
+        dst->value = src->value;
+        dst->flags = src->flags;
+    }
+
+    out_copy->enum_meta.values = values_copy;
+    out_copy->enum_meta.value_count = metadata->enum_meta.value_count;
+    return nmo_result_ok();
+}
+
+static nmo_result_t nmo_copy_flags_metadata(
+    nmo_type_registry_t *registry,
+    const nmo_specialized_metadata_t *metadata,
+    nmo_specialized_metadata_t *out_copy
+) {
+    if (!metadata->flags_meta.bits || metadata->flags_meta.bit_count == 0) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Flags metadata must include bits"));
+    }
+
+    nmo_flags_descriptor_t *bits_copy = (nmo_flags_descriptor_t *)nmo_arena_alloc(
+        registry->arena,
+        metadata->flags_meta.bit_count * sizeof(nmo_flags_descriptor_t),
+        _Alignof(nmo_flags_descriptor_t));
+    if (!bits_copy) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+            "Failed to allocate flags metadata bits"));
+    }
+
+    for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
+        const nmo_flags_descriptor_t *src = &metadata->flags_meta.bits[i];
+        nmo_flags_descriptor_t *dst = &bits_copy[i];
+        dst->name = nmo_arena_strdup_optional(registry->arena, src->name);
+        if (src->name && !dst->name) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to copy flags bit name"));
+        }
+        dst->description = nmo_arena_strdup_optional(registry->arena, src->description);
+        if (src->description && !dst->description) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to copy flags bit description"));
+        }
+        dst->mask = src->mask;
+        dst->flags = src->flags;
+    }
+
+    out_copy->flags_meta.bits = bits_copy;
+    out_copy->flags_meta.bit_count = metadata->flags_meta.bit_count;
+    return nmo_result_ok();
+}
+
+static nmo_result_t nmo_copy_struct_metadata(
+    nmo_type_registry_t *registry,
+    const nmo_specialized_metadata_t *metadata,
+    nmo_specialized_metadata_t *out_copy
+) {
+    if (!metadata->struct_meta.fields || metadata->struct_meta.field_count == 0) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Struct metadata must include fields"));
+    }
+
+    nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_arena_alloc(
+        registry->arena,
+        metadata->struct_meta.field_count * sizeof(nmo_struct_descriptor_t),
+        _Alignof(nmo_struct_descriptor_t));
+    if (!fields_copy) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+            "Failed to allocate struct metadata fields"));
+    }
+
+    for (size_t i = 0; i < metadata->struct_meta.field_count; i++) {
+        const nmo_struct_descriptor_t *src = &metadata->struct_meta.fields[i];
+        nmo_struct_descriptor_t *dst = &fields_copy[i];
+        dst->name = nmo_arena_strdup_optional(registry->arena, src->name);
+        if (src->name && !dst->name) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to copy struct field name"));
+        }
+        dst->description = nmo_arena_strdup_optional(registry->arena, src->description);
+        if (src->description && !dst->description) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to copy struct field description"));
+        }
+        dst->type_guid = src->type_guid;
+        dst->offset = src->offset;
+        dst->size = src->size;
+        dst->array_count = src->array_count;
+        dst->flags = src->flags;
+    }
+
+    out_copy->struct_meta.fields = fields_copy;
+    out_copy->struct_meta.field_count = metadata->struct_meta.field_count;
+    return nmo_result_ok();
+}
+
+static nmo_result_t nmo_deep_copy_metadata(
+    nmo_type_registry_t *registry,
+    const nmo_specialized_metadata_t *metadata,
+    nmo_specialized_metadata_t **out_copy
+) {
+    if (!registry || !metadata || !out_copy) {
+        return nmo_result_error(NMO_ERROR(
+            registry ? registry->arena : NULL,
+            NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR,
+            "Invalid metadata copy arguments"));
+    }
+
+    if (metadata->metadata_type != NMO_METADATA_TYPE_ENUM &&
+        metadata->metadata_type != NMO_METADATA_TYPE_STRUCT &&
+        metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Unknown metadata type"));
+    }
+
+    nmo_specialized_metadata_t *copy = (nmo_specialized_metadata_t *)nmo_arena_alloc(
+        registry->arena,
+        sizeof(nmo_specialized_metadata_t),
+        _Alignof(nmo_specialized_metadata_t));
+    if (!copy) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena,
+            NMO_ERR_NOMEM,
+            NMO_SEVERITY_ERROR,
+            "Failed to allocate metadata copy"));
+    }
+
+    memset(copy, 0, sizeof(*copy));
+    copy->type_id = metadata->type_id;
+    copy->metadata_type = metadata->metadata_type;
+    copy->reserved = metadata->reserved;
+
+    nmo_result_t result = nmo_result_ok();
+    switch (metadata->metadata_type) {
+        case NMO_METADATA_TYPE_ENUM:
+            result = nmo_copy_enum_metadata(registry, metadata, copy);
+            break;
+        case NMO_METADATA_TYPE_STRUCT:
+            result = nmo_copy_struct_metadata(registry, metadata, copy);
+            break;
+        case NMO_METADATA_TYPE_FLAGS:
+            result = nmo_copy_flags_metadata(registry, metadata, copy);
+            break;
+    }
+
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
+
+    *out_copy = copy;
+    return nmo_result_ok();
+}
+
+/* ============================================================================
  * Plugin Registration
  * ============================================================================ */
 
@@ -115,36 +323,41 @@ nmo_result_t nmo_type_registry_unregister_plugin_types(
             "Invalid registry pointer"));
     }
 
-    // First pass: collect all types from this plugin
-    nmo_guid_t *types_to_remove = NULL;
+    // First pass: count all types from this plugin
     size_t remove_count = 0;
-    size_t remove_capacity = 0;
-
     for (size_t i = 0; i < registry->types.count; i++) {
         const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
         if (!type || !type->valid) continue;
 
-        // Check if this type belongs to the plugin
         nmo_guid_t stored_plugin_guid;
         nmo_result_t found = nmo_hash_table_get(registry->type_to_plugin, &type->id, &stored_plugin_guid);
-
         if (nmo_result_is_ok(found) && nmo_guid_equals(stored_plugin_guid, plugin_guid)) {
-            // Expand array if needed
-            if (remove_count >= remove_capacity) {
-                remove_capacity = remove_capacity == 0 ? 16 : remove_capacity * 2;
-                nmo_guid_t *new_array = (nmo_guid_t*)nmo_arena_alloc(
-                    registry->arena,
-                    remove_capacity * sizeof(nmo_guid_t),
-                    _Alignof(nmo_guid_t));
-                if (new_array) {
-                    if (types_to_remove) {
-                        memcpy(new_array, types_to_remove, remove_count * sizeof(nmo_guid_t));
-                    }
-                    types_to_remove = new_array;
-                }
-            }
+            remove_count++;
+        }
+    }
 
-            types_to_remove[remove_count++] = type->guid;
+    nmo_guid_t *types_to_remove = NULL;
+    if (remove_count > 0) {
+        types_to_remove = (nmo_guid_t *)nmo_arena_alloc(
+            registry->arena,
+            remove_count * sizeof(nmo_guid_t),
+            _Alignof(nmo_guid_t));
+        if (!types_to_remove) {
+            return nmo_result_error(NMO_ERROR(
+                registry->arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to allocate plugin removal list"));
+        }
+
+        size_t index = 0;
+        for (size_t i = 0; i < registry->types.count; i++) {
+            const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
+            if (!type || !type->valid) continue;
+
+            nmo_guid_t stored_plugin_guid;
+            nmo_result_t found = nmo_hash_table_get(registry->type_to_plugin, &type->id, &stored_plugin_guid);
+            if (nmo_result_is_ok(found) && nmo_guid_equals(stored_plugin_guid, plugin_guid)) {
+                types_to_remove[index++] = type->guid;
+            }
         }
     }
 
@@ -227,21 +440,24 @@ nmo_result_t nmo_type_registry_register_metadata(
             "Invalid registry or metadata pointer"));
     }
 
-    // Copy metadata to arena
-    nmo_specialized_metadata_t *meta_copy = (nmo_specialized_metadata_t*)nmo_arena_alloc(
-        registry->arena,
-        sizeof(nmo_specialized_metadata_t),
-        _Alignof(nmo_specialized_metadata_t));
-    
-    if (!meta_copy) {
+    if (metadata->type_id < 0 || (size_t)metadata->type_id >= registry->types.count) {
         return nmo_result_error(NMO_ERROR(
-            registry->arena,
-            NMO_ERR_NOMEM,
-            NMO_SEVERITY_ERROR,
-            "Failed to allocate metadata copy"));
+            registry->arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Invalid metadata type ID"));
     }
 
-    memcpy(meta_copy, metadata, sizeof(nmo_specialized_metadata_t));
+    nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, metadata->type_id);
+    if (!type || !type->valid) {
+        return nmo_result_error(NMO_ERROR(
+            registry->arena, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+            "Type not found or invalid"));
+    }
+
+    nmo_specialized_metadata_t *meta_copy = NULL;
+    nmo_result_t copy_result = nmo_deep_copy_metadata(registry, metadata, &meta_copy);
+    if (nmo_result_is_error(copy_result)) {
+        return copy_result;
+    }
 
     // Store in array and create index mapping
     size_t index = registry->metadata.count;
@@ -253,16 +469,12 @@ nmo_result_t nmo_type_registry_register_metadata(
                                                        &metadata->type_id,
                                                        &index);
     if (nmo_result_is_error(insert_result)) {
+        nmo_arena_array_pop(&registry->metadata, NULL);
         return insert_result;
     }
 
-    // Update type descriptor's specialized_index (1-based index, 0 means no metadata)
-    if (metadata->type_id >= 0 && (size_t)metadata->type_id < registry->types.count) {
-        nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, metadata->type_id);
-        if (type && type->valid) {
-            type->specialized_index = (uint32_t)(index + 1);  // 1-based index
-        }
-    }
+    // Update type descriptor's specialized_index (0-based index, invalid sentinel if none)
+    type->specialized_index = (uint32_t)index;
 
     return nmo_result_ok();
 }
@@ -292,11 +504,11 @@ void nmo_type_registry_unregister_metadata(
     // Remove from hash table
     nmo_hash_table_remove(registry->type_to_metadata, &type_id);
 
-    // Clear specialized_index in type descriptor (set to 0 = no metadata)
+    // Clear specialized_index in type descriptor
     if (type_id >= 0 && (size_t)type_id < registry->types.count) {
         nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, type_id);
         if (type && type->valid) {
-            type->specialized_index = 0;  // Reset to "no metadata"
+            type->specialized_index = NMO_SPECIALIZED_INDEX_INVALID;
         }
     }
 

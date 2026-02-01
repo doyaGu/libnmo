@@ -9,14 +9,15 @@
  * - Modern format (v5+): single identifier 0x10F000 with flags + optional blocks
  * - Legacy format (<v5): separate identifiers 0x4000 (flags), 0x8000 (origin), 
  *   0x2000 (size), 0x1000 (source rect), 0x100000 (z-order)
- * - Optional blocks: 0x10000 (source rect), 0x20000 (z-order), 0x40000 (parent),
- *   0x200000 (material, sprites only)
+ * - Optional blocks: 0x10000 (source rect), 0x20000 (z-order), 0x40000 (parent)
+ * - Material is stored in identifier 0x200000 (CKCID_2DENTITY only)
  */
 
 #ifndef NMO_CK2DENTITY_SCHEMAS_H
 #define NMO_CK2DENTITY_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_math.h"
 #include "object/nmo_ckrenderobject_schemas.h"
 
 #ifdef __cplusplus
@@ -32,18 +33,6 @@ typedef struct nmo_result nmo_result_t;
 /* =============================================================================
  * CK2dEntity STATE STRUCTURES
  * ============================================================================= */
-
-/**
- * @brief VxRect - 2D rectangle (x, y, width, height)
- * 
- * Matches the Virtools SDK VxRect structure.
- */
-typedef struct nmo_vx_rect {
-    float x;
-    float y;
-    float width;
-    float height;
-} nmo_vx_rect_t;
 
 /**
  * @brief CK2dEntity state
@@ -63,29 +52,26 @@ typedef struct nmo_ck2dentity_state {
     nmo_ckrenderobject_state_t render_object; /**< Parent CKRenderObject state */
     
     /* Core rectangle fields */
-    nmo_vx_rect_t rect;                 /**< Screen-space rectangle */
+    nmo_rect_t rect;                    /**< Screen-space rectangle */
     bool has_homogeneous_rect;          /**< True if homogeneous coords are used */
-    nmo_vx_rect_t homogeneous_rect;     /**< Normalized [0..1] coordinates */
+    nmo_rect_t homogeneous_rect;        /**< Normalized [0..1] coordinates */
     
     /* Optional fields (presence indicated by flags) */
     bool has_source_rect;               /**< True if source rect is present */
-    nmo_vx_rect_t source_rect;          /**< Texture/sprite source rectangle */
+    nmo_rect_t source_rect;             /**< Texture/sprite source rectangle */
     
     bool has_z_order;                   /**< True if z-order is present */
-    uint32_t z_order;                   /**< Rendering depth */
+    int32_t z_order;                    /**< Rendering depth */
     
     bool has_parent;                    /**< True if parent reference is present */
     nmo_object_id_t parent_id;          /**< Parent entity ID */
     
-    bool has_material;                  /**< True if material is present (sprites only) */
+    bool has_material;                  /**< True if material identifier is present */
     nmo_object_id_t material_id;        /**< Material reference */
     
     /* Flags (sanitized with 0xFFF8F7FF on load) */
     uint32_t flags;                     /**< Entity flags (visibility, clipping, etc.) */
     
-    /* Preserve any unknown chunk data for round-trip safety */
-    uint8_t *raw_tail;                  /**< Unrecognized trailing data */
-    size_t raw_tail_size;               /**< Size of trailing data in bytes */
 } nmo_ck2dentity_state_t;
 
 /* =============================================================================
@@ -102,11 +88,10 @@ typedef struct nmo_ck2dentity_state {
 #define NMO_CK2DENTITY_CHUNK_SOURCE_RECT 0x1000
 #define NMO_CK2DENTITY_CHUNK_Z_ORDER     0x100000
 
-/** Optional block identifiers (modern format) */
+/** Optional block flags (modern format) */
 #define NMO_CK2DENTITY_FLAG_SOURCE_RECT  0x10000
 #define NMO_CK2DENTITY_FLAG_Z_ORDER      0x20000
 #define NMO_CK2DENTITY_FLAG_PARENT       0x40000
-#define NMO_CK2DENTITY_FLAG_MATERIAL     0x200000
 
 /** Homogeneous rect flag (bit in flags field) */
 #define NMO_CK2DENTITY_FLAG_HOMOGENEOUS  0x200

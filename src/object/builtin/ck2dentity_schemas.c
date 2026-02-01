@@ -30,44 +30,44 @@
  * ============================================================================= */
 
 /**
- * @brief Read VxRect from chunk (4 floats: x, y, width, height)
+ * @brief Read rect from chunk (4 floats: left, top, right, bottom)
  */
-static nmo_result_t read_rect(nmo_chunk_t *chunk, nmo_vx_rect_t *rect)
+static nmo_result_t read_rect(nmo_chunk_t *chunk, nmo_rect_t *rect)
 {
     nmo_result_t result;
     
-    result = nmo_chunk_read_float(chunk, &rect->x);
+    result = nmo_chunk_read_float(chunk, &rect->left);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_read_float(chunk, &rect->y);
+    result = nmo_chunk_read_float(chunk, &rect->top);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_read_float(chunk, &rect->width);
+    result = nmo_chunk_read_float(chunk, &rect->right);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_read_float(chunk, &rect->height);
+    result = nmo_chunk_read_float(chunk, &rect->bottom);
     if (result.code != NMO_OK) return result;
     
     return nmo_result_ok();
 }
 
 /**
- * @brief Write VxRect to chunk (4 floats: x, y, width, height)
+ * @brief Write rect to chunk (4 floats: left, top, right, bottom)
  */
-static nmo_result_t write_rect(nmo_chunk_t *chunk, const nmo_vx_rect_t *rect)
+static nmo_result_t write_rect(nmo_chunk_t *chunk, const nmo_rect_t *rect)
 {
     nmo_result_t result;
     
-    result = nmo_chunk_write_float(chunk, rect->x);
+    result = nmo_chunk_write_float(chunk, rect->left);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, rect->y);
+    result = nmo_chunk_write_float(chunk, rect->top);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, rect->width);
+    result = nmo_chunk_write_float(chunk, rect->right);
     if (result.code != NMO_OK) return result;
     
-    result = nmo_chunk_write_float(chunk, rect->height);
+    result = nmo_chunk_write_float(chunk, rect->bottom);
     if (result.code != NMO_OK) return result;
     
     return nmo_result_ok();
@@ -126,7 +126,7 @@ static nmo_result_t deserialize_modern(
         }
     }
     
-    /* Optional block: source rect (flag 0x10000) */
+    /* Optional block: source rect (flag reserved0) */
     if (raw_flags & NMO_CK2DENTITY_FLAG_SOURCE_RECT) {
         out_state->has_source_rect = true;
         result = read_rect(chunk, &out_state->source_rect);
@@ -136,33 +136,23 @@ static nmo_result_t deserialize_modern(
         }
     }
     
-    /* Optional block: z-order (flag 0x20000) */
+    /* Optional block: z-order (flag reserved1) */
     if (raw_flags & NMO_CK2DENTITY_FLAG_Z_ORDER) {
         out_state->has_z_order = true;
-        result = nmo_chunk_read_dword(chunk, &out_state->z_order);
+        result = nmo_chunk_read_int(chunk, (int32_t *)&out_state->z_order);
         if (result.code != NMO_OK) {
             return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                 NMO_SEVERITY_ERROR, "Failed to read z-order"));
         }
     }
     
-    /* Optional block: parent ID (flag 0x40000) */
+    /* Optional block: parent ID (flag reserved2) */
     if (raw_flags & NMO_CK2DENTITY_FLAG_PARENT) {
         out_state->has_parent = true;
         result = nmo_chunk_read_object_id(chunk, &out_state->parent_id);
         if (result.code != NMO_OK) {
             return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                 NMO_SEVERITY_ERROR, "Failed to read parent ID"));
-        }
-    }
-    
-    /* Optional block: material ID (flag 0x200000, sprites only) */
-    if (raw_flags & NMO_CK2DENTITY_FLAG_MATERIAL) {
-        out_state->has_material = true;
-        result = nmo_chunk_read_object_id(chunk, &out_state->material_id);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to read material ID"));
         }
     }
     
@@ -203,38 +193,69 @@ static nmo_result_t deserialize_legacy(
     /* Read origin (identifier 0x8000) */
     seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_ORIGIN);
     if (seek_result.code == NMO_OK) {
-        int32_t x, y;
-        result = nmo_chunk_read_int(chunk, &x);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to read origin x"));
+        if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
+            out_state->has_homogeneous_rect = true;
+            result = nmo_chunk_read_float(chunk, &out_state->homogeneous_rect.left);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read homogeneous origin x"));
+            }
+            result = nmo_chunk_read_float(chunk, &out_state->homogeneous_rect.top);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read homogeneous origin y"));
+            }
+        } else {
+            int32_t x, y;
+            result = nmo_chunk_read_int(chunk, &x);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read origin x"));
+            }
+            result = nmo_chunk_read_int(chunk, &y);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read origin y"));
+            }
+            /* Convert int to float (fixed-point conversion, SDK uses helpers) */
+            out_state->rect.left = (float)x;
+            out_state->rect.top = (float)y;
         }
-        result = nmo_chunk_read_int(chunk, &y);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to read origin y"));
-        }
-        /* Convert int to float (fixed-point conversion, SDK uses helpers) */
-        out_state->rect.x = (float)x;
-        out_state->rect.y = (float)y;
     }
     
     /* Read size (identifier 0x2000) */
     seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_SIZE);
     if (seek_result.code == NMO_OK) {
-        int32_t w, h;
-        result = nmo_chunk_read_int(chunk, &w);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to read size width"));
+        if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
+            float w, h;
+            out_state->has_homogeneous_rect = true;
+            result = nmo_chunk_read_float(chunk, &w);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read homogeneous width"));
+            }
+            result = nmo_chunk_read_float(chunk, &h);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read homogeneous height"));
+            }
+            out_state->homogeneous_rect.right = out_state->homogeneous_rect.left + w;
+            out_state->homogeneous_rect.bottom = out_state->homogeneous_rect.top + h;
+        } else {
+            int32_t w, h;
+            result = nmo_chunk_read_int(chunk, &w);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read size width"));
+            }
+            result = nmo_chunk_read_int(chunk, &h);
+            if (result.code != NMO_OK) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR, "Failed to read size height"));
+            }
+            out_state->rect.right = out_state->rect.left + (float)w;
+            out_state->rect.bottom = out_state->rect.top + (float)h;
         }
-        result = nmo_chunk_read_int(chunk, &h);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to read size height"));
-        }
-        out_state->rect.width = (float)w;
-        out_state->rect.height = (float)h;
     }
     
     /* Read source rect (identifier 0x1000) */
@@ -251,10 +272,10 @@ static nmo_result_t deserialize_legacy(
         if (result.code != NMO_OK) goto source_rect_error;
         
         out_state->has_source_rect = true;
-        out_state->source_rect.x = (float)x;
-        out_state->source_rect.y = (float)y;
-        out_state->source_rect.width = (float)w;
-        out_state->source_rect.height = (float)h;
+        out_state->source_rect.right = (float)x;
+        out_state->source_rect.left = (float)y;
+        out_state->source_rect.top = (float)w;
+        out_state->source_rect.bottom = (float)h;
         goto source_rect_done;
         
 source_rect_error:
@@ -267,7 +288,7 @@ source_rect_done:;
     seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_Z_ORDER);
     if (seek_result.code == NMO_OK) {
         out_state->has_z_order = true;
-        result = nmo_chunk_read_dword(chunk, &out_state->z_order);
+        result = nmo_chunk_read_int(chunk, (int32_t *)&out_state->z_order);
         if (result.code != NMO_OK) {
             return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                 NMO_SEVERITY_ERROR, "Failed to read z-order"));
@@ -321,25 +342,17 @@ nmo_result_t nmo_ck2dentity_deserialize(
         return result;
     }
     
-    /* Preserve remaining data as raw tail for round-trip */
-    size_t current_pos = nmo_chunk_get_position(chunk);
-    size_t chunk_size = nmo_chunk_get_data_size(chunk);
-    
-    if (current_pos < chunk_size) {
-        size_t remaining = chunk_size - current_pos;
-        out_state->raw_tail = (uint8_t *)nmo_arena_alloc(arena, remaining, 1);
-        if (out_state->raw_tail) {
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk,
-                out_state->raw_tail, remaining);
-            if (bytes_read == remaining) {
-                out_state->raw_tail_size = remaining;
-            } else {
-                out_state->raw_tail = NULL;
-                out_state->raw_tail_size = 0;
-            }
+    /* Optional material (identifier 0x200000, CKCID_2DENTITY only) */
+    if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY &&
+        nmo_chunk_seek_identifier(chunk, 0x200000).code == NMO_OK) {
+        out_state->has_material = true;
+        result = nmo_chunk_read_object_id(chunk, &out_state->material_id);
+        if (result.code != NMO_OK) {
+            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                NMO_SEVERITY_ERROR, "Failed to read material ID"));
         }
     }
-    
+
     return nmo_result_ok();
 }
 
@@ -364,17 +377,24 @@ static nmo_result_t serialize_modern(
     
     /* Build flags with optional block indicators */
     uint32_t flags = state->flags;
-    if (state->has_source_rect) flags |= NMO_CK2DENTITY_FLAG_SOURCE_RECT;
-    if (state->has_z_order) flags |= NMO_CK2DENTITY_FLAG_Z_ORDER;
-    if (state->has_parent) flags |= NMO_CK2DENTITY_FLAG_PARENT;
-    if (state->has_material) flags |= NMO_CK2DENTITY_FLAG_MATERIAL;
+    if (state->has_source_rect ||
+        state->source_rect.left != 0.0f || state->source_rect.top != 0.0f ||
+        state->source_rect.right != 0.0f || state->source_rect.bottom != 0.0f) {
+        flags |= NMO_CK2DENTITY_FLAG_SOURCE_RECT;
+    }
+    if (state->has_z_order || state->z_order != 0) {
+        flags |= NMO_CK2DENTITY_FLAG_Z_ORDER;
+    }
+    if (state->has_parent || state->parent_id != 0) {
+        flags |= NMO_CK2DENTITY_FLAG_PARENT;
+    }
     
     /* Write flags */
     result = nmo_chunk_write_dword(chunk, flags);
     if (result.code != NMO_OK) return result;
     
     /* Write rectangle (homogeneous or regular) */
-    if (state->has_homogeneous_rect) {
+    if ((state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) && state->has_homogeneous_rect) {
         result = write_rect(chunk, &state->homogeneous_rect);
     } else {
         result = write_rect(chunk, &state->rect);
@@ -387,18 +407,13 @@ static nmo_result_t serialize_modern(
         if (result.code != NMO_OK) return result;
     }
     
-    if (state->has_z_order) {
-        result = nmo_chunk_write_dword(chunk, state->z_order);
+    if (state->has_z_order || state->z_order != 0) {
+        result = nmo_chunk_write_int(chunk, state->z_order);
         if (result.code != NMO_OK) return result;
     }
     
-    if (state->has_parent) {
+    if (state->has_parent || state->parent_id != 0) {
         result = nmo_chunk_write_object_id(chunk, state->parent_id);
-        if (result.code != NMO_OK) return result;
-    }
-    
-    if (state->has_material) {
-        result = nmo_chunk_write_object_id(chunk, state->material_id);
         if (result.code != NMO_OK) return result;
     }
     
@@ -432,15 +447,14 @@ nmo_result_t nmo_ck2dentity_serialize(
         return result;
     }
     
-    /* Write raw tail if present */
-    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
-        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to write raw tail"));
-        }
+    /* Write material identifier if present */
+    if (in_state->has_material && in_state->material_id) {
+        result = nmo_chunk_write_identifier(out_chunk, 0x200000);
+        if (result.code != NMO_OK) return result;
+        result = nmo_chunk_write_object_id(out_chunk, in_state->material_id);
+        if (result.code != NMO_OK) return result;
     }
-    
+
     return nmo_result_ok();
 }
 

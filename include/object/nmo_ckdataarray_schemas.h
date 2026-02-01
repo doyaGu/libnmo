@@ -11,6 +11,8 @@
  * - STRING: String values
  * - OBJECT: Object references (CK_ID)
  * - PARAMETER: Parameter objects (CKParameterOut)
+ *   - File mode: stored as object ID
+ *   - Non-file: stored as sub-chunk
  * 
  * Based on official Virtools SDK (reference/src/CKDataArray.cpp:1735-1960).
  */
@@ -96,7 +98,8 @@ typedef union nmo_ckdataarray_cell {
     float float_value;            /**< FLOAT type value */
     const char *string_value;     /**< STRING type value (allocated from arena) */
     nmo_object_id_t object_id;    /**< OBJECT type value */
-    nmo_chunk_t *parameter_chunk; /**< PARAMETER type value (sub-chunk) */
+    nmo_object_id_t parameter_id; /**< PARAMETER type value (file mode: object ID) */
+    nmo_chunk_t *parameter_chunk; /**< PARAMETER type value (non-file: sub-chunk) */
 } nmo_ckdataarray_cell_t;
 
 /**

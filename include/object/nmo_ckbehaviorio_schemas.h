@@ -36,7 +36,7 @@ typedef struct nmo_result nmo_result_t;
  * Common flags (from CK_BEHAVIORIO_FLAGS):
  * - CK_BEHAVIORIO_IN (0x01): Input endpoint
  * - CK_BEHAVIORIO_OUT (0x02): Output endpoint
- * - CK_BEHAVIORIO_ACTIVE (0x04): Active I/O
+ * - CK_BEHAVIORIO_ACTIVE (0x100): Active I/O
  * 
  * Reference: reference/src/CKBehaviorIO.cpp:19-48
  */

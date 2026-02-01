@@ -42,14 +42,22 @@ typedef struct nmo_result nmo_result_t;
  * For now, preserve as raw buffer for round-trip.
  */
 typedef struct nmo_ckbitmapdata {
-    uint32_t width;                     /**< Image width */
-    uint32_t height;                    /**< Image height */
-    uint8_t *pixel_data;                /**< Raw pixel buffer */
+    uint32_t width;                     /**< Image width (optional) */
+    uint32_t height;                    /**< Image height (optional) */
+    uint8_t *pixel_data;                /**< Raw pixel buffer (optional) */
     size_t pixel_data_size;             /**< Pixel buffer size in bytes */
-    
-    /* Raw bitmap chunk data (preserved for round-trip) */
-    uint8_t *raw_data;                  /**< Unrecognized bitmap data */
-    size_t raw_data_size;               /**< Size of raw data in bytes */
+
+    /* Raw bitmap payloads by identifier (preserved for round-trip) */
+    uint8_t *palette_data;              /**< Payload for 0x200000 */
+    size_t palette_size;                /**< Size of palette payload */
+    uint8_t *system_copy_data;          /**< Payload for 0x10000000 */
+    size_t system_copy_size;            /**< Size of system copy payload */
+    uint8_t *video_backup_data;         /**< Payload for 0x800000 */
+    size_t video_backup_size;           /**< Size of video backup payload */
+    uint8_t *pixels_data;               /**< Payload for 0x400000 */
+    size_t pixels_size;                 /**< Size of pixels payload */
+    uint8_t *raw_chunk_data;            /**< Payload for 0x40000 */
+    size_t raw_chunk_size;              /**< Size of raw payload */
 } nmo_ckbitmapdata_t;
 
 /**
@@ -90,9 +98,6 @@ typedef struct nmo_cksprite_state {
     uint8_t *bitmap_properties;         /**< CKBitmapProperties blob (v7+) */
     size_t bitmap_properties_size;      /**< Size of properties blob */
     
-    /* Preserve any unknown chunk data for round-trip safety */
-    uint8_t *raw_tail;                  /**< Unrecognized trailing data */
-    size_t raw_tail_size;               /**< Size of trailing data in bytes */
 } nmo_cksprite_state_t;
 
 /* =============================================================================

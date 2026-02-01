@@ -27,6 +27,8 @@
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
 #include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdalign.h>
 #include <string.h>
 
@@ -34,18 +36,107 @@
  * CKBeObject IDENTIFIER CONSTANTS
  * ============================================================================= */
 
-/* From CKDefines.h */
-#define CK_STATESAVE_SCRIPTS         0x00000003
-#define CK_STATESAVE_DATAS           0x00000004
-#define CK_STATESAVE_NEWATTRIBUTES   0x00000010
+/* From CKDefines2.h (CK_STATESAVEFLAGS_BEOBJECT) */
+#define CK_STATESAVE_ATTRIBUTES      0x00000010u
+#define CK_STATESAVE_NEWATTRIBUTES   0x00000011u
+#define CK_STATESAVE_DATAS           0x00000040u
+#define CK_STATESAVE_BEHAVIORS       0x00000100u
+#define CK_STATESAVE_SINGLEACTIVITY  0x00000400u
+#define CK_STATESAVE_SCRIPTS         0x00000800u
 
-/* Attribute Manager GUID from CKAttributeManager.h */
-#define ATTRIBUTE_MANAGER_GUID_D1    0x6BED328B
-#define ATTRIBUTE_MANAGER_GUID_D2    0x141F5148
-#define CK_STATESAVE_SINGLEACTIVITY  0x00000020
+/* Attribute Manager GUID from CKEnums.h */
+#define ATTRIBUTE_MANAGER_GUID_D1    0x3d242466u
+#define ATTRIBUTE_MANAGER_GUID_D2    0x00000000u
 
 /* DATAS version flag */
 #define CK_DATAS_VERSION_FLAG        0x10000000
+
+/* =============================================================================
+ * IDENTIFIER HELPERS
+ * ============================================================================= */
+
+static size_t nmo_ckbeobject_identifier_remaining_dwords(nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) {
+        return 0;
+    }
+
+    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+
+    size_t next_pos = 0;
+    if (state->prev_identifier_pos + 1 < chunk->data.count) {
+        next_pos = data[state->prev_identifier_pos + 1];
+    }
+    if (next_pos == 0 || next_pos > chunk->data.count) {
+        next_pos = chunk->data.count;
+    }
+    if (next_pos < state->current_pos) {
+        return 0;
+    }
+
+    return next_pos - state->current_pos;
+}
+
+static nmo_result_t nmo_ckbeobject_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, size_t bytes)
+{
+    if (!chunk || !buffer) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbeobject_read_raw_bytes"));
+    }
+
+    size_t dwords = (bytes + 3) / 4;
+    NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, "Insufficient data for raw buffer");
+
+    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    memcpy(buffer, &data[state->current_pos], bytes);
+    state->current_pos += dwords;
+
+    return nmo_result_ok();
+}
+
+static nmo_result_t nmo_ckbeobject_read_object_sequence(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_ids,
+    uint32_t *out_count)
+{
+    size_t count = 0;
+    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+
+    if (count == 0) {
+        *out_ids = NULL;
+        *out_count = 0;
+        return nmo_result_ok();
+    }
+
+    if (count > UINT32_MAX) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+            NMO_SEVERITY_ERROR, "Invalid object sequence count"));
+    }
+
+    *out_count = (uint32_t)count;
+    *out_ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_object_id_t) * (*out_count), _Alignof(nmo_object_id_t));
+    if (!*out_ids) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
+            NMO_SEVERITY_ERROR, "Failed to allocate object ID array"));
+    }
+
+    for (uint32_t i = 0; i < *out_count; ++i) {
+        result = nmo_chunk_read_object_sequence_item(chunk, &(*out_ids)[i]);
+        if (result.code != NMO_OK) {
+            *out_count = i;
+            return nmo_result_ok();
+        }
+    }
+
+    return nmo_result_ok();
+}
 
 /* =============================================================================
  * CKBeObject DESERIALIZATION
@@ -84,76 +175,56 @@ static nmo_result_t nmo_ckbeobject_deserialize(
         if (result.code != NMO_OK) return result;
     }
     
+    const bool is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+
     /* Default priority is 0 */
     out_state->priority = 0;
 
-    /* Load scripts array - optional section */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCRIPTS);
-    if (result.code == NMO_OK) {
-        /* Read script count */
-        uint32_t script_count;
-        result = nmo_chunk_read_dword(chunk, &script_count);
-        if (result.code != NMO_OK) {
-            /* Log warning but continue - might be malformed data */
-            (void)arena; /* Identifier found but data malformed - skip section */
-            goto load_priority;
-        }
-
-        /* Allocate script array */
-        if (script_count > 0) {
-            /* Sanity check - prevent excessive allocations */
-            const uint32_t MAX_SCRIPTS = 10000; /* Reasonable upper bound */
-            if (script_count > MAX_SCRIPTS) {
-                /* Likely corrupted data - skip section */
-                goto load_priority;
-            }
-            
-            out_state->script_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena,
-                script_count * sizeof(nmo_object_id_t),
-                _Alignof(nmo_object_id_t)
-            );
-            if (!out_state->script_ids) {
-                /* Allocation failed - skip section */
-                goto load_priority;
-            }
-
-            /* Read script IDs */
-            for (uint32_t i = 0; i < script_count; i++) {
-                result = nmo_chunk_read_object_id(chunk, &out_state->script_ids[i]);
-                if (result.code != NMO_OK) {
-                    /* Partial data read failure - skip remaining scripts */
-                    out_state->script_count = i; /* Save what we got */
-                    goto load_priority;
-                }
-            }
-            out_state->script_count = script_count;
+    /* Load scripts array - optional section (legacy + modern) */
+    nmo_result_t result = nmo_result_ok();
+    if (is_file && nmo_chunk_get_data_version(chunk) < 5) {
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORS);
+        if (result.code == NMO_OK) {
+            (void)nmo_ckbeobject_read_object_sequence(chunk, arena,
+                                                      &out_state->script_ids,
+                                                      &out_state->script_count);
         }
     }
-    /* If identifier not found, scripts section is optional - continue */
 
-load_priority:
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCRIPTS);
+    if (result.code == NMO_OK) {
+        (void)nmo_ckbeobject_read_object_sequence(chunk, arena,
+                                                  &out_state->script_ids,
+                                                  &out_state->script_count);
+    }
+
     /* Load priority data - optional section */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAS);
     if (result.code == NMO_OK) {
-        uint32_t version_flag;
-        result = nmo_chunk_read_dword(chunk, &version_flag);
-        if (result.code != NMO_OK) {
-            /* Identifier found but data malformed - skip section */
+        if (!is_file) {
+            int32_t ignored = 0;
+            (void)nmo_chunk_read_int(chunk, &ignored);
             goto load_attributes;
         }
 
-        /* Check if modern format (version >= 5 with 0x10000000 flag) */
-        if (version_flag & CK_DATAS_VERSION_FLAG) {
-            int32_t priority;
-            result = nmo_chunk_read_int(chunk, &priority);
-            if (result.code == NMO_OK) {
-                out_state->priority = priority;
-            }
-            /* If read failed, use default priority=0 */
+        uint32_t version_flag = 0;
+        result = nmo_chunk_read_dword(chunk, &version_flag);
+        if (result.code != NMO_OK) {
+            goto load_attributes;
+        }
+
+        if (nmo_chunk_get_data_version(chunk) < 5) {
+            int32_t ignored = 0;
+            (void)nmo_chunk_read_int(chunk, &ignored);
+            (void)nmo_chunk_read_int(chunk, &ignored);
+            (void)nmo_chunk_read_int(chunk, &ignored);
+            (void)nmo_chunk_read_int(chunk, &out_state->priority);
+        } else if (version_flag & CK_DATAS_VERSION_FLAG) {
+            (void)nmo_chunk_read_int(chunk, &out_state->priority);
+        } else {
+            out_state->priority = 0;
         }
     }
-    /* If identifier not found, priority section is optional - continue with default priority=0 */
 
 load_attributes:
     /* Load attributes - optional section */
@@ -188,24 +259,32 @@ load_attributes:
                 goto deserialize_done;
             }
 
-            /* Read attribute parameter object IDs 
+            /* Read attribute parameter object IDs
              * Reference: CKBeObject.cpp lines 542-544 */
             for (size_t i = 0; i < attr_count; i++) {
-                result = nmo_chunk_read_object_id(chunk, &out_state->attribute_parameter_ids[i]);
+                result = nmo_chunk_read_object_sequence_item(chunk,
+                                                            &out_state->attribute_parameter_ids[i]);
                 if (result.code != NMO_OK) {
-                    /* Partial data read failure - save what we got */
-                    out_state->attribute_count = i;
-                    goto load_manager_sequence;
+                    out_state->attribute_count = (uint32_t)i;
+                    break;
                 }
             }
 
-            /* Skip sub-chunk sequence if present (only used in non-file mode)
-             * Reference: CKBeObject.cpp lines 548-552
-             * In non-file mode, there's a sub-chunk sequence here that we skip */
-            
-load_manager_sequence:
-            /* C requires a statement after a label */
-            ;
+            if (!is_file) {
+                size_t sub_count = 0;
+                result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &sub_count);
+                if (result.code == NMO_OK && sub_count > 0) {
+                    out_state->attribute_chunks = (nmo_chunk_t **)nmo_arena_alloc(
+                        arena, sizeof(nmo_chunk_t *) * sub_count, _Alignof(nmo_chunk_t *));
+                    if (out_state->attribute_chunks) {
+                        out_state->attribute_chunk_count = (uint32_t)sub_count;
+                        for (size_t i = 0; i < sub_count; ++i) {
+                            (void)nmo_chunk_read_sub_chunk(chunk, &out_state->attribute_chunks[i]);
+                        }
+                    }
+                }
+            }
+
             /* Read manager sequence for attribute types
              * Reference: CKBeObject.cpp lines 555-577 */
             nmo_guid_t manager_guid;
@@ -216,9 +295,7 @@ load_manager_sequence:
                  * Reference: CKBeObject.cpp line 556 checks managerGuid == ATTRIBUTE_MANAGER_GUID */
                 if (manager_guid.d1 == ATTRIBUTE_MANAGER_GUID_D1 && 
                     manager_guid.d2 == ATTRIBUTE_MANAGER_GUID_D2) {
-                    /* Read attribute types from manager sequence 
-                     * Note: Reference uses StartReadSequence() here which seems incorrect,
-                     * it should just read DWORDs directly */
+                    /* Read attribute types from manager sequence */
                     for (size_t i = 0; i < attr_count; i++) {
                         uint32_t attr_type;
                         result = nmo_chunk_read_dword(chunk, &attr_type);
@@ -226,11 +303,11 @@ load_manager_sequence:
                             out_state->attribute_types[i] = attr_type;
                         } else {
                             /* Partial read - save what we got */
-                            out_state->attribute_count = i;
+                            out_state->attribute_count = (uint32_t)i;
                             goto deserialize_done;
                         }
                     }
-                    out_state->attribute_count = attr_count;
+                    out_state->attribute_count = (uint32_t)attr_count;
                 } else {
                     /* Wrong manager GUID - data might be corrupted */
                     goto deserialize_done;
@@ -240,8 +317,26 @@ load_manager_sequence:
                 goto deserialize_done;
             }
         }
+    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES).code == NMO_OK) {
+        /* Legacy attribute payload - preserve raw bytes for round-trip */
+        size_t remaining_dwords = nmo_ckbeobject_identifier_remaining_dwords(chunk);
+        size_t remaining_bytes = remaining_dwords * 4;
+        if (remaining_bytes > 0) {
+            out_state->legacy_attributes_raw = nmo_arena_alloc(arena, remaining_bytes, 1);
+            if (out_state->legacy_attributes_raw) {
+                (void)nmo_ckbeobject_read_raw_bytes(chunk,
+                                                    out_state->legacy_attributes_raw,
+                                                    remaining_bytes);
+                out_state->legacy_attributes_size = remaining_bytes;
+            }
+        }
     }
     /* If identifier not found, attributes section is optional - continue */
+
+    if (is_file && nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SINGLEACTIVITY).code == NMO_OK) {
+        out_state->has_single_activity = 1;
+        (void)nmo_chunk_read_dword(chunk, &out_state->single_activity_flags);
+    }
 
 deserialize_done:
     /* Deserialization completed - all sections are optional */
@@ -281,24 +376,24 @@ static nmo_result_t nmo_ckbeobject_serialize(
         if (result.code != NMO_OK) return result;
     }
 
-    /* Write scripts if present */
-    if (in_state->script_count > 0 && in_state->script_ids) {
+    const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+
+    /* Write scripts if present (file mode only) */
+    if (is_file && in_state->script_count > 0 && in_state->script_ids) {
         nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCRIPTS);
         if (result.code != NMO_OK) return result;
 
-        /* Write script count */
-        result = nmo_chunk_write_dword(out_chunk, in_state->script_count);
+        /* Write script object sequence */
+        result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->script_count);
         if (result.code != NMO_OK) return result;
-
-        /* Write script IDs */
         for (uint32_t i = 0; i < in_state->script_count; i++) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->script_ids[i]);
+            result = nmo_chunk_write_object_sequence_item(out_chunk, in_state->script_ids[i]);
             if (result.code != NMO_OK) return result;
         }
     }
 
-    /* Write priority data if non-zero */
-    if (in_state->priority != 0) {
+    /* Write priority data if non-zero (file mode only) */
+    if (is_file && in_state->priority != 0) {
         nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAS);
         if (result.code != NMO_OK) return result;
 
@@ -308,6 +403,17 @@ static nmo_result_t nmo_ckbeobject_serialize(
 
         /* Write priority value */
         result = nmo_chunk_write_int(out_chunk, in_state->priority);
+        if (result.code != NMO_OK) return result;
+    }
+
+    /* Write legacy attributes if no modern attributes were decoded */
+    if (in_state->legacy_attributes_raw && in_state->legacy_attributes_size > 0 &&
+        in_state->attribute_count == 0) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTES);
+        if (result.code != NMO_OK) return result;
+        result = nmo_chunk_write_buffer_no_size(out_chunk,
+                                                in_state->legacy_attributes_raw,
+                                                in_state->legacy_attributes_size);
         if (result.code != NMO_OK) return result;
     }
 
@@ -327,9 +433,24 @@ static nmo_result_t nmo_ckbeobject_serialize(
             if (result.code != NMO_OK) return result;
         }
 
+        if (!is_file) {
+            result = nmo_chunk_start_sub_chunk_sequence(out_chunk, in_state->attribute_count);
+            if (result.code != NMO_OK) return result;
+            for (uint32_t i = 0; i < in_state->attribute_count; i++) {
+                nmo_chunk_t *sub = NULL;
+                if (in_state->attribute_chunks && i < in_state->attribute_chunk_count) {
+                    sub = in_state->attribute_chunks[i];
+                }
+                if (!sub) {
+                    sub = nmo_chunk_create(arena);
+                }
+                result = nmo_chunk_write_sub_chunk(out_chunk, sub);
+                if (result.code != NMO_OK) return result;
+            }
+        }
+
         /* Write manager sequence for attribute types */
-        /* Note: We use a placeholder GUID - in real implementation this should be ATTRIBUTE_MANAGER_GUID */
-        nmo_guid_t attr_mgr_guid = {0x6BED328B, 0x141F5148}; /* ATTRIBUTE_MANAGER_GUID */
+        nmo_guid_t attr_mgr_guid = {ATTRIBUTE_MANAGER_GUID_D1, ATTRIBUTE_MANAGER_GUID_D2};
         result = nmo_chunk_start_manager_sequence(out_chunk, attr_mgr_guid, in_state->attribute_count);
         if (result.code != NMO_OK) return result;
 
@@ -338,6 +459,14 @@ static nmo_result_t nmo_ckbeobject_serialize(
             result = nmo_chunk_write_dword(out_chunk, in_state->attribute_types[i]);
             if (result.code != NMO_OK) return result;
         }
+    }
+
+    /* Write single activity flags if present (file mode only) */
+    if (is_file && in_state->has_single_activity) {
+        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SINGLEACTIVITY);
+        if (result.code != NMO_OK) return result;
+        result = nmo_chunk_write_dword(out_chunk, in_state->single_activity_flags);
+        if (result.code != NMO_OK) return result;
     }
 
     return nmo_result_ok();
@@ -431,6 +560,8 @@ nmo_result_t nmo_register_ckbeobject_schemas(
                             offsetof(nmo_ckbeobject_state_t, priority), 0);
     nmo_builder_add_field_ex(&builder, "attribute_count", uint32_type,
                             offsetof(nmo_ckbeobject_state_t, attribute_count), 0);
+    nmo_builder_add_field_ex(&builder, "single_activity_flags", uint32_type,
+                            offsetof(nmo_ckbeobject_state_t, single_activity_flags), 0);
     
     /* Attach vtable for optimized read/write */
     nmo_builder_set_vtable(&builder, &nmo_ckbeobject_vtable);

@@ -5,9 +5,6 @@
  * CKMessageManager manages message type registrations in Virtools.
  * Messages are used for communication between behaviors and objects.
  * 
- * This is a simplified schema that only handles message type names.
- * The actual message routing and delivery is runtime functionality.
- * 
  * Based on official Virtools SDK (reference/src/CKMessageManager.cpp:178-250).
  */
 

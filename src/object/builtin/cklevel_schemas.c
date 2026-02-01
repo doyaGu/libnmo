@@ -33,10 +33,10 @@
  * ============================================================================= */
 
 /* From reference/src/CKLevel.cpp */
-#define CK_STATESAVE_LEVELDEFAULTDATA  0x00000001
-#define CK_STATESAVE_LEVELSCENE        0x00000002
-#define CK_STATESAVE_LEVELINACTIVEMAN  0x00000004
-#define CK_STATESAVE_LEVELDUPLICATEMAN 0x00000008
+#define CK_STATESAVE_LEVELINACTIVEMAN  0x00002000
+#define CK_STATESAVE_LEVELDUPLICATEMAN 0x00004000
+#define CK_STATESAVE_LEVELDEFAULTDATA  0x20000000
+#define CK_STATESAVE_LEVELSCENE        0x80000000
 
 /* =============================================================================
  * CKLevel DESERIALIZATION
@@ -78,22 +78,31 @@ static nmo_result_t nmo_cklevel_deserialize(
     /* Section 1: LEVELDEFAULTDATA - Legacy arrays + scene list */
     nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result.code == NMO_OK) {
-        /* Skip two legacy object arrays (both empty in modern files) */
-        int32_t count1, count2;
-        result = nmo_chunk_read_int(chunk, &count1);
+        /* 1) Legacy CKObjectArray (unused) */
+        size_t legacy_count = 0;
+        result = nmo_chunk_read_object_sequence_start(chunk, &legacy_count);
         if (result.code != NMO_OK) return result;
-        
-        result = nmo_chunk_read_int(chunk, &count2);
-        if (result.code != NMO_OK) return result;
+        for (size_t i = 0; i < legacy_count; ++i) {
+            nmo_object_id_t ignored_id = 0;
+            (void)nmo_chunk_read_object_sequence_item(chunk, &ignored_id);
+        }
 
-        /* Read scene list using XObjectPointerArray format */
-        int32_t scene_count;
-        result = nmo_chunk_read_int(chunk, &scene_count);
+        /* 2) Legacy XObjectPointerArray (empty in modern files) */
+        result = nmo_chunk_read_object_sequence_start(chunk, &legacy_count);
+        if (result.code != NMO_OK) return result;
+        for (size_t i = 0; i < legacy_count; ++i) {
+            nmo_object_id_t ignored_id = 0;
+            (void)nmo_chunk_read_object_sequence_item(chunk, &ignored_id);
+        }
+
+        /* 3) Scene list (XObjectPointerArray::Save) */
+        size_t scene_count = 0;
+        result = nmo_chunk_read_object_sequence_start(chunk, &scene_count);
         if (result.code != NMO_OK) return result;
 
         if (scene_count > 0) {
             const uint32_t MAX_SCENES = 10000;
-            if ((uint32_t)scene_count > MAX_SCENES) {
+            if (scene_count > MAX_SCENES) {
                 return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                     NMO_SEVERITY_ERROR, "Scene count exceeds maximum"));
             }
@@ -110,10 +119,10 @@ static nmo_result_t nmo_cklevel_deserialize(
                     NMO_SEVERITY_ERROR, "Failed to allocate scene ID array"));
             }
 
-            for (int32_t i = 0; i < scene_count; i++) {
-                result = nmo_chunk_read_object_id(chunk, &out_state->scene_ids[i]);
+            for (size_t i = 0; i < scene_count; i++) {
+                result = nmo_chunk_read_object_sequence_item(chunk, &out_state->scene_ids[i]);
                 if (result.code != NMO_OK) {
-                    out_state->scene_count = i;
+                    out_state->scene_count = (uint32_t)i;
                     break;
                 }
             }
@@ -270,19 +279,20 @@ static nmo_result_t nmo_cklevel_serialize(
     nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result.code != NMO_OK) return result;
 
-    /* Write two empty legacy arrays */
-    result = nmo_chunk_write_int(out_chunk, 0);
+    /* 1) Legacy CKObjectArray (unused) */
+    result = nmo_chunk_write_object_sequence_start(out_chunk, 0);
     if (result.code != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(out_chunk, 0);
+    /* 2) Legacy XObjectPointerArray (empty in modern files) */
+    result = nmo_chunk_write_object_sequence_start(out_chunk, 0);
     if (result.code != NMO_OK) return result;
 
-    /* Write scene list */
-    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->scene_count);
+    /* 3) Scene list */
+    result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->scene_count);
     if (result.code != NMO_OK) return result;
 
     for (uint32_t i = 0; i < in_state->scene_count; i++) {
-        result = nmo_chunk_write_object_id(out_chunk, in_state->scene_ids[i]);
+        result = nmo_chunk_write_object_sequence_item(out_chunk, in_state->scene_ids[i]);
         if (result.code != NMO_OK) return result;
     }
 

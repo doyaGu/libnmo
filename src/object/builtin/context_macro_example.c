@@ -1,10 +1,9 @@
 /**
  * @file context_macro_example.c
- * @brief Phase 5 improvement example: Using context macros for cleaner code
+ * @brief Phase 5 improvement example: Schema macro cleanup
  * 
- * This file demonstrates the new NMO_SCHEMA_CONTEXT macro that reduces
- * struct type repetition by 15%, improving on Phase 3's already impressive
- * 45-70% code reduction.
+ * This file demonstrates schema macro usage aligned with the current
+ * public header definitions in include/object/nmo_schema_macros.h.
  */
 
 #include "object/nmo_schema_macros.h"
@@ -38,12 +37,11 @@ typedef struct nmo_vector_new {
     float z;
 } nmo_vector_new_t;
 
-/* New way: Set context once, use FIELD shorthand */
+/* New way: Use the same macro syntax without extra context helpers */
 NMO_DECLARE_SCHEMA(Vector3, nmo_vector_new_t) {
-    NMO_SCHEMA_CONTEXT(nmo_vector_new_t)  /* Set context once */
-    FIELD(x, f32),                         /* Struct type inferred */
-    FIELD(y, f32),                         /* Struct type inferred */
-    FIELD(z, f32)                          /* Struct type inferred */
+    SCHEMA_FIELD(x, f32, nmo_vector_new_t),
+    SCHEMA_FIELD(y, f32, nmo_vector_new_t),
+    SCHEMA_FIELD(z, f32, nmo_vector_new_t)
 };
 
 /* Code reduction: 3 lines -> 1 line of context setup */
@@ -61,15 +59,14 @@ typedef struct nmo_transform {
 } nmo_transform_t;
 
 /* Verify size at compile time */
-NMO_VERIFY_SCHEMA_SIZE(nmo_transform_t, 40);  /* 3*4 + 4*4 + 3*4 + 4 = 40 */
+NMO_VERIFY_SCHEMA_SIZE(nmo_transform_t, 44);  /* 3*4 + 4*4 + 3*4 + 4 = 44 */
 NMO_VERIFY_SCHEMA_ALIGN(nmo_transform_t, 4);
 
 NMO_DECLARE_SCHEMA(Transform, nmo_transform_t) {
-    NMO_SCHEMA_CONTEXT(nmo_transform_t)
-    FIELD_ANNOTATED(position, f32[3], NMO_ANNOTATION_POSITION),
-    FIELD_ANNOTATED(rotation, f32[4], NMO_ANNOTATION_ROTATION),
-    FIELD_ANNOTATED(scale, f32[3], NMO_ANNOTATION_SCALE),
-    FIELD(flags, u32)
+    SCHEMA_FIELD_FULL(position, f32, nmo_transform_t, NMO_FIELD_ARRAY, 0, 0, 0),
+    SCHEMA_FIELD_FULL(rotation, f32, nmo_transform_t, NMO_FIELD_ARRAY, 0, 0, 0),
+    SCHEMA_FIELD_FULL(scale, f32, nmo_transform_t, NMO_FIELD_ARRAY, 0, 0, 0),
+    SCHEMA_FIELD(flags, u32, nmo_transform_t)
 };
 
 /* ============================================================================
@@ -84,11 +81,10 @@ typedef struct nmo_legacy_data {
 } nmo_legacy_data_t;
 
 NMO_DECLARE_SCHEMA(LegacyData, nmo_legacy_data_t) {
-    NMO_SCHEMA_CONTEXT(nmo_legacy_data_t)
-    FIELD(version, u32),
-    FIELD_VERSIONED(old_field, f32, 0, 5),  /* Added v0, removed v5 */
-    FIELD_VERSIONED(new_field, f32, 5, 0),  /* Added v5, never removed */
-    FIELD(padding, u8[8])
+    SCHEMA_FIELD(version, u32, nmo_legacy_data_t),
+    SCHEMA_FIELD_FULL(old_field, f32, nmo_legacy_data_t, NMO_FIELD_NONE, 0, 0, 5),
+    SCHEMA_FIELD_FULL(new_field, f32, nmo_legacy_data_t, NMO_FIELD_NONE, 5, 0, 0),
+    SCHEMA_FIELD_FULL(padding, u8, nmo_legacy_data_t, NMO_FIELD_ARRAY, 0, 0, 0)
 };
 
 /* ============================================================================
@@ -110,11 +106,19 @@ _Static_assert(offsetof(nmo_particle_t, color) == 24, "color offset");
 _Static_assert(offsetof(nmo_particle_t, lifetime) == 40, "lifetime offset");
 
 static const nmo_schema_field_descriptor_t particle_fields[] = {
-    SCHEMA_FIELD_VERIFIED(position, f32[3], nmo_particle_t),
-    SCHEMA_FIELD_VERIFIED(velocity, f32[3], nmo_particle_t),
-    SCHEMA_FIELD_VERIFIED(color, f32[4], nmo_particle_t),
-    SCHEMA_FIELD_VERIFIED(lifetime, f32, nmo_particle_t)
+    SCHEMA_FIELD_FULL(position, f32, nmo_particle_t, NMO_FIELD_ARRAY, 0, 0, 0),
+    SCHEMA_FIELD_FULL(velocity, f32, nmo_particle_t, NMO_FIELD_ARRAY, 0, 0, 0),
+    SCHEMA_FIELD_FULL(color, f32, nmo_particle_t, NMO_FIELD_ARRAY, 0, 0, 0),
+    SCHEMA_FIELD(lifetime, f32, nmo_particle_t)
 };
+
+void nmo_context_macro_example_silence(void) {
+    (void)vector_old_fields;
+    (void)Vector3_fields;
+    (void)Transform_fields;
+    (void)LegacyData_fields;
+    (void)particle_fields;
+}
 
 /* ============================================================================
  * Code Reduction Statistics
@@ -126,11 +130,10 @@ static const nmo_schema_field_descriptor_t particle_fields[] = {
  *   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  *   39 characters per field (excluding whitespace)
  *
- * Context FIELD macro (Phase 5):
- *   NMO_SCHEMA_CONTEXT(nmo_vector_t)  // One-time cost
- *   FIELD(x, f32),
- *   ^^^^^^^^^^^^^
- *   13 characters per field
+ * Simplified macro usage (Phase 5):
+ *   SCHEMA_FIELD(x, f32, nmo_vector_t),
+ *   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ *   33 characters per field
  *
  * Savings: (39 - 13) / 39 = 66% per field after first
  * Overall: ~60% code reduction for multi-field structs
@@ -156,17 +159,15 @@ static const nmo_schema_field_descriptor_t particle_fields[] = {
  */
 
 /* ============================================================================
- * Migration Guide: Phase 3 �?Phase 5
+ * Migration Guide: Phase 3 → Phase 5
  * ============================================================================ */
 
 /*
  * Step 1: Identify structs with 3+ fields (best ROI)
  *
- * Step 2: Add NMO_SCHEMA_CONTEXT after NMO_DECLARE_SCHEMA
+ * Step 2: Keep SCHEMA_FIELD / SCHEMA_FIELD_EX
  *
- * Step 3: Replace SCHEMA_FIELD �?FIELD
- *         Replace SCHEMA_FIELD_EX �?FIELD_ANNOTATED
- *         Replace SCHEMA_FIELD_VERSIONED �?FIELD_VERSIONED
+ * Step 3: Use SCHEMA_FIELD_FULL for arrays + version ranges
  *
  * Step 4: Add compile-time verifications:
  *         NMO_VERIFY_SCHEMA_SIZE(type, expected_bytes)

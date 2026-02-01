@@ -329,14 +329,16 @@ NMO_API nmo_result_t nmo_register_enum_from_descriptor(
  *
  * Example:
  * ```c
- * NMO_REGISTER_CK_CLASS(registry, arena, Object);
- * // Expands to: NMO_REGISTER_SCHEMA(registry, arena, CKObject,
- * //                                  nmo_ckobject_state_t, &ckobject_vtable)
+ * NMO_REGISTER_CK_CLASS(registry, arena, Object, nmo_ckobject_state_t, &ckobject_vtable);
  * ```
  */
-#define NMO_REGISTER_CK_CLASS(reg, arena, classname) \
+#define NMO_REGISTER_CK_CLASS(reg, arena, classname, struct_type, vtbl) \
     nmo_register_schema_from_descriptor(reg, arena, \
         "CK" #classname, \
+        sizeof(struct_type), _Alignof(struct_type), \
+        CK##classname##_fields, \
+        sizeof(CK##classname##_fields) / sizeof(CK##classname##_fields[0]), \
+        vtbl)
 /* ============================================================================
  * Phase 5 Improvements: Context Macros and Debug Tools
  * ============================================================================ */

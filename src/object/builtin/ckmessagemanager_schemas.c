@@ -70,7 +70,12 @@ static nmo_result_t nmo_ckmessagemanager_deserialize(
     result = nmo_chunk_read_int(chunk, &type_count);
     if (result.code != NMO_OK) return result;
 
-    if (type_count <= 0) {
+    if (type_count < 0) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+            NMO_SEVERITY_ERROR, "Invalid message type count"));
+    }
+
+    if (type_count == 0) {
         return nmo_result_ok();
     }
 
@@ -123,8 +128,23 @@ static nmo_result_t nmo_ckmessagemanager_serialize(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_serialize"));
     }
 
-    /* Don't write if no message types */
-    if (in_state->message_type_count == 0) {
+    if (in_state->message_type_count > 0 && in_state->message_type_names == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Message type names missing"));
+    }
+
+    /* Don't write if no used message types (all names empty) */
+    uint32_t used_count = 0;
+    for (uint32_t i = 0; i < in_state->message_type_count; i++) {
+        const char *name = in_state->message_type_names
+            ? in_state->message_type_names[i]
+            : NULL;
+        if (name && name[0] != '\0') {
+            used_count++;
+            break;
+        }
+    }
+    if (used_count == 0) {
         return nmo_result_ok();
     }
 

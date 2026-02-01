@@ -22,6 +22,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_arena_array.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -32,47 +33,61 @@
  * ============================================================================= */
 
 /**
- * @brief Read bitmap data from chunk (simplified)
- * 
- * Full implementation would handle palette, pixel formats, compression, etc.
- * For now, preserve as raw buffer for round-trip.
+ * @brief Copy identifier payload without mutating parser state
  */
-static nmo_result_t read_bitmap_data(
+static nmo_result_t nmo_sprite_copy_identifier_payload(
     nmo_chunk_t *chunk,
+    uint32_t identifier,
     nmo_arena_t *arena,
-    nmo_ckbitmapdata_t *bitmap)
+    uint8_t **out_data,
+    size_t *out_size)
 {
-    /* Bitmap data reading is complex (CKBitmapData::ReadFromChunk in SDK)
-     * For Phase 5, preserve entire bitmap section as raw data */
-    
-    /* Try to read dimensions if present (identifier 0x20000 from Save) */
-    nmo_result_t seek_result = nmo_chunk_seek_identifier(chunk, 0x20000);
-    if (seek_result.code == NMO_OK) {
-        nmo_result_t result = nmo_chunk_read_dword(chunk, &bitmap->width);
-        if (result.code != NMO_OK) return result;
-        result = nmo_chunk_read_dword(chunk, &bitmap->height);
-        if (result.code != NMO_OK) return result;
+    if (!chunk || !out_data || !out_size) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sprite_copy_identifier_payload"));
     }
-    
-    /* Preserve entire bitmap chunk section as raw data */
-    size_t end_pos = nmo_chunk_get_position(chunk);
-    size_t chunk_size = nmo_chunk_get_data_size(chunk);
-    
-    if (end_pos < chunk_size) {
-        size_t remaining = chunk_size - end_pos;
-        bitmap->raw_data = (uint8_t *)nmo_arena_alloc(arena, remaining, 1);
-        if (bitmap->raw_data) {
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk,
-                bitmap->raw_data, remaining);
-            if (bytes_read == remaining) {
-                bitmap->raw_data_size = remaining;
-            } else {
-                bitmap->raw_data = NULL;
-                bitmap->raw_data_size = 0;
-            }
+
+    *out_data = NULL;
+    *out_size = 0;
+
+    if (chunk->data.count == 0 || !chunk->data.data) {
+        return nmo_result_ok();
+    }
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t pos = 0;
+    while (pos < chunk->data.count && data[pos] != identifier) {
+        size_t next_pos = data[pos + 1];
+        if (next_pos == 0 || next_pos == pos) {
+            break;
         }
+        pos = next_pos;
     }
-    
+
+    if (pos >= chunk->data.count || data[pos] != identifier) {
+        return nmo_result_ok();
+    }
+
+    size_t next = data[pos + 1];
+    if (next == 0 || next > chunk->data.count) {
+        next = chunk->data.count;
+    }
+
+    if (next <= pos + 2) {
+        return nmo_result_ok();
+    }
+
+    size_t dwords = next - (pos + 2);
+    size_t bytes = dwords * sizeof(uint32_t);
+    uint8_t *payload = (uint8_t *)nmo_arena_alloc(arena, bytes, 1);
+    if (!payload) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
+            NMO_SEVERITY_ERROR, "Failed to allocate sprite bitmap payload"));
+    }
+
+    memcpy(payload, &data[pos + 2], bytes);
+    *out_data = payload;
+    *out_size = bytes;
     return nmo_result_ok();
 }
 
@@ -107,16 +122,20 @@ static nmo_result_t deserialize_file_backed(
          * No bitmap payload should be present in this chunk. */
         out_state->has_bitmap_data = false;
     } else {
-        /* No sprite reference - read embedded bitmap payload */
+        /* No sprite reference - read embedded bitmap payloads */
         out_state->has_sprite_ref = false;
         out_state->has_bitmap_data = true;
-        
-        /* Read bitmap data (identifiers: 0x200000, 0x10000000, 0x800000, 0x400000, 0x40000) */
-        result = read_bitmap_data(chunk, arena, &out_state->bitmap_data);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to read bitmap data"));
-        }
+
+        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_PALETTE,
+            arena, &out_state->bitmap_data.palette_data, &out_state->bitmap_data.palette_size);
+        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_SYSTEM_COPY,
+            arena, &out_state->bitmap_data.system_copy_data, &out_state->bitmap_data.system_copy_size);
+        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_VIDEO_BACKUP,
+            arena, &out_state->bitmap_data.video_backup_data, &out_state->bitmap_data.video_backup_size);
+        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_PIXELS,
+            arena, &out_state->bitmap_data.pixels_data, &out_state->bitmap_data.pixels_size);
+        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_RAW,
+            arena, &out_state->bitmap_data.raw_chunk_data, &out_state->bitmap_data.raw_chunk_size);
     }
     
     /* Read transparency (identifier 0x20000) */
@@ -159,24 +178,13 @@ static nmo_result_t deserialize_file_backed(
                 NMO_SEVERITY_ERROR, "Failed to read save options"));
         }
         
-        /* Read CKBitmapProperties blob (v7+, size varies) */
-        uint32_t data_version = nmo_chunk_get_data_version(chunk);
-        if (data_version > 6) {
-            /* Read properties blob (size not known, read until next identifier) */
-            size_t current_pos = nmo_chunk_get_position(chunk);
-            size_t chunk_size = nmo_chunk_get_data_size(chunk);
-            if (current_pos < chunk_size) {
-                /* For simplicity, read remaining data as properties blob */
-                size_t remaining = chunk_size - current_pos;
-                out_state->bitmap_properties = (uint8_t *)nmo_arena_alloc(arena, remaining, 1);
-                if (out_state->bitmap_properties) {
-                    size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk,
-                        out_state->bitmap_properties, remaining);
-                    if (bytes_read == remaining) {
-                        out_state->bitmap_properties_size = remaining;
-                    }
-                }
-            }
+        /* Read CKBitmapProperties blob (size-prefixed buffer) */
+        void *props = NULL;
+        size_t props_size = 0;
+        result = nmo_chunk_read_buffer(chunk, &props, &props_size);
+        if (result.code == NMO_OK && props && props_size > 0) {
+            out_state->bitmap_properties = (uint8_t *)props;
+            out_state->bitmap_properties_size = props_size;
         }
     }
     
@@ -267,36 +275,16 @@ nmo_result_t nmo_cksprite_deserialize(
         return result;
     }
     
-    /* Detect file-backed vs chunk-only by checking for bitmap identifiers
-     * File-backed: has dimensions (0x20000 from Save) or bitmap payloads
-     * Chunk-only: only lightweight state identifiers */
-    
-    /* For now, always use file-backed path (more complete) */
-    /* TODO: Add heuristic to detect chunk-only case */
-    result = deserialize_file_backed(chunk, arena, out_state);
+    /* Use chunk option to select file-backed vs chunk-only path */
+    if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+        result = deserialize_file_backed(chunk, arena, out_state);
+    } else {
+        result = deserialize_chunk_only(chunk, arena, out_state);
+    }
     if (result.code != NMO_OK) {
         return result;
     }
-    
-    /* Preserve remaining data as raw tail for round-trip */
-    size_t current_pos = nmo_chunk_get_position(chunk);
-    size_t chunk_size = nmo_chunk_get_data_size(chunk);
-    
-    if (current_pos < chunk_size) {
-        size_t remaining = chunk_size - current_pos;
-        out_state->raw_tail = (uint8_t *)nmo_arena_alloc(arena, remaining, 1);
-        if (out_state->raw_tail) {
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk,
-                out_state->raw_tail, remaining);
-            if (bytes_read == remaining) {
-                out_state->raw_tail_size = remaining;
-            } else {
-                out_state->raw_tail = NULL;
-                out_state->raw_tail_size = 0;
-            }
-        }
-    }
-    
+
     return nmo_result_ok();
 }
 
@@ -332,14 +320,46 @@ nmo_result_t nmo_cksprite_serialize(
         result = nmo_chunk_write_object_id(out_chunk, in_state->sprite_ref_id);
         if (result.code != NMO_OK) return result;
     } else if (in_state->has_bitmap_data) {
-        /* Write bitmap data (simplified - preserve raw data for round-trip) */
-        if (in_state->bitmap_data.raw_data && in_state->bitmap_data.raw_data_size > 0) {
-            result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->bitmap_data.raw_data,
-                in_state->bitmap_data.raw_data_size);
-            if (result.code != NMO_OK) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                    NMO_SEVERITY_ERROR, "Failed to write bitmap data"));
-            }
+        /* Write bitmap payloads in SDK order */
+        if (in_state->bitmap_data.palette_data && in_state->bitmap_data.palette_size > 0) {
+            result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_PALETTE);
+            if (result.code != NMO_OK) return result;
+            result = nmo_chunk_write_buffer_no_size(out_chunk,
+                in_state->bitmap_data.palette_data,
+                in_state->bitmap_data.palette_size);
+            if (result.code != NMO_OK) return result;
+        }
+        if (in_state->bitmap_data.system_copy_data && in_state->bitmap_data.system_copy_size > 0) {
+            result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_SYSTEM_COPY);
+            if (result.code != NMO_OK) return result;
+            result = nmo_chunk_write_buffer_no_size(out_chunk,
+                in_state->bitmap_data.system_copy_data,
+                in_state->bitmap_data.system_copy_size);
+            if (result.code != NMO_OK) return result;
+        }
+        if (in_state->bitmap_data.video_backup_data && in_state->bitmap_data.video_backup_size > 0) {
+            result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_VIDEO_BACKUP);
+            if (result.code != NMO_OK) return result;
+            result = nmo_chunk_write_buffer_no_size(out_chunk,
+                in_state->bitmap_data.video_backup_data,
+                in_state->bitmap_data.video_backup_size);
+            if (result.code != NMO_OK) return result;
+        }
+        if (in_state->bitmap_data.pixels_data && in_state->bitmap_data.pixels_size > 0) {
+            result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_PIXELS);
+            if (result.code != NMO_OK) return result;
+            result = nmo_chunk_write_buffer_no_size(out_chunk,
+                in_state->bitmap_data.pixels_data,
+                in_state->bitmap_data.pixels_size);
+            if (result.code != NMO_OK) return result;
+        }
+        if (in_state->bitmap_data.raw_chunk_data && in_state->bitmap_data.raw_chunk_size > 0) {
+            result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_RAW);
+            if (result.code != NMO_OK) return result;
+            result = nmo_chunk_write_buffer_no_size(out_chunk,
+                in_state->bitmap_data.raw_chunk_data,
+                in_state->bitmap_data.raw_chunk_size);
+            if (result.code != NMO_OK) return result;
         }
     }
     
@@ -370,21 +390,12 @@ nmo_result_t nmo_cksprite_serialize(
         
         /* Write bitmap properties blob (v7+) */
         if (in_state->bitmap_properties && in_state->bitmap_properties_size > 0) {
-            result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->bitmap_properties,
+            result = nmo_chunk_write_buffer(out_chunk, in_state->bitmap_properties,
                 in_state->bitmap_properties_size);
             if (result.code != NMO_OK) {
                 return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
                     NMO_SEVERITY_ERROR, "Failed to write bitmap properties"));
             }
-        }
-    }
-    
-    /* Write raw tail if present */
-    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
-        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
-        if (result.code != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Failed to write raw tail"));
         }
     }
     

@@ -18,6 +18,7 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk.h"
 #include "object/nmo_schema_registry.h"
+#include "object/nmo_ckbeobject_schemas.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -159,48 +160,31 @@ typedef enum nmo_blend_factor {
  * Size: ~200 bytes
  */
 typedef struct nmo_ck_material_state {
-    /* Colors (64 bytes) */
-    nmo_material_colors_t colors;
-    
-    /* Specular power (4 bytes) */
-    float specular_power;                /**< Specular highlight power (0 = disabled, default 0) */
-    
-    /* Texture references (up to 4 textures, 16 bytes) */
-    nmo_object_id_t texture_ids[4];      /**< Texture object IDs (0 = none) */
-    uint32_t texture_count;              /**< Number of active textures */
-    
-    /* Texture settings (40 bytes) */
-    nmo_texture_blend_mode_t texture_blend_mode;      /**< Texture blend mode */
-    nmo_texture_filter_mode_t texture_min_mode;       /**< Minification filter */
-    nmo_texture_filter_mode_t texture_mag_mode;       /**< Magnification filter */
-    nmo_texture_address_mode_t texture_address_mode;  /**< Address mode */
-    uint32_t texture_border_color;                    /**< Border color (ARGB) */
-    
-    /* Rendering modes (16 bytes) */
-    nmo_shade_mode_t shade_mode;         /**< Shading mode */
-    nmo_fill_mode_t fill_mode;           /**< Fill mode */
-    
-    /* Alpha testing (8 bytes) */
-    bool alpha_test_enabled;             /**< Enable alpha testing */
-    nmo_alpha_func_t alpha_func;         /**< Alpha comparison function */
-    uint8_t alpha_ref;                   /**< Alpha reference value (0-255) */
-    
-    /* Blending (12 bytes) */
-    bool blend_enabled;                  /**< Enable blending */
-    nmo_blend_factor_t src_blend;        /**< Source blend factor */
-    nmo_blend_factor_t dest_blend;       /**< Destination blend factor */
-    
-    /* Z-buffer control (4 bytes) */
-    bool zwrite_enabled;                 /**< Enable Z-buffer writes (default true) */
-    bool ztest_enabled;                  /**< Enable Z-buffer testing (default true) */
-    
-    /* Two-sided rendering (4 bytes) */
-    bool two_sided;                      /**< Render both sides (default false) */
-    
-    /* Presence flags (4 bytes) */
-    bool has_colors;                     /**< Colors data present */
-    bool has_textures;                   /**< Texture data present */
-    bool has_rendering_settings;         /**< Rendering settings present */
+    nmo_ckbeobject_state_t base;
+
+    /* Packed colors (ARGB) */
+    uint32_t diffuse_color;
+    uint32_t ambient_color;
+    uint32_t specular_color;
+    uint32_t emissive_color;
+
+    /* Specular power */
+    float specular_power;
+
+    /* Texture references */
+    nmo_object_id_t texture_ids[4];
+
+    /* Packed render settings */
+    uint32_t texture_border_color;
+    uint32_t packed_modes;
+    uint32_t packed_flags;
+
+    /* Effect data */
+    uint32_t effect;
+    nmo_object_id_t effect_parameter_id;
+    uint8_t has_effect;
+    uint8_t has_effect_param;
+    uint8_t has_additional_textures;
 } nmo_ck_material_state_t;
 
 /* ========================================================================
@@ -208,10 +192,10 @@ typedef struct nmo_ck_material_state {
  * ======================================================================== */
 
 /* Material identifiers (values TBD based on reverse engineering) */
-#define NMO_CKMATERIAL_IDENTIFIER_COLORS        0x00001000
+#define NMO_CKMATERIAL_IDENTIFIER_DATA          0x00001000
 #define NMO_CKMATERIAL_IDENTIFIER_TEXTURES      0x00002000
-#define NMO_CKMATERIAL_IDENTIFIER_RENDERING     0x00004000
-#define NMO_CKMATERIAL_IDENTIFIER_EXTENDED      0x00008000
+#define NMO_CKMATERIAL_IDENTIFIER_EFFECT        0x00004000
+#define NMO_CKMATERIAL_IDENTIFIER_EFFECT_PARAM  0x00010000
 
 /* ========================================================================
  * Function Typedefs

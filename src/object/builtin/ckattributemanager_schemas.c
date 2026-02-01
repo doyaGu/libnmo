@@ -200,6 +200,15 @@ static nmo_result_t nmo_ckattributemanager_serialize(
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->attribute_count);
     if (result.code != NMO_OK) return result;
 
+    if (in_state->category_count > 0 && in_state->categories == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Attribute categories missing"));
+    }
+    if (in_state->attribute_count > 0 && in_state->attributes == NULL) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Attribute descriptors missing"));
+    }
+
     /* Write categories */
     for (uint32_t i = 0; i < in_state->category_count; i++) {
         const nmo_ckattribute_category_t *cat = &in_state->categories[i];

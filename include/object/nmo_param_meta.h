@@ -40,6 +40,8 @@ struct nmo_param_meta {
     nmo_param_operation_t operation;    /**< Operation type */
     uint32_t flags;                     /**< Parameter flags */
     size_t size;                        /**< Size in bytes */
+    const char *ui_name;                /**< Optional UI display name */
+    const char *description;            /**< Optional description */
 };
 
 /**

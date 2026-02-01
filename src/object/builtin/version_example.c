@@ -9,8 +9,8 @@
  *
  * VERSIONING STRATEGY:
  * - Each version gets its own schema registration
- * - Version ranges are specified via since_version/deprecated_version/removed_version
- * - At load time, nmo_schema_registry_find_for_version() selects the right variant
+ * - Field-level version ranges are encoded in field descriptors
+ * - Selection of a schema variant is handled by higher-level logic
  *
  * EXAMPLE SCENARIO:
  * - MeshData_v2: Used in Virtools 2.x-4.x (versions 2-4)
@@ -18,7 +18,6 @@
  */
 
 #include "object/nmo_schema.h"
-#include "object/nmo_schema_builder.h"
 #include "object/nmo_schema_registry.h"
 #include "object/nmo_schema_macros.h"
 #include "core/nmo_error.h"
@@ -70,8 +69,7 @@ typedef struct mesh_data_v5 {
 /**
  * @brief Legacy mesh schema (v2-v4)
  *
- * Available in file versions 2-4, deprecated in version 5 (but still readable
- * for backward compatibility if needed).
+ * Field-level version metadata captures when fields appeared or were removed.
  */
 NMO_DECLARE_SCHEMA(MeshData_v2, mesh_data_v2_t) {
     SCHEMA_FIELD(vertex_count, u32, mesh_data_v2_t),
@@ -83,15 +81,15 @@ NMO_DECLARE_SCHEMA(MeshData_v2, mesh_data_v2_t) {
 /**
  * @brief Modern mesh schema (v5+)
  *
- * Introduced in version 5, used for all subsequent versions.
+ * Field-level version metadata can be used to indicate v5+ additions.
  */
 NMO_DECLARE_SCHEMA(MeshData_v5, mesh_data_v5_t) {
     SCHEMA_FIELD(vertex_count, u32, mesh_data_v5_t),
     SCHEMA_FIELD(face_count, u32, mesh_data_v5_t),
-    SCHEMA_FIELD(channel_count, u32, mesh_data_v5_t),
-    SCHEMA_FIELD(material_count, u32, mesh_data_v5_t),
-    SCHEMA_FIELD(bone_count, u32, mesh_data_v5_t),
-    SCHEMA_FIELD(morph_target_count, u32, mesh_data_v5_t),
+    SCHEMA_FIELD_VERSIONED(channel_count, u32, mesh_data_v5_t, 5, 0),
+    SCHEMA_FIELD_VERSIONED(material_count, u32, mesh_data_v5_t, 5, 0),
+    SCHEMA_FIELD_VERSIONED(bone_count, u32, mesh_data_v5_t, 5, 0),
+    SCHEMA_FIELD_VERSIONED(morph_target_count, u32, mesh_data_v5_t, 5, 0),
     SCHEMA_FIELD(flags, u32, mesh_data_v5_t),
     SCHEMA_FIELD(reserved, u32, mesh_data_v5_t)
 };
@@ -107,44 +105,7 @@ static nmo_result_t register_mesh_v2_schema(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena)
 {
-    /* Create builder */
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena,
-        "MeshData",  /* Base name (no _v2 suffix for lookup) */
-        sizeof(mesh_data_v2_t),
-        _Alignof(mesh_data_v2_t));
-    
-    /* Set version range: since=2, deprecated=5, removed=0 */
-    nmo_builder_set_since_version(&builder, 2);
-    nmo_builder_set_deprecated_version(&builder, 5);
-    /* Note: not removed (removed_version=0) so it can still be loaded for migration */
-    
-    /* Add fields from descriptor */
-    for (size_t i = 0; i < sizeof(MeshData_v2_fields) / sizeof(MeshData_v2_fields[0]); i++) {
-        const nmo_schema_field_descriptor_t *desc = &MeshData_v2_fields[i];
-        const nmo_schema_type_t *field_type = 
-            nmo_schema_registry_find_by_name(registry, desc->type_name);
-        
-        if (field_type == NULL) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-                NMO_SEVERITY_ERROR, "Field type not found"));
-        }
-        
-        nmo_schema_field_t field = {
-            .name = desc->name,
-            .type = field_type,
-            .offset = desc->offset,
-            .annotations = desc->annotations,
-            .since_version = desc->since_version,
-            .deprecated_version = desc->deprecated_version,
-            .removed_version = desc->removed_version
-        };
-        
-        nmo_builder_add_field_manual(&builder, &field);
-    }
-    
-    /* Build and register */
-    return nmo_builder_build(&builder, registry);
+    return NMO_REGISTER_SIMPLE_SCHEMA(registry, arena, MeshData_v2, mesh_data_v2_t);
 }
 
 /**
@@ -154,51 +115,15 @@ static nmo_result_t register_mesh_v5_schema(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena)
 {
-    /* Create builder */
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena,
-        "MeshData",  /* Same base name as v2 */
-        sizeof(mesh_data_v5_t),
-        _Alignof(mesh_data_v5_t));
-    
-    /* Set version range: since=5, never deprecated/removed */
-    nmo_builder_set_since_version(&builder, 5);
-    /* deprecated_version=0 and removed_version=0 means "still current" */
-    
-    /* Add fields from descriptor */
-    for (size_t i = 0; i < sizeof(MeshData_v5_fields) / sizeof(MeshData_v5_fields[0]); i++) {
-        const nmo_schema_field_descriptor_t *desc = &MeshData_v5_fields[i];
-        const nmo_schema_type_t *field_type = 
-            nmo_schema_registry_find_by_name(registry, desc->type_name);
-        
-        if (field_type == NULL) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-                NMO_SEVERITY_ERROR, "Field type not found"));
-        }
-        
-        nmo_schema_field_t field = {
-            .name = desc->name,
-            .type = field_type,
-            .offset = desc->offset,
-            .annotations = desc->annotations,
-            .since_version = desc->since_version,
-            .deprecated_version = desc->deprecated_version,
-            .removed_version = desc->removed_version
-        };
-        
-        nmo_builder_add_field_manual(&builder, &field);
-    }
-    
-    /* Build and register */
-    return nmo_builder_build(&builder, registry);
+    return NMO_REGISTER_SIMPLE_SCHEMA(registry, arena, MeshData_v5, mesh_data_v5_t);
 }
 
 /**
  * @brief Register all mesh data schema variants
  *
  * This function demonstrates how to register multiple versions of the same
- * type. The registry will contain both variants, and at load time, the
- * appropriate one is selected based on file version.
+ * type. The registry will contain both variants, and selection is performed
+ * by higher-level logic based on file version.
  *
  * @param registry Schema registry
  * @param arena Arena for allocations
@@ -232,7 +157,7 @@ nmo_result_t nmo_register_multi_version_example(
 /**
  * @brief Example: Load mesh data based on file version
  *
- * This shows how the version management system works at runtime.
+ * This shows how higher-level code can select a schema variant by name.
  */
 #if 0
 nmo_result_t load_mesh_data(
@@ -242,16 +167,13 @@ nmo_result_t load_mesh_data(
     uint32_t file_version,
     void **out_data)
 {
-    /* Find the right schema variant for this file version */
-    const nmo_schema_type_t *schema = 
-        nmo_schema_registry_find_for_version(registry, "MeshData", file_version);
-    
+    const char *schema_name = (file_version < 5) ? "MeshData_v2" : "MeshData_v5";
+    const nmo_schema_type_t *schema = nmo_schema_registry_find_by_name(registry, schema_name);
     if (schema == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
             NMO_SEVERITY_ERROR, "No compatible MeshData schema for this version"));
     }
     
-    /* Allocate buffer for the correct version */
     void *data = nmo_arena_alloc(arena, schema->size, schema->align);
     if (data == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,

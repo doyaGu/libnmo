@@ -6,7 +6,7 @@
  * 
  * Serialization format (from CK2_3D.dll analysis):
  * 
- * Modern format (version â‰?):
+ * Modern format (version ï¿½?):
  * - Identifier 0x400000: Core light data
  *   - DWORD: Type (low 8 bits) | Flags (high 24 bits)
  *   - DWORD: Diffuse color (packed ARGB)
@@ -71,7 +71,7 @@ void nmo_vx_color_from_argb(uint32_t argb, nmo_vx_color_t *out_color) {
 uint32_t nmo_vx_color_to_argb(const nmo_vx_color_t *color) {
     if (!color) return 0;
     
-    uint8_t a = (uint8_t)(color->a * 255.0f);
+    uint8_t a = 0xFF;
     uint8_t r = (uint8_t)(color->r * 255.0f);
     uint8_t g = (uint8_t)(color->g * 255.0f);
     uint8_t b = (uint8_t)(color->b * 255.0f);

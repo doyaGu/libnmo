@@ -20,18 +20,6 @@ static const char *get_class_name(nmo_class_id_t class_id)
     return nmo_ckclass_get_name_by_id(class_id);
 }
 
-/**
- * @brief Get parent name by class ID (internal helper)
- */
-static const char *get_parent_name(nmo_class_id_t class_id)
-{
-    const char *class_name = get_class_name(class_id);
-    if (!class_name) {
-        return NULL;
-    }
-    return nmo_ckclass_get_parent(class_name);
-}
-
 /* =============================================================================
  * CLASS HIERARCHY QUERIES
  * ============================================================================= */

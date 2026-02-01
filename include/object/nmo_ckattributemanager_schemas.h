@@ -9,8 +9,6 @@
  * - Categories: Groups of related attributes
  * - Attributes: Individual attribute type definitions
  * 
- * This is a simplified schema focusing on attribute/category metadata.
- * 
  * Based on official Virtools SDK (reference/src/CKAttributeManager.cpp:726-890).
  */
 
@@ -120,7 +118,6 @@ typedef struct nmo_ckattribute_descriptor {
  * Structure:
  * - Categories define groupings of attributes
  * - Attributes define individual property types
- * - Conversion tables map old indices to new (for file loading)
  * 
  * Reference: reference/src/CKAttributeManager.cpp:726-890
  */

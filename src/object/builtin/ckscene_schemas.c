@@ -35,6 +35,12 @@
 #define CK_STATESAVE_SCENELAUNCHED       0x00000002
 #define CK_STATESAVE_SCENERENDERSETTINGS 0x00000004
 
+/* Scene object flags (CKEnums.h) */
+#define CK_SCENEOBJECT_START_ACTIVATE   0x0001
+#define CK_SCENEOBJECT_ACTIVE           0x0008
+#define CK_SCENEOBJECT_START_DEACTIVATE 0x0010
+#define CK_SCENEOBJECT_START_RESET      0x0040
+
 /* =============================================================================
  * CKScene DESERIALIZATION
  * ============================================================================= */
@@ -115,7 +121,8 @@ static nmo_result_t nmo_ckscene_deserialize(
             if (result.code != NMO_OK) return result;
 
             for (int32_t i = 0; i < desc_count; i++) {
-                result = nmo_chunk_read_object_id(chunk, &out_state->object_descs[i].object_id);
+                result = nmo_chunk_read_object_sequence_item(chunk,
+                    &out_state->object_descs[i].object_id);
                 if (result.code != NMO_OK) {
                     out_state->object_count = i;
                     break;
@@ -152,7 +159,20 @@ static nmo_result_t nmo_ckscene_deserialize(
                 if (result.code != NMO_OK) {
                     break;
                 }
-                out_state->object_descs[i].flags = flags;
+                if (nmo_chunk_get_data_version(chunk) >= 8) {
+                    out_state->object_descs[i].flags = flags;
+                } else {
+                    uint32_t converted = flags & CK_SCENEOBJECT_ACTIVE;
+                    if (flags & 2) {
+                        converted |= CK_SCENEOBJECT_START_RESET;
+                    }
+                    if (flags & 1) {
+                        converted |= CK_SCENEOBJECT_START_ACTIVATE;
+                    } else {
+                        converted |= CK_SCENEOBJECT_START_DEACTIVATE;
+                    }
+                    out_state->object_descs[i].flags = converted;
+                }
             }
         }
     }
@@ -254,7 +274,8 @@ static nmo_result_t nmo_ckscene_serialize(
         if (result.code != NMO_OK) return result;
 
         for (uint32_t i = 0; i < in_state->object_count; i++) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->object_descs[i].object_id);
+            result = nmo_chunk_write_object_sequence_item(out_chunk,
+                in_state->object_descs[i].object_id);
             if (result.code != NMO_OK) return result;
         }
 

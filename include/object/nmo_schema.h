@@ -24,19 +24,32 @@ typedef struct nmo_schema_type nmo_schema_type_t;
 typedef struct nmo_schema_field nmo_schema_field_t;
 typedef struct nmo_schema_vtable nmo_schema_vtable_t;
 typedef struct nmo_schema_registry nmo_schema_registry_t;
+typedef struct nmo_param_meta nmo_param_meta_t;
 struct nmo_chunk;
 
 /**
- * @brief Schema type category
+ * @brief Schema type kind
  */
-typedef enum nmo_schema_category {
-    NMO_SCHEMA_CATEGORY_PRIMITIVE = 0,  /**< Primitive type (int, float, etc) */
-    NMO_SCHEMA_CATEGORY_STRUCT,         /**< Composite structure */
-    NMO_SCHEMA_CATEGORY_ENUM,           /**< Enumeration */
-    NMO_SCHEMA_CATEGORY_FLAGS,          /**< Bit flags */
-    NMO_SCHEMA_CATEGORY_OBJECT,         /**< CKObject-derived class */
-    NMO_SCHEMA_CATEGORY_CUSTOM          /**< Custom/plugin type */
-} nmo_schema_category_t;
+typedef enum nmo_type_kind {
+    NMO_TYPE_U8 = 0,
+    NMO_TYPE_U16,
+    NMO_TYPE_U32,
+    NMO_TYPE_U64,
+    NMO_TYPE_I8,
+    NMO_TYPE_I16,
+    NMO_TYPE_I32,
+    NMO_TYPE_I64,
+    NMO_TYPE_F32,
+    NMO_TYPE_F64,
+    NMO_TYPE_BOOL,
+    NMO_TYPE_STRING,
+    NMO_TYPE_STRUCT,
+    NMO_TYPE_ARRAY,
+    NMO_TYPE_FIXED_ARRAY,
+    NMO_TYPE_BINARY,
+    NMO_TYPE_RESOURCE_REF,
+    NMO_TYPE_ENUM
+} nmo_type_kind_t;
 
 /**
  * @brief Field annotation flags
@@ -53,11 +66,19 @@ typedef enum nmo_field_annotations {
 } nmo_field_annotations_t;
 
 /**
+ * @brief Enum value descriptor
+ */
+typedef struct nmo_enum_value {
+    const char *name;                   /**< Enum value name */
+    int32_t value;                      /**< Enum value */
+} nmo_enum_value_t;
+
+/**
  * @brief Field descriptor
  */
 struct nmo_schema_field {
     const char *name;                   /**< Field name */
-    nmo_guid_t type_guid;              /**< Field type GUID */
+    const nmo_schema_type_t *type;      /**< Field type */
     size_t offset;                      /**< Offset in bytes from struct start */
     uint32_t annotations;               /**< Field annotation flags */
     uint32_t since_version;             /**< Version when field was added */
@@ -69,64 +90,54 @@ struct nmo_schema_field {
  * @brief Schema virtual table for custom serialization
  */
 struct nmo_schema_vtable {
-    /**
-     * @brief Serialize instance to chunk
-     * @param instance Pointer to instance
-     * @param chunk Chunk to write to
-     * @param type Type descriptor
-     * @param context User context
-     * @return Result
-     */
-    nmo_result_t (*serialize)(const void *instance, 
-                             struct nmo_chunk *chunk,
-                             const nmo_schema_type_t *type,
-                             void *context);
-    
-    /**
-     * @brief Deserialize instance from chunk
-     * @param instance Pointer to instance
-     * @param chunk Chunk to read from
-     * @param type Type descriptor
-     * @param context User context
-     * @return Result
-     */
-    nmo_result_t (*deserialize)(void *instance,
-                               struct nmo_chunk *chunk,
-                               const nmo_schema_type_t *type,
-                               void *context);
-    
-    /**
-     * @brief Validate instance
-     * @param instance Pointer to instance
-     * @param type Type descriptor
-     * @param context User context
-     * @return Result
-     */
-    nmo_result_t (*validate)(const void *instance,
-                            const nmo_schema_type_t *type,
-                            void *context);
+    nmo_result_t (*read)(
+        const nmo_schema_type_t *type,
+        struct nmo_chunk *chunk,
+        nmo_arena_t *arena,
+        void *out_ptr);
+
+    nmo_result_t (*write)(
+        const nmo_schema_type_t *type,
+        struct nmo_chunk *chunk,
+        const void *in_ptr,
+        nmo_arena_t *arena);
+
+    nmo_result_t (*validate)(
+        const nmo_schema_type_t *type,
+        const void *instance,
+        void *context);
 };
 
 /**
  * @brief Schema type descriptor
  */
 struct nmo_schema_type {
-    nmo_guid_t guid;                   /**< Type GUID (primary key) */
-    const char *name;                  /**< Type name */
-    uint32_t class_id;                 /**< Virtools CK_CLASSID (for objects) */
-    nmo_schema_category_t category;    /**< Type category */
-    size_t size;                       /**< Size in bytes */
-    size_t alignment;                  /**< Alignment requirement */
-    
-    nmo_guid_t base_type;             /**< Parent type GUID (for inheritance) */
-    
-    const nmo_schema_field_t *fields; /**< Field descriptors */
-    size_t field_count;                /**< Number of fields */
-    
-    const nmo_schema_vtable_t *vtable;/**< Virtual table (optional) */
-    
-    uint32_t version;                  /**< Schema version */
-    uint32_t flags;                    /**< Type flags */
+    const char *name;                       /**< Type name */
+    nmo_type_kind_t kind;                   /**< Kind */
+    size_t size;                            /**< Size in bytes */
+    size_t align;                           /**< Alignment requirement */
+
+    nmo_guid_t guid;                        /**< Optional GUID */
+    uint32_t class_id;                      /**< Optional class ID */
+    nmo_guid_t base_type;                   /**< Parent type GUID (optional) */
+
+    const nmo_schema_field_t *fields;       /**< Field descriptors */
+    size_t field_count;                     /**< Number of fields */
+
+    const nmo_enum_value_t *enum_values;    /**< Enum value table */
+    size_t enum_value_count;                /**< Enum value count */
+    nmo_type_kind_t enum_base_type;         /**< Enum storage type */
+
+    const nmo_schema_type_t *element_type;  /**< Array element type */
+    size_t array_length;                    /**< Fixed array length */
+
+    const nmo_schema_vtable_t *vtable;      /**< Virtual table (optional) */
+
+    uint32_t since_version;                 /**< Version when type added */
+    uint32_t deprecated_version;            /**< Version when deprecated */
+    uint32_t removed_version;               /**< Version when removed */
+
+    const nmo_param_meta_t *param_meta;     /**< Optional parameter metadata */
 };
 
 #ifdef __cplusplus

@@ -355,7 +355,7 @@ nmo_result_t nmo_enum_to_string(
     int32_t enum_value = *(const int32_t*)value;
 
     // If name not requested or no registry, output numeric value
-    if (!use_name || !registry || type->specialized_index == (uint32_t)-1) {
+    if (!use_name || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
         snprintf(buffer, buffer_size, "%d", enum_value);
         return nmo_result_ok();
     }
@@ -402,7 +402,7 @@ nmo_result_t nmo_enum_from_string(
     }
 
     // Try to match name in enum metadata
-    if (registry && type->specialized_index != (uint32_t)-1 &&
+    if (registry && type->specialized_index != NMO_SPECIALIZED_INDEX_INVALID &&
         type->specialized_index < registry->metadata.count) {
         const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
         if (metadata && metadata->metadata_type == NMO_METADATA_TYPE_ENUM) {
@@ -454,7 +454,7 @@ nmo_result_t nmo_flags_to_string(
     uint32_t flags_value = *(const uint32_t*)value;
 
     // If names not requested or no registry, output hex
-    if (!use_names || !registry || type->specialized_index == (uint32_t)-1) {
+    if (!use_names || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
         snprintf(buffer, buffer_size, "0x%X", flags_value);
         return nmo_result_ok();
     }
@@ -533,7 +533,7 @@ nmo_result_t nmo_flags_from_string(
     }
 
     // Parse name1|name2 format from metadata
-    if (registry && type->specialized_index != (uint32_t)-1 &&
+    if (registry && type->specialized_index != NMO_SPECIALIZED_INDEX_INVALID &&
         type->specialized_index < registry->metadata.count) {
         const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
         if (metadata && metadata->metadata_type == NMO_METADATA_TYPE_FLAGS) {

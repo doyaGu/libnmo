@@ -22,19 +22,11 @@ typedef struct nmo_result nmo_result_t;
 /**
  * @brief CK3dObject state structure
  * 
- * Represents the deserialized state of a CK3dObject (3D mesh object).
- * This is a PARTIAL schema - mesh/material details preserved as raw data.
+ * Represents the deserialized state of a CK3dObject. In CKRenderEngine,
+ * CK3dObject does not add any serialized fields beyond CK3dEntity.
  */
 typedef struct nmo_ck3dobject_state {
     nmo_ck3dentity_state_t entity;  ///< Parent CK3dEntity state
-    
-    // Mesh and rendering data
-    nmo_object_id_t mesh_id;       ///< Reference to CKMesh object
-    uint32_t rendering_flags;      ///< Rendering flags (wireframe, culling, etc)
-    
-    // Preserved unknown data for future schema refinement
-    void *raw_tail;                ///< Remaining chunk data (materials, deformations)
-    size_t raw_tail_size;          ///< Size of preserved data
 } nmo_ck3dobject_state_t;
 
 /* Function pointer types for vtable */

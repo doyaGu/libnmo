@@ -15,6 +15,7 @@
 
 #include "object/nmo_schema_builder.h"
 #include "object/nmo_param_meta.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_schema_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -39,13 +40,11 @@ static nmo_result_t register_scalar_param_types(
     /* INT (4 bytes, CKPGUID_INT) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_SCALAR,
             .guid = CKPGUID_INT,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 4,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "int",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 4,
             .ui_name = "Integer",
             .description = "32-bit signed integer"
         };
@@ -59,13 +58,11 @@ static nmo_result_t register_scalar_param_types(
     /* FLOAT (4 bytes, CKPGUID_FLOAT) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_SCALAR,
             .guid = CKPGUID_FLOAT,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 4,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "float",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 4,
             .ui_name = "Float",
             .description = "32-bit floating point"
         };
@@ -79,13 +76,11 @@ static nmo_result_t register_scalar_param_types(
     /* BOOL (4 bytes, CKPGUID_BOOL) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_SCALAR,
             .guid = CKPGUID_BOOL,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 4,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE,
-            .creator_plugin = NULL,
+            .name = "bool",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 4,
             .ui_name = "Boolean",
             .description = "Boolean value (0 or 1)"
         };
@@ -99,13 +94,11 @@ static nmo_result_t register_scalar_param_types(
     /* STRING (variable size, CKPGUID_STRING) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_SCALAR,
             .guid = CKPGUID_STRING,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 0, /* Variable */
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE,
-            .creator_plugin = NULL,
+            .name = "string",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 0,
             .ui_name = "String",
             .description = "Variable-length string"
         };
@@ -119,13 +112,11 @@ static nmo_result_t register_scalar_param_types(
     /* KEY (4 bytes, CKPGUID_KEY) - for CK_ID/DWORD keys */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_SCALAR,
             .guid = CKPGUID_KEY,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 4,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE,
-            .creator_plugin = NULL,
+            .name = "key",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 4,
             .ui_name = "Key",
             .description = "Unique identifier (DWORD)"
         };
@@ -159,13 +150,11 @@ static nmo_result_t register_math_param_types(
     /* VECTOR (12 bytes: 3 floats, CKPGUID_VECTOR) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_VECTOR,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 12,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "Vector",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 12,
             .ui_name = "Vector",
             .description = "3D vector (x, y, z)"
         };
@@ -179,13 +168,11 @@ static nmo_result_t register_math_param_types(
     /* 2DVECTOR (8 bytes: 2 floats, CKPGUID_2DVECTOR) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_2DVECTOR,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 8,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "2DVector",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 8,
             .ui_name = "2D Vector",
             .description = "2D vector (x, y)"
         };
@@ -199,13 +186,11 @@ static nmo_result_t register_math_param_types(
     /* QUATERNION (16 bytes: 4 floats, CKPGUID_QUATERNION) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_QUATERNION,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 16,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "Quaternion",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 16,
             .ui_name = "Quaternion",
             .description = "Rotation quaternion (x, y, z, w)"
         };
@@ -219,13 +204,11 @@ static nmo_result_t register_math_param_types(
     /* MATRIX (64 bytes: 4x4 floats, CKPGUID_MATRIX) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_MATRIX,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 64,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "Matrix",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 64,
             .ui_name = "Matrix",
             .description = "4x4 transformation matrix"
         };
@@ -239,13 +222,11 @@ static nmo_result_t register_math_param_types(
     /* COLOR (16 bytes: RGBA as 4 floats, CKPGUID_COLOR) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_COLOR,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 16,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_ANIMATABLE,
-            .creator_plugin = NULL,
+            .name = "Color",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 16,
             .ui_name = "Color",
             .description = "RGBA color (4 floats)"
         };
@@ -259,13 +240,11 @@ static nmo_result_t register_math_param_types(
     /* BOX (24 bytes: 2 Vectors, CKPGUID_BOX) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_BOX,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 24,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE,
-            .creator_plugin = NULL,
+            .name = "Box",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 24,
             .ui_name = "Box",
             .description = "3D bounding box (min, max)"
         };
@@ -279,13 +258,11 @@ static nmo_result_t register_math_param_types(
     /* RECT (16 bytes: 4 floats, CKPGUID_RECT) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_STRUCT,
             .guid = CKPGUID_RECT,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 16,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE,
-            .creator_plugin = NULL,
+            .name = "Rect",
+            .operation = NMO_PARAMOP_STRUCT,
+            .flags = 0,
+            .size = 16,
             .ui_name = "Rectangle",
             .description = "2D rectangle (left, top, right, bottom)"
         };
@@ -318,13 +295,11 @@ static nmo_result_t register_object_ref_param_types(
     /* OBJECT (4 bytes: CK_ID, CKPGUID_OBJECT) */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_OBJECT_REF,
             .guid = CKPGUID_OBJECT,
-            .derived_from = NMO_GUID_NULL,
-            .default_size = 4,
-            .class_id = 0, /* Any object class (would be CK_OBJECT in full impl) */
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE,
-            .creator_plugin = NULL,
+            .name = "Object",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 4,
             .ui_name = "Object",
             .description = "Reference to Virtools object"
         };
@@ -338,13 +313,11 @@ static nmo_result_t register_object_ref_param_types(
     /* ID (4 bytes: CK_ID, CKPGUID_ID) - alias for Object */
     {
         nmo_param_meta_t meta = {
-            .kind = NMO_PARAM_OBJECT_REF,
             .guid = CKPGUID_ID,
-            .derived_from = CKPGUID_OBJECT, /* Derived from Object */
-            .default_size = 4,
-            .class_id = 0,
-            .flags = NMO_PARAM_FLAG_SERIALIZABLE | NMO_PARAM_FLAG_DERIVED,
-            .creator_plugin = NULL,
+            .name = "ID",
+            .operation = NMO_PARAMOP_SIMPLE,
+            .flags = 0,
+            .size = 4,
             .ui_name = "ID",
             .description = "Object identifier"
         };

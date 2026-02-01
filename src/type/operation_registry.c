@@ -93,16 +93,19 @@ static nmo_operation_family_t *find_or_create_family(
         return NULL;
     }
     
-    /* Add to registry */
-    family_index = registry->family_count++;
+    /* Add to registry (commit after map insertion) */
+    family_index = registry->family_count;
     registry->families[family_index] = family;
     
     /* Add to hash map */
     if (nmo_result_is_error(nmo_hash_table_insert(registry->family_map,
                                                   operation_guid,
                                                   &family_index))) {
+        registry->families[family_index] = NULL;
         return NULL;
     }
+
+    registry->family_count++;
     
     return family;
 }
@@ -318,6 +321,8 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
         alignof(nmo_operation_family_t *)
     );
     if (!registry->families) {
+        nmo_hash_table_destroy(registry->family_map);
+        registry->family_map = NULL;
         return NULL;
     }
     
@@ -325,8 +330,14 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
 }
 
 void nmo_operation_registry_destroy(nmo_operation_registry_t *registry) {
-    /* All memory is arena-allocated, nothing to free manually */
-    (void)registry;
+    if (!registry) {
+        return;
+    }
+
+    if (registry->family_map) {
+        nmo_hash_table_destroy(registry->family_map);
+        registry->family_map = NULL;
+    }
 }
 
 /* ============================================================================

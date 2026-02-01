@@ -7,6 +7,7 @@
 #define NMO_CK3DENTITY_SCHEMAS_H
 
 #include "object/nmo_ckrenderobject_schemas.h"
+#include "core/nmo_math.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -20,21 +21,66 @@ typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
 
 /**
+ * @brief CK3dEntity skin vertex data
+ */
+typedef struct nmo_ck3dentity_skin_vertex {
+    uint32_t bone_count;
+    nmo_vector_t initial_pos;
+    uint32_t *bone_indices;
+    float *bone_weights;
+} nmo_ck3dentity_skin_vertex_t;
+
+/**
+ * @brief CK3dEntity skin bone data
+ */
+typedef struct nmo_ck3dentity_skin_bone {
+    nmo_object_id_t bone_id;
+    uint32_t bone_flags;
+    nmo_matrix_t inverse_bind_matrix;
+} nmo_ck3dentity_skin_bone_t;
+
+/**
+ * @brief CK3dEntity skin data
+ */
+typedef struct nmo_ck3dentity_skin {
+    nmo_matrix_t object_init_matrix;
+    uint32_t bone_count;
+    nmo_ck3dentity_skin_bone_t *bones;
+    uint32_t vertex_count;
+    nmo_ck3dentity_skin_vertex_t *vertices;
+    uint32_t normal_count;
+    nmo_vector_t *normals;
+} nmo_ck3dentity_skin_t;
+
+/**
  * @brief CK3dEntity state structure
  * 
  * Represents the deserialized state of a CK3dEntity object.
- * This is a PARTIAL schema - some fields are preserved as raw data.
  */
 typedef struct nmo_ck3dentity_state {
     nmo_ckrenderobject_state_t render_object; ///< Parent CKRenderObject state
-    
-    // Transform data
+
+    /* Transform data */
     float world_matrix[16];    ///< 4x4 world transformation matrix
-    uint32_t entity_flags;     ///< Entity flags (local/world, etc)
-    
-    // Preserved unknown data for future schema refinement
-    void *raw_tail;           ///< Remaining chunk data (parent ref, z-order, bbox, pivot)
-    size_t raw_tail_size;     ///< Size of preserved data
+    uint32_t entity_flags;     ///< CK_3DENTITY flags
+    uint32_t moveable_flags;   ///< VX_MOVEABLE flags
+
+    /* Hierarchy and references */
+    nmo_object_id_t parent_id;
+    nmo_object_id_t place_id;
+    int32_t z_order;
+
+    /* Meshes */
+    nmo_object_id_t current_mesh_id;
+    uint32_t mesh_count;
+    nmo_object_id_t *mesh_ids;
+
+    /* Animations */
+    uint32_t animation_count;
+    nmo_object_id_t *animation_ids;
+
+    /* Skin data (optional) */
+    nmo_ck3dentity_skin_t *skin;
 } nmo_ck3dentity_state_t;
 
 /* Function pointer types for vtable */

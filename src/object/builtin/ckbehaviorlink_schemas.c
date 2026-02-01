@@ -26,10 +26,11 @@
  * IDENTIFIER CONSTANTS
  * ============================================================================= */
 
-/* From reference/src/CKBehaviorLink.cpp */
-#define CK_STATESAVE_BEHAV_LINK_NEWDATA   0x00000001
-#define CK_STATESAVE_BEHAV_LINK_CURDELAY  0x00000002  /* Legacy format */
-#define CK_STATESAVE_BEHAV_LINK_IOS       0x00000004  /* Legacy format */
+/* From CKDefines2.h (CK_STATESAVEFLAGS_BEHAV_LINK) */
+#define CK_STATESAVE_BEHAV_LINK_CURDELAY  0x00000004u  /* Legacy format */
+#define CK_STATESAVE_BEHAV_LINK_IOS       0x00000008u  /* Legacy format */
+#define CK_STATESAVE_BEHAV_LINK_DELAY     0x00000010u  /* Legacy format */
+#define CK_STATESAVE_BEHAV_LINK_NEWDATA   0x00000020u
 
 /* =============================================================================
  * CKBehaviorLink DESERIALIZATION
@@ -100,6 +101,14 @@ static nmo_result_t nmo_ckbehaviorlink_deserialize(
 
             result = nmo_chunk_read_object_id(chunk, &out_state->out_io_id);
             if (result.code != NMO_OK) return result;
+        }
+
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_LINK_DELAY);
+        if (result.code == NMO_OK) {
+            int32_t delay;
+            result = nmo_chunk_read_int(chunk, &delay);
+            if (result.code != NMO_OK) return result;
+            out_state->initial_activation_delay = (int16_t)delay;
         }
     }
 

@@ -26,8 +26,8 @@
  * IDENTIFIER CONSTANTS
  * ============================================================================= */
 
-/* From reference/src/CKBehaviorIO.cpp */
-#define CK_STATESAVE_BEHAV_IOFLAGS 0x00000001
+/* From CKDefines2.h (CK_STATESAVEFLAGS_BEHAV_IO) */
+#define CK_STATESAVE_BEHAV_IOFLAGS 0x00000001u
 
 /* =============================================================================
  * CKBehaviorIO DESERIALIZATION

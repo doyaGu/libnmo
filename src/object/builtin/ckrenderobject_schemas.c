@@ -60,38 +60,11 @@ nmo_result_t nmo_ckrenderobject_deserialize(
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckrenderobject_state_t));
 
-    /* CKRenderObject has no additional data beyond CKBeObject.
-     * The actual serialization happens in CKBeObject, which handles:
-     * - Scripts array
-     * - Priority
-     * - Attributes
-     * 
-     * Since we're at the Schema layer and need to maintain layer separation,
-     * we don't call the CKBeObject deserializer here. Instead, the Session
-     * layer's parser will handle the parent chain traversal.
-     * 
-     * For now, preserve any remaining chunk data as raw_tail for round-trip.
-     */
-
-    /* Get current read position */
-    size_t current_pos = nmo_chunk_get_position(chunk);
-    size_t chunk_size = nmo_chunk_get_data_size(chunk);
-    
-    if (current_pos < chunk_size) {
-        /* There's unread data - preserve it for round-trip */
-        size_t remaining = chunk_size - current_pos;
-        out_state->raw_tail = (uint8_t *)nmo_arena_alloc(arena, remaining, 1);
-        if (out_state->raw_tail) {
-            /* Read directly into pre-allocated buffer */
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk, 
-                out_state->raw_tail, remaining);
-            if (bytes_read == remaining) {
-                out_state->raw_tail_size = remaining;
-            } else {
-                /* Read failed - clear raw_tail */
-                out_state->raw_tail = NULL;
-                out_state->raw_tail_size = 0;
-            }
+    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
+    if (parent_deserialize) {
+        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
+        if (result.code != NMO_OK) {
+            return result;
         }
     }
 
@@ -106,7 +79,7 @@ nmo_result_t nmo_ckrenderobject_deserialize(
  * @brief Serialize CKRenderObject state to chunk
  * 
  * CKRenderObject has no additional data beyond CKBeObject.
- * This function writes back the preserved raw_tail data for round-trip.
+ * This function delegates to CKBeObject serializer.
  * 
  * Reference: reference/include/CKRenderObject.h (abstract class, no Save)
  * 
@@ -125,11 +98,9 @@ nmo_result_t nmo_ckrenderobject_serialize(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_serialize"));
     }
 
-    /* Write back preserved raw_tail data for round-trip */
-    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
-        /* Use no_size variant since we're writing back raw binary data */
-        nmo_result_t result = nmo_chunk_write_buffer_no_size(out_chunk, 
-            in_state->raw_tail, in_state->raw_tail_size);
+    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
+    if (parent_serialize) {
+        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
         if (result.code != NMO_OK) {
             return result;
         }

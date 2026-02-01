@@ -97,10 +97,10 @@ nmo_result_t nmo_register_math_types(
     /* Color (RGBA) */
     {
         nmo_schema_builder_t builder = nmo_builder_struct(arena, "Color", sizeof(nmo_color_t), alignof(nmo_color_t));
-        nmo_builder_add_field_ex(&builder, "r", f32_type, offsetof(nmo_color_t, r), NMO_ANNOTATION_COLOR);
-        nmo_builder_add_field_ex(&builder, "g", f32_type, offsetof(nmo_color_t, g), NMO_ANNOTATION_COLOR);
-        nmo_builder_add_field_ex(&builder, "b", f32_type, offsetof(nmo_color_t, b), NMO_ANNOTATION_COLOR);
-        nmo_builder_add_field_ex(&builder, "a", f32_type, offsetof(nmo_color_t, a), NMO_ANNOTATION_COLOR);
+        nmo_builder_add_field_ex(&builder, "r", f32_type, offsetof(nmo_color_t, r), NMO_FIELD_NONE);
+        nmo_builder_add_field_ex(&builder, "g", f32_type, offsetof(nmo_color_t, g), NMO_FIELD_NONE);
+        nmo_builder_add_field_ex(&builder, "b", f32_type, offsetof(nmo_color_t, b), NMO_FIELD_NONE);
+        nmo_builder_add_field_ex(&builder, "a", f32_type, offsetof(nmo_color_t, a), NMO_FIELD_NONE);
         result = nmo_builder_build(&builder, registry);
         if (result.code != NMO_OK) return result;
     }
@@ -200,7 +200,7 @@ nmo_result_t nmo_register_virtools_types(
  * UNIFIED REGISTRATION
  * ============================================================================= */
 
-nmo_result_t nmo_register_builtin_types(
+nmo_result_t nmo_register_builtin_schema_types(
     nmo_schema_registry_t *registry,
     nmo_arena_t *arena)
 {

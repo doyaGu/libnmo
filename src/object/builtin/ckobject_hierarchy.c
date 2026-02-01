@@ -26,20 +26,37 @@
 #include "object/nmo_ck2dentity_schemas.h"
 #include "object/nmo_ckrenderobject_schemas.h"
 #include "object/nmo_ckcamera_schemas.h"
+#include "object/nmo_cktargetcamera_schemas.h"
 #include "object/nmo_cklight_schemas.h"
+#include "object/nmo_cktargetlight_schemas.h"
 #include "object/nmo_ckmesh_schemas.h"
+#include "object/nmo_ckpatchmesh_schemas.h"
+#include "object/nmo_ckprogressivemesh_schemas.h"
 #include "object/nmo_cksprite_schemas.h"
+#include "object/nmo_cksprite3d_schemas.h"
 #include "object/nmo_ckspritetext_schemas.h"
 #include "object/nmo_cktexture_schemas.h"
 #include "object/nmo_ckbehavior_schemas.h"
 #include "object/nmo_ckbehaviorio_schemas.h"
 #include "object/nmo_ckbehaviorlink_schemas.h"
 #include "object/nmo_ckparameter_schemas.h"
+#include "object/nmo_ckparameteroperation_schemas.h"
+#include "object/nmo_ckinterfaceobjectmanager_schemas.h"
 #include "object/nmo_cklevel_schemas.h"
 #include "object/nmo_ckscene_schemas.h"
 #include "object/nmo_ckdataarray_schemas.h"
 #include "object/nmo_ckattributemanager_schemas.h"
 #include "object/nmo_ckmessagemanager_schemas.h"
+#include "object/nmo_cksound_schemas.h"
+#include "object/nmo_cksynchro_schemas.h"
+#include "object/nmo_ckplace_schemas.h"
+#include "object/nmo_ckcurve_schemas.h"
+#include "object/nmo_ckcharacter_schemas.h"
+#include "object/nmo_ckanimation_schemas.h"
+#include "object/nmo_ckkinematicchain_schemas.h"
+#include "object/nmo_ckrendercontext_schemas.h"
+#include "object/nmo_cklayer_schemas.h"
+#include "object/nmo_ckgrid_schemas.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include <stddef.h>
@@ -81,17 +98,17 @@ static const ck_class_def_t CK_CLASSES[] = {
     {"CKScene",                 10,  "CKBeObject",    0},  // CKCID_SCENE
     {"CKSceneObject",           11,  "CKObject",      0},  // CKCID_SCENEOBJECT
     {"CKKinematicChain",        13,  "CKObject",      0},  // CKCID_KINEMATICCHAIN
-    {"CKObjectAnimation",       15,  "CKSceneObject", 1},  // CKCID_OBJECTANIMATION (stub)
-    {"CKAnimation",             16,  "CKSceneObject", 1},  // CKCID_ANIMATION (stub)
-    {"CKKeyedAnimation",        18,  "CKAnimation",   1},  // CKCID_KEYEDANIMATION (stub)
+    {"CKObjectAnimation",       15,  "CKSceneObject", 0},  // CKCID_OBJECTANIMATION
+    {"CKAnimation",             16,  "CKSceneObject", 0},  // CKCID_ANIMATION
+    {"CKKeyedAnimation",        18,  "CKAnimation",   0},  // CKCID_KEYEDANIMATION
     {"CKBeObject",              19,  "CKSceneObject", 0},  // CKCID_BEOBJECT
     {"CKSynchroObject",         20,  "CKObject",      0},  // CKCID_SYNCHRO
     {"CKLevel",                 21,  "CKBeObject",    0},  // CKCID_LEVEL
-    {"CKPlace",                 22,  "CKBeObject",    1},  // CKCID_PLACE (stub)
+    {"CKPlace",                 22,  "CKBeObject",    0},  // CKCID_PLACE
     {"CKGroup",                 23,  "CKBeObject",    0},  // CKCID_GROUP
-    {"CKSound",                 24,  "CKBeObject",    1},  // CKCID_SOUND (stub)
-    {"CKWaveSound",             25,  "CKSound",       1},  // CKCID_WAVESOUND (stub)
-    {"CKMidiSound",             26,  "CKSound",       1},  // CKCID_MIDISOUND (stub)
+    {"CKSound",                 24,  "CKBeObject",    0},  // CKCID_SOUND
+    {"CKWaveSound",             25,  "CKSound",       0},  // CKCID_WAVESOUND
+    {"CKMidiSound",             26,  "CKSound",       0},  // CKCID_MIDISOUND
     {"CK2dEntity",              27,  "CKRenderObject", 0}, // CKCID_2DENTITY
     {"CKSprite",                28,  "CK2dEntity",    0},  // CKCID_SPRITE
     {"CKSpriteText",            29,  "CKSprite",      0},  // CKCID_SPRITETEXT
@@ -100,24 +117,24 @@ static const ck_class_def_t CK_CLASSES[] = {
     {"CKMesh",                  32,  "CKBeObject",    1},  // CKCID_MESH (stub)
     {"CK3dEntity",              33,  "CKRenderObject", 1}, // CKCID_3DENTITY (stub)
     {"CKCamera",                34,  "CK3dEntity",    1},  // CKCID_CAMERA (stub)
-    {"CKTargetCamera",          35,  "CKCamera",      1},  // CKCID_TARGETCAMERA (stub)
-    {"CKCurvePoint",            36,  "CK3dEntity",    1},  // CKCID_CURVEPOINT (stub)
-    {"CKSprite3D",              37,  "CK3dEntity",    1},  // CKCID_SPRITE3D (stub)
+    {"CKTargetCamera",          35,  "CKCamera",      0},  // CKCID_TARGETCAMERA
+    {"CKCurvePoint",            36,  "CK3dEntity",    0},  // CKCID_CURVEPOINT
+    {"CKSprite3D",              37,  "CK3dEntity",    0},  // CKCID_SPRITE3D
     {"CKLight",                 38,  "CK3dEntity",    1},  // CKCID_LIGHT (stub)
-    {"CKTargetLight",           39,  "CKLight",       1},  // CKCID_TARGETLIGHT (stub)
-    {"CKCharacter",             40,  "CK3dEntity",    1},  // CKCID_CHARACTER (stub)
+    {"CKTargetLight",           39,  "CKLight",       0},  // CKCID_TARGETLIGHT
+    {"CKCharacter",             40,  "CK3dEntity",    0},  // CKCID_CHARACTER
     {"CK3dObject",              41,  "CK3dEntity",    1},  // CKCID_3DOBJECT (stub)
-    {"CKBodyPart",              42,  "CK3dObject",    1},  // CKCID_BODYPART (stub)
-    {"CKCurve",                 43,  "CK3dEntity",    1},  // CKCID_CURVE (stub)
+    {"CKBodyPart",              42,  "CK3dObject",    0},  // CKCID_BODYPART
+    {"CKCurve",                 43,  "CK3dEntity",    0},  // CKCID_CURVE
     {"CKParameterLocal",        45,  "CKParameter",   0},  // CKCID_PARAMETERLOCAL
     {"CKParameter",             46,  "CKObject",      0},  // CKCID_PARAMETER
     {"CKRenderObject",          47,  "CKBeObject",    0},  // CKCID_RENDEROBJECT
     {"CKInterfaceObjectManager", 48, "CKObject",     0},   // CKCID_INTERFACEOBJECTMANAGER
     {"CKCriticalSectionObject", 49,  "CKObject",     0},   // CKCID_CRITICALSECTION
-    {"CKGrid",                  50,  "CK3dEntity",    1},  // CKCID_GRID (stub)
+    {"CKGrid",                  50,  "CK3dEntity",    0},  // CKCID_GRID
     {"CKLayer",                 51,  "CKObject",      0},  // CKCID_LAYER
     {"CKDataArray",             52,  "CKBeObject",    0},  // CKCID_DATAARRAY
-    {"CKPatchMesh",             53,  "CKMesh",        1},  // CKCID_PATCHMESH (stub)
+    {"CKPatchMesh",             53,  "CKMesh",        0},  // CKCID_PATCHMESH
     {"CKProgressiveMesh",       54,  "CKMesh",        1},  // CKCID_PROGRESSIVEMESH (stub)
 };
 
@@ -151,10 +168,40 @@ nmo_result_t nmo_register_ckobject_hierarchy(
         fprintf(stderr, "Failed at CKSceneObject: %d\n", result.code);
         return result;
     }
+
+    result = nmo_register_ckinterfaceobjectmanager_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKInterfaceObjectManager: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckrendercontext_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKRenderContext: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckanimation_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKAnimation/Keyed/ObjectAnimation: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckkinematicchain_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKKinematicChain: %d\n", result.code);
+        return result;
+    }
     
     result = nmo_register_ckbeobject_schemas(registry, arena);
     if (result.code != NMO_OK) {
         fprintf(stderr, "Failed at CKBeObject: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckplace_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKPlace: %d\n", result.code);
         return result;
     }
     
@@ -182,6 +229,18 @@ nmo_result_t nmo_register_ckobject_hierarchy(
         fprintf(stderr, "Failed at CK3dEntity: %d\n", result.code);
         return result;
     }
+
+    result = nmo_register_ckcurve_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKCurve/CurvePoint: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckcharacter_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKCharacter/BodyPart: %d\n", result.code);
+        return result;
+    }
     
     result = nmo_register_ck2dentity_schemas(registry, arena);
     if (result.code != NMO_OK) {
@@ -195,10 +254,22 @@ nmo_result_t nmo_register_ckobject_hierarchy(
         fprintf(stderr, "Failed at CKCamera: %d\n", result.code);
         return result;
     }
+
+    result = nmo_register_cktargetcamera_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKTargetCamera: %d\n", result.code);
+        return result;
+    }
     
     result = nmo_register_cklight_schemas(registry, arena);
     if (result.code != NMO_OK) {
         fprintf(stderr, "Failed at CKLight: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_cktargetlight_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKTargetLight: %d\n", result.code);
         return result;
     }
     
@@ -207,10 +278,28 @@ nmo_result_t nmo_register_ckobject_hierarchy(
         fprintf(stderr, "Failed at CKMesh: %d\n", result.code);
         return result;
     }
+
+    result = nmo_register_ckpatchmesh_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKPatchMesh: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckprogressivemesh_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKProgressiveMesh: %d\n", result.code);
+        return result;
+    }
     
     result = nmo_register_cksprite_schemas(registry, arena);
     if (result.code != NMO_OK) {
         fprintf(stderr, "Failed at CKSprite: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_cksprite3d_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKSprite3D: %d\n", result.code);
         return result;
     }
     
@@ -250,6 +339,24 @@ nmo_result_t nmo_register_ckobject_hierarchy(
         fprintf(stderr, "Failed at CKParameter: %d\n", result.code);
         return result;
     }
+
+    result = nmo_register_ckparameteroperation_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKParameterOperation: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_cksynchro_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKSynchro/State/Critical: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_cksound_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKSound: %d\n", result.code);
+        return result;
+    }
     
     /* Scene management (all have vtables) */
     result = nmo_register_cklevel_schemas(registry, arena);
@@ -267,6 +374,18 @@ nmo_result_t nmo_register_ckobject_hierarchy(
     result = nmo_register_ckdataarray_schemas(registry, arena);
     if (result.code != NMO_OK) {
         fprintf(stderr, "Failed at CKDataArray: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_ckgrid_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKGrid: %d\n", result.code);
+        return result;
+    }
+
+    result = nmo_register_cklayer_schemas(registry, arena);
+    if (result.code != NMO_OK) {
+        fprintf(stderr, "Failed at CKLayer: %d\n", result.code);
         return result;
     }
     

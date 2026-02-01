@@ -16,6 +16,7 @@
 #include "type/type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
+#include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 #include <stdio.h>
@@ -368,9 +369,39 @@ nmo_result_t nmo_type_registry_register_struct(
     if (nmo_result_is_error(result)) {
         return result;
     }
-    
+
+    /* Fetch registered descriptor to get assigned ID */
+    nmo_type_descriptor_t *registered =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!registered) {
+        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
+                                 NMO_SEVERITY_ERROR,
+                                 "Failed to find registered struct type");
+    }
+
     /* Update type_id in metadata */
-    spec_meta->type_id = type_desc->id;
+    spec_meta->type_id = registered->id;
+
+    /* Add metadata to registry */
+    size_t metadata_index = type_registry->metadata.count;
+    nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
+    if (nmo_result_is_error(append_res)) {
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
+        return append_res;
+    }
+
+    /* Add to type_id -> metadata_index hash table */
+    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+                                                    &registered->id,
+                                                    &metadata_index);
+    if (nmo_result_is_error(map_result)) {
+        nmo_arena_array_pop(&type_registry->metadata, NULL);
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
+        return map_result;
+    }
+
+    /* Update specialized_index (0-based) */
+    registered->specialized_index = (uint32_t)metadata_index;
     
     /* Return GUID */
     if (out_guid) {
@@ -485,7 +516,7 @@ nmo_result_t nmo_type_registry_begin_struct(
     type_desc->name = incomplete->name;
     type_desc->category = NMO_TYPE_CATEGORY_STRUCT;
     type_desc->valid = false;  /* Mark as incomplete */
-    type_desc->description = (const char*)incomplete;  /* Store incomplete state */
+    type_desc->description = NULL;
     
     /* Register placeholder (will be updated on finalize) */
     nmo_result_t result = nmo_type_registry_register(type_registry, type_desc);
@@ -501,6 +532,9 @@ nmo_result_t nmo_type_registry_begin_struct(
                                  "Failed to find just-registered type");
     }
     
+    /* Store incomplete state after registration */
+    registered->description = (const char*)incomplete;
+
     /* Mark as incomplete (register sets it to true) */
     registered->valid = false;
     
@@ -692,16 +726,25 @@ nmo_result_t nmo_type_registry_finalize_struct(
     spec_meta->struct_meta.field_count = incomplete->field_count;
     
     /* Add to registry metadata array */
-    uint32_t metadata_index = (uint32_t)type_registry->metadata.count;
+    size_t metadata_index = type_registry->metadata.count;
     nmo_result_t res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
     if (nmo_result_is_error(res)) return res;
+
+    /* Add to type_id -> metadata_index hash table */
+    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+                                                    &struct_type_id,
+                                                    &metadata_index);
+    if (nmo_result_is_error(map_result)) {
+        nmo_arena_array_pop(&type_registry->metadata, NULL);
+        return map_result;
+    }
     
     /* Update type descriptor to mark as valid */
     nmo_type_descriptor_t *type_desc = *(nmo_type_descriptor_t **)nmo_arena_array_get(&type_registry->types, struct_type_id);
     type_desc->size = total_size;
     type_desc->alignment = struct_alignment;
     type_desc->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE;
-    type_desc->specialized_index = metadata_index;
+    type_desc->specialized_index = (uint32_t)metadata_index;
     type_desc->description = NULL;  /* Clear incomplete state pointer */
     type_desc->valid = true;  /* Mark as complete */
     

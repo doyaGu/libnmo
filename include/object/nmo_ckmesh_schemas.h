@@ -27,26 +27,36 @@ typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
 
 /**
- * @brief Mesh flags (m_Flags at 0x50 in RCKMesh)
+ * @brief Mesh flags (VXMESH_FLAGS from CKEnums.h)
  * 
- * Controls mesh behavior, visibility, and rendering modes.
- * Valid mask: 0x7FE39A (filters invalid flags during load)
+ * Matches the Virtools SDK mesh flags used by RCKMesh.
  */
 typedef enum nmo_ck_mesh_flags {
-    NMO_MESH_DYNAMIC           = 0x000002,  ///< Dynamic mesh (frequently updated)
-    NMO_MESH_VISIBLE           = 0x000008,  ///< Visible for rendering
-    NMO_MESH_WRAP_S            = 0x000010,  ///< Texture wrap in S direction
-    NMO_MESH_WRAP_T            = 0x000080,  ///< Texture wrap in T direction
-    NMO_MESH_OPTIMIZE          = 0x000100,  ///< Optimized vertex/index buffers
-    NMO_MESH_TRANSPARENCY      = 0x000200,  ///< Has transparent materials
-    NMO_MESH_DOUBLESIDED       = 0x002000,  ///< Double-sided rendering
-    NMO_MESH_MIPMAP            = 0x004000,  ///< Use mipmaps
-    NMO_MESH_CULL_CCW          = 0x008000,  ///< Cull counter-clockwise faces
-    NMO_MESH_VERTEXCOLOR       = 0x020000,  ///< Has vertex colors
-    NMO_MESH_NORMALMAP         = 0x040000,  ///< Has normal mapping
-    NMO_MESH_PROGRESSIVE       = 0x400000,  ///< Has progressive mesh (LOD)
-    
-    NMO_MESH_FLAGS_VALID_MASK  = 0x7FE39A  ///< Valid flags mask (used in Load)
+    NMO_MESH_BOUNDINGUPTODATE     = 0x00000001,
+    NMO_MESH_VISIBLE              = 0x00000002,
+    NMO_MESH_OPTIMIZED            = 0x00000004,
+    NMO_MESH_RENDERCHANNELS       = 0x00000008,
+    NMO_MESH_HASTRANSPARENCY      = 0x00000010,
+    NMO_MESH_PRELITMODE           = 0x00000080,
+    NMO_MESH_WRAPU                = 0x00000100,
+    NMO_MESH_WRAPV                = 0x00000200,
+    NMO_MESH_FORCETRANSPARENCY    = 0x00001000,
+    NMO_MESH_TRANSPARENCYUPTODATE = 0x00002000,
+    NMO_MESH_UV_CHANGED           = 0x00004000,
+    NMO_MESH_NORMAL_CHANGED       = 0x00008000,
+    NMO_MESH_COLOR_CHANGED        = 0x00010000,
+    NMO_MESH_POS_CHANGED          = 0x00020000,
+    NMO_MESH_HINTDYNAMIC          = 0x00040000,
+    NMO_MESH_GENNORMALS           = 0x00080000,
+    NMO_MESH_PROCEDURALUV         = 0x00100000,
+    NMO_MESH_PROCEDURALPOS        = 0x00200000,
+    NMO_MESH_STRIPIFY             = 0x00400000,
+    NMO_MESH_MONOMATERIAL         = 0x00800000,
+    NMO_MESH_PM_BUILDNORM         = 0x01000000,
+    NMO_MESH_BWEIGHTS_CHANGED     = 0x02000000,
+
+    NMO_MESH_ALLFLAGS             = 0x007FF39F,
+    NMO_MESH_ALLOWED_FLAGS_MASK   = 0x03FFF39A
 } nmo_ck_mesh_flags_t;
 
 /**
@@ -157,6 +167,7 @@ typedef struct nmo_ck_mesh_state {
     uint32_t *vertex_colors;              ///< Vertex colors (ARGB packed)
     uint32_t *vertex_specular;            ///< Specular colors (ARGB packed)
     float *vertex_weights;                ///< Bone weights (skinning)
+    uint32_t vertex_weight_count;          ///< Vertex weight count
     
     // === Material system ===
     uint32_t material_group_count;        ///< Material group count

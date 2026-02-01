@@ -5,7 +5,7 @@
  * Provides schema definitions and (de)serialization functions for CKBeObject.
  * CKBeObject is the base class for behavioral objects (objects with scripts/attributes).
  * 
- * CKBeObject adds scripts, priority, and attributes on top of CKObject.
+ * CKBeObject adds scripts, priority, attributes, and single-activity flags on top of CKObject.
  * Many derived classes (CKRenderObject, CKMesh, CKTexture, etc.) do not override
  * Load/Save and inherit this serialization behavior directly.
  */
@@ -53,6 +53,18 @@ typedef struct nmo_ckbeobject_state {
     nmo_object_id_t *attribute_parameter_ids;  /**< Array of attribute parameter IDs */
     uint32_t *attribute_types;                 /**< Array of attribute type IDs */
     uint32_t attribute_count;                  /**< Number of attributes */
+
+    /* Attribute parameter sub-chunks (non-file mode) */
+    nmo_chunk_t **attribute_chunks;            /**< Optional sub-chunks per attribute */
+    uint32_t attribute_chunk_count;            /**< Number of attribute sub-chunks */
+
+    /* Single activity flags (file save only) */
+    uint8_t has_single_activity;               /**< True if single activity flags exist */
+    uint32_t single_activity_flags;            /**< Scene object activity flags */
+
+    /* Legacy attribute payload (CK_STATESAVE_ATTRIBUTES) */
+    void *legacy_attributes_raw;               /**< Raw legacy attribute data */
+    size_t legacy_attributes_size;             /**< Size of legacy attribute payload */
 } nmo_ckbeobject_state_t;
 
 /* =============================================================================

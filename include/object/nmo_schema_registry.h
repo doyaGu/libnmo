@@ -31,6 +31,44 @@ extern "C" {
  */
 typedef struct nmo_schema_registry nmo_schema_registry_t;
 
+/**
+ * @brief Conflict reasons for schema registration
+ */
+typedef enum nmo_schema_conflict_reason {
+    NMO_SCHEMA_CONFLICT_NONE = 0,
+    NMO_SCHEMA_CONFLICT_NAME,
+    NMO_SCHEMA_CONFLICT_GUID,
+    NMO_SCHEMA_CONFLICT_CLASS_ID
+} nmo_schema_conflict_reason_t;
+
+/**
+ * @brief Batch registration report
+ */
+typedef struct nmo_schema_register_report {
+    size_t attempted;
+    size_t registered;
+    size_t failed;
+    nmo_result_t last_error;
+    nmo_schema_conflict_reason_t last_conflict_reason;
+    const char *last_conflict_name;
+    nmo_guid_t last_conflict_guid;
+    nmo_class_id_t last_conflict_class_id;
+} nmo_schema_register_report_t;
+
+/**
+ * @brief Schema registry statistics
+ */
+typedef struct nmo_schema_registry_stats {
+    size_t total_types;
+    size_t struct_types;
+    size_t enum_types;
+    size_t array_types;
+    size_t scalar_types;
+    size_t object_types;
+    size_t guid_mapped;
+    size_t class_id_mapped;
+} nmo_schema_registry_stats_t;
+
 /* =============================================================================
  * LIFECYCLE
  * ============================================================================= */
@@ -73,6 +111,33 @@ NMO_API void nmo_schema_registry_destroy(nmo_schema_registry_t *registry);
 NMO_API nmo_result_t nmo_schema_registry_add(
     nmo_schema_registry_t *registry,
     const nmo_schema_type_t *type);
+
+/**
+ * @brief Register multiple schema types in a batch
+ *
+ * Continues registering even if some entries fail. Use report to inspect
+ * conflicts and counts.
+ *
+ * @param registry Registry
+ * @param types Array of type pointers
+ * @param type_count Number of types
+ * @param report Optional report output (can be NULL)
+ * @return NMO_OK if all succeeded, error code of the last failure otherwise
+ */
+NMO_API nmo_result_t nmo_schema_registry_add_batch(
+    nmo_schema_registry_t *registry,
+    const nmo_schema_type_t *const *types,
+    size_t type_count,
+    nmo_schema_register_report_t *report);
+
+/**
+ * @brief Get schema registry statistics
+ * @param registry Registry
+ * @param stats Output stats
+ */
+NMO_API void nmo_schema_registry_get_stats(
+    const nmo_schema_registry_t *registry,
+    nmo_schema_registry_stats_t *stats);
 
 /**
  * @brief Register all built-in types
@@ -199,6 +264,31 @@ NMO_API const nmo_schema_type_t *nmo_schema_registry_find_by_class_id_inherited(
 NMO_API const nmo_schema_type_t *nmo_schema_registry_find_by_guid(
     const nmo_schema_registry_t *registry,
     nmo_guid_t guid);
+
+/**
+ * @brief Check schema compatibility with file version
+ * @param type Schema type
+ * @param file_version File format version
+ * @return 1 if compatible, 0 otherwise
+ */
+NMO_API int nmo_schema_is_compatible(
+    const nmo_schema_type_t *type,
+    uint32_t file_version);
+
+/**
+ * @brief Find schema variant compatible with a file version
+ *
+ * Supports exact name match and version-suffixed variants (name_vN).
+ *
+ * @param registry Registry
+ * @param name Base type name
+ * @param file_version File format version
+ * @return Type descriptor or NULL if not found
+ */
+NMO_API const nmo_schema_type_t *nmo_schema_registry_find_for_version(
+    const nmo_schema_registry_t *registry,
+    const char *name,
+    uint32_t file_version);
 
 /**
  * @brief Get number of registered types

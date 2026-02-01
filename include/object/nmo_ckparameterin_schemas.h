@@ -1,0 +1,70 @@
+/**
+ * @file nmo_ckparameterin_schemas.h
+ * @brief Public API for CKParameterIn schema-based serialization
+ *
+ * Provides schema definitions and (de)serialization functions for CKParameterIn.
+ *
+ * Based on official Virtools SDK:
+ * - CKParameterIn (reference/src/CKParameterIn.cpp:140-250)
+ */
+
+#ifndef NMO_CKPARAMETERIN_SCHEMAS_H
+#define NMO_CKPARAMETERIN_SCHEMAS_H
+
+#include "nmo_types.h"
+#include "core/nmo_guid.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Forward declarations */
+typedef struct nmo_arena nmo_arena_t;
+typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_result nmo_result_t;
+
+/* =============================================================================
+ * CKParameterIn STATE STRUCTURES
+ * ============================================================================= */
+
+/**
+ * @brief CKParameterIn state
+ *
+ * Input parameters get data from a source (direct source or shared input).
+ * They don't own data - they reference another parameter.
+ *
+ * Reference: reference/src/CKParameterIn.cpp:170-250
+ */
+typedef struct nmo_ckparameterin_state {
+    nmo_guid_t type_guid;              /**< Parameter type GUID */
+    nmo_object_id_t source_id;         /**< Source parameter ID (direct or shared) */
+    uint8_t is_shared;                 /**< TRUE if shared input, FALSE if direct source */
+    uint8_t is_disabled;               /**< TRUE if parameter is disabled */
+} nmo_ckparameterin_state_t;
+
+/* =============================================================================
+ * FUNCTION POINTER TYPES
+ * ============================================================================= */
+
+typedef nmo_result_t (*nmo_ckparameterin_deserialize_fn)(
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena,
+    nmo_ckparameterin_state_t *out_state);
+
+typedef nmo_result_t (*nmo_ckparameterin_serialize_fn)(
+    const nmo_ckparameterin_state_t *in_state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena);
+
+/* =============================================================================
+ * PUBLIC API - Accessors
+ * ============================================================================= */
+
+NMO_API nmo_ckparameterin_deserialize_fn nmo_get_ckparameterin_deserialize(void);
+NMO_API nmo_ckparameterin_serialize_fn nmo_get_ckparameterin_serialize(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NMO_CKPARAMETERIN_SCHEMAS_H */

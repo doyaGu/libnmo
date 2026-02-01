@@ -16,6 +16,7 @@
 #define NMO_CKRENDEROBJECT_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "object/nmo_ckbeobject_schemas.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,11 +44,7 @@ typedef struct nmo_result nmo_result_t;
  * Reference: reference/include/CKRenderObject.h (abstract class, no Load/Save)
  */
 typedef struct nmo_ckrenderobject_state {
-    /* No additional data beyond CKBeObject - this is an abstract base class */
-    
-    /* Preserve any unknown chunk data for round-trip safety */
-    uint8_t *raw_tail;       /**< Unrecognized trailing data */
-    size_t raw_tail_size;    /**< Size of trailing data in bytes */
+    nmo_ckbeobject_state_t base;
 } nmo_ckrenderobject_state_t;
 
 /* =============================================================================

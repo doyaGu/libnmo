@@ -71,6 +71,8 @@ typedef struct nmo_ckbehavior_state {
     uint32_t flags;                        /**< Behavior flags (type, locked, etc.) */
     int32_t priority;                      /**< Execution priority (default 0) */
     int32_t compatible_class_id;           /**< Compatible object class ID */
+    nmo_object_id_t owner_id;              /**< Owner object ID (legacy formats) */
+    uint32_t behavior_type;                /**< Legacy behavior type value */
     
     /* Building block data (only if CKBEHAVIOR_BUILDINGBLOCK flag set) */
     nmo_guid_t block_guid;                 /**< Building block GUID */
@@ -82,6 +84,8 @@ typedef struct nmo_ckbehavior_state {
     /* Graph data arrays (only if not building block) */
     nmo_object_id_t *sub_behaviors;        /**< Sub-behavior IDs */
     uint32_t sub_behavior_count;           /**< Number of sub-behaviors */
+    nmo_chunk_t **sub_behavior_chunks;     /**< Sub-behavior sub-chunks (non-file mode) */
+    uint32_t sub_behavior_chunk_count;     /**< Number of sub-behavior sub-chunks */
     
     nmo_object_id_t *sub_behavior_links;   /**< Sub-behavior link IDs */
     uint32_t sub_behavior_link_count;      /**< Number of links */
@@ -98,6 +102,8 @@ typedef struct nmo_ckbehavior_state {
     
     nmo_object_id_t *local_parameters;     /**< Local parameter IDs */
     uint32_t local_parameter_count;        /**< Number of local parameters */
+    nmo_chunk_t **local_parameter_chunks;  /**< Local parameter sub-chunks (non-file mode) */
+    uint32_t local_parameter_chunk_count;  /**< Number of local parameter sub-chunks */
     
     /* I/O arrays */
     nmo_object_id_t *inputs;               /**< Input IDs (BehaviorIO) */

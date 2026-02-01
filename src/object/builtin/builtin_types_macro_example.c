@@ -42,7 +42,7 @@ NMO_DECLARE_SCHEMA(Vector3, nmo_vector_t) {
 };
 
 /* =============================================================================
- * EXAMPLE 2: Color (Struct with field annotations)
+ * EXAMPLE 2: Color (Struct with field flags)
  * ============================================================================= */
 
 /* Old approach (12 lines):
@@ -62,12 +62,12 @@ NMO_DECLARE_SCHEMA(Vector3, nmo_vector_t) {
  * if (result.code != NMO_OK) return result;
  */
 
-/* New approach (6 lines): */
+/* New approach (4 lines): */
 NMO_DECLARE_SCHEMA(Color, nmo_color_t) {
-    SCHEMA_FIELD_EX(r, f32, nmo_color_t, NMO_ANNOTATION_COLOR),
-    SCHEMA_FIELD_EX(g, f32, nmo_color_t, NMO_ANNOTATION_COLOR),
-    SCHEMA_FIELD_EX(b, f32, nmo_color_t, NMO_ANNOTATION_COLOR),
-    SCHEMA_FIELD_EX(a, f32, nmo_color_t, NMO_ANNOTATION_COLOR)
+    SCHEMA_FIELD(r, f32, nmo_color_t),
+    SCHEMA_FIELD(g, f32, nmo_color_t),
+    SCHEMA_FIELD(b, f32, nmo_color_t),
+    SCHEMA_FIELD(a, f32, nmo_color_t)
 };
 
 /* =============================================================================
@@ -171,7 +171,7 @@ typedef struct example_versioned_type {
 
 /* Field table with version metadata */
 NMO_DECLARE_SCHEMA(VersionedExample, example_versioned_type_t) {
-    SCHEMA_FIELD(id, u32, example_versioned_type_t),                              /* Since v1 (default) */
+    SCHEMA_FIELD_EX(id, u32, example_versioned_type_t, NMO_FIELD_ID),             /* Since v1 (default) */
     SCHEMA_FIELD(flags, u32, example_versioned_type_t),                           /* Since v1 (default) */
     SCHEMA_FIELD_VERSIONED(scale, f32, example_versioned_type_t, 5, 0),          /* Since v5, not deprecated */
     SCHEMA_FIELD_VERSIONED(deprecated_val, f32, example_versioned_type_t, 3, 7)  /* Since v3, deprecated in v7 */

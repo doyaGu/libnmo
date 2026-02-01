@@ -22,6 +22,8 @@
 #define NMO_CKTEXTURE_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "object/nmo_ckbeobject_schemas.h"
+#include "core/nmo_guid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,12 +44,20 @@ typedef struct nmo_result nmo_result_t;
  * Constants and Enumerations
  * ======================================================================== */
 
-/** Serialization identifiers (from CK2_3D_reverse_notes.md) */
-#define NMO_CKTEXTURE_IDENTIFIER_PALETTE       0x00200000  /**< Palette data */
-#define NMO_CKTEXTURE_IDENTIFIER_SYSMEM        0x10000000  /**< System memory copy */
-#define NMO_CKTEXTURE_IDENTIFIER_VIDEOMEM      0x00800000  /**< Video memory backup */
-#define NMO_CKTEXTURE_IDENTIFIER_FILEPATH      0x00400000  /**< Original file path */
-#define NMO_CKTEXTURE_IDENTIFIER_FORMAT        0x00040000  /**< Texture format/dimensions */
+/** Serialization identifiers (CK_STATESAVEFLAGS_TEXTURE) */
+#define NMO_CKTEXTURE_IDENTIFIER_AVIFILENAME   0x00001000  /**< Movie file name */
+#define NMO_CKTEXTURE_IDENTIFIER_CURRENTIMAGE  0x00002000  /**< Current slot */
+#define NMO_CKTEXTURE_IDENTIFIER_BITMAPS       0x00004000  /**< Legacy bitmap2 format */
+#define NMO_CKTEXTURE_IDENTIFIER_TRANSPARENT   0x00008000  /**< Transparency data */
+#define NMO_CKTEXTURE_IDENTIFIER_FILENAMES     0x00010000  /**< Slot filenames */
+#define NMO_CKTEXTURE_IDENTIFIER_COMPRESSED    0x00020000  /**< Raw bitmap data */
+#define NMO_CKTEXTURE_IDENTIFIER_VIDEOFORMAT   0x00040000  /**< Desired video format */
+#define NMO_CKTEXTURE_IDENTIFIER_SAVEFORMAT    0x00080000  /**< Save format (CKBitmapProperties) */
+#define NMO_CKTEXTURE_IDENTIFIER_READER        0x00100000  /**< Reader-compressed bitmap data */
+#define NMO_CKTEXTURE_IDENTIFIER_PICKTHRESHOLD 0x00200000  /**< Pick threshold */
+#define NMO_CKTEXTURE_IDENTIFIER_USERMIPMAP    0x00400000  /**< User mipmap levels */
+#define NMO_CKTEXTURE_IDENTIFIER_SYSTEMCACHING 0x00800000  /**< System caching */
+#define NMO_CKTEXTURE_IDENTIFIER_OLDTEXONLY    0x002FF000  /**< Packed texture flags */
 
 /** Bitmap save options (CK_BITMAP_SAVEOPTIONS) */
 #define NMO_CKTEXTURE_RAWDATA                  0x00000000  /**< Raw pixel data */
@@ -98,75 +108,117 @@ typedef struct nmo_mipmap_level {
 } nmo_mipmap_level_t;
 
 /**
+ * @brief Bitmap payload kind stored in CKTexture chunks.
+ */
+typedef enum nmo_cktexture_bitmap_kind {
+    NMO_CKTEXTURE_BITMAP_NONE = 0,
+    NMO_CKTEXTURE_BITMAP_READER = 1,
+    NMO_CKTEXTURE_BITMAP_RAW = 2,
+    NMO_CKTEXTURE_BITMAP_BITMAP2 = 3
+} nmo_cktexture_bitmap_kind_t;
+
+/**
+ * @brief Reader-compressed bitmap slot payload.
+ */
+typedef struct nmo_cktexture_reader_slot {
+    uint32_t format_type;      /**< 0 = empty, 1 = no alpha plane, 2 = alpha plane */
+    uint32_t extension;        /**< CKFileExtension packed into 4 bytes */
+    nmo_guid_t reader_guid;    /**< Bitmap reader GUID */
+    uint32_t data_size;        /**< Compressed data size */
+    uint8_t *data;             /**< Compressed payload */
+    uint32_t alpha_count;      /**< Distinct alpha count (format_type == 2) */
+    uint32_t alpha_value;      /**< Single alpha value (alpha_count == 1) */
+    uint32_t alpha_plane_size; /**< Alpha plane size (alpha_count > 1) */
+    uint8_t *alpha_plane;      /**< Alpha plane payload */
+} nmo_cktexture_reader_slot_t;
+
+/**
+ * @brief Raw bitmap slot payload (WriteRawBitmap layout).
+ */
+typedef struct nmo_cktexture_raw_slot {
+    int32_t bits_per_pixel;
+    int32_t width;
+    int32_t height;
+    uint32_t alpha_mask;
+    uint32_t red_mask;
+    uint32_t green_mask;
+    uint32_t blue_mask;
+    uint32_t compression;
+    uint32_t blue_size;
+    uint8_t *blue_data;
+    uint32_t green_size;
+    uint8_t *green_data;
+    uint32_t red_size;
+    uint8_t *red_data;
+    uint32_t alpha_size;
+    uint8_t *alpha_data;
+} nmo_cktexture_raw_slot_t;
+
+/**
+ * @brief Legacy bitmap2 slot payload.
+ */
+typedef struct nmo_cktexture_bitmap2_slot {
+    int32_t header_size;
+    uint32_t buffer_size;
+    uint8_t *buffer;
+} nmo_cktexture_bitmap2_slot_t;
+
+/**
  * @brief CKTexture state structure (inherits from CKBeObject)
  *
  * Size: Approximately 200+ bytes (variable based on mipmap count and pixel data)
  *
- * Serialization Format:
- * - Identifier 0x00040000: Format (width, height, bpp, masks)
- * - Identifier 0x00200000: Palette data (optional, for indexed formats)
- * - Identifier 0x10000000: System memory pixel data
- * - Identifier 0x00800000: Video memory backup (optional)
- * - Identifier 0x00400000: Original file path (optional, for external refs)
- *
- * Lifecycle:
- * 1. Deserialize: Parse identifiers, load pixel data and format
- * 2. FinishLoading: Validate format, generate mipmaps if needed
+ * Serialization Format (CK2/CKRenderEngine):
+ * - Identifier 0x00001000: Movie file name (optional)
+ * - Identifier 0x00100000: Reader-compressed bitmaps (optional)
+ * - Identifier 0x00020000: Raw bitmap data (optional)
+ * - Identifier 0x00004000: Legacy bitmap2 data (optional)
+ * - Identifier 0x00010000: Slot filenames (optional)
+ * - Identifier 0x00200000: Pick threshold (optional)
+ * - Identifier 0x002FF000: Packed texture flags (oldtexonly)
+ * - Identifier 0x00080000: Save format (optional)
+ * - Identifier 0x00400000: User mipmaps (optional)
  */
 typedef struct nmo_ck_texture_state {
-    /* === Inherited from CKBeObject === */
-    // CKBeObject state would be here (name, flags, etc.)
-    // For now, keeping it simple without explicit inheritance
-    
-    /* === CKTexture-Specific === */
-    
-    /** @name Texture Format (Identifier 0x00040000) */
-    /**@{*/
-    bool has_format;                    /**< True if format data is present */
-    nmo_texture_format_t format;        /**< Texture format and dimensions */
-    /**@}*/
-    
-    /** @name Palette Data (Identifier 0x00200000) */
-    /**@{*/
-    bool has_palette;                   /**< True if palette is present */
-    uint32_t palette_size;              /**< Number of palette entries */
-    uint32_t *palette;                  /**< Palette entries (ARGB, arena-allocated) */
-    /**@}*/
-    
-    /** @name Pixel Data (Identifier 0x10000000) */
-    /**@{*/
-    bool has_pixel_data;                /**< True if pixel data is present */
-    uint32_t pixel_data_size;           /**< Size of pixel data in bytes */
-    uint8_t *pixel_data;                /**< Raw pixel data (arena-allocated) */
-    /**@}*/
-    
-    /** @name Video Memory Backup (Identifier 0x00800000) */
-    /**@{*/
-    bool has_video_backup;              /**< True if video backup is present */
-    uint32_t video_backup_size;         /**< Size of video backup in bytes */
-    uint8_t *video_backup;              /**< Video memory backup (arena-allocated) */
-    /**@}*/
-    
-    /** @name External File Reference (Identifier 0x00400000) */
-    /**@{*/
-    bool has_file_path;                 /**< True if external file path is present */
-    char *file_path;                    /**< Original file path (arena-allocated) */
-    /**@}*/
-    
-    /** @name Mipmap Data */
-    /**@{*/
-    uint32_t mipmap_count;              /**< Number of mipmap levels */
-    nmo_mipmap_level_t *mipmaps;        /**< Mipmap levels (arena-allocated) */
-    /**@}*/
-    
-    /** @name Save Options */
-    /**@{*/
-    uint32_t save_options;              /**< Bitmap save options (CK_BITMAP_SAVEOPTIONS) */
-    uint32_t flags;                     /**< Bitmap flags (CKBMPDATA_FLAGS) */
-    /**@}*/
-    
-    /* === Internal State === */
-    bool needs_mipmap_generation;       /**< Flag set during Load, cleared after mipmap gen */
+    nmo_ckbeobject_state_t base;
+
+    /* Movie / filenames */
+    uint8_t has_movie_filename;
+    char *movie_filename;
+    uint8_t has_slot_filenames;
+    uint32_t slot_count;
+    char **slot_filenames;
+
+    /* Bitmap payloads */
+    nmo_cktexture_bitmap_kind_t bitmap_kind;
+    nmo_cktexture_reader_slot_t *reader_slots;
+    nmo_cktexture_raw_slot_t *raw_slots;
+    nmo_cktexture_bitmap2_slot_t *bitmap2_slots;
+
+    /* Pick threshold */
+    uint8_t has_pick_threshold;
+    int32_t pick_threshold;
+
+    /* Packed flags (CK_STATESAVE_OLDTEXONLY) */
+    uint8_t has_oldtexonly;
+    uint8_t mipmap_level;
+    uint16_t save_options;
+    uint8_t is_transparent;
+    uint8_t is_cubemap;
+    uint8_t has_desired_video_format;
+    uint32_t desired_video_format;
+    uint8_t has_transparent_color;
+    uint32_t transparent_color;
+    uint8_t has_current_slot;
+    int32_t current_slot;
+
+    /* Save format and user mipmaps */
+    uint8_t has_save_format;
+    void *save_format_data;
+    size_t save_format_size;
+    uint8_t has_user_mipmaps;
+    uint32_t user_mipmap_count;
+    nmo_cktexture_raw_slot_t *user_mipmaps;
 } nmo_ck_texture_state_t;
 
 /* ========================================================================
@@ -182,14 +234,14 @@ typedef struct nmo_ck_texture_state {
  * @return NMO_OK on success, error code on failure
  *
  * Expected Identifiers:
- * - 0x00040000: Format (required)
- * - 0x10000000: Pixel data (required)
- * - 0x00200000: Palette (optional, for indexed formats)
- * - 0x00800000: Video backup (optional)
- * - 0x00400000: File path (optional, for external refs)
+ * - 0x00100000, 0x00020000, or 0x00004000: bitmap payloads
+ * - 0x00010000: slot filenames
+ * - 0x002FF000: packed flags
+ * - 0x00080000: save format
+ * - 0x00400000: user mipmaps
  *
  * Error Conditions:
- * - NMO_ERR_INVALID_FORMAT: Missing required format or pixel data
+ * - NMO_ERR_INVALID_FORMAT: malformed bitmap payload
  * - NMO_ERR_NOMEM: Arena allocation failure
  */
 typedef nmo_result_t (*nmo_cktexture_deserialize_fn)(
@@ -207,11 +259,12 @@ typedef nmo_result_t (*nmo_cktexture_deserialize_fn)(
  * @return NMO_OK on success, error code on failure
  *
  * Written Identifiers:
- * - 0x00040000: Format (always written if has_format is true)
- * - 0x10000000: Pixel data (always written if has_pixel_data is true)
- * - 0x00200000: Palette (written if has_palette is true)
- * - 0x00800000: Video backup (written if has_video_backup is true)
- * - 0x00400000: File path (written if has_file_path is true)
+ * - 0x00100000 / 0x00020000 / 0x00004000: bitmap payloads
+ * - 0x00010000: slot filenames
+ * - 0x00200000: pick threshold
+ * - 0x002FF000: packed flags
+ * - 0x00080000: save format
+ * - 0x00400000: user mipmaps
  *
  * Error Conditions:
  * - NMO_ERR_CANT_WRITE_FILE: Chunk buffer overflow
@@ -226,10 +279,7 @@ typedef nmo_result_t (*nmo_cktexture_serialize_fn)(
 /**
  * @brief Finish loading callback for CKTexture objects
  *
- * Performs post-deserialization setup:
- * - Validates texture format (dimensions, bpp)
- * - Generates mipmaps if needed
- * - Clears needs_mipmap_generation flag
+ * Performs post-deserialization setup (no-op for raw payload schemas).
  *
  * @param[in,out] state CKTexture state to finalize
  * @param[in] context Object context (unused currently)
@@ -237,8 +287,7 @@ typedef nmo_result_t (*nmo_cktexture_serialize_fn)(
  * @return NMO_OK on success, error code on failure
  *
  * Error Conditions:
- * - NMO_ERR_VALIDATION_FAILED: Invalid texture format
- * - NMO_ERR_NOMEM: Failed to allocate mipmap data
+ * - NMO_ERR_VALIDATION_FAILED: Invalid payload
  */
 typedef nmo_result_t (*nmo_cktexture_finish_loading_fn)(
     nmo_ck_texture_state_t *state,

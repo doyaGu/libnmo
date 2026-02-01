@@ -14,6 +14,7 @@
 #include "object/nmo_schema_registry.h"
 #include "object/nmo_schema_builder.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -32,6 +33,10 @@
 #define CK_STATESAVE_DATAARRAYFORMAT  0x00000001
 #define CK_STATESAVE_DATAARRAYDATA    0x00000002
 #define CK_STATESAVE_DATAARRAYMEMBERS 0x00000004
+
+static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
+    return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
+}
 
 /* =============================================================================
  * CKDataArray DESERIALIZATION
@@ -105,10 +110,10 @@ static nmo_result_t nmo_ckdataarray_deserialize(
                 fmt->name = temp_name; /* Note: This relies on chunk's internal buffer */
 
                 /* Read column type */
-                uint32_t type;
-                result = nmo_chunk_read_dword(chunk, &type);
+                int32_t type;
+                result = nmo_chunk_read_int(chunk, &type);
                 if (result.code != NMO_OK) return result;
-                fmt->type = (nmo_ck_arraytype_t)type;
+                fmt->type = (nmo_ck_arraytype_t)((uint32_t)type);
 
                 /* Read parameter type GUID for PARAMETER columns */
                 if (fmt->type == NMO_ARRAYTYPE_PARAMETER) {
@@ -192,10 +197,13 @@ static nmo_result_t nmo_ckdataarray_deserialize(
                             break;
 
                         case NMO_ARRAYTYPE_PARAMETER:
-                            /* Parameters can be stored as references or sub-chunks */
-                            /* For simplicity, read as sub-chunk (CKFile* == nullptr case) */
-                            result = nmo_chunk_read_sub_chunk(chunk, &cell->parameter_chunk);
-                            if (result.code != NMO_OK) return result;
+                            if (nmo_chunk_is_file_mode(chunk)) {
+                                result = nmo_chunk_read_object_id(chunk, &cell->parameter_id);
+                                if (result.code != NMO_OK) return result;
+                            } else {
+                                result = nmo_chunk_read_sub_chunk(chunk, &cell->parameter_chunk);
+                                if (result.code != NMO_OK) return result;
+                            }
                             break;
 
                         default:
@@ -221,10 +229,10 @@ static nmo_result_t nmo_ckdataarray_deserialize(
         if (result.code != NMO_OK) return result;
         out_state->column_index = (uint32_t)column_index;
 
-        /* Key column was added in version 5 */
-        /* Check if there's more data to read */
-        result = nmo_chunk_read_int(chunk, &out_state->key_column);
-        /* Ignore errors - key_column is optional for older versions */
+        if (nmo_chunk_is_file_mode(chunk) || nmo_chunk_get_data_version(chunk) >= 5) {
+            result = nmo_chunk_read_int(chunk, &out_state->key_column);
+            if (result.code != NMO_OK) return result;
+        }
     }
 
     return nmo_result_ok();
@@ -323,7 +331,10 @@ static nmo_result_t nmo_ckdataarray_serialize(
                 break;
 
             case NMO_ARRAYTYPE_PARAMETER:
-                if (cell->parameter_chunk) {
+                if (nmo_chunk_is_file_mode(out_chunk)) {
+                    result = nmo_chunk_write_object_id(out_chunk, cell->parameter_id);
+                    if (result.code != NMO_OK) return result;
+                } else if (cell->parameter_chunk) {
                     result = nmo_chunk_write_sub_chunk(out_chunk, cell->parameter_chunk);
                     if (result.code != NMO_OK) return result;
                 }

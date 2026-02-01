@@ -12,15 +12,12 @@
  * 
  * Format structure (from reference Load/Save):
  * - CK3dEntity data (transform matrix, etc)
- * - Projection type (DWORD: 0=perspective, 1=orthographic)
- * - FOV angle (float, in degrees)
- * - Aspect ratio (float, width/height)
+ * - Projection type (DWORD: CK_PERSPECTIVEPROJECTION or CK_ORTHOGRAPHICPROJECTION)
+ * - FOV angle (float, radians)
+ * - Orthographic zoom (float)
+ * - Packed width/height (DWORD: low=width, high=height)
  * - Near clip plane (float)
  * - Far clip plane (float)
- * - Orthographic width/height (floats, for ortho mode)
- * - Optional: Target point, roll angle, etc
- * 
- * This is a PARTIAL schema - some fields preserved in raw_tail.
  */
 
 #include "object/nmo_ckcamera_schemas.h"
@@ -37,6 +34,14 @@
 #include <stdalign.h>
 #include <string.h>
 
+/* Identifier constants from CKDefines2.h */
+#define CK_STATESAVE_CAMERAFOV       0x00400000u
+#define CK_STATESAVE_CAMERAPROJTYPE  0x00800000u
+#define CK_STATESAVE_CAMERAOTHOZOOM  0x01000000u
+#define CK_STATESAVE_CAMERAASPECT    0x02000000u
+#define CK_STATESAVE_CAMERAPLANES    0x04000000u
+#define CK_STATESAVE_CAMERAONLY      0x0FC00000u
+
 /* =============================================================================
  * CKCamera DESERIALIZATION
  * ============================================================================= */
@@ -48,14 +53,12 @@
  * 
  * Chunk format (version 7):
  * - CK3dEntity data (transform, flags, etc)
- * - DWORD projection_type (0=perspective, 1=orthographic)
- * - float fov (field of view angle in degrees)
- * - float aspect_ratio (width/height)
+ * - DWORD projection_type
+ * - float fov
+ * - float orthographic_zoom
+ * - DWORD packed dimensions
  * - float near_plane
  * - float far_plane
- * - float ortho_width (for orthographic mode)
- * - float ortho_height (for orthographic mode)
- * - Remaining data preserved as raw_tail
  * 
  * @param chunk Chunk containing CKCamera data
  * @param arena Arena for allocations
@@ -82,92 +85,39 @@ static nmo_result_t nmo_ckcamera_deserialize(
         return result;
     }
 
-    // Read projection type
-    result = nmo_chunk_read_dword(chunk, &out_state->projection_type);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read projection type");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    // Read FOV
-    result = nmo_chunk_read_float(chunk, &out_state->fov);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read FOV");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    // Read aspect ratio
-    result = nmo_chunk_read_float(chunk, &out_state->aspect_ratio);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read aspect ratio");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    // Read near plane
-    result = nmo_chunk_read_float(chunk, &out_state->near_plane);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read near plane");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    // Read far plane
-    result = nmo_chunk_read_float(chunk, &out_state->far_plane);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read far plane");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    // Read orthographic dimensions
-    result = nmo_chunk_read_float(chunk, &out_state->ortho_width);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read ortho width");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    result = nmo_chunk_read_float(chunk, &out_state->ortho_height);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                      NMO_SEVERITY_ERROR,
-                                      "Failed to read ortho height");
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
-    }
-
-    // Preserve remaining data as raw tail
-    size_t current_pos = nmo_chunk_get_position(chunk);
-    size_t chunk_size = nmo_chunk_get_data_size(chunk);
-    
-    if (current_pos < chunk_size) {
-        size_t remaining = chunk_size - current_pos;
-        out_state->raw_tail = (uint8_t *)nmo_arena_alloc(arena, remaining, 1);
-        if (out_state->raw_tail) {
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk, 
-                out_state->raw_tail, remaining);
-            if (bytes_read == remaining) {
-                out_state->raw_tail_size = remaining;
-            } else {
-                out_state->raw_tail = NULL;
-                out_state->raw_tail_size = 0;
-            }
+    if (nmo_chunk_get_data_version(chunk) < 5) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAFOV).code == NMO_OK) {
+            (void)nmo_chunk_read_float(chunk, &out_state->fov);
         }
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPROJTYPE).code == NMO_OK) {
+            (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
+        }
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAOTHOZOOM).code == NMO_OK) {
+            (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
+        }
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAASPECT).code == NMO_OK) {
+            (void)nmo_chunk_read_int(chunk, &out_state->width);
+            (void)nmo_chunk_read_int(chunk, &out_state->height);
+        }
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPLANES).code == NMO_OK) {
+            (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
+            (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
+        }
+        return nmo_result_ok();
+    }
+
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAONLY).code == NMO_OK) {
+        (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
+        (void)nmo_chunk_read_float(chunk, &out_state->fov);
+        (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
+
+        uint32_t packed = 0;
+        (void)nmo_chunk_read_dword(chunk, &packed);
+        out_state->width = (int32_t)(packed & 0xFFFF);
+        out_state->height = (int32_t)((packed >> 16) & 0xFFFF);
+
+        (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
+        (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
     }
 
     return nmo_result_ok();
@@ -203,33 +153,28 @@ static nmo_result_t nmo_ckcamera_serialize(
         return result;
     }
 
-    // Write projection parameters
-    result = nmo_chunk_write_dword(out_chunk, in_state->projection_type);
-    if (result.code != NMO_OK) return result;
-    
-    result = nmo_chunk_write_float(out_chunk, in_state->fov);
-    if (result.code != NMO_OK) return result;
-    
-    result = nmo_chunk_write_float(out_chunk, in_state->aspect_ratio);
-    if (result.code != NMO_OK) return result;
-    
-    result = nmo_chunk_write_float(out_chunk, in_state->near_plane);
-    if (result.code != NMO_OK) return result;
-    
-    result = nmo_chunk_write_float(out_chunk, in_state->far_plane);
-    if (result.code != NMO_OK) return result;
-    
-    result = nmo_chunk_write_float(out_chunk, in_state->ortho_width);
-    if (result.code != NMO_OK) return result;
-    
-    result = nmo_chunk_write_float(out_chunk, in_state->ortho_height);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CAMERAONLY);
     if (result.code != NMO_OK) return result;
 
-    // Write preserved tail data
-    if (in_state->raw_tail_size > 0 && in_state->raw_tail) {
-        result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->raw_tail, in_state->raw_tail_size);
-        if (result.code != NMO_OK) return result;
-    }
+    result = nmo_chunk_write_dword(out_chunk, in_state->projection_type);
+    if (result.code != NMO_OK) return result;
+
+    result = nmo_chunk_write_float(out_chunk, in_state->fov);
+    if (result.code != NMO_OK) return result;
+
+    result = nmo_chunk_write_float(out_chunk, in_state->orthographic_zoom);
+    if (result.code != NMO_OK) return result;
+
+    uint32_t packed = ((uint32_t)(in_state->height & 0xFFFF) << 16) |
+        (uint32_t)(in_state->width & 0xFFFF);
+    result = nmo_chunk_write_dword(out_chunk, packed);
+    if (result.code != NMO_OK) return result;
+
+    result = nmo_chunk_write_float(out_chunk, in_state->near_plane);
+    if (result.code != NMO_OK) return result;
+
+    result = nmo_chunk_write_float(out_chunk, in_state->far_plane);
+    if (result.code != NMO_OK) return result;
 
     return nmo_result_ok();
 }
@@ -316,8 +261,8 @@ nmo_result_t nmo_register_ckcamera_schemas(
     nmo_builder_add_field_ex(&builder, "fov", float_type,
                             offsetof(nmo_ckcamera_state_t, fov),
                             0);
-    nmo_builder_add_field_ex(&builder, "aspect_ratio", float_type,
-                            offsetof(nmo_ckcamera_state_t, aspect_ratio),
+    nmo_builder_add_field_ex(&builder, "orthographic_zoom", float_type,
+                            offsetof(nmo_ckcamera_state_t, orthographic_zoom),
                             0);
     nmo_builder_add_field_ex(&builder, "near_plane", float_type,
                             offsetof(nmo_ckcamera_state_t, near_plane),
@@ -325,11 +270,11 @@ nmo_result_t nmo_register_ckcamera_schemas(
     nmo_builder_add_field_ex(&builder, "far_plane", float_type,
                             offsetof(nmo_ckcamera_state_t, far_plane),
                             0);
-    nmo_builder_add_field_ex(&builder, "ortho_width", float_type,
-                            offsetof(nmo_ckcamera_state_t, ortho_width),
+    nmo_builder_add_field_ex(&builder, "width", uint32_type,
+                            offsetof(nmo_ckcamera_state_t, width),
                             0);
-    nmo_builder_add_field_ex(&builder, "ortho_height", float_type,
-                            offsetof(nmo_ckcamera_state_t, ortho_height),
+    nmo_builder_add_field_ex(&builder, "height", uint32_type,
+                            offsetof(nmo_ckcamera_state_t, height),
                             0);
     
     /* Attach vtable for optimized read/write */
