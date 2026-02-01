@@ -155,7 +155,7 @@ nmo_result_t nmo_ckparameteroperation_serialize(
         return nmo_result_ok();
     }
 
-    if (!nmo_guid_is_null(&in_state->operation_guid)) {
+    if (!nmo_guid_is_null(in_state->operation_guid)) {
         nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONOP);
         if (result.code != NMO_OK) return result;
         result = nmo_chunk_write_guid(out_chunk, in_state->operation_guid);
