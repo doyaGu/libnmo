@@ -24,6 +24,17 @@ typedef struct tracked_value {
     uint32_t id;
 } tracked_value_t;
 
+static void tracked_value_copy(void *dest, const void *src, void *user_data) {
+    if (dest == NULL || src == NULL) {
+        return;
+    }
+    memcpy(dest, src, sizeof(tracked_value_t));
+    if (user_data != NULL) {
+        uint32_t *count = (uint32_t *)user_data;
+        *count += 1u;
+    }
+}
+
 static void tracked_value_dispose(void *element, void *user_data) {
     if (element == NULL || user_data == NULL) {
         return;
@@ -741,6 +752,36 @@ TEST(buffer, clone_preserves_independence) {
     nmo_arena_destroy(arena);
 }
 
+TEST(buffer, clone_preserves_lifecycle_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_arena_array_t src;
+    nmo_arena_array_init(&src, sizeof(tracked_value_t), 0, arena);
+
+    tracked_value_t values[] = {{1}, {2}, {3}};
+    nmo_arena_array_append_array(&src, values, 3);
+
+    uint32_t copy_count = 0;
+    nmo_container_lifecycle_t lifecycle = {
+        .copy = tracked_value_copy,
+        .user_data = &copy_count
+    };
+    nmo_arena_array_set_lifecycle(&src, &lifecycle);
+
+    nmo_arena_array_t dest;
+    nmo_result_t result = nmo_arena_array_clone(&src, &dest, arena);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(3u, copy_count);
+
+    tracked_value_t extra = {9};
+    result = nmo_arena_array_append(&dest, &extra);
+    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(4u, copy_count);
+
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Typed Macro Tests
  * ========================================================================== */
@@ -1329,6 +1370,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(buffer, clone_basic);
     REGISTER_TEST(buffer, clone_empty_buffer);
     REGISTER_TEST(buffer, clone_preserves_independence);
+    REGISTER_TEST(buffer, clone_preserves_lifecycle_copy);
 
     /* Typed Macro Tests */
     REGISTER_TEST(buffer, typed_macros_basic);

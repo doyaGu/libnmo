@@ -65,9 +65,31 @@ TEST(error, result_create) {
     nmo_arena_destroy(arena);
 }
 
+TEST(error, free_non_arena_chain) {
+    nmo_error_t *cause = nmo_error_createf_at(NULL,
+                                              NMO_ERR_INVALID_ARGUMENT,
+                                              NMO_SEVERITY_ERROR,
+                                              __FILE__,
+                                              __LINE__,
+                                              "Cause %d", 1);
+    ASSERT_NOT_NULL(cause);
+
+    nmo_error_t *err = nmo_error_createf_at(NULL,
+                                            NMO_ERR_INVALID_STATE,
+                                            NMO_SEVERITY_ERROR,
+                                            __FILE__,
+                                            __LINE__,
+                                            "Top error");
+    ASSERT_NOT_NULL(err);
+    nmo_error_add_cause(err, cause);
+
+    nmo_error_free(err);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(error, code_ok);
     REGISTER_TEST(error, create);
     REGISTER_TEST(error, message);
     REGISTER_TEST(error, result_create);
+    REGISTER_TEST(error, free_non_arena_chain);
 TEST_MAIN_END()

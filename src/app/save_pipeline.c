@@ -663,23 +663,45 @@ static nmo_result_t save_build_data_section(nmo_save_context_t *ctx) {
         return SAVE_ERR(NMO_ERR_NOMEM, "Object data array allocation failed");
     }
 
+    uint32_t file_version = ctx->file_info.file_version;
+    if (file_version == 0) file_version = 8;
+
+    nmo_id_remap_table_t *remap_table = NULL;
+    if (file_version < 7) {
+        remap_table = nmo_id_remap_plan_get_table(ctx->remap_plan);
+        if (remap_table == NULL) {
+            return SAVE_ERR(NMO_ERR_INVALID_STATE, "Missing ID remap table for legacy save");
+        }
+    }
+
     /* Copy chunk pointers */
     for (size_t i = 0; i < ctx->object_count; i++) {
         if (ctx->reference_map[i]) {
+            data_sect.objects[i].object_id = 0;
             data_sect.objects[i].chunk = NULL;
             data_sect.objects[i].data_size = 0;
         } else {
             nmo_chunk_t *chunk = ctx->objects[i]->chunk;
+            data_sect.objects[i].object_id = 0;
             data_sect.objects[i].chunk = chunk;
             data_sect.objects[i].data_size = (chunk && chunk->raw_data != NULL)
                 ? (uint32_t)chunk->raw_size : 0;
         }
+
+        if (file_version < 7) {
+            nmo_object_id_t file_id = 0;
+            int lookup_result = nmo_id_remap_lookup(remap_table, ctx->objects[i]->id, &file_id);
+            if (lookup_result != NMO_OK || file_id == 0) {
+                nmo_log(ctx->logger, NMO_LOG_ERROR,
+                        "Failed to map object ID for legacy save (runtime=%u)",
+                        ctx->objects[i]->id);
+                return SAVE_ERR(lookup_result, "Legacy object ID remap failed");
+            }
+            data_sect.objects[i].object_id = file_id;
+        }
     }
 
     /* Calculate data section size */
-    uint32_t file_version = ctx->file_info.file_version;
-    if (file_version == 0) file_version = 8;
-
     size_t data_size = nmo_data_section_calculate_size(&data_sect, file_version, ctx->arena);
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Data section unpack size: %zu bytes", data_size);
 

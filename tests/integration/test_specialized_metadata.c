@@ -406,8 +406,8 @@ TEST(specialized_metadata, specialized_index_field) {
     ASSERT_NE(NULL, reg_type);
     nmo_type_id_t type_id = reg_type->id;
     
-    /* Initially specialized_index should be 0 */
-    ASSERT_EQ(0, reg_type->specialized_index);
+    /* Initially specialized_index should be invalid */
+    ASSERT_EQ(NMO_SPECIALIZED_INDEX_INVALID, reg_type->specialized_index);
     
     /* Register metadata */
     nmo_enum_descriptor_t vals[] = {
@@ -426,8 +426,138 @@ TEST(specialized_metadata, specialized_index_field) {
     /* Check that specialized_index is now set */
     reg_type = nmo_type_registry_find_by_guid(registry, GUID_ENUM_COLOR);
     ASSERT_NE(NULL, reg_type);
-    ASSERT_GT(reg_type->specialized_index, 0);  /* Should be non-zero now */
+    ASSERT_NE(NMO_SPECIALIZED_INDEX_INVALID, reg_type->specialized_index);
     
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
+ * Test: Deep Copy Metadata Inputs
+ * ============================================================================ */
+
+TEST(specialized_metadata, deep_copy_inputs) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NE(NULL, arena);
+
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    ASSERT_NE(NULL, registry);
+
+    /* Register enum, struct, and flags types */
+    nmo_type_descriptor_t enum_type = {0};
+    enum_type.guid = GUID_ENUM_COLOR;
+    enum_type.name = "CopyEnum";
+    enum_type.category = NMO_TYPE_CATEGORY_ENUM;
+    enum_type.size = 4;
+    enum_type.alignment = 4;
+    enum_type.valid = true;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &enum_type).code);
+
+    nmo_type_descriptor_t struct_type = {0};
+    struct_type.guid = GUID_STRUCT_POINT;
+    struct_type.name = "CopyStruct";
+    struct_type.category = NMO_TYPE_CATEGORY_STRUCT;
+    struct_type.size = 8;
+    struct_type.alignment = 4;
+    struct_type.valid = true;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &struct_type).code);
+
+    nmo_type_descriptor_t flags_type = {0};
+    flags_type.guid = GUID_FLAGS_PERMS;
+    flags_type.name = "CopyFlags";
+    flags_type.category = NMO_TYPE_CATEGORY_FLAGS;
+    flags_type.size = 4;
+    flags_type.alignment = 4;
+    flags_type.valid = true;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &flags_type).code);
+
+    nmo_type_id_t enum_id = nmo_type_registry_find_by_guid(registry, GUID_ENUM_COLOR)->id;
+    nmo_type_id_t struct_id = nmo_type_registry_find_by_guid(registry, GUID_STRUCT_POINT)->id;
+    nmo_type_id_t flags_id = nmo_type_registry_find_by_guid(registry, GUID_FLAGS_PERMS)->id;
+
+    /* Build metadata with mutable buffers */
+    char enum_name[] = "Red";
+    char enum_desc[] = "EnumDesc";
+    nmo_enum_descriptor_t enum_values[] = {
+        {.name = enum_name, .value = 1, .description = enum_desc, .flags = 0}
+    };
+    nmo_specialized_metadata_t enum_meta = {0};
+    enum_meta.type_id = enum_id;
+    enum_meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+    enum_meta.enum_meta.values = enum_values;
+    enum_meta.enum_meta.value_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &enum_meta).code);
+
+    char field_name[] = "x";
+    char field_desc[] = "XCoord";
+    nmo_struct_descriptor_t struct_fields[] = {
+        {
+            .name = field_name,
+            .type_guid = GUID_INT,
+            .offset = 0,
+            .size = 4,
+            .array_count = 0,
+            .flags = 0,
+            .description = field_desc
+        }
+    };
+    nmo_specialized_metadata_t struct_meta = {0};
+    struct_meta.type_id = struct_id;
+    struct_meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+    struct_meta.struct_meta.fields = struct_fields;
+    struct_meta.struct_meta.field_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &struct_meta).code);
+
+    char flag_name[] = "Read";
+    char flag_desc[] = "ReadPerm";
+    nmo_flags_descriptor_t flags_bits[] = {
+        {.name = flag_name, .mask = 0x01, .description = flag_desc, .flags = 0}
+    };
+    nmo_specialized_metadata_t flags_meta = {0};
+    flags_meta.type_id = flags_id;
+    flags_meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+    flags_meta.flags_meta.bits = flags_bits;
+    flags_meta.flags_meta.bit_count = 1;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &flags_meta).code);
+
+    /* Mutate inputs after registration */
+    enum_name[0] = 'X';
+    enum_desc[0] = 'Y';
+    enum_values[0].value = 99;
+    enum_values[0].flags = 42;
+
+    field_name[0] = 'Z';
+    field_desc[0] = 'W';
+    struct_fields[0].size = 16;
+    struct_fields[0].flags = 0xFF;
+
+    flag_name[0] = 'Q';
+    flag_desc[0] = 'R';
+    flags_bits[0].mask = 0x10;
+    flags_bits[0].flags = 7;
+
+    /* Verify registry retains original copies */
+    const nmo_specialized_metadata_t *enum_out = nmo_type_registry_get_metadata(registry, enum_id);
+    ASSERT_NE(NULL, enum_out);
+    ASSERT_STR_EQ("Red", enum_out->enum_meta.values[0].name);
+    ASSERT_STR_EQ("EnumDesc", enum_out->enum_meta.values[0].description);
+    ASSERT_EQ(1, enum_out->enum_meta.values[0].value);
+    ASSERT_EQ(0, enum_out->enum_meta.values[0].flags);
+
+    const nmo_specialized_metadata_t *struct_out = nmo_type_registry_get_metadata(registry, struct_id);
+    ASSERT_NE(NULL, struct_out);
+    ASSERT_STR_EQ("x", struct_out->struct_meta.fields[0].name);
+    ASSERT_STR_EQ("XCoord", struct_out->struct_meta.fields[0].description);
+    ASSERT_EQ(4, struct_out->struct_meta.fields[0].size);
+    ASSERT_EQ(0, struct_out->struct_meta.fields[0].flags);
+
+    const nmo_specialized_metadata_t *flags_out = nmo_type_registry_get_metadata(registry, flags_id);
+    ASSERT_NE(NULL, flags_out);
+    ASSERT_STR_EQ("Read", flags_out->flags_meta.bits[0].name);
+    ASSERT_STR_EQ("ReadPerm", flags_out->flags_meta.bits[0].description);
+    ASSERT_EQ(0x01, flags_out->flags_meta.bits[0].mask);
+    ASSERT_EQ(0, flags_out->flags_meta.bits[0].flags);
+
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
@@ -479,5 +609,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(specialized_metadata, multiple_types);
     REGISTER_TEST(specialized_metadata, unregistration);
     REGISTER_TEST(specialized_metadata, specialized_index_field);
+    REGISTER_TEST(specialized_metadata, deep_copy_inputs);
     REGISTER_TEST(specialized_metadata, invalid_arguments);
 TEST_MAIN_END()

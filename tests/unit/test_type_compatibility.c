@@ -481,6 +481,51 @@ TEST(type_compatibility, lazy_mask_update) {
     teardown();
 }
 
+TEST(type_compatibility, derivation_out_of_order_registration) {
+    nmo_arena_t *local_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NE(NULL, local_arena);
+
+    nmo_type_registry_t *local_registry = nmo_type_registry_create(local_arena);
+    ASSERT_NE(NULL, local_registry);
+
+    nmo_guid_t guid_parent = {0x20000001, 0x00000000};
+    nmo_guid_t guid_child = {0x20000002, 0x00000000};
+
+    nmo_type_descriptor_t child_type = {0};
+    child_type.guid = guid_child;
+    child_type.name = "ChildType";
+    child_type.size = 4;
+    child_type.alignment = 4;
+    child_type.category = NMO_TYPE_CATEGORY_SCALAR;
+    child_type.valid = true;
+    child_type.base_type = guid_parent;
+
+    nmo_result_t res = nmo_type_registry_register(local_registry, &child_type);
+    ASSERT_EQ(NMO_OK, res.code);
+
+    nmo_type_descriptor_t parent_type = {0};
+    parent_type.guid = guid_parent;
+    parent_type.name = "ParentType";
+    parent_type.size = 4;
+    parent_type.alignment = 4;
+    parent_type.category = NMO_TYPE_CATEGORY_SCALAR;
+    parent_type.valid = true;
+    parent_type.base_type = NMO_GUID_NULL;
+
+    res = nmo_type_registry_register(local_registry, &parent_type);
+    ASSERT_EQ(NMO_OK, res.code);
+
+    nmo_type_id_t parent_id = nmo_type_registry_guid_to_type_id(local_registry, guid_parent);
+    nmo_type_id_t child_id = nmo_type_registry_guid_to_type_id(local_registry, guid_child);
+    ASSERT_NE(NMO_TYPE_ID_INVALID, parent_id);
+    ASSERT_NE(NMO_TYPE_ID_INVALID, child_id);
+
+    ASSERT_TRUE(nmo_type_is_derived_from(local_registry, child_id, parent_id));
+
+    nmo_type_registry_destroy(local_registry);
+    nmo_arena_destroy(local_arena);
+}
+
 /* ============================================================================
  * Test Main
  * ============================================================================ */
@@ -510,4 +555,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_conversion, class_id_conversions);
     REGISTER_TEST(type_compatibility, null_registry);
     REGISTER_TEST(type_compatibility, lazy_mask_update);
+    REGISTER_TEST(type_compatibility, derivation_out_of_order_registration);
 TEST_MAIN_END()

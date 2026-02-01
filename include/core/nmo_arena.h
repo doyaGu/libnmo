@@ -44,7 +44,7 @@ typedef struct nmo_arena_config {
     size_t initial_block_size;    /**< Initial block size (default: 64KB) */
     size_t max_block_size;        /**< Maximum block size (default: 16MB, 0=unlimited) */
     float growth_factor;          /**< Growth factor for new blocks (default: 2.0) */
-    size_t alignment;             /**< Default alignment (default: 16 bytes) */
+    size_t alignment;             /**< Default alignment (default: 16 bytes, max: 16) */
 } nmo_arena_config_t;
 
 /**
@@ -77,7 +77,7 @@ NMO_API nmo_arena_t *nmo_arena_create(nmo_allocator_t *allocator, size_t initial
  *
  * @param arena Arena allocator
  * @param size Number of bytes to allocate
- * @param alignment Alignment requirement (must be power of 2)
+ * @param alignment Alignment requirement (must be power of 2, max 16)
  * @return Pointer to allocated memory or NULL on failure
  */
 NMO_API void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment);

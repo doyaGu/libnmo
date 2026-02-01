@@ -60,6 +60,7 @@ typedef struct nmo_manager_data {
  * in Header1 for file_version >= 8.
  */
 typedef struct nmo_object_data {
+    nmo_object_id_t object_id; /**< Object ID for legacy formats (file_version < 7) */
     uint32_t data_size; /**< Size of chunk data in bytes */
     nmo_chunk_t *chunk; /**< Chunk containing object state (may be NULL if size=0) */
 } nmo_object_data_t;

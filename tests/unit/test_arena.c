@@ -69,23 +69,13 @@ TEST(arena, aligned_allocation) {
 }
 
 TEST(arena, alignment_16_bytes) {
-    /* Note: 16-byte alignment requires a fresh arena since chunk->data
-     * is at offset 24 (not 16-byte aligned). The first allocation in a
-     * fresh arena should work if the chunk itself is 16-byte aligned. */
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
     void *ptr16 = nmo_arena_alloc(arena, 10, 16);
     ASSERT_NOT_NULL(ptr16);
 
-    /* Check alignment - may be 8 or 16 depending on malloc alignment */
-    uintptr_t align = ((uintptr_t)ptr16) % 16;
-    if (align != 0) {
-        /* Skip test if 16-byte alignment is not supported */
-        /* This is acceptable behavior on some systems */
-    } else {
-        ASSERT_EQ(align, 0);
-    }
+    ASSERT_EQ(((uintptr_t)ptr16) % 16, 0);
 
     nmo_arena_destroy(arena);
 }

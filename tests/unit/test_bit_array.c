@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 TEST(bit_array, basic_set_and_test) {
     nmo_bit_array_t bits;
@@ -127,10 +128,26 @@ TEST(bit_array, to_string) {
     nmo_bit_array_dispose(&bits);
 }
 
+TEST(bit_array, overflow_guards) {
+    nmo_bit_array_t bits;
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL).code);
+
+    nmo_result_t reserve_result = nmo_bit_array_reserve(&bits, SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, reserve_result.code);
+
+    nmo_result_t set_result = nmo_bit_array_set(&bits, SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, set_result.code);
+
+    ASSERT_EQ(SIZE_MAX, nmo_bit_array_find_nth_unset(&bits, SIZE_MAX));
+
+    nmo_bit_array_dispose(&bits);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(bit_array, basic_set_and_test);
     REGISTER_TEST(bit_array, toggle_and_fill);
     REGISTER_TEST(bit_array, find_ordinals);
     REGISTER_TEST(bit_array, bitwise_ops);
     REGISTER_TEST(bit_array, to_string);
+    REGISTER_TEST(bit_array, overflow_guards);
 TEST_MAIN_END()

@@ -253,6 +253,42 @@ TEST(struct_registration, register_struct_simple) {
     teardown();
 }
 
+TEST(struct_registration, register_struct_metadata_mapping) {
+    setup();
+
+    nmo_struct_field_def_t fields[] = {
+        { .name = "x", .type_name = "int" },
+        { .name = "y", .type_name = "float" }
+    };
+
+    nmo_struct_type_def_t struct_def = {
+        .name = "Point2D",
+        .description = "2D point",
+        .guid = NMO_NULL_GUID,
+        .fields = fields,
+        .field_count = 2,
+        .alignment = 0,
+        .packed = false
+    };
+
+    nmo_guid_t guid;
+    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
+    ASSERT_NE(NULL, type_desc);
+
+    const nmo_specialized_metadata_t *meta =
+        nmo_type_registry_get_metadata(test_registry, type_desc->id);
+    ASSERT_NE(NULL, meta);
+    ASSERT_EQ(NMO_METADATA_TYPE_STRUCT, meta->metadata_type);
+    ASSERT_EQ(2, meta->struct_meta.field_count);
+    ASSERT_STR_EQ("x", meta->struct_meta.fields[0].name);
+    ASSERT_STR_EQ("y", meta->struct_meta.fields[1].name);
+
+    teardown();
+}
+
 TEST(struct_registration, register_struct_with_custom_guid) {
     setup();
     
@@ -745,6 +781,7 @@ TEST_MAIN_BEGIN()
     
     /* Struct registration tests */
     REGISTER_TEST(struct_registration, register_struct_simple);
+    REGISTER_TEST(struct_registration, register_struct_metadata_mapping);
     REGISTER_TEST(struct_registration, register_struct_with_custom_guid);
     REGISTER_TEST(struct_registration, register_struct_packed);
     REGISTER_TEST(struct_registration, register_struct_null_params);

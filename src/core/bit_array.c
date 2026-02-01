@@ -9,9 +9,38 @@
 
 #define NMO_BITS_PER_WORD 32U
 
+static int nmo_size_add_overflow(size_t a, size_t b, size_t *out) {
+    if (out == NULL) {
+        return 1;
+    }
+    if (a > SIZE_MAX - b) {
+        return 1;
+    }
+    *out = a + b;
+    return 0;
+}
+
+static int nmo_size_mul_overflow(size_t a, size_t b, size_t *out) {
+    if (out == NULL) {
+        return 1;
+    }
+    if (a == 0 || b == 0) {
+        *out = 0;
+        return 0;
+    }
+    if (a > SIZE_MAX / b) {
+        return 1;
+    }
+    *out = a * b;
+    return 0;
+}
+
 static size_t nmo_bit_array_words_for_bits(size_t bits) {
     if (bits == 0) {
         return 0;
+    }
+    if (bits > SIZE_MAX - (NMO_BITS_PER_WORD - 1)) {
+        return SIZE_MAX;
     }
     return (bits + (NMO_BITS_PER_WORD - 1)) / NMO_BITS_PER_WORD;
 }
@@ -30,7 +59,18 @@ static nmo_result_t nmo_bit_array_grow(nmo_bit_array_t *array, size_t new_word_c
         target *= 2;
     }
 
-    size_t bytes = target * sizeof(uint32_t);
+    size_t bytes = 0;
+    if (nmo_size_mul_overflow(target, sizeof(uint32_t), &bytes)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Bit array size overflow"));
+    }
+    size_t bit_capacity = 0;
+    if (nmo_size_mul_overflow(target, (size_t)NMO_BITS_PER_WORD, &bit_capacity)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Bit array capacity overflow"));
+    }
     uint32_t *words = (uint32_t *) nmo_alloc(&array->alloc, bytes, sizeof(uint32_t));
     if (words == NULL) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
@@ -53,13 +93,23 @@ static nmo_result_t nmo_bit_array_grow(nmo_bit_array_t *array, size_t new_word_c
 
     array->words = words;
     array->word_capacity = target;
-    array->bit_capacity = target * NMO_BITS_PER_WORD;
+    array->bit_capacity = bit_capacity;
     return nmo_result_ok();
 }
 
 static nmo_result_t nmo_bit_array_ensure_index(nmo_bit_array_t *array, size_t index) {
-    size_t required_bits = index + 1;
+    size_t required_bits = 0;
+    if (nmo_size_add_overflow(index, 1u, &required_bits)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Bit array index overflow"));
+    }
     size_t required_words = nmo_bit_array_words_for_bits(required_bits);
+    if (required_words == SIZE_MAX) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Bit array size overflow"));
+    }
     return nmo_bit_array_grow(array, required_words);
 }
 
@@ -76,6 +126,11 @@ nmo_result_t nmo_bit_array_init(nmo_bit_array_t *array,
     array->alloc = allocator ? *allocator : nmo_allocator_default();
 
     size_t initial_words = nmo_bit_array_words_for_bits(initial_bits);
+    if (initial_words == SIZE_MAX) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Bit array size overflow"));
+    }
     if (initial_words == 0) {
         return nmo_result_ok();
     }
@@ -111,6 +166,11 @@ nmo_result_t nmo_bit_array_reserve(nmo_bit_array_t *array, size_t bit_count) {
                                           "array must not be NULL"));
     }
     size_t required_words = nmo_bit_array_words_for_bits(bit_count);
+    if (required_words == SIZE_MAX) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "Bit array size overflow"));
+    }
     return nmo_bit_array_grow(array, required_words);
 }
 
@@ -250,8 +310,15 @@ size_t nmo_bit_array_find_nth_unset(nmo_bit_array_t *array, size_t ordinal) {
         }
     }
 
-    size_t target = bits + (ordinal - seen);
-    nmo_bit_array_ensure_index(array, target);
+    size_t delta = ordinal - seen;
+    size_t target = 0;
+    if (nmo_size_add_overflow(bits, delta, &target)) {
+        return SIZE_MAX;
+    }
+    nmo_result_t ensure = nmo_bit_array_ensure_index(array, target);
+    if (ensure.code != NMO_OK) {
+        return SIZE_MAX;
+    }
     return target;
 }
 

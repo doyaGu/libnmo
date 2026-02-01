@@ -154,6 +154,9 @@ NMO_API nmo_result_t nmo_array_alloc(nmo_array_t *array,
 
 /**
  * @brief Clone array
+ *
+ * The destination inherits lifecycle hooks from the source and uses the
+ * copy callback (or memcpy fallback) to duplicate elements.
  */
 NMO_API nmo_result_t nmo_array_clone(const nmo_array_t *src,
                                       nmo_array_t *dest,

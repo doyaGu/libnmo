@@ -142,12 +142,13 @@ static nmo_result_t parse_object_data(
     for (uint32_t i = 0; i < section->object_count; i++) {
         nmo_object_data_t *obj = &section->objects[i];
 
+        obj->object_id = 0;
+
         /* For file_version < 7, object ID is stored here */
         /* For file_version >= 8, object IDs are in Header1 */
         if (file_version < 7) {
             CHECK_BUFFER_SIZE(*pos, 4, size);
-            /* uint32_t object_id = */
-            nmo_read_u32_le(data + *pos);
+            obj->object_id = nmo_read_u32_le(data + *pos);
             *pos += 4;
             /* Object ID is not stored in nmo_object_data for version < 7
              * because it's redundant with Header1 in version >= 8 */
@@ -300,8 +301,11 @@ nmo_result_t nmo_data_section_serialize(
                     return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
                                                       NMO_SEVERITY_ERROR, "Buffer too small for object ID"));
                 }
-                /* TODO: Get actual object ID from somewhere */
-                nmo_write_u32_le(buf + pos, 0); /* Placeholder */
+                if (obj->object_id == 0) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR, "Missing object ID for legacy data section"));
+                }
+                nmo_write_u32_le(buf + pos, obj->object_id);
                 pos += 4;
             }
 

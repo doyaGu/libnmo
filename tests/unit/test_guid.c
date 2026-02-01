@@ -70,10 +70,16 @@ TEST(guid, parse_empty_string)
     ASSERT_TRUE(nmo_guid_is_null(guid));  // Should return null GUID for empty string
 }
 
-TEST(guid, parse_invalid_format_no_braces)
+TEST(guid, parse_guid_string_no_braces)
 {
-    nmo_guid_t guid = nmo_guid_parse("12345678-9ABCDEF0");  // Missing braces
-    ASSERT_TRUE(nmo_guid_is_null(guid));  // Should return null GUID for invalid format
+    nmo_guid_t guid = nmo_guid_parse("12345678-9ABCDEF0");
+    ASSERT_FALSE(nmo_guid_is_null(guid));
+}
+
+TEST(guid, parse_guid_string_no_dash)
+{
+    nmo_guid_t guid = nmo_guid_parse("123456789ABCDEF0");
+    ASSERT_FALSE(nmo_guid_is_null(guid));
 }
 
 TEST(guid, parse_invalid_format_wrong_length)
@@ -97,7 +103,7 @@ TEST(guid, parse_malformed_braces)
 TEST(guid, parse_malformed_hyphen)
 {
     nmo_guid_t guid = nmo_guid_parse("{123456789ABCDEF0}");  // Missing hyphen
-    ASSERT_TRUE(nmo_guid_is_null(guid));  // Should return null GUID for malformed input
+    ASSERT_TRUE(nmo_guid_is_null(guid));
 }
 
 TEST(guid, guid_equals_different_values)
@@ -124,7 +130,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(guid, format_zero_size_buffer);
     REGISTER_TEST(guid, parse_null_string);
     REGISTER_TEST(guid, parse_empty_string);
-    REGISTER_TEST(guid, parse_invalid_format_no_braces);
+    REGISTER_TEST(guid, parse_guid_string_no_braces);
+    REGISTER_TEST(guid, parse_guid_string_no_dash);
     REGISTER_TEST(guid, parse_invalid_format_wrong_length);
     REGISTER_TEST(guid, parse_invalid_characters);
     REGISTER_TEST(guid, parse_malformed_braces);

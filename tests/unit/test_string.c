@@ -5,6 +5,7 @@
 
 #include "nmo.h"
 #include "test_framework.h"
+#include <limits.h>
 
 static void assert_ok(nmo_result_t result) {
     ASSERT_EQ(NMO_OK, result.code);
@@ -225,6 +226,24 @@ TEST(nmo_string, numeric_failures) {
     nmo_string_dispose(&str);
 }
 
+TEST(nmo_string, overflow_guards) {
+    nmo_string_t str;
+    assert_ok(nmo_string_init(&str, NULL));
+
+    assert_ok(nmo_string_assign(&str, "a"));
+
+    nmo_result_t append = nmo_string_append_len(&str, "b", SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, append.code);
+
+    nmo_result_t insert = nmo_string_insert(&str, 0, "c", SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, insert.code);
+
+    nmo_result_t replace = nmo_string_replace(&str, 0, 0, "d", SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, replace.code);
+
+    nmo_string_dispose(&str);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_string, init_and_assign);
     REGISTER_TEST(nmo_string, append_insert_erase);
@@ -235,4 +254,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_string, equals_helpers);
     REGISTER_TEST(nmo_string, pop_back_and_capacity);
     REGISTER_TEST(nmo_string, numeric_failures);
+    REGISTER_TEST(nmo_string, overflow_guards);
 TEST_MAIN_END()

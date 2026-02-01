@@ -8,6 +8,7 @@
 #include "core/nmo_guid.h"
 #include "type/type_system.h"
 #include "type/builtin_operations.h"
+#include "app/nmo_plugin.h"
 #include <string.h>
 
 /* ============================================================================
@@ -21,6 +22,8 @@ static nmo_type_registry_t *registry = NULL;
 static nmo_guid_t guid_test1 = {0x20000001, 0x00000000};
 static nmo_guid_t guid_test2 = {0x20000002, 0x00000000};
 static nmo_guid_t guid_test3 = {0x20000003, 0x00000000};
+static nmo_guid_t guid_plugin = {0x30000001, 0x00000000};
+static nmo_guid_t guid_plugin_type = {0x30000002, 0x00000000};
 
 static void setup(void) {
     arena = nmo_arena_create(NULL, 8192);
@@ -133,6 +136,70 @@ TEST(type_statistics, get_memory_usage) {
     // Should be less than arena size (not consuming everything)
     ASSERT_LT(memory, 1024 * 1024);
     
+    teardown();
+}
+
+TEST(type_statistics, type_count_after_unregister) {
+    setup();
+
+    size_t before_total = nmo_type_registry_get_type_count(registry);
+    size_t before_builtin = nmo_type_registry_get_builtin_count(registry);
+
+    nmo_type_descriptor_t test_type = {0};
+    test_type.guid = guid_test1;
+    test_type.name = "TempType";
+    test_type.size = 4;
+    test_type.alignment = 4;
+    test_type.category = NMO_TYPE_CATEGORY_SCALAR;
+    test_type.valid = true;
+    test_type.base_type = NMO_GUID_NULL;
+
+    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    size_t mid_total = nmo_type_registry_get_type_count(registry);
+    size_t mid_builtin = nmo_type_registry_get_builtin_count(registry);
+    ASSERT_EQ(before_total + 1, mid_total);
+    ASSERT_EQ(before_builtin + 1, mid_builtin);
+
+    result = nmo_type_registry_unregister(registry, guid_test1);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    size_t after_total = nmo_type_registry_get_type_count(registry);
+    size_t after_builtin = nmo_type_registry_get_builtin_count(registry);
+    ASSERT_EQ(before_total, after_total);
+    ASSERT_EQ(before_builtin, after_builtin);
+
+    teardown();
+}
+
+TEST(type_statistics, plugin_count_after_plugin_type) {
+    setup();
+
+    size_t before = nmo_type_registry_get_plugin_count(registry);
+
+    nmo_plugin_t plugin = {0};
+    plugin.guid = guid_plugin;
+    plugin.name = "StatsPlugin";
+    plugin.version = 0x00010000;
+    plugin.category = 0x01;
+
+    nmo_type_descriptor_t plugin_type = {0};
+    plugin_type.guid = guid_plugin_type;
+    plugin_type.name = "PluginType";
+    plugin_type.size = 4;
+    plugin_type.alignment = 4;
+    plugin_type.category = NMO_TYPE_CATEGORY_STRUCT;
+    plugin_type.valid = true;
+    plugin_type.base_type = NMO_GUID_NULL;
+    plugin_type.creator_plugin = &plugin;
+
+    nmo_result_t result = nmo_type_registry_register(registry, &plugin_type);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    size_t after = nmo_type_registry_get_plugin_count(registry);
+    ASSERT_EQ(before + 1, after);
+
     teardown();
 }
 
@@ -476,6 +543,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_statistics, get_enum_count);
     REGISTER_TEST(type_statistics, get_struct_count);
     REGISTER_TEST(type_statistics, get_memory_usage);
+    REGISTER_TEST(type_statistics, type_count_after_unregister);
+    REGISTER_TEST(type_statistics, plugin_count_after_plugin_type);
     
     REGISTER_TEST(type_statistics, count_flags_after_registration);
     REGISTER_TEST(type_statistics, count_enum_after_registration);

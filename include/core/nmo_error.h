@@ -76,6 +76,9 @@ typedef struct nmo_error {
     const char *file;      /**< Source file (for debugging) */
     int line;              /**< Source line (for debugging) */
     nmo_error_t *cause;    /**< Causal error (chain) */
+    uint8_t owns_message; /**< Non-zero if message storage should be freed */
+    uint8_t from_arena;   /**< Non-zero if error was allocated from an arena */
+    uint16_t _reserved;   /**< Reserved for future use/padding */
 } nmo_error_t;
 
 /**
@@ -133,6 +136,13 @@ NMO_API nmo_error_t *nmo_error_createf_at(nmo_arena_t *arena,
  * @param cause Causal error
  */
 NMO_API void nmo_error_add_cause(nmo_error_t *error, nmo_error_t *cause);
+
+/**
+ * @brief Free a non-arena error chain created by the error helpers.
+ *
+ * Errors allocated from an arena are not freed (arena owns the memory).
+ */
+NMO_API void nmo_error_free(nmo_error_t *error);
 
 /**
  * @brief Get error message for error code

@@ -46,13 +46,13 @@ TEST(chunk_special_cases, array_helpers_round_trip) {
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
 
-    uint32_t decoded[dword_count];
+    uint32_t decoded[sizeof(dword_values) / sizeof(dword_values[0])] = {0};
     nmo_result_t parse_result = nmo_chunk_parser_read_dword_array_as_words(parser,
                                                                            decoded,
                                                                            dword_count);
     ASSERT_EQ(parse_result.code, NMO_OK);
 
-    uint16_t restored[sample_count];
+    uint16_t restored[sizeof(samples) / sizeof(samples[0])] = {0};
     parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
                                                                   sample_count,
                                                                   restored);

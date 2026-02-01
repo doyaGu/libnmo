@@ -12,6 +12,8 @@
 #include <string.h>
 #include <limits.h>
 
+#define NMO_ARENA_ARRAY_MAX_ALIGNMENT 16u
+
 static size_t nmo_array_alignment(size_t element_size) {
     (void)element_size;
 
@@ -20,6 +22,9 @@ static size_t nmo_array_alignment(size_t element_size) {
      * Using max_align_t is the safest portable default for generic storage.
      */
     size_t alignment = (size_t)alignof(max_align_t);
+    if (alignment > NMO_ARENA_ARRAY_MAX_ALIGNMENT) {
+        alignment = NMO_ARENA_ARRAY_MAX_ALIGNMENT;
+    }
     if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
         alignment = sizeof(void *);
     }
@@ -512,6 +517,7 @@ nmo_result_t nmo_arena_array_clone(const nmo_arena_array_t *src,
     if (result.code != NMO_OK) {
         return result;
     }
+    nmo_arena_array_set_lifecycle(dest, &src->lifecycle);
 
     // Copy data if any
     if (src->count > 0 && src->data) {

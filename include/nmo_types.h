@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#ifndef alignof
+#define alignof _Alignof
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

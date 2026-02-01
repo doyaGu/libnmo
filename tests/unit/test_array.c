@@ -13,6 +13,17 @@ typedef struct tracked_value {
     uint32_t id;
 } tracked_value_t;
 
+static void tracked_value_copy(void *dest, const void *src, void *user_data) {
+    if (dest == NULL || src == NULL) {
+        return;
+    }
+    memcpy(dest, src, sizeof(tracked_value_t));
+    if (user_data != NULL) {
+        uint32_t *count = (uint32_t *)user_data;
+        *count += 1u;
+    }
+}
+
 static void tracked_value_dispose(void *element, void *user_data) {
     if (element == NULL || user_data == NULL) {
         return;
@@ -202,6 +213,34 @@ TEST(nmo_array, set_data_and_clone) {
     nmo_array_dispose(&array);
 }
 
+TEST(nmo_array, clone_preserves_lifecycle_copy) {
+    nmo_array_t array;
+    nmo_array_init(&array, sizeof(tracked_value_t), 0, NULL);
+
+    tracked_value_t values[] = {{1}, {2}, {3}};
+    nmo_array_append_array(&array, values, 3);
+
+    uint32_t copy_count = 0;
+    nmo_container_lifecycle_t lifecycle = {
+        .copy = tracked_value_copy,
+        .user_data = &copy_count
+    };
+    nmo_array_set_lifecycle(&array, &lifecycle);
+
+    nmo_array_t clone;
+    nmo_result_t result = nmo_array_clone(&array, &clone, NULL);
+    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(3u, copy_count);
+
+    tracked_value_t extra = {99};
+    result = nmo_array_append(&clone, &extra);
+    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(4u, copy_count);
+
+    nmo_array_dispose(&clone);
+    nmo_array_dispose(&array);
+}
+
 TEST(nmo_array, swap_resize_and_shrink) {
     nmo_array_t first, second;
     nmo_array_init(&first, sizeof(uint32_t), 0, NULL);
@@ -265,6 +304,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_array, reserve_and_ensure_space);
     REGISTER_TEST(nmo_array, lifecycle_callbacks);
     REGISTER_TEST(nmo_array, set_data_and_clone);
+    REGISTER_TEST(nmo_array, clone_preserves_lifecycle_copy);
     REGISTER_TEST(nmo_array, swap_resize_and_shrink);
     REGISTER_TEST(nmo_array, invalid_arguments);
 TEST_MAIN_END()

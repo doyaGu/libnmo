@@ -71,6 +71,91 @@ TEST(enum_flags, register_enum_success) {
     teardown();
 }
 
+TEST(enum_flags, register_enum_metadata_mapping) {
+    setup();
+
+    nmo_enum_value_def_t values1[] = {
+        { "A", 0, NULL },
+        { "B", 1, NULL }
+    };
+    nmo_enum_type_def_t enum_def1 = {
+        .name = "EnumOne",
+        .values = values1,
+        .value_count = 2,
+        .default_value = 0
+    };
+
+    nmo_enum_value_def_t values2[] = {
+        { "X", 10, NULL },
+        { "Y", 20, NULL }
+    };
+    nmo_enum_type_def_t enum_def2 = {
+        .name = "EnumTwo",
+        .values = values2,
+        .value_count = 2,
+        .default_value = 10
+    };
+
+    nmo_guid_t guid1;
+    nmo_guid_t guid2;
+    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def1, &guid1);
+    ASSERT_EQ(NMO_OK, result.code);
+    result = nmo_type_registry_register_enum(g_type_registry, &enum_def2, &guid2);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    const nmo_type_descriptor_t *type1 = nmo_type_registry_find_by_guid(g_type_registry, guid1);
+    const nmo_type_descriptor_t *type2 = nmo_type_registry_find_by_guid(g_type_registry, guid2);
+    ASSERT_NE(NULL, type1);
+    ASSERT_NE(NULL, type2);
+
+    const nmo_specialized_metadata_t *meta1 =
+        nmo_type_registry_get_metadata(g_type_registry, type1->id);
+    const nmo_specialized_metadata_t *meta2 =
+        nmo_type_registry_get_metadata(g_type_registry, type2->id);
+    ASSERT_NE(NULL, meta1);
+    ASSERT_NE(NULL, meta2);
+
+    ASSERT_EQ(NMO_METADATA_TYPE_ENUM, meta1->metadata_type);
+    ASSERT_EQ(NMO_METADATA_TYPE_ENUM, meta2->metadata_type);
+    ASSERT_EQ(2, meta1->enum_meta.value_count);
+    ASSERT_EQ(2, meta2->enum_meta.value_count);
+    ASSERT_STR_EQ("A", meta1->enum_meta.values[0].name);
+    ASSERT_STR_EQ("X", meta2->enum_meta.values[0].name);
+
+    teardown();
+}
+
+TEST(enum_flags, unregister_enum_clears_metadata_mapping) {
+    setup();
+
+    nmo_enum_value_def_t values[] = {
+        { "ONE", 1, NULL }
+    };
+    nmo_enum_type_def_t enum_def = {
+        .name = "TempEnum",
+        .values = values,
+        .value_count = 1,
+        .default_value = 1
+    };
+
+    nmo_guid_t guid;
+    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    ASSERT_NE(NULL, type);
+    nmo_type_id_t type_id = type->id;
+
+    ASSERT_NE(NULL, nmo_type_registry_get_metadata(g_type_registry, type_id));
+
+    result = nmo_type_registry_unregister(g_type_registry, guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    ASSERT_EQ(NULL, nmo_type_registry_get_metadata(g_type_registry, type_id));
+
+    teardown();
+}
+
 TEST(enum_flags, register_enum_null_params) {
     setup();
     
@@ -398,6 +483,8 @@ TEST(enum_flags, register_flags_with_default_value) {
 TEST_MAIN_BEGIN()
     /* Enum tests */
     REGISTER_TEST(enum_flags, register_enum_success);
+    REGISTER_TEST(enum_flags, register_enum_metadata_mapping);
+    REGISTER_TEST(enum_flags, unregister_enum_clears_metadata_mapping);
     REGISTER_TEST(enum_flags, register_enum_null_params);
     REGISTER_TEST(enum_flags, register_enum_empty_name);
     REGISTER_TEST(enum_flags, register_enum_no_values);

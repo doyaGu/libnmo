@@ -236,7 +236,8 @@ NMO_API nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
 /**
  * @brief Clone array
  *
- * Creates a deep copy of the array with all its elements.
+ * Creates a deep copy of the array with all its elements. Lifecycle hooks
+ * are copied to the destination and copy callbacks are used when provided.
  *
  * @param src Source array (required)
  * @param dest Destination array (required, will be initialized)

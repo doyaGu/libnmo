@@ -47,7 +47,14 @@ static int nmo_pool_grow(nmo_pool_t *pool, size_t blocks) {
     }
 
     size_t header_size = nmo_pool_align_up(sizeof(nmo_pool_chunk_t), sizeof(void *));
-    size_t chunk_bytes = header_size + (pool->block_stride * blocks);
+    if (blocks > SIZE_MAX / pool->block_stride) {
+        return NMO_ERR_NOMEM;
+    }
+    size_t data_bytes = pool->block_stride * blocks;
+    if (header_size > SIZE_MAX - data_bytes) {
+        return NMO_ERR_NOMEM;
+    }
+    size_t chunk_bytes = header_size + data_bytes;
 
     void *raw = nmo_alloc(&pool->allocator, chunk_bytes, sizeof(void *));
     if (!raw) {

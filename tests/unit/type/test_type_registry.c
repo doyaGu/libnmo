@@ -1,5 +1,8 @@
 #include "type/type_system.h"
 #include "test_framework.h"
+#include "core/nmo_error.h"
+#include <stdalign.h>
+#include <stdio.h>
 #include <string.h>
 
 /* Test GUIDs - Using Virtools compatible values (struct initialization for C17 compatibility) */
@@ -8,6 +11,26 @@ static const nmo_guid_t GUID_FLOAT = {0x47884c3f, 0x432c2c20};       // CKPGUID_
 static const nmo_guid_t GUID_VECTOR3 = {0x48824eae, 0x2fe47960};     // CKPGUID_VECTOR
 static const nmo_guid_t GUID_3DENTITY = {0x5b8a05d5, 0x31ea28d4};    // CKPGUID_3DENTITY
 static const nmo_guid_t GUID_CHARACTER = {0x35985c64, 0x51af1372};   // CKPGUID_CHARACTER
+
+static nmo_result_t dummy_manager_serialize(
+    const void *instance,
+    struct nmo_chunk *chunk,
+    void *manager_context) {
+    (void)instance;
+    (void)chunk;
+    (void)manager_context;
+    return nmo_result_ok();
+}
+
+static nmo_result_t dummy_manager_deserialize(
+    void *instance,
+    struct nmo_chunk *chunk,
+    void *manager_context) {
+    (void)instance;
+    (void)chunk;
+    (void)manager_context;
+    return nmo_result_ok();
+}
 
 /* ============================================================================
  * Test: Registry Creation
@@ -105,6 +128,57 @@ TEST(type_registry, register_multiple_types) {
     nmo_arena_destroy(arena);
 }
 
+TEST(type_registry, register_copies_name_and_fields) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    char name_buf[32];
+    char desc_buf[32];
+    char field_name_buf[32];
+    snprintf(name_buf, sizeof(name_buf), "TempType");
+    snprintf(desc_buf, sizeof(desc_buf), "TempDesc");
+    snprintf(field_name_buf, sizeof(field_name_buf), "fieldA");
+
+    int default_val = 42;
+    nmo_type_field_t fields[1] = {0};
+    fields[0].name = field_name_buf;
+    fields[0].description = "FieldDesc";
+    fields[0].type_guid = GUID_INT;
+    fields[0].offset = 0;
+    fields[0].size = sizeof(int);
+    fields[0].flags = 0;
+    fields[0].default_value = &default_val;
+
+    nmo_type_descriptor_t type = {0};
+    type.guid = GUID_FLOAT;
+    type.name = name_buf;
+    type.description = desc_buf;
+    type.category = NMO_TYPE_CATEGORY_STRUCT;
+    type.size = sizeof(int);
+    type.alignment = alignof(int);
+    type.fields = fields;
+    type.field_count = 1;
+
+    nmo_result_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    name_buf[0] = 'X';
+    desc_buf[0] = 'Y';
+    field_name_buf[0] = 'Z';
+    default_val = 7;
+
+    const nmo_type_descriptor_t *found = nmo_type_registry_find_by_guid(registry, GUID_FLOAT);
+    ASSERT_NE(NULL, found);
+    ASSERT_STR_EQ("TempType", found->name);
+    ASSERT_STR_EQ("TempDesc", found->description);
+    ASSERT_EQ(1, found->field_count);
+    ASSERT_STR_EQ("fieldA", found->fields[0].name);
+    ASSERT_STR_EQ("FieldDesc", found->fields[0].description);
+    ASSERT_EQ(42, *(const int *)found->fields[0].default_value);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(type_registry, register_duplicate_guid_fails) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
@@ -133,6 +207,37 @@ TEST(type_registry, register_duplicate_guid_fails) {
     ASSERT_NE(NULL, found);
     ASSERT_STR_EQ("int", found->name);
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(type_registry, register_respects_compat_mask_limit) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    for (size_t i = 0; i < NMO_TYPE_COMPAT_MASK_SIZE; i++) {
+        char name[32];
+        snprintf(name, sizeof(name), "Type%u", (unsigned int)i);
+        nmo_type_descriptor_t type = {0};
+        type.guid = (nmo_guid_t){0x60000000u + (uint32_t)i, 0x10000000u + (uint32_t)i};
+        type.name = name;
+        type.category = NMO_TYPE_CATEGORY_SCALAR;
+        type.size = 4;
+        type.alignment = 4;
+        nmo_result_t result = nmo_type_registry_register(registry, &type);
+        ASSERT_EQ(NMO_OK, result.code);
+    }
+
+    nmo_type_descriptor_t overflow = {0};
+    overflow.guid = (nmo_guid_t){0x70000000u, 0x20000000u};
+    overflow.name = "OverflowType";
+    overflow.category = NMO_TYPE_CATEGORY_SCALAR;
+    overflow.size = 4;
+    overflow.alignment = 4;
+
+    nmo_result_t overflow_result = nmo_type_registry_register(registry, &overflow);
+    ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS, overflow_result.code);
+
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -209,6 +314,69 @@ TEST(type_registry, get_by_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(type_registry, find_by_class_id_direct) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_descriptor_t object_type = {0};
+    object_type.guid = GUID_3DENTITY;
+    object_type.name = "CK3dEntity";
+    object_type.category = NMO_TYPE_CATEGORY_OBJECT_REF;
+    object_type.size = 4;
+    object_type.alignment = 4;
+    object_type.class_id = 0x1001;
+    object_type.valid = true;
+    object_type.base_type = NMO_GUID_NULL;
+
+    nmo_result_t result = nmo_type_registry_register(registry, &object_type);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    const nmo_type_descriptor_t *found = nmo_type_registry_find_by_class_id(registry, 0x1001);
+    ASSERT_NE(NULL, found);
+    ASSERT_EQ(0x1001, found->class_id);
+
+    const nmo_type_descriptor_t *inherited =
+        nmo_type_registry_find_by_class_id_inherited(registry, 0x1001);
+    ASSERT_NE(NULL, inherited);
+    ASSERT_TRUE(nmo_guid_equals(found->guid, inherited->guid));
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
+TEST(type_registry, unregister_removes_lookups) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_descriptor_t test_type = {0};
+    test_type.guid = GUID_CHARACTER;
+    test_type.name = "TestCharacter";
+    test_type.category = NMO_TYPE_CATEGORY_STRUCT;
+    test_type.size = 8;
+    test_type.alignment = 4;
+    test_type.class_id = 0x2002;
+    test_type.valid = true;
+    test_type.base_type = NMO_GUID_NULL;
+
+    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_CHARACTER));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_name(registry, "TestCharacter"));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_class_id(registry, 0x2002));
+
+    result = nmo_type_registry_unregister(registry, GUID_CHARACTER);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_guid(registry, GUID_CHARACTER));
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "TestCharacter"));
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_class_id(registry, 0x2002));
+    ASSERT_EQ(NMO_TYPE_ID_INVALID, nmo_type_registry_class_id_to_type_id(registry, 0x2002));
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Test: Slot Recycling
  * ============================================================================ */
@@ -259,6 +427,84 @@ TEST(type_registry, slot_recycling) {
     /* Type count should be 2 (not 3) */
     ASSERT_EQ(2, registry->types.count);
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(type_registry, slot_recycling_clears_class_id_map) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_descriptor_t type_a = {0};
+    type_a.guid = GUID_INT;
+    type_a.name = "TypeA";
+    type_a.category = NMO_TYPE_CATEGORY_OBJECT_REF;
+    type_a.size = 4;
+    type_a.alignment = 4;
+    type_a.class_id = 0x1111;
+    nmo_type_registry_register(registry, &type_a);
+
+    nmo_type_registry_unregister(registry, GUID_INT);
+
+    nmo_type_descriptor_t type_b = {0};
+    type_b.guid = GUID_FLOAT;
+    type_b.name = "TypeB";
+    type_b.category = NMO_TYPE_CATEGORY_OBJECT_REF;
+    type_b.size = 4;
+    type_b.alignment = 4;
+    type_b.class_id = 0x2222;
+    nmo_type_registry_register(registry, &type_b);
+
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_class_id(registry, 0x1111));
+    ASSERT_EQ(NMO_TYPE_ID_INVALID, nmo_type_registry_class_id_to_type_id(registry, 0x1111));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_class_id(registry, 0x2222));
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
+TEST(type_registry, unregister_clears_type_manager_mapping) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_guid_t manager_guid = {0xABCDEF01, 0x12345678};
+    nmo_result_t result = nmo_type_registry_register_saver_manager(
+        registry,
+        manager_guid,
+        "DummyManager",
+        dummy_manager_serialize,
+        dummy_manager_deserialize,
+        NULL);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    nmo_type_descriptor_t type_a = {0};
+    type_a.guid = GUID_INT;
+    type_a.name = "ManagedType";
+    type_a.category = NMO_TYPE_CATEGORY_STRUCT;
+    type_a.size = 4;
+    type_a.alignment = 4;
+    result = nmo_type_registry_register(registry, &type_a);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    result = nmo_type_registry_set_type_manager(registry, GUID_INT, manager_guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    ASSERT_NE(NULL, nmo_type_registry_get_type_manager(registry, GUID_INT));
+
+    result = nmo_type_registry_unregister(registry, GUID_INT);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    nmo_type_descriptor_t type_b = {0};
+    type_b.guid = GUID_FLOAT;
+    type_b.name = "NewType";
+    type_b.category = NMO_TYPE_CATEGORY_STRUCT;
+    type_b.size = 4;
+    type_b.alignment = 4;
+    result = nmo_type_registry_register(registry, &type_b);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    ASSERT_EQ(NULL, nmo_type_registry_get_type_manager(registry, GUID_FLOAT));
+
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -392,11 +638,17 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_registry, create_destroy);
     REGISTER_TEST(type_registry, register_simple_type);
     REGISTER_TEST(type_registry, register_multiple_types);
+    REGISTER_TEST(type_registry, register_copies_name_and_fields);
     REGISTER_TEST(type_registry, register_duplicate_guid_fails);
+    REGISTER_TEST(type_registry, register_respects_compat_mask_limit);
     REGISTER_TEST(type_registry, find_by_guid);
     REGISTER_TEST(type_registry, find_by_name);
     REGISTER_TEST(type_registry, get_by_id);
+    REGISTER_TEST(type_registry, find_by_class_id_direct);
+    REGISTER_TEST(type_registry, unregister_removes_lookups);
     REGISTER_TEST(type_registry, slot_recycling);
+    REGISTER_TEST(type_registry, slot_recycling_clears_class_id_map);
+    REGISTER_TEST(type_registry, unregister_clears_type_manager_mapping);
     REGISTER_TEST(type_registry, compatibility_same_type);
     REGISTER_TEST(type_registry, compatibility_inheritance);
     REGISTER_TEST(type_registry, derivation_depth);

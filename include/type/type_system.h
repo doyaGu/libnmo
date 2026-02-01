@@ -143,6 +143,9 @@ typedef struct nmo_specialized_metadata_t {
 #define NMO_METADATA_TYPE_STRUCT 2
 #define NMO_METADATA_TYPE_FLAGS  3
 
+/* Specialized metadata index constants */
+#define NMO_SPECIALIZED_INDEX_INVALID ((uint32_t)UINT32_MAX)
+
 /* ============================================================================
  * Field Semantic Annotations
  * 
@@ -393,7 +396,7 @@ typedef struct nmo_type_descriptor_t {
     /* === Plugin Tracking (16 bytes) === */
     const nmo_plugin_t *creator_plugin;  /* Plugin that registered this type */
     nmo_manager_index_t saver_manager; /* Manager for custom serialization */
-    uint32_t specialized_index;        /* Index into enums/structs/flags arrays */
+    uint32_t specialized_index;        /* 0-based index into metadata array (NMO_SPECIALIZED_INDEX_INVALID if none) */
     bool valid;                         /* FALSE after unregistration (soft invalidation) */
     uint8_t _padding[3];                /* Alignment padding */
 } nmo_type_descriptor_t;  /* Total: 160 bytes (was 148) */
@@ -890,7 +893,8 @@ nmo_result_t nmo_type_registry_set_ui_visibility(
  * @brief Register specialized metadata for a type
  * 
  * @param registry Registry
- * @param metadata Metadata container (enum/struct/flags)
+ * @param metadata Metadata container (enum/struct/flags). Contents are
+ *        deep-copied into the registry arena, so caller buffers may be temporary.
  * @return nmo_ok() on success
  */
 nmo_result_t nmo_type_registry_register_metadata(

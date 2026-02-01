@@ -5,6 +5,8 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_id_remap.h"
 
+#define LIST_SEQUENCE_MARKER 0xFFFFFFFFu
+
 // =============================================================================
 // Internal Helpers
 // =============================================================================
@@ -43,30 +45,32 @@ static nmo_result_t remap_chunk_data_recursive(uint32_t *chunk_data,
     if (ids && id_count > 0) {
         size_t i = 0;
         while (i < id_count) {
-            int id_offset = (int) ids[i];
+            uint32_t entry = ids[i];
 
-            if (id_offset >= 0) {
+            if (entry != LIST_SEQUENCE_MARKER) {
                 // Single object ID at this offset
-                if ((size_t) id_offset < data_size) {
-                    nmo_object_id_t *id_ref = (nmo_object_id_t *) &chunk_data[id_offset];
+                if ((size_t) entry < data_size) {
+                    nmo_object_id_t *id_ref = (nmo_object_id_t *) &chunk_data[entry];
                     local_count += remap_single_id(id_ref, remap);
                 }
                 i++;
             } else {
                 // Sequence of object IDs
                 i++;
-                if (i >= id_count) break;
+                if (i >= id_count) {
+                    break;
+                }
 
-                int sequence_header_offset = (int) ids[i];
-                if (sequence_header_offset >= 0 &&
-                    (size_t) sequence_header_offset < data_size) {
+                uint32_t sequence_header_offset = ids[i];
+                if ((size_t) sequence_header_offset < data_size) {
                     // Sequence format: [count, id1, id2, ...]
-                    int count = (int) chunk_data[sequence_header_offset];
-                    size_t sequence_start = sequence_header_offset + 1;
+                    uint32_t count = chunk_data[sequence_header_offset];
+                    size_t sequence_start = (size_t) sequence_header_offset + 1u;
 
-                    if (count > 0 && sequence_start + count <= data_size) {
-                        for (int k = 0; k < count; k++) {
-                            nmo_object_id_t *id_ref = (nmo_object_id_t *) &chunk_data[sequence_start + k];
+                    if (count > 0 && sequence_start + (size_t) count <= data_size) {
+                        for (uint32_t k = 0; k < count; k++) {
+                            nmo_object_id_t *id_ref =
+                                (nmo_object_id_t *) &chunk_data[sequence_start + k];
                             local_count += remap_single_id(id_ref, remap);
                         }
                     }
@@ -99,7 +103,7 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
         sizeof(uint32_t) + /* file_flag */
         sizeof(uint32_t) + /* id_count */
         sizeof(uint32_t);  /* chunk_count */
-    if (parent_chunk_version > 4) {
+    if (parent_chunk_version > NMO_CHUNK_VERSION1) {
         header_bytes += sizeof(uint32_t); /* manager_count */
     }
     const size_t header_dwords = header_bytes / sizeof(uint32_t);
@@ -121,11 +125,12 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
 
     uint32_t version_info = parent_data[header_pos + 2];
     uint32_t child_chunk_version = (version_info >> 16) & 0xFFFFu;
+
     uint32_t data_size = parent_data[header_pos + 3];
     uint32_t id_count = parent_data[header_pos + 5];
     uint32_t chunk_ref_count = parent_data[header_pos + 6];
     uint32_t manager_count = 0;
-    if (parent_chunk_version > 4) {
+    if (parent_chunk_version > NMO_CHUNK_VERSION1) {
         manager_count = parent_data[header_pos + 7];
     }
 
@@ -150,9 +155,68 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
     }
 
     if (chunk_ref_count > 0) {
+        size_t data_end = data_start + (size_t)data_size;
+        if (data_end > parent_dwords) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
+                                              NMO_SEVERITY_ERROR, "Sub-chunk data bounds invalid"));
+        }
+
         for (size_t i = 0; i < (size_t)chunk_ref_count; ++i) {
-            size_t rel = (size_t)parent_data[refs_start + i];
-            size_t child_header_pos = data_start + rel;
+            uint32_t entry = parent_data[refs_start + i];
+
+            if (entry == LIST_SEQUENCE_MARKER) {
+                if (i + 1 >= (size_t)chunk_ref_count) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence marker"));
+                }
+
+                uint32_t seq_pos = parent_data[refs_start + (++i)];
+                if (seq_pos >= data_size) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence offset out of bounds"));
+                }
+
+                size_t seq_abs = data_start + (size_t)seq_pos;
+                if (seq_abs + 1 > data_end) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds"));
+                }
+
+                uint32_t seq_count = parent_data[seq_abs];
+                size_t cursor = seq_abs + 1;
+
+                for (uint32_t s = 0; s < seq_count; ++s) {
+                    if (cursor >= data_end) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated"));
+                    }
+
+                    uint32_t payload_dwords = parent_data[cursor];
+                    size_t total_dwords = 1u + (size_t)payload_dwords;
+                    if (cursor + total_dwords > data_end) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds"));
+                    }
+
+                    nmo_result_t result = remap_embedded_subchunk_recursive(parent_data,
+                                                                            parent_dwords,
+                                                                            cursor,
+                                                                            child_chunk_version,
+                                                                            remap,
+                                                                            remapped_count);
+                    NMO_RETURN_IF_ERROR(result);
+                    cursor += total_dwords;
+                }
+
+                continue;
+            }
+
+            if (entry >= data_size) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR, "Sub-chunk reference out of bounds"));
+            }
+
+            size_t child_header_pos = data_start + (size_t)entry;
             nmo_result_t result = remap_embedded_subchunk_recursive(parent_data,
                                                                     parent_dwords,
                                                                     child_header_pos,
@@ -177,29 +241,124 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
     int local_count = 0;
     nmo_result_t result = nmo_result_ok();
 
-    // Only process chunks with version >= CHUNK_VERSION1 (4)
     if (chunk->chunk_version < NMO_CHUNK_VERSION1) {
-        return nmo_result_ok();
-    }
+        if (chunk->data.count > 0) {
+            uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+            size_t data_size = chunk->data.count;
 
-    // Remap IDs in this chunk's data buffer
-    if (chunk->data.count > 0 && chunk->ids.count > 0) {
-        uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-        uint32_t *chunk_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
-        result = remap_chunk_data_recursive(chunk_data, chunk->data.count,
-                                            chunk_ids, chunk->ids.count,
-                                            remap, &local_count);
-        NMO_RETURN_IF_ERROR(result);
+            static const uint32_t obj_marker[3] = {0xE32BC4C9u, 0x134212E3u, 0xFCBAE9DCu};
+            static const uint32_t seq_marker[5] =
+                {0xE192BD47u, 0x13246628u, 0x13EAB3CEu, 0x7891AEFCu, 0x13984562u};
+
+            for (size_t pos = 3; pos < data_size; ++pos) {
+                if (chunk_data[pos - 3] == obj_marker[0] &&
+                    chunk_data[pos - 2] == obj_marker[1] &&
+                    chunk_data[pos - 1] == obj_marker[2]) {
+                    nmo_object_id_t *id_ref = (nmo_object_id_t *) &chunk_data[pos];
+                    local_count += remap_single_id(id_ref, remap);
+                }
+            }
+
+            if (data_size > 5) {
+                for (size_t pos = 2; pos + 2 < data_size; ++pos) {
+                    if (chunk_data[pos - 2] == seq_marker[0] &&
+                        chunk_data[pos - 1] == seq_marker[1] &&
+                        chunk_data[pos] == seq_marker[2] &&
+                        chunk_data[pos + 1] == seq_marker[3] &&
+                        chunk_data[pos + 2] == seq_marker[4]) {
+                        if (pos + 3 >= data_size) {
+                            continue;
+                        }
+
+                        uint32_t count = chunk_data[pos + 3];
+                        size_t first_entry = pos + 4;
+                        size_t last_entry = first_entry + (size_t) count;
+                        if (count > 0 && last_entry <= data_size) {
+                            for (size_t cursor = first_entry; cursor < last_entry; ++cursor) {
+                                nmo_object_id_t *id_ref =
+                                    (nmo_object_id_t *) &chunk_data[cursor];
+                                local_count += remap_single_id(id_ref, remap);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Remap IDs in this chunk's data buffer
+        if (chunk->data.count > 0 && chunk->ids.count > 0) {
+            uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+            uint32_t *chunk_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+            result = remap_chunk_data_recursive(chunk_data, chunk->data.count,
+                                                chunk_ids, chunk->ids.count,
+                                                remap, &local_count);
+            NMO_RETURN_IF_ERROR(result);
+        }
     }
 
     // Recursively process embedded sub-chunks in the serialized data stream
     if (chunk->chunk_refs.count > 0 && chunk->data.count > 0) {
         uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
         uint32_t *chunk_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->chunk_refs);
+        size_t data_size = chunk->data.count;
         for (size_t i = 0; i < chunk->chunk_refs.count; ++i) {
+            uint32_t entry = chunk_refs[i];
+
+            if (entry == LIST_SEQUENCE_MARKER) {
+                if (i + 1 >= chunk->chunk_refs.count) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence marker"));
+                }
+
+                uint32_t seq_pos = chunk_refs[++i];
+                if (seq_pos >= data_size) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence offset out of bounds"));
+                }
+
+                size_t seq_abs = (size_t)seq_pos;
+                if (seq_abs + 1 > data_size) {
+                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds"));
+                }
+
+                uint32_t seq_count = chunk_data[seq_abs];
+                size_t cursor = seq_abs + 1;
+
+                for (uint32_t s = 0; s < seq_count; ++s) {
+                    if (cursor >= data_size) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated"));
+                    }
+
+                    uint32_t payload_dwords = chunk_data[cursor];
+                    size_t total_dwords = 1u + (size_t)payload_dwords;
+                    if (cursor + total_dwords > data_size) {
+                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
+                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds"));
+                    }
+
+                    result = remap_embedded_subchunk_recursive(chunk_data,
+                                                               chunk->data.count,
+                                                               cursor,
+                                                               chunk->chunk_version,
+                                                               remap,
+                                                               &local_count);
+                    NMO_RETURN_IF_ERROR(result);
+                    cursor += total_dwords;
+                }
+
+                continue;
+            }
+
+            if (entry >= data_size) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
+                                                  NMO_SEVERITY_ERROR, "Sub-chunk reference out of bounds"));
+            }
+
             result = remap_embedded_subchunk_recursive(chunk_data,
                                                        chunk->data.count,
-                                                       (size_t)chunk_refs[i],
+                                                       (size_t)entry,
                                                        chunk->chunk_version,
                                                        remap,
                                                        &local_count);

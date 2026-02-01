@@ -66,6 +66,9 @@ nmo_error_t *nmo_error_create(nmo_arena_t *arena,
     error->file = file;
     error->line = line;
     error->cause = NULL;
+    error->owns_message = 0;
+    error->from_arena = arena != NULL ? 1u : 0u;
+    error->_reserved = 0;
 
     return error;
 }
@@ -81,6 +84,21 @@ void nmo_error_add_cause(nmo_error_t *error, nmo_error_t *cause) {
     }
 
     error->cause = cause;
+}
+
+void nmo_error_free(nmo_error_t *error) {
+    nmo_allocator_t alloc = nmo_allocator_default();
+
+    while (error != NULL) {
+        nmo_error_t *next = error->cause;
+        if (!error->from_arena) {
+            if (error->owns_message && error->message != NULL) {
+                nmo_free(&alloc, (void *)error->message);
+            }
+            nmo_free(&alloc, error);
+        }
+        error = next;
+    }
 }
 
 const char *nmo_error_string(nmo_error_code_t code) {
@@ -176,6 +194,9 @@ static nmo_error_t *nmo_error_createf_at_v(nmo_arena_t *arena,
         }
         return NULL;
     }
+
+    error->owns_message = message_allocated ? 1u : 0u;
+    error->from_arena = arena != NULL ? 1u : 0u;
 
     return error;
 }

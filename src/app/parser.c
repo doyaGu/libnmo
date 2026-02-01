@@ -796,7 +796,7 @@ static int nmo_load_file_with_io(
         int32_t signed_raw_id = (int32_t) raw_id;
         if (id_sanitizer != NULL && signed_raw_id < 0) {
             int32_t runtime_ext = nmo_id_register_external(id_sanitizer, signed_raw_id);
-            if (runtime_ext != NMO_OBJECT_ID_INVALID) {
+            if (runtime_ext != (int32_t)NMO_OBJECT_ID_INVALID) {
                 nmo_log(logger, NMO_LOG_INFO,
                         "  Object %zu: external reference %d registered as runtime %d",
                         i, signed_raw_id, runtime_ext);

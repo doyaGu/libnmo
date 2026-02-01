@@ -14,6 +14,17 @@
 
 #define NMO_STRING_DEFAULT_CAPACITY 16u
 
+static int nmo_size_add_overflow(size_t a, size_t b, size_t *out) {
+    if (out == NULL) {
+        return 1;
+    }
+    if (a > SIZE_MAX - b) {
+        return 1;
+    }
+    *out = a + b;
+    return 0;
+}
+
 static const char *nmo_string_empty_cstr(void) {
     return "";
 }
@@ -325,7 +336,12 @@ nmo_result_t nmo_string_append_len(nmo_string_t *string,
                                           NMO_SEVERITY_ERROR,
                                           "data must not be NULL when length > 0"));
     }
-    size_t new_length = nmo_string_length(string) + length;
+    size_t new_length = 0;
+    if (nmo_size_add_overflow(nmo_string_length(string), length, &new_length)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "string length overflow"));
+    }
     nmo_result_t prep = nmo_string_prepare_write(string, new_length);
     if (prep.code != NMO_OK) {
         return prep;
@@ -343,7 +359,12 @@ nmo_result_t nmo_string_append_view(nmo_string_t *string,
 }
 
 nmo_result_t nmo_string_append_char(nmo_string_t *string, char ch) {
-    size_t new_length = nmo_string_length(string) + 1u;
+    size_t new_length = 0;
+    if (nmo_size_add_overflow(nmo_string_length(string), 1u, &new_length)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "string length overflow"));
+    }
     nmo_result_t prep = nmo_string_prepare_write(string, new_length);
     if (prep.code != NMO_OK) {
         return prep;
@@ -381,7 +402,12 @@ nmo_result_t nmo_string_insert(nmo_string_t *string,
                                           "data must not be NULL when length > 0"));
     }
 
-    size_t new_length = string->length + length;
+    size_t new_length = 0;
+    if (nmo_size_add_overflow(string->length, length, &new_length)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "string length overflow"));
+    }
     nmo_result_t prep = nmo_string_prepare_write(string, new_length);
     if (prep.code != NMO_OK) {
         return prep;
@@ -444,7 +470,13 @@ nmo_result_t nmo_string_replace(nmo_string_t *string,
     }
 
     size_t current_span = nmo_string_min_size(length, string->length - index);
-    size_t updated_length = string->length - current_span + new_length;
+    size_t base_length = string->length - current_span;
+    size_t updated_length = 0;
+    if (nmo_size_add_overflow(base_length, new_length, &updated_length)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "string length overflow"));
+    }
 
     nmo_result_t prep = nmo_string_prepare_write(string, updated_length);
     if (prep.code != NMO_OK) {

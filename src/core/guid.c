@@ -56,11 +56,11 @@ nmo_guid_t nmo_guid_parse(const char *str) {
         return NMO_GUID_NULL;
     }
 
-    // Require opening brace
-    if (*str != '{') {
-        return NMO_GUID_NULL;
+    int has_brace = 0;
+    if (*str == '{') {
+        has_brace = 1;
+        str++;
     }
-    str++;
 
     // Parse first 32 bits
     uint32_t d1, d2;
@@ -69,11 +69,12 @@ nmo_guid_t nmo_guid_parse(const char *str) {
     }
     str += 8;
 
-    // Require dash
-    if (*str != '-') {
+    // Require dash for brace-delimited format, optional otherwise
+    if (*str == '-') {
+        str++;
+    } else if (has_brace) {
         return NMO_GUID_NULL;
     }
-    str++;
 
     // Parse second 32 bits
     if (!parse_hex_uint32(str, &d2)) {
@@ -81,11 +82,12 @@ nmo_guid_t nmo_guid_parse(const char *str) {
     }
     str += 8;
 
-    // Require closing brace
-    if (*str != '}') {
-        return NMO_GUID_NULL;
+    if (has_brace) {
+        if (*str != '}') {
+            return NMO_GUID_NULL;
+        }
+        str++;
     }
-    str++;
 
     // Should be at end of string
     if (*str != '\0') {

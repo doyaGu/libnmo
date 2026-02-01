@@ -9,6 +9,10 @@
 #define NMO_ARENA_DEFAULT_GROWTH_FACTOR 2.0f
 #define NMO_ARENA_ALIGNMENT 16
 
+static int nmo_arena_is_power_of_two(size_t value) {
+    return value != 0 && (value & (value - 1)) == 0;
+}
+
 // Arena chunk
 typedef struct nmo_arena_chunk {
     struct nmo_arena_chunk *next;
@@ -35,7 +39,20 @@ typedef struct nmo_arena {
     size_t bytes_used;
 } nmo_arena_t;
 
+static size_t nmo_arena_align_used(const nmo_arena_chunk_t *chunk, size_t alignment) {
+    uintptr_t base = (uintptr_t)chunk->data;
+    uintptr_t current = base + (uintptr_t)chunk->used;
+    uintptr_t aligned = (current + (uintptr_t)(alignment - 1)) & ~(uintptr_t)(alignment - 1);
+    if (aligned < base) {
+        return SIZE_MAX;
+    }
+    return (size_t)(aligned - base);
+}
+
 static nmo_arena_chunk_t *arena_create_chunk(nmo_allocator_t *allocator, size_t size) {
+    if (size > SIZE_MAX - sizeof(nmo_arena_chunk_t)) {
+        return NULL;
+    }
     size_t total_size = sizeof(nmo_arena_chunk_t) + size;
     nmo_arena_chunk_t *chunk = (nmo_arena_chunk_t *) nmo_alloc(allocator, total_size, NMO_ARENA_ALIGNMENT);
 
@@ -79,7 +96,7 @@ nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_con
     if (cfg.growth_factor < 1.0f) {
         cfg.growth_factor = NMO_ARENA_DEFAULT_GROWTH_FACTOR;
     }
-    if (cfg.alignment == 0) {
+    if (cfg.alignment == 0 || !nmo_arena_is_power_of_two(cfg.alignment) || cfg.alignment > NMO_ARENA_ALIGNMENT) {
         cfg.alignment = NMO_ARENA_ALIGNMENT;
     }
     
@@ -128,50 +145,79 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment) {
         return NULL;
     }
 
-    // Ensure alignment is power of 2
-    if (alignment > 0 && (alignment & (alignment - 1)) != 0) {
-        return NULL;
-    }
-
     // Default alignment
     if (alignment == 0) {
         alignment = arena->default_alignment;
     }
 
+    if (alignment > NMO_ARENA_ALIGNMENT) {
+        return NULL;
+    }
+
+    if (!nmo_arena_is_power_of_two(alignment)) {
+        return NULL;
+    }
+
     nmo_arena_chunk_t *chunk = arena->current;
 
-    // Align current position
-    size_t aligned_used = (chunk->used + alignment - 1) & ~(alignment - 1);
-    size_t remaining = chunk->size - aligned_used;
+    // Align current position using absolute base address
+    size_t aligned_used = nmo_arena_align_used(chunk, alignment);
+    if (aligned_used == SIZE_MAX) {
+        return NULL;
+    }
+    size_t remaining = aligned_used <= chunk->size ? (chunk->size - aligned_used) : 0;
 
     // Check if current chunk has enough space
     if (remaining < size) {
-        // Calculate next chunk size with growth factor (Phase 5)
-        size_t new_chunk_size = (size_t)(arena->next_chunk_size * arena->growth_factor);
-        
-        // Clamp to max_chunk_size if set
-        if (arena->max_chunk_size > 0 && new_chunk_size > arena->max_chunk_size) {
-            new_chunk_size = arena->max_chunk_size;
+        int used_existing = 0;
+        nmo_arena_chunk_t *next_chunk = chunk->next;
+        if (next_chunk != NULL) {
+            size_t next_aligned = nmo_arena_align_used(next_chunk, alignment);
+            size_t next_remaining = next_aligned <= next_chunk->size
+                ? (next_chunk->size - next_aligned)
+                : 0;
+            if (next_aligned != SIZE_MAX && next_remaining >= size) {
+                chunk = next_chunk;
+                arena->current = next_chunk;
+                arena->next_chunk_size = next_chunk->size;
+                aligned_used = next_aligned;
+                remaining = next_remaining;
+                used_existing = 1;
+            }
         }
 
-        // If requested size is larger than calculated chunk size, use larger chunk
-        if (size > new_chunk_size) {
-            new_chunk_size = (size + alignment - 1) & ~(alignment - 1);
+        if (!used_existing) {
+            // Calculate next chunk size with growth factor (Phase 5)
+            size_t new_chunk_size = (size_t)(arena->next_chunk_size * arena->growth_factor);
+
+            // Clamp to max_chunk_size if set
+            if (arena->max_chunk_size > 0 && new_chunk_size > arena->max_chunk_size) {
+                new_chunk_size = arena->max_chunk_size;
+            }
+
+            // If requested size is larger than calculated chunk size, use larger chunk
+            if (size > new_chunk_size) {
+                new_chunk_size = (size + alignment - 1) & ~(alignment - 1);
+            }
+
+            nmo_arena_chunk_t *new_chunk = arena_create_chunk(&arena->allocator, new_chunk_size);
+            if (new_chunk == NULL) {
+                return NULL;
+            }
+
+            // Link new chunk
+            new_chunk->next = chunk->next;
+            chunk->next = new_chunk;
+            arena->current = new_chunk;
+            arena->total_allocated += new_chunk_size;
+            arena->next_chunk_size = new_chunk_size;  /* Update for next growth */
+
+            chunk = new_chunk;
+            aligned_used = nmo_arena_align_used(chunk, alignment);
+            if (aligned_used == SIZE_MAX) {
+                return NULL;
+            }
         }
-
-        nmo_arena_chunk_t *new_chunk = arena_create_chunk(&arena->allocator, new_chunk_size);
-        if (new_chunk == NULL) {
-            return NULL;
-        }
-
-        // Link new chunk
-        chunk->next = new_chunk;
-        arena->current = new_chunk;
-        arena->total_allocated += new_chunk_size;
-        arena->next_chunk_size = new_chunk_size;  /* Update for next growth */
-
-        chunk = new_chunk;
-        aligned_used = 0;
     }
 
     // Allocate from current chunk
