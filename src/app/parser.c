@@ -33,12 +33,15 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "session/nmo_shadow_storage.h"
+#include "object/nmo_schema_interface.h"
 #include "type/type_system.h"
 #include "core/nmo_guid.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
 #include "miniz.h"  /* For compression/decompression */
+
+#define NMO_PARSER_MAX_HEADER1_SIZE (64u * 1024u * 1024u)
 
 /**
  * @brief Get plugin category label for logging
@@ -136,7 +139,9 @@ static int nmo_load_included_files(
     const nmo_header1_t *hdr1,
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,
-    int preserve_shadow
+    int preserve_shadow,
+    uint32_t max_name_len,
+    uint32_t max_data_size
 ) {
     if (session == NULL || io == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -145,6 +150,9 @@ static int nmo_load_included_files(
     uint32_t expected = (hdr1 != NULL) ? hdr1->included_file_count : 0;
     uint32_t parsed = 0;
     nmo_arena_t *arena = nmo_session_get_arena(session);
+
+    const int has_authoritative_table =
+        (hdr1 != NULL && hdr1->included_files != NULL && hdr1->included_file_count > 0);
 
     uint8_t *shadow_blob = NULL;
     size_t shadow_size = 0;
@@ -157,14 +165,14 @@ static int nmo_load_included_files(
     int result = NMO_OK;
 
     while (1) {
+        if (has_authoritative_table && parsed >= expected) {
+            break;
+        }
+
         uint32_t name_len = 0;
         int read_result = nmo_io_read_u32(io, &name_len);
         if (read_result != NMO_OK) {
             if (read_result == NMO_ERR_EOF) {
-                break;
-            }
-
-            if (read_result == NMO_ERR_INVALID_ARGUMENT) {
                 break;
             }
 
@@ -173,6 +181,18 @@ static int nmo_load_included_files(
             result = read_result;
             goto cleanup;
         }
+
+        if (max_name_len == 0) {
+            max_name_len = NMO_LOAD_DEFAULT_MAX_INCLUDED_NAME_LEN;
+        }
+        if (name_len > max_name_len) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "Included filename too large (%u bytes)", name_len);
+            result = NMO_ERR_INVALID_FORMAT;
+            goto cleanup;
+        }
+
+        const size_t name_alloc_size = (size_t)name_len + 1u;
 
         if (shadow_storage != NULL) {
             int append_result = nmo_shadow_buffer_append_u32(
@@ -183,7 +203,7 @@ static int nmo_load_included_files(
             }
         }
 
-        char *name_buf = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
+        char *name_buf = (char *) nmo_arena_alloc(arena, name_alloc_size, 1);
         if (name_buf == NULL) {
             result = NMO_ERR_NOMEM;
             goto cleanup;
@@ -215,6 +235,16 @@ static int nmo_load_included_files(
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to read included file size for '%s'", name_buf);
             result = NMO_ERR_EOF;
+            goto cleanup;
+        }
+
+        if (max_data_size == 0) {
+            max_data_size = NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE;
+        }
+        if (data_size > max_data_size) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                "Included file '%s' too large (%u bytes)", name_buf, data_size);
+            result = NMO_ERR_INVALID_FORMAT;
             goto cleanup;
         }
 
@@ -281,10 +311,22 @@ static int nmo_load_included_files(
         parsed++;
     }
 
+    if (expected != 0 && parsed > expected) {
+        nmo_log(logger, NMO_LOG_WARN,
+                "  Parsed %u included file(s), but Header1 advertised %u",
+                parsed, expected);
+    }
+
     if (expected > parsed) {
         nmo_log(logger, NMO_LOG_INFO,
                 "  Header references %u included file(s), parsed %u entries",
                 expected, parsed);
+
+        if (has_authoritative_table) {
+            /* Header1 provided an authoritative include table, but payload is incomplete. */
+            result = NMO_ERR_EOF;
+            goto cleanup;
+        }
 
         if (hdr1 != NULL && hdr1->included_files != NULL) {
             for (uint32_t i = parsed; i < expected; i++) {
@@ -337,9 +379,9 @@ static int nmo_load_file_with_io(
     nmo_session_t *session,
     const char *path,
     nmo_io_interface_t *io,
-    nmo_load_flags_t flags
+    const nmo_load_options_t *opts
 ) {
-    if (session == NULL || path == NULL || io == NULL) {
+    if (session == NULL || path == NULL || io == NULL || opts == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -351,11 +393,7 @@ static int nmo_load_file_with_io(
     nmo_id_sanitizer_t *id_sanitizer = nmo_session_get_id_sanitizer(session);
     nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(session);
 
-    void *header1_packed = NULL;
-    size_t header1_pack_size = 0;
-    void *data_packed = NULL;
-    size_t data_pack_size = 0;
-
+    const nmo_load_flags_t flags = opts->flags;
     const int preserve_shadow = (flags & NMO_LOAD_PRESERVE_SHADOW) != 0;
 
     if (shadow_storage != NULL) {
@@ -414,6 +452,20 @@ static int nmo_load_file_with_io(
     memset(&hdr1, 0, sizeof(nmo_header1_t));
     hdr1.object_count = header.object_count;
 
+    if ((header.hdr1_pack_size > 0 && header.hdr1_unpack_size == 0) ||
+        (header.hdr1_pack_size == 0 && header.hdr1_unpack_size > 0)) {
+        nmo_log(logger, NMO_LOG_ERROR, "Invalid header1 size fields");
+        nmo_io_close(io);
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (header.hdr1_pack_size > NMO_PARSER_MAX_HEADER1_SIZE ||
+        header.hdr1_unpack_size > NMO_PARSER_MAX_HEADER1_SIZE) {
+        nmo_log(logger, NMO_LOG_ERROR, "Header1 size exceeds limit");
+        nmo_io_close(io);
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
     /* Skip header1 if empty (for files with no header1 data) */
     if (header.hdr1_pack_size == 0 || header.hdr1_unpack_size == 0) {
         nmo_log(logger, NMO_LOG_INFO, "  No header1 data (empty file or minimal format)");
@@ -435,9 +487,6 @@ static int nmo_load_file_with_io(
             nmo_io_close(io);
             return NMO_ERR_INVALID_ARGUMENT;
         }
-
-        header1_packed = packed_hdr1;
-        header1_pack_size = header.hdr1_pack_size;
 
         /* Decompress if needed */
         void *hdr1_data = NULL;
@@ -498,7 +547,7 @@ static int nmo_load_file_with_io(
         return dep_store_result;
     }
 
-    nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %zu plugins",
+        nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %u plugins",
             hdr1.object_count, header.manager_count, hdr1.plugin_dep_count);
 
     /* Phase 5: Start Load Session */
@@ -513,7 +562,7 @@ static int nmo_load_file_with_io(
     }
 
     /* Phase 6: Check Plugin Dependencies */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 6: Checking plugin dependencies (%zu plugins)",
+        nmo_log(logger, NMO_LOG_INFO, "Phase 6: Checking plugin dependencies (%u plugins)",
             hdr1.plugin_dep_count);
 
     nmo_plugin_manager_t *plugin_manager = nmo_session_get_plugin_manager(session);
@@ -629,9 +678,6 @@ static int nmo_load_file_with_io(
             return NMO_ERR_INVALID_ARGUMENT;
         }
 
-        data_packed = packed_buffer;
-        data_pack_size = header.data_pack_size;
-
         /* Decompress if needed */
         void *data_buffer = NULL;
         size_t data_size = 0;
@@ -701,35 +747,16 @@ static int nmo_load_file_with_io(
 
     }
 
-    if ((flags & NMO_LOAD_SKIP_CRC) == 0) {
-        uint32_t expected_crc = header.crc;
-        nmo_file_header_t crc_header = header;
-        crc_header.crc = 0;
-
-        uint32_t actual_crc = 0;
-        actual_crc = mz_adler32(actual_crc, (const uint8_t *)&crc_header, 32);
-        if (crc_header.file_version >= 5) {
-            actual_crc = mz_adler32(actual_crc, (const uint8_t *)&crc_header.object_count, 56);
-        }
-        if (header1_pack_size > 0 && header1_packed != NULL) {
-            actual_crc = mz_adler32(actual_crc, (const uint8_t *)header1_packed, header1_pack_size);
-        }
-        if (data_pack_size > 0 && data_packed != NULL) {
-            actual_crc = mz_adler32(actual_crc, (const uint8_t *)data_packed, data_pack_size);
-        }
-
-        if (actual_crc != expected_crc) {
-            nmo_log(logger, NMO_LOG_ERROR,
-                    "CRC mismatch: expected 0x%08X, got 0x%08X", expected_crc, actual_crc);
-            nmo_load_session_destroy(load_session);
-            nmo_io_close(io);
-            return NMO_ERR_CHECKSUM_MISMATCH;
-        }
-    }
-
     {
         int included_result = nmo_load_included_files(
-            session, io, &hdr1, logger, shadow_storage, preserve_shadow);
+            session,
+            io,
+            &hdr1,
+            logger,
+            shadow_storage,
+            preserve_shadow,
+            opts->max_included_name_len,
+            opts->max_included_file_size);
         if (included_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_WARN,
                     "Failed to load included files (code=%d)", included_result);
@@ -807,19 +834,8 @@ static int nmo_load_file_with_io(
             }
         }
 
-        /* Skip reference-only objects */
-        if (desc->flags & NMO_OBJECT_REFERENCE_FLAG) {
-            nmo_log(logger, NMO_LOG_INFO, "  Object %zu: reference-only, skipping", i);
-            created_objects[i] = NULL;
-            continue;
-        }
-
-        if (signed_raw_id < 0) {
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Object %zu: external reference, skipping object creation", i);
-            created_objects[i] = NULL;
-            continue;
-        }
+        const int is_reference_only = (desc->flags & NMO_OBJECT_REFERENCE_FLAG) != 0;
+        const int is_external_ref = (signed_raw_id < 0);
 
         nmo_object_id_t sanitized_id = nmo_id_sanitize(raw_id);
 
@@ -837,7 +853,11 @@ static int nmo_load_file_with_io(
         obj->class_id = desc->class_id;
         obj->name = desc->name;
         obj->flags = desc->flags;
+        if (is_external_ref && (obj->flags & NMO_OBJECT_REFERENCE_FLAG) == 0) {
+            obj->flags |= NMO_OBJECT_REFERENCE_FLAG;
+        }
         obj->arena = arena;
+        obj->file_id = desc->file_id;
 
         /* Add to repository (assigns runtime ID) */
         int add_result = nmo_object_repository_add(repo, obj);
@@ -861,7 +881,8 @@ static int nmo_load_file_with_io(
         }
 
         /* Register with load session (file ID -> runtime ID mapping) */
-        int reg_result = nmo_load_session_register(load_session, obj, sanitized_id);
+        nmo_object_id_t map_file_id = is_external_ref ? raw_id : sanitized_id;
+        int reg_result = nmo_load_session_register(load_session, obj, map_file_id);
         if (reg_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to register object in load session");
             nmo_load_session_destroy(load_session);
@@ -872,8 +893,19 @@ static int nmo_load_file_with_io(
         /* Store in temporary mapping */
         created_objects[i] = obj;
 
-        nmo_log(logger, NMO_LOG_INFO, "  Created object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
-            i, sanitized_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+        if (is_reference_only) {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Created reference-only object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
+                    i, sanitized_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+        } else if (is_external_ref) {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Created external reference object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
+                    i, map_file_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+        } else {
+            nmo_log(logger, NMO_LOG_INFO,
+                    "  Created object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
+                    i, sanitized_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+        }
     }
 
     /* Phase 11: Attach Object Chunks */
@@ -1021,13 +1053,16 @@ static int nmo_load_file_with_io(
     
     if (type_reg == NULL) {
         nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
-        return -1; /* Parser function returns int, not nmo_result_t */
+        return NMO_ERR_INVALID_STATE;
     }
 
     size_t deserialized_count = 0;
     size_t skipped_count = 0;
     size_t error_count = 0;
     size_t no_schema_count = 0;
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, repo, NMO_SERIALIZE_FLAG_FILE_MODE);
 
     for (size_t i = 0; i < repo_count; i++) {
         nmo_object_t *obj = objects[i];
@@ -1044,25 +1079,18 @@ static int nmo_load_file_with_io(
             continue;
         }
 
-        /* Prepare chunk for reading - wrap in error handler to prevent crash */
-        nmo_result_t read_result = {NMO_OK, NULL};
-        
-        /* Defensive: catch potential chunk corruption */
-        if (obj->chunk->data.count == 0 || obj->chunk->data.data == NULL) {
-            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u): chunk has invalid data pointer or zero size, skipping",
+        /* Defensive: verify chunk buffer looks sane before starting read */
+        size_t chunk_buffer_size = 0;
+        const void *chunk_buffer = nmo_chunk_get_data(obj->chunk, &chunk_buffer_size);
+        if (chunk_buffer == NULL || chunk_buffer_size == 0) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Object %zu (ID=%u): chunk has no data buffer, skipping",
                     i, obj->id);
             skipped_count++;
             continue;
         }
-        
-        if (obj->chunk->arena == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): chunk has NULL arena, skipping",
-                    i, obj->id);
-            error_count++;
-            continue;
-        }
-        
-        read_result = nmo_chunk_start_read(obj->chunk);
+
+        nmo_result_t read_result = nmo_chunk_start_read(obj->chunk);
         if (read_result.code != NMO_OK) {
             error_count++;
             nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to start chunk read: %d",
@@ -1070,16 +1098,8 @@ static int nmo_load_file_with_io(
             continue;
         }
 
-        /* Query class hierarchy system for class info */
-        const char *class_name = "Unknown";  /* Class name lookup removed */
-        
-        if (class_name == NULL) {
-            /* Class ID not registered in hierarchy - no schema available */
-            no_schema_count++;
-            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X): unknown class ID, preserving raw chunk",
-                    i, obj->id, obj->class_id);
-            continue;
-        }
+        /* Class name lookup is optional; keep log output stable. */
+        const char *class_name = "<unknown>";
         
         /* Find schema type with inheritance-based fallback
          * This searches up the class hierarchy until a schema is found */
@@ -1091,6 +1111,7 @@ static int nmo_load_file_with_io(
             no_schema_count++;
             nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): no schema found in hierarchy",
                     i, obj->id, obj->class_id, class_name);
+            nmo_chunk_close(obj->chunk);
             continue;
         }
         
@@ -1099,6 +1120,7 @@ static int nmo_load_file_with_io(
             no_schema_count++;
             nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): schema '%s' has no vtable read function",
                     i, obj->id, obj->class_id, class_name, schema_type->name);
+            nmo_chunk_close(obj->chunk);
             continue;
         }
 
@@ -1108,12 +1130,14 @@ static int nmo_load_file_with_io(
             error_count++;
             nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to allocate %zu bytes for state",
                     i, obj->id, schema_type->size);
+            nmo_chunk_close(obj->chunk);
             continue;
         }
         memset(state, 0, schema_type->size);
         
         /* Call vtable read function (schema-driven deserialization) */
-        nmo_result_t result = schema_type->vtable->deserialize(state, obj->chunk, schema_type, arena);
+        nmo_result_t result = schema_type->vtable->deserialize(
+            state, obj->chunk, schema_type, &ser_ctx);
         
         /* Check result */
         if (result.code == NMO_OK) {
@@ -1144,6 +1168,8 @@ static int nmo_load_file_with_io(
                     }
                 }
             }
+
+            nmo_chunk_close(obj->chunk);
         } else {
             error_count++;
             const char *error_msg = result.error ? result.error->message : "unknown error";
@@ -1154,9 +1180,9 @@ static int nmo_load_file_with_io(
                 nmo_log(logger, NMO_LOG_ERROR, "    Error chain: code=%d, severity=%d",
                         result.error->code, result.error->severity);
             }
+
+            nmo_chunk_close(obj->chunk);
         }
-        
-        i++; /* Increment loop counter */
     }
 
     nmo_log(logger, NMO_LOG_INFO, "  Deserialization summary: %zu deserialized, %zu no schema, %zu skipped (no chunk), %zu errors",
@@ -1243,7 +1269,9 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
         return NMO_ERR_FILE_NOT_FOUND;
     }
 
-    return nmo_load_file_with_io(session, path, io, flags);
+    nmo_load_options_t opts = nmo_load_options_default();
+    opts.flags = flags;
+    return nmo_load_file_with_io(session, path, io, &opts);
 }
 
 /**
@@ -1252,7 +1280,9 @@ int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t fla
 nmo_load_options_t nmo_load_options_default(void) {
     nmo_load_options_t opts = {
         .allocator = NULL,
-        .flags = NMO_LOAD_DEFAULT
+        .flags = NMO_LOAD_DEFAULT,
+        .max_included_name_len = NMO_LOAD_DEFAULT_MAX_INCLUDED_NAME_LEN,
+        .max_included_file_size = NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE,
     };
     return opts;
 }
@@ -1336,7 +1366,7 @@ int nmo_load_file_ex(nmo_session_t *session,
             return NMO_ERR_FILE_NOT_FOUND;
         }
 
-        return nmo_load_file_with_io(session, path, io, opts->flags);
+        return nmo_load_file_with_io(session, path, io, opts);
     }
 
     nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
@@ -1346,7 +1376,7 @@ int nmo_load_file_ex(nmo_session_t *session,
         return NMO_ERR_FILE_NOT_FOUND;
     }
 
-    return nmo_load_file_with_io(session, path, io, opts->flags);
+    return nmo_load_file_with_io(session, path, io, opts);
 }
 
 /**

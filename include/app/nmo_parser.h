@@ -17,6 +17,16 @@ extern "C" {
 typedef struct nmo_session nmo_session_t;
 typedef struct nmo_allocator nmo_allocator_t;
 
+/* ============================================================================
+ * Load-time limits
+ * ============================================================================ */
+
+/** Default maximum included filename length (bytes, excluding NUL). */
+#define NMO_LOAD_DEFAULT_MAX_INCLUDED_NAME_LEN 4096u
+
+/** Default maximum included file payload size (bytes). */
+#define NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE (512u * 1024u * 1024u)
+
 /**
  * @brief Load flags
  */
@@ -28,9 +38,8 @@ typedef enum nmo_load_flags {
     NMO_LOAD_AS_DYNAMIC_OBJECT  = 0x0008,
     NMO_LOAD_ONLYBEHAVIORS      = 0x0010,
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
-    NMO_LOAD_SKIP_CRC           = 0x0040,
     NMO_LOAD_PRESERVE_SHADOW    = 0x0080,
-    
+
     /* Phase 5 flags */
     NMO_LOAD_SKIP_INDEX_BUILD       = 0x0100,  /* Skip object index building */
     NMO_LOAD_SKIP_REFERENCE_RESOLVE = 0x0200,  /* Skip reference resolution */
@@ -44,6 +53,12 @@ typedef enum nmo_load_flags {
 typedef struct nmo_load_options {
     nmo_allocator_t *allocator;     /**< Custom allocator (NULL for default) */
     nmo_load_flags_t flags;         /**< Standard load flags */
+
+    /** Maximum included filename length (bytes, excluding NUL). */
+    uint32_t max_included_name_len;
+
+    /** Maximum included file payload size (bytes). */
+    uint32_t max_included_file_size;
 } nmo_load_options_t;
 
 /**
