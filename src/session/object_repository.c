@@ -261,7 +261,27 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
 
     /* Remove from name table if has name */
     if (obj != NULL && obj->name != NULL && obj->name[0] != '\0') {
-        nmo_hash_table_remove(repo->name_table, &obj->name);
+        nmo_object_t *mapped = NULL;
+        if (nmo_result_is_ok(nmo_hash_table_get(repo->name_table, &obj->name, &mapped))
+            && mapped == obj) {
+            nmo_object_t *replacement = NULL;
+            size_t total_count = nmo_indexed_map_get_count(repo->id_map);
+            for (size_t i = 0; i < total_count; i++) {
+                nmo_object_t *candidate = NULL;
+                if (nmo_indexed_map_get_value_at(repo->id_map, i, &candidate)
+                    && candidate != obj
+                    && candidate->name != NULL
+                    && strcmp(candidate->name, obj->name) == 0) {
+                    replacement = candidate;
+                    break;
+                }
+            }
+            if (replacement != NULL) {
+                nmo_hash_table_insert(repo->name_table, &replacement->name, &replacement);
+            } else {
+                nmo_hash_table_remove(repo->name_table, &obj->name);
+            }
+        }
     }
 
     /* Remove from ID map */
@@ -357,15 +377,30 @@ static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t
         return NMO_OBJECT_ID_NONE;
     }
 
-    nmo_object_id_t id = repo->next_runtime_id;
-    repo->next_runtime_id++;
-
-    /* Skip invalid ID if we wrap around */
-    if (repo->next_runtime_id == NMO_OBJECT_ID_NONE) {
-        repo->next_runtime_id = 1;
+    nmo_object_id_t start = repo->next_runtime_id;
+    if (start == NMO_OBJECT_ID_NONE) {
+        start = 1;
     }
 
-    return id;
+    nmo_object_id_t id = start;
+    for (;;) {
+        if (!nmo_indexed_map_contains(repo->id_map, &id)) {
+            nmo_object_id_t next = id + 1;
+            if (next == NMO_OBJECT_ID_NONE) {
+                next = 1;
+            }
+            repo->next_runtime_id = next;
+            return id;
+        }
+
+        id++;
+        if (id == NMO_OBJECT_ID_NONE) {
+            id = 1;
+        }
+        if (id == start) {
+            return NMO_OBJECT_ID_NONE;
+        }
+    }
 }
 
 /**

@@ -596,6 +596,9 @@ int nmo_object_index_remove_object(
         object_array_t *arr = NULL;
         if (nmo_result_is_ok(nmo_hash_table_get(index->class_index, &object->class_id, &arr))) {
             object_array_remove(arr, object_id);
+            if (arr != NULL && arr->count == 0) {
+                nmo_hash_table_remove(index->class_index, &object->class_id);
+            }
         }
     }
     
@@ -606,6 +609,9 @@ int nmo_object_index_remove_object(
             object_array_t *arr = NULL;
             if (nmo_result_is_ok(nmo_hash_table_get(index->name_index, &name, &arr))) {
                 object_array_remove(arr, object_id);
+                if (arr != NULL && arr->count == 0) {
+                    nmo_hash_table_remove(index->name_index, &name);
+                }
             }
         }
     }
@@ -616,6 +622,9 @@ int nmo_object_index_remove_object(
             object_array_t *arr = NULL;
             if (nmo_result_is_ok(nmo_hash_table_get(index->guid_index, &object->type_guid, &arr))) {
                 object_array_remove(arr, object_id);
+                if (arr != NULL && arr->count == 0) {
+                    nmo_hash_table_remove(index->guid_index, &object->type_guid);
+                }
             }
         }
     }

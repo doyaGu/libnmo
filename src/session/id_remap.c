@@ -8,7 +8,6 @@
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
-#include <stdlib.h>
 #include <string.h>
 
 /* Forward declaration for load session internal function */
@@ -48,8 +47,6 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
     /* Create arena for remap table */
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     if (arena == NULL) {
-        free(file_ids);
-        free(runtime_ids);
         return NULL;
     }
 
@@ -57,8 +54,6 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
     nmo_id_remap_t *remap = nmo_id_remap_create(arena);
     if (remap == NULL) {
         nmo_arena_destroy(arena);
-        free(file_ids);
-        free(runtime_ids);
         return NULL;
     }
 
@@ -70,8 +65,39 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
         }
     }
 
-    free(file_ids);
-    free(runtime_ids);
+    /* Add file object index mappings (index -> runtime ID) for file-mode chunks */
+    nmo_object_repository_t *repo = nmo_load_session_get_repository(session);
+    if (repo != NULL) {
+        size_t repo_count = 0;
+        nmo_object_t **objects = nmo_object_repository_get_all(repo, &repo_count);
+        nmo_object_id_t file_index = 1;
+
+        for (size_t i = 0; i < repo_count; i++) {
+            nmo_object_t *obj = objects ? objects[i] : NULL;
+            if (obj == NULL) {
+                continue;
+            }
+
+            if (obj->file_id == 0) {
+                continue;
+            }
+
+            nmo_result_t add_result = nmo_id_remap_add(remap, file_index, obj->id);
+            if (nmo_result_is_error(add_result)) {
+                /* Continue even if one fails */
+            }
+
+            if (obj->flags & NMO_OBJECT_REFERENCE_FLAG) {
+                nmo_result_t ref_result = nmo_id_remap_add(
+                    remap, file_index | NMO_OBJECT_REFERENCE_FLAG, obj->id);
+                if (nmo_result_is_error(ref_result)) {
+                    /* Continue even if one fails */
+                }
+            }
+
+            file_index++;
+        }
+    }
 
     return remap;
 }
@@ -105,7 +131,7 @@ void nmo_id_remap_table_destroy(nmo_id_remap_table_t *table) {
 }
 
 /* ============================================================================
- * Save-time ID Remapping (runtime ID -> sequential file ID)
+ * Save-time ID Remapping (runtime ID -> file object index)
  * ============================================================================ */
 
 nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
@@ -139,7 +165,28 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
         return NULL;
     }
 
-    /* Build mapping: runtime ID -> sequential file ID (0, 1, 2, ...) */
+    nmo_object_id_t *used_ids = (nmo_object_id_t *) nmo_arena_alloc(
+        arena, sizeof(nmo_object_id_t) * object_count, alignof(nmo_object_id_t));
+    if (used_ids == NULL) {
+        nmo_arena_destroy(arena);
+        return NULL;
+    }
+    size_t used_count = 0;
+
+    for (size_t i = 0; i < object_count; i++) {
+        nmo_object_t *obj = objects_to_save[i];
+        if (obj == NULL) {
+            continue;
+        }
+
+        if (obj->file_id != 0) {
+            used_ids[used_count++] = obj->file_id;
+        }
+    }
+
+    nmo_object_id_t next_file_id = 1;
+
+    /* Build mapping: runtime ID -> preserved file ID when available */
     for (size_t i = 0; i < object_count; i++) {
         nmo_object_t *obj = objects_to_save[i];
         if (obj == NULL) {
@@ -147,7 +194,28 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
         }
 
         nmo_object_id_t runtime_id = obj->id;
-        nmo_object_id_t file_id = (nmo_object_id_t) i; // Sequential file IDs
+        nmo_object_id_t file_id = obj->file_id;
+
+        if (obj->file_id == 0) {
+            for (;;) {
+                int used = 0;
+                for (size_t u = 0; u < used_count; u++) {
+                    if (used_ids[u] == next_file_id) {
+                        used = 1;
+                        break;
+                    }
+                }
+
+                if (!used) {
+                    file_id = next_file_id;
+                    used_ids[used_count++] = file_id;
+                    next_file_id++;
+                    break;
+                }
+
+                next_file_id++;
+            }
+        }
 
         nmo_result_t result = nmo_id_remap_add(plan->remap, runtime_id, file_id);
         if (nmo_result_is_ok(result)) {

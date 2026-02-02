@@ -6,6 +6,7 @@
 #include "session/nmo_load_session.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
+#include "core/nmo_arena.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_error.h"
@@ -24,6 +25,7 @@ typedef struct nmo_load_session {
     nmo_hash_table_t *id_mappings;
 
     int active;
+    nmo_arena_t *arena;
 } nmo_load_session_t;
 
 /**
@@ -35,10 +37,19 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
         return NULL;
     }
 
-    nmo_load_session_t *session = (nmo_load_session_t *) malloc(sizeof(nmo_load_session_t));
-    if (session == NULL) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    if (arena == NULL) {
         return NULL;
     }
+
+    nmo_load_session_t *session = (nmo_load_session_t *) nmo_arena_alloc(
+        arena, sizeof(nmo_load_session_t), sizeof(void *));
+    if (session == NULL) {
+        nmo_arena_destroy(arena);
+        return NULL;
+    }
+    memset(session, 0, sizeof(nmo_load_session_t));
+    session->arena = arena;
 
     /* Initialize mapping table using generic hash table */
     size_t initial_capacity = (max_saved_id > 64) ? (max_saved_id * 2) : 64;
@@ -52,7 +63,7 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
     );
 
     if (session->id_mappings == NULL) {
-        free(session);
+        nmo_arena_destroy(arena);
         return NULL;
     }
 
@@ -147,7 +158,7 @@ nmo_object_id_t nmo_load_session_get_max_saved_id(const nmo_load_session_t *sess
 void nmo_load_session_destroy(nmo_load_session_t *session) {
     if (session != NULL) {
         nmo_hash_table_destroy(session->id_mappings);
-        free(session);
+        nmo_arena_destroy(session->arena);
     }
 }
 
@@ -208,12 +219,12 @@ int nmo_load_session_get_mappings(const nmo_load_session_t *session,
     }
 
     /* Allocate arrays */
-    nmo_object_id_t *fids = (nmo_object_id_t *) malloc(mapping_count * sizeof(nmo_object_id_t));
-    nmo_object_id_t *rids = (nmo_object_id_t *) malloc(mapping_count * sizeof(nmo_object_id_t));
+    nmo_object_id_t *fids = (nmo_object_id_t *) nmo_arena_alloc(
+        session->arena, mapping_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
+    nmo_object_id_t *rids = (nmo_object_id_t *) nmo_arena_alloc(
+        session->arena, mapping_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
 
     if (fids == NULL || rids == NULL) {
-        free(fids);
-        free(rids);
         return NMO_ERR_NOMEM;
     }
 
