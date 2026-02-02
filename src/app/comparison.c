@@ -7,9 +7,13 @@
 #include "app/nmo_session.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_id_remap.h"
+#include "format/nmo_chunk_api.h"
+#include "core/nmo_arena.h"
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 /* ============================================================================
  * Result Initialization
@@ -119,9 +123,100 @@ int nmo_session_compare_file_info(const nmo_session_t *session1,
 /**
  * @brief Compare two objects for equality
  */
+static nmo_id_remap_t *build_id_remap_by_file_id(nmo_object_t **objects1,
+                                                 size_t count1,
+                                                 nmo_object_t **objects2,
+                                                 size_t count2,
+                                                 nmo_arena_t *arena) {
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    if (remap == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < count2; i++) {
+        nmo_object_t *obj2 = objects2[i];
+        if (obj2 == NULL) continue;
+
+        nmo_object_id_t key2 = obj2->file_id != 0 ? obj2->file_id : obj2->file_index;
+        if (key2 == 0) continue;
+
+        for (size_t j = 0; j < count1; j++) {
+            nmo_object_t *obj1 = objects1[j];
+            if (obj1 == NULL) continue;
+
+            nmo_object_id_t key1 = obj1->file_id != 0 ? obj1->file_id : obj1->file_index;
+            if (key1 == 0) continue;
+
+            if (key1 == key2 && obj1->class_id == obj2->class_id) {
+                (void)nmo_id_remap_add(remap, obj2->id, obj1->id);
+                break;
+            }
+        }
+    }
+
+    return remap;
+}
+
+static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
+                                     const nmo_chunk_t *chunk2,
+                                     const nmo_id_remap_t *remap,
+                                     nmo_arena_t *arena,
+                                     nmo_object_id_t object_id,
+                                     nmo_comparison_result_t *result) {
+    if (chunk1 == NULL && chunk2 == NULL) {
+        return 1;
+    }
+    if (chunk1 == NULL || chunk2 == NULL) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx), "chunk: %s vs %s",
+                 chunk1 ? "present" : "NULL",
+                 chunk2 ? "present" : "NULL");
+        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, object_id, ctx);
+        return 0;
+    }
+
+    const nmo_chunk_t *compare_chunk2 = chunk2;
+    nmo_chunk_t *clone2 = NULL;
+    if (remap != NULL && arena != NULL) {
+        clone2 = nmo_chunk_clone(chunk2, arena);
+        if (clone2 != NULL) {
+            (void)nmo_chunk_remap_object_ids(clone2, remap);
+            compare_chunk2 = clone2;
+        }
+    }
+
+    size_t size1 = chunk1->data.count;
+    size_t size2 = compare_chunk2->data.count;
+    if (size1 != size2) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx), "chunk data size: %zu vs %zu DWORDs", size1, size2);
+        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, object_id, ctx);
+        if (result->diff_count > 0) {
+            result->diffs[result->diff_count - 1].data.size.expected_size = size1 * sizeof(uint32_t);
+            result->diffs[result->diff_count - 1].data.size.actual_size = size2 * sizeof(uint32_t);
+        }
+        return 0;
+    }
+
+    if (size1 > 0) {
+        const uint32_t *data1 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk1->data);
+        const uint32_t *data2 = NMO_ARENA_ARRAY_DATA(uint32_t, &compare_chunk2->data);
+        if (memcmp(data1, data2, size1 * sizeof(uint32_t)) != 0) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            snprintf(ctx, sizeof(ctx), "chunk data differs (%zu DWORDs)", size1);
+            nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_DATA, object_id, ctx);
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 static int compare_objects(const nmo_object_t *obj1,
                            const nmo_object_t *obj2,
                            nmo_compare_flags_t flags,
+                           const nmo_id_remap_t *remap,
+                           nmo_arena_t *arena,
                            nmo_comparison_result_t *result) {
     if (obj1 == NULL || obj2 == NULL) {
         return 0;
@@ -165,65 +260,8 @@ static int compare_objects(const nmo_object_t *obj1,
     
     /* Compare chunks */
     if (flags & NMO_COMPARE_CHUNKS) {
-        if (obj1->chunk == NULL && obj2->chunk == NULL) {
-            /* Both NULL - match */
-        } else if (obj1->chunk == NULL || obj2->chunk == NULL) {
-            char ctx[NMO_DIFF_CONTEXT_MAX];
-            snprintf(ctx, sizeof(ctx), "chunk: %s vs %s",
-                     obj1->chunk ? "present" : "NULL",
-                     obj2->chunk ? "present" : "NULL");
-            nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, obj1->id, ctx);
+        if (!compare_chunks_normalized(obj1->chunk, obj2->chunk, remap, arena, obj1->id, result)) {
             match = 0;
-        } else {
-            /* Prefer raw serialized data when available */
-            if (obj1->chunk->raw_data != NULL && obj2->chunk->raw_data != NULL &&
-                obj1->chunk->raw_size > 0 && obj2->chunk->raw_size > 0) {
-                size_t size1 = obj1->chunk->raw_size;
-                size_t size2 = obj2->chunk->raw_size;
-
-                if (size1 != size2) {
-                    char ctx[NMO_DIFF_CONTEXT_MAX];
-                    snprintf(ctx, sizeof(ctx), "chunk raw size: %zu vs %zu bytes",
-                             size1, size2);
-                    nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, obj1->id, ctx);
-                    if (result->diff_count > 0) {
-                        result->diffs[result->diff_count - 1].data.size.expected_size = size1;
-                        result->diffs[result->diff_count - 1].data.size.actual_size = size2;
-                    }
-                    match = 0;
-                } else if (size1 > 0) {
-                    if (memcmp(obj1->chunk->raw_data, obj2->chunk->raw_data, size1) != 0) {
-                        char ctx[NMO_DIFF_CONTEXT_MAX];
-                        snprintf(ctx, sizeof(ctx), "chunk raw data differs (%zu bytes)", size1);
-                        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_DATA, obj1->id, ctx);
-                        match = 0;
-                    }
-                }
-            } else {
-                /* Fallback to in-memory DWORD buffer */
-                size_t size1 = obj1->chunk->data.count;
-                size_t size2 = obj2->chunk->data.count;
-
-                if (size1 != size2) {
-                    char ctx[NMO_DIFF_CONTEXT_MAX];
-                    snprintf(ctx, sizeof(ctx), "chunk size: %zu vs %zu DWORDs",
-                             size1, size2);
-                    nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, obj1->id, ctx);
-                    if (result->diff_count > 0) {
-                        result->diffs[result->diff_count - 1].data.size.expected_size = size1;
-                        result->diffs[result->diff_count - 1].data.size.actual_size = size2;
-                    }
-                    match = 0;
-                } else if (size1 > 0) {
-                    if (memcmp(obj1->chunk->data.data, obj2->chunk->data.data,
-                               size1 * sizeof(uint32_t)) != 0) {
-                        char ctx[NMO_DIFF_CONTEXT_MAX];
-                        snprintf(ctx, sizeof(ctx), "chunk data differs (%zu DWORDs)", size1);
-                        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_DATA, obj1->id, ctx);
-                        match = 0;
-                    }
-                }
-            }
         }
     }
     
@@ -259,16 +297,27 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
         nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_COUNT, 0, ctx);
     }
     
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    nmo_id_remap_t *remap = NULL;
+    if (arena != NULL) {
+        remap = build_id_remap_by_file_id(objects1, count1, objects2, count2, arena);
+    }
+
     /* Compare objects in order (or by ID if NMO_COMPARE_IGNORE_ORDER) */
     int all_match = 1;
 
     if (flags & NMO_COMPARE_IGNORE_ORDER) {
+        if (count2 > 0 && arena == NULL) {
+            return 0;
+        }
         uint8_t *used = NULL;
         if (count2 > 0) {
-            used = (uint8_t *)calloc(count2, sizeof(uint8_t));
+            used = (uint8_t *)nmo_arena_alloc(arena, count2 * sizeof(uint8_t), 1);
             if (used == NULL) {
+                if (arena) nmo_arena_destroy(arena);
                 return 0;
             }
+            memset(used, 0, count2 * sizeof(uint8_t));
         }
 
         for (size_t i = 0; i < count1; i++) {
@@ -298,7 +347,7 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
                 used[match_index] = 1;
             }
 
-            if (compare_objects(obj1, objects2[match_index], flags, result)) {
+            if (compare_objects(obj1, objects2[match_index], flags, remap, arena, result)) {
                 result->objects_matched++;
             } else {
                 all_match = 0;
@@ -315,7 +364,7 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
             all_match = 0;
         }
 
-        free(used);
+        if (arena) nmo_arena_destroy(arena);
         return all_match;
     }
 
@@ -324,7 +373,7 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
         nmo_object_t *obj1 = objects1[i];
         nmo_object_t *obj2 = objects2[i];
 
-        if (compare_objects(obj1, obj2, flags, result)) {
+        if (compare_objects(obj1, obj2, flags, remap, arena, result)) {
             result->objects_matched++;
         } else {
             all_match = 0;
@@ -351,6 +400,7 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
         all_match = 0;
     }
 
+    if (arena) nmo_arena_destroy(arena);
     return all_match;
 }
 
