@@ -210,6 +210,9 @@ NMO_API nmo_result_t nmo_chunk_deserialize(const void *data,
  * Parses serialized chunk data in Virtools VERSION1 format.
  * Similar to deserialize but operates on an existing chunk structure.
  *
+ * @note The input buffer must be 4-byte aligned and remain valid for the
+ *       lifetime of the chunk (raw_data is stored for round-trip saving).
+ *
  * @param chunk Chunk to parse into (required)
  * @param data Serialized data buffer (required)
  * @param size Data size in bytes

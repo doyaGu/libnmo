@@ -52,8 +52,12 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
                                          uint32_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 3);
+    /* CK2 behavior: CheckSize(12) BEFORE checking/creating m_Managers */
+    nmo_result_t result = nmo_chunk_check_size(chunk, 3 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
+
+    /* Set MAN flag */
+    chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
@@ -61,18 +65,18 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
                                           NMO_SEVERITY_ERROR, "Failed to get parser state"));
     }
 
-    // Track manager position
+    /* CK2 behavior: AddEntry(CurrentPos) - track position of GUID start */
     uint32_t pos = (uint32_t) state->current_pos;
     nmo_result_t list_result = nmo_arena_array_append(&chunk->managers, &pos);
     NMO_RETURN_IF_ERROR(list_result);
 
-    // Write manager GUID and value
+    /* Write manager GUID and value (CK2 order: d1, d2, value) */
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     data[state->current_pos++] = manager_guid.d1;
     data[state->current_pos++] = manager_guid.d2;
     data[state->current_pos++] = value;
 
-    // Update data_size
+    /* Update data_size */
     if (state->current_pos > chunk->data.count) {
         chunk->data.count = state->current_pos;
     }

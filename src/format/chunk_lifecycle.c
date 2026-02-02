@@ -63,6 +63,9 @@ nmo_result_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
     /* Reset logical size; keep capacity */
     chunk->data.count = 0;
 
+    /* CK2 behavior: StartWrite() sets m_ChunkVersion = CHUNK_VERSION4 (7) */
+    chunk->chunk_version = NMO_CHUNK_VERSION_4;
+
     return nmo_result_ok();
 }
 

@@ -19,7 +19,13 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 2);
+    /* CK2 behavior: Calls StartWrite() if no parser state */
+    if (!chunk->parser_state) {
+        nmo_result_t start_result = nmo_chunk_start_write(chunk);
+        NMO_RETURN_IF_ERROR(start_result);
+    }
+
+    nmo_result_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -44,9 +50,12 @@ nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
 nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
-    NMO_CHUNK_CHECK_BOUNDS(chunk, 2);
-
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    if (!state || state->current_pos >= chunk->data.count) {
+        *out_id = 0;
+        return nmo_result_ok();
+    }
+
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     *out_id = data[state->current_pos];
 
@@ -59,13 +68,26 @@ nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
 nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-    
     // Empty chunk cannot have identifiers
     if (chunk->data.count == 0 || chunk->data.data == NULL) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
                                "Identifier not found in empty chunk");
     }
+
+    /* CK2 behavior: Creates parser if NULL */
+    if (!chunk->parser_state) {
+        chunk->parser_state = nmo_arena_alloc(chunk->arena,
+                                               sizeof(nmo_chunk_parser_state_t),
+                                               _Alignof(nmo_chunk_parser_state_t));
+        if (!chunk->parser_state) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                   "Failed to allocate parser state");
+        }
+        memset(chunk->parser_state, 0, sizeof(nmo_chunk_parser_state_t));
+        ((nmo_chunk_parser_state_t *)chunk->parser_state)->data_size = chunk->data.count;
+    }
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 

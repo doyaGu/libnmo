@@ -5,6 +5,7 @@
 #include "format/nmo_chunk_api.h"
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 
 // =============================================================================
 // Internal Helpers
@@ -138,7 +139,11 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
     }
 
     // Allocate array
-    nmo_object_id_t *ids = (nmo_object_id_t *) nmo_arena_alloc(arena, 
+    if (count > (SIZE_MAX / sizeof(nmo_object_id_t))) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "ID array size overflow");
+    }
+    nmo_object_id_t *ids = (nmo_object_id_t *) nmo_arena_alloc(arena,
                                                                 count * sizeof(nmo_object_id_t),
                                                                 _Alignof(nmo_object_id_t));
     if (!ids) {
@@ -201,7 +206,11 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
     }
 
     // Allocate array
-    int32_t *array = (int32_t *) nmo_arena_alloc(arena, 
+    if (count > (SIZE_MAX / sizeof(int32_t))) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Int array size overflow");
+    }
+    int32_t *array = (int32_t *) nmo_arena_alloc(arena,
                                                   count * sizeof(int32_t),
                                                   _Alignof(int32_t));
     if (!array) {
@@ -266,9 +275,13 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
     }
 
     // Allocate array
-    float *array = (float *) nmo_arena_alloc(arena, 
-                                             count * sizeof(float),
-                                             _Alignof(float));
+    if (count > (SIZE_MAX / sizeof(float))) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Float array size overflow");
+    }
+    float *array = (float *) nmo_arena_alloc(arena,
+                                              count * sizeof(float),
+                                              _Alignof(float));
     if (!array) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                "Failed to allocate float array");
@@ -331,7 +344,11 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
     }
 
     // Allocate array
-    uint32_t *array = (uint32_t *) nmo_arena_alloc(arena, 
+    if (count > (SIZE_MAX / sizeof(uint32_t))) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Dword array size overflow");
+    }
+    uint32_t *array = (uint32_t *) nmo_arena_alloc(arena,
                                                     count * sizeof(uint32_t),
                                                     _Alignof(uint32_t));
     if (!array) {
@@ -394,7 +411,11 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
     }
 
     // Allocate array
-    uint8_t *array = (uint8_t *) nmo_arena_alloc(arena, 
+    if (count > (SIZE_MAX / sizeof(uint8_t))) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Byte array size overflow");
+    }
+    uint8_t *array = (uint8_t *) nmo_arena_alloc(arena,
                                                   count * sizeof(uint8_t),
                                                   _Alignof(uint8_t));
     if (!array) {
@@ -456,7 +477,11 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
     }
 
     // Allocate string pointer array
-    char **strings = (char **) nmo_arena_alloc(arena, 
+    if (count > (SIZE_MAX / sizeof(char *))) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "String array size overflow");
+    }
+    char **strings = (char **) nmo_arena_alloc(arena,
                                                 count * sizeof(char *),
                                                 _Alignof(char *));
     if (!strings) {

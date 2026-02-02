@@ -202,7 +202,7 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
     }
 
     size_t dwords = (total_size + 3u) / 4u;
-    nmo_result_t result = nmo_chunk_check_size(chunk, dwords);
+    nmo_result_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
@@ -349,6 +349,9 @@ static nmo_result_t nmo_chunk_bitmap_convert_interleaved(const nmo_image_desc_t 
     }
 
     const size_t pixel_count = (size_t)desc->width * (size_t)desc->height;
+    if (pixel_count > (SIZE_MAX / (size_t)channels)) {
+        return make_error(NMO_ERR_INVALID_ARGUMENT, "Bitmap dimensions overflow");
+    }
     const size_t total_size = pixel_count * (size_t)channels;
     uint8_t *buffer = nmo_arena_alloc(arena, total_size, 16);
     if (!buffer) {
@@ -394,6 +397,9 @@ static nmo_result_t nmo_chunk_bitmap_copy_rgba_to_rgb(const uint8_t *rgba,
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Invalid RGBA copy arguments");
     }
 
+    if (pixel_count > (SIZE_MAX / 3u)) {
+        return make_error(NMO_ERR_INVALID_ARGUMENT, "Bitmap dimensions overflow");
+    }
     size_t total = pixel_count * 3u;
     uint8_t *rgb = nmo_arena_alloc(arena, total, 16);
     if (!rgb) {

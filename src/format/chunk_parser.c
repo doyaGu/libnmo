@@ -3,6 +3,7 @@
 #include "core/nmo_utils.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define NMO_CHUNK_PARSER_DATA(p) (NMO_ARENA_ARRAY_DATA(uint32_t, &((p)->chunk->data)))
 #define NMO_CHUNK_PARSER_DATA_SIZE(p) ((p)->chunk->data.count)
@@ -377,24 +378,29 @@ nmo_result_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
     }
 
     // Read array metadata
-    int32_t data_size_bytes = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
-    int32_t element_count = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    uint32_t data_size_bytes = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    uint32_t element_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Check for valid parameters
-    if (data_size_bytes <= 0 || element_count <= 0) {
+    if (data_size_bytes == 0 || element_count == 0) {
         return nmo_result_ok();
     }
 
     // Calculate needed DWORDs (round up)
-    int32_t dword_count = (data_size_bytes + 3) / 4;
+#if SIZE_MAX == UINT32_MAX
+    if (data_size_bytes > (UINT32_MAX - 3u)) {
+        NMO_PARSER_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, "Array size overflow");
+    }
+#endif
+    size_t dword_count = ((size_t)data_size_bytes + 3u) / 4u;
 
     // Bounds check before allocation
-    if (!check_bounds(p, (size_t) dword_count)) {
+    if (!check_bounds(p, dword_count)) {
         NMO_PARSER_RETURN_EOF("Cannot read array data");
     }
 
     // Allocate array data
-    void *array_data = nmo_arena_alloc(arena, (size_t) data_size_bytes, 1);
+    void *array_data = nmo_arena_alloc(arena, (size_t)data_size_bytes, 1);
     if (array_data == NULL) {
         NMO_PARSER_RETURN_NOMEM("Failed to allocate array data");
     }
@@ -427,23 +433,31 @@ nmo_result_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
         NMO_PARSER_RETURN_EOF("Cannot read array metadata");
     }
 
-    int32_t data_size_bytes = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
-    int32_t element_count = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    uint32_t data_size_bytes = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
+    uint32_t element_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
-    if (data_size_bytes <= 0 || element_count <= 0) {
+    if (data_size_bytes == 0 || element_count == 0) {
         *array = NULL;
         *out_count = 0;
         return nmo_result_ok();
     }
 
-    int32_t dword_count = (data_size_bytes + 3) / 4;
-    if (!check_bounds(p, (size_t) dword_count)) {
+#if SIZE_MAX == UINT32_MAX
+    if (data_size_bytes > (UINT32_MAX - 3u)) {
+        *array = NULL;
+        *out_count = 0;
+        NMO_PARSER_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, "Array size overflow");
+    }
+#endif
+
+    size_t dword_count = ((size_t)data_size_bytes + 3u) / 4u;
+    if (!check_bounds(p, dword_count)) {
         *array = NULL;
         *out_count = 0;
         NMO_PARSER_RETURN_EOF("Cannot read array data");
     }
 
-    void *array_data = nmo_arena_alloc(arena, (size_t) data_size_bytes, 1);
+    void *array_data = nmo_arena_alloc(arena, (size_t)data_size_bytes, 1);
     if (array_data == NULL) {
         *array = NULL;
         *out_count = 0;
@@ -861,17 +875,33 @@ nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
 
     // Read the start position from previous identifier's next pointer
     // Reference: int startPos = m_Data[m_ChunkParser->PrevIdentifierPos + 1];
+    if (p->prev_identifier_pos + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+        NMO_PARSER_RETURN_EOF("Invalid identifier chain start");
+    }
     size_t start_pos = NMO_CHUNK_PARSER_DATA(p)[p->prev_identifier_pos + 1];
+    if (start_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+        NMO_PARSER_RETURN_EOF("Identifier chain start out of bounds");
+    }
     size_t current_pos = start_pos;
+    size_t steps = 0;
 
     // Phase 1: Search from startPos to the end of the chain
     // Reference: if (currentPos != 0) { ... }
     if (current_pos != 0) {
         // Search following the chain
         while (NMO_CHUNK_PARSER_DATA(p)[current_pos] != identifier) {
+            if (current_pos + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+                NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+            }
             current_pos = NMO_CHUNK_PARSER_DATA(p)[current_pos + 1];
             if (current_pos == 0)
                 break;
+            if (current_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+                NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+            }
+            if (++steps > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+                NMO_PARSER_RETURN_EOF("Identifier chain cycle detected");
+            }
         }
 
         // Check if found
@@ -885,12 +915,22 @@ nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
     // Phase 2: Search from beginning of list until reaching startPos
     // Reference: currentPos = 0; while (m_Data[currentPos] != identifier) { ... }
     current_pos = 0;
+    steps = 0;
     while (NMO_CHUNK_PARSER_DATA(p)[current_pos] != identifier) {
+        if (current_pos + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+            NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+        }
         current_pos = NMO_CHUNK_PARSER_DATA(p)[current_pos + 1];
         // Cycle detection: back to start means not found
         // Reference: if (currentPos == startPos) return FALSE;
         if (current_pos == start_pos)
                 NMO_PARSER_RETURN_EOF("Identifier not found");
+        if (current_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+            NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+        }
+        if (++steps > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+            NMO_PARSER_RETURN_EOF("Identifier chain cycle detected");
+        }
     }
 
     // Found the identifier - update parser state

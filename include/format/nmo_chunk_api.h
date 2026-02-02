@@ -263,7 +263,7 @@ NMO_API int nmo_chunk_is_compressed(const nmo_chunk_t *chunk);
  * @brief Get current position
  *
  * @param chunk Chunk (required)
- * @return Current position in DWORDs
+ * @return Current position in DWORDs, or (size_t)-1 if no parser state
  */
 NMO_API size_t nmo_chunk_get_position(const nmo_chunk_t *chunk);
 
@@ -272,7 +272,7 @@ NMO_API size_t nmo_chunk_get_position(const nmo_chunk_t *chunk);
  *
  * @param chunk Chunk (required)
  * @param pos Position in DWORDs
- * @return NMO_OK on success, NMO_ERR_OUT_OF_BOUNDS if pos > data_size
+ * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos);
 
@@ -281,7 +281,7 @@ NMO_API nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos);
  *
  * @param chunk Chunk (required)
  * @param dwords Number of DWORDs to skip
- * @return NMO_OK on success, NMO_ERR_OUT_OF_BOUNDS if would exceed data_size
+ * @return NMO_OK on success
  */
 NMO_API nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords);
 
@@ -296,10 +296,10 @@ NMO_API nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords);
  * Similar to CKStateChunk::CheckSize().
  *
  * @param chunk Chunk (required)
- * @param needed_dwords Number of DWORDs needed from current position
+ * @param needed_bytes Number of bytes needed from current position
  * @return NMO_OK on success, NMO_ERR_NOMEM on allocation failure
  */
-NMO_API nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_dwords);
+NMO_API nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes);
 
 // =============================================================================
 // PRIMITIVE TYPES - WRITE
@@ -991,6 +991,19 @@ NMO_API nmo_result_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *su
  * @return NMO_OK on success, error code on failure
  */
 NMO_API nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub);
+
+/**
+ * @brief Write sub-chunk in a sequence
+ *
+ * Mirrors CKStateChunk::WriteSubChunkSequence. Does not add an entry to the
+ * sub-chunk reference list (the sequence marker added by
+ * nmo_chunk_start_sub_chunk_sequence tracks the sequence).
+ *
+ * @param chunk Parent chunk (required)
+ * @param sub Sub-chunk to write (can be NULL to emit a null marker)
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_result_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t *sub);
 
 /**
  * @brief Read sub-chunk

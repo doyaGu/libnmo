@@ -17,55 +17,23 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // Sub-chunks
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
-    NMO_CHUNK_CHECK_ARGS(chunk, sub, "Invalid chunk arguments");
-
-    // Set CHN flag
-    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-
-    // Track sub-chunk
-    nmo_result_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
-    NMO_RETURN_IF_ERROR(list_result);
-
-    // Calculate total size (in DWORDs)
-    const bool include_manager = (chunk->chunk_version > 4);
-    size_t header_bytes =
-        sizeof(uint32_t) + /* size */
-        sizeof(uint32_t) + /* class_id */
-        sizeof(uint32_t) + /* version */
-        sizeof(uint32_t) + /* data_size */
-        sizeof(uint32_t) + /* file_flag */
-        sizeof(uint32_t) + /* id_count */
-        sizeof(uint32_t);  /* chunk_count */
-    if (include_manager) {
-        header_bytes += sizeof(uint32_t); /* manager_count */
-    }
-    size_t header_dwords = header_bytes / sizeof(uint32_t);
-    size_t total_size = header_dwords;
-    total_size += sub->data.count;
-    total_size += sub->ids.count;
-    total_size += sub->chunk_refs.count;
-    if (include_manager) {
-        total_size += sub->managers.count;
-    }
-
+static nmo_result_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_t *sub) {
     nmo_result_t result;
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
 
-    size_t size_header_offset = state->current_pos;
+    /* CK2 header layout: size, class_id, version, data_size, file_flag,
+       id_count, chunk_count, manager_count (always present in CK2 writer) */
+    const uint32_t data_count = (uint32_t) sub->data.count;
+    const uint32_t id_count = (uint32_t) sub->ids.count;
+    const uint32_t chunk_count = (uint32_t) sub->chunk_refs.count;
+    const uint32_t manager_count = (uint32_t) sub->managers.count;
 
-    // Write header
-    result = nmo_chunk_write_dword(chunk, (uint32_t) (total_size - 1));
+    const uint32_t header_dwords = 8u;
+    const uint32_t total_dwords = header_dwords + data_count + id_count +
+                                  chunk_count + manager_count;
+
+    result = nmo_chunk_write_dword(chunk, total_dwords - 1u);
     NMO_RETURN_IF_ERROR(result);
 
-    // Track sub-chunk position (CK2 AddEntry)
-    {
-        uint32_t header_pos = (uint32_t) size_header_offset;
-        result = nmo_arena_array_append(&chunk->chunk_refs, &header_pos);
-    }
-    NMO_RETURN_IF_ERROR(result);
-
-    // CK2 writes class_id as full DWORD - use class_id field (32-bit)
     result = nmo_chunk_write_dword(chunk, (uint32_t) sub->class_id);
     NMO_RETURN_IF_ERROR(result);
 
@@ -74,7 +42,7 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     result = nmo_chunk_write_dword(chunk, version_info);
     NMO_RETURN_IF_ERROR(result);
 
-    result = nmo_chunk_write_dword(chunk, (uint32_t) sub->data.count);
+    result = nmo_chunk_write_dword(chunk, data_count);
     NMO_RETURN_IF_ERROR(result);
 
     result = nmo_chunk_write_dword(
@@ -82,50 +50,96 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
         (sub->chunk_options & NMO_CHUNK_OPTION_FILE) ? 1u : 0u);
     NMO_RETURN_IF_ERROR(result);
 
-    result = nmo_chunk_write_dword(chunk, (uint32_t) sub->ids.count);
+    result = nmo_chunk_write_dword(chunk, id_count);
     NMO_RETURN_IF_ERROR(result);
 
-    result = nmo_chunk_write_dword(chunk, (uint32_t) sub->chunk_refs.count);
+    result = nmo_chunk_write_dword(chunk, chunk_count);
     NMO_RETURN_IF_ERROR(result);
 
-    if (include_manager) {
-        result = nmo_chunk_write_dword(chunk, (uint32_t) sub->managers.count);
-        NMO_RETURN_IF_ERROR(result);
-    }
+    result = nmo_chunk_write_dword(chunk, manager_count);
+    NMO_RETURN_IF_ERROR(result);
 
-    // Write data
-    if (sub->data.count > 0) {
+    if (data_count > 0) {
         const uint32_t *sub_data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
-        result = nmo_chunk_write_buffer_no_size(chunk, sub_data, sub->data.count * sizeof(uint32_t));
+        result = nmo_chunk_write_buffer_no_size(chunk, sub_data, data_count * sizeof(uint32_t));
         NMO_RETURN_IF_ERROR(result);
     }
 
-    // Write IDs
-    if (sub->ids.count > 0) {
+    if (id_count > 0) {
         const uint32_t *sub_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->ids);
-        result = nmo_chunk_write_buffer_no_size(chunk, sub_ids, sub->ids.count * sizeof(uint32_t));
+        result = nmo_chunk_write_buffer_no_size(chunk, sub_ids, id_count * sizeof(uint32_t));
         NMO_RETURN_IF_ERROR(result);
     }
 
-    // Write chunk refs (offset list)
-    if (sub->chunk_refs.count > 0) {
+    if (chunk_count > 0) {
         const uint32_t *sub_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->chunk_refs);
-        result = nmo_chunk_write_buffer_no_size(chunk,
-                                                sub_refs,
-                                                sub->chunk_refs.count * sizeof(uint32_t));
+        result = nmo_chunk_write_buffer_no_size(chunk, sub_refs, chunk_count * sizeof(uint32_t));
         NMO_RETURN_IF_ERROR(result);
     }
 
-    // Write managers list
-    if (include_manager && sub->managers.count > 0) {
+    if (manager_count > 0) {
         const uint32_t *sub_mgrs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
-        result = nmo_chunk_write_buffer_no_size(chunk,
-                                                sub_mgrs,
-                                                sub->managers.count * sizeof(uint32_t));
+        result = nmo_chunk_write_buffer_no_size(chunk, sub_mgrs, manager_count * sizeof(uint32_t));
         NMO_RETURN_IF_ERROR(result);
     }
 
     return nmo_result_ok();
+}
+
+nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    if (sub == NULL) {
+        return nmo_chunk_write_dword(chunk, 0u);
+    }
+
+    /* Set CHN flag and track sub-chunk */
+    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    nmo_result_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    NMO_RETURN_IF_ERROR(list_result);
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    if (!state) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                               "Failed to get parser state");
+    }
+
+    size_t size_header_offset = state->current_pos;
+
+    /* Track sub-chunk position before writing (CK2 AddEntry uses CurrentPos-1). */
+    size_t refs_count_before = chunk->chunk_refs.count;
+    nmo_result_t result;
+    {
+        uint32_t header_pos = (uint32_t) size_header_offset;
+        result = nmo_arena_array_append(&chunk->chunk_refs, &header_pos);
+    }
+    NMO_RETURN_IF_ERROR(result);
+
+    /* Write payload */
+    result = write_sub_chunk_payload(chunk, sub);
+    if (nmo_result_is_error(result)) {
+        /* Roll back the appended entry to preserve consistency. */
+        chunk->chunk_refs.count = refs_count_before;
+        return result;
+    }
+
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    if (sub == NULL) {
+        return nmo_chunk_write_dword(chunk, 0u);
+    }
+
+    /* In CK2, WriteSubChunkSequence does not add entries to the chunk refs list.
+       The sequence marker added by StartSubChunkSequence tracks the sequence. */
+    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    nmo_result_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    NMO_RETURN_IF_ERROR(list_result);
+
+    return write_sub_chunk_payload(chunk, sub);
 }
 
 nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count) {
@@ -156,6 +170,20 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     result = nmo_chunk_read_dword(chunk, &total_size);
     NMO_RETURN_IF_ERROR(result);
+
+    if (total_size == 0) {
+        *out_sub = NULL;
+        return nmo_result_ok();
+    }
+
+    {
+        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+        if (state && (size_t)total_size + state->current_pos > chunk->data.count) {
+            *out_sub = NULL;
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                              "Sub-chunk out of bounds"));
+        }
+    }
 
     // CK2 reads class_id as full DWORD, not WORD
     result = nmo_chunk_read_dword(chunk, &class_id);

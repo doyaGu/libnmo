@@ -17,6 +17,8 @@
 #include <stdalign.h>
 
 #define STREAM_DEFAULT_BUFFER_SIZE (64 * 1024)
+#define STREAM_MAX_HEADER1_SIZE (64u * 1024u * 1024u)
+#define STREAM_MAX_CHUNK_SIZE (256u * 1024u * 1024u)
 
 struct nmo_stream_reader {
     nmo_io_interface_t *io;
@@ -356,6 +358,18 @@ nmo_stream_reader_t *nmo_stream_reader_create(const char *path,
         free(reader);
     });
 
+    if ((reader->header.hdr1_pack_size > 0 && reader->header.hdr1_unpack_size == 0) ||
+        (reader->header.hdr1_pack_size == 0 && reader->header.hdr1_unpack_size > 0)) {
+        nmo_stream_reader_destroy(reader);
+        return NULL;
+    }
+
+    if (reader->header.hdr1_pack_size > STREAM_MAX_HEADER1_SIZE ||
+        reader->header.hdr1_unpack_size > STREAM_MAX_HEADER1_SIZE) {
+        nmo_stream_reader_destroy(reader);
+        return NULL;
+    }
+
     memset(&reader->header1, 0, sizeof(reader->header1));
     reader->header1.object_count = reader->header.object_count;
 
@@ -496,6 +510,11 @@ nmo_result_t nmo_stream_reader_read_next_object(nmo_stream_reader_t *reader,
 
     nmo_chunk_t *chunk = NULL;
     if (chunk_size > 0) {
+        if (chunk_size > reader->uncompressed_remaining || chunk_size > STREAM_MAX_CHUNK_SIZE) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
+                                              NMO_SEVERITY_ERROR,
+                                              "Chunk size exceeds remaining data"));
+        }
         void *buffer = nmo_arena_alloc(arena, chunk_size, 4);
         if (buffer == NULL) {
             return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
@@ -580,6 +599,11 @@ nmo_result_t nmo_stream_reader_skip_object(nmo_stream_reader_t *reader) {
     }
 
     if (chunk_size > 0) {
+        if (chunk_size > reader->uncompressed_remaining || chunk_size > STREAM_MAX_CHUNK_SIZE) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
+                                              NMO_SEVERITY_ERROR,
+                                              "Chunk size exceeds remaining data"));
+        }
         nmo_result_t skip_res = reader_skip_bytes(reader, chunk_size);
         if (skip_res.code != NMO_OK) {
             return skip_res;

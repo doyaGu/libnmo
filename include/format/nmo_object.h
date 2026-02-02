@@ -48,6 +48,7 @@ typedef struct nmo_object {
 
     /* File context */
     nmo_object_id_t file_index; /**< Original file ID */
+    nmo_object_id_t file_id;    /**< Original file ID value from Header1 */
     uint32_t creation_flags;  /**< Flags used during creation */
     uint32_t save_flags;      /**< Flags for saving */
 

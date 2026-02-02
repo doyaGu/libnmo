@@ -24,7 +24,7 @@ static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
 nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1);
+    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -42,7 +42,7 @@ nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
 nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1);
+    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -60,7 +60,7 @@ nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
 nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1);
+    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -82,7 +82,7 @@ nmo_result_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value) {
 nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1);
+    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -103,7 +103,7 @@ nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
 nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 2);
+    nmo_result_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -202,7 +202,7 @@ nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
     size_t dwords = (len + 3) / 4;          // Round up to DWORDs
 
     // Write length
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1 + dwords);
+    nmo_result_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -274,7 +274,7 @@ nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
     size_t dwords = (size + 3) / 4;
 
     // Write size
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1 + dwords);
+    nmo_result_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -306,7 +306,7 @@ nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
 
     size_t dwords = (size + 3) / 4;
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, dwords);
+    nmo_result_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -398,17 +398,20 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
 nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 1);
+    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
 
-    // Track position if ID is non-zero
+    // Track position if ID is non-zero (internal remap list)
     if (id != 0) {
         uint32_t pos = (uint32_t) state->current_pos;
         nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
         NMO_RETURN_IF_ERROR(list_result);
-        chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
+        /* CKStateChunk: file-mode does NOT serialize ID lists */
+        if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {
+            chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
+        }
     }
 
     uint32_t *data_dwords = get_data_u32(chunk);

@@ -12,16 +12,15 @@
 nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    // Set IDS option
-    chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
-
     nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *) chunk->parser_state;
     if (!state) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
                                "Parser state not initialized");
     }
 
-    if (count > 0) {
+    /* CK2 behavior: Only track when count > 0 AND not in file mode */
+    if (count > 0 && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {
+        /* CK2: AddEntries adds -1 marker followed by position */
         uint32_t sentinel = 0xFFFFFFFFu;
         nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
         NMO_RETURN_IF_ERROR(list_result);
@@ -29,9 +28,12 @@ nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
         uint32_t pos = (uint32_t) state->current_pos;
         list_result = nmo_arena_array_append(&chunk->ids, &pos);
         NMO_RETURN_IF_ERROR(list_result);
+
+        /* Set IDS option since we added tracking entries */
+        chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
 
-    // Write count
+    /* Write count */
     return nmo_chunk_write_int(chunk, (int32_t) count);
 }
 

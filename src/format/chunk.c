@@ -8,6 +8,7 @@
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
+#include <stdint.h>
 
 /* Helper macros */
 #define ALIGN_4(x) nmo_align_dword(x)
@@ -73,21 +74,39 @@ static nmo_result_t read_u32(nmo_read_ctx_t *ctx, uint32_t *value) {
 }
 
 /**
+ * @brief Compute option flags for serialization
+ *
+ * CKStateChunk does not serialize ID lists in file mode. We keep internal
+ * ID tracking for remap, but omit IDS from serialized options when FILE is set.
+ */
+static uint32_t chunk_compute_option_flags(const nmo_chunk_t *chunk) {
+    uint32_t option_flags = chunk ? chunk->chunk_options : 0;
+
+    /* Only serialize IDS when not in file mode */
+    if ((option_flags & NMO_CHUNK_OPTION_FILE) == 0) {
+        if (chunk && chunk->ids.count > 0) {
+            option_flags |= NMO_CHUNK_OPTION_IDS;
+        }
+    } else {
+        option_flags &= ~NMO_CHUNK_OPTION_IDS;
+    }
+
+    if (chunk && chunk->chunk_refs.count > 0) {
+        option_flags |= NMO_CHUNK_OPTION_CHN;
+    }
+    if (chunk && chunk->managers.count > 0) {
+        option_flags |= NMO_CHUNK_OPTION_MAN;
+    }
+
+    return option_flags;
+}
+
+/**
  * @brief Calculate serialized size of a chunk
  */
 static size_t chunk_calc_size(const nmo_chunk_t *chunk) {
     size_t size = 0;
-    uint32_t option_flags = chunk->chunk_options;
-
-    if (chunk->ids.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_IDS;
-    }
-    if (chunk->chunk_refs.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_CHN;
-    }
-    if (chunk->managers.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_MAN;
-    }
+    uint32_t option_flags = chunk_compute_option_flags(chunk);
 
     /* Version info + chunk size */
     size += 4 + 4;
@@ -288,17 +307,7 @@ static nmo_result_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
  */
 static nmo_result_t chunk_serialize_internal(const nmo_chunk_t *chunk, nmo_write_ctx_t *ctx) {
     nmo_result_t result;
-    uint32_t option_flags = chunk->chunk_options;
-
-    if (chunk->ids.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_IDS;
-    }
-    if (chunk->chunk_refs.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_CHN;
-    }
-    if (chunk->managers.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_MAN;
-    }
+    uint32_t option_flags = chunk_compute_option_flags(chunk);
 
     /* Pack version info:
      * versionInfo = (dataVersion | (chunkClassID << 8)) |
@@ -540,7 +549,8 @@ static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
     size_t size = 0;
     uint32_t chunk_version = chunk->chunk_version;
     const size_t data_count = chunk->data.count;
-    const size_t id_count = chunk->ids.count;
+    const uint32_t option_flags = chunk_compute_option_flags(chunk);
+    const size_t id_count = (option_flags & NMO_CHUNK_OPTION_IDS) ? chunk->ids.count : 0;
     const size_t chunk_ref_count = chunk->chunk_refs.count;
     const size_t manager_count = chunk->managers.count;
 
@@ -564,7 +574,7 @@ static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
     }
 
     /* VERSION3/VERSION4 compact header */
-    const int has_ids = (chunk->chunk_options & NMO_CHUNK_OPTION_IDS) || id_count > 0;
+    const int has_ids = (option_flags & NMO_CHUNK_OPTION_IDS) != 0;
     const int has_chunks = (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) || chunk_ref_count > 0;
     const int has_managers = (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) || manager_count > 0;
 
@@ -630,7 +640,8 @@ nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
     size_t pos = 0; /* Position in DWORDs */
     uint32_t chunk_version = chunk->chunk_version;
     const size_t data_count = chunk->data.count;
-    const size_t id_count = chunk->ids.count;
+    const uint32_t option_flags = chunk_compute_option_flags(chunk);
+    const size_t id_count = (option_flags & NMO_CHUNK_OPTION_IDS) ? chunk->ids.count : 0;
     const size_t chunk_ref_count = chunk->chunk_refs.count;
     const size_t manager_count = chunk->managers.count;
     const uint32_t *data_u32 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -737,16 +748,7 @@ nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
         }
     } else {
         /* VERSION3/VERSION4 compact layout */
-        uint32_t option_flags = chunk->chunk_options;
-        if (id_count > 0) {
-            option_flags |= NMO_CHUNK_OPTION_IDS;
-        }
-        if (chunk_ref_count > 0) {
-            option_flags |= NMO_CHUNK_OPTION_CHN;
-        }
-        if (manager_count > 0) {
-            option_flags |= NMO_CHUNK_OPTION_MAN;
-        }
+        uint32_t option_flags = chunk_compute_option_flags(chunk);
 
         uint8_t chunk_options = (uint8_t) (option_flags & 0xFFu);
         uint8_t data_version = (uint8_t) (chunk->data_version & 0xFFu);
@@ -943,6 +945,16 @@ nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
     if (chunk == NULL || data == NULL || size == 0) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR, "Invalid arguments to nmo_chunk_parse"));
+    }
+
+    if ((size % sizeof(uint32_t)) != 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR, "Chunk buffer size must be DWORD aligned"));
+    }
+
+    if (((uintptr_t)data % sizeof(uint32_t)) != 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR, "Chunk buffer must be 4-byte aligned"));
     }
 
     /* Store raw data for round-trip saving */
@@ -1227,16 +1239,7 @@ nmo_result_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *
                                           "Invalid arguments"));
     }
 
-    uint32_t option_flags = chunk->chunk_options;
-    if (chunk->ids.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_IDS;
-    }
-    if (chunk->chunk_refs.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_CHN;
-    }
-    if (chunk->managers.count > 0) {
-        option_flags |= NMO_CHUNK_OPTION_MAN;
-    }
+    uint32_t option_flags = chunk_compute_option_flags(chunk);
 
     out_header->chunk_id = chunk->class_id;
     out_header->chunk_size = (uint32_t) (chunk->data.count * sizeof(uint32_t));
