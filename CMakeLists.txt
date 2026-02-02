@@ -162,39 +162,53 @@ set(NMO_FORMAT_SOURCES
 
 # Object layer sources (Phase 6)
 set(NMO_OBJECT_SOURCES
-    src/object/schema_registry.c
     src/object/class_hierarchy.c
+    src/object/object_type_common.c
     src/object/object_types.c
-    src/object/builtin/builtin_types.c
-    src/object/builtin/builtin_types_macro_example.c
-    src/object/builtin/param_types.c
-    src/object/builtin/ckobject_hierarchy.c
+    src/object/builtin/object_vtables.c
     src/object/builtin/ckobject_schemas.c
     src/object/builtin/ckbeobject_schemas.c
     src/object/builtin/cksceneobject_schemas.c
     src/object/builtin/ckrenderobject_schemas.c
     src/object/builtin/ckparameter_schemas.c
+    src/object/builtin/ckparameterin_schemas.c
+    src/object/builtin/ckparameterout_schemas.c
+    src/object/builtin/ckparameterlocal_schemas.c
+    src/object/builtin/ckparameteroperation_schemas.c
     src/object/builtin/ckgroup_schemas.c
     src/object/builtin/cklevel_schemas.c
     src/object/builtin/ckscene_schemas.c
     src/object/builtin/ckbehavior_schemas.c
     src/object/builtin/ckbehaviorio_schemas.c
     src/object/builtin/ckbehaviorlink_schemas.c
+    src/object/builtin/ckinterfaceobjectmanager_schemas.c
     src/object/builtin/ckdataarray_schemas.c
     src/object/builtin/ckmessagemanager_schemas.c
     src/object/builtin/ckattributemanager_schemas.c
+    src/object/builtin/cksynchro_schemas.c
+    src/object/builtin/cksound_schemas.c
+    src/object/builtin/ckgrid_schemas.c
+    src/object/builtin/cklayer_schemas.c
+    src/object/builtin/ckplace_schemas.c
     src/object/builtin/ck3dentity_schemas.c
     src/object/builtin/ckcamera_schemas.c
+    src/object/builtin/cktargetcamera_schemas.c
     src/object/builtin/ck3dobject_schemas.c
     src/object/builtin/ck2dentity_schemas.c
     src/object/builtin/cksprite_schemas.c
+    src/object/builtin/cksprite3d_schemas.c
     src/object/builtin/ckspritetext_schemas.c
     src/object/builtin/cktexture_schemas.c
     src/object/builtin/ckmaterial_schemas.c
     src/object/builtin/cklight_schemas.c
+    src/object/builtin/cktargetlight_schemas.c
     src/object/builtin/ckmesh_schemas.c
-    src/object/builtin/context_macro_example.c
-    src/object/builtin/version_example.c
+    src/object/builtin/ckpatchmesh_schemas.c
+    src/object/builtin/ckcurve_schemas.c
+    src/object/builtin/ckcharacter_schemas.c
+    src/object/builtin/ckanimation_schemas.c
+    src/object/builtin/ckkinematicchain_schemas.c
+    src/object/builtin/ckrendercontext_schemas.c
 )
 
 # Type System sources (Phase 5.5+)
@@ -206,7 +220,6 @@ set(NMO_TYPE_SOURCES
     src/type/type_registry_enum.c
     src/type/type_registry_struct.c
     src/type/type_string_converters.c
-    src/type/ckclass_stubs.c
     src/type/builtin_operations.c
     src/type/builtin_arithmetic.c
     src/type/builtin_logic.c
