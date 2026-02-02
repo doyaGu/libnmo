@@ -256,7 +256,7 @@ TEST(load_session_id_remap, id_remap_plan_create) {
     size_t remapped_count = nmo_id_remap_plan_get_remapped_count(plan);
     ASSERT_EQ(5, remapped_count);
 
-    /* Test lookups - runtime IDs should map to sequential file IDs (0-4) */
+    /* Test lookups - runtime IDs should map to sequential file IDs (1-5) */
     for (int i = 0; i < 5; i++) {
         nmo_object_id_t runtime_id = (nmo_object_id_t)(200 + i);
         nmo_object_id_t file_id;
@@ -264,7 +264,7 @@ TEST(load_session_id_remap, id_remap_plan_create) {
         nmo_id_remap_table_t* plan_table = nmo_id_remap_plan_get_table(plan);
         int result = nmo_id_remap_lookup(plan_table, runtime_id, &file_id);
         ASSERT_EQ(NMO_OK, result);
-        ASSERT_EQ((nmo_object_id_t)i, file_id);
+        ASSERT_EQ((nmo_object_id_t)(i + 1), file_id);  /* File IDs start from 1, not 0 */
     }
 
     nmo_id_remap_plan_destroy(plan);
@@ -304,7 +304,7 @@ TEST(load_session_id_remap, remap_plan_large) {
     size_t remapped_count = nmo_id_remap_plan_get_remapped_count(plan);
     ASSERT_EQ((size_t)count, remapped_count);
 
-    /* Verify all lookups work */
+    /* Verify all lookups work - file IDs are sequential starting from 1 */
     for (int i = 0; i < count; i++) {
         nmo_object_id_t runtime_id = (nmo_object_id_t)(1000 + i);
         nmo_object_id_t file_id;
@@ -312,7 +312,7 @@ TEST(load_session_id_remap, remap_plan_large) {
         nmo_id_remap_table_t* plan_table = nmo_id_remap_plan_get_table(plan);
         int result = nmo_id_remap_lookup(plan_table, runtime_id, &file_id);
         ASSERT_EQ(NMO_OK, result);
-        ASSERT_EQ((nmo_object_id_t)i, file_id);
+        ASSERT_EQ((nmo_object_id_t)(i + 1), file_id);  /* File IDs start from 1 */
     }
 
     free(objects);

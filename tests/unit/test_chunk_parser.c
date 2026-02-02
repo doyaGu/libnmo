@@ -9,6 +9,8 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
+#include <stdint.h>
 
 TEST(chunk_parser, create_destroy) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
@@ -340,6 +342,40 @@ TEST(chunk_parser, bounds_checking) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_parser, array_lendian_overflow) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
+    ASSERT_EQ(resize_result.code, NMO_OK);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+
+    data[0] = UINT32_MAX; // data_size_bytes
+    data[1] = 1;          // element_count
+
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
+
+    void *array = NULL;
+    size_t count = 0;
+    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser, &array, &count, arena);
+
+    if (SIZE_MAX == UINT32_MAX) {
+        ASSERT_EQ(parse_result.code, NMO_ERR_INVALID_FORMAT);
+    } else {
+        ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+    }
+    ASSERT_NULL(array);
+    ASSERT_EQ(count, 0u);
+
+    nmo_chunk_parser_destroy(parser);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, create_destroy);
     REGISTER_TEST(chunk_parser, cursor_operations);
@@ -349,4 +385,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, manager_sequence_state);
     REGISTER_TEST(chunk_parser, identifier_navigation);
     REGISTER_TEST(chunk_parser, bounds_checking);
+    REGISTER_TEST(chunk_parser, array_lendian_overflow);
 TEST_MAIN_END()

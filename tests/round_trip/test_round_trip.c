@@ -50,7 +50,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    int result = nmo_load_file(load1, input_path, NMO_LOAD_DEFAULT | NMO_LOAD_SKIP_CRC);
+    int result = nmo_load_file(load1, input_path, NMO_LOAD_DEFAULT);
     if (result != NMO_OK) {
         printf("  FAILED: Load failed for %s (error %d)\n", input_path, result);
         nmo_session_destroy(load1);
@@ -76,7 +76,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    result = nmo_load_file(load2, temp_file, NMO_LOAD_DEFAULT | NMO_LOAD_SKIP_CRC);
+    result = nmo_load_file(load2, temp_file, NMO_LOAD_DEFAULT);
     if (result != NMO_OK) {
         printf("  FAILED: Reload failed for %s (error %d)\n", temp_file, result);
         nmo_session_destroy(load2);

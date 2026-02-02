@@ -10,12 +10,16 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_schema_interface.h"
 #include <string.h>
 
 /* Test: Serialize and deserialize CKObject state */
 TEST(object_serialization, ckobject_roundtrip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NE(NULL, arena);
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
 
     /* Setup type registry */
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
@@ -42,7 +46,7 @@ TEST(object_serialization, ckobject_roundtrip) {
     };
 
     /* Serialize */
-    result = ckobject_type->vtable->serialize(&state_out, chunk, ckobject_type, arena);
+    result = ckobject_type->vtable->serialize(&state_out, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Prepare for deserialization */
@@ -50,7 +54,7 @@ TEST(object_serialization, ckobject_roundtrip) {
 
     /* Deserialize */
     nmo_ckobject_state_t state_in = {0};
-    result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, arena);
+    result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify */
@@ -66,6 +70,9 @@ TEST(object_serialization, ckobject_hidden) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     nmo_register_object_types(registry);
 
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CKOBJECT);
     ASSERT_NE(NULL, ckobject_type);
@@ -79,13 +86,13 @@ TEST(object_serialization, ckobject_hidden) {
     };
 
     /* Serialize */
-    nmo_result_t result = ckobject_type->vtable->serialize(&state_out, chunk, ckobject_type, arena);
+    nmo_result_t result = ckobject_type->vtable->serialize(&state_out, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Deserialize */
     nmo_chunk_start_read(chunk);
     nmo_ckobject_state_t state_in = {0};
-    result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, arena);
+    result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify hidden state */
@@ -101,6 +108,9 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     nmo_register_object_types(registry);
 
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CKOBJECT);
     ASSERT_NE(NULL, ckobject_type);
@@ -114,13 +124,13 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
     };
 
     /* Serialize */
-    nmo_result_t result = ckobject_type->vtable->serialize(&state_out, chunk, ckobject_type, arena);
+    nmo_result_t result = ckobject_type->vtable->serialize(&state_out, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Deserialize */
     nmo_chunk_start_read(chunk);
     nmo_ckobject_state_t state_in = {0};
-    result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, arena);
+    result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify hierarchical hidden state */
@@ -137,6 +147,9 @@ TEST(object_serialization, null_checks) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     nmo_register_object_types(registry);
 
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CKOBJECT);
     ASSERT_NE(NULL, ckobject_type);
@@ -145,19 +158,19 @@ TEST(object_serialization, null_checks) {
     nmo_ckobject_state_t state = {0};
 
     /* NULL instance in serialize */
-    nmo_result_t result = ckobject_type->vtable->serialize(NULL, chunk, ckobject_type, arena);
+    nmo_result_t result = ckobject_type->vtable->serialize(NULL, chunk, ckobject_type, &ser_ctx);
     ASSERT_NE(NMO_OK, result.code);
 
     /* NULL chunk in serialize */
-    result = ckobject_type->vtable->serialize(&state, NULL, ckobject_type, arena);
+    result = ckobject_type->vtable->serialize(&state, NULL, ckobject_type, &ser_ctx);
     ASSERT_NE(NMO_OK, result.code);
 
     /* NULL instance in deserialize */
-    result = ckobject_type->vtable->deserialize(NULL, chunk, ckobject_type, arena);
+    result = ckobject_type->vtable->deserialize(NULL, chunk, ckobject_type, &ser_ctx);
     ASSERT_NE(NMO_OK, result.code);
 
     /* NULL chunk in deserialize */
-    result = ckobject_type->vtable->deserialize(&state, NULL, ckobject_type, arena);
+    result = ckobject_type->vtable->deserialize(&state, NULL, ckobject_type, &ser_ctx);
     ASSERT_NE(NMO_OK, result.code);
 
     nmo_arena_destroy(arena);
@@ -168,6 +181,9 @@ TEST(object_serialization, ck3dentity_roundtrip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     nmo_register_object_types(registry);
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
 
     const nmo_type_descriptor_t *entity3d_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CK3DENTITY);
@@ -193,13 +209,13 @@ TEST(object_serialization, ck3dentity_roundtrip) {
     };
 
     /* Serialize */
-    nmo_result_t result = entity3d_type->vtable->serialize(&state_out, chunk, entity3d_type, arena);
+    nmo_result_t result = entity3d_type->vtable->serialize(&state_out, chunk, entity3d_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Deserialize */
     nmo_chunk_start_read(chunk);
     nmo_ck3dentity_state_t state_in = {0};
-    result = entity3d_type->vtable->deserialize(&state_in, chunk, entity3d_type, arena);
+    result = entity3d_type->vtable->deserialize(&state_in, chunk, entity3d_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify base object state */
@@ -223,6 +239,9 @@ TEST(object_serialization, ck3dentity_transform) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     nmo_register_object_types(registry);
 
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+
     const nmo_type_descriptor_t *entity3d_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CK3DENTITY);
     ASSERT_NE(NULL, entity3d_type);
@@ -244,12 +263,12 @@ TEST(object_serialization, ck3dentity_transform) {
     };
 
     /* Serialize and deserialize */
-    nmo_result_t result = entity3d_type->vtable->serialize(&state_out, chunk, entity3d_type, arena);
+    nmo_result_t result = entity3d_type->vtable->serialize(&state_out, chunk, entity3d_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     nmo_chunk_start_read(chunk);
     nmo_ck3dentity_state_t state_in = {0};
-    result = entity3d_type->vtable->deserialize(&state_in, chunk, entity3d_type, arena);
+    result = entity3d_type->vtable->deserialize(&state_in, chunk, entity3d_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result.code);
 
     /* Verify translation components */

@@ -283,6 +283,40 @@ TEST(object_index, incremental_update) {
     teardown_fixture(f);
 }
 
+TEST(object_index, remove_clears_empty_entries) {
+    test_fixture_t *f = setup_fixture();
+    ASSERT_NOT_NULL(f);
+
+    nmo_guid_t guid = {0x11111111, 0x2222};
+
+    nmo_object_t *obj = create_test_object(f, 1, 100, "Solo");
+    obj->type_guid = guid;
+
+    nmo_object_index_build(f->index, NMO_INDEX_BUILD_ALL);
+    nmo_object_repository_set_index(f->repo, f->index);
+
+    int result = nmo_object_repository_remove(f->repo, obj->id);
+    ASSERT_EQ(NMO_OK, result);
+
+    size_t count = 0;
+    nmo_object_t **objects = nmo_object_index_get_by_class(f->index, 100, &count);
+    ASSERT_NULL(objects);
+    ASSERT_EQ(0, count);
+
+    objects = nmo_object_index_get_by_name_all(f->index, "Solo", 0, &count);
+    ASSERT_NULL(objects);
+    ASSERT_EQ(0, count);
+
+    objects = nmo_object_index_get_by_guid_all(f->index, guid, &count);
+    ASSERT_NULL(objects);
+    ASSERT_EQ(0, count);
+
+    ASSERT_NULL(nmo_object_index_find_by_name(f->index, "Solo", 0));
+    ASSERT_NULL(nmo_object_index_find_by_guid(f->index, guid));
+
+    teardown_fixture(f);
+}
+
 /**
  * Test: Index statistics
  */
@@ -375,6 +409,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_index, name_index);
     REGISTER_TEST(object_index, guid_index);
     REGISTER_TEST(object_index, incremental_update);
+    REGISTER_TEST(object_index, remove_clears_empty_entries);
     REGISTER_TEST(object_index, statistics);
     REGISTER_TEST(object_index, active_flags);
     REGISTER_TEST(object_index, rebuild);

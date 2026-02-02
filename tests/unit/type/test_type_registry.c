@@ -210,32 +210,35 @@ TEST(type_registry, register_duplicate_guid_fails) {
     nmo_arena_destroy(arena);
 }
 
-TEST(type_registry, register_respects_compat_mask_limit) {
+TEST(type_registry, compat_mask_supports_more_than_256_types) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
 
-    for (size_t i = 0; i < NMO_TYPE_COMPAT_MASK_SIZE; i++) {
+    const size_t type_count = 300;
+    nmo_guid_t prev_guid = (nmo_guid_t){0, 0};
+
+    for (size_t i = 0; i < type_count; i++) {
         char name[32];
         snprintf(name, sizeof(name), "Type%u", (unsigned int)i);
+
         nmo_type_descriptor_t type = {0};
         type.guid = (nmo_guid_t){0x60000000u + (uint32_t)i, 0x10000000u + (uint32_t)i};
         type.name = name;
         type.category = NMO_TYPE_CATEGORY_SCALAR;
         type.size = 4;
         type.alignment = 4;
+        if (i > 0) {
+            type.base_type = prev_guid;
+        }
+
         nmo_result_t result = nmo_type_registry_register(registry, &type);
         ASSERT_EQ(NMO_OK, result.code);
+        prev_guid = type.guid;
     }
 
-    nmo_type_descriptor_t overflow = {0};
-    overflow.guid = (nmo_guid_t){0x70000000u, 0x20000000u};
-    overflow.name = "OverflowType";
-    overflow.category = NMO_TYPE_CATEGORY_SCALAR;
-    overflow.size = 4;
-    overflow.alignment = 4;
-
-    nmo_result_t overflow_result = nmo_type_registry_register(registry, &overflow);
-    ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS, overflow_result.code);
+    // Ensure inheritance across the old 256-bit boundary works.
+    ASSERT_TRUE(nmo_type_is_derived_from(registry, (nmo_type_id_t)(type_count - 1), 0));
+    ASSERT_TRUE(!nmo_type_is_derived_from(registry, 0, (nmo_type_id_t)(type_count - 1)));
 
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
@@ -640,7 +643,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_registry, register_multiple_types);
     REGISTER_TEST(type_registry, register_copies_name_and_fields);
     REGISTER_TEST(type_registry, register_duplicate_guid_fails);
-    REGISTER_TEST(type_registry, register_respects_compat_mask_limit);
+    REGISTER_TEST(type_registry, compat_mask_supports_more_than_256_types);
     REGISTER_TEST(type_registry, find_by_guid);
     REGISTER_TEST(type_registry, find_by_name);
     REGISTER_TEST(type_registry, get_by_id);

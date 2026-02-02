@@ -300,6 +300,58 @@ TEST(object_repository, get_all_objects) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_repository, auto_assign_skips_existing_ids) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(arena);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *obj1 = create_test_object(arena, 1, "First", 1000);
+    nmo_object_t *obj2 = create_test_object(arena, 0, "Second", 1000);
+
+    int result1 = nmo_object_repository_add(repo, obj1);
+    ASSERT_EQ(NMO_OK, result1);
+
+    int result2 = nmo_object_repository_add(repo, obj2);
+    ASSERT_EQ(NMO_OK, result2);
+    ASSERT_EQ(2, obj2->id);
+
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_repository, duplicate_name_handling) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(arena);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *obj1 = create_test_object(arena, 10, "SameName", 1000);
+    nmo_object_t *obj2 = create_test_object(arena, 20, "SameName", 1000);
+
+    int result1 = nmo_object_repository_add(repo, obj1);
+    ASSERT_EQ(NMO_OK, result1);
+
+    int result2 = nmo_object_repository_add(repo, obj2);
+    ASSERT_EQ(NMO_OK, result2);
+
+    ASSERT_EQ(2, nmo_object_repository_get_count(repo));
+    nmo_object_t *found = nmo_object_repository_find_by_name(repo, "SameName");
+    ASSERT_TRUE(found == obj1 || found == obj2);
+
+    int remove_result = nmo_object_repository_remove(repo, obj2->id);
+    ASSERT_EQ(NMO_OK, remove_result);
+    ASSERT_EQ(1, nmo_object_repository_get_count(repo));
+
+    found = nmo_object_repository_find_by_name(repo, "SameName");
+    ASSERT_EQ(obj1, found);
+
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
+}
+
 TEST(object_repository, duplicate_id_handling) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -336,5 +388,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_repository, remove_object);
     REGISTER_TEST(object_repository, clear_repository);
     REGISTER_TEST(object_repository, get_all_objects);
+    REGISTER_TEST(object_repository, auto_assign_skips_existing_ids);
+    REGISTER_TEST(object_repository, duplicate_name_handling);
     REGISTER_TEST(object_repository, duplicate_id_handling);
 TEST_MAIN_END()

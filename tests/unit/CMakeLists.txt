@@ -102,6 +102,10 @@ add_unit_test(test_type_statistics)
 # Phase 6.6: Custom manager support tests
 add_unit_test(test_custom_managers)
 
+# Phase 6.7: Object types system tests
+add_unit_test(test_object_types)
+add_unit_test(test_object_types_conformance)
+
 # Session layer tests
 add_unit_test(test_id_sanitizer)  # Phase 1.1: ID sanitization pipeline
 add_unit_test(test_shadow_storage)  # Phase 1.2: Shadow blob preservation

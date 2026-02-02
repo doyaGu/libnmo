@@ -335,7 +335,7 @@ TEST(string_registration, register_flags_string_invalid_mask) {
  * change_*_string() Tests
  * ============================================================================ */
 
-TEST(string_registration, change_enum_string_not_implemented) {
+TEST(string_registration, change_enum_string_not_found) {
     setup();
     
     nmo_guid_t guid = {0x1, 0x2};
@@ -344,24 +344,86 @@ TEST(string_registration, change_enum_string_not_implemented) {
         guid,
         "NEW=0"
     );
-    
-    ASSERT_EQ(NMO_ERR_NOT_IMPLEMENTED, result.code);
+
+    /* Type does not exist yet */
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
     
     teardown();
 }
 
-TEST(string_registration, change_flags_string_not_implemented) {
+TEST(string_registration, change_enum_string_success) {
     setup();
     
+    nmo_guid_t guid = {0x10, 0x20};
+    nmo_result_t result = nmo_type_registry_register_enum_string(
+        g_type_registry,
+        guid,
+        "MyEnum",
+        "A=0,B=1"
+    );
+    ASSERT_EQ(NMO_OK, result.code);
+
+    result = nmo_type_registry_change_enum_string(
+        g_type_registry,
+        guid,
+        "A=0,B=1,C=2"
+    );
+    ASSERT_EQ(NMO_OK, result.code);
+
+    /* Removing existing values must fail */
+    result = nmo_type_registry_change_enum_string(
+        g_type_registry,
+        guid,
+        "A=0"
+    );
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    
+    teardown();
+}
+
+TEST(string_registration, change_flags_string_not_found) {
+    setup();
+
     nmo_guid_t guid = {0x1, 0x2};
     nmo_result_t result = nmo_type_registry_change_flags_string(
         g_type_registry,
         guid,
         "NEW=0x01"
     );
-    
-    ASSERT_EQ(NMO_ERR_NOT_IMPLEMENTED, result.code);
-    
+
+    /* Type does not exist yet */
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
+
+    teardown();
+}
+
+TEST(string_registration, change_flags_string_success) {
+    setup();
+
+    nmo_guid_t guid = {0x11, 0x22};
+    nmo_result_t result = nmo_type_registry_register_flags_string(
+        g_type_registry,
+        guid,
+        "MyFlags",
+        "READ=0x01,WRITE=0x02"
+    );
+    ASSERT_EQ(NMO_OK, result.code);
+
+    result = nmo_type_registry_change_flags_string(
+        g_type_registry,
+        guid,
+        "READ=0x01,WRITE=0x02,EXECUTE=0x04"
+    );
+    ASSERT_EQ(NMO_OK, result.code);
+
+    /* Removing existing bits must fail */
+    result = nmo_type_registry_change_flags_string(
+        g_type_registry,
+        guid,
+        "READ=0x01"
+    );
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+
     teardown();
 }
 
@@ -385,6 +447,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(string_registration, register_flags_string_null_params);
     REGISTER_TEST(string_registration, register_flags_string_invalid_mask);
     
-    REGISTER_TEST(string_registration, change_enum_string_not_implemented);
-    REGISTER_TEST(string_registration, change_flags_string_not_implemented);
+    REGISTER_TEST(string_registration, change_enum_string_not_found);
+    REGISTER_TEST(string_registration, change_enum_string_success);
+    REGISTER_TEST(string_registration, change_flags_string_not_found);
+    REGISTER_TEST(string_registration, change_flags_string_success);
 TEST_MAIN_END()

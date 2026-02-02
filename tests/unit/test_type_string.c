@@ -834,6 +834,132 @@ TEST(type_string, object_id_roundtrip) {
     teardown();
 }
 
+typedef struct test_object_name_session {
+    int unused;
+} test_object_name_session_t;
+
+static nmo_result_t test_object_id_to_name(const void *session, nmo_id_t id, const char **out_name)
+{
+    (void)session;
+    if (!out_name) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "out_name is NULL"));
+    }
+
+    if (id == 42) {
+        *out_name = "Ball_01";
+        return nmo_result_ok();
+    }
+
+    *out_name = NULL;
+    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
+        NMO_SEVERITY_ERROR, "Object not found"));
+}
+
+static nmo_result_t test_object_name_to_id(const void *session, const char *name, nmo_id_t *out_id)
+{
+    (void)session;
+    if (!name || !out_id) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments"));
+    }
+
+    if (strcmp(name, "Ball_01") == 0) {
+        *out_id = 42;
+        return nmo_result_ok();
+    }
+
+    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
+        NMO_SEVERITY_ERROR, "Object name not found"));
+}
+
+static nmo_result_t test_object_id_to_unsafe_name(const void *session, nmo_id_t id, const char **out_name)
+{
+    (void)session;
+    if (!out_name) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "out_name is NULL"));
+    }
+
+    if (id == 42) {
+        *out_name = "Ball 01"; // unsafe (space)
+        return nmo_result_ok();
+    }
+
+    *out_name = NULL;
+    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
+        NMO_SEVERITY_ERROR, "Object not found"));
+}
+
+TEST(type_string, object_id_to_string_uses_name_resolver) {
+    setup();
+
+    test_object_name_session_t session = {0};
+
+    nmo_type_string_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
+
+    char buffer[64];
+    nmo_id_t value = 42;
+    nmo_result_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), (struct nmo_session*)&session);
+
+    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_STR_EQ("Ball_01", buffer);
+
+    nmo_type_string_set_object_resolvers(NULL, NULL);
+    teardown();
+}
+
+TEST(type_string, object_id_from_string_uses_name_resolver) {
+    setup();
+
+    test_object_name_session_t session = {0};
+
+    nmo_type_string_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
+
+    nmo_id_t value = 0;
+    nmo_result_t result = nmo_object_id_from_string(&value, "Ball_01", (struct nmo_session*)&session);
+
+    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(42u, value);
+
+    nmo_type_string_set_object_resolvers(NULL, NULL);
+    teardown();
+}
+
+TEST(type_string, object_id_to_string_falls_back_on_unsafe_name) {
+    setup();
+
+    test_object_name_session_t session = {0};
+
+    nmo_type_string_set_object_resolvers(test_object_id_to_unsafe_name, test_object_name_to_id);
+
+    char buffer[64];
+    nmo_id_t value = 42;
+    nmo_result_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), (struct nmo_session*)&session);
+
+    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_STR_EQ("#42", buffer);
+
+    nmo_type_string_set_object_resolvers(NULL, NULL);
+    teardown();
+}
+
+TEST(type_string, object_id_from_string_name_not_found) {
+    setup();
+
+    test_object_name_session_t session = {0};
+
+    nmo_type_string_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
+
+    nmo_id_t value = 0;
+    nmo_result_t result = nmo_object_id_from_string(&value, "DoesNotExist", (struct nmo_session*)&session);
+
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
+
+    nmo_type_string_set_object_resolvers(NULL, NULL);
+    teardown();
+}
+
 /* ============================================================================
  * Main Test Runner
  * ============================================================================ */
@@ -910,4 +1036,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, object_id_to_string);
     REGISTER_TEST(type_string, object_id_from_string);
     REGISTER_TEST(type_string, object_id_roundtrip);
+    REGISTER_TEST(type_string, object_id_to_string_uses_name_resolver);
+    REGISTER_TEST(type_string, object_id_from_string_uses_name_resolver);
+    REGISTER_TEST(type_string, object_id_to_string_falls_back_on_unsafe_name);
+    REGISTER_TEST(type_string, object_id_from_string_name_not_found);
 TEST_MAIN_END()

@@ -86,6 +86,26 @@ static nmo_result_t mock_add_int(
     return nmo_result_ok();
 }
 
+static nmo_result_t mock_add_int_to_float(
+    const void *p1_data,
+    const nmo_type_descriptor_t *p1_type,
+    const void *p2_data,
+    const nmo_type_descriptor_t *p2_type,
+    void *result_data,
+    const nmo_type_descriptor_t *result_type,
+    void *user_data
+) {
+    (void)p1_type;
+    (void)p2_type;
+    (void)result_type;
+    (void)user_data;
+
+    const int32_t a = *(const int32_t *)p1_data;
+    const int32_t b = *(const int32_t *)p2_data;
+    *(float *)result_data = (float)(a + b);
+    return nmo_result_ok();
+}
+
 /* Simple integer negation (unary) */
 static nmo_result_t mock_negate_int(
     const void *p1_data,
@@ -483,6 +503,72 @@ TEST(operation_registry, execute_operation_success) {
     ASSERT_EQ(NMO_OK, exec_result.code);
     ASSERT_EQ(8, result);
     
+    teardown_context(ctx);
+}
+
+TEST(operation_registry, execute_selects_requested_result_type) {
+    test_context_t *ctx = setup_context();
+    ASSERT_NE(NULL, ctx);
+
+    /* Register types */
+    nmo_type_descriptor_t int_type = {0};
+    int_type.guid = GUID_TYPE_INT;
+    int_type.name = "INT";
+    int_type.size = sizeof(int32_t);
+    int_type.alignment = alignof(int32_t);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type).code);
+
+    nmo_type_descriptor_t float_type = {0};
+    float_type.guid = GUID_TYPE_FLOAT;
+    float_type.name = "FLOAT";
+    float_type.size = sizeof(float);
+    float_type.alignment = alignof(float);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &float_type).code);
+
+    /* Register two cells for the same (op, p1, p2), with different result types */
+    nmo_operation_desc_t int_result = {0};
+    int_result.operation_guid = GUID_OP_ADD;
+    int_result.p1_type_guid = GUID_TYPE_INT;
+    int_result.p2_type_guid = GUID_TYPE_INT;
+    int_result.result_type_guid = GUID_TYPE_INT;
+    int_result.function = mock_add_int;
+    int_result.flags = NMO_OP_BINARY;
+    int_result.priority = 50;
+    int_result.name = "Add";
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &int_result, ctx->type_registry).code);
+
+    nmo_operation_desc_t float_result = {0};
+    float_result.operation_guid = GUID_OP_ADD;
+    float_result.p1_type_guid = GUID_TYPE_INT;
+    float_result.p2_type_guid = GUID_TYPE_INT;
+    float_result.result_type_guid = GUID_TYPE_FLOAT;
+    float_result.function = mock_add_int_to_float;
+    float_result.flags = NMO_OP_BINARY;
+    float_result.priority = 100; /* Higher priority, but must still be selected by result_type */
+    float_result.name = "Add";
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &float_result, ctx->type_registry).code);
+
+    const int32_t a = 3;
+    const int32_t b = 5;
+    float out = 0.0f;
+
+    const nmo_type_descriptor_t *int_desc = nmo_type_registry_find_by_guid(ctx->type_registry, GUID_TYPE_INT);
+    const nmo_type_descriptor_t *float_desc = nmo_type_registry_find_by_guid(ctx->type_registry, GUID_TYPE_FLOAT);
+    ASSERT_NE(NULL, int_desc);
+    ASSERT_NE(NULL, float_desc);
+
+    nmo_result_t exec_result = nmo_operation_registry_execute(
+        ctx->operation_registry,
+        &GUID_OP_ADD,
+        &a, int_desc,
+        &b, int_desc,
+        &out, float_desc,
+        ctx->type_registry
+    );
+
+    ASSERT_EQ(NMO_OK, exec_result.code);
+    ASSERT_TRUE(out == 8.0f);
+
     teardown_context(ctx);
 }
 
@@ -1145,6 +1231,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(operation_registry, find_operation_not_implemented);
     REGISTER_TEST(operation_registry, find_null_params);
     REGISTER_TEST(operation_registry, execute_operation_success);
+    REGISTER_TEST(operation_registry, execute_selects_requested_result_type);
     REGISTER_TEST(operation_registry, get_family_success);
     REGISTER_TEST(operation_registry, enumerate_family_success);
     REGISTER_TEST(operation_registry, get_stats_initial);

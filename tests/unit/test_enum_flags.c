@@ -288,6 +288,77 @@ TEST(enum_flags, register_enum_with_negative_values) {
     teardown();
 }
 
+TEST(enum_flags, change_enum_string_add_value_success) {
+    setup();
+
+    nmo_enum_value_def_t values[] = {
+        { "RED", 0, NULL },
+        { "GREEN", 1, NULL }
+    };
+    nmo_enum_type_def_t enum_def = {
+        .name = "Color",
+        .values = values,
+        .value_count = 2,
+        .default_value = 0
+    };
+
+    nmo_guid_t guid;
+    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    result = nmo_type_registry_change_enum_string(g_type_registry, guid, "RED=0,GREEN=1,BLUE=2");
+    ASSERT_EQ(NMO_OK, result.code);
+
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    ASSERT_NE(NULL, type_desc);
+
+    const nmo_specialized_metadata_t *meta =
+        nmo_type_registry_get_metadata(g_type_registry, type_desc->id);
+    ASSERT_NE(NULL, meta);
+    ASSERT_EQ(NMO_METADATA_TYPE_ENUM, meta->metadata_type);
+    ASSERT_EQ(3, meta->enum_meta.value_count);
+
+    bool found_blue = false;
+    for (size_t i = 0; i < meta->enum_meta.value_count; i++) {
+        if (strcmp(meta->enum_meta.values[i].name, "BLUE") == 0) {
+            found_blue = true;
+            ASSERT_EQ(2, meta->enum_meta.values[i].value);
+        }
+    }
+    ASSERT_TRUE(found_blue);
+
+    teardown();
+}
+
+TEST(enum_flags, change_enum_string_rejects_incompatible_changes) {
+    setup();
+
+    nmo_enum_value_def_t values[] = {
+        { "A", 0, NULL },
+        { "B", 1, NULL }
+    };
+    nmo_enum_type_def_t enum_def = {
+        .name = "MyEnum",
+        .values = values,
+        .value_count = 2,
+        .default_value = 0
+    };
+
+    nmo_guid_t guid;
+    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    /* Cannot remove existing value */
+    result = nmo_type_registry_change_enum_string(g_type_registry, guid, "A=0");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+
+    /* Cannot change existing value's numeric mapping */
+    result = nmo_type_registry_change_enum_string(g_type_registry, guid, "A=0,B=2");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+
+    teardown();
+}
+
 /* ============================================================================
  * Flags Registration Tests
  * ============================================================================ */
@@ -476,6 +547,77 @@ TEST(enum_flags, register_flags_with_default_value) {
     teardown();
 }
 
+TEST(enum_flags, change_flags_string_add_bit_success) {
+    setup();
+
+    nmo_flags_bit_def_t bits[] = {
+        { "READ", 0x01, NULL },
+        { "WRITE", 0x02, NULL }
+    };
+    nmo_flags_type_def_t flags_def = {
+        .name = "Permissions",
+        .bits = bits,
+        .bit_count = 2,
+        .default_value = 0
+    };
+
+    nmo_guid_t guid;
+    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    result = nmo_type_registry_change_flags_string(g_type_registry, guid, "READ=0x01,WRITE=0x02,EXECUTE=0x04");
+    ASSERT_EQ(NMO_OK, result.code);
+
+    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
+    ASSERT_NE(NULL, type_desc);
+
+    const nmo_specialized_metadata_t *meta =
+        nmo_type_registry_get_metadata(g_type_registry, type_desc->id);
+    ASSERT_NE(NULL, meta);
+    ASSERT_EQ(NMO_METADATA_TYPE_FLAGS, meta->metadata_type);
+    ASSERT_EQ(3, meta->flags_meta.bit_count);
+
+    bool found_execute = false;
+    for (size_t i = 0; i < meta->flags_meta.bit_count; i++) {
+        if (strcmp(meta->flags_meta.bits[i].name, "EXECUTE") == 0) {
+            found_execute = true;
+            ASSERT_EQ(0x04, meta->flags_meta.bits[i].mask);
+        }
+    }
+    ASSERT_TRUE(found_execute);
+
+    teardown();
+}
+
+TEST(enum_flags, change_flags_string_rejects_incompatible_changes) {
+    setup();
+
+    nmo_flags_bit_def_t bits[] = {
+        { "BIT_A", 0x01, NULL },
+        { "BIT_B", 0x02, NULL }
+    };
+    nmo_flags_type_def_t flags_def = {
+        .name = "MyFlags",
+        .bits = bits,
+        .bit_count = 2,
+        .default_value = 0
+    };
+
+    nmo_guid_t guid;
+    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_OK, result.code);
+
+    /* Cannot remove existing bit */
+    result = nmo_type_registry_change_flags_string(g_type_registry, guid, "BIT_A=0x01");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+
+    /* Cannot change existing bit's mask */
+    result = nmo_type_registry_change_flags_string(g_type_registry, guid, "BIT_A=0x01,BIT_B=0x04");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+
+    teardown();
+}
+
 /* ============================================================================
  * Test Main
  * ============================================================================ */
@@ -491,6 +633,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(enum_flags, register_enum_duplicate_names);
     REGISTER_TEST(enum_flags, register_enum_already_exists);
     REGISTER_TEST(enum_flags, register_enum_with_negative_values);
+    REGISTER_TEST(enum_flags, change_enum_string_add_value_success);
+    REGISTER_TEST(enum_flags, change_enum_string_rejects_incompatible_changes);
     
     /* Flags tests */
     REGISTER_TEST(enum_flags, register_flags_success);
@@ -501,4 +645,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(enum_flags, register_flags_duplicate_masks);
     REGISTER_TEST(enum_flags, register_flags_invalid_mask);
     REGISTER_TEST(enum_flags, register_flags_with_default_value);
+    REGISTER_TEST(enum_flags, change_flags_string_add_bit_success);
+    REGISTER_TEST(enum_flags, change_flags_string_rejects_incompatible_changes);
 TEST_MAIN_END()

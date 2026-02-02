@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#include <stdint.h>
 
 TEST(header1, serialization) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
@@ -130,8 +132,32 @@ TEST(header1, included_metadata_only) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, size_overflow) {
+    if (SIZE_MAX > UINT32_MAX) {
+        return;
+    }
+
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_header1_t header;
+    memset(&header, 0, sizeof(header));
+    header.object_count = 0;
+    header.plugin_dep_count = (uint32_t)(SIZE_MAX / sizeof(uint32_t)) + 1u;
+    header.plugin_deps = NULL;
+    header.included_file_count = 0;
+
+    void* out_data = NULL;
+    size_t out_size = 0;
+    nmo_result_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
+    ASSERT_EQ(result.code, NMO_ERR_CORRUPT);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header1, serialization);
     REGISTER_TEST(header1, round_trip);
     REGISTER_TEST(header1, included_metadata_only);
+    REGISTER_TEST(header1, size_overflow);
 TEST_MAIN_END()

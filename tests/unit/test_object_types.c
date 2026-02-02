@@ -191,3 +191,14 @@ TEST(object_types, resource_types) {
 
     nmo_arena_destroy(arena);
 }
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(object_types, register_base_types);
+    REGISTER_TEST(object_types, register_all_types);
+    REGISTER_TEST(object_types, lookup_by_class_id);
+    REGISTER_TEST(object_types, inheritance_check);
+    REGISTER_TEST(object_types, guid_to_class_id);
+    REGISTER_TEST(object_types, is_object_type);
+    REGISTER_TEST(object_types, 3d_entity_hierarchy);
+    REGISTER_TEST(object_types, resource_types);
+TEST_MAIN_END()

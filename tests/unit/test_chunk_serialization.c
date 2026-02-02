@@ -36,7 +36,7 @@ TEST(chunk_serialization, version_info_packing) {
     chunk->data_version = 0x12;       // Custom data version
     chunk->chunk_class_id = 0x34;     // Class ID
     chunk->chunk_version = 7;         // CHUNK_VERSION4
-    chunk->chunk_options = 0x0F;      // Some options (will be OR'd with actual flags)
+    chunk->chunk_options = 0x07;      // IDS|CHN|MAN (NOT FILE - IDS aren't serialized in file mode)
 
     // Add some data
     nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 2);

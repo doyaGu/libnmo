@@ -65,7 +65,7 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    int result = nmo_load_file(load1_session, input_file, NMO_LOAD_DEFAULT | NMO_LOAD_SKIP_CRC);
+    int result = nmo_load_file(load1_session, input_file, NMO_LOAD_DEFAULT);
     if (result != NMO_OK) {
         printf("  FAILED: Could not load original file (error %d)\n", result);
         nmo_session_destroy(load1_session);
@@ -96,7 +96,7 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    result = nmo_load_file(load2_session, temp_file, NMO_LOAD_DEFAULT | NMO_LOAD_SKIP_CRC);
+    result = nmo_load_file(load2_session, temp_file, NMO_LOAD_DEFAULT);
     if (result != NMO_OK) {
         printf("  FAILED: Could not load saved file (error %d)\n", result);
         nmo_session_destroy(load2_session);
