@@ -8,6 +8,9 @@
  */
 
 #include "object/nmo_ckparameterin_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -30,17 +33,26 @@
  *
  * Reference: reference/src/CKParameterIn.cpp:177-250
  */
-static nmo_result_t nmo_ckparameterin_deserialize(
+nmo_result_t nmo_ckparameterin_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckparameterin_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckparameterin_state_t *out_state = (nmo_ckparameterin_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
     memset(out_state, 0, sizeof(nmo_ckparameterin_state_t));
+
+    /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
@@ -113,22 +125,32 @@ static nmo_result_t nmo_ckparameterin_deserialize(
  *
  * Reference: reference/src/CKParameterIn.cpp:142-162
  */
-static nmo_result_t nmo_ckparameterin_serialize(
-    const nmo_ckparameterin_state_t *in_state,
+nmo_result_t nmo_ckparameterin_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckparameterin_state_t *in_state = (const nmo_ckparameterin_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_result_t result;
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
+
+    /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Write identifier based on shared/direct source */
     uint32_t identifier = in_state->is_shared
         ? CK_STATESAVE_PARAMETERIN_DATASHARED
         : CK_STATESAVE_PARAMETERIN_DATASOURCE;
 
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, identifier);
+    result = nmo_chunk_write_identifier(out_chunk, identifier);
     if (result.code != NMO_OK) return result;
 
     result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
@@ -146,16 +168,18 @@ static nmo_result_t nmo_ckparameterin_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * PUBLIC API - Accessors
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-nmo_ckparameterin_deserialize_fn nmo_get_ckparameterin_deserialize(void)
-{
-    return nmo_ckparameterin_deserialize;
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckparameterin,
+    nmo_ckparameterin_state_t,
+    nmo_ckparameterin_serialize,
+    nmo_ckparameterin_deserialize,
+    NMO_GUID_CKPARAMETERIN,
+    "CKParameterIn",
+    NMO_CID_PARAMETERIN,
+    NMO_GUID_CKOBJECT
+)
 
-nmo_ckparameterin_serialize_fn nmo_get_ckparameterin_serialize(void)
-{
-    return nmo_ckparameterin_serialize;
-}

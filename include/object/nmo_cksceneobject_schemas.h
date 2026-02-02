@@ -10,6 +10,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,6 +18,7 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKSceneObject STATE
@@ -32,26 +34,6 @@ typedef struct nmo_cksceneobject_state {
 } nmo_cksceneobject_state_t;
 
 /* =============================================================================
- * FUNCTION TYPES
- * ============================================================================= */
-
-/**
- * @brief CKSceneObject deserialize function type
- */
-typedef nmo_result_t (*nmo_cksceneobject_deserialize_fn)(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cksceneobject_state_t *out_state);
-
-/**
- * @brief CKSceneObject serialize function type
- */
-typedef nmo_result_t (*nmo_cksceneobject_serialize_fn)(
-    const nmo_cksceneobject_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
-
-/* =============================================================================
  * DESERIALIZATION/SERIALIZATION
  * ============================================================================= */
 
@@ -64,9 +46,10 @@ typedef nmo_result_t (*nmo_cksceneobject_serialize_fn)(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_cksceneobject_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cksceneobject_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /**
  * @brief Serialize CKSceneObject to chunk
@@ -77,39 +60,12 @@ NMO_API nmo_result_t nmo_cksceneobject_deserialize(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_cksceneobject_serialize(
-    const nmo_cksceneobject_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/* =============================================================================
- * ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get CKSceneObject deserialize function pointer
- */
-NMO_API nmo_cksceneobject_deserialize_fn nmo_get_cksceneobject_deserialize(void);
-
-/**
- * @brief Get CKSceneObject serialize function pointer
- */
-NMO_API nmo_cksceneobject_serialize_fn nmo_get_cksceneobject_serialize(void);
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKSceneObject schemas
- * 
- * @param registry Schema registry
- * @param arena Arena for allocations
- * @return Result indicating success or error
- */
-NMO_API nmo_result_t nmo_register_cksceneobject_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cksceneobject_vtable, nmo_register_cksceneobject_type)
 #ifdef __cplusplus
 }
 #endif

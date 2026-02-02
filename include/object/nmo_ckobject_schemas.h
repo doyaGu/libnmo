@@ -11,16 +11,17 @@
 #define NMO_CKOBJECT_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKObject STATE STRUCTURES
@@ -41,24 +42,6 @@ typedef struct nmo_ckobject_state {
 #define NMO_CKOBJECT_HIERARCHICAL     0x02  /**< Object has hierarchical hide */
 
 /* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKObject schema types
- * 
- * Registers schema types for CKObject state structures.
- * Should be called during schema registry initialization.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-NMO_API nmo_result_t nmo_register_ckobject_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
-/* =============================================================================
  * DESERIALIZATION FUNCTIONS
  * ============================================================================= */
 
@@ -73,24 +56,14 @@ NMO_API nmo_result_t nmo_register_ckobject_schemas(
  * @param out_state Output state structure
  * @return Result indicating success or error
  */
-typedef nmo_result_t (*nmo_ckobject_deserialize_fn)(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckobject_state_t *out_state);
-
 /**
  * @brief Deserialize CKObject from chunk (implementation)
  */
 NMO_API nmo_result_t nmo_ckobject_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckobject_state_t *out_state);
-
-/**
- * @brief Get CKObject deserialize function pointer
- * @return Function pointer to CKObject deserialize implementation
- */
-NMO_API nmo_ckobject_deserialize_fn nmo_get_ckobject_deserialize(void);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /* =============================================================================
  * SERIALIZATION FUNCTIONS
@@ -107,24 +80,16 @@ NMO_API nmo_ckobject_deserialize_fn nmo_get_ckobject_deserialize(void);
  * @param arena     Arena for temporary allocations
  * @return Result indicating success or error
  */
-typedef nmo_result_t (*nmo_ckobject_serialize_fn)(
-    const nmo_ckobject_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
-
 /**
  * @brief Serialize CKObject to chunk (implementation)
  */
 NMO_API nmo_result_t nmo_ckobject_serialize(
-    const nmo_ckobject_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/**
- * @brief Get CKObject serialize function pointer
- * @return Function pointer to CKObject serialize implementation
- */
-NMO_API nmo_ckobject_serialize_fn nmo_get_ckobject_serialize(void);
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckobject_vtable, nmo_register_ckobject_type)
 
 /* =============================================================================
  * FINISH LOADING FUNCTIONS (Phase 15 - PostLoad equivalent)
@@ -137,15 +102,9 @@ NMO_API nmo_ckobject_serialize_fn nmo_get_ckobject_serialize(void);
  * Equivalent to CKObject::PostLoad() in Virtools SDK.
  * 
  * @param state Deserialized object state
- * @param arena Arena for allocations
- * @param repository Object repository for reference resolution (opaque void*)
+ * @param context Serialization context (nmo_serialize_context_t*)
  * @return Result indicating success or error
  */
-typedef nmo_result_t (*nmo_ckobject_finish_loading_fn)(
-    void *state,
-    nmo_arena_t *arena,
-    void *repository);
-
 /**
  * @brief Finish loading CKObject (base implementation)
  * 
@@ -153,14 +112,7 @@ typedef nmo_result_t (*nmo_ckobject_finish_loading_fn)(
  */
 NMO_API nmo_result_t nmo_ckobject_finish_loading(
     void *state,
-    nmo_arena_t *arena,
-    void *repository);
-
-/**
- * @brief Get CKObject finish_loading function pointer
- * @return Function pointer to CKObject finish_loading implementation
- */
-NMO_API nmo_ckobject_finish_loading_fn nmo_get_ckobject_finish_loading(void);
+    void *context);
 
 #ifdef __cplusplus
 }

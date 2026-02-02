@@ -19,16 +19,17 @@
 #include "nmo_types.h"
 #include "core/nmo_math.h"
 #include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CK2dEntity STATE STRUCTURES
@@ -49,7 +50,7 @@ typedef struct nmo_result nmo_result_t;
  * - m_Material: material reference (sprites only, identifier 0x200000)
  */
 typedef struct nmo_ck2dentity_state {
-    nmo_ckrenderobject_state_t render_object; /**< Parent CKRenderObject state */
+    nmo_ckrenderobject_state_t base; /**< Parent CKRenderObject state */
     
     /* Core rectangle fields */
     nmo_rect_t rect;                    /**< Screen-space rectangle */
@@ -100,77 +101,22 @@ typedef struct nmo_ck2dentity_state {
 #define NMO_CK2DENTITY_FLAGS_MASK        0xFFF8F7FF
 
 /* =============================================================================
- * FUNCTION POINTER TYPES
+ * PUBLIC API
  * ============================================================================= */
 
-/**
- * @brief CK2dEntity deserialize function pointer type
- * 
- * @param chunk Chunk containing CK2dEntity data
- * @param arena Arena for allocations
- * @param out_state Output structure to fill
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ck2dentity_deserialize_fn)(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ck2dentity_state_t *out_state);
-
-/**
- * @brief CK2dEntity serialize function pointer type
- * 
- * @param chunk Chunk to write to
- * @param state Input state structure
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ck2dentity_serialize_fn)(
-    const nmo_ck2dentity_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CK2dEntity schema types
- * 
- * Registers schema types for CK2dEntity state structures.
- * Must be called during initialization before using CK2dEntity schemas.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-NMO_API nmo_result_t nmo_register_ck2dentity_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
-/**
- * @brief Deserialize CK2dEntity from chunk (public API)
- * 
- * @param chunk Chunk containing CK2dEntity data
- * @param arena Arena for allocations
- * @param out_state Output state structure
- * @return Result indicating success or error
- */
 NMO_API nmo_result_t nmo_ck2dentity_deserialize(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ck2dentity_state_t *out_state);
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/**
- * @brief Serialize CK2dEntity to chunk (public API)
- * 
- * @param chunk Chunk to write to
- * @param state State to serialize
- * @param arena Arena for temporary allocations
- * @return Result indicating success or error
- */
 NMO_API nmo_result_t nmo_ck2dentity_serialize(
-    const nmo_ck2dentity_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ck2dentity_vtable, nmo_register_ck2dentity_type)
 
 #ifdef __cplusplus
 }

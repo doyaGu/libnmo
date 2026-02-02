@@ -11,9 +11,10 @@
  */
 
 #include "object/nmo_ckspritetext_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ck2dentity_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -72,6 +73,21 @@ static nmo_result_t deserialize_text_content(
     
     return nmo_result_ok();
 }
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckspritetext,
+    nmo_ck_spritetext_state_t,
+    nmo_ckspritetext_serialize,
+    nmo_ckspritetext_deserialize,
+    NMO_GUID_CKSPRITETEXT,
+    "CKSpriteText",
+    NMO_CID_SPRITETEXT,
+    NMO_GUID_CKSPRITE
+)
 
 /**
  * @brief Deserialize identifier 0x02000000 (font properties)
@@ -375,10 +391,15 @@ static nmo_result_t ckspritetext_finish_loading(
  * ======================================================================== */
 
 nmo_result_t nmo_ckspritetext_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck_spritetext_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ck_spritetext_state_t *out_state = (nmo_ck_spritetext_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !arena || !out_state) {
         return nmo_result_error(NMO_ERROR(
             arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -388,7 +409,7 @@ nmo_result_t nmo_ckspritetext_deserialize(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ck2dentity_deserialize(chunk, arena, &out_state->base);
+    nmo_result_t result = nmo_ck2dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -402,10 +423,15 @@ nmo_result_t nmo_ckspritetext_deserialize(
 }
 
 nmo_result_t nmo_ckspritetext_serialize(
-    const nmo_ck_spritetext_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ck_spritetext_state_t *in_state = (const nmo_ck_spritetext_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(
             arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -413,7 +439,7 @@ nmo_result_t nmo_ckspritetext_serialize(
         ));
     }
 
-    nmo_result_t result = nmo_ck2dentity_serialize(&in_state->base, out_chunk, arena);
+    nmo_result_t result = nmo_ck2dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -421,97 +447,3 @@ nmo_result_t nmo_ckspritetext_serialize(
     return ckspritetext_serialize_modern(in_state, out_chunk, arena);
 }
 
-static nmo_result_t nmo_ckspritetext_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckspritetext_deserialize(chunk, arena, (nmo_ck_spritetext_state_t *)out_ptr);
-}
-
-static nmo_result_t nmo_ckspritetext_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckspritetext_serialize((const nmo_ck_spritetext_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckspritetext_vtable = {
-    .read = nmo_ckspritetext_vtable_read,
-    .write = nmo_ckspritetext_vtable_write,
-    .validate = NULL
-};
-
-/* ========================================================================
- * Schema Registration
- * ======================================================================== */
-
-/**
- * @brief Register CKSpriteText schemas with the schema system
- */
-nmo_result_t nmo_register_ckspritetext_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena
-) {
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_register_ckspritetext_schemas"
-        ));
-    }
-    
-    /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *int32_type = nmo_schema_registry_find_by_name(registry, "i32");
-    const nmo_schema_type_t *string_type = nmo_schema_registry_find_by_name(registry, "string");
-    
-    if (!uint32_type || !int32_type || !string_type) {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-            "Required types not found in registry"
-        ));
-    }
-    
-    /* Register CKSpriteText state structure */
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena, "CKSpriteTextState",
-        sizeof(nmo_ck_spritetext_state_t),
-        alignof(nmo_ck_spritetext_state_t)
-    );
-    
-    /* Add text content field */
-    nmo_builder_add_field_ex(&builder, "text_content", string_type,
-                            offsetof(nmo_ck_spritetext_state_t, text_content), 0);
-    
-    /* Add font properties fields */
-    nmo_builder_add_field_ex(&builder, "font_name", string_type,
-                            offsetof(nmo_ck_spritetext_state_t, font) + offsetof(nmo_font_info_t, font_name), 0);
-    nmo_builder_add_field_ex(&builder, "font_size", int32_type,
-                            offsetof(nmo_ck_spritetext_state_t, font) + offsetof(nmo_font_info_t, size), 0);
-    nmo_builder_add_field_ex(&builder, "font_weight", int32_type,
-                            offsetof(nmo_ck_spritetext_state_t, font) + offsetof(nmo_font_info_t, weight), 0);
-    nmo_builder_add_field_ex(&builder, "font_italic", int32_type,
-                            offsetof(nmo_ck_spritetext_state_t, font) + offsetof(nmo_font_info_t, italic), 0);
-    nmo_builder_add_field_ex(&builder, "font_underline", int32_type,
-                            offsetof(nmo_ck_spritetext_state_t, font) + offsetof(nmo_font_info_t, underline), 0);
-    
-    /* Add color fields */
-    nmo_builder_add_field_ex(&builder, "font_color", uint32_type,
-                            offsetof(nmo_ck_spritetext_state_t, font_color), 0);
-    nmo_builder_add_field_ex(&builder, "background_color", uint32_type,
-                            offsetof(nmo_ck_spritetext_state_t, background_color), 0);
-
-    nmo_builder_set_vtable(&builder, &nmo_ckspritetext_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}

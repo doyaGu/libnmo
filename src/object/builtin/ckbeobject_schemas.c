@@ -15,11 +15,11 @@
  */
 
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_cksceneobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -155,11 +155,16 @@ static nmo_result_t nmo_ckbeobject_read_object_sequence(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckbeobject_deserialize(
+nmo_result_t nmo_ckbeobject_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckbeobject_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckbeobject_state_t *out_state = (nmo_ckbeobject_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbeobject_deserialize"));
@@ -169,20 +174,18 @@ static nmo_result_t nmo_ckbeobject_deserialize(
     memset(out_state, 0, sizeof(nmo_ckbeobject_state_t));
     
     /* Deserialize base CKSceneObject state first */
-    nmo_cksceneobject_deserialize_fn parent_deserialize = nmo_get_cksceneobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
     
     const bool is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     /* Default priority is 0 */
     out_state->priority = 0;
 
     /* Load scripts array - optional section (legacy + modern) */
-    nmo_result_t result = nmo_result_ok();
-    if (is_file && nmo_chunk_get_data_version(chunk) < 5) {
+    result = nmo_result_ok();
+    if (is_file && data_version < 5) {
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORS);
         if (result.code == NMO_OK) {
             (void)nmo_ckbeobject_read_object_sequence(chunk, arena,
@@ -213,7 +216,7 @@ static nmo_result_t nmo_ckbeobject_deserialize(
             goto load_attributes;
         }
 
-        if (nmo_chunk_get_data_version(chunk) < 5) {
+        if (data_version < 5) {
             int32_t ignored = 0;
             (void)nmo_chunk_read_int(chunk, &ignored);
             (void)nmo_chunk_read_int(chunk, &ignored);
@@ -222,6 +225,11 @@ static nmo_result_t nmo_ckbeobject_deserialize(
         } else if (version_flag & CK_DATAS_VERSION_FLAG) {
             (void)nmo_chunk_read_int(chunk, &out_state->priority);
         } else {
+            if (data_version >= 5 && nmo_ckbeobject_identifier_remaining_dwords(chunk) > 0) {
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR,
+                    "CKBeObject: DATAS section missing version flag but contains data"));
+            }
             out_state->priority = 0;
         }
     }
@@ -309,12 +317,14 @@ load_attributes:
                     }
                     out_state->attribute_count = (uint32_t)attr_count;
                 } else {
-                    /* Wrong manager GUID - data might be corrupted */
-                    goto deserialize_done;
+                    return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                        NMO_SEVERITY_ERROR,
+                        "CKBeObject: attribute manager GUID mismatch"));
                 }
             } else if (result.code != NMO_OK || seq_count != attr_count) {
-                /* Manager sequence not found or count mismatch - skip */
-                goto deserialize_done;
+                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
+                    NMO_SEVERITY_ERROR,
+                    "CKBeObject: attribute manager sequence count mismatch"));
             }
         }
     } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES).code == NMO_OK) {
@@ -359,22 +369,24 @@ deserialize_done:
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckbeobject_serialize(
-    const nmo_ckbeobject_state_t *in_state,
+nmo_result_t nmo_ckbeobject_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckbeobject_state_t *in_state = (const nmo_ckbeobject_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbeobject_serialize"));
     }
 
     /* Write base class (CKSceneObject) data */
-    nmo_cksceneobject_serialize_fn parent_serialize = nmo_get_cksceneobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_cksceneobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
 
@@ -444,7 +456,7 @@ static nmo_result_t nmo_ckbeobject_serialize(
                 if (!sub) {
                     sub = nmo_chunk_create(arena);
                 }
-                result = nmo_chunk_write_sub_chunk(out_chunk, sub);
+                result = nmo_chunk_write_sub_chunk_sequence(out_chunk, sub);
                 if (result.code != NMO_OK) return result;
             }
         }
@@ -472,137 +484,18 @@ static nmo_result_t nmo_ckbeobject_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA VTABLE (for schema registry integration)
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CKBeObject
- * 
- * Adapts nmo_ckbeobject_deserialize to match nmo_schema_vtable_t signature.
- */
-static nmo_result_t nmo_ckbeobject_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type; /* Type info not needed for CKBeObject */
-    return nmo_ckbeobject_deserialize(chunk, arena, (nmo_ckbeobject_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckbeobject,
+    nmo_ckbeobject_state_t,
+    nmo_ckbeobject_serialize,
+    nmo_ckbeobject_deserialize,
+    NMO_GUID_CKBEOBJECT,
+    "CKBeObject",
+    NMO_CID_BEOBJECT,
+    NMO_GUID_CKSCENEOBJECT
+)
 
-/**
- * @brief Vtable write wrapper for CKBeObject
- * 
- * Adapts nmo_ckbeobject_serialize to match nmo_schema_vtable_t signature.
- */
-static nmo_result_t nmo_ckbeobject_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type; /* Type info not needed for CKBeObject */
-    return nmo_ckbeobject_serialize((const nmo_ckbeobject_state_t *)in_ptr, chunk, arena);
-}
-
-/**
- * @brief Vtable for CKBeObject schema
- */
-static const nmo_schema_vtable_t nmo_ckbeobject_vtable = {
-    .read = nmo_ckbeobject_vtable_read,
-    .write = nmo_ckbeobject_vtable_write,
-    .validate = NULL  /* No custom validation */
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKBeObject schema types
- * 
- * Creates schema descriptors for CKBeObject state structures with vtable.
- * This enables schema registry-based deserialization in parser.c Phase 14.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckbeobject_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckbeobject_schemas"));
-    }
-
-    /* Get base types for fields */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *int32_type = nmo_schema_registry_find_by_name(registry, "i32");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
-    
-    if (!uint32_type || !int32_type || !object_id_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
-    }
-
-    /* Register CKBeObject state structure with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKBeObjectState",
-                                                      sizeof(nmo_ckbeobject_state_t),
-                                                      alignof(nmo_ckbeobject_state_t));
-    
-    /* Add fields (simplified - full implementation would include all fields) */
-    nmo_builder_add_field_ex(&builder, "script_count", uint32_type,
-                            offsetof(nmo_ckbeobject_state_t, script_count), 0);
-    nmo_builder_add_field_ex(&builder, "priority", int32_type,
-                            offsetof(nmo_ckbeobject_state_t, priority), 0);
-    nmo_builder_add_field_ex(&builder, "attribute_count", uint32_type,
-                            offsetof(nmo_ckbeobject_state_t, attribute_count), 0);
-    nmo_builder_add_field_ex(&builder, "single_activity_flags", uint32_type,
-                            offsetof(nmo_ckbeobject_state_t, single_activity_flags), 0);
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckbeobject_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    /* Map class ID to schema */
-    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKBeObjectState");
-    if (type) {
-        result = nmo_schema_registry_map_class_id(registry, NMO_CID_BEOBJECT, type);
-        if (result.code != NMO_OK) {
-            return result;
-        }
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKBeObject
- * 
- * @return Deserialize function pointer
- */
-nmo_ckbeobject_deserialize_fn nmo_get_ckbeobject_deserialize(void)
-{
-    return nmo_ckbeobject_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKBeObject
- * 
- * @return Serialize function pointer
- */
-nmo_ckbeobject_serialize_fn nmo_get_ckbeobject_serialize(void)
-{
-    return nmo_ckbeobject_serialize;
-}

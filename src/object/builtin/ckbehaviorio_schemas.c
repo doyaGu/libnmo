@@ -9,9 +9,10 @@
  */
 
 #include "object/nmo_ckbehaviorio_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -46,11 +47,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckbehaviorio_deserialize(
+nmo_result_t nmo_ckbehaviorio_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckbehaviorio_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckbehaviorio_state_t *out_state = (nmo_ckbehaviorio_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorio_deserialize"));
@@ -59,11 +65,16 @@ static nmo_result_t nmo_ckbehaviorio_deserialize(
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckbehaviorio_state_t));
 
+    /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
+
     /* Read I/O flags */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_IOFLAGS);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_IOFLAGS);
     if (result.code == NMO_OK) {
         result = nmo_chunk_read_dword(chunk, &out_state->old_flags);
         if (result.code != NMO_OK) return result;
+        out_state->has_flags = true;
     }
     /* Note: If identifier not found, old_flags remains 0 (valid for older versions) */
 
@@ -86,11 +97,16 @@ static nmo_result_t nmo_ckbehaviorio_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckbehaviorio_serialize(
-    const nmo_ckbehaviorio_state_t *in_state,
+nmo_result_t nmo_ckbehaviorio_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckbehaviorio_state_t *in_state = (const nmo_ckbehaviorio_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorio_serialize"));
@@ -98,7 +114,11 @@ static nmo_result_t nmo_ckbehaviorio_serialize(
 
     nmo_result_t result;
 
-    /* Write I/O flags */
+    /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
+
+    /* CKBehaviorIO::Save always writes IOFLAGS in file context */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_IOFLAGS);
     if (result.code != NMO_OK) return result;
 
@@ -108,85 +128,18 @@ static nmo_result_t nmo_ckbehaviorio_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Register CKBehaviorIO schema types
- * 
- * Creates schema descriptors for CKBehaviorIO state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-/* =============================================================================
- * VTABLE IMPLEMENTATION
- * ============================================================================= */
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckbehaviorio,
+    nmo_ckbehaviorio_state_t,
+    nmo_ckbehaviorio_serialize,
+    nmo_ckbehaviorio_deserialize,
+    NMO_GUID_CKBEHAVIORIO,
+    "CKBehaviorIO",
+    NMO_CID_BEHAVIORIO,
+    NMO_GUID_CKOBJECT
+)
 
-static nmo_result_t vtable_read_ckbehaviorio(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
-    (void)type;
-    return nmo_ckbehaviorio_deserialize(chunk, arena, (nmo_ckbehaviorio_state_t *)out_ptr);
-}
-
-static nmo_result_t vtable_write_ckbehaviorio(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
-    (void)type;
-    return nmo_ckbehaviorio_serialize((const nmo_ckbehaviorio_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckbehaviorio_vtable = {
-    .read = vtable_read_ckbehaviorio,
-    .write = vtable_write_ckbehaviorio,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_ckbehaviorio_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckbehaviorio_schemas"));
-    }
-
-    /* Register minimal schema with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKBehaviorIOState",
-                                                      sizeof(nmo_ckbehaviorio_state_t),
-                                                      alignof(nmo_ckbehaviorio_state_t));
-    
-    nmo_builder_set_vtable(&builder, &nmo_ckbehaviorio_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKBehaviorIO
- * 
- * @return Deserialize function pointer
- */
-nmo_ckbehaviorio_deserialize_fn nmo_get_ckbehaviorio_deserialize(void)
-{
-    return nmo_ckbehaviorio_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKBehaviorIO
- * 
- * @return Serialize function pointer
- */
-nmo_ckbehaviorio_serialize_fn nmo_get_ckbehaviorio_serialize(void)
-{
-    return nmo_ckbehaviorio_serialize;
-}

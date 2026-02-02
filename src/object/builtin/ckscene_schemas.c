@@ -12,10 +12,11 @@
  */
 
 #include "object/nmo_ckscene_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -58,11 +59,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckscene_deserialize(
+nmo_result_t nmo_ckscene_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckscene_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckscene_state_t *out_state = (nmo_ckscene_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckscene_deserialize"));
@@ -72,14 +78,11 @@ static nmo_result_t nmo_ckscene_deserialize(
     memset(out_state, 0, sizeof(nmo_ckscene_state_t));
     
     /* Deserialize base CKBeObject state first */
-    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Section 1: SCENENEWDATA - Level + scene objects */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENENEWDATA);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENENEWDATA);
     if (result.code == NMO_OK) {
         /* Read level ID */
         result = nmo_chunk_read_object_id(chunk, &out_state->level_id);
@@ -239,25 +242,27 @@ static nmo_result_t nmo_ckscene_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckscene_serialize(
-    const nmo_ckscene_state_t *in_state,
+nmo_result_t nmo_ckscene_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckscene_state_t *in_state = (const nmo_ckscene_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckscene_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Section 1: SCENENEWDATA */
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCENENEWDATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCENENEWDATA);
     if (result.code != NMO_OK) return result;
 
     /* Write level ID */
@@ -286,16 +291,18 @@ static nmo_result_t nmo_ckscene_serialize(
         for (uint32_t i = 0; i < in_state->object_count; i++) {
             /* Write initial value chunk */
             if (in_state->object_descs[i].initial_value) {
-                result = nmo_chunk_write_sub_chunk(out_chunk, in_state->object_descs[i].initial_value);
+                result = nmo_chunk_write_sub_chunk_sequence(
+                    out_chunk,
+                    in_state->object_descs[i].initial_value);
                 if (result.code != NMO_OK) return result;
             } else {
                 /* Write NULL chunk */
-                result = nmo_chunk_write_sub_chunk(out_chunk, NULL);
+                result = nmo_chunk_write_sub_chunk_sequence(out_chunk, NULL);
                 if (result.code != NMO_OK) return result;
             }
 
             /* Write reserved NULL chunk */
-            result = nmo_chunk_write_sub_chunk(out_chunk, NULL);
+            result = nmo_chunk_write_sub_chunk_sequence(out_chunk, NULL);
             if (result.code != NMO_OK) return result;
         }
 
@@ -350,117 +357,18 @@ static nmo_result_t nmo_ckscene_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CKScene
- */
-static nmo_result_t nmo_ckscene_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckscene_deserialize(chunk, arena, (nmo_ckscene_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckscene,
+    nmo_ckscene_state_t,
+    nmo_ckscene_serialize,
+    nmo_ckscene_deserialize,
+    NMO_GUID_CKSCENE,
+    "CKScene",
+    NMO_CID_SCENE,
+    NMO_GUID_CKBEOBJECT
+)
 
-/**
- * @brief Vtable write wrapper for CKScene
- */
-static nmo_result_t nmo_ckscene_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckscene_serialize((const nmo_ckscene_state_t *)in_ptr, chunk, arena);
-}
-
-/**
- * @brief Vtable for CKScene schema operations
- */
-static const nmo_schema_vtable_t nmo_ckscene_vtable = {
-    .read = nmo_ckscene_vtable_read,
-    .write = nmo_ckscene_vtable_write,
-    .validate = NULL
-};
-
-/**
- * @brief Register CKScene schema types
- * 
- * Creates schema descriptors for CKScene state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckscene_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckscene_schemas"));
-    }
-
-    /* Get base types for fields */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
-    
-    if (!uint32_type || !float_type || !object_id_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
-    }
-
-    /* Create schema builder for CKScene */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKSceneState",
-                                                      sizeof(nmo_ckscene_state_t),
-                                                      alignof(nmo_ckscene_state_t));
-    
-    /* Add scene fields (simplified) */
-    nmo_builder_add_field_ex(&builder, "level_id", object_id_type,
-                            offsetof(nmo_ckscene_state_t, level_id), 0);
-    nmo_builder_add_field_ex(&builder, "object_count", uint32_type,
-                            offsetof(nmo_ckscene_state_t, object_count), 0);
-    nmo_builder_add_field_ex(&builder, "background_color", uint32_type,
-                            offsetof(nmo_ckscene_state_t, background_color), 0);
-
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckscene_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKScene
- * 
- * @return Deserialize function pointer
- */
-nmo_ckscene_deserialize_fn nmo_get_ckscene_deserialize(void)
-{
-    return nmo_ckscene_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKScene
- * 
- * @return Serialize function pointer
- */
-nmo_ckscene_serialize_fn nmo_get_ckscene_serialize(void)
-{
-    return nmo_ckscene_serialize;
-}

@@ -10,7 +10,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
-#include "object/nmo_ckobject_hierarchy.h"
+#include "object/nmo_ckclass.h"
 #include <stdlib.h>
 #include <string.h>
 

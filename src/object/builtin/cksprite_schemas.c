@@ -14,9 +14,10 @@
  */
 
 #include "object/nmo_cksprite_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_ck2dentity_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -257,10 +258,15 @@ static nmo_result_t deserialize_chunk_only(
  * Detection heuristic: if bitmap payload identifiers are present, use file-backed path.
  */
 nmo_result_t nmo_cksprite_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cksprite_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_cksprite_state_t *out_state = (nmo_cksprite_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !arena || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_deserialize"));
@@ -270,7 +276,7 @@ nmo_result_t nmo_cksprite_deserialize(
     
     /* First deserialize parent CK2dEntity data */
     nmo_result_t result = nmo_ck2dentity_deserialize(
-        chunk, arena, &out_state->entity);
+        &out_state->entity, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -298,17 +304,22 @@ nmo_result_t nmo_cksprite_deserialize(
  * Writes sprite data in original format (matches RCKSprite::Save behavior).
  */
 nmo_result_t nmo_cksprite_serialize(
-    const nmo_cksprite_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_cksprite_state_t *in_state = (const nmo_cksprite_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_serialize"));
     }
     
     /* Serialize parent CK2dEntity data */
-    nmo_result_t result = nmo_ck2dentity_serialize(&in_state->entity, out_chunk, arena);
+    nmo_result_t result = nmo_ck2dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -402,53 +413,18 @@ nmo_result_t nmo_cksprite_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * VTABLE IMPLEMENTATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-static nmo_result_t vtable_read_cksprite(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
-    (void)type;
-    return nmo_cksprite_deserialize(chunk, arena, (nmo_cksprite_state_t *)out_ptr);
-}
-
-static nmo_result_t vtable_write_cksprite(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
-    (void)type;
-    return nmo_cksprite_serialize((const nmo_cksprite_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_cksprite_vtable = {
-    .read = vtable_read_cksprite,
-    .write = vtable_write_cksprite,
-    .validate = NULL
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-nmo_result_t nmo_register_cksprite_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_cksprite_schemas"));
-    }
-    
-    /* Register minimal schema with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKSpriteState",
-                                                      sizeof(nmo_cksprite_state_t),
-                                                      alignof(nmo_cksprite_state_t));
-    
-    nmo_builder_set_vtable(&builder, &nmo_cksprite_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    cksprite,
+    nmo_cksprite_state_t,
+    nmo_cksprite_serialize,
+    nmo_cksprite_deserialize,
+    NMO_GUID_CKSPRITE,
+    "CKSprite",
+    NMO_CID_SPRITE,
+    NMO_GUID_CK2DENTITY
+)
 

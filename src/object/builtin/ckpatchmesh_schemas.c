@@ -4,8 +4,9 @@
  */
 
 #include "object/nmo_ckpatchmesh_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -20,9 +21,10 @@
 
 static nmo_result_t nmo_ckpatchmesh_deserialize_internal(
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
+    void *context,
     nmo_ckpatchmesh_state_t *out_state)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckpatchmesh_deserialize"));
@@ -30,9 +32,8 @@ static nmo_result_t nmo_ckpatchmesh_deserialize_internal(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_ckmesh_deserialize_fn base_deserialize = nmo_get_ckmesh_deserialize();
-    if (base_deserialize) {
-        nmo_result_t result = base_deserialize(chunk, arena, &out_state->base);
+    {
+        nmo_result_t result = nmo_ckmesh_deserialize(&out_state->base, chunk, NULL, context);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -285,11 +286,27 @@ static nmo_result_t nmo_ckpatchmesh_deserialize_internal(
     return nmo_result_ok();
 }
 
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckpatchmesh,
+    nmo_ckpatchmesh_state_t,
+    nmo_ckpatchmesh_serialize,
+    nmo_ckpatchmesh_deserialize,
+    NMO_GUID_CKPATCHMESH,
+    "CKPatchMesh",
+    NMO_CID_PATCHMESH,
+    NMO_GUID_CKMESH
+)
+
 static nmo_result_t nmo_ckpatchmesh_serialize_internal(
     const nmo_ckpatchmesh_state_t *in_state,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    void *context)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     nmo_result_t result;
 
     if (!in_state || !out_chunk) {
@@ -297,9 +314,8 @@ static nmo_result_t nmo_ckpatchmesh_serialize_internal(
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckpatchmesh_serialize"));
     }
 
-    nmo_ckmesh_serialize_fn base_serialize = nmo_get_ckmesh_serialize();
-    if (base_serialize) {
-        nmo_result_t result = base_serialize(&in_state->base, out_chunk, arena);
+    {
+        nmo_result_t result = nmo_ckmesh_serialize(&in_state->base, out_chunk, NULL, context);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -491,77 +507,24 @@ static nmo_result_t nmo_ckpatchmesh_serialize_internal(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_ckpatchmesh_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckpatchmesh_deserialize_internal(chunk, arena, (nmo_ckpatchmesh_state_t *)out_ptr);
-}
-
-static nmo_result_t nmo_ckpatchmesh_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckpatchmesh_serialize_internal((const nmo_ckpatchmesh_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckpatchmesh_vtable = {
-    .read = nmo_ckpatchmesh_vtable_read,
-    .write = nmo_ckpatchmesh_vtable_write,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_ckpatchmesh_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckpatchmesh_schemas"));
-    }
-
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    if (!uint32_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required types not found in registry"));
-    }
-
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKPatchMeshState",
-                                                      sizeof(nmo_ckpatchmesh_state_t),
-                                                      alignof(nmo_ckpatchmesh_state_t));
-
-    nmo_builder_add_field_ex(&builder, "patch_flags", uint32_type,
-                            offsetof(nmo_ckpatchmesh_state_t, patch_flags), 0);
-    nmo_builder_add_field_ex(&builder, "patch_count", uint32_type,
-                            offsetof(nmo_ckpatchmesh_state_t, patch_count), 0);
-    nmo_builder_add_field_ex(&builder, "edge_count", uint32_type,
-                            offsetof(nmo_ckpatchmesh_state_t, edge_count), 0);
-    nmo_builder_add_field_ex(&builder, "channel_count", uint32_type,
-                            offsetof(nmo_ckpatchmesh_state_t, channel_count), 0);
-
-    nmo_builder_set_vtable(&builder, &nmo_ckpatchmesh_vtable);
-
-    return nmo_builder_build(&builder, registry);
-}
-
 nmo_result_t nmo_ckpatchmesh_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckpatchmesh_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckpatchmesh_deserialize_internal(chunk, arena, out_state);
+    (void)type;
+    nmo_ckpatchmesh_state_t *out_state = (nmo_ckpatchmesh_state_t *)instance;
+    return nmo_ckpatchmesh_deserialize_internal(chunk, context, out_state);
 }
 
 nmo_result_t nmo_ckpatchmesh_serialize(
-    const nmo_ckpatchmesh_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckpatchmesh_serialize_internal(in_state, out_chunk, arena);
+    (void)type;
+    const nmo_ckpatchmesh_state_t *in_state = (const nmo_ckpatchmesh_state_t *)instance;
+    return nmo_ckpatchmesh_serialize_internal(in_state, out_chunk, context);
 }

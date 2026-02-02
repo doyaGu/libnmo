@@ -7,6 +7,7 @@
 #define NMO_CKGRID_SCHEMAS_H
 
 #include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -14,10 +15,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief CKGrid state
@@ -40,19 +41,19 @@ typedef struct nmo_ckgrid_state {
     nmo_chunk_t **layer_chunks;
 } nmo_ckgrid_state_t;
 
-NMO_API nmo_result_t nmo_register_ckgrid_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 NMO_API nmo_result_t nmo_ckgrid_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckgrid_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckgrid_serialize(
-    const nmo_ckgrid_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckgrid_vtable, nmo_register_ckgrid_type)
 
 #ifdef __cplusplus
 }

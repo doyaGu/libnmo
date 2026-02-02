@@ -8,6 +8,10 @@
  */
 
 #include "object/nmo_ckparameterlocal_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_schema_interface.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -27,17 +31,26 @@
  *
  * Reference: reference/src/CKParameterLocal.cpp:131-145
  */
-static nmo_result_t nmo_ckparameterlocal_deserialize(
+nmo_result_t nmo_ckparameterlocal_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckparameterlocal_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckparameterlocal_state_t *out_state = (nmo_ckparameterlocal_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
     memset(out_state, 0, sizeof(nmo_ckparameterlocal_state_t));
+
+    /* Read base CKParameter state (merged into this chunk by AddChunkAndDelete) */
+    nmo_result_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Check if "myself" parameter */
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_MYSELF).code == NMO_OK) {
@@ -57,41 +70,57 @@ static nmo_result_t nmo_ckparameterlocal_deserialize(
  *
  * Reference: reference/src/CKParameterLocal.cpp:119-130
  */
-static nmo_result_t nmo_ckparameterlocal_serialize(
-    const nmo_ckparameterlocal_state_t *in_state,
+nmo_result_t nmo_ckparameterlocal_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckparameterlocal_state_t *in_state = (const nmo_ckparameterlocal_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_result_t result;
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments"));
     }
 
+    /* Write base state (CKObject when "myself", otherwise CKParameter) */
+    if (in_state->is_myself) {
+        result = nmo_ckobject_serialize(&in_state->base.base, out_chunk, NULL, context);
+    } else {
+        result = nmo_ckparameter_serialize(&in_state->base, out_chunk, NULL, context);
+    }
+    if (result.code != NMO_OK) return result;
+
     /* Write "myself" flag if needed */
     if (in_state->is_myself) {
-        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_MYSELF);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_MYSELF);
         if (result.code != NMO_OK) return result;
     }
 
     /* Write setting flag if needed */
     if (in_state->is_setting) {
-        nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING);
         if (result.code != NMO_OK) return result;
     }
 
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * PUBLIC API - Accessors
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-nmo_ckparameterlocal_deserialize_fn nmo_get_ckparameterlocal_deserialize(void)
-{
-    return nmo_ckparameterlocal_deserialize;
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckparameterlocal,
+    nmo_ckparameterlocal_state_t,
+    nmo_ckparameterlocal_serialize,
+    nmo_ckparameterlocal_deserialize,
+    NMO_GUID_CKPARAMETERLOCAL,
+    "CKParameterLocal",
+    NMO_CID_PARAMETERLOCAL,
+    NMO_GUID_CKPARAMETER
+)
 
-nmo_ckparameterlocal_serialize_fn nmo_get_ckparameterlocal_serialize(void)
-{
-    return nmo_ckparameterlocal_serialize;
-}

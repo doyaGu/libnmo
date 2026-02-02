@@ -9,10 +9,11 @@
  */
 
 #include "object/nmo_ckdataarray_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
@@ -55,11 +56,16 @@ static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckdataarray_deserialize(
+nmo_result_t nmo_ckdataarray_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckdataarray_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckdataarray_state_t *out_state = (nmo_ckdataarray_state_t *)instance;
+        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_deserialize"));
@@ -69,14 +75,11 @@ static nmo_result_t nmo_ckdataarray_deserialize(
     memset(out_state, 0, sizeof(nmo_ckdataarray_state_t));
     
     /* Deserialize base CKBeObject state first */
-    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
     out_state->key_column = -1; /* Default: no key column */
 
-    nmo_result_t result;
+    result = nmo_result_ok();
 
     /* Read column formats */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYFORMAT);
@@ -254,24 +257,26 @@ static nmo_result_t nmo_ckdataarray_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckdataarray_serialize(
-    const nmo_ckdataarray_state_t *in_state,
+nmo_result_t nmo_ckdataarray_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckdataarray_state_t *in_state = (const nmo_ckdataarray_state_t *)instance;
+        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
-    nmo_result_t result;
+    result = nmo_result_ok();
 
     /* Write column formats */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYFORMAT);
@@ -363,85 +368,18 @@ static nmo_result_t nmo_ckdataarray_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Register CKDataArray schema types
- * 
- * Creates schema descriptors for CKDataArray state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-/* =============================================================================
- * VTABLE IMPLEMENTATION
- * ============================================================================= */
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckdataarray,
+    nmo_ckdataarray_state_t,
+    nmo_ckdataarray_serialize,
+    nmo_ckdataarray_deserialize,
+    NMO_GUID_CKDATAARRAY,
+    "CKDataArray",
+    NMO_CID_DATAARRAY,
+    NMO_GUID_CKBEOBJECT
+)
 
-static nmo_result_t vtable_read_ckdataarray(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
-    (void)type;
-    return nmo_ckdataarray_deserialize(chunk, arena, (nmo_ckdataarray_state_t *)out_ptr);
-}
-
-static nmo_result_t vtable_write_ckdataarray(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
-    (void)type;
-    return nmo_ckdataarray_serialize((const nmo_ckdataarray_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckdataarray_vtable = {
-    .read = vtable_read_ckdataarray,
-    .write = vtable_write_ckdataarray,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_ckdataarray_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckdataarray_schemas"));
-    }
-
-    /* Register minimal schema with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKDataArrayState",
-                                                      sizeof(nmo_ckdataarray_state_t),
-                                                      alignof(nmo_ckdataarray_state_t));
-    
-    nmo_builder_set_vtable(&builder, &nmo_ckdataarray_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKDataArray
- * 
- * @return Deserialize function pointer
- */
-nmo_ckdataarray_deserialize_fn nmo_get_ckdataarray_deserialize(void)
-{
-    return nmo_ckdataarray_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKDataArray
- * 
- * @return Serialize function pointer
- */
-nmo_ckdataarray_serialize_fn nmo_get_ckdataarray_serialize(void)
-{
-    return nmo_ckdataarray_serialize;
-}

@@ -13,10 +13,11 @@
  */
 
 #include "object/nmo_cklevel_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -55,11 +56,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_cklevel_deserialize(
+nmo_result_t nmo_cklevel_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cklevel_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_cklevel_state_t *out_state = (nmo_cklevel_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklevel_deserialize"));
@@ -69,14 +75,11 @@ static nmo_result_t nmo_cklevel_deserialize(
     memset(out_state, 0, sizeof(nmo_cklevel_state_t));
     
     /* Deserialize base CKBeObject state first */
-    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Section 1: LEVELDEFAULTDATA - Legacy arrays + scene list */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result.code == NMO_OK) {
         /* 1) Legacy CKObjectArray (unused) */
         size_t legacy_count = 0;
@@ -258,25 +261,27 @@ static nmo_result_t nmo_cklevel_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_cklevel_serialize(
-    const nmo_cklevel_state_t *in_state,
+nmo_result_t nmo_cklevel_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_cklevel_state_t *in_state = (const nmo_cklevel_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklevel_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Section 1: LEVELDEFAULTDATA */
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDEFAULTDATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result.code != NMO_OK) return result;
 
     /* 1) Legacy CKObjectArray (unused) */
@@ -341,115 +346,18 @@ static nmo_result_t nmo_cklevel_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * VTABLE WRAPPERS
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CKLevel
- */
-static nmo_result_t nmo_cklevel_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type; /* Type info not needed for CKLevel */
-    return nmo_cklevel_deserialize(chunk, arena, (nmo_cklevel_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    cklevel,
+    nmo_cklevel_state_t,
+    nmo_cklevel_serialize,
+    nmo_cklevel_deserialize,
+    NMO_GUID_CKLEVEL,
+    "CKLevel",
+    NMO_CID_LEVEL,
+    NMO_GUID_CKBEOBJECT
+)
 
-/**
- * @brief Vtable write wrapper for CKLevel
- */
-static nmo_result_t nmo_cklevel_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type; /* Type info not needed for CKLevel */
-    return nmo_cklevel_serialize((const nmo_cklevel_state_t *)in_ptr, chunk, arena);
-}
-
-/**
- * @brief Vtable for CKLevel schema
- */
-static const nmo_schema_vtable_t nmo_cklevel_vtable = {
-    .read = nmo_cklevel_vtable_read,
-    .write = nmo_cklevel_vtable_write,
-    .validate = NULL
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKLevel schema types with vtable
- * 
- * Creates schema descriptors for CKLevel state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_cklevel_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_cklevel_schemas"));
-    }
-
-    /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
-    
-    if (!uint32_type || !object_id_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
-    }
-
-    /* Register CKLevel state structure with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKLevelState",
-                                                      sizeof(nmo_cklevel_state_t),
-                                                      alignof(nmo_cklevel_state_t));
-    
-    nmo_builder_add_field_ex(&builder, "scene_count", uint32_type,
-                            offsetof(nmo_cklevel_state_t, scene_count), 0);
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_cklevel_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKLevel
- * 
- * @return Deserialize function pointer
- */
-nmo_cklevel_deserialize_fn nmo_get_cklevel_deserialize(void)
-{
-    return nmo_cklevel_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKLevel
- * 
- * @return Serialize function pointer
- */
-nmo_cklevel_serialize_fn nmo_get_cklevel_serialize(void)
-{
-    return nmo_cklevel_serialize;
-}

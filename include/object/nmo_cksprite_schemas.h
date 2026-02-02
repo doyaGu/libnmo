@@ -20,16 +20,17 @@
 
 #include "nmo_types.h"
 #include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKSprite STATE STRUCTURES
@@ -166,10 +167,6 @@ typedef nmo_result_t (*nmo_cksprite_serialize_fn)(
  * @param arena Arena for schema allocations
  * @return Result indicating success or error
  */
-NMO_API nmo_result_t nmo_register_cksprite_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 /**
  * @brief Deserialize CKSprite from chunk (public API)
  * 
@@ -179,9 +176,10 @@ NMO_API nmo_result_t nmo_register_cksprite_schemas(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_cksprite_deserialize(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_cksprite_state_t *out_state);
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /**
  * @brief Serialize CKSprite to chunk (public API)
@@ -192,9 +190,12 @@ NMO_API nmo_result_t nmo_cksprite_deserialize(
  * @return Result indicating success or error
  */
 NMO_API nmo_result_t nmo_cksprite_serialize(
-    const nmo_cksprite_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cksprite_vtable, nmo_register_cksprite_type)
 
 #ifdef __cplusplus
 }

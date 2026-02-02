@@ -17,12 +17,15 @@
 #include "nmo_types.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk.h"
-#include "object/nmo_schema_registry.h"
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Forward declarations */
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* ========================================================================
  * Material State Structure
@@ -198,51 +201,27 @@ typedef struct nmo_ck_material_state {
 #define NMO_CKMATERIAL_IDENTIFIER_EFFECT_PARAM  0x00010000
 
 /* ========================================================================
- * Function Typedefs
- * ======================================================================== */
-
-/**
- * @brief Deserialize CKMaterial from chunk (modern format)
- */
-typedef nmo_result_t (*nmo_ckmaterial_deserialize_fn)(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck_material_state_t *out_state
-);
-
-/**
- * @brief Serialize CKMaterial to chunk (modern format)
- */
-typedef nmo_result_t (*nmo_ckmaterial_serialize_fn)(
-    const nmo_ck_material_state_t *state,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena
-);
-
-/**
- * @brief Finish loading callback for CKMaterial
- */
-typedef nmo_result_t (*nmo_ckmaterial_finish_loading_fn)(
-    nmo_ck_material_state_t *state,
-    void *context,
-    nmo_arena_t *arena
-);
-
-/* ========================================================================
  * Public API
  * ======================================================================== */
 
-/**
- * @brief Register CKMaterial schemas with the schema system
- *
- * @param registry Schema registry
- * @param arena Arena for allocations
- * @return NMO_OK on success, error code on failure
- */
-NMO_API nmo_result_t nmo_register_ckmaterial_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena
-);
+NMO_API nmo_result_t nmo_ckmaterial_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_result_t nmo_ckmaterial_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckmaterial_vtable, nmo_register_ckmaterial_type)
+
+NMO_API nmo_result_t nmo_ckmaterial_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
 
 #ifdef __cplusplus
 }

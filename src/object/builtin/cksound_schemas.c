@@ -4,8 +4,9 @@
  */
 
 #include "object/nmo_cksound_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -25,10 +26,15 @@
  * ============================================================================= */
 
 nmo_result_t nmo_cksound_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cksound_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_cksound_state_t *out_state = (nmo_cksound_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksound_deserialize"));
@@ -36,12 +42,9 @@ nmo_result_t nmo_cksound_deserialize(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) {
+        return result;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SOUNDFILENAME).code == NMO_OK) {
@@ -56,24 +59,26 @@ nmo_result_t nmo_cksound_deserialize(
 }
 
 nmo_result_t nmo_cksound_serialize(
-    const nmo_cksound_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_cksound_state_t *in_state = (const nmo_cksound_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksound_serialize"));
     }
 
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) {
+        return result;
     }
 
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SOUNDFILENAME);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SOUNDFILENAME);
     if (result.code != NMO_OK) return result;
 
     result = nmo_chunk_write_dword(out_chunk, in_state->save_options);
@@ -87,10 +92,15 @@ nmo_result_t nmo_cksound_serialize(
  * ============================================================================= */
 
 nmo_result_t nmo_ckwavesound_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckwavesound_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckwavesound_state_t *out_state = (nmo_ckwavesound_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckwavesound_deserialize"));
@@ -98,7 +108,7 @@ nmo_result_t nmo_ckwavesound_deserialize(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_cksound_deserialize(chunk, arena, &out_state->base);
+    nmo_result_t result = nmo_cksound_deserialize(&out_state->base, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -206,16 +216,21 @@ nmo_result_t nmo_ckwavesound_deserialize(
 }
 
 nmo_result_t nmo_ckwavesound_serialize(
-    const nmo_ckwavesound_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckwavesound_state_t *in_state = (const nmo_ckwavesound_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckwavesound_serialize"));
     }
 
-    nmo_result_t result = nmo_cksound_serialize(&in_state->base, out_chunk, arena);
+    nmo_result_t result = nmo_cksound_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -264,10 +279,15 @@ nmo_result_t nmo_ckwavesound_serialize(
  * ============================================================================= */
 
 nmo_result_t nmo_ckmidisound_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckmidisound_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckmidisound_state_t *out_state = (nmo_ckmidisound_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmidisound_deserialize"));
@@ -275,7 +295,7 @@ nmo_result_t nmo_ckmidisound_deserialize(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_cksound_deserialize(chunk, arena, &out_state->base);
+    nmo_result_t result = nmo_cksound_deserialize(&out_state->base, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -289,16 +309,21 @@ nmo_result_t nmo_ckmidisound_deserialize(
 }
 
 nmo_result_t nmo_ckmidisound_serialize(
-    const nmo_ckmidisound_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckmidisound_state_t *in_state = (const nmo_ckmidisound_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmidisound_serialize"));
     }
 
-    nmo_result_t result = nmo_cksound_serialize(&in_state->base, out_chunk, arena);
+    nmo_result_t result = nmo_cksound_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -307,15 +332,40 @@ nmo_result_t nmo_ckmidisound_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * Schema registration
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-nmo_result_t nmo_register_cksound_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    (void)registry;
-    (void)arena;
-    return nmo_result_ok();
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    cksound,
+    nmo_cksound_state_t,
+    nmo_cksound_serialize,
+    nmo_cksound_deserialize,
+    NMO_GUID_CKSOUND,
+    "CKSound",
+    NMO_CID_SOUND,
+    NMO_GUID_CKBEOBJECT
+)
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckwavesound,
+    nmo_ckwavesound_state_t,
+    nmo_ckwavesound_serialize,
+    nmo_ckwavesound_deserialize,
+    NMO_GUID_CKWAVESOUND,
+    "CKWaveSound",
+    NMO_CID_WAVESOUND,
+    NMO_GUID_CKSOUND
+)
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckmidisound,
+    nmo_ckmidisound_state_t,
+    nmo_ckmidisound_serialize,
+    nmo_ckmidisound_deserialize,
+    NMO_GUID_CKMIDISOUND,
+    "CKMidiSound",
+    NMO_CID_MIDISOUND,
+    NMO_GUID_CKSOUND
+)
+

@@ -4,8 +4,9 @@
  */
 
 #include "object/nmo_ckgrid_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -20,10 +21,15 @@ static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
 }
 
 nmo_result_t nmo_ckgrid_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckgrid_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckgrid_state_t *out_state = (nmo_ckgrid_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgrid_deserialize"));
@@ -31,7 +37,7 @@ nmo_result_t nmo_ckgrid_deserialize(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ck3dentity_deserialize(chunk, arena, &out_state->base);
+    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result.code != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GRIDDATA).code != NMO_OK) {
@@ -84,16 +90,21 @@ nmo_result_t nmo_ckgrid_deserialize(
 }
 
 nmo_result_t nmo_ckgrid_serialize(
-    const nmo_ckgrid_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckgrid_state_t *in_state = (const nmo_ckgrid_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgrid_serialize"));
     }
 
-    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, arena);
+    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) return result;
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GRIDDATA);
@@ -129,69 +140,18 @@ nmo_result_t nmo_ckgrid_serialize(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_ckgrid_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckgrid_deserialize(chunk, arena, (nmo_ckgrid_state_t *)out_ptr);
-}
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-static nmo_result_t nmo_ckgrid_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckgrid_serialize((const nmo_ckgrid_state_t *)in_ptr, chunk, arena);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckgrid,
+    nmo_ckgrid_state_t,
+    nmo_ckgrid_serialize,
+    nmo_ckgrid_deserialize,
+    NMO_GUID_CKGRID,
+    "CKGrid",
+    NMO_CID_GRID,
+    NMO_GUID_CK3DENTITY
+)
 
-static const nmo_schema_vtable_t nmo_ckgrid_vtable = {
-    .read = nmo_ckgrid_vtable_read,
-    .write = nmo_ckgrid_vtable_write,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_ckgrid_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckgrid_schemas"));
-    }
-
-    const nmo_schema_type_t *u32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *i32_type = nmo_schema_registry_find_by_name(registry, "i32");
-    if (!u32_type || !i32_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required scalar types not found"));
-    }
-
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKGridState",
-                                                      sizeof(nmo_ckgrid_state_t),
-                                                      alignof(nmo_ckgrid_state_t));
-    nmo_builder_add_field_ex(&builder, "width", i32_type,
-                             offsetof(nmo_ckgrid_state_t, width), 0);
-    nmo_builder_add_field_ex(&builder, "length", i32_type,
-                             offsetof(nmo_ckgrid_state_t, length), 0);
-    nmo_builder_add_field_ex(&builder, "priority", i32_type,
-                             offsetof(nmo_ckgrid_state_t, priority), 0);
-    nmo_builder_add_field_ex(&builder, "orientation_mode", u32_type,
-                             offsetof(nmo_ckgrid_state_t, orientation_mode), 0);
-
-    nmo_builder_set_vtable(&builder, &nmo_ckgrid_vtable);
-
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) return result;
-
-    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKGridState");
-    if (type) {
-        result = nmo_schema_registry_map_class_id(registry, NMO_CID_GRID, type);
-    }
-
-    return result.code == NMO_OK ? nmo_result_ok() : result;
-}

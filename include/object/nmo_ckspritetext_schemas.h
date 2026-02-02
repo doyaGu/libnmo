@@ -8,16 +8,17 @@
 
 #include "nmo_types.h"
 #include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /** Serialization identifiers */
 #define NMO_CKSPRITETEXT_IDENTIFIER_TEXT       0x01000000
@@ -57,19 +58,19 @@ typedef struct nmo_ck_spritetext_state {
     bool needs_redraw;
 } nmo_ck_spritetext_state_t;
 
-NMO_API nmo_result_t nmo_register_ckspritetext_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 NMO_API nmo_result_t nmo_ckspritetext_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck_spritetext_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckspritetext_serialize(
-    const nmo_ck_spritetext_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckspritetext_vtable, nmo_register_ckspritetext_type)
 
 #ifdef __cplusplus
 }

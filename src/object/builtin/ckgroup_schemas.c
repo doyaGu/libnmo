@@ -12,16 +12,18 @@
  */
 
 #include "object/nmo_ckgroup_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "session/nmo_object_repository.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_logger.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -51,11 +53,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckgroup_deserialize(
+nmo_result_t nmo_ckgroup_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckgroup_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckgroup_state_t *out_state = (nmo_ckgroup_state_t *)instance;
+        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_deserialize"));
@@ -65,14 +72,11 @@ static nmo_result_t nmo_ckgroup_deserialize(
     memset(out_state, 0, sizeof(nmo_ckgroup_state_t));
     
     /* Deserialize base CKBeObject state first */
-    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Seek group data identifier */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GROUPALL);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GROUPALL);
     if (result.code != NMO_OK) {
         /* No group data - empty group is valid */
         return nmo_result_ok();
@@ -136,22 +140,24 @@ static nmo_result_t nmo_ckgroup_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckgroup_serialize(
-    const nmo_ckgroup_state_t *in_state,
+nmo_result_t nmo_ckgroup_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckgroup_state_t *in_state = (const nmo_ckgroup_state_t *)instance;
+        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_serialize"));
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) return result;
-    }
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Only write data if group is non-empty */
     if (in_state->object_count == 0 || !in_state->object_ids) {
@@ -159,7 +165,7 @@ static nmo_result_t nmo_ckgroup_serialize(
     }
 
     /* Write identifier */
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GROUPALL);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GROUPALL);
     if (result.code != NMO_OK) return result;
 
     /* Write object count */
@@ -175,127 +181,21 @@ static nmo_result_t nmo_ckgroup_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA VTABLE (for schema registry integration)
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CKGroup
- */
-static nmo_result_t nmo_ckgroup_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckgroup_deserialize(chunk, arena, (nmo_ckgroup_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckgroup,
+    nmo_ckgroup_state_t,
+    nmo_ckgroup_serialize,
+    nmo_ckgroup_deserialize,
+    NMO_GUID_CKGROUP,
+    "CKGroup",
+    NMO_CID_GROUP,
+    NMO_GUID_CKBEOBJECT
+)
 
-/**
- * @brief Vtable write wrapper for CKGroup
- */
-static nmo_result_t nmo_ckgroup_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckgroup_serialize((const nmo_ckgroup_state_t *)in_ptr, chunk, arena);
-}
-
-/**
- * @brief Vtable for CKGroup schema
- */
-static const nmo_schema_vtable_t nmo_ckgroup_vtable = {
-    .read = nmo_ckgroup_vtable_read,
-    .write = nmo_ckgroup_vtable_write,
-    .validate = NULL
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKGroup schema types with vtable
- * 
- * Creates schema descriptors for CKGroup state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckgroup_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckgroup_schemas"));
-    }
-
-    /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
-    
-    if (!uint32_type || !object_id_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
-    }
-
-    /* Register CKGroup state structure with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKGroupState",
-                                                      sizeof(nmo_ckgroup_state_t),
-                                                      alignof(nmo_ckgroup_state_t));
-    
-    nmo_builder_add_field_ex(&builder, "object_count", uint32_type,
-                            offsetof(nmo_ckgroup_state_t, object_count), 0);
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckgroup_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    /* Map class ID to schema */
-    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKGroupState");
-    if (type) {
-        result = nmo_schema_registry_map_class_id(registry, NMO_CID_GROUP, type);
-        if (result.code != NMO_OK) {
-            return result;
-        }
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKGroup
- * 
- * @return Deserialize function pointer
- */
-nmo_ckgroup_deserialize_fn nmo_get_ckgroup_deserialize(void)
-{
-    return nmo_ckgroup_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKGroup
- * 
- * @return Serialize function pointer
- */
-nmo_ckgroup_serialize_fn nmo_get_ckgroup_serialize(void)
-{
-    return nmo_ckgroup_serialize;
-}
 
 /* =============================================================================
  * CKGroup FINISH LOADING (Phase 15 - PostLoad equivalent)
@@ -314,60 +214,71 @@ nmo_ckgroup_serialize_fn nmo_get_ckgroup_serialize(void)
  * @param repository Object repository for reference resolution (opaque void*)
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckgroup_finish_loading(
-    void *state,
+nmo_result_t nmo_ckgroup_finish_loading(
+    void *instance,
     nmo_arena_t *arena,
     void *repository)
 {
-    if (!state || !repository) {
+    if (!instance) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_finish_loading"));
     }
 
-    nmo_ckgroup_state_t *group_state = (nmo_ckgroup_state_t *)state;
+    nmo_ckgroup_state_t *group_state = (nmo_ckgroup_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
 
     /* Nothing to do for empty groups */
     if (group_state->object_count == 0 || !group_state->object_ids) {
         return nmo_result_ok();
     }
 
-    /* TODO: Establish bidirectional group membership
-     * For each object_id in the group:
-     * 1. Resolve object_id to nmo_object_t* using repository
-     * 2. Add this group to the object's group list
-     * 3. Handle missing objects gracefully (external references)
+    /* Validate and resolve all member object references
      * 
-     * This requires:
-     * - nmo_object_t to have a groups list (future enhancement)
-     * - Or store group membership in a separate index
+     * Group membership resolution:
+     * - Verify each object_id exists in repository
+     * - Count resolved vs unresolved references for diagnostics
+     * - External references (objects not in this file) are allowed
      * 
-     * For now, just log that we'd process these objects.
+     * Note: Bidirectional membership (object->groups) is not currently tracked.
+     * This would require extending nmo_object_t with a groups list, which is
+     * deferred to future work. For now, groups->objects direction is sufficient
+     * for most use cases.
      */
+    uint32_t resolved_count = 0;
+    uint32_t unresolved_count = 0;
 
-    /* Validate all object IDs are resolvable (Phase 15 validation) */
     for (uint32_t i = 0; i < group_state->object_count; i++) {
         nmo_object_id_t obj_id = group_state->object_ids[i];
         
         /* Skip null references */
-        if (obj_id == 0) continue;
+        if (obj_id == 0) {
+            continue;
+        }
         
-        /* Check if object exists in repository
-         * Note: nmo_object_repository_find_by_id is declared in nmo_object_repository.h
-         * which we'll need to include if we want to actually resolve references.
-         * For now, this is a placeholder that establishes the pattern.
-         */
-        (void)obj_id; /* Suppress unused warning until we implement resolution */
+        /* Try to resolve the object reference */
+        if (repo != NULL) {
+            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, obj_id);
+            if (obj != NULL) {
+                resolved_count++;
+                /* Object found - bidirectional link would go here:
+                 * nmo_object_add_to_group(obj, group_id);
+                 */
+            } else {
+                unresolved_count++;
+                /* Object not found - may be external reference */
+            }
+        } else {
+            /* No repository - can't resolve, but not an error */
+            unresolved_count++;
+        }
+    }
+
+    /* Log resolution statistics if logger available */
+    if (unresolved_count > 0) {
+        nmo_log_debug(NULL, "CKGroup finish_loading: %u resolved, %u unresolved (external refs)",
+                      resolved_count, unresolved_count);
     }
 
     return nmo_result_ok();
 }
 
-/**
- * @brief Get the finish_loading function for CKGroup
- * 
- * @return Finish loading function pointer
- */
-nmo_ckgroup_finish_loading_fn nmo_get_ckgroup_finish_loading(void)
-{
-    return nmo_ckgroup_finish_loading;
-}

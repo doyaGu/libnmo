@@ -36,9 +36,10 @@
  */
 
 #include "object/nmo_cklight_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_ck3dentity_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -404,11 +405,16 @@ static nmo_result_t nmo_cklight_deserialize_legacy(
 /**
  * @brief Main deserialize function (dispatches to modern/legacy)
  */
-static nmo_result_t nmo_cklight_deserialize(
+nmo_result_t nmo_cklight_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cklight_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_cklight_state_t *out_state = (nmo_cklight_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !arena || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
@@ -418,8 +424,7 @@ static nmo_result_t nmo_cklight_deserialize(
     memset(out_state, 0, sizeof(*out_state));
 
     // First deserialize parent CK3dEntity data
-    nmo_result_t result = nmo_get_ck3dentity_deserialize()(
-        chunk, arena, &out_state->entity);
+    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -441,11 +446,16 @@ static nmo_result_t nmo_cklight_deserialize(
 /**
  * @brief Serialize CKLight state to chunk (always uses modern format)
  */
-static nmo_result_t nmo_cklight_serialize(
-    const nmo_cklight_state_t *state,
+nmo_result_t nmo_cklight_serialize(
+    const void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_cklight_state_t *state = (const nmo_cklight_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!state || !chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
@@ -453,8 +463,7 @@ static nmo_result_t nmo_cklight_serialize(
     }
 
     // First serialize parent CK3dEntity data
-    nmo_result_t result = nmo_get_ck3dentity_serialize()(
-        &state->entity, chunk, arena);
+    nmo_result_t result = nmo_ck3dentity_serialize(&state->entity, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -583,6 +592,21 @@ static nmo_result_t nmo_cklight_serialize(
     return nmo_result_ok();
 }
 
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    cklight,
+    nmo_cklight_state_t,
+    nmo_cklight_serialize,
+    nmo_cklight_deserialize,
+    NMO_GUID_CKLIGHT,
+    "CKLight",
+    NMO_CID_LIGHT,
+    NMO_GUID_CK3DENTITY
+)
+
 /* =============================================================================
  * CKLight FINISH LOADING
  * ============================================================================= */
@@ -590,22 +614,21 @@ static nmo_result_t nmo_cklight_serialize(
 /**
  * @brief Finish loading CKLight (resolve references, validate data)
  */
-static nmo_result_t nmo_cklight_finish_loading(
-    void *state,
+nmo_result_t nmo_cklight_finish_loading(
+    void *instance,
     nmo_arena_t *arena,
     void *repository)
 {
-    if (!state || !arena || !repository) {
+    if (!instance || !arena || !repository) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
                                           "Invalid arguments to CKLight finish_loading"));
     }
 
-    nmo_cklight_state_t *light_state = (nmo_cklight_state_t *)state;
+    nmo_cklight_state_t *light_state = (nmo_cklight_state_t *)instance;
 
     // First finish loading parent CK3dEntity
-    nmo_result_t result = nmo_get_ck3dentity_finish_loading()(
-        &light_state->entity, arena, repository);
+    nmo_result_t result = nmo_ck3dentity_finish_loading(&light_state->entity, arena, repository);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -637,100 +660,4 @@ static nmo_result_t nmo_cklight_finish_loading(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * PUBLIC API
- * ============================================================================= */
 
-nmo_cklight_deserialize_fn nmo_get_cklight_deserialize(void) {
-    return nmo_cklight_deserialize;
-}
-
-nmo_cklight_serialize_fn nmo_get_cklight_serialize(void) {
-    return nmo_cklight_serialize;
-}
-
-nmo_cklight_finish_loading_fn nmo_get_cklight_finish_loading(void) {
-    return nmo_cklight_finish_loading;
-}
-
-/**
- * @brief Register CKLight schema
- * 
- * Registers CKLight state structure schema with type system.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_cklight_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (registry == NULL || arena == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_cklight_schemas"));
-    }
-
-    /* Get base types */
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    
-    if (float_type == NULL || uint32_type == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required types not found in registry"));
-    }
-
-    /* Register CKLight state structure */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKLightState",
-                                                      sizeof(nmo_cklight_state_t),
-                                                      alignof(nmo_cklight_state_t));
-    
-    /* Light data fields */
-    nmo_builder_add_field_ex(&builder, "type", uint32_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, type),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "diffuse_r", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, diffuse) + offsetof(nmo_vx_color_t, r),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "specular_r", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, specular) + offsetof(nmo_vx_color_t, r),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "ambient_r", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, ambient) + offsetof(nmo_vx_color_t, r),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "range", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, range),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "attenuation0", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, attenuation0),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "attenuation1", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, attenuation1),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "attenuation2", float_type,
-                            offsetof(nmo_cklight_state_t, light_data) + offsetof(nmo_ck_light_data_t, attenuation2),
-                            0);
-    
-    /* Flags and power */
-    nmo_builder_add_field_ex(&builder, "flags", uint32_type,
-                            offsetof(nmo_cklight_state_t, flags),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "light_power", float_type,
-                            offsetof(nmo_cklight_state_t, light_power),
-                            0);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-
-    return nmo_result_ok();
-}

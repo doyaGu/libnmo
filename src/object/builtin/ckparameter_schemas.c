@@ -18,9 +18,10 @@
  */
 
 #include "object/nmo_ckparameter_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -55,11 +56,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckparameter_deserialize(
+nmo_result_t nmo_ckparameter_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckparameter_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckparameter_state_t *out_state = (nmo_ckparameter_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_deserialize"));
@@ -68,9 +74,14 @@ static nmo_result_t nmo_ckparameter_deserialize(
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckparameter_state_t));
     out_state->mode = NMO_CKPARAM_MODE_NONE;
+    out_state->has_state = false;
+
+    /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
 
     /* Seek parameter identifier - optional section */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_PARAM_IDENTIFIER);
+    result = nmo_chunk_seek_identifier(chunk, CK_PARAM_IDENTIFIER);
     if (result.code != NMO_OK) {
         /* No parameter data - valid for reference-only objects */
         return nmo_result_ok();
@@ -82,12 +93,24 @@ static nmo_result_t nmo_ckparameter_deserialize(
         return result;
     }
 
-    /* Read parameter state (always present in CK2) */
+    /* If no more data after GUID, preserve header-only state */
+    {
+        size_t data_size = nmo_chunk_get_data_size(chunk);
+        size_t pos_dwords = nmo_chunk_get_position(chunk);
+        size_t pos_bytes = pos_dwords * sizeof(uint32_t);
+        if (pos_bytes >= data_size) {
+            out_state->has_state = false;
+            return nmo_result_ok();
+        }
+    }
+
+    /* Read parameter state */
     uint32_t param_state = 0;
     result = nmo_chunk_read_dword(chunk, &param_state);
     if (result.code != NMO_OK) {
         return result;
     }
+    out_state->has_state = true;
 
     if (param_state == 3) {
         out_state->mode = NMO_CKPARAM_MODE_NONE;
@@ -158,23 +181,50 @@ static nmo_result_t nmo_ckparameter_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckparameter_serialize(
-    const nmo_ckparameter_state_t *in_state,
+nmo_result_t nmo_ckparameter_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckparameter_state_t *in_state = (const nmo_ckparameter_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_result_t result;
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_serialize"));
     }
 
+    /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
+
     /* Write parameter identifier */
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_PARAM_IDENTIFIER);
+    result = nmo_chunk_write_identifier(out_chunk, CK_PARAM_IDENTIFIER);
     if (result.code != NMO_OK) return result;
 
     /* Write parameter type GUID */
     result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
     if (result.code != NMO_OK) return result;
+
+    /* Write parameter state and payload if present */
+    if (!in_state->has_state) {
+        bool inferred_has_state = false;
+        if (in_state->mode != NMO_CKPARAM_MODE_NONE ||
+            in_state->buffer_size > 0 ||
+            in_state->object_id != 0 ||
+            in_state->subchunk != NULL ||
+            in_state->manager_guid.d1 != 0 ||
+            in_state->manager_guid.d2 != 0 ||
+            in_state->manager_value != 0) {
+            inferred_has_state = true;
+        }
+        if (!inferred_has_state) {
+            return nmo_result_ok();
+        }
+    }
 
     /* Write parameter state and payload */
     switch (in_state->mode) {
@@ -221,116 +271,18 @@ static nmo_result_t nmo_ckparameter_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CKParameter
- */
-static nmo_result_t nmo_ckparameter_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckparameter_deserialize(chunk, arena, (nmo_ckparameter_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckparameter,
+    nmo_ckparameter_state_t,
+    nmo_ckparameter_serialize,
+    nmo_ckparameter_deserialize,
+    NMO_GUID_CKPARAMETER,
+    "CKParameter",
+    NMO_CID_PARAMETER,
+    NMO_GUID_CKOBJECT
+)
 
-/**
- * @brief Vtable write wrapper for CKParameter
- */
-static nmo_result_t nmo_ckparameter_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckparameter_serialize((const nmo_ckparameter_state_t *)in_ptr, chunk, arena);
-}
-
-/**
- * @brief Vtable for CKParameter schema operations
- */
-static const nmo_schema_vtable_t nmo_ckparameter_vtable = {
-    .read = nmo_ckparameter_vtable_read,
-    .write = nmo_ckparameter_vtable_write,
-    .validate = NULL
-};
-
-/**
- * @brief Register CKParameter schema types
- * 
- * Creates schema descriptors for CKParameter state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckparameter_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckparameter_schemas"));
-    }
-
-    /* Get base types for fields */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *object_id_type = nmo_schema_registry_find_by_name(registry, "ObjectID");
-    
-    if (!uint32_type || !object_id_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required base types not found in registry"));
-    }
-
-    /* Create schema builder for CKParameter */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKParameterState",
-                                                      sizeof(nmo_ckparameter_state_t),
-                                                      alignof(nmo_ckparameter_state_t));
-    
-    /* Add parameter fields (simplified) */
-    nmo_builder_add_field_ex(&builder, "mode", uint32_type,
-                            offsetof(nmo_ckparameter_state_t, mode), 0);
-    nmo_builder_add_field_ex(&builder, "buffer_size", uint32_type,
-                            offsetof(nmo_ckparameter_state_t, buffer_size), 0);
-    nmo_builder_add_field_ex(&builder, "object_id", object_id_type,
-                            offsetof(nmo_ckparameter_state_t, object_id), 0);
-
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckparameter_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKParameter
- * 
- * @return Deserialize function pointer
- */
-nmo_ckparameter_deserialize_fn nmo_get_ckparameter_deserialize(void)
-{
-    return nmo_ckparameter_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKParameter
- * 
- * @return Serialize function pointer
- */
-nmo_ckparameter_serialize_fn nmo_get_ckparameter_serialize(void)
-{
-    return nmo_ckparameter_serialize;
-}

@@ -7,9 +7,9 @@
  */
 
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -46,10 +46,15 @@
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckobject_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckobject_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckobject_state_t *out_state = (nmo_ckobject_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_deserialize"));
@@ -96,11 +101,14 @@ nmo_result_t nmo_ckobject_deserialize(
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckobject_serialize(
-    const nmo_ckobject_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;  /* Not needed for simple CKObject serialization */
+    (void)type;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    const nmo_ckobject_state_t *in_state = (const nmo_ckobject_state_t *)instance;
     
     if (in_state == NULL || out_chunk == NULL) {
         nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
@@ -124,130 +132,6 @@ nmo_result_t nmo_ckobject_serialize(
 }
 
 /* =============================================================================
- * SCHEMA VTABLE (for schema registry integration)
- * ============================================================================= */
-
-/**
- * @brief Vtable read wrapper for CKObject
- * 
- * Adapts nmo_ckobject_deserialize to match nmo_schema_vtable_t signature.
- */
-static nmo_result_t nmo_ckobject_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type; /* Type info not needed for CKObject */
-    return nmo_ckobject_deserialize(chunk, arena, (nmo_ckobject_state_t *)out_ptr);
-}
-
-/**
- * @brief Vtable write wrapper for CKObject
- * 
- * Adapts nmo_ckobject_serialize to match nmo_schema_vtable_t signature.
- */
-static nmo_result_t nmo_ckobject_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type; /* Type info not needed for CKObject */
-    return nmo_ckobject_serialize((const nmo_ckobject_state_t *)in_ptr, chunk, arena);
-}
-
-/**
- * @brief Vtable for CKObject schema
- */
-static const nmo_schema_vtable_t nmo_ckobject_vtable = {
-    .read = nmo_ckobject_vtable_read,
-    .write = nmo_ckobject_vtable_write,
-    .validate = NULL  /* No custom validation */
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKObject schema types
- * 
- * Creates schema descriptors for CKObject state structures with vtable.
- * This enables schema registry-based deserialization in parser.c Phase 14.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckobject_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (registry == NULL || arena == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckobject_schemas"));
-    }
-
-    /* Get base types */
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    if (uint32_type == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required type u32 not found in registry"));
-    }
-
-    /* Register CKObject state structure with vtable */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKObjectState", 
-                                                      sizeof(nmo_ckobject_state_t),
-                                                      alignof(nmo_ckobject_state_t));
-    
-    nmo_builder_add_field_ex(&builder, "visibility_flags", uint32_type,
-                            offsetof(nmo_ckobject_state_t, visibility_flags),
-                            0);  /* No special annotations */
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckobject_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-
-    /* Map class ID to schema */
-    const nmo_schema_type_t *ckobject_type = nmo_schema_registry_find_by_name(registry, "CKObjectState");
-    if (ckobject_type) {
-        result = nmo_schema_registry_map_class_id(registry, NMO_CID_OBJECT, ckobject_type);
-        if (result.code != NMO_OK) {
-            return result;
-        }
-    }
-
-    return nmo_result_ok();
-}
-
-/**
- * @brief Get CKObject deserialize function pointer
- * 
- * Provides access to the deserialization function for use in parser.c Phase 14.
- * 
- * @return Function pointer to nmo_ckobject_deserialize
- */
-nmo_ckobject_deserialize_fn nmo_get_ckobject_deserialize(void) {
-    return nmo_ckobject_deserialize;
-}
-
-/**
- * @brief Get CKObject serialize function pointer
- * 
- * Provides access to the serialization function for use in save pipeline.
- * 
- * @return Function pointer to nmo_ckobject_serialize
- */
-nmo_ckobject_serialize_fn nmo_get_ckobject_serialize(void) {
-    return nmo_ckobject_serialize;
-}
-
-/* =============================================================================
  * FINISH LOADING (Phase 15 - PostLoad equivalent)
  * ============================================================================= */
 
@@ -258,27 +142,31 @@ nmo_ckobject_serialize_fn nmo_get_ckobject_serialize(void) {
  * reference resolution and runtime initialization.
  * 
  * @param state Object state (unused in base implementation)
- * @param arena Arena for allocations (unused in base implementation)
- * @param repository Object repository (unused in base implementation)
+ * @param context Serialization context (unused in base implementation)
  * @return Always NMO_OK
  */
 nmo_result_t nmo_ckobject_finish_loading(
     void *state,
-    nmo_arena_t *arena,
-    void *repository)
+    void *context)
 {
     /* Base implementation does nothing */
     (void)state;
-    (void)arena;
-    (void)repository;
+    (void)context;
     return nmo_result_ok();
 }
 
-/**
- * @brief Get the finish_loading function for CKObject
- * @return Finish loading function pointer
- */
-nmo_ckobject_finish_loading_fn nmo_get_ckobject_finish_loading(void)
-{
-    return nmo_ckobject_finish_loading;
-}
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckobject,
+    nmo_ckobject_state_t,
+    nmo_ckobject_serialize,
+    nmo_ckobject_deserialize,
+    NMO_GUID_CKOBJECT,
+    "CKObject",
+    NMO_CID_OBJECT,
+    (nmo_guid_t){0}
+)
+

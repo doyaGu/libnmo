@@ -14,6 +14,7 @@
 #define NMO_CKLIGHT_SCHEMAS_H
 
 #include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -21,10 +22,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief Light types (VXLIGHT_TYPE from Virtools)
@@ -96,50 +97,24 @@ typedef struct nmo_cklight_state {
     float light_power;               ///< Intensity multiplier (default 1.0)
 } nmo_cklight_state_t;
 
-/* Function pointer types for vtable */
-typedef nmo_result_t (*nmo_cklight_deserialize_fn)(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_cklight_state_t *out_state);
+NMO_API nmo_result_t nmo_cklight_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-typedef nmo_result_t (*nmo_cklight_serialize_fn)(
-    const nmo_cklight_state_t *in_state,
+NMO_API nmo_result_t nmo_cklight_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-typedef nmo_result_t (*nmo_cklight_finish_loading_fn)(
-    void *state,
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cklight_vtable, nmo_register_cklight_type)
+
+NMO_API nmo_result_t nmo_cklight_finish_loading(
+    void *instance,
     nmo_arena_t *arena,
     void *repository);
-
-/**
- * @brief Register CKLight state schema
- * 
- * @param registry Schema registry
- * @param arena Arena for allocations
- * @return Result indicating success or error
- */
-NMO_API nmo_result_t nmo_register_cklight_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
-/**
- * @brief Get CKLight deserialize function
- * @return Function pointer for deserialization
- */
-NMO_API nmo_cklight_deserialize_fn nmo_get_cklight_deserialize(void);
-
-/**
- * @brief Get CKLight serialize function
- * @return Function pointer for serialization
- */
-NMO_API nmo_cklight_serialize_fn nmo_get_cklight_serialize(void);
-
-/**
- * @brief Get CKLight finish_loading function
- * @return Function pointer for finish loading
- */
-NMO_API nmo_cklight_finish_loading_fn nmo_get_cklight_finish_loading(void);
 
 /**
  * @brief Helper: Convert ARGB DWORD to VxColor

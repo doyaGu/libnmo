@@ -4,8 +4,9 @@
  */
 
 #include "object/nmo_ckanimation_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -72,6 +73,43 @@ static nmo_result_t read_object_id_array(
     return nmo_result_ok();
 }
 
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckanimation,
+    nmo_ckanimation_state_t,
+    nmo_ckanimation_serialize,
+    nmo_ckanimation_deserialize,
+    NMO_GUID_CKANIMATION,
+    "CKAnimation",
+    NMO_CID_ANIMATION,
+    NMO_GUID_CKSCENEOBJECT
+)
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckkeyedanimation,
+    nmo_ckkeyedanimation_state_t,
+    nmo_ckkeyedanimation_serialize,
+    nmo_ckkeyedanimation_deserialize,
+    NMO_GUID_CKKEYEDANIMATION,
+    "CKKeyedAnimation",
+    NMO_CID_KEYEDANIMATION,
+    NMO_GUID_CKANIMATION
+)
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckobjectanimation,
+    nmo_ckobjectanimation_state_t,
+    nmo_ckobjectanimation_serialize,
+    nmo_ckobjectanimation_deserialize,
+    NMO_GUID_CKOBJECTANIMATION,
+    "CKObjectAnimation",
+    NMO_CID_OBJECTANIMATION,
+    NMO_GUID_CKANIMATION
+)
+
 static nmo_result_t write_object_id_array(
     nmo_chunk_t *chunk,
     const nmo_object_id_t *ids,
@@ -114,9 +152,10 @@ static void read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
 
 static nmo_result_t nmo_ckanimation_deserialize_internal(
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
+    void *context,
     nmo_ckanimation_state_t *out_state)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckanimation_deserialize"));
@@ -124,9 +163,8 @@ static nmo_result_t nmo_ckanimation_deserialize_internal(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_cksceneobject_deserialize_fn parent_deserialize = nmo_get_cksceneobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
+    {
+        nmo_result_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result.code != NMO_OK) return result;
     }
 
@@ -197,16 +235,16 @@ static nmo_result_t nmo_ckanimation_deserialize_internal(
 static nmo_result_t nmo_ckanimation_serialize_internal(
     const nmo_ckanimation_state_t *in_state,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    void *context)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckanimation_serialize"));
     }
 
-    nmo_cksceneobject_serialize_fn parent_serialize = nmo_get_cksceneobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
+    {
+        nmo_result_t result = nmo_cksceneobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result.code != NMO_OK) return result;
     }
 
@@ -254,9 +292,10 @@ static nmo_result_t nmo_ckanimation_serialize_internal(
 
 static nmo_result_t nmo_ckkeyedanimation_deserialize_internal(
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
+    void *context,
     nmo_ckkeyedanimation_state_t *out_state)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkeyedanimation_deserialize"));
@@ -264,7 +303,7 @@ static nmo_result_t nmo_ckkeyedanimation_deserialize_internal(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ckanimation_deserialize_internal(chunk, arena, &out_state->base);
+    nmo_result_t result = nmo_ckanimation_deserialize_internal(chunk, context, &out_state->base);
     if (result.code != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMANIMLIST).code == NMO_OK) {
@@ -306,14 +345,15 @@ static nmo_result_t nmo_ckkeyedanimation_deserialize_internal(
 static nmo_result_t nmo_ckkeyedanimation_serialize_internal(
     const nmo_ckkeyedanimation_state_t *in_state,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    void *context)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkeyedanimation_serialize"));
     }
 
-    nmo_result_t result = nmo_ckanimation_serialize_internal(&in_state->base, out_chunk, arena);
+    nmo_result_t result = nmo_ckanimation_serialize_internal(&in_state->base, out_chunk, context);
     if (result.code != NMO_OK) return result;
 
     if (in_state->animation_count > 0 && in_state->animation_ids) {
@@ -355,9 +395,10 @@ static nmo_result_t nmo_ckkeyedanimation_serialize_internal(
 
 static nmo_result_t nmo_ckobjectanimation_deserialize_internal(
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
+    void *context,
     nmo_ckobjectanimation_state_t *out_state)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobjectanimation_deserialize"));
@@ -365,9 +406,8 @@ static nmo_result_t nmo_ckobjectanimation_deserialize_internal(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_cksceneobject_deserialize_fn parent_deserialize = nmo_get_cksceneobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
+    {
+        nmo_result_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result.code != NMO_OK) return result;
     }
 
@@ -455,16 +495,16 @@ static nmo_result_t nmo_ckobjectanimation_deserialize_internal(
 static nmo_result_t nmo_ckobjectanimation_serialize_internal(
     const nmo_ckobjectanimation_state_t *in_state,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    void *context)
 {
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobjectanimation_serialize"));
     }
 
-    nmo_cksceneobject_serialize_fn parent_serialize = nmo_get_cksceneobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
+    {
+        nmo_result_t result = nmo_cksceneobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result.code != NMO_OK) return result;
     }
 
@@ -562,180 +602,70 @@ static nmo_result_t nmo_ckobjectanimation_serialize_internal(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_ckanimation_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckanimation_deserialize_internal(chunk, arena, (nmo_ckanimation_state_t *)out_ptr);
-}
-
-static nmo_result_t nmo_ckanimation_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckanimation_serialize_internal((const nmo_ckanimation_state_t *)in_ptr, chunk, arena);
-}
-
-static nmo_result_t nmo_ckkeyedanimation_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckkeyedanimation_deserialize_internal(chunk, arena, (nmo_ckkeyedanimation_state_t *)out_ptr);
-}
-
-static nmo_result_t nmo_ckkeyedanimation_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckkeyedanimation_serialize_internal((const nmo_ckkeyedanimation_state_t *)in_ptr, chunk, arena);
-}
-
-static nmo_result_t nmo_ckobjectanimation_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckobjectanimation_deserialize_internal(chunk, arena, (nmo_ckobjectanimation_state_t *)out_ptr);
-}
-
-static nmo_result_t nmo_ckobjectanimation_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckobjectanimation_serialize_internal((const nmo_ckobjectanimation_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckanimation_vtable = {
-    .read = nmo_ckanimation_vtable_read,
-    .write = nmo_ckanimation_vtable_write,
-    .validate = NULL
-};
-
-static const nmo_schema_vtable_t nmo_ckkeyedanimation_vtable = {
-    .read = nmo_ckkeyedanimation_vtable_read,
-    .write = nmo_ckkeyedanimation_vtable_write,
-    .validate = NULL
-};
-
-static const nmo_schema_vtable_t nmo_ckobjectanimation_vtable = {
-    .read = nmo_ckobjectanimation_vtable_read,
-    .write = nmo_ckobjectanimation_vtable_write,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_ckanimation_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckanimation_schemas"));
-    }
-
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
-    if (!uint32_type || !float_type) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required types not found in registry"));
-    }
-
-    nmo_schema_builder_t anim_builder = nmo_builder_struct(arena, "CKAnimationState",
-                                                           sizeof(nmo_ckanimation_state_t),
-                                                           alignof(nmo_ckanimation_state_t));
-    nmo_builder_add_field_ex(&anim_builder, "flags", uint32_type,
-                            offsetof(nmo_ckanimation_state_t, flags), 0);
-    nmo_builder_add_field_ex(&anim_builder, "frame_rate", float_type,
-                            offsetof(nmo_ckanimation_state_t, frame_rate), 0);
-    nmo_builder_add_field_ex(&anim_builder, "length", float_type,
-                            offsetof(nmo_ckanimation_state_t, length), 0);
-    nmo_builder_set_vtable(&anim_builder, &nmo_ckanimation_vtable);
-    nmo_result_t result = nmo_builder_build(&anim_builder, registry);
-    if (result.code != NMO_OK) return result;
-
-    nmo_schema_builder_t keyed_builder = nmo_builder_struct(arena, "CKKeyedAnimationState",
-                                                            sizeof(nmo_ckkeyedanimation_state_t),
-                                                            alignof(nmo_ckkeyedanimation_state_t));
-    nmo_builder_add_field_ex(&keyed_builder, "animation_count", uint32_type,
-                            offsetof(nmo_ckkeyedanimation_state_t, animation_count), 0);
-    nmo_builder_add_field_ex(&keyed_builder, "merge_factor", float_type,
-                            offsetof(nmo_ckkeyedanimation_state_t, merge_factor), 0);
-    nmo_builder_set_vtable(&keyed_builder, &nmo_ckkeyedanimation_vtable);
-    result = nmo_builder_build(&keyed_builder, registry);
-    if (result.code != NMO_OK) return result;
-
-    nmo_schema_builder_t obj_builder = nmo_builder_struct(arena, "CKObjectAnimationState",
-                                                          sizeof(nmo_ckobjectanimation_state_t),
-                                                          alignof(nmo_ckobjectanimation_state_t));
-    nmo_builder_add_field_ex(&obj_builder, "flags", uint32_type,
-                            offsetof(nmo_ckobjectanimation_state_t, flags), 0);
-    nmo_builder_add_field_ex(&obj_builder, "length", float_type,
-                            offsetof(nmo_ckobjectanimation_state_t, length), 0);
-    nmo_builder_set_vtable(&obj_builder, &nmo_ckobjectanimation_vtable);
-
-    return nmo_builder_build(&obj_builder, registry);
-}
-
 nmo_result_t nmo_ckanimation_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckanimation_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckanimation_deserialize_internal(chunk, arena, out_state);
+    (void)type;
+    nmo_ckanimation_state_t *out_state = (nmo_ckanimation_state_t *)instance;
+    return nmo_ckanimation_deserialize_internal(chunk, context, out_state);
 }
 
 nmo_result_t nmo_ckanimation_serialize(
-    const nmo_ckanimation_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckanimation_serialize_internal(in_state, out_chunk, arena);
+    (void)type;
+    const nmo_ckanimation_state_t *in_state = (const nmo_ckanimation_state_t *)instance;
+    return nmo_ckanimation_serialize_internal(in_state, out_chunk, context);
 }
 
 nmo_result_t nmo_ckkeyedanimation_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckkeyedanimation_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckkeyedanimation_deserialize_internal(chunk, arena, out_state);
+    (void)type;
+    nmo_ckkeyedanimation_state_t *out_state = (nmo_ckkeyedanimation_state_t *)instance;
+    return nmo_ckkeyedanimation_deserialize_internal(chunk, context, out_state);
 }
 
 nmo_result_t nmo_ckkeyedanimation_serialize(
-    const nmo_ckkeyedanimation_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckkeyedanimation_serialize_internal(in_state, out_chunk, arena);
+    (void)type;
+    const nmo_ckkeyedanimation_state_t *in_state =
+        (const nmo_ckkeyedanimation_state_t *)instance;
+    return nmo_ckkeyedanimation_serialize_internal(in_state, out_chunk, context);
 }
 
 nmo_result_t nmo_ckobjectanimation_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckobjectanimation_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckobjectanimation_deserialize_internal(chunk, arena, out_state);
+    (void)type;
+    nmo_ckobjectanimation_state_t *out_state = (nmo_ckobjectanimation_state_t *)instance;
+    return nmo_ckobjectanimation_deserialize_internal(chunk, context, out_state);
 }
 
 nmo_result_t nmo_ckobjectanimation_serialize(
-    const nmo_ckobjectanimation_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    return nmo_ckobjectanimation_serialize_internal(in_state, out_chunk, arena);
+    (void)type;
+    const nmo_ckobjectanimation_state_t *in_state =
+        (const nmo_ckobjectanimation_state_t *)instance;
+    return nmo_ckobjectanimation_serialize_internal(in_state, out_chunk, context);
 }

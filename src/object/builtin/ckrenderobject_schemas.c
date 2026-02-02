@@ -15,9 +15,10 @@
  */
 
 #include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -48,10 +49,15 @@
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckrenderobject_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckrenderobject_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckrenderobject_state_t *out_state = (nmo_ckrenderobject_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_deserialize"));
@@ -60,12 +66,9 @@ nmo_result_t nmo_ckrenderobject_deserialize(
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckrenderobject_state_t));
 
-    nmo_ckbeobject_deserialize_fn parent_deserialize = nmo_get_ckbeobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result.code != NMO_OK) {
+        return result;
     }
 
     return nmo_result_ok();
@@ -89,115 +92,39 @@ nmo_result_t nmo_ckrenderobject_deserialize(
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckrenderobject_serialize(
-    const nmo_ckrenderobject_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckrenderobject_state_t *in_state = (const nmo_ckrenderobject_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_serialize"));
     }
 
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
-    }
-
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * VTABLE IMPLEMENTATION
- * ============================================================================= */
-
-static nmo_result_t vtable_read_ckrenderobject(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, nmo_arena_t *arena, void *out_ptr) {
-    (void)type;
-    return nmo_ckrenderobject_deserialize(chunk, arena, (nmo_ckrenderobject_state_t *)out_ptr);
-}
-
-static nmo_result_t vtable_write_ckrenderobject(const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk, const void *in_ptr, nmo_arena_t *arena) {
-    (void)type;
-    return nmo_ckrenderobject_serialize((const nmo_ckrenderobject_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckrenderobject_vtable = {
-    .read = vtable_read_ckrenderobject,
-    .write = vtable_write_ckrenderobject,
-    .validate = NULL
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKRenderObject schema types
- * 
- * Creates schema descriptors for CKRenderObject state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckrenderobject_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckrenderobject_schemas"));
-    }
-
-    /* Register minimal schema with vtable for abstract base class */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKRenderObjectState",
-                                                      sizeof(nmo_ckrenderobject_state_t),
-                                                      alignof(nmo_ckrenderobject_state_t));
-    
-    /* Set vtable for automated serialization */
-    nmo_builder_set_vtable(&builder, &nmo_ckrenderobject_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
-    
-    /* Map class ID to schema */
-    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKRenderObjectState");
-    if (type) {
-        result = nmo_schema_registry_map_class_id(registry, NMO_CID_RENDEROBJECT, type);
-        if (result.code != NMO_OK) {
-            return result;
-        }
-    }
-    
+
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Get the deserialize function for CKRenderObject
- * 
- * @return Deserialize function pointer
- */
-nmo_ckrenderobject_deserialize_fn nmo_get_ckrenderobject_deserialize(void)
-{
-    return nmo_ckrenderobject_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKRenderObject
- * 
- * @return Serialize function pointer
- */
-nmo_ckrenderobject_serialize_fn nmo_get_ckrenderobject_serialize(void)
-{
-    return nmo_ckrenderobject_serialize;
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckrenderobject,
+    nmo_ckrenderobject_state_t,
+    nmo_ckrenderobject_serialize,
+    nmo_ckrenderobject_deserialize,
+    NMO_GUID_CKRENDEROBJECT,
+    "CKRenderObject",
+    NMO_CID_RENDEROBJECT,
+    NMO_GUID_CKBEOBJECT
+)

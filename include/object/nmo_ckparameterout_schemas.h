@@ -12,6 +12,8 @@
 #define NMO_CKPARAMETEROUT_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "nmo_ckparameter_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +23,7 @@ extern "C" {
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKParameterOut STATE STRUCTURES
@@ -35,7 +38,8 @@ typedef struct nmo_result nmo_result_t;
  * Reference: reference/src/CKParameterOut.cpp:120-160
  */
 typedef struct nmo_ckparameterout_state {
-    /* Inherits CKParameter data (stored separately) */
+    /* Base CKParameter state */
+    nmo_ckparameter_state_t base;
 
     /* Destination parameters */
     nmo_object_id_t *destination_ids;  /**< Array of destination parameter IDs */
@@ -43,25 +47,22 @@ typedef struct nmo_ckparameterout_state {
 } nmo_ckparameterout_state_t;
 
 /* =============================================================================
- * FUNCTION POINTER TYPES
+ * PUBLIC API
  * ============================================================================= */
 
-typedef nmo_result_t (*nmo_ckparameterout_deserialize_fn)(
+NMO_API nmo_result_t nmo_ckparameterout_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_result_t nmo_ckparameterout_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ckparameterout_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-typedef nmo_result_t (*nmo_ckparameterout_serialize_fn)(
-    const nmo_ckparameterout_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
-
-/* =============================================================================
- * PUBLIC API - Accessors
- * ============================================================================= */
-
-NMO_API nmo_ckparameterout_deserialize_fn nmo_get_ckparameterout_deserialize(void);
-NMO_API nmo_ckparameterout_serialize_fn nmo_get_ckparameterout_serialize(void);
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckparameterout_vtable, nmo_register_ckparameterout_type)
 
 #ifdef __cplusplus
 }

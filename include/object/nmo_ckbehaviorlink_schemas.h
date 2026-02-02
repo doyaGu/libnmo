@@ -12,6 +12,8 @@
 #define NMO_CKBEHAVIORLINK_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "nmo_ckobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,8 +22,8 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_arena nmo_arena_t;
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKBehaviorLink STATE STRUCTURE
@@ -40,6 +42,11 @@ typedef struct nmo_result nmo_result_t;
  * Reference: reference/src/CKBehaviorLink.cpp:49-121
  */
 typedef struct nmo_ckbehaviorlink_state_t {
+    /**
+     * @brief Base CKObject state
+     */
+    nmo_ckobject_state_t base;
+
     /**
      * @brief Current activation delay (in frames)
      * 
@@ -71,65 +78,42 @@ typedef struct nmo_ckbehaviorlink_state_t {
      * ID = 0 means no output connected.
      */
     nmo_object_id_t out_io_id;
+
+    /**
+     * @brief Whether the link format was detected during load
+     */
+    bool has_format;
+
+    /**
+     * @brief Use new format (NEWDATA identifier)
+     */
+    bool use_new_format;
+
+    /**
+     * @brief Presence of legacy identifiers
+     */
+    bool has_legacy_curdelay;
+    bool has_legacy_ios;
+    bool has_legacy_delay;
 } nmo_ckbehaviorlink_state_t;
-
-/* =============================================================================
- * FUNCTION POINTER TYPES
- * ============================================================================= */
-
-/**
- * @brief Function pointer for CKBehaviorLink deserialization
- * 
- * @param chunk Chunk to read from
- * @param arena Arena for allocations
- * @param out_state Output state structure
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ckbehaviorlink_deserialize_fn)(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ckbehaviorlink_state_t *out_state);
-
-/**
- * @brief Function pointer for CKBehaviorLink serialization
- * 
- * @param chunk Chunk to write to
- * @param state Input state structure
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ckbehaviorlink_serialize_fn)(
-    const nmo_ckbehaviorlink_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
 
 /* =============================================================================
  * PUBLIC API
  * ============================================================================= */
 
-/**
- * @brief Register CKBehaviorLink schema types
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckbehaviorlink_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_ckbehaviorlink_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/**
- * @brief Get the deserialize function for CKBehaviorLink
- * 
- * @return Deserialize function pointer
- */
-nmo_ckbehaviorlink_deserialize_fn nmo_get_ckbehaviorlink_deserialize(void);
+NMO_API nmo_result_t nmo_ckbehaviorlink_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/**
- * @brief Get the serialize function for CKBehaviorLink
- * 
- * @return Serialize function pointer
- */
-nmo_ckbehaviorlink_serialize_fn nmo_get_ckbehaviorlink_serialize(void);
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckbehaviorlink_vtable, nmo_register_ckbehaviorlink_type)
 
 #ifdef __cplusplus
 }

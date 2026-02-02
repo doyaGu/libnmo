@@ -7,6 +7,7 @@
 #define NMO_CKPATCHMESH_SCHEMAS_H
 
 #include "object/nmo_ckmesh_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
 
@@ -15,10 +16,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief Patch mesh format type
@@ -97,19 +98,19 @@ typedef struct nmo_ckpatchmesh_state {
     nmo_object_id_t *legacy_material_ids;
 } nmo_ckpatchmesh_state_t;
 
-NMO_API nmo_result_t nmo_register_ckpatchmesh_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 NMO_API nmo_result_t nmo_ckpatchmesh_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckpatchmesh_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckpatchmesh_serialize(
-    const nmo_ckpatchmesh_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckpatchmesh_vtable, nmo_register_ckpatchmesh_type)
 
 #ifdef __cplusplus
 }

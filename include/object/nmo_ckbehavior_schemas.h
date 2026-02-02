@@ -20,16 +20,17 @@
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 #include "nmo_cksceneobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKBehavior STATE STRUCTURES
@@ -73,6 +74,9 @@ typedef struct nmo_ckbehavior_state {
     int32_t compatible_class_id;           /**< Compatible object class ID */
     nmo_object_id_t owner_id;              /**< Owner object ID (legacy formats) */
     uint32_t behavior_type;                /**< Legacy behavior type value */
+    uint32_t save_flags;                   /**< Raw save flags from file (preserve unknown bits) */
+    bool has_save_flags;                   /**< Whether save_flags was loaded from file */
+    bool use_legacy_identifiers;           /**< Use legacy identifier values (0x1/0x2/0x4) */
     
     /* Building block data (only if CKBEHAVIOR_BUILDINGBLOCK flag set) */
     nmo_guid_t block_guid;                 /**< Building block GUID */
@@ -118,72 +122,26 @@ typedef struct nmo_ckbehavior_state {
     
     /* Interface chunk (optional, for editing) */
     nmo_chunk_t *interface_chunk;          /**< Interface data chunk */
+    bool has_interface;                    /**< Whether interface identifier is present */
 } nmo_ckbehavior_state_t;
 
 /* =============================================================================
- * FUNCTION POINTER TYPES
+ * PUBLIC API
  * ============================================================================= */
 
-/**
- * @brief CKBehavior deserialize function pointer type
- * 
- * @param chunk Chunk containing CKBehavior data
- * @param arena Arena for allocations
- * @param out_state Output structure to fill
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ckbehavior_deserialize_fn)(
+NMO_API nmo_result_t nmo_ckbehavior_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_result_t nmo_ckbehavior_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ckbehavior_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/**
- * @brief CKBehavior serialize function pointer type
- * 
- * @param chunk Chunk to write to
- * @param state Input state structure
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ckbehavior_serialize_fn)(
-    const nmo_ckbehavior_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKBehavior schema types
- * 
- * Registers schema types for CKBehavior state structures.
- * Must be called during initialization before using CKBehavior schemas.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-NMO_API nmo_result_t nmo_register_ckbehavior_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKBehavior
- * 
- * @return Deserialize function pointer
- */
-NMO_API nmo_ckbehavior_deserialize_fn nmo_get_ckbehavior_deserialize(void);
-
-/**
- * @brief Get the serialize function for CKBehavior
- * 
- * @return Serialize function pointer
- */
-NMO_API nmo_ckbehavior_serialize_fn nmo_get_ckbehavior_serialize(void);
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckbehavior_vtable, nmo_register_ckbehavior_type)
 
 #ifdef __cplusplus
 }

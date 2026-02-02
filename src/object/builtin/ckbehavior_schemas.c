@@ -18,9 +18,11 @@
  */
 
 #include "object/nmo_ckbehavior_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_cksceneobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_registry.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -58,6 +60,11 @@
 #define CK_STATESAVE_BEHAVIORSCRIPTDATA     0x00400000u
 #define CK_STATESAVE_BEHAVIORPRIORITY       0x00800000u
 #define CK_STATESAVE_BEHAVIORTARGET         0x01000000u
+
+/* Legacy identifier values (older CK2 builds) */
+#define CK_STATESAVE_BEHAVIORINTERFACE_LEGACY      0x00000001u
+#define CK_STATESAVE_BEHAVIORNEWDATA_LEGACY        0x00000002u
+#define CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY 0x00000004u
 
 /* Behavior flags (subset) from CKEnums.h */
 #define CKBEHAVIOR_ACTIVE                    0x00000001u
@@ -196,11 +203,16 @@ static nmo_result_t read_object_subchunk_list(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckbehavior_deserialize(
+nmo_result_t nmo_ckbehavior_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckbehavior_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckbehavior_state_t *out_state = (nmo_ckbehavior_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_deserialize"));
@@ -209,17 +221,41 @@ static nmo_result_t nmo_ckbehavior_deserialize(
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckbehavior_state_t));
     
-    /* Deserialize base CKSceneObject state first */
-    nmo_cksceneobject_deserialize_fn parent_deserialize = nmo_get_cksceneobject_deserialize();
-    if (parent_deserialize) {
-        nmo_result_t result = parent_deserialize(chunk, arena, &out_state->base);
+    /* Deserialize base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    {
+        nmo_result_t result = nmo_chunk_start_read(chunk);
+        if (result.code != NMO_OK) return result;
+
+        result = nmo_ckobject_deserialize(&out_state->base.base, chunk, NULL, context);
+        if (result.code != NMO_OK) return result;
+    }
+
+    {
+        nmo_result_t result = nmo_chunk_start_read(chunk);
         if (result.code != NMO_OK) return result;
     }
     
     const bool is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     out_state->compatible_class_id = NMO_CID_BEOBJECT;
 
-    if (!is_file) {
+    uint32_t newdata_id = CK_STATESAVE_BEHAVIORNEWDATA;
+    nmo_result_t newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);
+    if (newdata_seek.code != NMO_OK) {
+        newdata_id = CK_STATESAVE_BEHAVIORNEWDATA_LEGACY;
+        newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);
+        if (newdata_seek.code == NMO_OK) {
+            out_state->use_legacy_identifiers = true;
+        }
+    }
+
+    if (is_file && data_version >= 5 && newdata_seek.code != NMO_OK) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
+            NMO_SEVERITY_ERROR,
+            "CKBehavior: missing NEWDATA identifier in file-mode chunk"));
+    }
+
+    if (!is_file && newdata_seek.code != NMO_OK) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBBEHAV).code == NMO_OK) {
             (void)read_object_subchunk_list(chunk, arena,
                                             &out_state->sub_behaviors,
@@ -239,18 +275,11 @@ static nmo_result_t nmo_ckbehavior_deserialize(
         return nmo_result_ok();
     }
 
-    /* Optional: Interface chunk (for editing mode) */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORINTERFACE);
-    if (result.code == NMO_OK) {
-        result = nmo_chunk_read_sub_chunk(chunk, &out_state->interface_chunk);
-        /* Ignore errors - interface chunk is optional */
-    }
-
     /* Main behavior data */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORNEWDATA);
+    nmo_result_t result = newdata_seek;
     if (result.code == NMO_OK) {
         uint32_t flags = 0;
-        if (nmo_chunk_get_data_version(chunk) >= 5) {
+        if (data_version >= 5) {
             result = nmo_chunk_read_dword(chunk, &flags);
             if (result.code != NMO_OK) return result;
 
@@ -289,19 +318,29 @@ static nmo_result_t nmo_ckbehavior_deserialize(
             result = nmo_chunk_read_dword(chunk, &save_flags);
             if (result.code != NMO_OK) return result;
 
-            if (save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
+            out_state->save_flags = save_flags;
+            out_state->has_save_flags = true;
+
+            uint32_t graph_save_flags = save_flags;
+            if (flags & CKBEHAVIOR_BUILDINGBLOCK) {
+                graph_save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
+                                      CK_STATESAVE_BEHAVIORSUBLINKS |
+                                      CK_STATESAVE_BEHAVIOROPERATIONS);
+            }
+
+            if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
                 result = read_object_sequence(chunk, arena, &out_state->sub_behaviors,
                                               &out_state->sub_behavior_count);
                 if (result.code != NMO_OK) return result;
             }
 
-            if (save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
+            if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
                 result = read_object_sequence(chunk, arena, &out_state->sub_behavior_links,
                                               &out_state->sub_behavior_link_count);
                 if (result.code != NMO_OK) return result;
             }
 
-            if (save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
+            if (graph_save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
                 result = read_object_sequence(chunk, arena, &out_state->operations,
                                               &out_state->operation_count);
                 if (result.code != NMO_OK) return result;
@@ -410,8 +449,32 @@ static nmo_result_t nmo_ckbehavior_deserialize(
         }
     }
 
+    /* Optional: Interface chunk (for editing mode) */
+    uint32_t interface_id = CK_STATESAVE_BEHAVIORINTERFACE;
+    result = nmo_chunk_seek_identifier(chunk, interface_id);
+    if (result.code != NMO_OK) {
+        interface_id = CK_STATESAVE_BEHAVIORINTERFACE_LEGACY;
+        result = nmo_chunk_seek_identifier(chunk, interface_id);
+        if (result.code == NMO_OK) {
+            out_state->use_legacy_identifiers = true;
+        }
+    }
+    if (result.code == NMO_OK) {
+        out_state->has_interface = true;
+        nmo_chunk_t *interface_chunk = NULL;
+        nmo_result_t sub_result = nmo_chunk_read_sub_chunk(chunk, &interface_chunk);
+        if (sub_result.code == NMO_OK) {
+            out_state->interface_chunk = interface_chunk;
+        } else {
+            out_state->interface_chunk = NULL;
+        }
+    }
+
     /* Optional: Single activity flags */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSINGLEACTIVITY);
+    uint32_t single_activity_id = out_state->use_legacy_identifiers
+        ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY
+        : CK_STATESAVE_BEHAVIORSINGLEACTIVITY;
+    result = nmo_chunk_seek_identifier(chunk, single_activity_id);
     if (result.code == NMO_OK) {
         result = nmo_chunk_read_dword(chunk, &out_state->single_activity_flags);
         if (result.code == NMO_OK) {
@@ -477,28 +540,39 @@ static nmo_result_t nmo_ckbehavior_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckbehavior_serialize(
-    const nmo_ckbehavior_state_t *in_state,
+nmo_result_t nmo_ckbehavior_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckbehavior_state_t *in_state = (const nmo_ckbehavior_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_serialize"));
     }
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const bool write_file_format = is_file;
 
-    /* Write base class (CKSceneObject) data */
-    nmo_cksceneobject_serialize_fn parent_serialize = nmo_get_cksceneobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->base, out_chunk, arena);
-        if (result.code != NMO_OK) return result;
+    if (write_file_format && !in_state->has_save_flags &&
+        (in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0) {
+        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_STATE,
+            NMO_SEVERITY_ERROR, "Missing CKBehavior save flags"));
     }
 
-    nmo_result_t result;
+    /* Start write mode for behavior chunk */
+    nmo_result_t result = nmo_chunk_start_write(out_chunk);
+    if (result.code != NMO_OK) return result;
 
-    if (!is_file) {
+    /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    result = nmo_ckobject_serialize(&in_state->base.base, out_chunk, NULL, context);
+    if (result.code != NMO_OK) return result;
+
+    if (!write_file_format) {
         if (in_state->sub_behavior_count > 0 && in_state->sub_behaviors) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORSUBBEHAV);
             if (result.code != NMO_OK) return result;
@@ -549,16 +623,23 @@ static nmo_result_t nmo_ckbehavior_serialize(
     }
 
     /* Optional: Interface chunk */
-    if (in_state->interface_chunk) {
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORINTERFACE);
+    if (in_state->has_interface || in_state->interface_chunk) {
+        const uint32_t interface_id = CK_STATESAVE_BEHAVIORINTERFACE;
+        result = nmo_chunk_write_identifier(out_chunk, interface_id);
         if (result.code != NMO_OK) return result;
 
-        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->interface_chunk);
-        if (result.code != NMO_OK) return result;
+        if (in_state->interface_chunk) {
+            result = nmo_chunk_write_sub_chunk(out_chunk, in_state->interface_chunk);
+            if (result.code != NMO_OK) return result;
+        } else {
+            result = nmo_chunk_write_dword(out_chunk, 0);
+            if (result.code != NMO_OK) return result;
+        }
     }
 
     /* Main behavior data */
-    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORNEWDATA);
+    const uint32_t newdata_id = CK_STATESAVE_BEHAVIORNEWDATA;
+    result = nmo_chunk_write_identifier(out_chunk, newdata_id);
     if (result.code != NMO_OK) return result;
 
     /* Write behavior flags */
@@ -608,32 +689,51 @@ static nmo_result_t nmo_ckbehavior_serialize(
         if (result.code != NMO_OK) return result;
     }
 
-    /* Calculate save flags */
+    /* Calculate or preserve save flags */
     uint32_t save_flags = 0;
-    if (in_state->sub_behavior_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
-    if (in_state->sub_behavior_link_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
-    if (in_state->operation_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
-    if (in_state->in_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
-    if (in_state->out_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPARAMS;
-    if (in_state->local_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS;
-    if (in_state->input_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
-    if (in_state->output_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
+    if (in_state->has_save_flags) {
+        save_flags = in_state->save_flags;
+    } else {
+        if (in_state->sub_behavior_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
+        else save_flags &= ~CK_STATESAVE_BEHAVIORSUBBEHAV;
+        if (in_state->sub_behavior_link_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIORSUBLINKS;
+        if (in_state->operation_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIOROPERATIONS;
+        if (in_state->in_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIORINPARAMS;
+        if (in_state->out_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPARAMS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIOROUTPARAMS;
+        if (in_state->local_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIORLOCALPARAMS;
+        if (in_state->input_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIORINPUTS;
+        if (in_state->output_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
+        else save_flags &= ~CK_STATESAVE_BEHAVIOROUTPUTS;
+    }
 
     result = nmo_chunk_write_dword(out_chunk, save_flags);
     if (result.code != NMO_OK) return result;
 
     /* Write arrays */
-    if (save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
+    uint32_t graph_save_flags = save_flags;
+    if (behavior_flags & CKBEHAVIOR_BUILDINGBLOCK) {
+        graph_save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
+                              CK_STATESAVE_BEHAVIORSUBLINKS |
+                              CK_STATESAVE_BEHAVIOROPERATIONS);
+    }
+
+    if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
         result = write_object_sequence(out_chunk, in_state->sub_behaviors, in_state->sub_behavior_count);
         if (result.code != NMO_OK) return result;
     }
 
-    if (save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
+    if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
         result = write_object_sequence(out_chunk, in_state->sub_behavior_links, in_state->sub_behavior_link_count);
         if (result.code != NMO_OK) return result;
     }
 
-    if (save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
+    if (graph_save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
         result = write_object_sequence(out_chunk, in_state->operations, in_state->operation_count);
         if (result.code != NMO_OK) return result;
     }
@@ -665,7 +765,10 @@ static nmo_result_t nmo_ckbehavior_serialize(
 
     /* Optional: Single activity flags */
     if (in_state->has_single_activity) {
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORSINGLEACTIVITY);
+        const uint32_t single_activity_id = in_state->use_legacy_identifiers
+            ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY
+            : CK_STATESAVE_BEHAVIORSINGLEACTIVITY;
+        result = nmo_chunk_write_identifier(out_chunk, single_activity_id);
         if (result.code != NMO_OK) return result;
 
         result = nmo_chunk_write_dword(out_chunk, in_state->single_activity_flags);
@@ -675,54 +778,18 @@ static nmo_result_t nmo_ckbehavior_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Register CKBehavior schema types
- * 
- * Creates schema descriptors for CKBehavior state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckbehavior_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckbehavior_schemas"));
-    }
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckbehavior,
+    nmo_ckbehavior_state_t,
+    nmo_ckbehavior_serialize,
+    nmo_ckbehavior_deserialize,
+    NMO_GUID_CKBEHAVIOR,
+    "CKBehavior",
+    NMO_CID_BEHAVIOR,
+    NMO_GUID_CKSCENEOBJECT
+)
 
-    /* Schema will be registered when schema builder is fully implemented */
-    /* For now, just store the function pointers in the registry */
-    
-    return nmo_result_ok();
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKBehavior
- * 
- * @return Deserialize function pointer
- */
-nmo_ckbehavior_deserialize_fn nmo_get_ckbehavior_deserialize(void)
-{
-    return nmo_ckbehavior_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKBehavior
- * 
- * @return Serialize function pointer
- */
-nmo_ckbehavior_serialize_fn nmo_get_ckbehavior_serialize(void)
-{
-    return nmo_ckbehavior_serialize;
-}

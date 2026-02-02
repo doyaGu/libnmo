@@ -14,8 +14,10 @@
  */
 
 #include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckrenderobject_schemas.h"
-#include "object/nmo_schema_registry.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -304,10 +306,15 @@ source_rect_done:;
  * Dispatches to modern or legacy deserializer based on chunk data version.
  */
 nmo_result_t nmo_ck2dentity_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck2dentity_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ck2dentity_state_t *out_state = (nmo_ck2dentity_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !arena || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_deserialize"));
@@ -316,8 +323,7 @@ nmo_result_t nmo_ck2dentity_deserialize(
     memset(out_state, 0, sizeof(*out_state));
     
     /* First deserialize parent CKRenderObject data */
-    nmo_result_t result = nmo_ckrenderobject_deserialize(
-        chunk, arena, &out_state->render_object);
+    nmo_result_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -426,17 +432,22 @@ static nmo_result_t serialize_modern(
  * Always uses modern format (v5+) for simplicity.
  */
 nmo_result_t nmo_ck2dentity_serialize(
-    const nmo_ck2dentity_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ck2dentity_state_t *in_state = (const nmo_ck2dentity_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_serialize"));
     }
     
     /* Serialize parent CKRenderObject data */
-    nmo_result_t result = nmo_ckrenderobject_serialize(&in_state->render_object, out_chunk, arena);
+    nmo_result_t result = nmo_ckrenderobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -458,21 +469,18 @@ nmo_result_t nmo_ck2dentity_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-nmo_result_t nmo_register_ck2dentity_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ck2dentity_schemas"));
-    }
-    
-    /* TODO: Register schema types when schema builder is ready */
-    /* For now, schemas are registered via deserialize/serialize functions */
-    
-    return nmo_result_ok();
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ck2dentity,
+    nmo_ck2dentity_state_t,
+    nmo_ck2dentity_serialize,
+    nmo_ck2dentity_deserialize,
+    NMO_GUID_CK2DENTITY,
+    "CK2dEntity",
+    NMO_CID_2DENTITY,
+    NMO_GUID_CKRENDEROBJECT
+)
+

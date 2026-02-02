@@ -9,8 +9,7 @@
  */
 
 #include "object/nmo_ckmessagemanager_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -45,11 +44,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckmessagemanager_deserialize(
+nmo_result_t nmo_ckmessagemanager_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckmessagemanager_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckmessagemanager_state_t *out_state = (nmo_ckmessagemanager_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_deserialize"));
@@ -118,11 +122,17 @@ static nmo_result_t nmo_ckmessagemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckmessagemanager_serialize(
-    const nmo_ckmessagemanager_state_t *in_state,
+nmo_result_t nmo_ckmessagemanager_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckmessagemanager_state_t *in_state =
+        (const nmo_ckmessagemanager_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_serialize"));
@@ -168,87 +178,3 @@ static nmo_result_t nmo_ckmessagemanager_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * VTABLE WRAPPERS
- * ============================================================================= */
-
-static nmo_result_t vtable_read_ckmessagemanager(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_state)
-{
-    (void)type;
-    return nmo_ckmessagemanager_deserialize(chunk, arena, (nmo_ckmessagemanager_state_t *)out_state);
-}
-
-static nmo_result_t vtable_write_ckmessagemanager(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_state,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckmessagemanager_serialize((const nmo_ckmessagemanager_state_t *)in_state, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckmessagemanager_vtable = {
-    .read = vtable_read_ckmessagemanager,
-    .write = vtable_write_ckmessagemanager,
-    .validate = NULL
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKMessageManager schema types
- * 
- * Creates schema descriptors for CKMessageManager state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckmessagemanager_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckmessagemanager_schemas"));
-    }
-
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena, "nmo_ckmessagemanager_state_t",
-        sizeof(nmo_ckmessagemanager_state_t), alignof(nmo_ckmessagemanager_state_t));
-
-    nmo_builder_set_vtable(&builder, &nmo_ckmessagemanager_vtable);
-
-    return nmo_builder_build(&builder, registry);
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKMessageManager
- * 
- * @return Deserialize function pointer
- */
-nmo_ckmessagemanager_deserialize_fn nmo_get_ckmessagemanager_deserialize(void)
-{
-    return nmo_ckmessagemanager_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKMessageManager
- * 
- * @return Serialize function pointer
- */
-nmo_ckmessagemanager_serialize_fn nmo_get_ckmessagemanager_serialize(void)
-{
-    return nmo_ckmessagemanager_serialize;
-}

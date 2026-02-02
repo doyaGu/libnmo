@@ -37,6 +37,7 @@
 #include "format/nmo_object.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
+#include "object/nmo_schema_interface.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_object_repository.h"
 #include "session/nmo_shadow_storage.h"
@@ -86,6 +87,7 @@ struct nmo_save_context {
     uint8_t *reference_map;       /**< 1 = save as reference only */
     nmo_object_desc_t *obj_descs;
     nmo_id_remap_plan_t *remap_plan;
+    nmo_id_remap_table_t *file_index_remap;
 
     /* Phase 1 outputs: Manager info */
     nmo_manager_data_t *manager_entries;
@@ -522,11 +524,35 @@ static nmo_result_t save_build_remap_plan(nmo_save_context_t *ctx) {
 
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Created remap plan with %zu entries", remap_count);
 
+    ctx->file_index_remap = nmo_id_remap_create(ctx->arena);
+    if (ctx->file_index_remap == NULL) {
+        return SAVE_ERR(NMO_ERR_NOMEM, "File index remap allocation failed");
+    }
+
+    for (size_t i = 0; i < ctx->object_count; i++) {
+        nmo_object_t *obj = ctx->objects[i];
+        if (obj == NULL) {
+            continue;
+        }
+
+        nmo_object_id_t file_index = (nmo_object_id_t) (i + 1);
+        if (ctx->reference_map && ctx->reference_map[i]) {
+            file_index |= NMO_OBJECT_REFERENCE_FLAG;
+        }
+
+        nmo_result_t add_result = nmo_id_remap_add(ctx->file_index_remap, obj->id, file_index);
+        if (nmo_result_is_error(add_result)) {
+            /* Continue even if one fails */
+        }
+    }
+
     return nmo_result_ok();
 }
 
 static nmo_result_t save_serialize_managers(nmo_save_context_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.4: Serializing manager chunks");
+
+    nmo_id_remap_table_t *remap_table = ctx->file_index_remap;
 
     /* Get session manager data for round-trip preservation */
     uint32_t session_manager_count = 0;
@@ -575,6 +601,15 @@ static nmo_result_t save_serialize_managers(nmo_save_context_t *ctx) {
             entry->data_size = (chunk->raw_data != NULL) ? (uint32_t)chunk->raw_size : 0;
             entry->flags = NMO_MANAGER_DATA_FLAG_DISPATCHED;
 
+            if (chunk->raw_data == NULL && remap_table != NULL) {
+                nmo_result_t remap_result = nmo_chunk_remap_object_ids(chunk, remap_table);
+                if (remap_result.code != NMO_OK) {
+                    nmo_log(ctx->logger, NMO_LOG_WARN,
+                            "  Manager %s: failed to remap object IDs (code=%d)",
+                            manager->name ? manager->name : "<unnamed>", remap_result.code);
+                }
+            }
+
             nmo_log(ctx->logger, NMO_LOG_DEBUG, "  Manager %s: chunk size=%u",
                     manager->name ? manager->name : "<unnamed>", entry->data_size);
         }
@@ -607,12 +642,18 @@ static nmo_result_t save_serialize_objects(nmo_save_context_t *ctx) {
     size_t skipped_count = 0;
     const nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(ctx->session);
 
+    nmo_id_remap_table_t *remap_table = ctx->file_index_remap;
+
     for (size_t i = 0; i < ctx->object_count; i++) {
         nmo_object_t *obj = ctx->objects[i];
 
-        /* Skip reference-only objects */
+        /* Reference-only objects: preserve existing chunk if any, do not reserialize */
         if (ctx->reference_map[i]) {
-            skipped_count++;
+            if (obj->chunk != NULL) {
+                reused_count++;
+            } else {
+                skipped_count++;
+            }
             continue;
         }
 
@@ -630,6 +671,14 @@ static nmo_result_t save_serialize_objects(nmo_save_context_t *ctx) {
         if (obj->chunk == old_chunk) {
             reused_count++;
         } else {
+            if (obj->chunk != NULL && obj->chunk->raw_data == NULL && remap_table != NULL) {
+                nmo_result_t remap_result = nmo_chunk_remap_object_ids(obj->chunk, remap_table);
+                if (remap_result.code != NMO_OK) {
+                    nmo_log(ctx->logger, NMO_LOG_WARN,
+                            "    Failed to remap object IDs for object %u (code=%d)",
+                            obj->id, remap_result.code);
+                }
+            }
             serialized_count++;
         }
     }
@@ -676,7 +725,7 @@ static nmo_result_t save_build_data_section(nmo_save_context_t *ctx) {
 
     /* Copy chunk pointers */
     for (size_t i = 0; i < ctx->object_count; i++) {
-        if (ctx->reference_map[i]) {
+        if (ctx->reference_map[i] && ctx->objects[i]->chunk == NULL) {
             data_sect.objects[i].object_id = 0;
             data_sect.objects[i].chunk = NULL;
             data_sect.objects[i].data_size = 0;
@@ -757,7 +806,7 @@ static nmo_result_t save_build_header1(nmo_save_context_t *ctx) {
         ctx->obj_descs[i].file_id = file_id;
         ctx->obj_descs[i].class_id = obj->class_id;
         ctx->obj_descs[i].name = (char *)obj->name;
-        ctx->obj_descs[i].file_index = i;
+        ctx->obj_descs[i].file_index = (obj->file_index != 0) ? obj->file_index : (nmo_object_id_t)i;
 
         uint32_t descriptor_flags = obj->flags;
         if (ctx->reference_map[i]) {
@@ -1211,6 +1260,8 @@ static nmo_chunk_t *serialize_object_with_schema(
             if (empty_chunk) {
                 empty_chunk->class_id = obj->class_id;
                 empty_chunk->chunk_version = 7;
+                empty_chunk->data_version = 7;
+                empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
                 nmo_chunk_start_write(empty_chunk);
                 nmo_chunk_close(empty_chunk);
                 return empty_chunk;
@@ -1226,8 +1277,18 @@ static nmo_chunk_t *serialize_object_with_schema(
         return NULL;
     }
 
+    const nmo_chunk_t *old_chunk = obj->chunk;
+
     new_chunk->class_id = obj->class_id;
-    new_chunk->chunk_version = 7;
+    if (old_chunk != NULL) {
+        new_chunk->chunk_version = old_chunk->chunk_version;
+        new_chunk->data_version = old_chunk->data_version;
+        new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    } else {
+        new_chunk->chunk_version = 7;
+        new_chunk->data_version = 7;
+        new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    }
 
     nmo_result_t result = nmo_chunk_start_write(new_chunk);
     if (result.code != NMO_OK) {
@@ -1236,8 +1297,11 @@ static nmo_chunk_t *serialize_object_with_schema(
         return NULL;
     }
 
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE);
+
     /* Call vtable serialize function */
-    result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, arena);
+    result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);
 
     if (result.code != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR,
@@ -1260,6 +1324,12 @@ static nmo_chunk_t *serialize_object_with_schema(
     }
 
     nmo_chunk_close(new_chunk);
+
+    if (old_chunk != NULL && new_chunk->data.count == 0) {
+        nmo_log(logger, NMO_LOG_WARN,
+                "    Serialized object %u is empty; preserving original chunk", obj->id);
+        return (nmo_chunk_t *)old_chunk;
+    }
 
     nmo_log(logger, NMO_LOG_DEBUG,
             "    Serialized object %u using schema '%s' (%zu bytes)",

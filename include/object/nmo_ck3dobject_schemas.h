@@ -7,6 +7,7 @@
 #define NMO_CK3DOBJECT_SCHEMAS_H
 
 #include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -14,10 +15,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief CK3dObject state structure
@@ -29,50 +30,24 @@ typedef struct nmo_ck3dobject_state {
     nmo_ck3dentity_state_t entity;  ///< Parent CK3dEntity state
 } nmo_ck3dobject_state_t;
 
-/* Function pointer types for vtable */
-typedef nmo_result_t (*nmo_ck3dobject_deserialize_fn)(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ck3dobject_state_t *out_state);
+NMO_API nmo_result_t nmo_ck3dobject_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-typedef nmo_result_t (*nmo_ck3dobject_serialize_fn)(
-    const nmo_ck3dobject_state_t *in_state,
+NMO_API nmo_result_t nmo_ck3dobject_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-typedef nmo_result_t (*nmo_ck3dobject_finish_loading_fn)(
-    void *state,
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ck3dobject_vtable, nmo_register_ck3dobject_type)
+
+NMO_API nmo_result_t nmo_ck3dobject_finish_loading(
+    void *instance,
     nmo_arena_t *arena,
     void *repository);
-
-/**
- * @brief Register CK3dObject state schema
- * 
- * @param registry Schema registry
- * @param arena Arena for allocations
- * @return Result indicating success or error
- */
-NMO_API nmo_result_t nmo_register_ck3dobject_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
-/**
- * @brief Get CK3dObject deserialize function
- * @return Function pointer for deserialization
- */
-NMO_API nmo_ck3dobject_deserialize_fn nmo_get_ck3dobject_deserialize(void);
-
-/**
- * @brief Get CK3dObject serialize function
- * @return Function pointer for serialization
- */
-NMO_API nmo_ck3dobject_serialize_fn nmo_get_ck3dobject_serialize(void);
-
-/**
- * @brief Get CK3dObject finish_loading function
- * @return Function pointer for finish loading
- */
-NMO_API nmo_ck3dobject_finish_loading_fn nmo_get_ck3dobject_finish_loading(void);
 
 #ifdef __cplusplus
 }

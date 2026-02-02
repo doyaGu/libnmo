@@ -7,6 +7,7 @@
 #define NMO_CKLAYER_SCHEMAS_H
 
 #include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 
@@ -15,10 +16,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief CKLayer state
@@ -43,19 +44,19 @@ typedef struct nmo_cklayer_state {
     size_t square_data_size;
 } nmo_cklayer_state_t;
 
-NMO_API nmo_result_t nmo_register_cklayer_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 NMO_API nmo_result_t nmo_cklayer_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cklayer_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_cklayer_serialize(
-    const nmo_cklayer_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cklayer_vtable, nmo_register_cklayer_type)
 
 #ifdef __cplusplus
 }

@@ -25,8 +25,8 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_arena nmo_arena_t;
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
  * ATTRIBUTE STRUCTURES
@@ -152,62 +152,20 @@ typedef struct nmo_ckattributemanager_state {
 } nmo_ckattributemanager_state_t;
 
 /* =============================================================================
- * FUNCTION POINTER TYPES
- * ============================================================================= */
-
-/**
- * @brief Function pointer for CKAttributeManager deserialization
- * 
- * @param chunk Chunk to read from
- * @param arena Arena for allocations
- * @param out_state Output state structure
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ckattributemanager_deserialize_fn)(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ckattributemanager_state_t *out_state);
-
-/**
- * @brief Function pointer for CKAttributeManager serialization
- * 
- * @param chunk Chunk to write to
- * @param state Input state structure
- * @return Result indicating success or error
- */
-typedef nmo_result_t (*nmo_ckattributemanager_serialize_fn)(
-    const nmo_ckattributemanager_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
-
-/* =============================================================================
  * PUBLIC API
  * ============================================================================= */
 
-/**
- * @brief Register CKAttributeManager schema types
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckattributemanager_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
+NMO_API nmo_result_t nmo_ckattributemanager_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-/**
- * @brief Get the deserialize function for CKAttributeManager
- * 
- * @return Deserialize function pointer
- */
-nmo_ckattributemanager_deserialize_fn nmo_get_ckattributemanager_deserialize(void);
-
-/**
- * @brief Get the serialize function for CKAttributeManager
- * 
- * @return Serialize function pointer
- */
-nmo_ckattributemanager_serialize_fn nmo_get_ckattributemanager_serialize(void);
+NMO_API nmo_result_t nmo_ckattributemanager_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

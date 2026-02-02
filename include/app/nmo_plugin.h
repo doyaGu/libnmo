@@ -20,7 +20,6 @@ typedef struct nmo_context nmo_context_t;
 typedef struct nmo_session nmo_session_t;
 typedef struct nmo_manager nmo_manager_t;
 typedef struct nmo_manager_descriptor nmo_manager_descriptor_t;
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 
 typedef int (*nmo_plugin_init_fn)(const nmo_plugin_t *plugin, nmo_context_t *ctx);
 typedef void (*nmo_plugin_shutdown_fn)(const nmo_plugin_t *plugin, nmo_context_t *ctx);

@@ -7,6 +7,7 @@
 #define NMO_CKPARAMETEROPERATION_SCHEMAS_H
 
 #include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 
@@ -15,10 +16,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief CKParameterOperation state
@@ -39,19 +40,19 @@ typedef struct nmo_ckparameteroperation_state {
     nmo_chunk_t *out_chunk;
 } nmo_ckparameteroperation_state_t;
 
-NMO_API nmo_result_t nmo_register_ckparameteroperation_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 NMO_API nmo_result_t nmo_ckparameteroperation_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckparameteroperation_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckparameteroperation_serialize(
-    const nmo_ckparameteroperation_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckparameteroperation_vtable, nmo_register_ckparameteroperation_type)
 
 #ifdef __cplusplus
 }

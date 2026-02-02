@@ -68,7 +68,6 @@ extern "C" {
 #define NMO_CID_LAYER                   51
 #define NMO_CID_DATAARRAY               52
 #define NMO_CID_PATCHMESH               53
-#define NMO_CID_PROGRESSIVEMESH         54
 #define NMO_CID_MAXCLASSID              55
 
 /* =============================================================================

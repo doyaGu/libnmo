@@ -9,8 +9,7 @@
  */
 
 #include "object/nmo_ckattributemanager_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -46,11 +45,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckattributemanager_deserialize(
+nmo_result_t nmo_ckattributemanager_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckattributemanager_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckattributemanager_state_t *out_state = (nmo_ckattributemanager_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (chunk == NULL || out_state == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_deserialize"));
@@ -177,11 +181,17 @@ static nmo_result_t nmo_ckattributemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckattributemanager_serialize(
-    const nmo_ckattributemanager_state_t *in_state,
+nmo_result_t nmo_ckattributemanager_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckattributemanager_state_t *in_state =
+        (const nmo_ckattributemanager_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (in_state == NULL || out_chunk == NULL) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_serialize"));
@@ -253,87 +263,3 @@ static nmo_result_t nmo_ckattributemanager_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * VTABLE WRAPPERS
- * ============================================================================= */
-
-static nmo_result_t vtable_read_ckattributemanager(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_state)
-{
-    (void)type;
-    return nmo_ckattributemanager_deserialize(chunk, arena, (nmo_ckattributemanager_state_t *)out_state);
-}
-
-static nmo_result_t vtable_write_ckattributemanager(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_state,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckattributemanager_serialize((const nmo_ckattributemanager_state_t *)in_state, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_ckattributemanager_vtable = {
-    .read = vtable_read_ckattributemanager,
-    .write = vtable_write_ckattributemanager,
-    .validate = NULL
-};
-
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Register CKAttributeManager schema types
- * 
- * Creates schema descriptors for CKAttributeManager state structures.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckattributemanager_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckattributemanager_schemas"));
-    }
-
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena, "nmo_ckattributemanager_state_t",
-        sizeof(nmo_ckattributemanager_state_t), alignof(nmo_ckattributemanager_state_t));
-
-    nmo_builder_set_vtable(&builder, &nmo_ckattributemanager_vtable);
-
-    return nmo_builder_build(&builder, registry);
-}
-
-/* =============================================================================
- * PUBLIC API - ACCESSOR FUNCTIONS
- * ============================================================================= */
-
-/**
- * @brief Get the deserialize function for CKAttributeManager
- * 
- * @return Deserialize function pointer
- */
-nmo_ckattributemanager_deserialize_fn nmo_get_ckattributemanager_deserialize(void)
-{
-    return nmo_ckattributemanager_deserialize;
-}
-
-/**
- * @brief Get the serialize function for CKAttributeManager
- * 
- * @return Serialize function pointer
- */
-nmo_ckattributemanager_serialize_fn nmo_get_ckattributemanager_serialize(void)
-{
-    return nmo_ckattributemanager_serialize;
-}

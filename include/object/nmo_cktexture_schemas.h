@@ -23,6 +23,7 @@
 
 #include "nmo_types.h"
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "core/nmo_guid.h"
 
 #ifdef __cplusplus
@@ -30,10 +31,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @defgroup CKTextureSchema CKTexture Schema API
@@ -222,99 +223,27 @@ typedef struct nmo_ck_texture_state {
 } nmo_ck_texture_state_t;
 
 /* ========================================================================
- * Function Pointer Types
- * ======================================================================== */
-
-/**
- * @brief Deserialize function for CKTexture objects (modern format v5+)
- *
- * @param[in] chunk State chunk containing serialized data
- * @param[in] arena Arena allocator for temporary memory
- * @param[out] out_state Deserialized CKTexture state
- * @return NMO_OK on success, error code on failure
- *
- * Expected Identifiers:
- * - 0x00100000, 0x00020000, or 0x00004000: bitmap payloads
- * - 0x00010000: slot filenames
- * - 0x002FF000: packed flags
- * - 0x00080000: save format
- * - 0x00400000: user mipmaps
- *
- * Error Conditions:
- * - NMO_ERR_INVALID_FORMAT: malformed bitmap payload
- * - NMO_ERR_NOMEM: Arena allocation failure
- */
-typedef nmo_result_t (*nmo_cktexture_deserialize_fn)(
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena,
-    nmo_ck_texture_state_t *out_state
-);
-
-/**
- * @brief Serialize function for CKTexture objects (modern format v5+)
- *
- * @param[in] state CKTexture state to serialize
- * @param[in,out] chunk State chunk to write data into
- * @param[in] arena Arena allocator for temporary memory
- * @return NMO_OK on success, error code on failure
- *
- * Written Identifiers:
- * - 0x00100000 / 0x00020000 / 0x00004000: bitmap payloads
- * - 0x00010000: slot filenames
- * - 0x00200000: pick threshold
- * - 0x002FF000: packed flags
- * - 0x00080000: save format
- * - 0x00400000: user mipmaps
- *
- * Error Conditions:
- * - NMO_ERR_CANT_WRITE_FILE: Chunk buffer overflow
- * - NMO_ERR_VALIDATION_FAILED: Invalid format or missing required data
- */
-typedef nmo_result_t (*nmo_cktexture_serialize_fn)(
-    const nmo_ck_texture_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena
-);
-
-/**
- * @brief Finish loading callback for CKTexture objects
- *
- * Performs post-deserialization setup (no-op for raw payload schemas).
- *
- * @param[in,out] state CKTexture state to finalize
- * @param[in] context Object context (unused currently)
- * @param[in] arena Arena allocator for temporary memory
- * @return NMO_OK on success, error code on failure
- *
- * Error Conditions:
- * - NMO_ERR_VALIDATION_FAILED: Invalid payload
- */
-typedef nmo_result_t (*nmo_cktexture_finish_loading_fn)(
-    nmo_ck_texture_state_t *state,
-    void *context,
-    nmo_arena_t *arena
-);
-
-/* ========================================================================
  * Public API Functions
  * ======================================================================== */
 
-/**
- * @brief Register CKTexture schemas with the schema system
- *
- * Registers ClassID 31 (CKCID_TEXTURE) with deserialize, serialize,
- * and finish_loading handlers.
- *
- * @param[in,out] registry Schema registry to register into
- * @param[in] arena Arena for schema allocations
- * @return NMO_OK on success, error code on failure
- *
- * Thread Safety: NOT thread-safe during registration. Call once during initialization.
- */
-nmo_result_t nmo_register_cktexture_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena
-);
+NMO_API nmo_result_t nmo_cktexture_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_result_t nmo_cktexture_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cktexture_vtable, nmo_register_cktexture_type)
+
+NMO_API nmo_result_t nmo_cktexture_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
 
 /**
  * @}

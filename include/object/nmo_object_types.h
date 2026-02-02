@@ -26,6 +26,7 @@
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
+#include "object/nmo_class_ids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,99 +47,84 @@ typedef struct nmo_arena nmo_arena_t;
  * This ensures unique GUIDs while maintaining class ID mapping.
  * ============================================================================ */
 
+/** Base DWORD1 for all CKObject-derived types ("VKOB") */
+#define NMO_CKOBJECT_GUID_DWORD1 0x564B4F42u
+
+/** Helper macro to build object GUIDs from class IDs */
+#define NMO_OBJECT_GUID(_class_id) ((nmo_guid_t){NMO_CKOBJECT_GUID_DWORD1, (uint32_t)(_class_id)})
+
 /* Base object types */
-#define NMO_GUID_CKOBJECT              ((nmo_guid_t){0x564B4F42, 0x00000001})
-#define NMO_GUID_CKSCENEOBJECT         ((nmo_guid_t){0x564B4F42, 0x0000000B})
-#define NMO_GUID_CKBEOBJECT            ((nmo_guid_t){0x564B4F42, 0x00000013})
-#define NMO_GUID_CKRENDEROBJECT        ((nmo_guid_t){0x564B4F42, 0x0000002F})
+#define NMO_GUID_CKOBJECT              NMO_OBJECT_GUID(NMO_CID_OBJECT)
+#define NMO_GUID_CKSCENEOBJECT         NMO_OBJECT_GUID(NMO_CID_SCENEOBJECT)
+#define NMO_GUID_CKBEOBJECT            NMO_OBJECT_GUID(NMO_CID_BEOBJECT)
+#define NMO_GUID_CKRENDEROBJECT        NMO_OBJECT_GUID(NMO_CID_RENDEROBJECT)
 
 /* 2D entities */
-#define NMO_GUID_CK2DENTITY            ((nmo_guid_t){0x564B4F42, 0x0000001B})
-#define NMO_GUID_CKSPRITE              ((nmo_guid_t){0x564B4F42, 0x0000001C})
-#define NMO_GUID_CKSPRITETEXT          ((nmo_guid_t){0x564B4F42, 0x0000001D})
+#define NMO_GUID_CK2DENTITY            NMO_OBJECT_GUID(NMO_CID_2DENTITY)
+#define NMO_GUID_CKSPRITE              NMO_OBJECT_GUID(NMO_CID_SPRITE)
+#define NMO_GUID_CKSPRITETEXT          NMO_OBJECT_GUID(NMO_CID_SPRITETEXT)
 
 /* 3D entities */
-#define NMO_GUID_CK3DENTITY            ((nmo_guid_t){0x564B4F42, 0x00000021})
-#define NMO_GUID_CK3DOBJECT            ((nmo_guid_t){0x564B4F42, 0x00000029})
-#define NMO_GUID_CKCAMERA              ((nmo_guid_t){0x564B4F42, 0x00000022})
-#define NMO_GUID_CKLIGHT               ((nmo_guid_t){0x564B4F42, 0x00000026})
-#define NMO_GUID_CKCHARACTER           ((nmo_guid_t){0x564B4F42, 0x00000028})
+#define NMO_GUID_CK3DENTITY            NMO_OBJECT_GUID(NMO_CID_3DENTITY)
+#define NMO_GUID_CK3DOBJECT            NMO_OBJECT_GUID(NMO_CID_3DOBJECT)
+#define NMO_GUID_CKCAMERA              NMO_OBJECT_GUID(NMO_CID_CAMERA)
+#define NMO_GUID_CKLIGHT               NMO_OBJECT_GUID(NMO_CID_LIGHT)
+#define NMO_GUID_CKCHARACTER           NMO_OBJECT_GUID(NMO_CID_CHARACTER)
 
 /* Resources */
-#define NMO_GUID_CKMATERIAL            ((nmo_guid_t){0x564B4F42, 0x0000001E})
-#define NMO_GUID_CKTEXTURE             ((nmo_guid_t){0x564B4F42, 0x0000001F})
-#define NMO_GUID_CKMESH                ((nmo_guid_t){0x564B4F42, 0x00000020})
+#define NMO_GUID_CKMATERIAL            NMO_OBJECT_GUID(NMO_CID_MATERIAL)
+#define NMO_GUID_CKTEXTURE             NMO_OBJECT_GUID(NMO_CID_TEXTURE)
+#define NMO_GUID_CKMESH                NMO_OBJECT_GUID(NMO_CID_MESH)
 
 /* Behaviors and logic */
-#define NMO_GUID_CKBEHAVIOR            ((nmo_guid_t){0x564B4F42, 0x00000008})
-#define NMO_GUID_CKBEHAVIORIO          ((nmo_guid_t){0x564B4F42, 0x00000009})
-#define NMO_GUID_CKBEHAVIORLINK        ((nmo_guid_t){0x564B4F42, 0x00000006})
-#define NMO_GUID_CKPARAMETER           ((nmo_guid_t){0x564B4F42, 0x0000002E})
-#define NMO_GUID_CKPARAMETERLOCAL      ((nmo_guid_t){0x564B4F42, 0x0000002D})
+#define NMO_GUID_CKBEHAVIOR            NMO_OBJECT_GUID(NMO_CID_BEHAVIOR)
+#define NMO_GUID_CKBEHAVIORIO          NMO_OBJECT_GUID(NMO_CID_BEHAVIORIO)
+#define NMO_GUID_CKBEHAVIORLINK        NMO_OBJECT_GUID(NMO_CID_BEHAVIORLINK)
+#define NMO_GUID_CKPARAMETER           NMO_OBJECT_GUID(NMO_CID_PARAMETER)
+#define NMO_GUID_CKPARAMETERLOCAL      NMO_OBJECT_GUID(NMO_CID_PARAMETERLOCAL)
+#define NMO_GUID_CKSTATE               NMO_OBJECT_GUID(NMO_CID_STATE)
+#define NMO_GUID_CKCRITICALSECTION     NMO_OBJECT_GUID(NMO_CID_CRITICALSECTION)
 
 /* Scene management */
-#define NMO_GUID_CKSCENE               ((nmo_guid_t){0x564B4F42, 0x0000000A})
-#define NMO_GUID_CKLEVEL               ((nmo_guid_t){0x564B4F42, 0x00000015})
-#define NMO_GUID_CKGROUP               ((nmo_guid_t){0x564B4F42, 0x00000017})
+#define NMO_GUID_CKSCENE               NMO_OBJECT_GUID(NMO_CID_SCENE)
+#define NMO_GUID_CKLEVEL               NMO_OBJECT_GUID(NMO_CID_LEVEL)
+#define NMO_GUID_CKGROUP               NMO_OBJECT_GUID(NMO_CID_GROUP)
 
 /* Data structures */
-#define NMO_GUID_CKDATAARRAY           ((nmo_guid_t){0x564B4F42, 0x00000034})
+#define NMO_GUID_CKDATAARRAY           NMO_OBJECT_GUID(NMO_CID_DATAARRAY)
 
 /* Animation */
-#define NMO_GUID_CKANIMATION           ((nmo_guid_t){0x564B4F42, 0x00000010})
-#define NMO_GUID_CKKEYEDANIMATION      ((nmo_guid_t){0x564B4F42, 0x00000012})
+#define NMO_GUID_CKANIMATION           NMO_OBJECT_GUID(NMO_CID_ANIMATION)
+#define NMO_GUID_CKKEYEDANIMATION      NMO_OBJECT_GUID(NMO_CID_KEYEDANIMATION)
+#define NMO_GUID_CKOBJECTANIMATION     NMO_OBJECT_GUID(NMO_CID_OBJECTANIMATION)
 
-/* ============================================================================
- * Object State Structures
- * 
- * Each CKObject-derived class has a corresponding state structure that holds
- * its serializable data. These are used by vtable functions.
- * ============================================================================ */
+/* Parameters (extended) */
+#define NMO_GUID_CKPARAMETERIN         NMO_OBJECT_GUID(NMO_CID_PARAMETERIN)
+#define NMO_GUID_CKPARAMETEROUT        NMO_OBJECT_GUID(NMO_CID_PARAMETEROUT)
+#define NMO_GUID_CKPARAMETEROPERATION  NMO_OBJECT_GUID(NMO_CID_PARAMETEROPERATION)
 
-/**
- * @brief CKObject state (base class)
- */
-typedef struct nmo_ckobject_state {
-    uint32_t visibility_flags;              /**< Visibility flags */
-} nmo_ckobject_state_t;
+/* Extended 3D types */
+#define NMO_GUID_CKTARGETCAMERA        NMO_OBJECT_GUID(NMO_CID_TARGETCAMERA)
+#define NMO_GUID_CKTARGETLIGHT         NMO_OBJECT_GUID(NMO_CID_TARGETLIGHT)
+#define NMO_GUID_CKSPRITE3D            NMO_OBJECT_GUID(NMO_CID_SPRITE3D)
+#define NMO_GUID_CKCURVE               NMO_OBJECT_GUID(NMO_CID_CURVE)
+#define NMO_GUID_CKCURVEPOINT          NMO_OBJECT_GUID(NMO_CID_CURVEPOINT)
+#define NMO_GUID_CKBODYPART            NMO_OBJECT_GUID(NMO_CID_BODYPART)
 
-/* Visibility flag constants */
-#define NMO_CKOBJECT_VISIBLE          0x01  /**< Object is visible */
-#define NMO_CKOBJECT_HIERARCHICAL     0x02  /**< Object has hierarchical hide */
+/* Utility types */
+#define NMO_GUID_CKRENDERCONTEXT       NMO_OBJECT_GUID(NMO_CID_RENDERCONTEXT)
+#define NMO_GUID_CKKINEMATICCHAIN      NMO_OBJECT_GUID(NMO_CID_KINEMATICCHAIN)
+#define NMO_GUID_CKSYNCHRO             NMO_OBJECT_GUID(NMO_CID_SYNCHRO)
+#define NMO_GUID_CKPLACE               NMO_OBJECT_GUID(NMO_CID_PLACE)
+#define NMO_GUID_CKSOUND               NMO_OBJECT_GUID(NMO_CID_SOUND)
+#define NMO_GUID_CKWAVESOUND           NMO_OBJECT_GUID(NMO_CID_WAVESOUND)
+#define NMO_GUID_CKMIDISOUND           NMO_OBJECT_GUID(NMO_CID_MIDISOUND)
+#define NMO_GUID_CKINTERFACEOBJECTMANAGER NMO_OBJECT_GUID(NMO_CID_INTERFACEOBJECTMANAGER)
 
-/**
- * @brief CK3dEntity state
- */
-typedef struct nmo_ck3dentity_state {
-    nmo_ckobject_state_t base;              /**< Base object state */
-    uint32_t flags;                         /**< Entity flags */
-    float world_matrix[16];                 /**< 4x4 world transformation matrix */
-    uint32_t zorder;                        /**< Z-order for rendering */
-    /* Add more fields as reverse-engineered */
-} nmo_ck3dentity_state_t;
-
-/**
- * @brief CKMesh state
- */
-typedef struct nmo_ckmesh_state {
-    nmo_ckobject_state_t base;              /**< Base object state */
-    uint32_t vertex_count;                  /**< Number of vertices */
-    uint32_t face_count;                    /**< Number of faces */
-    /* Actual vertex/face data managed separately */
-} nmo_ckmesh_state_t;
-
-/**
- * @brief CKMaterial state
- */
-typedef struct nmo_ckmaterial_state {
-    nmo_ckobject_state_t base;              /**< Base object state */
-    float ambient[4];                       /**< Ambient RGBA */
-    float diffuse[4];                       /**< Diffuse RGBA */
-    float specular[4];                      /**< Specular RGBA */
-    float emissive[4];                      /**< Emissive RGBA */
-    float power;                            /**< Specular power */
-    uint32_t texture_id;                    /**< Reference to CKTexture */
-} nmo_ckmaterial_state_t;
+/* Mesh variants */
+#define NMO_GUID_CKGRID                NMO_OBJECT_GUID(NMO_CID_GRID)
+#define NMO_GUID_CKLAYER               NMO_OBJECT_GUID(NMO_CID_LAYER)
+#define NMO_GUID_CKPATCHMESH           NMO_OBJECT_GUID(NMO_CID_PATCHMESH)
 
 /* ============================================================================
  * Type Registration Functions
@@ -225,6 +211,51 @@ NMO_API nmo_result_t nmo_register_resource_types(nmo_type_registry_t *registry);
  * @return nmo_ok() on success, error on failure
  */
 NMO_API nmo_result_t nmo_register_behavior_types(nmo_type_registry_t *registry);
+
+/**
+ * @brief Register parameter types
+ * 
+ * Registers: CKParameterIn, CKParameterOut, CKParameterOperation
+ * Requires base types and CKParameter to be registered first.
+ * 
+ * @param registry Type registry
+ * @return nmo_ok() on success, error on failure
+ */
+NMO_API nmo_result_t nmo_register_parameter_types(nmo_type_registry_t *registry);
+
+/**
+ * @brief Register extended 3D entity types
+ * 
+ * Registers: CKTargetCamera, CKTargetLight, CKSprite3D, CKCurve
+ * Requires base types and CK3dEntity to be registered first.
+ * 
+ * @param registry Type registry
+ * @return nmo_ok() on success, error on failure
+ */
+NMO_API nmo_result_t nmo_register_extended_3d_types(nmo_type_registry_t *registry);
+
+/**
+ * @brief Register utility object types
+ * 
+ * Registers: CKRenderContext, CKKinematicChain, CKSynchro, CKPlace, CKSound,
+ *            CKInterfaceObjectManager
+ * Requires base types to be registered first.
+ * 
+ * @param registry Type registry
+ * @return nmo_ok() on success, error on failure
+ */
+NMO_API nmo_result_t nmo_register_utility_types(nmo_type_registry_t *registry);
+
+/**
+ * @brief Register mesh variant types
+ * 
+ * Registers: CKGrid, CKLayer, CKPatchMesh
+ * Requires base types and CKMesh to be registered first.
+ * 
+ * @param registry Type registry
+ * @return nmo_ok() on success, error on failure
+ */
+NMO_API nmo_result_t nmo_register_mesh_types(nmo_type_registry_t *registry);
 
 /* ============================================================================
  * Helper Functions

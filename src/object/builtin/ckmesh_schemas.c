@@ -59,9 +59,10 @@
  */
 
 #include "object/nmo_ckmesh_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -368,7 +369,7 @@ static nmo_result_t nmo_ckmesh_deserialize_modern(
     memset(out_state, 0, sizeof(*out_state));
     
     // Load parent CKBeObject
-    result = nmo_get_ckbeobject_deserialize()(chunk, arena, &out_state->beobject);
+    result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -685,7 +686,7 @@ static nmo_result_t nmo_ckmesh_deserialize_legacy(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    result = nmo_get_ckbeobject_deserialize()(chunk, arena, &out_state->beobject);
+    result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -991,12 +992,17 @@ static nmo_result_t nmo_ckmesh_deserialize_legacy(
 /**
  * @brief Main deserialization dispatcher
  */
-static nmo_result_t nmo_ckmesh_deserialize(
+nmo_result_t nmo_ckmesh_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck_mesh_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    if (!chunk || !arena || !out_state) {
+    (void)type;
+    nmo_ck_mesh_state_t *out_state = (nmo_ck_mesh_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
+    if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
                                           "Invalid arguments to deserialize"));
@@ -1157,26 +1163,28 @@ static uint32_t nmo_ckmesh_compute_save_flags(
  * @param arena     Arena for temporary allocations (must not be NULL)
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckmesh_serialize(
-    const nmo_ck_mesh_state_t *in_state,
+nmo_result_t nmo_ckmesh_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ck_mesh_state_t *in_state = (const nmo_ck_mesh_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
                                           "Invalid arguments to serialize"));
     }
 
-    nmo_ckbeobject_serialize_fn parent_serialize = nmo_get_ckbeobject_serialize();
-    if (parent_serialize) {
-        nmo_result_t result = parent_serialize(&in_state->beobject, out_chunk, arena);
-        if (result.code != NMO_OK) {
-            return result;
-        }
+    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->beobject, out_chunk, NULL, context);
+    if (result.code != NMO_OK) {
+        return result;
     }
 
-    nmo_result_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHFLAGS);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHFLAGS);
     if (result.code != NMO_OK) return result;
     result = nmo_chunk_write_dword(out_chunk, in_state->flags);
     if (result.code != NMO_OK) return result;
@@ -1423,6 +1431,21 @@ static nmo_result_t nmo_ckmesh_serialize(
     return nmo_result_ok();
 }
 
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckmesh,
+    nmo_ck_mesh_state_t,
+    nmo_ckmesh_serialize,
+    nmo_ckmesh_deserialize,
+    NMO_GUID_CKMESH,
+    "CKMesh",
+    NMO_CID_MESH,
+    NMO_GUID_CKBEOBJECT
+)
+
 /* =============================================================================
  * FINISH LOADING
  * ============================================================================= */
@@ -1430,7 +1453,7 @@ static nmo_result_t nmo_ckmesh_serialize(
 /**
  * @brief Finish loading (resolve references, build normals if needed)
  */
-static nmo_result_t nmo_ckmesh_finish_loading(
+nmo_result_t nmo_ckmesh_finish_loading(
     void *state,
     nmo_arena_t *arena,
     void *repository)
@@ -1460,114 +1483,6 @@ static nmo_result_t nmo_ckmesh_finish_loading(
 }
 
 /* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
-
-/**
- * @brief Vtable read wrapper for CKMesh
- */
-static nmo_result_t nmo_ckmesh_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckmesh_deserialize(chunk, arena, (nmo_ck_mesh_state_t *)out_ptr);
-}
-
-/**
- * @brief Vtable write wrapper for CKMesh
- */
-static nmo_result_t nmo_ckmesh_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckmesh_serialize(
-        (const nmo_ck_mesh_state_t *)in_ptr,
-        chunk,
-        arena);
-}
-
-/**
- * @brief Vtable for CKMesh schema operations
- */
-static const nmo_schema_vtable_t nmo_ckmesh_vtable = {
-    .read = nmo_ckmesh_vtable_read,
-    .write = nmo_ckmesh_vtable_write,
-    .validate = NULL
-};
-
-/**
- * @brief Register CKMesh schema
- */
-nmo_result_t nmo_register_ckmesh_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments to register_ckmesh_schemas"));
-    }
-    
-    // Get base types
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    
-    if (float_type == NULL || uint32_type == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required types not found in registry"));
-    }
-
-    // Register CKMesh state structure
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKMeshState",
-                                                      sizeof(nmo_ck_mesh_state_t),
-                                                      alignof(nmo_ck_mesh_state_t));
-    
-    // Add basic fields
-    nmo_builder_add_field_ex(&builder, "flags", uint32_type,
-                            offsetof(nmo_ck_mesh_state_t, flags),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "radius", float_type,
-                            offsetof(nmo_ck_mesh_state_t, radius),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "vertex_count", uint32_type,
-                            offsetof(nmo_ck_mesh_state_t, vertex_count),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "face_count", uint32_type,
-                            offsetof(nmo_ck_mesh_state_t, face_count),
-                            0);
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckmesh_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-
-    return nmo_result_ok();
-}
-
-/* =============================================================================
  * PUBLIC API
  * ============================================================================= */
 
-nmo_ckmesh_deserialize_fn nmo_get_ckmesh_deserialize(void) {
-    return nmo_ckmesh_deserialize;
-}
-
-nmo_ckmesh_serialize_fn nmo_get_ckmesh_serialize(void) {
-    return nmo_ckmesh_serialize;
-}
-
-nmo_ckmesh_finish_loading_fn nmo_get_ckmesh_finish_loading(void) {
-    return nmo_ckmesh_finish_loading;
-}

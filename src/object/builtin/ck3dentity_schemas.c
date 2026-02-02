@@ -22,9 +22,10 @@
  */
 
 #include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckrenderobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -109,10 +110,15 @@ static nmo_result_t nmo_ck3dentity_read_raw_bytes(nmo_chunk_t *chunk, void *buff
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ck3dentity_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck3dentity_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ck3dentity_state_t *out_state = (nmo_ck3dentity_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !arena || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
@@ -122,8 +128,7 @@ nmo_result_t nmo_ck3dentity_deserialize(
     memset(out_state, 0, sizeof(*out_state));
 
     // First deserialize parent CKRenderObject data
-    nmo_result_t result = nmo_ckrenderobject_deserialize(
-        chunk, arena, &out_state->render_object);
+    nmo_result_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -416,10 +421,15 @@ nmo_result_t nmo_ck3dentity_deserialize(
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ck3dentity_serialize(
-    const nmo_ck3dentity_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ck3dentity_state_t *in_state = (const nmo_ck3dentity_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
@@ -427,8 +437,7 @@ nmo_result_t nmo_ck3dentity_serialize(
     }
 
     // First serialize parent CKRenderObject data
-    nmo_result_t result = nmo_ckrenderobject_serialize(
-        &in_state->render_object, out_chunk, arena);
+    nmo_result_t result = nmo_ckrenderobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -577,142 +586,21 @@ nmo_result_t nmo_ck3dentity_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CK3dEntity
- */
-static nmo_result_t nmo_ck3dentity_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ck3dentity_deserialize(chunk, arena, (nmo_ck3dentity_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ck3dentity,
+    nmo_ck3dentity_state_t,
+    nmo_ck3dentity_serialize,
+    nmo_ck3dentity_deserialize,
+    NMO_GUID_CK3DENTITY,
+    "CK3dEntity",
+    NMO_CID_3DENTITY,
+    NMO_GUID_CKRENDEROBJECT
+)
 
-/**
- * @brief Vtable write wrapper for CK3dEntity
- */
-static nmo_result_t nmo_ck3dentity_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ck3dentity_serialize(
-        (const nmo_ck3dentity_state_t *)in_ptr,
-        chunk,
-        arena);
-}
-
-/**
- * @brief Vtable for CK3dEntity schema operations
- */
-static const nmo_schema_vtable_t nmo_ck3dentity_vtable = {
-    .read = nmo_ck3dentity_vtable_read,
-    .write = nmo_ck3dentity_vtable_write,
-    .validate = NULL
-};
-
-/**
- * @brief Register CK3dEntity state schema
- * 
- * Creates schema descriptor for CK3dEntity state structure.
- * This is separate from class hierarchy registration in ckobject_hierarchy.c.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ck3dentity_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (registry == NULL || arena == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ck3dentity_schemas"));
-    }
-
-    /* Get base types */
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    
-    if (float_type == NULL || uint32_type == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required types not found in registry"));
-    }
-
-    /* Register CK3dEntity state structure */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CK3dEntityState",
-                                                      sizeof(nmo_ck3dentity_state_t),
-                                                      alignof(nmo_ck3dentity_state_t));
-    
-    /* World transformation matrix (16 floats) - simplified representation */
-    nmo_builder_add_field_ex(&builder, "world_matrix", float_type,
-                            offsetof(nmo_ck3dentity_state_t, world_matrix),
-                            0);
-    
-    nmo_builder_add_field_ex(&builder, "entity_flags", uint32_type,
-                            offsetof(nmo_ck3dentity_state_t, entity_flags),
-                            0);
-
-    nmo_builder_add_field_ex(&builder, "moveable_flags", uint32_type,
-                            offsetof(nmo_ck3dentity_state_t, moveable_flags),
-                            0);
-
-    nmo_builder_add_field_ex(&builder, "parent_id", uint32_type,
-                            offsetof(nmo_ck3dentity_state_t, parent_id),
-                            0);
-
-    nmo_builder_add_field_ex(&builder, "place_id", uint32_type,
-                            offsetof(nmo_ck3dentity_state_t, place_id),
-                            0);
-
-    nmo_builder_add_field_ex(&builder, "z_order", uint32_type,
-                            offsetof(nmo_ck3dentity_state_t, z_order),
-                            0);
-
-    nmo_builder_add_field_ex(&builder, "current_mesh_id", uint32_type,
-                            offsetof(nmo_ck3dentity_state_t, current_mesh_id),
-                            0);
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ck3dentity_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-
-    return nmo_result_ok();
-}
-
-/**
- * @brief Get CK3dEntity deserialize function pointer
- * 
- * Provides access to deserialization function for use in parser.c Phase 14.
- * 
- * @return Function pointer to nmo_ck3dentity_deserialize
- */
-nmo_ck3dentity_deserialize_fn nmo_get_ck3dentity_deserialize(void) {
-    return nmo_ck3dentity_deserialize;
-}
-
-/**
- * @brief Get CK3dEntity serialize function pointer
- * 
- * Provides access to serialization function for use in save pipeline.
- * 
- * @return Function pointer to nmo_ck3dentity_serialize
- */
-nmo_ck3dentity_serialize_fn nmo_get_ck3dentity_serialize(void) {
-    return nmo_ck3dentity_serialize;
-}
 
 /**
  * @brief Finish loading CK3dEntity
@@ -726,23 +614,14 @@ nmo_ck3dentity_serialize_fn nmo_get_ck3dentity_serialize(void) {
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ck3dentity_finish_loading(
-    void *state,
+    void *instance,
     nmo_arena_t *arena,
     void *repository)
 {
     /* Base implementation does nothing special beyond RenderObject */
-    (void)state;
+    (void)instance;
     (void)arena;
     (void)repository;
     return nmo_result_ok();
-}
-
-/**
- * @brief Get finish_loading function for CK3dEntity
- * @return Finish loading function pointer
- */
-nmo_ck3dentity_finish_loading_fn nmo_get_ck3dentity_finish_loading(void)
-{
-    return nmo_ck3dentity_finish_loading;
 }
 

@@ -7,6 +7,7 @@
 #define NMO_CKSYNCHRO_SCHEMAS_H
 
 #include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -14,10 +15,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief CKSynchroObject state
@@ -47,39 +48,45 @@ typedef struct nmo_ckcriticalsection_state {
     nmo_object_id_t object_in_section_id;
 } nmo_ckcriticalsection_state_t;
 
-NMO_API nmo_result_t nmo_register_cksynchro_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 NMO_API nmo_result_t nmo_cksynchro_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cksynchro_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_cksynchro_serialize(
-    const nmo_cksynchro_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckstate_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckstate_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckstate_serialize(
-    const nmo_ckstate_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckcriticalsection_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckcriticalsection_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckcriticalsection_serialize(
-    const nmo_ckcriticalsection_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cksynchro_vtable, nmo_register_cksynchro_type)
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckstate_vtable, nmo_register_ckstate_type)
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckcriticalsection_vtable, nmo_register_ckcriticalsection_type)
 
 #ifdef __cplusplus
 }

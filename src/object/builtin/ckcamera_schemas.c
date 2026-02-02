@@ -21,9 +21,10 @@
  */
 
 #include "object/nmo_ckcamera_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ck3dentity_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -65,11 +66,16 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckcamera_deserialize(
+nmo_result_t nmo_ckcamera_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckcamera_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckcamera_state_t *out_state = (nmo_ckcamera_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !arena || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
@@ -79,8 +85,7 @@ static nmo_result_t nmo_ckcamera_deserialize(
     memset(out_state, 0, sizeof(*out_state));
 
     // First deserialize parent CK3dEntity data
-    nmo_result_t result = nmo_ck3dentity_deserialize(
-        chunk, arena, &out_state->entity);
+    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -135,11 +140,16 @@ static nmo_result_t nmo_ckcamera_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-static nmo_result_t nmo_ckcamera_serialize(
-    const nmo_ckcamera_state_t *in_state,
+nmo_result_t nmo_ckcamera_serialize(
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckcamera_state_t *in_state = (const nmo_ckcamera_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk || !arena) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
                                           NMO_SEVERITY_ERROR,
@@ -147,8 +157,7 @@ static nmo_result_t nmo_ckcamera_serialize(
     }
 
     // First serialize parent CK3dEntity data
-    nmo_result_t result = nmo_ck3dentity_serialize(
-        &in_state->entity, out_chunk, arena);
+    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result.code != NMO_OK) {
         return result;
     }
@@ -179,136 +188,21 @@ static nmo_result_t nmo_ckcamera_serialize(
     return nmo_result_ok();
 }
 
-/* =============================================================================
- * SCHEMA REGISTRATION
- * ============================================================================= */
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-/**
- * @brief Vtable read wrapper for CKCamera
- */
-static nmo_result_t nmo_ckcamera_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckcamera_deserialize(chunk, arena, (nmo_ckcamera_state_t *)out_ptr);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckcamera,
+    nmo_ckcamera_state_t,
+    nmo_ckcamera_serialize,
+    nmo_ckcamera_deserialize,
+    NMO_GUID_CKCAMERA,
+    "CKCamera",
+    NMO_CID_CAMERA,
+    NMO_GUID_CK3DENTITY
+)
 
-/**
- * @brief Vtable write wrapper for CKCamera
- */
-static nmo_result_t nmo_ckcamera_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckcamera_serialize(
-        (const nmo_ckcamera_state_t *)in_ptr,
-        chunk,
-        arena);
-}
-
-/**
- * @brief Vtable for CKCamera schema operations
- */
-static const nmo_schema_vtable_t nmo_ckcamera_vtable = {
-    .read = nmo_ckcamera_vtable_read,
-    .write = nmo_ckcamera_vtable_write,
-    .validate = NULL
-};
-
-/**
- * @brief Register CKCamera state schema
- * 
- * Creates schema descriptor for CKCamera state structure.
- * This is separate from class hierarchy registration in ckobject_hierarchy.c.
- * 
- * @param registry Schema registry to register into
- * @param arena Arena for schema allocations
- * @return Result indicating success or error
- */
-nmo_result_t nmo_register_ckcamera_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (registry == NULL || arena == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckcamera_schemas"));
-    }
-
-    /* Get base types */
-    const nmo_schema_type_t *float_type = nmo_schema_registry_find_by_name(registry, "f32");
-    const nmo_schema_type_t *uint32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    
-    if (float_type == NULL || uint32_type == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Required types not found in registry"));
-    }
-
-    /* Register CKCamera state structure */
-    nmo_schema_builder_t builder = nmo_builder_struct(arena, "CKCameraState",
-                                                      sizeof(nmo_ckcamera_state_t),
-                                                      alignof(nmo_ckcamera_state_t));
-    
-    /* Camera projection parameters */
-    nmo_builder_add_field_ex(&builder, "projection_type", uint32_type,
-                            offsetof(nmo_ckcamera_state_t, projection_type),
-                            0);
-    nmo_builder_add_field_ex(&builder, "fov", float_type,
-                            offsetof(nmo_ckcamera_state_t, fov),
-                            0);
-    nmo_builder_add_field_ex(&builder, "orthographic_zoom", float_type,
-                            offsetof(nmo_ckcamera_state_t, orthographic_zoom),
-                            0);
-    nmo_builder_add_field_ex(&builder, "near_plane", float_type,
-                            offsetof(nmo_ckcamera_state_t, near_plane),
-                            0);
-    nmo_builder_add_field_ex(&builder, "far_plane", float_type,
-                            offsetof(nmo_ckcamera_state_t, far_plane),
-                            0);
-    nmo_builder_add_field_ex(&builder, "width", uint32_type,
-                            offsetof(nmo_ckcamera_state_t, width),
-                            0);
-    nmo_builder_add_field_ex(&builder, "height", uint32_type,
-                            offsetof(nmo_ckcamera_state_t, height),
-                            0);
-    
-    /* Attach vtable for optimized read/write */
-    nmo_builder_set_vtable(&builder, &nmo_ckcamera_vtable);
-    
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-
-    return nmo_result_ok();
-}
-
-/**
- * @brief Get CKCamera deserialize function pointer
- * 
- * Provides access to deserialization function for use in parser.c Phase 14.
- * 
- * @return Function pointer to nmo_ckcamera_deserialize
- */
-nmo_ckcamera_deserialize_fn nmo_get_ckcamera_deserialize(void) {
-    return nmo_ckcamera_deserialize;
-}
-
-/**
- * @brief Get CKCamera serialize function pointer
- * 
- * Provides access to serialization function for use in save pipeline.
- * 
- * @return Function pointer to nmo_ckcamera_serialize
- */
-nmo_ckcamera_serialize_fn nmo_get_ckcamera_serialize(void) {
-    return nmo_ckcamera_serialize;
-}
 
 /**
  * @brief Finish loading CKCamera
@@ -321,24 +215,15 @@ nmo_ckcamera_serialize_fn nmo_get_ckcamera_serialize(void) {
  * @return Result indicating success or error
  */
 nmo_result_t nmo_ckcamera_finish_loading(
-    void *state,
+    void *instance,
     nmo_arena_t *arena,
     void *repository)
 {
     /* Camera-specific initialization could go here */
-    (void)state;
+    (void)instance;
     (void)arena;
     (void)repository;
     return nmo_result_ok();
-}
-
-/**
- * @brief Get finish_loading function for CKCamera
- * @return Finish loading function pointer
- */
-nmo_ckcamera_finish_loading_fn nmo_get_ckcamera_finish_loading(void)
-{
-    return nmo_ckcamera_finish_loading;
 }
 
 

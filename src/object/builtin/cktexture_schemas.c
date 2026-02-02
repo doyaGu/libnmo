@@ -11,9 +11,10 @@
  */
 
 #include "object/nmo_cktexture_schemas.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -322,11 +323,16 @@ static nmo_result_t nmo_cktexture_read_slot_filenames(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_cktexture_deserialize_internal(
+nmo_result_t nmo_cktexture_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ck_texture_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ck_texture_state_t *out_state = (nmo_ck_texture_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_deserialize"));
@@ -334,9 +340,8 @@ static nmo_result_t nmo_cktexture_deserialize_internal(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_ckbeobject_deserialize_fn base_deserialize = nmo_get_ckbeobject_deserialize();
-    if (base_deserialize) {
-        nmo_result_t result = base_deserialize(chunk, arena, &out_state->base);
+    {
+        nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result.code != NMO_OK) return result;
     }
 
@@ -547,19 +552,38 @@ static nmo_result_t nmo_cktexture_deserialize_internal(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_cktexture_serialize_internal(
-    const nmo_ck_texture_state_t *state,
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_SCHEMA(
+    cktexture,
+    nmo_ck_texture_state_t,
+    nmo_cktexture_serialize,
+    nmo_cktexture_deserialize,
+    NMO_GUID_CKTEXTURE,
+    "CKTexture",
+    NMO_CID_TEXTURE,
+    NMO_GUID_CKBEOBJECT
+)
+
+nmo_result_t nmo_cktexture_serialize(
+    const void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ck_texture_state_t *state = (const nmo_ck_texture_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!state || !chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_serialize"));
     }
 
-    nmo_ckbeobject_serialize_fn base_serialize = nmo_get_ckbeobject_serialize();
-    if (base_serialize) {
-        nmo_result_t result = base_serialize(&state->base, chunk, arena);
+    {
+        nmo_result_t result = nmo_ckbeobject_serialize(&state->base, chunk, NULL, context);
         if (result.code != NMO_OK) return result;
     }
 
@@ -655,80 +679,14 @@ static nmo_result_t nmo_cktexture_serialize_internal(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_cktexture_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
+ 
+nmo_result_t nmo_cktexture_finish_loading(
+    void *instance,
     nmo_arena_t *arena,
-    void *out_ptr)
+    void *repository)
 {
-    (void)type;
-    return nmo_cktexture_deserialize_internal(chunk, arena, (nmo_ck_texture_state_t *)out_ptr);
-}
-
-static nmo_result_t nmo_cktexture_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_cktexture_serialize_internal((const nmo_ck_texture_state_t *)in_ptr, chunk, arena);
-}
-
-static const nmo_schema_vtable_t nmo_cktexture_vtable = {
-    .read = nmo_cktexture_vtable_read,
-    .write = nmo_cktexture_vtable_write,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_cktexture_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_register_cktexture_schemas"
-        ));
-    }
-
-    const nmo_schema_type_t *u32_type = nmo_schema_registry_find_by_name(registry, "u32");
-    const nmo_schema_type_t *i32_type = nmo_schema_registry_find_by_name(registry, "i32");
-    if (!u32_type || !i32_type) {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-            "Required types not found in registry"
-        ));
-    }
-
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena, "CKTextureState",
-        sizeof(nmo_ck_texture_state_t),
-        alignof(nmo_ck_texture_state_t)
-    );
-
-    nmo_builder_add_field_ex(&builder, "slot_count", u32_type,
-                            offsetof(nmo_ck_texture_state_t, slot_count), 0);
-    nmo_builder_add_field_ex(&builder, "pick_threshold", i32_type,
-                            offsetof(nmo_ck_texture_state_t, pick_threshold), 0);
-    nmo_builder_add_field_ex(&builder, "mipmap_level", u32_type,
-                            offsetof(nmo_ck_texture_state_t, mipmap_level), 0);
-    nmo_builder_add_field_ex(&builder, "save_options", u32_type,
-                            offsetof(nmo_ck_texture_state_t, save_options), 0);
-    nmo_builder_add_field_ex(&builder, "desired_video_format", u32_type,
-                            offsetof(nmo_ck_texture_state_t, desired_video_format), 0);
-
-    nmo_builder_set_vtable(&builder, &nmo_cktexture_vtable);
-
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) {
-        return result;
-    }
-
-    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(registry, "CKTextureState");
-    if (type) {
-        result = nmo_schema_registry_map_class_id(registry, NMO_CID_TEXTURE, type);
-    }
-
-    return result.code == NMO_OK ? nmo_result_ok() : result;
+    (void)instance;
+    (void)arena;
+    (void)repository;
+    return nmo_result_ok();
 }

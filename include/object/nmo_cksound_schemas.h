@@ -12,6 +12,7 @@
 #define NMO_CKSOUND_SCHEMAS_H
 
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -19,10 +20,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_schema_registry nmo_schema_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_result nmo_result_t;
+typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
  * @brief Simple 3D vector (x,y,z)
@@ -83,40 +84,46 @@ typedef struct nmo_ckmidisound_state {
     char *midi_file_name;
 } nmo_ckmidisound_state_t;
 
-NMO_API nmo_result_t nmo_register_cksound_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena);
-
 /* Serialization entry points */
 NMO_API nmo_result_t nmo_cksound_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_cksound_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_cksound_serialize(
-    const nmo_cksound_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckwavesound_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckwavesound_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckwavesound_serialize(
-    const nmo_ckwavesound_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckmidisound_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckmidisound_state_t *out_state);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_result_t nmo_ckmidisound_serialize(
-    const nmo_ckmidisound_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(nmo_cksound_vtable, nmo_register_cksound_type)
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckwavesound_vtable, nmo_register_ckwavesound_type)
+NMO_DECLARE_OBJECT_SCHEMA(nmo_ckmidisound_vtable, nmo_register_ckmidisound_type)
 
 #ifdef __cplusplus
 }

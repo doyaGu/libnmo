@@ -4,8 +4,9 @@
  */
 
 #include "object/nmo_ckparameteroperation_schemas.h"
-#include "object/nmo_schema_registry.h"
-#include "object/nmo_schema_builder.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_schema_interface.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -21,10 +22,15 @@
 #define CK_STATESAVE_OPERATIONNEWDATA     0x00000400u
 
 nmo_result_t nmo_ckparameteroperation_deserialize(
+    void *instance,
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_ckparameteroperation_state_t *out_state)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    nmo_ckparameteroperation_state_t *out_state = (nmo_ckparameteroperation_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!chunk || !out_state) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameteroperation_deserialize"));
@@ -32,9 +38,8 @@ nmo_result_t nmo_ckparameteroperation_deserialize(
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_ckobject_deserialize_fn base_deserialize = nmo_get_ckobject_deserialize();
-    if (base_deserialize) {
-        nmo_result_t result = base_deserialize(chunk, arena, &out_state->base);
+    {
+        nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -119,18 +124,23 @@ nmo_result_t nmo_ckparameteroperation_deserialize(
 }
 
 nmo_result_t nmo_ckparameteroperation_serialize(
-    const nmo_ckparameteroperation_state_t *in_state,
+    const void *instance,
     nmo_chunk_t *out_chunk,
-    nmo_arena_t *arena)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    const nmo_ckparameteroperation_state_t *in_state =
+        (const nmo_ckparameteroperation_state_t *)instance;
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+
     if (!in_state || !out_chunk) {
         return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameteroperation_serialize"));
     }
 
-    nmo_ckobject_serialize_fn base_serialize = nmo_get_ckobject_serialize();
-    if (base_serialize) {
-        nmo_result_t result = base_serialize(&in_state->base, out_chunk, arena);
+    {
+        nmo_result_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result.code != NMO_OK) {
             return result;
         }
@@ -194,61 +204,18 @@ nmo_result_t nmo_ckparameteroperation_serialize(
     return nmo_result_ok();
 }
 
-static nmo_result_t nmo_ckparameteroperation_vtable_read(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    void *out_ptr)
-{
-    (void)type;
-    return nmo_ckparameteroperation_deserialize(chunk, arena,
-        (nmo_ckparameteroperation_state_t *)out_ptr);
-}
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
 
-static nmo_result_t nmo_ckparameteroperation_vtable_write(
-    const nmo_schema_type_t *type,
-    nmo_chunk_t *chunk,
-    const void *in_ptr,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    return nmo_ckparameteroperation_serialize(
-        (const nmo_ckparameteroperation_state_t *)in_ptr, chunk, arena);
-}
+NMO_DEFINE_OBJECT_SCHEMA(
+    ckparameteroperation,
+    nmo_ckparameteroperation_state_t,
+    nmo_ckparameteroperation_serialize,
+    nmo_ckparameteroperation_deserialize,
+    NMO_GUID_CKPARAMETEROPERATION,
+    "CKParameterOperation",
+    NMO_CID_PARAMETEROPERATION,
+    NMO_GUID_CKOBJECT
+)
 
-static const nmo_schema_vtable_t nmo_ckparameteroperation_vtable = {
-    .read = nmo_ckparameteroperation_vtable_read,
-    .write = nmo_ckparameteroperation_vtable_write,
-    .validate = NULL
-};
-
-nmo_result_t nmo_register_ckparameteroperation_schemas(
-    nmo_schema_registry_t *registry,
-    nmo_arena_t *arena)
-{
-    if (!registry || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_register_ckparameteroperation_schemas"));
-    }
-
-    nmo_schema_builder_t builder = nmo_builder_struct(
-        arena,
-        "CKParameterOperationState",
-        sizeof(nmo_ckparameteroperation_state_t),
-        alignof(nmo_ckparameteroperation_state_t));
-
-    nmo_builder_set_vtable(&builder, &nmo_ckparameteroperation_vtable);
-
-    nmo_result_t result = nmo_builder_build(&builder, registry);
-    if (result.code != NMO_OK) return result;
-
-    const nmo_schema_type_t *type = nmo_schema_registry_find_by_name(
-        registry, "CKParameterOperationState");
-    if (type) {
-        result = nmo_schema_registry_map_class_id(registry,
-                                                  NMO_CID_PARAMETEROPERATION,
-                                                  type);
-    }
-
-    return result.code == NMO_OK ? nmo_result_ok() : result;
-}
