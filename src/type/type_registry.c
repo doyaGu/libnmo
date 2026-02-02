@@ -11,13 +11,71 @@
 
 #include "type/type_system.h"
 #include "app/nmo_plugin.h"  /* Need full nmo_plugin_t definition */
+#include "object/nmo_class_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
+#include "core/nmo_bit_array.h"
 #include <string.h>
 #include <assert.h>
 #include <stddef.h>
+
+/* ============================================================================
+ * Compatibility Mask Helpers (nmo_bit_array_t)
+ * ============================================================================ */
+
+static void *arena_alloc_adapter(void *user_data, size_t size, size_t alignment) {
+    nmo_arena_t *arena = (nmo_arena_t *)user_data;
+    if (!arena) {
+        return NULL;
+    }
+    if (alignment == 0) {
+        alignment = _Alignof(max_align_t);
+    }
+    return nmo_arena_alloc(arena, size, alignment);
+}
+
+static void arena_free_adapter(void *user_data, void *ptr) {
+    (void)user_data;
+    (void)ptr;
+    // Arena allocator: free is intentionally a no-op.
+}
+
+static nmo_allocator_t arena_allocator_from_registry(const nmo_type_registry_t *registry) {
+    return nmo_allocator_custom(arena_alloc_adapter, arena_free_adapter, registry ? registry->arena : NULL);
+}
+
+static size_t compat_mask_growth_bits(size_t required_bits) {
+    if (required_bits == 0) {
+        return (size_t)NMO_TYPE_COMPAT_MASK_SIZE;
+    }
+    size_t chunk = (size_t)NMO_TYPE_COMPAT_MASK_SIZE;
+    if (chunk == 0) {
+        chunk = 256;
+    }
+    return ((required_bits + chunk - 1u) / chunk) * chunk;
+}
+
+static nmo_result_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, nmo_type_descriptor_t *type) {
+    if (!registry || !type) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments to ensure_compat_mask_capacity"));
+    }
+
+    const size_t required_bits = compat_mask_growth_bits(registry->types.count);
+    if (type->compat_mask.bits.alloc.alloc == NULL) {
+        nmo_allocator_t alloc = arena_allocator_from_registry(registry);
+        nmo_result_t init = nmo_bit_array_init(&type->compat_mask.bits, required_bits, &alloc);
+        if (nmo_result_is_error(init)) {
+            return init;
+        }
+        return nmo_result_ok();
+    }
+
+    return nmo_bit_array_reserve(&type->compat_mask.bits, required_bits);
+}
 
 /* ============================================================================
  * Note: struct nmo_type_registry_t is already defined in type_system.h
@@ -253,10 +311,6 @@ nmo_result_t nmo_type_registry_register(
 
     // Find slot (reuse NULL slots before expanding)
     size_t slot = find_free_slot(registry);
-    if (slot >= NMO_TYPE_COMPAT_MASK_SIZE) {
-        nmo_result_t result = { NMO_ERR_OUT_OF_BOUNDS, NULL };
-        return result;
-    }
 
     // Allocate and copy descriptor
     nmo_type_descriptor_t *type = nmo_arena_alloc(registry->arena,
@@ -268,6 +322,9 @@ nmo_result_t nmo_type_registry_register(
     }
     
     memcpy(type, descriptor, sizeof(nmo_type_descriptor_t));
+
+    // Registry owns the compatibility mask storage.
+    memset(&type->compat_mask, 0, sizeof(type->compat_mask));
 
     // Registry owns specialized metadata index; default to invalid until set.
     type->specialized_index = NMO_SPECIALIZED_INDEX_INVALID;
@@ -575,29 +632,21 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     if (type) return type;
 
     // Walk up class hierarchy to find parent with schema
-    // Uses nmo_ckclass API (from include/object/nmo_ckobject_hierarchy.h)
-    extern const char *nmo_ckclass_get_name_by_id(uint32_t class_id);
-    extern const char *nmo_ckclass_get_parent(const char *class_name);
-    extern uint32_t nmo_ckclass_get_id_by_name(const char *class_name);
-    
     uint32_t current_class_id = class_id;
     int max_depth = 50;  // Prevent infinite loops
-    
+
     while (max_depth-- > 0) {
-        // Get current class name
-        const char *class_name = nmo_ckclass_get_name_by_id(current_class_id);
-        if (!class_name) break;  // Unknown class
-        
-        // Get parent class name
-        const char *parent_name = nmo_ckclass_get_parent(class_name);
-        if (!parent_name) break;  // Reached root
-        
-        // Get parent class ID
-        current_class_id = nmo_ckclass_get_id_by_name(parent_name);
-        if (current_class_id == 0) break;  // Invalid parent
-        
-        type = nmo_type_registry_find_by_class_id(registry, current_class_id);
-        if (type) return type;
+        uint32_t parent_id = nmo_class_get_parent(registry, current_class_id);
+        if (parent_id == 0) {
+            break;
+        }
+
+        type = nmo_type_registry_find_by_class_id(registry, parent_id);
+        if (type) {
+            return type;
+        }
+
+        current_class_id = parent_id;
     }
 
     return NULL;  // No schema found in hierarchy
@@ -615,6 +664,16 @@ const nmo_type_descriptor_t* nmo_type_registry_get_by_id(
 
 void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
     if (!registry || registry->derivation_masks_valid) return;
+
+    // Ensure all valid types have an initialized mask with enough capacity.
+    for (size_t i = 0; i < registry->types.count; i++) {
+        nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, i);
+        if (type && type->valid) {
+            if (nmo_result_is_error(ensure_compat_mask_capacity(registry, type))) {
+                return;
+            }
+        }
+    }
 
     // Reset all masks
     for (size_t i = 0; i < registry->types.count; i++) {
@@ -638,11 +697,19 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
             if (!nmo_guid_is_null(type->base_type)) {
                 const nmo_type_descriptor_t *parent = nmo_type_registry_find_by_guid(registry, type->base_type);
                 if (parent && parent->valid) {
-                    for (size_t word = 0; word < (NMO_TYPE_COMPAT_MASK_SIZE / 64); word++) {
-                        uint64_t old_bits = type->compat_mask.bits[word];
-                        uint64_t new_bits = old_bits | parent->compat_mask.bits[word];
+                    // OR parent's compatibility mask into this type's mask.
+                    // We keep the explicit word loop so we can detect whether anything changed
+                    // without allocating/copying extra buffers.
+                    const nmo_bit_array_t *src = &parent->compat_mask.bits;
+                    nmo_bit_array_t *dst = &type->compat_mask.bits;
+                    const size_t words = dst->word_capacity;
+
+                    for (size_t word = 0; word < words; word++) {
+                        uint32_t old_bits = dst->words[word];
+                        uint32_t parent_bits = (src->words && word < src->word_capacity) ? src->words[word] : 0;
+                        uint32_t new_bits = old_bits | parent_bits;
                         if (new_bits != old_bits) {
-                            type->compat_mask.bits[word] = new_bits;
+                            dst->words[word] = new_bits;
                             changed = true;
                         }
                     }
@@ -1331,7 +1398,7 @@ nmo_result_t nmo_type_registry_register_saver_manager(
         if (nmo_result_is_ok(nmo_hash_table_get(registry->manager_guid_map,
                                                &manager_guid,
                                                &existing_index))) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Manager already registered"));
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR, "Manager already registered"));
         }
     }
     
@@ -1354,7 +1421,7 @@ nmo_result_t nmo_type_registry_register_saver_manager(
                 nmo_hash_table_destroy(registry->type_to_manager);
                 registry->type_to_manager = NULL;
             }
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "Failed to create manager hash tables"));
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to create manager hash tables"));
         }
     }
     
@@ -1363,14 +1430,18 @@ nmo_result_t nmo_type_registry_register_saver_manager(
         registry->arena, sizeof(nmo_saver_manager_t), _Alignof(nmo_saver_manager_t));
     
     if (!manager) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "Failed to allocate manager descriptor"));
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager descriptor"));
     }
     
     // Initialize manager
     manager->guid = manager_guid;
-    manager->name = nmo_arena_strdup(registry->arena, name);
-    if (name && !manager->name) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy manager name"));
+    if (name) {
+        manager->name = nmo_arena_strdup(registry->arena, name);
+        if (!manager->name) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy manager name"));
+        }
+    } else {
+        manager->name = NULL;
     }
     manager->serialize = serialize;
     manager->deserialize = deserialize;

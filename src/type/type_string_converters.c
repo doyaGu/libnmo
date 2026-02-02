@@ -185,6 +185,88 @@ nmo_result_t nmo_bool_from_string(
  * Vector Converters
  * ============================================================================ */
 
+static nmo_result_t parse_float_tuple(
+    const char *kind,
+    const char *string,
+    float *out,
+    int count)
+{
+    if (!kind || !string || !out || count <= 0) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for parse_float_tuple"));
+    }
+
+    // Skip whitespace and opening parenthesis
+    while (*string && isspace((unsigned char)*string)) string++;
+    if (*string != '(') {
+        return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "%s must start with '('", kind);
+    }
+    string++;
+
+    // Parse N float values separated by ',' (and optionally ';' for readability)
+    char *endptr;
+    for (int i = 0; i < count; i++) {
+        while (*string && isspace((unsigned char)*string)) string++;
+
+        errno = 0;
+        out[i] = strtof(string, &endptr);
+
+        if (errno != 0 || endptr == string) {
+            return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                     "Invalid %s component", kind);
+        }
+
+        string = endptr;
+        while (*string && isspace((unsigned char)*string)) string++;
+
+        if (i < (count - 1)) {
+            if (*string != ',' && *string != ';') {
+                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                         "%s components must be separated by ','", kind);
+            }
+            string++;
+        }
+    }
+
+    // Expect closing parenthesis
+    while (*string && isspace((unsigned char)*string)) string++;
+    if (*string != ')') {
+        return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "%s must end with ')'", kind);
+    }
+
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_vector2_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (!value || !buffer || buffer_size < 24) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for vector2_to_string"));
+    }
+
+    const float *v = (const float*)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g)", v[0], v[1]);
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_vector2_from_string(
+    void *value,
+    const char *string)
+{
+    if (!value || !string) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for vector2_from_string"));
+    }
+
+    float *v = (float*)value;
+    return parse_float_tuple("Vector2", string, v, 2);
+}
+
 nmo_result_t nmo_vector_to_string(
     const void *value,
     char *buffer,
@@ -253,6 +335,34 @@ nmo_result_t nmo_vector_from_string(
     }
 
     return nmo_result_ok();
+}
+
+nmo_result_t nmo_vector4_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (!value || !buffer || buffer_size < 48) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for vector4_to_string"));
+    }
+
+    const float *v = (const float*)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", v[0], v[1], v[2], v[3]);
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_vector4_from_string(
+    void *value,
+    const char *string)
+{
+    if (!value || !string) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for vector4_from_string"));
+    }
+
+    float *v = (float*)value;
+    return parse_float_tuple("Vector4", string, v, 4);
 }
 
 /* ============================================================================
@@ -328,6 +438,82 @@ nmo_result_t nmo_quaternion_from_string(
     }
 
     return nmo_result_ok();
+}
+
+/* ============================================================================
+ * Matrix/Color Converters
+ * ============================================================================ */
+
+nmo_result_t nmo_matrix_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (!value || !buffer || buffer_size < 128) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for matrix_to_string"));
+    }
+
+    const nmo_matrix_t *m = (const nmo_matrix_t*)value;
+    snprintf(buffer, buffer_size,
+             "(%.6g, %.6g, %.6g, %.6g; %.6g, %.6g, %.6g, %.6g; %.6g, %.6g, %.6g, %.6g; %.6g, %.6g, %.6g, %.6g)",
+             m->m[0][0], m->m[0][1], m->m[0][2], m->m[0][3],
+             m->m[1][0], m->m[1][1], m->m[1][2], m->m[1][3],
+             m->m[2][0], m->m[2][1], m->m[2][2], m->m[2][3],
+             m->m[3][0], m->m[3][1], m->m[3][2], m->m[3][3]);
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_matrix_from_string(
+    void *value,
+    const char *string)
+{
+    if (!value || !string) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for matrix_from_string"));
+    }
+
+    float tmp[16];
+    nmo_result_t r = parse_float_tuple("Matrix", string, tmp, 16);
+    if (nmo_result_is_error(r)) {
+        return r;
+    }
+
+    nmo_matrix_t *m = (nmo_matrix_t*)value;
+    for (int row = 0; row < 4; row++) {
+        for (int col = 0; col < 4; col++) {
+            m->m[row][col] = tmp[row * 4 + col];
+        }
+    }
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_color_to_string(
+    const void *value,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (!value || !buffer || buffer_size < 48) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for color_to_string"));
+    }
+
+    const float *c = (const float*)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", c[0], c[1], c[2], c[3]);
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_color_from_string(
+    void *value,
+    const char *string)
+{
+    if (!value || !string) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments for color_from_string"));
+    }
+
+    float *c = (float*)value;
+    return parse_float_tuple("Color", string, c, 4);
 }
 
 /* ============================================================================
@@ -741,23 +927,66 @@ nmo_result_t nmo_string_from_string(
  * Object ID Converters
  * ============================================================================ */
 
+static nmo_object_id_to_name_resolver_fn g_object_id_to_name_resolver = NULL;
+static nmo_object_name_to_id_resolver_fn g_object_name_to_id_resolver = NULL;
+
+void nmo_type_string_set_object_resolvers(
+    nmo_object_id_to_name_resolver_fn id_to_name,
+    nmo_object_name_to_id_resolver_fn name_to_id)
+{
+    g_object_id_to_name_resolver = id_to_name;
+    g_object_name_to_id_resolver = name_to_id;
+}
+
+static bool nmo_object_name_is_safe_token(const char *name)
+{
+    if (!name || *name == '\0' || *name == '#') {
+        return false;
+    }
+
+    for (const char *p = name; *p != '\0'; ++p) {
+        unsigned char c = (unsigned char)(*p);
+        if (isspace(c) || c == '"' || c == '\\') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 nmo_result_t nmo_object_id_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
     struct nmo_session *session)
 {
-    if (!value || !buffer || buffer_size < 16) {
+    if (!value || !buffer || buffer_size == 0) {
         return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR, "Invalid arguments for object_id_to_string"));
     }
 
     nmo_id_t id = *(const nmo_id_t*)value;
-    
-    // TODO: Look up object name from session if available
-    (void)session;  // Unused for now
-    
-    snprintf(buffer, buffer_size, "#%u", id);
+
+    if (session && g_object_id_to_name_resolver) {
+        const char *name = NULL;
+        nmo_result_t resolved = g_object_id_to_name_resolver(session, id, &name);
+        if (resolved.code == NMO_OK && nmo_object_name_is_safe_token(name)) {
+            size_t len = strlen(name);
+            if (len + 1 > buffer_size) {
+                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+                    NMO_SEVERITY_ERROR, "Buffer too small for object name"));
+            }
+
+            memcpy(buffer, name, len + 1);
+            return nmo_result_ok();
+        }
+    }
+
+    int written = snprintf(buffer, buffer_size, "#%u", id);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
+            NMO_SEVERITY_ERROR, "Buffer too small for object id"));
+    }
     return nmo_result_ok();
 }
 
@@ -771,9 +1000,6 @@ nmo_result_t nmo_object_id_from_string(
             NMO_SEVERITY_ERROR, "Invalid arguments for object_id_from_string"));
     }
 
-    // TODO: Look up object ID by name from session if available
-    (void)session;  // Unused for now
-
     // Parse #id format
     if (*string == '#') {
         string++;
@@ -783,6 +1009,16 @@ nmo_result_t nmo_object_id_from_string(
             *(nmo_id_t*)value = (nmo_id_t)id;
             return nmo_result_ok();
         }
+    }
+
+    // Name lookup (optional)
+    if (session && g_object_name_to_id_resolver) {
+        nmo_id_t resolved_id = 0;
+        nmo_result_t resolved = g_object_name_to_id_resolver(session, string, &resolved_id);
+        if (resolved.code == NMO_OK) {
+            *(nmo_id_t*)value = resolved_id;
+        }
+        return resolved;
     }
 
     return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
@@ -825,12 +1061,23 @@ nmo_result_t nmo_type_value_to_string(
     }
     
     // Vector types (Vector2 = 2 floats, Vector3 = 3 floats, Vector4/Quaternion = 4 floats)
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2) ||
-        nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR3)) {
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2)) {
+        return nmo_vector2_to_string(value, buffer, buffer_size);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR3)) {
         return nmo_vector_to_string(value, buffer, buffer_size);
     }
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR4)) {
+        return nmo_vector4_to_string(value, buffer, buffer_size);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_QUATERNION)) {
         return nmo_quaternion_to_string(value, buffer, buffer_size);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_MATRIX)) {
+        return nmo_matrix_to_string(value, buffer, buffer_size);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_COLOR)) {
+        return nmo_color_to_string(value, buffer, buffer_size);
     }
 
     // Fallback: try by size/alignment for unnamed types
@@ -880,12 +1127,23 @@ nmo_result_t nmo_type_value_from_string(
     }
     
     // Vector types (Vector2 = 2 floats, Vector3 = 3 floats, Vector4/Quaternion = 4 floats)
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2) ||
-        nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR3)) {
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2)) {
+        return nmo_vector2_from_string(value, string);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR3)) {
         return nmo_vector_from_string(value, string);
     }
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR4)) {
+        return nmo_vector4_from_string(value, string);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_QUATERNION)) {
         return nmo_quaternion_from_string(value, string);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_MATRIX)) {
+        return nmo_matrix_from_string(value, string);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_COLOR)) {
+        return nmo_color_from_string(value, string);
     }
 
     // Fallback: try by size for unnamed types

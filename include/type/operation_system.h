@@ -136,7 +136,7 @@ typedef struct nmo_operation_tree_cell {
  * Array of cells with the same Operation + P1 type, sorted by P2 type GUID.
  */
 typedef struct nmo_operation_p2_layer {
-    nmo_guid_t p1_type_guid;             /**< P1 type GUID (for verification) */
+    nmo_guid_t p2_type_guid;             /**< P2 type GUID (for verification) */
     
     nmo_operation_tree_cell_t *cells;    /**< Sorted array of cells (by p2_type_guid) */
     uint32_t cell_count;                 /**< Number of cells */
@@ -149,9 +149,9 @@ typedef struct nmo_operation_p2_layer {
  * Array of P2 layers with the same Operation, sorted by P1 type GUID.
  */
 typedef struct nmo_operation_p1_layer {
-    nmo_guid_t operation_guid;           /**< Operation GUID (for verification) */
+    nmo_guid_t p1_type_guid;             /**< P1 type GUID (for verification) */
     
-    nmo_operation_p2_layer_t *p2_layers; /**< Sorted array of P2 layers (by p1_type_guid) */
+    nmo_operation_p2_layer_t *p2_layers; /**< Sorted array of P2 layers (by p2_type_guid) */
     uint32_t layer_count;                /**< Number of P2 layers */
     uint32_t layer_capacity;             /**< Allocated capacity */
 } nmo_operation_p1_layer_t;
@@ -306,6 +306,32 @@ NMO_API nmo_result_t nmo_operation_registry_find(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
+    const nmo_type_registry_t *type_registry,
+    const nmo_operation_tree_cell_t **out_cell
+);
+
+/**
+ * @brief Find operation with required result type
+ *
+ * Like nmo_operation_registry_find(), but requires the selected cell to match
+ * the requested result type GUID. This is the correct primitive to use when
+ * the caller already knows the expected result type (e.g. execution).
+ *
+ * @param registry       Operation registry
+ * @param operation_guid Operation family GUID
+ * @param p1_type        Parameter 1 type descriptor
+ * @param p2_type        Parameter 2 type descriptor (NULL for unary)
+ * @param result_type    Required result type descriptor (must not be NULL)
+ * @param type_registry  Type registry for inheritance matching (optional, can be NULL)
+ * @param out_cell       Output cell pointer (set to NULL if not found)
+ * @return NMO_OK if found, NMO_ERR_NOT_FOUND if no match
+ */
+NMO_API nmo_result_t nmo_operation_registry_find_typed(
+    nmo_operation_registry_t *registry,
+    const nmo_guid_t *operation_guid,
+    const nmo_type_descriptor_t *p1_type,
+    const nmo_type_descriptor_t *p2_type,
+    const nmo_type_descriptor_t *result_type,
     const nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 );

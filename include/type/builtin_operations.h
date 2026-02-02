@@ -80,6 +80,9 @@ extern "C" {
 #define NMO_TYPE_GUID_VECTOR2  ((nmo_guid_t){0x6FED1D00, 0x00000004})
 #define NMO_TYPE_GUID_VECTOR3  ((nmo_guid_t){0x6FED1D00, 0x00000005})
 #define NMO_TYPE_GUID_VECTOR4  ((nmo_guid_t){0x6FED1D00, 0x00000006})
+#define NMO_TYPE_GUID_QUATERNION ((nmo_guid_t){0x6FED1D00, 0x00000007})
+#define NMO_TYPE_GUID_MATRIX     ((nmo_guid_t){0x6FED1D00, 0x00000008})
+#define NMO_TYPE_GUID_COLOR      ((nmo_guid_t){0x6FED1D00, 0x00000009})
 
 /* ============================================================================
  * Registration Functions
@@ -103,7 +106,8 @@ NMO_API nmo_result_t nmo_register_builtin_operations(
 /**
  * @brief Register builtin types
  *
- * Registers common builtin types (INT, FLOAT, BOOL, VECTOR2/3/4).
+ * Registers common builtin types (INT, FLOAT, BOOL) and Virtools math types
+ * (VxVector2/3/4, VxQuaternion, VxMatrix, VxColor).
  *
  * @param type_registry Type registry
  * @return NMO_OK on success, error code on failure

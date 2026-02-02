@@ -8,6 +8,7 @@
 #include "type/builtin_operations.h"
 #include "type/type_system.h"
 #include "type/operation_system.h"
+#include "core/nmo_math.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
 #include <stdint.h>
@@ -93,7 +94,138 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         return result;
     }
 
-    /* Vector types will be registered later in Phase 6.2+ */
+    /* Register Virtools math types */
+    nmo_type_descriptor_t vec2_type = {
+        .guid = NMO_TYPE_GUID_VECTOR2,
+        .name = "VxVector2",
+        .size = sizeof(nmo_vector2_t),
+        .alignment = alignof(nmo_vector2_t),
+        .class_id = 0,
+        .base_type = {0, 0},
+        .category = 0,
+        .flags = 0,
+        .id = 0,
+        .description = NULL,
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin = NULL
+    };
+
+    result = nmo_type_registry_register(type_registry, &vec2_type);
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
+
+    nmo_type_descriptor_t vec3_type = {
+        .guid = NMO_TYPE_GUID_VECTOR3,
+        .name = "VxVector3",
+        .size = sizeof(nmo_vector_t),
+        .alignment = alignof(nmo_vector_t),
+        .class_id = 0,
+        .base_type = {0, 0},
+        .category = 0,
+        .flags = 0,
+        .id = 0,
+        .description = NULL,
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin = NULL
+    };
+
+    result = nmo_type_registry_register(type_registry, &vec3_type);
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
+
+    nmo_type_descriptor_t vec4_type = {
+        .guid = NMO_TYPE_GUID_VECTOR4,
+        .name = "VxVector4",
+        .size = sizeof(nmo_vector4_t),
+        .alignment = alignof(nmo_vector4_t),
+        .class_id = 0,
+        .base_type = {0, 0},
+        .category = 0,
+        .flags = 0,
+        .id = 0,
+        .description = NULL,
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin = NULL
+    };
+
+    result = nmo_type_registry_register(type_registry, &vec4_type);
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
+
+    nmo_type_descriptor_t quat_type = {
+        .guid = NMO_TYPE_GUID_QUATERNION,
+        .name = "VxQuaternion",
+        .size = sizeof(nmo_quaternion_t),
+        .alignment = alignof(nmo_quaternion_t),
+        .class_id = 0,
+        .base_type = {0, 0},
+        .category = 0,
+        .flags = 0,
+        .id = 0,
+        .description = NULL,
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin = NULL
+    };
+
+    result = nmo_type_registry_register(type_registry, &quat_type);
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
+
+    nmo_type_descriptor_t mat_type = {
+        .guid = NMO_TYPE_GUID_MATRIX,
+        .name = "VxMatrix",
+        .size = sizeof(nmo_matrix_t),
+        .alignment = alignof(nmo_matrix_t),
+        .class_id = 0,
+        .base_type = {0, 0},
+        .category = 0,
+        .flags = 0,
+        .id = 0,
+        .description = NULL,
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin = NULL
+    };
+
+    result = nmo_type_registry_register(type_registry, &mat_type);
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
+
+    nmo_type_descriptor_t color_type = {
+        .guid = NMO_TYPE_GUID_COLOR,
+        .name = "VxColor",
+        .size = sizeof(nmo_color_t),
+        .alignment = alignof(nmo_color_t),
+        .class_id = 0,
+        .base_type = {0, 0},
+        .category = 0,
+        .flags = 0,
+        .id = 0,
+        .description = NULL,
+        .fields = NULL,
+        .field_count = 0,
+        .vtable = NULL,
+        .creator_plugin = NULL
+    };
+
+    result = nmo_type_registry_register(type_registry, &color_type);
+    if (nmo_result_is_error(result)) {
+        return result;
+    }
 
     return nmo_result_ok();
 }

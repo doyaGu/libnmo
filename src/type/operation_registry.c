@@ -120,7 +120,7 @@ static nmo_operation_p1_layer_t *find_or_create_p1_layer(
 ) {
     /* Linear search (small array, typically < 10 elements) */
     for (uint32_t i = 0; i < family->layer_count; i++) {
-        if (nmo_guid_equals(family->p1_layers[i].operation_guid, *p1_type_guid)) {
+        if (nmo_guid_equals(family->p1_layers[i].p1_type_guid, *p1_type_guid)) {
             return &family->p1_layers[i];
         }
     }
@@ -149,7 +149,7 @@ static nmo_operation_p1_layer_t *find_or_create_p1_layer(
     /* Initialize new P1 layer */
     nmo_operation_p1_layer_t *p1_layer = &family->p1_layers[family->layer_count++];
     memset(p1_layer, 0, sizeof(*p1_layer));
-    p1_layer->operation_guid = *p1_type_guid;
+    p1_layer->p1_type_guid = *p1_type_guid;
     
     /* Initial capacity for P2 layers */
     p1_layer->layer_capacity = 4;
@@ -175,7 +175,7 @@ static nmo_operation_p2_layer_t *find_or_create_p2_layer(
 ) {
     /* Linear search */
     for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
-        if (nmo_guid_equals(p1_layer->p2_layers[i].p1_type_guid, *p2_type_guid)) {
+        if (nmo_guid_equals(p1_layer->p2_layers[i].p2_type_guid, *p2_type_guid)) {
             return &p1_layer->p2_layers[i];
         }
     }
@@ -204,7 +204,7 @@ static nmo_operation_p2_layer_t *find_or_create_p2_layer(
     /* Initialize new P2 layer */
     nmo_operation_p2_layer_t *p2_layer = &p1_layer->p2_layers[p1_layer->layer_count++];
     memset(p2_layer, 0, sizeof(*p2_layer));
-    p2_layer->p1_type_guid = *p2_type_guid;
+    p2_layer->p2_type_guid = *p2_type_guid;
     
     /* Initial capacity for cells */
     p2_layer->cell_capacity = 4;
@@ -499,6 +499,193 @@ static const nmo_operation_tree_cell_t *find_cell_best(
     return best_cell;
 }
 
+/**
+ * @brief Find exact cell by result type GUID
+ */
+static const nmo_operation_tree_cell_t *find_cell_by_result(
+    const nmo_operation_p2_layer_t *p2_layer,
+    nmo_guid_t result_type_guid
+) {
+    if (!p2_layer || p2_layer->cell_count == 0) {
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < p2_layer->cell_count; i++) {
+        const nmo_operation_tree_cell_t *cell = &p2_layer->cells[i];
+        if (nmo_guid_equals(cell->desc.result_type_guid, result_type_guid)) {
+            return cell;
+        }
+    }
+
+    return NULL;
+}
+
+static nmo_result_t find_p2_layer(
+    nmo_operation_registry_t *registry,
+    const nmo_guid_t *operation_guid,
+    const nmo_type_descriptor_t *p1_type,
+    const nmo_type_descriptor_t *p2_type,
+    const nmo_type_registry_t *type_registry,
+    const nmo_operation_p2_layer_t **out_p2_layer
+) {
+    if (!registry || !operation_guid || !p1_type || !out_p2_layer) {
+        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Invalid parameters");
+    }
+
+    *out_p2_layer = NULL;
+
+    /* Step 1: Find operation family by GUID (O(1) hash lookup) */
+    uint32_t family_index = 0;
+    if (nmo_result_is_error(nmo_hash_table_get(registry->family_map,
+                                               operation_guid,
+                                               &family_index))) {
+        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "Operation family not found");
+    }
+
+    const nmo_operation_family_t *family = registry->families[family_index];
+    if (!family) {
+        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                 "Family index points to NULL");
+    }
+
+    /* Step 2: Find P1 layer by type GUID (linear search with inheritance fallback) */
+    const nmo_operation_p1_layer_t *p1_layer = NULL;
+    const nmo_operation_p1_layer_t *compatible_p1_layer = NULL;
+    int32_t best_p1_depth = -1;
+
+    /* First try exact match */
+    for (uint32_t i = 0; i < family->layer_count; i++) {
+        if (nmo_guid_equals(family->p1_layers[i].p1_type_guid, p1_type->guid)) {
+            p1_layer = &family->p1_layers[i];
+            break;
+        }
+    }
+
+    /* If no exact match and type_registry available, try inheritance matching */
+    if (!p1_layer && type_registry) {
+        nmo_type_id_t p1_type_id = nmo_type_registry_guid_to_type_id(
+            type_registry, p1_type->guid);
+
+        if (p1_type_id != NMO_TYPE_ID_INVALID) {
+            /* Find best compatible type (closest parent) */
+            for (uint32_t i = 0; i < family->layer_count; i++) {
+                nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
+                    type_registry, family->p1_layers[i].p1_type_guid);
+
+                if (candidate_id != NMO_TYPE_ID_INVALID) {
+                    /* Check if p1_type derives from candidate */
+                    int32_t depth = nmo_type_get_derivation_depth(
+                        type_registry, p1_type_id, candidate_id);
+
+                    /* Update if better match (closer parent = lower depth) */
+                    if (depth >= 0 && (best_p1_depth < 0 || depth < best_p1_depth)) {
+                        compatible_p1_layer = &family->p1_layers[i];
+                        best_p1_depth = depth;
+                    }
+                }
+            }
+
+            p1_layer = compatible_p1_layer;
+        }
+    }
+
+    if (!p1_layer) {
+        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "P1 type not found in family (no compatible type)");
+    }
+
+    /* Step 3: Find P2 layer by type GUID (linear search with inheritance fallback) */
+    nmo_guid_t p2_guid = p2_type ? p2_type->guid : (nmo_guid_t){0, 0};
+    const nmo_operation_p2_layer_t *p2_layer = NULL;
+    const nmo_operation_p2_layer_t *compatible_p2_layer = NULL;
+    int32_t best_p2_depth = -1;
+
+    /* First try exact match */
+    for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
+        if (nmo_guid_equals(p1_layer->p2_layers[i].p2_type_guid, p2_guid)) {
+            p2_layer = &p1_layer->p2_layers[i];
+            break;
+        }
+    }
+
+    /* If no exact match and type_registry available, try inheritance matching */
+    if (!p2_layer && p2_type && type_registry) {
+        nmo_type_id_t p2_type_id = nmo_type_registry_guid_to_type_id(
+            type_registry, p2_guid);
+
+        if (p2_type_id != NMO_TYPE_ID_INVALID) {
+            /* Find best compatible type (closest parent) */
+            for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
+                nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
+                    type_registry, p1_layer->p2_layers[i].p2_type_guid);
+
+                if (candidate_id != NMO_TYPE_ID_INVALID) {
+                    /* Check if p2_type derives from candidate */
+                    int32_t depth = nmo_type_get_derivation_depth(
+                        type_registry, p2_type_id, candidate_id);
+
+                    /* Update if better match (closer parent = lower depth) */
+                    if (depth >= 0 && (best_p2_depth < 0 || depth < best_p2_depth)) {
+                        compatible_p2_layer = &p1_layer->p2_layers[i];
+                        best_p2_depth = depth;
+                    }
+                }
+            }
+
+            p2_layer = compatible_p2_layer;
+        }
+    }
+
+    if (!p2_layer) {
+        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "P2 type not found in P1 layer (no compatible type)");
+    }
+
+    *out_p2_layer = p2_layer;
+    return nmo_result_ok();
+}
+
+nmo_result_t nmo_operation_registry_find_typed(
+    nmo_operation_registry_t *registry,
+    const nmo_guid_t *operation_guid,
+    const nmo_type_descriptor_t *p1_type,
+    const nmo_type_descriptor_t *p2_type,
+    const nmo_type_descriptor_t *result_type,
+    const nmo_type_registry_t *type_registry,
+    const nmo_operation_tree_cell_t **out_cell
+) {
+    if (!registry || !operation_guid || !p1_type || !result_type || !out_cell) {
+        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Invalid parameters");
+    }
+
+    *out_cell = NULL;
+    registry->total_lookups++;
+
+    const nmo_operation_p2_layer_t *p2_layer = NULL;
+    nmo_result_t layer_result = find_p2_layer(
+        registry, operation_guid, p1_type, p2_type, type_registry, &p2_layer);
+    if (nmo_result_is_error(layer_result)) {
+        return layer_result;
+    }
+
+    const nmo_operation_tree_cell_t *cell = find_cell_by_result(p2_layer, result_type->guid);
+    if (!cell) {
+        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "No operation cell found for requested result type");
+    }
+
+    /* Update statistics (mutable cast for statistics) */
+    nmo_operation_tree_cell_t *mutable_cell = (nmo_operation_tree_cell_t *)cell;
+    mutable_cell->call_count++;
+
+    *out_cell = cell;
+    registry->cache_hits++;  /* Placeholder - no real cache yet */
+    return nmo_result_ok();
+}
+
 nmo_result_t nmo_operation_registry_find(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
@@ -537,7 +724,7 @@ nmo_result_t nmo_operation_registry_find(
     
     /* First try exact match */
     for (uint32_t i = 0; i < family->layer_count; i++) {
-        if (nmo_guid_equals(family->p1_layers[i].operation_guid, p1_type->guid)) {
+        if (nmo_guid_equals(family->p1_layers[i].p1_type_guid, p1_type->guid)) {
             p1_layer = &family->p1_layers[i];
             break;
         }
@@ -552,7 +739,7 @@ nmo_result_t nmo_operation_registry_find(
             /* Find best compatible type (closest parent) */
             for (uint32_t i = 0; i < family->layer_count; i++) {
                 nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
-                    type_registry, family->p1_layers[i].operation_guid);
+                    type_registry, family->p1_layers[i].p1_type_guid);
                 
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p1_type derives from candidate */
@@ -584,7 +771,7 @@ nmo_result_t nmo_operation_registry_find(
     
     /* First try exact match */
     for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
-        if (nmo_guid_equals(p1_layer->p2_layers[i].p1_type_guid, p2_guid)) {
+        if (nmo_guid_equals(p1_layer->p2_layers[i].p2_type_guid, p2_guid)) {
             p2_layer = &p1_layer->p2_layers[i];
             break;
         }
@@ -599,7 +786,7 @@ nmo_result_t nmo_operation_registry_find(
             /* Find best compatible type (closest parent) */
             for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
                 nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
-                    type_registry, p1_layer->p2_layers[i].p1_type_guid);
+                    type_registry, p1_layer->p2_layers[i].p2_type_guid);
                 
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p2_type derives from candidate */
@@ -658,8 +845,8 @@ nmo_result_t nmo_operation_registry_execute(
     
     /* Find operation */
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t result = nmo_operation_registry_find(
-        registry, operation_guid, p1_type, p2_type, type_registry, &cell
+    nmo_result_t result = nmo_operation_registry_find_typed(
+        registry, operation_guid, p1_type, p2_type, result_type, type_registry, &cell
     );
     
     if (nmo_result_is_error(result)) {

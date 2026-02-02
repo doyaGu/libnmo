@@ -240,30 +240,42 @@ typedef struct nmo_type_field_t {
  * Reference: CKParameterManager.cpp, lines 1265-1276
  * ============================================================================ */
 
-#define NMO_TYPE_COMPAT_MASK_SIZE 256   /* Support 256 types, extendable */
+#include "core/nmo_bit_array.h"
+
+/**
+ * @brief Compatibility mask growth granularity (in bits)
+ *
+ * Historically this was a hard cap (256 types). It is now used only as a
+ * coarse growth hint.
+ */
+#define NMO_TYPE_COMPAT_MASK_SIZE 256
 
 typedef struct nmo_compatibility_mask_t {
-    uint64_t bits[NMO_TYPE_COMPAT_MASK_SIZE / 64];  /* 4 uint64_t = 256 bits */
+    nmo_bit_array_t bits;
 } nmo_compatibility_mask_t;
 
-/* Mask operations */
 static inline void nmo_compat_mask_set(nmo_compatibility_mask_t *mask, nmo_type_id_t id) {
-    if (id >= 0 && id < NMO_TYPE_COMPAT_MASK_SIZE) {
-        mask->bits[id / 64] |= (1ULL << (id % 64));
+    if (!mask || id < 0) {
+        return;
     }
+
+    (void)nmo_bit_array_set(&mask->bits, (size_t)id);
 }
 
 static inline bool nmo_compat_mask_is_set(const nmo_compatibility_mask_t *mask, nmo_type_id_t id) {
-    if (id >= 0 && id < NMO_TYPE_COMPAT_MASK_SIZE) {
-        return (mask->bits[id / 64] & (1ULL << (id % 64))) != 0;
+    if (!mask || id < 0) {
+        return false;
     }
-    return false;
+
+    return nmo_bit_array_test(&mask->bits, (size_t)id) != 0;
 }
 
 static inline void nmo_compat_mask_clear(nmo_compatibility_mask_t *mask) {
-    for (size_t i = 0; i < NMO_TYPE_COMPAT_MASK_SIZE / 64; i++) {
-        mask->bits[i] = 0;
+    if (!mask) {
+        return;
     }
+
+    nmo_bit_array_clear_all(&mask->bits);
 }
 
 /* ============================================================================
@@ -361,7 +373,7 @@ typedef struct nmo_saver_manager_t {
 /* ============================================================================
  * Unified Type Descriptor
  * 
- * Merges nmo_schema_type_t and nmo_param_meta_t into single structure.
+ * Merges legacy schema metadata and param metadata into a single structure.
  * Reference: CKParameterTypeDesc validation
  * Extended with annotation support per design.md Section 5.4
  * ============================================================================ */
