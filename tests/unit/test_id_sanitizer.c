@@ -21,22 +21,22 @@ TEST(id_sanitizer, registers_bidirectional_mappings) {
     ASSERT_NOT_NULL(s);
 
     /* Register two mappings */
-    ASSERT_EQ(nmo_id_sanitizer_register(s, 0, 1), NMO_OK);
+    ASSERT_EQ(nmo_id_sanitizer_register(s, 1, 1), NMO_OK);
     ASSERT_EQ(nmo_id_sanitizer_register(s, 5, 42), NMO_OK);
 
     /* File -> runtime lookups */
-    ASSERT_EQ(nmo_id_file_to_runtime(s, 0), 1u);
+    ASSERT_EQ(nmo_id_file_to_runtime(s, 1), 1u);
     ASSERT_EQ(nmo_id_file_to_runtime(s, 5), 42u);
     ASSERT_EQ(nmo_id_file_to_runtime(s, 99), NMO_OBJECT_ID_INVALID);
 
     /* Runtime -> file lookups */
-    ASSERT_EQ(nmo_id_runtime_to_file(s, 1), 0u);
+    ASSERT_EQ(nmo_id_runtime_to_file(s, 1), 1u);
     ASSERT_EQ(nmo_id_runtime_to_file(s, 42), 5u);
     ASSERT_EQ(nmo_id_runtime_to_file(s, 999), NMO_OBJECT_ID_INVALID);
 
     /* Reset should clear mappings */
     nmo_id_sanitizer_reset(s);
-    ASSERT_EQ(nmo_id_file_to_runtime(s, 0), NMO_OBJECT_ID_INVALID);
+    ASSERT_EQ(nmo_id_file_to_runtime(s, 1), NMO_OBJECT_ID_INVALID);
     ASSERT_EQ(nmo_id_runtime_to_file(s, 42), NMO_OBJECT_ID_INVALID);
 
     nmo_id_sanitizer_destroy(s);
@@ -86,13 +86,13 @@ TEST(id_sanitizer, reseed_bulk_loads_mappings) {
     nmo_id_sanitizer_t *s = nmo_id_sanitizer_create(arena);
     ASSERT_NOT_NULL(s);
 
-    uint32_t file_idx[] = {0, 1, 2};
+    uint32_t file_ids[] = {1, 2, 3};
     uint32_t runtime[] = {10, 20, 30};
-    ASSERT_EQ(nmo_id_sanitizer_reseed(s, file_idx, runtime, 3), NMO_OK);
+    ASSERT_EQ(nmo_id_sanitizer_reseed(s, file_ids, runtime, 3), NMO_OK);
 
-    ASSERT_EQ(nmo_id_file_to_runtime(s, 0), 10u);
-    ASSERT_EQ(nmo_id_file_to_runtime(s, 1), 20u);
-    ASSERT_EQ(nmo_id_file_to_runtime(s, 2), 30u);
+    ASSERT_EQ(nmo_id_file_to_runtime(s, 1), 10u);
+    ASSERT_EQ(nmo_id_file_to_runtime(s, 2), 20u);
+    ASSERT_EQ(nmo_id_file_to_runtime(s, 3), 30u);
 
     nmo_id_sanitizer_destroy(s);
     nmo_arena_destroy(arena);

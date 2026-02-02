@@ -137,14 +137,14 @@ static nmo_id_remap_t *build_id_remap_by_file_id(nmo_object_t **objects1,
         nmo_object_t *obj2 = objects2[i];
         if (obj2 == NULL) continue;
 
-        nmo_object_id_t key2 = obj2->file_id != 0 ? obj2->file_id : obj2->file_index;
+        nmo_object_id_t key2 = obj2->file_id;
         if (key2 == 0) continue;
 
         for (size_t j = 0; j < count1; j++) {
             nmo_object_t *obj1 = objects1[j];
             if (obj1 == NULL) continue;
 
-            nmo_object_id_t key1 = obj1->file_id != 0 ? obj1->file_id : obj1->file_index;
+            nmo_object_id_t key1 = obj1->file_id;
             if (key1 == 0) continue;
 
             if (key1 == key2 && obj1->class_id == obj2->class_id) {

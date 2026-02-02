@@ -19,7 +19,7 @@ TEST(object, create_destroy) {
 
     ASSERT_EQ(obj->id, 100);
     ASSERT_EQ(obj->class_id, 200);
-    ASSERT_EQ(obj->file_index, 100);  // Should default to ID
+    ASSERT_EQ(obj->file_index, 0);  // Default is unknown until computed/loaded
 
     nmo_arena_destroy(arena);
 }

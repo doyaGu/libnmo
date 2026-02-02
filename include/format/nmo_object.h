@@ -47,8 +47,8 @@ typedef struct nmo_object {
     void *data;         /**< Custom data pointer */
 
     /* File context */
-    nmo_object_id_t file_index; /**< Original file ID */
-    nmo_object_id_t file_id;    /**< Original file ID value from Header1 */
+    nmo_object_id_t file_index; /**< FileIndex offset in uncompressed file buffer (Header1) */
+    nmo_object_id_t file_id;    /**< Object ID stored in file (Header1 Object) */
     uint32_t creation_flags;  /**< Flags used during creation */
     uint32_t save_flags;      /**< Flags for saving */
 
@@ -192,19 +192,19 @@ NMO_API int nmo_object_set_data(nmo_object_t *object, void *data);
 NMO_API void *nmo_object_get_data(const nmo_object_t *object);
 
 /**
- * @brief Set file index (original file ID)
+ * @brief Set FileIndex offset (Header1)
  *
  * @param object Object (required)
- * @param file_index File ID
+ * @param file_index FileIndex offset in uncompressed file buffer
  * @return NMO_OK on success
  */
 NMO_API int nmo_object_set_file_index(nmo_object_t *object, nmo_object_id_t file_index);
 
 /**
- * @brief Get file index
+ * @brief Get FileIndex offset (Header1)
  *
  * @param object Object (required)
- * @return File ID
+ * @return FileIndex offset in uncompressed file buffer
  */
 NMO_API nmo_object_id_t nmo_object_get_file_index(const nmo_object_t *object);
 

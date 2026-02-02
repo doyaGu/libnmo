@@ -5,7 +5,6 @@
 
 #include "session/nmo_id_remap.h"
 #include "session/nmo_load_session.h"
-#include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include <string.h>
@@ -13,7 +12,7 @@
 
 /* Forward declaration for load session internal function */
 extern int nmo_load_session_get_mappings(const nmo_load_session_t *session,
-                                         nmo_object_id_t **file_ids,
+                                         nmo_object_id_t **file_indices,
                                          nmo_object_id_t **runtime_ids,
                                          size_t *count);
 
@@ -28,7 +27,7 @@ typedef struct nmo_id_remap_plan {
 } nmo_id_remap_plan_t;
 
 /* ============================================================================
- * Load-time ID Remapping (file ID -> runtime ID)
+ * Load-time ID Remapping (file object index -> runtime ID)
  * ============================================================================ */
 
 nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
@@ -37,11 +36,11 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
     }
 
     /* Get mappings from load session */
-    nmo_object_id_t *file_ids = NULL;
+    nmo_object_id_t *file_indices = NULL;
     nmo_object_id_t *runtime_ids = NULL;
     size_t count = 0;
 
-    int result = nmo_load_session_get_mappings(session, &file_ids, &runtime_ids, &count);
+    int result = nmo_load_session_get_mappings(session, &file_indices, &runtime_ids, &count);
     if (result != NMO_OK || count == 0) {
         return NULL;
     }
@@ -59,15 +58,10 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
         return NULL;
     }
 
-    /* Store arena pointer in remap for cleanup */
-    /* NOTE: nmo_id_remap_t should have an arena field for proper cleanup.
-     * For now, we rely on the fact that nmo_id_remap_table_destroy()
-     * will use the table's arena field to clean up. */
-
-    /* Add all mappings (file ID -> runtime ID) */
+    /* Add all mappings (file object index -> runtime ID) */
     size_t failed_count = 0;
     for (size_t i = 0; i < count; i++) {
-        nmo_result_t add_result = nmo_id_remap_add(remap, file_ids[i], runtime_ids[i]);
+        nmo_result_t add_result = nmo_id_remap_add(remap, file_indices[i], runtime_ids[i]);
         if (nmo_result_is_error(add_result)) {
             failed_count++;
         }
@@ -77,42 +71,6 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
     if (failed_count == count && count > 0) {
         nmo_arena_destroy(arena);
         return NULL;
-    }
-
-    /* Add file object index mappings (index -> runtime ID) for file-mode chunks */
-    nmo_object_repository_t *repo = nmo_load_session_get_repository(session);
-    if (repo != NULL) {
-        size_t repo_count = 0;
-        nmo_object_t **objects = nmo_object_repository_get_all(repo, &repo_count);
-        nmo_object_id_t file_index = 1;
-
-        for (size_t i = 0; i < repo_count; i++) {
-            nmo_object_t *obj = objects ? objects[i] : NULL;
-            if (obj == NULL) {
-                continue;
-            }
-
-            if (obj->file_id == 0) {
-                continue;
-            }
-
-            nmo_result_t add_result = nmo_id_remap_add(remap, file_index, obj->id);
-            if (nmo_result_is_error(add_result)) {
-                /* Log but continue - non-critical for file index mappings */
-                (void)add_result;
-            }
-
-            if (obj->flags & NMO_OBJECT_REFERENCE_FLAG) {
-                nmo_result_t ref_result = nmo_id_remap_add(
-                    remap, file_index | NMO_OBJECT_REFERENCE_FLAG, obj->id);
-                if (nmo_result_is_error(ref_result)) {
-                    /* Log but continue - non-critical for reference mappings */
-                    (void)ref_result;
-                }
-            }
-
-            file_index++;
-        }
     }
 
     return remap;
@@ -162,6 +120,7 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
     if (repo == NULL || objects_to_save == NULL || object_count == 0) {
         return NULL;
     }
+    (void)repo;
 
     /* Create arena for plan */
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);

@@ -15,7 +15,7 @@
 // =============================================================================
 
 static int remap_single_id(nmo_object_id_t *id_ref, const nmo_id_remap_t *remap) {
-    if (!id_ref || *id_ref == 0) return 0;
+    if (!id_ref) return 0;
 
     nmo_object_id_t old_id = *id_ref;
     nmo_object_id_t new_id;

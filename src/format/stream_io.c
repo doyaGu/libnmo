@@ -843,7 +843,10 @@ nmo_result_t nmo_stream_writer_write_object(nmo_stream_writer_t *writer,
     }
 
     if (writer->header.file_version < 7) {
-        uint32_t obj_id = nmo_object_get_file_index(object);
+        uint32_t obj_id = object ? object->file_id : 0;
+        if (obj_id == 0 && object != NULL) {
+            obj_id = nmo_object_get_id(object);
+        }
         uint8_t buffer[4];
         nmo_write_u32_le(buffer, obj_id);
         nmo_result_t res = writer_write_bytes(writer, buffer, sizeof(buffer));

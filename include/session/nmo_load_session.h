@@ -18,16 +18,16 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object nmo_object_t;
 
 /**
- * @brief Load session for tracking file ID to runtime ID mapping
+ * @brief Load session for tracking file object index to runtime ID mapping
  */
 typedef struct nmo_load_session nmo_load_session_t;
 
 /**
  * @brief Start load session
  *
- * Begins a load session that tracks object ID remapping from file IDs to runtime IDs.
- * Objects loaded from a file have sequential file IDs (0-based), but runtime IDs may
- * be different if objects already exist in the repository.
+ * Begins a load session that tracks object index remapping from file object table
+ * indices (SaveFindObjectIndex, 0-based) to runtime IDs. Runtime IDs may differ
+ * if objects already exist in the repository.
  *
  * @param repo Object repository
  * @param max_saved_id Maximum object ID from the file being loaded
@@ -37,19 +37,20 @@ NMO_API nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo
                                                  nmo_object_id_t max_saved_id);
 
 /**
- * @brief Register object with file ID
+ * @brief Register object with file object index
  *
- * Registers an object that was loaded from a file, mapping its file ID to its
- * runtime ID. This mapping is used later to remap object references.
+ * Registers an object that was loaded from a file, mapping its file object table
+ * index (SaveFindObjectIndex) to its runtime ID. This mapping is used later to
+ * remap object references in chunks.
  *
  * @param session Load session
  * @param obj Object to register
- * @param file_id Original ID from the file
+ * @param file_id File object table index (0-based)
  * @return NMO_OK on success
  */
 NMO_API int nmo_load_session_register(nmo_load_session_t *session,
                                       nmo_object_t *obj,
-                                      nmo_object_id_t file_id);
+                                      nmo_object_id_t file_index);
 
 /**
  * @brief End load session

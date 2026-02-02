@@ -45,6 +45,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
+#include <limits.h>
 #include "miniz.h"
 
 #define DEFAULT_COMPRESSION_LEVEL 6
@@ -52,6 +53,14 @@
 
 /* Helper macro for returning error results */
 #define SAVE_ERR(code, msg) nmo_result_errorf(NULL, code, NMO_SEVERITY_ERROR, msg)
+
+static int save_safe_add_size(size_t a, size_t b, size_t *out) {
+    if (SIZE_MAX - a < b) {
+        return 0;
+    }
+    *out = a + b;
+    return 1;
+}
 
 /* ============================================================================
  * Internal Structures
@@ -125,6 +134,11 @@ static nmo_result_t save_serialize_managers(nmo_save_context_t *ctx);
 static nmo_result_t save_serialize_objects(nmo_save_context_t *ctx);
 static nmo_result_t save_build_data_section(nmo_save_context_t *ctx);
 static nmo_result_t save_build_header1(nmo_save_context_t *ctx);
+static nmo_result_t save_get_chunk_size(nmo_chunk_t *chunk, nmo_arena_t *arena, size_t *out_size);
+static nmo_result_t save_compute_manager_data_size(nmo_save_context_t *ctx, size_t *out_size);
+static nmo_result_t save_fill_file_indices(nmo_save_context_t *ctx,
+                                           size_t header1_unpack_size,
+                                           uint32_t file_version);
 
 static nmo_result_t save_compress_sections(nmo_save_context_t *ctx);
 static nmo_result_t save_write_file(nmo_save_context_t *ctx, const char *path);
@@ -199,6 +213,130 @@ static nmo_result_t save_report_progress(nmo_save_context_t *ctx,
 
     if (!keep_going && ctx->options.allow_cancel) {
         return SAVE_ERR(NMO_ERR_CANCELLED, "Save cancelled by callback");
+    }
+
+    return nmo_result_ok();
+}
+
+static nmo_result_t save_get_chunk_size(nmo_chunk_t *chunk, nmo_arena_t *arena, size_t *out_size) {
+    if (out_size == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid chunk size output pointer"));
+    }
+
+    *out_size = 0;
+    if (chunk == NULL) {
+        return nmo_result_ok();
+    }
+
+    if (chunk->raw_data != NULL && chunk->raw_size > 0) {
+        *out_size = chunk->raw_size;
+        return nmo_result_ok();
+    }
+
+    void *serialized = NULL;
+    size_t serialized_size = 0;
+    nmo_result_t result = nmo_chunk_serialize(chunk, &serialized, &serialized_size, arena);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+
+    *out_size = serialized_size;
+    return nmo_result_ok();
+}
+
+static nmo_result_t save_compute_manager_data_size(nmo_save_context_t *ctx, size_t *out_size) {
+    if (ctx == NULL || out_size == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid manager size arguments"));
+    }
+
+    size_t total = 0;
+    for (uint32_t i = 0; i < ctx->manager_entry_count; i++) {
+        const nmo_manager_data_t *mgr = &ctx->manager_entries[i];
+        size_t chunk_size = 0;
+
+        if (mgr->data_size > 0) {
+            chunk_size = mgr->data_size;
+        } else if (mgr->chunk != NULL) {
+            NMO_RETURN_IF_ERROR(save_get_chunk_size(mgr->chunk, ctx->arena, &chunk_size));
+        }
+
+        size_t entry_size = 0;
+        if (!save_safe_add_size(8u, 4u, &entry_size) ||
+            !save_safe_add_size(entry_size, chunk_size, &entry_size)) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "Manager data size overflow"));
+        }
+
+        if (!save_safe_add_size(total, entry_size, &total)) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "Manager data size overflow"));
+        }
+    }
+
+    *out_size = total;
+    return nmo_result_ok();
+}
+
+static nmo_result_t save_fill_file_indices(nmo_save_context_t *ctx,
+                                           size_t header1_unpack_size,
+                                           uint32_t file_version) {
+    if (ctx == NULL || ctx->obj_descs == NULL) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
+                                          NMO_SEVERITY_ERROR,
+                                          "Invalid file index context"));
+    }
+
+    size_t header_size = (file_version >= 5) ? 64u : 32u;
+    size_t manager_data_size = 0;
+    NMO_RETURN_IF_ERROR(save_compute_manager_data_size(ctx, &manager_data_size));
+
+    size_t offset = 0;
+    if (!save_safe_add_size(header_size, header1_unpack_size, &offset) ||
+        !save_safe_add_size(offset, manager_data_size, &offset)) {
+        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                          NMO_SEVERITY_ERROR,
+                                          "File index base offset overflow"));
+    }
+
+    for (size_t i = 0; i < ctx->object_count; i++) {
+        nmo_object_t *obj = ctx->objects[i];
+        size_t chunk_size = 0;
+        if (obj != NULL) {
+            NMO_RETURN_IF_ERROR(save_get_chunk_size(obj->chunk, ctx->arena, &chunk_size));
+        }
+
+        if (offset > UINT32_MAX) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "File index exceeds 32-bit range"));
+        }
+
+        ctx->obj_descs[i].file_index = (nmo_object_id_t)offset;
+        if (obj != NULL) {
+            obj->file_index = ctx->obj_descs[i].file_index;
+        }
+
+        size_t entry_size = 0;
+        size_t size_field_bytes = 4u;
+        if (file_version < 7) {
+            size_field_bytes += 4u; /* legacy object_id field */
+        }
+        if (!save_safe_add_size(size_field_bytes, chunk_size, &entry_size)) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "File index entry size overflow"));
+        }
+        if (!save_safe_add_size(offset, entry_size, &offset)) {
+            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
+                                              NMO_SEVERITY_ERROR,
+                                              "File index overflow"));
+        }
     }
 
     return nmo_result_ok();
@@ -535,12 +673,9 @@ static nmo_result_t save_build_remap_plan(nmo_save_context_t *ctx) {
             continue;
         }
 
-        nmo_object_id_t file_index = (nmo_object_id_t) (i + 1);
-        if (ctx->reference_map && ctx->reference_map[i]) {
-            file_index |= NMO_OBJECT_REFERENCE_FLAG;
-        }
+        nmo_object_id_t file_object_index = (nmo_object_id_t) i; /* SaveFindObjectIndex (0-based) */
 
-        nmo_result_t add_result = nmo_id_remap_add(ctx->file_index_remap, obj->id, file_index);
+        nmo_result_t add_result = nmo_id_remap_add(ctx->file_index_remap, obj->id, file_object_index);
         if (nmo_result_is_error(add_result)) {
             /* Continue even if one fails */
         }
@@ -781,6 +916,10 @@ static nmo_result_t save_build_header1(nmo_save_context_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.7: Building header1 buffer");
 
     nmo_id_remap_table_t *remap_table = nmo_id_remap_plan_get_table(ctx->remap_plan);
+    uint32_t file_version = ctx->file_info.file_version;
+    if (file_version == 0) {
+        file_version = 8;
+    }
 
     /* Build object descriptors */
     ctx->obj_descs = (nmo_object_desc_t *)nmo_arena_alloc(
@@ -806,7 +945,7 @@ static nmo_result_t save_build_header1(nmo_save_context_t *ctx) {
         ctx->obj_descs[i].file_id = file_id;
         ctx->obj_descs[i].class_id = obj->class_id;
         ctx->obj_descs[i].name = (char *)obj->name;
-        ctx->obj_descs[i].file_index = (obj->file_index != 0) ? obj->file_index : (nmo_object_id_t)i;
+        ctx->obj_descs[i].file_index = 0;
 
         uint32_t descriptor_flags = obj->flags;
         if (ctx->reference_map[i]) {
@@ -869,8 +1008,25 @@ static nmo_result_t save_build_header1(nmo_save_context_t *ctx) {
         }
     }
 
-    /* Serialize Header1 */
+    /* First pass: serialize to get Header1 unpack size */
+    void *header1_probe = NULL;
+    size_t header1_probe_size = 0;
     nmo_result_t result = nmo_header1_serialize(
+        &hdr1, &header1_probe, &header1_probe_size, ctx->arena);
+
+    if (result.code != NMO_OK) {
+        return result;
+    }
+    (void)header1_probe;
+
+    /* Fill FileIndex offsets (uncompressed file buffer) */
+    result = save_fill_file_indices(ctx, header1_probe_size, file_version);
+    if (result.code != NMO_OK) {
+        return result;
+    }
+
+    /* Final serialize with correct FileIndex values */
+    result = nmo_header1_serialize(
         &hdr1, &ctx->header1_buffer, &ctx->header1_unpack_size, ctx->arena);
 
     if (result.code != NMO_OK) {

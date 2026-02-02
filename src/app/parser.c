@@ -791,7 +791,7 @@ static int nmo_load_file_with_io(
 
     nmo_id_remap_table_t *remap_table = NULL;
 
-    /* Temporary array to map file index to created objects (for Phase 11) */
+    /* Temporary array to map file object index (SaveFindObjectIndex) to created objects (for Phase 11) */
     nmo_object_t **created_objects = NULL;
 
     /* Skip object creation if no header1 data or no object descriptors */
@@ -868,21 +868,21 @@ static int nmo_load_file_with_io(
             return add_result;
         }
 
-        /* Record original file index (0-based) */
+        /* Record original FileIndex offset (uncompressed file buffer) */
         nmo_object_set_file_index(obj, desc->file_index);
 
-        if (id_sanitizer != NULL) {
-            int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, desc->file_index, obj->id);
+        uint32_t file_object_index = (uint32_t)i;
+        if (id_sanitizer != NULL && signed_raw_id >= 0 && sanitized_id != 0) {
+            int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, sanitized_id, obj->id);
             if (sanitize_result != NMO_OK) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "  Failed to register ID sanitizer mapping (file_index=%u, runtime_id=%u)",
-                        desc->file_index, obj->id);
+                        "  Failed to register ID sanitizer mapping (file_id=%u, runtime_id=%u)",
+                        sanitized_id, obj->id);
             }
         }
 
-        /* Register with load session (file ID -> runtime ID mapping) */
-        nmo_object_id_t map_file_id = is_external_ref ? raw_id : sanitized_id;
-        int reg_result = nmo_load_session_register(load_session, obj, map_file_id);
+        /* Register with load session (file object index -> runtime ID mapping) */
+        int reg_result = nmo_load_session_register(load_session, obj, file_object_index);
         if (reg_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to register object in load session");
             nmo_load_session_destroy(load_session);
@@ -895,16 +895,16 @@ static int nmo_load_file_with_io(
 
         if (is_reference_only) {
             nmo_log(logger, NMO_LOG_INFO,
-                    "  Created reference-only object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                    i, sanitized_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+                    "  Created reference-only object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
+                    i, sanitized_id, file_object_index, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
         } else if (is_external_ref) {
             nmo_log(logger, NMO_LOG_INFO,
-                    "  Created external reference object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                    i, map_file_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+                    "  Created external reference object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
+                    i, raw_id, file_object_index, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
         } else {
             nmo_log(logger, NMO_LOG_INFO,
-                    "  Created object %zu: file_id=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                    i, sanitized_id, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
+                    "  Created object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
+                    i, sanitized_id, file_object_index, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
         }
     }
 

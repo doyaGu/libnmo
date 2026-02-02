@@ -17,7 +17,7 @@ nmo_object_t *nmo_object_create(nmo_arena_t *arena, nmo_object_id_t id, nmo_clas
     object->id = id;
     object->class_id = class_id;
     object->arena = arena;
-    object->file_index = id; // Default to same as runtime ID
+    object->file_index = 0; // Unknown until computed/loaded
     object->file_id = 0; // Unknown until loaded from file
 
     return object;

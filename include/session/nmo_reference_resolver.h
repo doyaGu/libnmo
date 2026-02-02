@@ -41,7 +41,7 @@ typedef struct nmo_object_ref {
     
     /* Internal fields */
     nmo_object_t *resolved_object; /**< Resolved object pointer (NULL if unresolved) */
-    int32_t file_index;           /**< Position in file object list */
+    int32_t file_index;           /**< File object index (SaveFindObjectIndex, 0-based) */
 } nmo_object_ref_t;
 
 /**

@@ -82,21 +82,6 @@ typedef struct nmo_session {
     int plugin_diag_valid;
 } nmo_session_t;
 
-static const char *nmo_session_copy_string(nmo_arena_t *arena, const char *source) {
-    if (arena == NULL || source == NULL) {
-        return NULL;
-    }
-
-    size_t len = strlen(source) + 1;
-    char *dest = (char *) nmo_arena_alloc(arena, len, sizeof(char));
-    if (dest == NULL) {
-        return NULL;
-    }
-
-    memcpy(dest, source, len);
-    return dest;
-}
-
 static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t needed) {
     if (session == NULL || session->arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -847,7 +832,7 @@ static int nmo_session_build_plugin_diagnostics(
             if (entry != NULL) {
                 entry->resolved_version = registered->version;
                 if (registered->name != NULL) {
-                    entry->resolved_name = nmo_session_copy_string(arena, registered->name);
+                    entry->resolved_name = (char *)nmo_arena_strdup(arena, registered->name);
                 }
             }
 

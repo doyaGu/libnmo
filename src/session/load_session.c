@@ -22,7 +22,7 @@ typedef struct nmo_load_session {
     nmo_object_id_t saved_id_max;
     nmo_object_id_t id_base;
 
-    /* Hash table for file ID to runtime ID mapping */
+    /* Hash table for file object index to runtime ID mapping */
     nmo_hash_table_t *id_mappings;
 
     int active;
@@ -53,10 +53,10 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
     session->arena = arena;
 
     /* Initialize mapping table using generic hash table */
-    size_t initial_capacity = (max_saved_id > 64) ? (max_saved_id * 2) : 64;
+    size_t initial_capacity = 64;
     session->id_mappings = nmo_hash_table_create(
         NULL,
-        sizeof(nmo_object_id_t),    /* key: file_id */
+        sizeof(nmo_object_id_t),    /* key: file object index */
         sizeof(nmo_object_id_t),    /* value: runtime_id */
         initial_capacity,
         nmo_hash_uint32,            /* hash function for uint32_t */
@@ -72,10 +72,7 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
     session->saved_id_max = max_saved_id;
     session->active = 1;
 
-    /* Allocate ID base
-     * This ensures file IDs don't conflict with existing runtime IDs.
-     * We allocate a range starting from current max + 1.
-     */
+    /* Track next available runtime ID base (for potential remap logic). */
     size_t existing_count = nmo_object_repository_get_count(repo);
     if (existing_count > 0) {
         /* Find max existing ID */
@@ -96,22 +93,22 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
 }
 
 /**
- * Register object with file ID
+ * Register object with file object index
  */
 int nmo_load_session_register(nmo_load_session_t *session,
                               nmo_object_t *obj,
-                              nmo_object_id_t file_id) {
+                              nmo_object_id_t file_index) {
     if (session == NULL || obj == NULL || !session->active) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     /* Check if already registered */
-    if (nmo_hash_table_contains(session->id_mappings, &file_id)) {
+    if (nmo_hash_table_contains(session->id_mappings, &file_index)) {
         return NMO_ERR_INVALID_STATE; // Already registered
     }
 
     /* Add mapping */
-    nmo_result_t result = nmo_hash_table_insert(session->id_mappings, &file_id, &obj->id);
+    nmo_result_t result = nmo_hash_table_insert(session->id_mappings, &file_index, &obj->id);
     if (nmo_result_is_error(result)) {
         return result.code;
     }
@@ -161,23 +158,6 @@ void nmo_load_session_destroy(nmo_load_session_t *session) {
         nmo_hash_table_destroy(session->id_mappings);
         nmo_arena_destroy(session->arena);
     }
-}
-
-/**
- * Get runtime ID for file ID (internal helper for id_remap.c)
- */
-int nmo_load_session_lookup_runtime_id(const nmo_load_session_t *session,
-                                       nmo_object_id_t file_id,
-                                       nmo_object_id_t *runtime_id) {
-    if (session == NULL || runtime_id == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (nmo_result_is_ok(nmo_hash_table_get(session->id_mappings, &file_id, runtime_id))) {
-        return NMO_OK;
-    }
-
-    return NMO_ERR_NOT_FOUND;
 }
 
 /**

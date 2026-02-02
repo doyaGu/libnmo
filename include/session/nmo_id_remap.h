@@ -25,7 +25,8 @@ typedef struct nmo_object nmo_object_t;
 /**
  * @brief ID remap table (compatibility wrapper around nmo_id_remap_t)
  * 
- * Used during load operations to map file IDs to runtime IDs.
+ * Used during load operations to map file object indices (SaveFindObjectIndex)
+ * to runtime IDs for chunk ID remapping.
  */
 typedef nmo_id_remap_t nmo_id_remap_table_t;
 
@@ -37,14 +38,14 @@ typedef nmo_id_remap_t nmo_id_remap_table_t;
 typedef struct nmo_id_remap_plan nmo_id_remap_plan_t;
 
 /* ============================================================================
- * Load-time ID Remapping (file ID -> runtime ID)
+ * Load-time ID Remapping (file object index -> runtime ID)
  * ============================================================================ */
 
 /**
  * @brief Build ID remap table from load session
  * 
- * Creates a remap table that maps file IDs to runtime IDs based on
- * the mappings recorded during the load session.
+ * Creates a remap table that maps file object indices (SaveFindObjectIndex, 0-based)
+ * to runtime IDs based on the mappings recorded during the load session.
  * 
  * @param session Load session containing ID mappings
  * @return Remap table or NULL on error
@@ -55,7 +56,7 @@ NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session)
  * @brief Lookup remapped ID
  * 
  * @param table Remap table
- * @param old_id Original ID (file ID during load, runtime ID during save)
+ * @param old_id Original ID (file object index during load, runtime ID during save)
  * @param new_id Output for remapped ID
  * @return NMO_OK on success, NMO_ERR_NOT_FOUND if not found
  */

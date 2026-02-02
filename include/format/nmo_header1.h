@@ -24,7 +24,7 @@ extern "C" {
 typedef struct nmo_object_desc {
     nmo_object_id_t file_id;    /**< Object ID from file, bit 23 may be set for reference-only */
     nmo_class_id_t class_id;    /**< Class ID (oit->ObjectCid) */
-    nmo_object_id_t file_index; /**< File index (oit->FileIndex) */
+    nmo_object_id_t file_index; /**< FileIndex offset in uncompressed file buffer (oit->FileIndex) */
     char *name;               /**< Object name (allocated from arena) */
     uint32_t flags;           /**< Object flags (bit 23 = reference-only) */
 } nmo_object_desc_t;

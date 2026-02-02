@@ -15,7 +15,6 @@
  */
 typedef struct nmo_pool_entry {
     nmo_chunk_t *chunk;     /**< Chunk pointer */
-    uint32_t generation;    /**< Generation counter for use-after-release detection */
     int in_use;             /**< 1 if acquired, 0 if available */
 } nmo_pool_entry_t;
 
@@ -28,7 +27,6 @@ struct nmo_chunk_pool {
     size_t count;               /**< Number of entries (total chunks) */
     size_t available;           /**< Number of available chunks */
     nmo_arena_t *arena;         /**< Arena for allocations */
-    uint32_t pool_generation;   /**< Global pool generation counter */
 };
 
 /**
@@ -68,8 +66,6 @@ NMO_API nmo_chunk_pool_t *nmo_chunk_pool_create(
     pool->count = 0;
     pool->available = 0;
     pool->arena = arena;
-    pool->pool_generation = 0;
-
     return pool;
 }
 
@@ -128,7 +124,6 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     for (size_t i = 0; i < pool->count; i++) {
         if (!pool->entries[i].in_use) {
             pool->entries[i].in_use = 1;
-            pool->entries[i].generation = ++pool->pool_generation;
             pool->available--;
 
             nmo_chunk_t *chunk = pool->entries[i].chunk;
@@ -176,7 +171,6 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     // Add to pool
     pool->entries[pool->count].chunk = chunk;
     pool->entries[pool->count].in_use = 1;
-    pool->entries[pool->count].generation = ++pool->pool_generation;
     pool->count++;
 
     return chunk;
@@ -198,8 +192,6 @@ NMO_API void nmo_chunk_pool_release(
         if (pool->entries[i].chunk == chunk && pool->entries[i].in_use) {
             pool->entries[i].in_use = 0;
             pool->available++;
-            // Increment generation to detect use-after-release
-            pool->entries[i].generation = ++pool->pool_generation;
             reset_chunk(chunk);
             return;
         }

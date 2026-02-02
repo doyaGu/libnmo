@@ -5,7 +5,7 @@
  * Implements the ID "clean-up" pipeline described in IMPROVEMENT_PLAN.md:
  * - Strips the 0x800000 mask used for reference-only objects
  * - Tracks negative external references
- * - Maintains File Index (0-based) <-> Runtime ID (1-based) mappings
+ * - Maintains File ID (CK_ID, 1-based) <-> Runtime ID mappings
  */
 
 #ifndef NMO_ID_SANITIZER_H
@@ -51,10 +51,10 @@ NMO_API void nmo_id_sanitizer_reset(nmo_id_sanitizer_t *sanitizer);
 NMO_API uint32_t nmo_id_sanitize(uint32_t raw_id);
 
 /**
- * @brief Register a File Index -> Runtime ID mapping.
+ * @brief Register a File ID -> Runtime ID mapping.
  */
 NMO_API int nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
-                                      uint32_t file_index,
+                                      uint32_t file_id,
                                       uint32_t runtime_id);
 
 /**
@@ -69,23 +69,23 @@ NMO_API int32_t nmo_id_register_external(nmo_id_sanitizer_t *sanitizer,
 /**
  * @brief Bulk reset-and-register convenience for remapped IDs.
  *
- * Clears existing tables and registers a set of file_index -> runtime_id pairs.
+ * Clears existing tables and registers a set of file_id -> runtime_id pairs.
  */
 NMO_API int nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
-                                    const uint32_t *file_indices,
+                                    const uint32_t *file_ids,
                                     const uint32_t *runtime_ids,
                                     size_t count);
 
 /**
- * @brief Lookup runtime ID from a file index.
+ * @brief Lookup runtime ID from a file ID.
  *
  * Returns NMO_OBJECT_ID_INVALID if not found.
  */
 NMO_API uint32_t nmo_id_file_to_runtime(const nmo_id_sanitizer_t *sanitizer,
-                                        uint32_t file_index);
+                                        uint32_t file_id);
 
 /**
- * @brief Lookup file index from a runtime ID.
+ * @brief Lookup file ID from a runtime ID.
  *
  * Returns NMO_OBJECT_ID_INVALID if not found.
  */

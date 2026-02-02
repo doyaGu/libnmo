@@ -10,8 +10,8 @@
 #include <stdalign.h>
 
 struct nmo_id_sanitizer {
-    nmo_hash_table_t *file_to_runtime;   /* file_index (0-based) -> runtime_id (1-based) */
-    nmo_hash_table_t *runtime_to_file;   /* runtime_id -> file_index */
+    nmo_hash_table_t *file_to_runtime;   /* file ID (CK_ID) -> runtime_id */
+    nmo_hash_table_t *runtime_to_file;   /* runtime_id -> file ID */
     nmo_hash_table_t *negative_refs;     /* runtime_id -> original negative id */
     nmo_arena_t *arena;
 };
@@ -90,23 +90,24 @@ uint32_t nmo_id_sanitize(uint32_t raw_id) {
 }
 
 int nmo_id_sanitizer_register(nmo_id_sanitizer_t *sanitizer,
-                              uint32_t file_index,
+                              uint32_t file_id,
                               uint32_t runtime_id) {
     if (sanitizer == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    uint32_t clean_file = nmo_id_sanitize(file_id);
     uint32_t clean_runtime = nmo_id_sanitize(runtime_id);
 
-    nmo_result_t result = nmo_hash_table_insert(sanitizer->file_to_runtime, &file_index, &clean_runtime);
+    nmo_result_t result = nmo_hash_table_insert(sanitizer->file_to_runtime, &clean_file, &clean_runtime);
     if (nmo_result_is_error(result)) {
         return result.code;
     }
 
-    result = nmo_hash_table_insert(sanitizer->runtime_to_file, &clean_runtime, &file_index);
+    result = nmo_hash_table_insert(sanitizer->runtime_to_file, &clean_runtime, &clean_file);
     if (nmo_result_is_error(result)) {
         /* Roll back the first insert to keep tables consistent */
-        nmo_hash_table_remove(sanitizer->file_to_runtime, &file_index);
+        nmo_hash_table_remove(sanitizer->file_to_runtime, &clean_file);
         return result.code;
     }
 
@@ -137,17 +138,17 @@ int32_t nmo_id_register_external(nmo_id_sanitizer_t *sanitizer, int32_t negative
 }
 
 int nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
-                            const uint32_t *file_indices,
+                            const uint32_t *file_ids,
                             const uint32_t *runtime_ids,
                             size_t count) {
-    if (sanitizer == NULL || (count > 0 && (file_indices == NULL || runtime_ids == NULL))) {
+    if (sanitizer == NULL || (count > 0 && (file_ids == NULL || runtime_ids == NULL))) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_id_sanitizer_reset(sanitizer);
 
     for (size_t i = 0; i < count; i++) {
-        int r = nmo_id_sanitizer_register(sanitizer, file_indices[i], runtime_ids[i]);
+        int r = nmo_id_sanitizer_register(sanitizer, file_ids[i], runtime_ids[i]);
         if (r != NMO_OK) {
             return r;
         }
@@ -156,14 +157,15 @@ int nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
     return NMO_OK;
 }
 
-uint32_t nmo_id_file_to_runtime(const nmo_id_sanitizer_t *sanitizer, uint32_t file_index) {
+uint32_t nmo_id_file_to_runtime(const nmo_id_sanitizer_t *sanitizer, uint32_t file_id) {
     if (sanitizer == NULL || sanitizer->file_to_runtime == NULL) {
         return NMO_OBJECT_ID_INVALID;
     }
 
     uint32_t runtime_id = 0;
+    uint32_t key = nmo_id_sanitize(file_id);
     if (nmo_result_is_ok(nmo_hash_table_get(sanitizer->file_to_runtime,
-                                           &file_index,
+                                           &key,
                                            &runtime_id))) {
         return runtime_id;
     }
@@ -176,10 +178,10 @@ uint32_t nmo_id_runtime_to_file(const nmo_id_sanitizer_t *sanitizer, uint32_t ru
         return NMO_OBJECT_ID_INVALID;
     }
 
-    uint32_t file_index = 0;
+    uint32_t file_id = 0;
     uint32_t key = nmo_id_sanitize(runtime_id);
-    if (nmo_result_is_ok(nmo_hash_table_get(sanitizer->runtime_to_file, &key, &file_index))) {
-        return file_index;
+    if (nmo_result_is_ok(nmo_hash_table_get(sanitizer->runtime_to_file, &key, &file_id))) {
+        return file_id;
     }
 
     return NMO_OBJECT_ID_INVALID;

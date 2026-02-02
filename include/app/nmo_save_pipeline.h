@@ -6,7 +6,7 @@
  *
  * **Phase 1: Layout & Serialize**
  * - Serialize objects to memory buffer
- * - Build ID mapping (runtime_id -> file_index)
+ * - Build ID mappings (runtime_id -> file ID for Header1, runtime_id -> file object index for chunks)
  * - Restore shadow blobs (chunk tails, included files)
  * - Calculate exact Data Section size
  *
@@ -138,7 +138,7 @@ NMO_API void nmo_save_context_destroy(nmo_save_context_t *ctx);
  *
  * This phase performs:
  * 1. Manager pre-save hooks
- * 2. Build ID remap plan (runtime_id -> file_index)
+ * 2. Build ID remap plan (runtime_id -> file ID) and file object index remap
  * 3. Serialize manager chunks
  * 4. Serialize object chunks with ID remapping
  * 5. Build Header1 with object descriptors

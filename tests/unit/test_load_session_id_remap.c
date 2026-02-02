@@ -93,7 +93,7 @@ TEST(load_session_id_remap, register_objects) {
         obj->arena = arena;
         nmo_object_repository_add(repo, obj);
 
-        /* Register with file ID */
+        /* Register with file object index */
         int result = nmo_load_session_register(session, obj, (nmo_object_id_t)i);
         ASSERT_EQ(NMO_OK, result);
     }
@@ -106,7 +106,7 @@ TEST(load_session_id_remap, register_objects) {
     dup_obj->class_id = 0x00000001;
     dup_obj->arena = arena;
 
-    int result = nmo_load_session_register(session, dup_obj, 0);  // Duplicate file ID 0
+    int result = nmo_load_session_register(session, dup_obj, 0);  // Duplicate file index 0
     ASSERT_EQ(NMO_ERR_INVALID_STATE, result);
 
     nmo_load_session_destroy(session);
@@ -137,7 +137,7 @@ TEST(load_session_id_remap, build_remap_table) {
         obj->arena = arena;
         nmo_object_repository_add(repo, obj);
 
-        nmo_load_session_register(session, obj, (nmo_object_id_t)i);  // File IDs: 0-4
+        nmo_load_session_register(session, obj, (nmo_object_id_t)i);  // File object indices: 0-4
     }
 
     /* Build remap table */
@@ -198,7 +198,7 @@ TEST(load_session_id_remap, remap_table_iteration) {
 
     /* Iterate through entries and verify all exist */
     size_t count = nmo_id_remap_table_get_count(table);
-    int found[3] = {0, 0, 0};  // Track which file IDs we've seen
+    int found[3] = {0, 0, 0};  // Track which file indices we've seen
 
     for (size_t i = 0; i < count; i++) {
         const nmo_id_remap_entry_t* entry = &table->entries[i];
