@@ -208,6 +208,29 @@ NMO_API nmo_result_t nmo_result_errorf_at(nmo_arena_t *arena,
                                          const char *fmt, ...);
 
 /**
+ * @brief Add context to an error result by wrapping it in a new error node.
+ *
+ * If @p result is OK, it is returned unchanged.
+ * If @p result is an error, a new error is allocated (using @p arena or the
+ * default allocator) with the same error code, and the original error is
+ * attached as a cause. This makes error chains more actionable without
+ * duplicating error handling boilerplate at call sites.
+ *
+ * @param arena Arena for allocations (optional)
+ * @param result Existing result (error or ok)
+ * @param file Source file (__FILE__)
+ * @param line Source line (__LINE__)
+ * @param fmt printf-style context format string
+ * @param ... Arguments for format string
+ * @return Result with additional context on error
+ */
+NMO_API nmo_result_t nmo_result_add_contextf_at(nmo_arena_t *arena,
+                                               nmo_result_t result,
+                                               const char *file,
+                                               int line,
+                                               const char *fmt, ...);
+
+/**
  * @brief Check whether a result indicates success
  */
 static inline int nmo_result_is_ok(nmo_result_t result) {
@@ -252,6 +275,39 @@ static inline int nmo_result_is_not_found(nmo_result_t result) {
         if (_r.code != NMO_OK) { \
             on_error; \
             return _r; \
+        } \
+    } while (0)
+
+/**
+ * @brief Evaluate expression returning nmo_result_t; on error, wrap with context and return.
+ */
+#define NMO_RETURN_IF_ERROR_CTX(arena, expr, ...) \
+    do { \
+        nmo_result_t _r = (expr); \
+        if (_r.code != NMO_OK) { \
+            return nmo_result_add_contextf_at((arena), _r, __FILE__, __LINE__, __VA_ARGS__); \
+        } \
+    } while (0)
+
+/**
+ * @brief Evaluate expression returning nmo_result_t; on error, wrap with context and goto label.
+ */
+#define NMO_GOTO_IF_ERROR_CTX(arena, expr, label, ...) \
+    do { \
+        nmo_result_t _r = (expr); \
+        if (_r.code != NMO_OK) { \
+            _r = nmo_result_add_contextf_at((arena), _r, __FILE__, __LINE__, __VA_ARGS__); \
+            goto label; \
+        } \
+    } while (0)
+
+/**
+ * @brief Ensure condition holds; otherwise return a formatted error.
+ */
+#define NMO_ENSURE(arena, cond, code, severity, ...) \
+    do { \
+        if (!(cond)) { \
+            return nmo_result_errorf_at((arena), (code), (severity), __FILE__, __LINE__, __VA_ARGS__); \
         } \
     } while (0)
 

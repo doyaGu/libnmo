@@ -201,6 +201,33 @@ static nmo_error_t *nmo_error_createf_at_v(nmo_arena_t *arena,
     return error;
 }
 
+nmo_result_t nmo_result_add_contextf_at(nmo_arena_t *arena,
+                                       nmo_result_t result,
+                                       const char *file,
+                                       int line,
+                                       const char *fmt, ...) {
+    if (result.code == NMO_OK) {
+        return result;
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    nmo_severity_t severity = NMO_SEVERITY_ERROR;
+    if (result.error != NULL) {
+        severity = result.error->severity;
+    }
+
+    nmo_error_t *ctx = nmo_error_createf_at_v(arena, result.code, severity, file, line, fmt, args);
+    va_end(args);
+
+    if (ctx == NULL) {
+        return result;
+    }
+
+    nmo_error_add_cause(ctx, result.error);
+    return nmo_result_error(ctx);
+}
+
 nmo_error_t *nmo_error_createf_at(nmo_arena_t *arena,
                                  nmo_error_code_t code,
                                  nmo_severity_t severity,
