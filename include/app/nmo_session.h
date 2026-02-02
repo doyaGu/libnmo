@@ -79,11 +79,11 @@ NMO_API void nmo_session_destroy(nmo_session_t *session);
  * @return Context
  */
 NMO_API nmo_context_t *nmo_session_get_context(const nmo_session_t *session);
+
 /**
  * @brief Get plugin manager (borrowed from context)
  */
 NMO_API nmo_plugin_manager_t *nmo_session_get_plugin_manager(const nmo_session_t *session);
-
 
 /**
  * @brief Get arena
@@ -227,7 +227,7 @@ NMO_API nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename
  *
  * @param session Session to save
  * @param filename Output file path
- * @return 0 on success, negative on error
+ * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
 NMO_API int nmo_session_save(nmo_session_t *session, const char *filename);
 
@@ -245,7 +245,7 @@ typedef struct nmo_index_stats nmo_index_stats_t;
  * @param session Session
  * @param out_objects Output object array pointer
  * @param out_count Output object count
- * @return 0 on success, negative on error
+ * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
 NMO_API int nmo_session_get_objects(
     nmo_session_t *session,
@@ -293,7 +293,7 @@ NMO_API nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *se
  *
  * @param session Session
  * @param flags Index types to rebuild (NMO_INDEX_BUILD_*)
- * @return 0 on success, negative on error
+ * @return NMO_OK on success, otherwise an NMO_ERR_* code
  */
 NMO_API int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags);
 
@@ -345,13 +345,22 @@ NMO_API int nmo_session_add_included_file_ex(
     uint32_t size,
     const nmo_included_file_metadata_t *meta);
 
-int nmo_session_add_included_file_borrowed(
+/**
+ * @brief Add an included file without copying payload data.
+ *
+ * The payload pointer is borrowed (caller owns the memory). Use this for
+ * metadata-only entries or when data is already lifetime-managed elsewhere.
+ */
+NMO_API int nmo_session_add_included_file_borrowed(
     nmo_session_t *session,
     const char *name,
     const void *data,
     uint32_t size);
 
-int nmo_session_add_included_file_borrowed_ex(
+/**
+ * @brief Add an included file without copying payload data, with metadata.
+ */
+NMO_API int nmo_session_add_included_file_borrowed_ex(
     nmo_session_t *session,
     const char *name,
     const void *data,
@@ -406,7 +415,10 @@ typedef struct nmo_finish_loading_stats {
     uint32_t manager_errors;
 } nmo_finish_loading_stats_t;
 
-void nmo_session_set_finish_loading_stats(
+/**
+ * @brief Store finish-loading diagnostics for later retrieval.
+ */
+NMO_API void nmo_session_set_finish_loading_stats(
     nmo_session_t *session,
     const nmo_finish_loading_stats_t *stats);
 
@@ -437,7 +449,7 @@ typedef struct nmo_session_plugin_diagnostics {
 
 NMO_API void nmo_session_set_plugin_diagnostics(
     nmo_session_t *session,
-    nmo_session_plugin_dependency_status_t *entries,
+    const nmo_session_plugin_dependency_status_t *entries,
     size_t entry_count,
     size_t missing_count,
     size_t outdated_count,
@@ -522,7 +534,15 @@ NMO_API size_t nmo_session_count_objects_by_class(
  * @param header Opaque file header data to store
  * @param header_size Size of header data in bytes
  */
-void nmo_session_set_file_header(nmo_session_t *session, const void *header, size_t header_size);
+/**
+ * @brief Set file header (internal use by parser)
+ *
+ * This function is used by the in-library parser. It is exported so consumers
+ * including this header do not see an uncallable symbol when building shared.
+ */
+NMO_API void nmo_session_set_file_header(nmo_session_t *session,
+                                        const void *header,
+                                        size_t header_size);
 
 #ifdef __cplusplus
 }

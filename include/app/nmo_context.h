@@ -16,7 +16,6 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_allocator nmo_allocator_t;
-typedef struct nmo_logger nmo_logger_t;
 typedef struct nmo_type_registry_t nmo_type_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_plugin_manager nmo_plugin_manager_t;
@@ -34,8 +33,8 @@ typedef struct nmo_context nmo_context_t;
  * @brief Context descriptor for creation
  */
 typedef struct nmo_context_desc {
-    nmo_allocator_t *allocator; /**< Memory allocator (NULL for default) */
-    nmo_logger_t *logger;       /**< Logger (NULL for default) */
+    const nmo_allocator_t *allocator; /**< Memory allocator config (NULL for default) */
+    const nmo_logger_t *logger;       /**< Logger config (NULL for default) */
     int thread_pool_size;       /**< Thread pool size (0 for no threading) */
 } nmo_context_desc_t;
 

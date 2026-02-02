@@ -649,7 +649,26 @@ int32_t nmo_type_get_derivation_depth(
     nmo_type_id_t child_id,
     nmo_type_id_t parent_id);
 
-/* --- Type Conversion API (Phase 6.3.3) --- */
+/* --- Type Conversion API (Phase 6.3.3) ---
+ *
+ * These functions provide bidirectional conversion between different type identifiers.
+ * While there are multiple conversion paths, each serves a specific purpose:
+ *
+ * Direct Conversions (O(1)):
+ * - GUID <-> Type ID: Primary conversion (GUID is canonical, Type ID is fast)
+ * - Type ID <-> Name: For debugging and UI display
+ * - GUID <-> ClassID: For Virtools file format compatibility
+ *
+ * The API is designed for clarity rather than minimalism - each function name
+ * explicitly states the conversion direction, making the code self-documenting.
+ *
+ * TODO: Consider adding a generic conversion function for plugin extensibility:
+ *   nmo_result_t nmo_type_convert(const nmo_type_registry_t *registry,
+ *                                 nmo_type_identifier_type_t from_type,
+ *                                 const void *from_value,
+ *                                 nmo_type_identifier_type_t to_type,
+ *                                 void *to_value);
+ */
 
 /**
  * @brief Convert GUID to Type ID (O(1) hash lookup)

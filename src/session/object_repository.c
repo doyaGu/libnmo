@@ -344,6 +344,11 @@ nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repo, size
     }
 
     if (repo->scratch_all_capacity < obj_count) {
+        /* Check for multiplication overflow */
+        if (obj_count > SIZE_MAX / sizeof(nmo_object_t *)) {
+            *count = 0;
+            return NULL;
+        }
         nmo_object_t **new_objects = (nmo_object_t **)realloc(
             repo->scratch_all,
             obj_count * sizeof(nmo_object_t *));
@@ -464,6 +469,11 @@ nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repo
     }
 
     if (repo->scratch_class_capacity < match_count) {
+        /* Check for multiplication overflow */
+        if (match_count > SIZE_MAX / sizeof(nmo_object_t *)) {
+            *out_count = 0;
+            return NULL;
+        }
         nmo_object_t **new_objects = (nmo_object_t **)realloc(
             repo->scratch_class,
             match_count * sizeof(nmo_object_t *));

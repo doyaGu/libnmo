@@ -43,7 +43,7 @@ typedef struct nmo_object {
     size_t child_capacity;   /**< Children array capacity */
 
     /* Data */
-    nmo_chunk_t *chunk; /**< Associated chunk data */
+    nmo_chunk_t *chunk; /**< Associated chunk data (non-owning reference) */
     void *data;         /**< Custom data pointer */
 
     /* File context */
@@ -153,6 +153,10 @@ NMO_API size_t nmo_object_get_child_count(const nmo_object_t *object);
 /**
  * @brief Set object chunk data
  *
+ * @note This is a non-owning reference. The object does not take ownership
+ * of the chunk. The chunk must remain valid for the lifetime of the object
+ * or be explicitly cleared before destruction.
+ *
  * @param object Object (required)
  * @param chunk Chunk data (can be NULL)
  * @return NMO_OK on success
@@ -161,6 +165,9 @@ NMO_API int nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk);
 
 /**
  * @brief Get object chunk data
+ *
+ * @note This returns a non-owning reference. The chunk is owned by its arena
+ * and will be destroyed when the arena is destroyed.
  *
  * @param object Object (required)
  * @return Chunk data or NULL if not set

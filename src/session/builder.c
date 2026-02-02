@@ -10,7 +10,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
-#include "object/nmo_ckclass.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -86,18 +86,32 @@ static void set_bit(uint32_t *mask, size_t mask_size, nmo_object_id_t id) {
  */
 static int grow_file_objects(nmo_builder_t *builder) {
     size_t new_capacity = builder->object_capacity * 2;
-    nmo_file_object_t *new_objects = (nmo_file_object_t *) realloc(
-        builder->file_objects, 
-        new_capacity * sizeof(nmo_file_object_t)
+    // Use arena allocation instead of realloc to avoid mixed allocation patterns
+    // Note: Old array is leaked (arena allocator limitation), but this is acceptable
+    // since the arena will be cleaned up when the builder is destroyed.
+    nmo_file_object_t *new_objects = (nmo_file_object_t *) nmo_arena_alloc(
+        builder->arena,
+        new_capacity * sizeof(nmo_file_object_t),
+        _Alignof(nmo_file_object_t)
     );
-    
+
     if (new_objects == NULL) {
         return NMO_ERR_NOMEM;
     }
-    
+
+    // Copy existing objects
+    if (builder->file_objects != NULL && builder->object_count > 0) {
+        memcpy(new_objects, builder->file_objects,
+               builder->object_count * sizeof(nmo_file_object_t));
+    }
+
+    // Clear new entries
+    memset(new_objects + builder->object_count, 0,
+           (new_capacity - builder->object_count) * sizeof(nmo_file_object_t));
+
     builder->file_objects = new_objects;
     builder->object_capacity = new_capacity;
-    
+
     return NMO_OK;
 }
 
@@ -106,51 +120,58 @@ static int grow_file_objects(nmo_builder_t *builder) {
  */
 nmo_builder_t *nmo_builder_create(const char *output_path) {
     (void)output_path;  /* Not used in stub implementation */
-    
-    nmo_builder_t *builder = (nmo_builder_t *) calloc(1, sizeof(nmo_builder_t));
+
+    /* Create arena first for all allocations */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    if (arena == NULL) {
+        return NULL;
+    }
+
+    /* Allocate builder structure from arena */
+    nmo_builder_t *builder = (nmo_builder_t *) nmo_arena_alloc(
+        arena, sizeof(nmo_builder_t), _Alignof(nmo_builder_t));
     if (builder == NULL) {
+        nmo_arena_destroy(arena);
         return NULL;
     }
-    
-    /* Create arena for string allocations */
-    builder->arena = nmo_arena_create(NULL, 4096);
-    if (builder->arena == NULL) {
-        free(builder);
-        return NULL;
-    }
-    
-    /* Allocate file objects array */
-    builder->file_objects = (nmo_file_object_t *) malloc(
-        INITIAL_OBJECT_CAPACITY * sizeof(nmo_file_object_t)
+
+    memset(builder, 0, sizeof(nmo_builder_t));
+    builder->arena = arena;
+
+    /* Allocate file objects array from arena */
+    builder->file_objects = (nmo_file_object_t *) nmo_arena_alloc(
+        arena,
+        INITIAL_OBJECT_CAPACITY * sizeof(nmo_file_object_t),
+        _Alignof(nmo_file_object_t)
     );
     if (builder->file_objects == NULL) {
-        nmo_arena_destroy(builder->arena);
-        free(builder);
+        nmo_arena_destroy(arena);
         return NULL;
     }
-    
+
     builder->object_capacity = INITIAL_OBJECT_CAPACITY;
     builder->object_count = 0;
-    
-    /* Allocate bitmasks (support up to 1024 objects initially) */
+
+    /* Allocate bitmasks from arena (support up to 1024 objects initially) */
     builder->mask_size = 32;  /* 32 * 32 bits = 1024 objects */
-    builder->saved_mask = (uint32_t *) calloc(builder->mask_size, sizeof(uint32_t));
-    builder->referenced_mask = (uint32_t *) calloc(builder->mask_size, sizeof(uint32_t));
-    
+    builder->saved_mask = (uint32_t *) nmo_arena_alloc(
+        arena, builder->mask_size * sizeof(uint32_t), _Alignof(uint32_t));
+    builder->referenced_mask = (uint32_t *) nmo_arena_alloc(
+        arena, builder->mask_size * sizeof(uint32_t), _Alignof(uint32_t));
+
     if (builder->saved_mask == NULL || builder->referenced_mask == NULL) {
-        free(builder->saved_mask);
-        free(builder->referenced_mask);
-        free(builder->file_objects);
-        nmo_arena_destroy(builder->arena);
-        free(builder);
+        nmo_arena_destroy(arena);
         return NULL;
     }
-    
+
+    memset(builder->saved_mask, 0, builder->mask_size * sizeof(uint32_t));
+    memset(builder->referenced_mask, 0, builder->mask_size * sizeof(uint32_t));
+
     builder->max_save_id = 0;
     builder->scene_saved = 0;
     builder->stage = NMO_BUILD_STAGE_INIT;
     builder->error_msg[0] = '\0';
-    
+
     return builder;
 }
 
@@ -161,12 +182,13 @@ void nmo_builder_destroy(nmo_builder_t *builder) {
     if (builder == NULL) {
         return;
     }
-    
-    free(builder->file_objects);
-    free(builder->saved_mask);
-    free(builder->referenced_mask);
-    nmo_arena_destroy(builder->arena);
-    free(builder);
+
+    /* Since we use arena allocation for everything, just destroy the arena */
+    nmo_arena_t *arena = builder->arena;
+    if (arena != NULL) {
+        nmo_arena_destroy(arena);
+    }
+    /* No need to free builder - it was allocated from the arena */
 }
 
 /**

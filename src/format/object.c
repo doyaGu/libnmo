@@ -78,6 +78,9 @@ int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t 
             memcpy(new_children, parent->children, parent->child_count * sizeof(nmo_object_t *));
         }
 
+        // NOTE: Since we use arena allocation, the old parent->children array is not freed.
+        // This is acceptable because arena allocators free all memory at once when destroyed.
+        // If this becomes problematic, consider using malloc/free for children arrays.
         parent->children = new_children;
         parent->child_capacity = new_capacity;
     }

@@ -273,6 +273,87 @@ TEST(load_session_id_remap, id_remap_plan_create) {
 }
 
 /**
+ * Test ID remap plan preserves existing file IDs and fills gaps
+ */
+TEST(load_session_id_remap, id_remap_plan_preserve_and_fill_gaps) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t* objects[5];
+
+    /*
+     * Runtime IDs 300..304
+     * Preserve file IDs for some objects and leave gaps:
+     * - obj0: file_id = 1
+     * - obj1: file_id = 3
+     * - obj2: file_id = 0 (should get 2)
+     * - obj3: file_id = 10
+     * - obj4: file_id = 0 (should get 4)
+     */
+    for (int i = 0; i < 5; i++) {
+        objects[i] = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void*));
+        memset(objects[i], 0, sizeof(nmo_object_t));
+        objects[i]->id = (nmo_object_id_t)(300 + i);
+        objects[i]->class_id = 0x00000001;
+        objects[i]->arena = arena;
+        nmo_object_repository_add(repo, objects[i]);
+    }
+
+    objects[0]->file_id = 1;
+    objects[1]->file_id = 3;
+    objects[3]->file_id = 10;
+
+    nmo_id_remap_plan_t* plan = nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 5);
+    ASSERT_NOT_NULL(plan);
+
+    nmo_id_remap_table_t* table = nmo_id_remap_plan_get_table(plan);
+    ASSERT_NOT_NULL(table);
+
+    nmo_object_id_t file_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 300, &file_id));
+    ASSERT_EQ(1, file_id);
+
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 301, &file_id));
+    ASSERT_EQ(3, file_id);
+
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 302, &file_id));
+    ASSERT_EQ(2, file_id);
+
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 303, &file_id));
+    ASSERT_EQ(10, file_id);
+
+    ASSERT_EQ(NMO_OK, nmo_id_remap_lookup(table, 304, &file_id));
+    ASSERT_EQ(4, file_id);
+
+    nmo_id_remap_plan_destroy(plan);
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
+}
+
+/**
+ * Test ID remap plan rejects invalid inputs
+ */
+TEST(load_session_id_remap, id_remap_plan_invalid_inputs) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t* objects[1] = {0};
+
+    ASSERT_NULL(nmo_id_remap_plan_create(NULL, (nmo_object_t**)objects, 1));
+    ASSERT_NULL(nmo_id_remap_plan_create(repo, NULL, 1));
+    ASSERT_NULL(nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 0));
+
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
+}
+
+/**
  * Test remap plan with large number of objects
  */
 TEST(load_session_id_remap, remap_plan_large) {
@@ -373,6 +454,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_session_id_remap, build_remap_table);
     REGISTER_TEST(load_session_id_remap, remap_table_iteration);
     REGISTER_TEST(load_session_id_remap, id_remap_plan_create);
+    REGISTER_TEST(load_session_id_remap, id_remap_plan_preserve_and_fill_gaps);
+    REGISTER_TEST(load_session_id_remap, id_remap_plan_invalid_inputs);
     REGISTER_TEST(load_session_id_remap, remap_plan_large);
     REGISTER_TEST(load_session_id_remap, load_session_end);
 TEST_MAIN_END()

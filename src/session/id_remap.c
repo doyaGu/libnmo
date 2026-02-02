@@ -9,6 +9,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include <string.h>
+#include <stdalign.h>
 
 /* Forward declaration for load session internal function */
 extern int nmo_load_session_get_mappings(const nmo_load_session_t *session,
@@ -23,6 +24,7 @@ typedef struct nmo_id_remap_plan {
     nmo_id_remap_t *remap;   /**< Underlying remap table (runtime -> file) */
     nmo_arena_t *arena;      /**< Arena for allocations */
     size_t objects_remapped; /**< Number of objects remapped */
+    int owns_arena;          /**< Whether we own the arena (for cleanup) */
 } nmo_id_remap_plan_t;
 
 /* ============================================================================
@@ -57,12 +59,24 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
         return NULL;
     }
 
+    /* Store arena pointer in remap for cleanup */
+    /* NOTE: nmo_id_remap_t should have an arena field for proper cleanup.
+     * For now, we rely on the fact that nmo_id_remap_table_destroy()
+     * will use the table's arena field to clean up. */
+
     /* Add all mappings (file ID -> runtime ID) */
+    size_t failed_count = 0;
     for (size_t i = 0; i < count; i++) {
         nmo_result_t add_result = nmo_id_remap_add(remap, file_ids[i], runtime_ids[i]);
         if (nmo_result_is_error(add_result)) {
-            /* Continue even if one fails */
+            failed_count++;
         }
+    }
+
+    /* If all mappings failed, clean up and return NULL */
+    if (failed_count == count && count > 0) {
+        nmo_arena_destroy(arena);
+        return NULL;
     }
 
     /* Add file object index mappings (index -> runtime ID) for file-mode chunks */
@@ -84,14 +98,16 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
 
             nmo_result_t add_result = nmo_id_remap_add(remap, file_index, obj->id);
             if (nmo_result_is_error(add_result)) {
-                /* Continue even if one fails */
+                /* Log but continue - non-critical for file index mappings */
+                (void)add_result;
             }
 
             if (obj->flags & NMO_OBJECT_REFERENCE_FLAG) {
                 nmo_result_t ref_result = nmo_id_remap_add(
                     remap, file_index | NMO_OBJECT_REFERENCE_FLAG, obj->id);
                 if (nmo_result_is_error(ref_result)) {
-                    /* Continue even if one fails */
+                    /* Log but continue - non-critical for reference mappings */
+                    (void)ref_result;
                 }
             }
 
@@ -126,8 +142,14 @@ void nmo_id_remap_table_destroy(nmo_id_remap_table_t *table) {
         return;
     }
 
-    /* Destroy the remap and its arena (created by nmo_build_remap_table) */
-    nmo_arena_destroy(table->arena);
+    /* Destroy the arena that was created by nmo_build_remap_table.
+     * NOTE: This assumes the table owns the arena. If callers need to share
+     * arenas, they should use nmo_id_remap_create() directly and manage
+     * the arena lifetime themselves. */
+    nmo_arena_t *arena = table->arena;
+    if (arena != NULL) {
+        nmo_arena_destroy(arena);
+    }
 }
 
 /* ============================================================================
@@ -149,7 +171,7 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
 
     /* Allocate plan structure */
     nmo_id_remap_plan_t *plan = (nmo_id_remap_plan_t *) nmo_arena_alloc(
-        arena, sizeof(nmo_id_remap_plan_t), sizeof(void *));
+        arena, sizeof(nmo_id_remap_plan_t), alignof(nmo_id_remap_plan_t));
     if (plan == NULL) {
         nmo_arena_destroy(arena);
         return NULL;
@@ -157,6 +179,7 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
 
     plan->arena = arena;
     plan->objects_remapped = 0;
+    plan->owns_arena = 1;  /* We own the arena */
 
     /* Create remap table */
     plan->remap = nmo_id_remap_create(arena);
@@ -235,7 +258,7 @@ size_t nmo_id_remap_plan_get_remapped_count(const nmo_id_remap_plan_t *plan) {
 }
 
 void nmo_id_remap_plan_destroy(nmo_id_remap_plan_t *plan) {
-    if (plan != NULL) {
+    if (plan != NULL && plan->owns_arena) {
         /* Arena destruction will free everything */
         nmo_arena_destroy(plan->arena);
     }

@@ -144,21 +144,14 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     memset(ctx, 0, sizeof(nmo_context_t));
     ctx->refcount = 1;
 
-    if (desc != NULL && desc->allocator != NULL) {
-        ctx->allocator = desc->allocator;
-    } else {
-        ctx->allocator_storage = effective_allocator;
-        ctx->allocator = &ctx->allocator_storage;
-    }
+    ctx->allocator_storage = effective_allocator;
+    ctx->allocator = &ctx->allocator_storage;
 
-    if (desc != NULL && desc->logger != NULL) {
-        ctx->logger = desc->logger;
-        ctx->logger_owned = 0;
-    } else {
-        ctx->logger_storage = nmo_logger_stderr();
-        ctx->logger = &ctx->logger_storage;
-        ctx->logger_owned = 1;
-    }
+    ctx->logger_storage = (desc != NULL && desc->logger != NULL)
+        ? *desc->logger
+        : nmo_logger_null();
+    ctx->logger = &ctx->logger_storage;
+    ctx->logger_owned = 1;
 
     ctx->arena = nmo_arena_create(ctx->allocator, 0);
     if (ctx->arena == NULL) {

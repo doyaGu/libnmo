@@ -14,6 +14,7 @@
 #include "core/nmo_logger.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdalign.h>
 
 /**
  * @brief Strategy entry for custom resolution
@@ -100,7 +101,7 @@ static int grow_strategies(nmo_reference_resolver_t *resolver) {
     nmo_strategy_entry_t *new_strategies = nmo_arena_alloc(
         resolver->arena,
         sizeof(nmo_strategy_entry_t) * new_capacity,
-        1
+        alignof(nmo_strategy_entry_t)
     );
     
     if (!new_strategies) {
@@ -130,7 +131,7 @@ static int grow_pending(nmo_reference_resolver_t *resolver) {
     nmo_object_ref_t **new_pending = nmo_arena_alloc(
         resolver->arena,
         sizeof(nmo_object_ref_t *) * new_capacity,
-        1
+        alignof(nmo_object_ref_t *)
     );
     
     if (!new_pending) {
@@ -163,7 +164,7 @@ nmo_reference_resolver_t *nmo_reference_resolver_create(
     nmo_reference_resolver_t *resolver = nmo_arena_alloc(
         arena,
         sizeof(nmo_reference_resolver_t),
-        1
+        alignof(nmo_reference_resolver_t)
     );
     
     if (!resolver) {
@@ -222,7 +223,7 @@ nmo_object_ref_t *nmo_reference_resolver_register_reference(
     nmo_object_ref_t *ref_copy = nmo_arena_alloc(
         resolver->arena,
         sizeof(nmo_object_ref_t),
-        1
+        alignof(nmo_object_ref_t)
     );
     
     if (!ref_copy) {
@@ -234,7 +235,7 @@ nmo_object_ref_t *nmo_reference_resolver_register_reference(
     /* Copy name string if present */
     if (ref->name) {
         size_t name_len = strlen(ref->name) + 1;
-        char *name_copy = nmo_arena_alloc(resolver->arena, name_len, 1);
+        char *name_copy = nmo_arena_alloc(resolver->arena, name_len, alignof(char));
         if (name_copy) {
             memcpy(name_copy, ref->name, name_len);
             ref_copy->name = name_copy;
@@ -313,6 +314,10 @@ int nmo_reference_resolver_resolve_all(
     }
     
     if (resolver->pending_count > resolver->unresolved_capacity) {
+        /* Check for multiplication overflow */
+        if (resolver->pending_count > SIZE_MAX / sizeof(nmo_object_ref_t *)) {
+            return NMO_ERR_NOMEM;
+        }
         nmo_object_ref_t **new_unresolved = (nmo_object_ref_t **)realloc(
             resolver->unresolved_refs,
             sizeof(nmo_object_ref_t *) * resolver->pending_count);

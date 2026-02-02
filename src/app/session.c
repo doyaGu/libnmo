@@ -17,6 +17,7 @@
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -111,7 +112,10 @@ static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t n
     }
 
     size_t bytes = sizeof(nmo_included_file_t) * new_capacity;
-    nmo_included_file_t *new_block = (nmo_included_file_t *) nmo_arena_alloc(session->arena, bytes, sizeof(void *));
+    nmo_included_file_t *new_block = (nmo_included_file_t *) nmo_arena_alloc(
+        session->arena,
+        bytes,
+        alignof(nmo_included_file_t));
     if (new_block == NULL) {
         return NMO_ERR_NOMEM;
     }
@@ -754,7 +758,7 @@ void nmo_session_set_finish_loading_stats(
 
 void nmo_session_set_plugin_diagnostics(
     nmo_session_t *session,
-    nmo_session_plugin_dependency_status_t *entries,
+    const nmo_session_plugin_dependency_status_t *entries,
     size_t entry_count,
     size_t missing_count,
     size_t outdated_count,
@@ -808,7 +812,7 @@ static int nmo_session_build_plugin_diagnostics(
         entries = (nmo_session_plugin_dependency_status_t *) nmo_arena_alloc(
             arena,
             bytes,
-            sizeof(void *));
+            alignof(nmo_session_plugin_dependency_status_t));
         if (entries != NULL) {
             memset(entries, 0, bytes);
         }
@@ -911,7 +915,7 @@ void nmo_session_set_file_header(nmo_session_t *session, const void *header, siz
     void *stored_header = nmo_arena_alloc(
         session->arena,
         header_size,
-        16
+        alignof(max_align_t)
     );
     
     if (stored_header != NULL) {

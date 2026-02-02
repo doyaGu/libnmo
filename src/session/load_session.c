@@ -12,6 +12,7 @@
 #include "core/nmo_error.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdalign.h>
 
 /**
  * Load session structure
@@ -176,7 +177,7 @@ int nmo_load_session_lookup_runtime_id(const nmo_load_session_t *session,
         return NMO_OK;
     }
 
-    return NMO_ERR_INVALID_ARGUMENT; // Not found
+    return NMO_ERR_NOT_FOUND;
 }
 
 /**

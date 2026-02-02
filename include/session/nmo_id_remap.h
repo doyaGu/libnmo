@@ -57,7 +57,7 @@ NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session)
  * @param table Remap table
  * @param old_id Original ID (file ID during load, runtime ID during save)
  * @param new_id Output for remapped ID
- * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT if not found
+ * @return NMO_OK on success, NMO_ERR_NOT_FOUND if not found
  */
 NMO_API int nmo_id_remap_lookup(const nmo_id_remap_table_t *table,
                                 nmo_object_id_t old_id,
@@ -88,8 +88,10 @@ NMO_API void nmo_id_remap_table_destroy(nmo_id_remap_table_t *table);
 /**
  * @brief Create ID remap plan for save operations
  * 
- * Creates a plan that maps runtime IDs to sequential file IDs (starting from 0)
+ * Creates a plan that maps runtime IDs to sequential file IDs (starting from 1)
  * for the objects being saved.
+ *
+ * File ID 0 is reserved to mean "no file ID".
  * 
  * @param repo Object repository
  * @param objects_to_save Array of objects to save

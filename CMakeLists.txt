@@ -96,6 +96,7 @@ set(NMO_CORE_SOURCES
     src/core/arena.c
     src/core/error.c
     src/core/logger.c
+    src/core/version.c
     src/core/guid.c
     src/core/array.c
     src/core/arena_array.c

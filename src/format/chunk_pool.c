@@ -15,6 +15,7 @@
  */
 typedef struct nmo_pool_entry {
     nmo_chunk_t *chunk;     /**< Chunk pointer */
+    uint32_t generation;    /**< Generation counter for use-after-release detection */
     int in_use;             /**< 1 if acquired, 0 if available */
 } nmo_pool_entry_t;
 
@@ -27,6 +28,7 @@ struct nmo_chunk_pool {
     size_t count;               /**< Number of entries (total chunks) */
     size_t available;           /**< Number of available chunks */
     nmo_arena_t *arena;         /**< Arena for allocations */
+    uint32_t pool_generation;   /**< Global pool generation counter */
 };
 
 /**
@@ -66,6 +68,7 @@ NMO_API nmo_chunk_pool_t *nmo_chunk_pool_create(
     pool->count = 0;
     pool->available = 0;
     pool->arena = arena;
+    pool->pool_generation = 0;
 
     return pool;
 }
@@ -125,8 +128,9 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     for (size_t i = 0; i < pool->count; i++) {
         if (!pool->entries[i].in_use) {
             pool->entries[i].in_use = 1;
+            pool->entries[i].generation = ++pool->pool_generation;
             pool->available--;
-            
+
             nmo_chunk_t *chunk = pool->entries[i].chunk;
             reset_chunk(chunk);
             return chunk;
@@ -136,6 +140,11 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     // No available chunk, need to allocate a new one
     if (pool->count >= pool->capacity) {
         // Pool is full, need to expand
+        // NOTE: Since we use arena allocation, the old entries array cannot be freed.
+        // This is a known memory leak in the arena allocator pattern. The memory will
+        // be reclaimed when the arena itself is destroyed. For production use, consider
+        // using malloc/free for the entries array or implement a bump allocator with
+        // explicit free support.
         size_t new_capacity = pool->capacity * 2;
         nmo_pool_entry_t *new_entries = (nmo_pool_entry_t *)nmo_arena_alloc(
             pool->arena,
@@ -147,9 +156,9 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
         }
 
         // Copy old entries
-        memcpy(new_entries, pool->entries, 
+        memcpy(new_entries, pool->entries,
                pool->count * sizeof(nmo_pool_entry_t));
-        
+
         // Clear new entries
         memset(new_entries + pool->count, 0,
                (new_capacity - pool->count) * sizeof(nmo_pool_entry_t));
@@ -167,6 +176,7 @@ NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     // Add to pool
     pool->entries[pool->count].chunk = chunk;
     pool->entries[pool->count].in_use = 1;
+    pool->entries[pool->count].generation = ++pool->pool_generation;
     pool->count++;
 
     return chunk;
@@ -188,13 +198,40 @@ NMO_API void nmo_chunk_pool_release(
         if (pool->entries[i].chunk == chunk && pool->entries[i].in_use) {
             pool->entries[i].in_use = 0;
             pool->available++;
+            // Increment generation to detect use-after-release
+            pool->entries[i].generation = ++pool->pool_generation;
             reset_chunk(chunk);
             return;
         }
     }
 
     // Chunk not found in pool - this is an error condition
+    // The chunk may have been already released or was never acquired from this pool
     assert(0 && "Chunk not found in pool or already released");
+}
+
+/**
+ * @brief Validate chunk pointer (detect use-after-release)
+ *
+ * @param pool Pool to validate against
+ * @param chunk Chunk to validate
+ * @return 1 if chunk is valid and in use, 0 if released or invalid
+ */
+NMO_API int nmo_chunk_pool_validate(
+    const nmo_chunk_pool_t *pool,
+    const nmo_chunk_t *chunk
+) {
+    if (!pool || !chunk) {
+        return 0;
+    }
+
+    for (size_t i = 0; i < pool->count; i++) {
+        if (pool->entries[i].chunk == chunk) {
+            return pool->entries[i].in_use;
+        }
+    }
+
+    return 0; // Not found in pool
 }
 
 /**

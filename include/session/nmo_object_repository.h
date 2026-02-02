@@ -93,11 +93,19 @@ NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository_t *re
 
 /**
  * @brief Get all objects
+ *
+ * @note This function returns NULL for both empty repositories (count=0) and
+ * allocation failures. To distinguish between these cases, check the count:
+ * - *out_count == 0: Empty repository (success)
+ * - *out_count == 0 and repository has objects: Allocation failure
+ * For production use, consider checking nmo_object_repository_get_count() first.
+ *
  * @param repository Repository
- * @param out_count Output count
+ * @param out_count Output count (always set, even on error)
  * @return Array of objects (caller must not free).
  *         The returned array is owned by the repository and is valid until the
  *         next call to nmo_object_repository_get_all() or repository destruction.
+ *         Returns NULL on error or if repository is empty.
  */
 NMO_API nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repository,
                                                      size_t *out_count);

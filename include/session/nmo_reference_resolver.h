@@ -149,7 +149,7 @@ NMO_API nmo_object_t *nmo_reference_resolver_resolve(
  * reference's resolved_object field.
  *
  * @param resolver Resolver instance (required)
- * @return NMO_OK if all resolved successfully, NMO_WARN if some failed
+ * @return NMO_OK. Use nmo_reference_resolver_has_unresolved() / get_unresolved() for diagnostics.
  */
 NMO_API int nmo_reference_resolver_resolve_all(
     nmo_reference_resolver_t *resolver

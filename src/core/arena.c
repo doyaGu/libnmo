@@ -7,7 +7,27 @@
 #define NMO_ARENA_DEFAULT_CHUNK_SIZE (64 * 1024)   // 64 KB
 #define NMO_ARENA_DEFAULT_MAX_CHUNK (16 * 1024 * 1024)  // 16 MB
 #define NMO_ARENA_DEFAULT_GROWTH_FACTOR 2.0f
+#define NMO_ARENA_MAX_GROWTH_FACTOR 8.0f
 #define NMO_ARENA_ALIGNMENT 16
+
+/**
+ * Safely multiply a size by a float factor with overflow protection.
+ * Returns base if factor is invalid (NaN, Inf, < 1.0).
+ * Clamps result to max_size (or SIZE_MAX if max_size is 0).
+ */
+static size_t safe_size_multiply_float(size_t base, float factor, size_t max_size) {
+    if (!isfinite(factor) || factor < 1.0f) {
+        return base;
+    }
+    if (max_size == 0) {
+        max_size = SIZE_MAX;
+    }
+    double result = (double)base * (double)factor;
+    if (result >= (double)max_size) {
+        return max_size;
+    }
+    return (size_t)result;
+}
 
 static int nmo_arena_is_power_of_two(size_t value) {
     return value != 0 && (value & (value - 1)) == 0;
@@ -93,7 +113,8 @@ nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_con
     if (cfg.initial_block_size == 0) {
         cfg.initial_block_size = NMO_ARENA_DEFAULT_CHUNK_SIZE;
     }
-    if (cfg.growth_factor < 1.0f) {
+    if (cfg.growth_factor < 1.0f || cfg.growth_factor > NMO_ARENA_MAX_GROWTH_FACTOR ||
+        !isfinite(cfg.growth_factor)) {
         cfg.growth_factor = NMO_ARENA_DEFAULT_GROWTH_FACTOR;
     }
     if (cfg.alignment == 0 || !nmo_arena_is_power_of_two(cfg.alignment) || cfg.alignment > NMO_ARENA_ALIGNMENT) {
@@ -188,16 +209,20 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment) {
 
         if (!used_existing) {
             // Calculate next chunk size with growth factor (Phase 5)
-            size_t new_chunk_size = (size_t)(arena->next_chunk_size * arena->growth_factor);
-
-            // Clamp to max_chunk_size if set
-            if (arena->max_chunk_size > 0 && new_chunk_size > arena->max_chunk_size) {
-                new_chunk_size = arena->max_chunk_size;
-            }
+            size_t new_chunk_size = safe_size_multiply_float(
+                arena->next_chunk_size,
+                arena->growth_factor,
+                arena->max_chunk_size
+            );
 
             // If requested size is larger than calculated chunk size, use larger chunk
             if (size > new_chunk_size) {
-                new_chunk_size = (size + alignment - 1) & ~(alignment - 1);
+                // Check for overflow before alignment calculation
+                if (size > SIZE_MAX - (alignment - 1)) {
+                    new_chunk_size = SIZE_MAX & ~(alignment - 1);
+                } else {
+                    new_chunk_size = (size + alignment - 1) & ~(alignment - 1);
+                }
             }
 
             nmo_arena_chunk_t *new_chunk = arena_create_chunk(&arena->allocator, new_chunk_size);
@@ -285,15 +310,12 @@ int nmo_arena_reserve(nmo_arena_t *arena, size_t total_size) {
     
     // Allocate in chunks following growth pattern
     while (needed > 0) {
-        size_t chunk_size = arena->next_chunk_size;
-        
-        // Apply growth factor
-        chunk_size = (size_t)(chunk_size * arena->growth_factor);
-        
-        // Clamp to max
-        if (arena->max_chunk_size > 0 && chunk_size > arena->max_chunk_size) {
-            chunk_size = arena->max_chunk_size;
-        }
+        // Apply growth factor with overflow protection
+        size_t chunk_size = safe_size_multiply_float(
+            arena->next_chunk_size,
+            arena->growth_factor,
+            arena->max_chunk_size
+        );
         
         // Don't allocate more than needed
         if (chunk_size > needed) {
@@ -343,11 +365,16 @@ int nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config) {
 const char *nmo_arena_strdup(nmo_arena_t *arena, const char *str) {
     if (!str) return NULL;
     if (!arena) return NULL;
-    
-    size_t len = strlen(str) + 1;
-    char *copy = (char*)nmo_arena_alloc(arena, len, 1);
+
+    size_t len = strlen(str);
+    if (len == SIZE_MAX) {
+        return NULL;  // Overflow protection
+    }
+    size_t alloc_size = len + 1;
+
+    char *copy = (char*)nmo_arena_alloc(arena, alloc_size, 1);
     if (!copy) return NULL;
-    
-    memcpy(copy, str, len);
+
+    memcpy(copy, str, alloc_size);
     return copy;
 }

@@ -12,6 +12,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static void *test_malloc_alloc(void *user_data, size_t size, size_t alignment) {
+    (void)user_data;
+    (void)alignment;
+    return malloc(size);
+}
+
+static void test_malloc_free(void *user_data, void *ptr) {
+    (void)user_data;
+    free(ptr);
+}
+
+static void test_log_counter(void *user_data, nmo_log_level_t level, const char *message) {
+    (void)level;
+    (void)message;
+    int *counter = (int *)user_data;
+    (*counter)++;
+}
+
 /**
  * Test context creation with default settings
  */
@@ -42,8 +60,11 @@ TEST(context_session, create_default) {
  * Test context creation with custom settings
  */
 TEST(context_session, create_custom) {
-    nmo_allocator_t allocator = nmo_allocator_default();
-    nmo_logger_t logger = nmo_logger_null();
+    int alloc_tag = 123;
+    int log_counter = 0;
+
+    nmo_allocator_t allocator = nmo_allocator_custom(test_malloc_alloc, test_malloc_free, &alloc_tag);
+    nmo_logger_t logger = nmo_logger_custom(test_log_counter, &log_counter, NMO_LOG_INFO);
 
     nmo_context_desc_t desc = {
         .allocator = &allocator,
@@ -56,10 +77,38 @@ TEST(context_session, create_custom) {
 
     /* Verify custom settings */
     nmo_allocator_t* ctx_allocator = nmo_context_get_allocator(ctx);
-    ASSERT_EQ(&allocator, ctx_allocator);
+    ASSERT_NOT_NULL(ctx_allocator);
+    ASSERT_NE(&allocator, ctx_allocator);
+    ASSERT_EQ(allocator.alloc, ctx_allocator->alloc);
+    ASSERT_EQ(allocator.free, ctx_allocator->free);
+    ASSERT_EQ(allocator.user_data, ctx_allocator->user_data);
 
     nmo_logger_t* ctx_logger = nmo_context_get_logger(ctx);
-    ASSERT_EQ(&logger, ctx_logger);
+    ASSERT_NOT_NULL(ctx_logger);
+    ASSERT_NE(&logger, ctx_logger);
+    ASSERT_EQ(logger.log, ctx_logger->log);
+    ASSERT_EQ(logger.user_data, ctx_logger->user_data);
+    ASSERT_EQ(logger.level, ctx_logger->level);
+
+    /* Mutating the original desc structs should not affect the context */
+    logger.level = NMO_LOG_ERROR;
+    allocator.user_data = NULL;
+    ASSERT_EQ(NMO_LOG_INFO, ctx_logger->level);
+    ASSERT_EQ(&alloc_tag, ctx_allocator->user_data);
+
+    /* Logger switching should replace the logger callback */
+    ASSERT_EQ(test_log_counter, ctx_logger->log);
+    nmo_context_enable_logging(ctx, 0);
+    ctx_logger = nmo_context_get_logger(ctx);
+    ASSERT_NE(test_log_counter, ctx_logger->log);
+    nmo_context_enable_logging(ctx, 1);
+    ctx_logger = nmo_context_get_logger(ctx);
+    ASSERT_NE(test_log_counter, ctx_logger->log);
+
+    /* Setting log level should take effect */
+    nmo_context_set_log_level(ctx, NMO_LOG_ERROR);
+    ctx_logger = nmo_context_get_logger(ctx);
+    ASSERT_EQ(NMO_LOG_ERROR, ctx_logger->level);
 
     nmo_context_release(ctx);
 }

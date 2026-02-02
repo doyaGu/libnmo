@@ -70,6 +70,21 @@ NMO_API void nmo_chunk_pool_release(
 );
 
 /**
+ * @brief Validate chunk pointer (detect use-after-release)
+ *
+ * Checks if a chunk pointer is valid and currently acquired from the pool.
+ * Useful for debugging and detecting use-after-release bugs.
+ *
+ * @param pool Pool to validate against
+ * @param chunk Chunk to validate
+ * @return 1 if chunk is valid and in use, 0 if released or invalid
+ */
+NMO_API int nmo_chunk_pool_validate(
+    const nmo_chunk_pool_t *pool,
+    const nmo_chunk_t *chunk
+);
+
+/**
  * @brief Get pool statistics
  *
  * @param pool Pool to query

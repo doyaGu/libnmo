@@ -113,11 +113,7 @@ add_unit_test(test_repository)
 add_unit_test(test_object_repository)
 add_unit_test(test_object_index)  # Phase 5: Object indexing tests
 add_unit_test(test_chunk_advanced)  # Phase 6: Advanced chunk features tests
-add_unit_test(test_context)
-add_unit_test(test_context_session)
-add_unit_test(test_context_threadsafe)  # Thread-safety tests
 add_unit_test(test_manager_registry)
-add_unit_test(test_plugin_diagnostics)
 add_unit_test(test_nmo_baseline)
 # Set working directory to project root so data/ can be found
 set_tests_properties(test_nmo_baseline PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -128,6 +124,16 @@ add_unit_test(test_load_session_id_remap)
 add_unit_test(test_session)
 
 # App layer tests (Phase 7)
+# Public API / umbrella header smoke test
+add_unit_test(test_public_api_smoke)
+
+# Context and session integration
+add_unit_test(test_context_session)
+add_unit_test(test_context_threadsafe)  # Thread-safety tests
+
+# Plugin manager / diagnostics
+add_unit_test(test_plugin_diagnostics)
+
 # TODO: Re-enable when tests are updated to use correct API
 # add_unit_test(test_stats)
 # add_unit_test(test_inspector)
