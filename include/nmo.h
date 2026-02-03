@@ -9,11 +9,13 @@
  * (.nmo/.cmo/.vmo) with full compatibility with the original Virtools runtime.
  *
  * Architecture:
- * - Core Layer: allocator, arena, error, logger, GUID
- * - IO Layer: file, memory, compressed, checksum, transactional IO
- * - Format Layer: headers, chunks, objects, managers
- * - Object Layer: repository, ID remapping
- * - Session Layer: context, session, parser, builder
+ * - Core Layer: allocator, arena, error, logger, GUID, math, color, pool, refcount, containers
+ * - IO Layer: file, memory, compressed, checksum, mmap, transactional IO
+ * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
+ * - Object Layer: class IDs, object types, schemas
+ * - Type Layer: type system, dynamic types, operation system, builtin operations, string conversion
+ * - Session Layer: repository, ID remapping, object system, object index, parser, builder
+ * - App Layer: context, session, plugin, comparison, finish loading, inspector, save pipeline, stats
  *
  * Basic usage:
  * @code
@@ -57,6 +59,10 @@
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_list.h"
 #include "core/nmo_shared_library.h"
+#include "core/nmo_math.h"
+#include "core/nmo_color.h"
+#include "core/nmo_pool.h"
+#include "core/nmo_refcount.h"
 
 // IO layer
 #include "io/nmo_io.h"
@@ -64,6 +70,7 @@
 #include "io/nmo_io_memory.h"
 #include "io/nmo_io_compressed.h"
 #include "io/nmo_io_checksum.h"
+#include "io/nmo_io_mmap.h"
 #include "io/nmo_txn.h"
 
 // Format layer
@@ -75,10 +82,23 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
 #include "format/nmo_chunk_writer.h"
+#include "format/nmo_chunk_pool.h"
 #include "format/nmo_manager_registry.h"
 #include "format/nmo_image.h"
 #include "format/nmo_image_codec.h"
 #include "format/nmo_stb_adapter.h"
+#include "format/nmo_data.h"
+
+// Object layer
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_types.h"
+
+// Type layer
+#include "type/type_system.h"
+#include "type/dynamic_types.h"
+#include "type/operation_system.h"
+#include "type/builtin_operations.h"
+#include "type/type_string.h"
 
 // Session layer
 #include "session/nmo_object_repository.h"
@@ -86,11 +106,18 @@
 #include "format/nmo_id_remap.h"
 #include "session/nmo_parser.h"
 #include "session/nmo_builder.h"
+#include "session/nmo_object_system.h"
+#include "session/nmo_object_index.h"
 
 // App layer
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "app/nmo_plugin.h"
+#include "app/nmo_comparison.h"
+#include "app/nmo_finish_loading.h"
+#include "app/nmo_inspector.h"
+#include "app/nmo_save_pipeline.h"
+#include "app/nmo_stats.h"
 
 #ifdef __cplusplus
 extern "C" {
