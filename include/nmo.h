@@ -64,7 +64,6 @@
 #include "io/nmo_io_memory.h"
 #include "io/nmo_io_compressed.h"
 #include "io/nmo_io_checksum.h"
-#include "io/nmo_io_stream.h"
 #include "io/nmo_txn.h"
 
 // Format layer
