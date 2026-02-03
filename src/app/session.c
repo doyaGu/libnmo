@@ -8,6 +8,7 @@
 #include "app/nmo_parser.h"
 #include "app/nmo_plugin.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_arena_array.h"
 #include "core/nmo_allocator.h"
 #include "session/nmo_object_repository.h"
 #include "session/nmo_object_index.h"
@@ -18,7 +19,6 @@
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
 #include <stddef.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define DEFAULT_ARENA_SIZE (1024 * 1024)  /* 1 MB */
@@ -30,6 +30,9 @@
 typedef struct nmo_session {
     /* Borrowed context (not owned) */
     nmo_context_t *context;
+
+    /* Allocator snapshot used to allocate/free the session + arena */
+    nmo_allocator_t allocator;
 
     /* Owned resources */
     nmo_arena_t *arena;
@@ -65,9 +68,7 @@ typedef struct nmo_session {
     uint32_t plugin_dep_count;
 
     /* Included files */
-    nmo_included_file_t *included_files;
-    uint32_t included_file_count;
-    uint32_t included_file_capacity;
+    nmo_arena_array_t included_files;
 
     /* Chunk pool for chunk allocations */
     nmo_chunk_pool_t *chunk_pool;
@@ -80,43 +81,11 @@ typedef struct nmo_session {
     /* Plugin dependency diagnostics */
     nmo_session_plugin_diagnostics_t plugin_diag;
     int plugin_diag_valid;
+
+    /* Backing store for plugin diagnostics entries (arena-backed) */
+    nmo_arena_array_t plugin_diag_entries;
 } nmo_session_t;
 
-static int nmo_session_reserve_included_files(nmo_session_t *session, uint32_t needed) {
-    if (session == NULL || session->arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (session->included_file_capacity >= needed) {
-        return NMO_OK;
-    }
-
-    uint32_t new_capacity = session->included_file_capacity ? session->included_file_capacity : 4;
-    while (new_capacity < needed) {
-        new_capacity *= 2;
-    }
-
-    size_t bytes = sizeof(nmo_included_file_t) * new_capacity;
-    nmo_included_file_t *new_block = (nmo_included_file_t *) nmo_arena_alloc(
-        session->arena,
-        bytes,
-        alignof(nmo_included_file_t));
-    if (new_block == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    memset(new_block, 0, bytes);
-
-    if (session->included_files != NULL && session->included_file_count > 0) {
-        memcpy(new_block,
-               session->included_files,
-               sizeof(nmo_included_file_t) * session->included_file_count);
-    }
-
-    session->included_files = new_block;
-    session->included_file_capacity = new_capacity;
-    return NMO_OK;
-}
 /**
  * Create session
  */
@@ -125,21 +94,26 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         return NULL;
     }
 
-    nmo_session_t *session = (nmo_session_t *) malloc(sizeof(nmo_session_t));
+    nmo_allocator_t *ctx_allocator = nmo_context_get_allocator(ctx);
+    nmo_allocator_t allocator = (ctx_allocator != NULL) ? *ctx_allocator : nmo_allocator_default();
+
+    nmo_session_t *session = (nmo_session_t *) nmo_alloc(&allocator, sizeof(nmo_session_t), _Alignof(nmo_session_t));
     if (session == NULL) {
         return NULL;
     }
 
-    memset(session, 0, sizeof(nmo_session_t));
+    memset(session, 0, sizeof(*session));
 
     /* Borrow context (do not retain) */
     session->context = ctx;
 
+    /* Snapshot allocator for consistent frees */
+    session->allocator = allocator;
+
     /* Create arena for session-local allocations */
-    nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
-    session->arena = nmo_arena_create(allocator, DEFAULT_ARENA_SIZE);
+    session->arena = nmo_arena_create(&session->allocator, DEFAULT_ARENA_SIZE);
     if (session->arena == NULL) {
-        free(session);
+        nmo_free(&session->allocator, session);
         return NULL;
     }
 
@@ -147,7 +121,24 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     session->repository = nmo_object_repository_create(session->arena);
     if (session->repository == NULL) {
         nmo_arena_destroy(session->arena);
-        free(session);
+        nmo_free(&session->allocator, session);
+        return NULL;
+    }
+
+    if (nmo_arena_array_init(&session->included_files, sizeof(nmo_included_file_t), 0, session->arena) != NMO_OK) {
+        nmo_object_repository_destroy(session->repository);
+        nmo_arena_destroy(session->arena);
+        nmo_free(&session->allocator, session);
+        return NULL;
+    }
+
+    if (nmo_arena_array_init(&session->plugin_diag_entries,
+                            sizeof(nmo_session_plugin_dependency_status_t),
+                            0,
+                            session->arena) != NMO_OK) {
+        nmo_object_repository_destroy(session->repository);
+        nmo_arena_destroy(session->arena);
+        nmo_free(&session->allocator, session);
         return NULL;
     }
 
@@ -159,9 +150,6 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     session->manager_data_count = 0;
     session->plugin_deps = NULL;
     session->plugin_dep_count = 0;
-    session->included_files = NULL;
-    session->included_file_count = 0;
-    session->included_file_capacity = 0;
     session->chunk_pool = NULL;
     session->chunk_pool_capacity = 0;
 
@@ -182,7 +170,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     if (session->id_sanitizer == NULL) {
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
-        free(session);
+        nmo_free(&session->allocator, session);
         return NULL;
     }
 
@@ -193,7 +181,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         session->id_sanitizer = NULL;
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
-        free(session);
+        nmo_free(&session->allocator, session);
         return NULL;
     }
     
@@ -250,7 +238,7 @@ void nmo_session_destroy(nmo_session_t *session) {
 
         /* Do not release context - we only borrowed it */
 
-        free(session);
+        nmo_free(&session->allocator, session);
     }
 }
 
@@ -419,24 +407,14 @@ static int nmo_session_copy_owner_ids(
     }
 
     if (owner_ids == NULL || owner_count == 0) {
-        entry->owner_count = 0;
+        nmo_arena_array_clear(&entry->owner_ids);
         return NMO_OK;
     }
 
-    if (entry->owner_capacity < owner_count || entry->owner_ids == NULL) {
-        nmo_object_id_t *buffer = (nmo_object_id_t *) nmo_arena_alloc(
-            session->arena,
-            owner_count * sizeof(nmo_object_id_t),
-            sizeof(nmo_object_id_t));
-        if (buffer == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-        entry->owner_ids = buffer;
-        entry->owner_capacity = owner_count;
+    nmo_arena_array_clear(&entry->owner_ids);
+    if (nmo_arena_array_append_array(&entry->owner_ids, owner_ids, owner_count) != NMO_OK) {
+        return NMO_ERR_NOMEM;
     }
-
-    memcpy(entry->owner_ids, owner_ids, owner_count * sizeof(nmo_object_id_t));
-    entry->owner_count = owner_count;
     return NMO_OK;
 }
 
@@ -459,14 +437,21 @@ static int nmo_session_store_included_file(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int reserve_result = nmo_session_reserve_included_files(session, session->included_file_count + 1);
-    if (reserve_result != NMO_OK) {
-        return reserve_result;
+    nmo_included_file_t *entry = NULL;
+    if (nmo_arena_array_extend(&session->included_files, 1, (void **)&entry) != NMO_OK || entry == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    memset(entry, 0, sizeof(*entry));
+    if (nmo_arena_array_init(&entry->owner_ids, sizeof(nmo_object_id_t), 0, session->arena) != NMO_OK) {
+        (void)nmo_arena_array_pop(&session->included_files, NULL);
+        return NMO_ERR_NOMEM;
     }
 
     size_t name_len = strlen(name);
     char *name_copy = (char *) nmo_arena_alloc(session->arena, name_len + 1, 1);
     if (name_copy == NULL) {
+        (void)nmo_arena_array_pop(&session->included_files, NULL);
         return NMO_ERR_NOMEM;
     }
     memcpy(name_copy, name, name_len + 1);
@@ -477,6 +462,7 @@ static int nmo_session_store_included_file(
         if (copy_payload) {
             payload = nmo_arena_alloc(session->arena, size, 1);
             if (payload == NULL) {
+                (void)nmo_arena_array_pop(&session->included_files, NULL);
                 return NMO_ERR_NOMEM;
             }
             memcpy(payload, payload_src, size);
@@ -485,7 +471,6 @@ static int nmo_session_store_included_file(
         }
     }
 
-    nmo_included_file_t *entry = &session->included_files[session->included_file_count++];
     entry->name = name_copy;
     entry->data = payload;
     entry->size = size;
@@ -494,9 +479,6 @@ static int nmo_session_store_included_file(
         entry_attributes |= meta_attrs;
     }
     entry->attributes = entry_attributes;
-    entry->owner_ids = NULL;
-    entry->owner_count = 0;
-    entry->owner_capacity = 0;
 
     if (meta != NULL) {
         int owner_result = nmo_session_copy_owner_ids(
@@ -505,6 +487,7 @@ static int nmo_session_store_included_file(
             meta->owner_ids,
             meta->owner_count);
         if (owner_result != NMO_OK) {
+            (void)nmo_arena_array_pop(&session->included_files, NULL);
             return owner_result;
         }
     }
@@ -556,13 +539,17 @@ int nmo_session_set_included_file_owners(
     const nmo_object_id_t *owner_ids,
     uint32_t owner_count
 ) {
-    if (session == NULL || index >= session->included_file_count) {
+    if (session == NULL || index >= session->included_files.count) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_included_file_t *entry = &session->included_files[index];
+    nmo_included_file_t *entry = (nmo_included_file_t *)nmo_arena_array_get(&session->included_files, index);
+    if (entry == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
     if (owner_ids == NULL || owner_count == 0) {
-        entry->owner_count = 0;
+        nmo_arena_array_clear(&entry->owner_ids);
         return NMO_OK;
     }
 
@@ -581,10 +568,10 @@ nmo_included_file_t *nmo_session_get_included_files(
     }
 
     if (out_count != NULL) {
-        *out_count = session->included_file_count;
+        *out_count = (uint32_t) session->included_files.count;
     }
 
-    return session->included_files;
+    return (nmo_included_file_t *) session->included_files.data;
 }
 
 /* High-level convenience API */
@@ -792,15 +779,13 @@ static int nmo_session_build_plugin_diagnostics(
     size_t outdated = 0;
     nmo_session_plugin_dependency_status_t *entries = NULL;
 
-    if (dep_count > 0 && arena != NULL) {
-        size_t bytes = dep_count * sizeof(nmo_session_plugin_dependency_status_t);
-        entries = (nmo_session_plugin_dependency_status_t *) nmo_arena_alloc(
-            arena,
-            bytes,
-            alignof(nmo_session_plugin_dependency_status_t));
-        if (entries != NULL) {
-            memset(entries, 0, bytes);
+    nmo_arena_array_clear(&session->plugin_diag_entries);
+    if (dep_count > 0) {
+        if (nmo_arena_array_extend(&session->plugin_diag_entries, dep_count, (void **)&entries) != NMO_OK ||
+            entries == NULL) {
+            return NMO_ERR_NOMEM;
         }
+        memset(entries, 0, dep_count * sizeof(*entries));
     }
 
     if (deps != NULL && dep_count > 0) {

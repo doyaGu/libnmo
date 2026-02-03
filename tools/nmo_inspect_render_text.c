@@ -552,11 +552,11 @@ static void print_resource_section(FILE *out, const inspect_state_t *state, cons
             break;
         }
         fprintf(out,
-                "[%u] %s (%u bytes) owners=%u\n",
+            "[%u] %s (%u bytes) owners=%zu\n",
                 i,
                 files[i].name ? files[i].name : "(unnamed)",
                 files[i].size,
-                files[i].owner_count);
+            files[i].owner_ids.count);
         rows_written++;
     }
 

@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_arena_array.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -317,9 +318,7 @@ typedef struct nmo_included_file {
     const char *name;           /**< Filename without path */
     const void *data;           /**< Raw payload data */
     uint32_t size;              /**< Payload size in bytes */
-    nmo_object_id_t *owner_ids; /**< Owning object IDs (optional) */
-    uint32_t owner_count;       /**< Number of owning objects */
-    uint32_t owner_capacity;    /**< Allocated owner slots */
+    nmo_arena_array_t owner_ids; /**< Owning object IDs (optional, element type: nmo_object_id_t) */
     uint32_t attributes;        /**< Metadata flags (borrowed payload, etc.) */
 } nmo_included_file_t;
 
