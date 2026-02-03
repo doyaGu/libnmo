@@ -31,7 +31,6 @@ add_integration_test(test_real_file_roundtrip)
 # add_integration_test(test_macro_integration)
 
 # Phase 5.6: Schema v2 plugin and metadata integration tests
-add_integration_test(test_plugin_tracking)
 add_integration_test(test_cascade_deletion)
 add_integration_test(test_specialized_metadata)
 add_integration_test(test_type_invalidation)

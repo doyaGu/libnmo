@@ -613,14 +613,12 @@ TEST(type_registry, statistics) {
     int_type.guid = GUID_INT;
     int_type.name = "int";
     int_type.size = 4;
-    int_type.creator_plugin = NULL;  /* Builtin */
     nmo_type_registry_register(registry, &int_type);
     
     nmo_type_descriptor_t float_type = {0};
     float_type.guid = GUID_FLOAT;
     float_type.name = "float";
     float_type.size = 4;
-    float_type.creator_plugin = NULL;  /* Builtin */
     nmo_type_registry_register(registry, &float_type);
     
     size_t total = 0, builtin = 0, plugin = 0;

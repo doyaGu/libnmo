@@ -18,7 +18,7 @@ extern "C" {
 typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
-typedef struct nmo_plugin_manager nmo_plugin_manager_t;
+typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_arena nmo_arena_t;
 
 /**
@@ -100,9 +100,14 @@ NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *
 NMO_API nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_context_t *ctx);
 
 /**
- * @brief Get plugin manager
+ * @brief Get extension registry
+ *
+ * Thread-safe access to the extension registry.
+ *
+ * @param ctx Context
+ * @return Extension registry or NULL
  */
-NMO_API nmo_plugin_manager_t *nmo_context_get_plugin_manager(const nmo_context_t *ctx);
+NMO_API nmo_extension_registry_t *nmo_context_get_extension_registry(const nmo_context_t *ctx);
 
 /**
  * @brief Get allocator

@@ -96,15 +96,15 @@ add_unit_test(test_type_compatibility)
 # Phase 6.4: String conversion and serialization tests
 add_unit_test(test_type_string)
 
-# Phase 6.5: Type statistics and visibility control tests
-add_unit_test(test_type_statistics)
-
 # Phase 6.6: Custom manager support tests
 add_unit_test(test_custom_managers)
 
 # Phase 6.7: Object types system tests
 add_unit_test(test_object_types)
 add_unit_test(test_object_types_conformance)
+
+# Extension layer tests
+add_unit_test(test_extension_registry)
 
 # Session layer tests
 add_unit_test(test_id_sanitizer)  # Phase 1.1: ID sanitization pipeline
@@ -130,13 +130,6 @@ add_unit_test(test_public_api_smoke)
 # Context and session integration
 add_unit_test(test_context_session)
 add_unit_test(test_context_threadsafe)  # Thread-safety tests
-
-# Plugin manager / diagnostics
-add_unit_test(test_plugin_diagnostics)
-
-# TODO: Re-enable when tests are updated to use correct API
-# add_unit_test(test_stats)
-# add_unit_test(test_inspector)
 
 # Phase 2.1: Dual-Track IO API tests
 add_unit_test(test_load_options)

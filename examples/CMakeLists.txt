@@ -13,6 +13,3 @@ target_link_libraries(custom_manager PRIVATE nmo)
 
 add_executable(object_inspector object_inspector.c)
 target_link_libraries(object_inspector PRIVATE nmo)
-
-add_executable(plugin_example plugin_example.c)
-target_link_libraries(plugin_example PRIVATE nmo)

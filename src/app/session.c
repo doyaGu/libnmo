@@ -7,7 +7,7 @@
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
-#include "app/nmo_plugin.h"
+#include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_allocator.h"
@@ -253,11 +253,11 @@ nmo_context_t *nmo_session_get_context(const nmo_session_t *session) {
     return session ? session->context : NULL;
 }
 
-nmo_plugin_manager_t *nmo_session_get_plugin_manager(const nmo_session_t *session) {
+nmo_extension_registry_t *nmo_session_get_extension_registry(const nmo_session_t *session) {
     if (session == NULL) {
         return NULL;
     }
-    return nmo_context_get_plugin_manager(session->context);
+    return nmo_context_get_extension_registry(session->context);
 }
 
 /**
@@ -370,12 +370,12 @@ int nmo_session_set_plugin_dependencies(
 
     if (deps == NULL || count == 0) {
         nmo_context_t *ctx = nmo_session_get_context(session);
-        int manager_available = 0;
-        if (ctx != NULL && nmo_context_get_plugin_manager(ctx) != NULL) {
-            manager_available = 1;
+        int registry_available = 0;
+        if (ctx != NULL && nmo_context_get_extension_registry(ctx) != NULL) {
+            registry_available = 1;
         }
 
-        nmo_session_set_plugin_diagnostics(session, NULL, 0, 0, 0, manager_available);
+        nmo_session_set_plugin_diagnostics(session, NULL, 0, 0, 0, registry_available);
         return NMO_OK;
     }
 
@@ -748,7 +748,7 @@ void nmo_session_set_plugin_diagnostics(
     session->plugin_diag.entry_count = entry_count;
     session->plugin_diag.missing_count = missing_count;
     session->plugin_diag.outdated_count = outdated_count;
-    session->plugin_diag.plugin_manager_available = plugin_manager_available ? 1 : 0;
+    session->plugin_diag.extension_registry_available = plugin_manager_available ? 1 : 0;
     session->plugin_diag_valid = 1;
 }
 
@@ -775,8 +775,8 @@ static int nmo_session_build_plugin_diagnostics(
 
     nmo_arena_t *arena = nmo_session_get_arena(session);
     nmo_context_t *ctx = nmo_session_get_context(session);
-    nmo_plugin_manager_t *plugin_manager = ctx != NULL
-        ? nmo_context_get_plugin_manager(ctx)
+    nmo_extension_registry_t *ext_registry = ctx != NULL
+        ? nmo_context_get_extension_registry(ctx)
         : NULL;
 
     size_t missing = 0;
@@ -803,15 +803,15 @@ static int nmo_session_build_plugin_diagnostics(
                 entry->required_version = dep->version;
             }
 
-            const nmo_plugin_t *registered = plugin_manager
-                ? nmo_plugin_manager_find_by_guid(plugin_manager, dep->guid)
+            const nmo_extension_plugin_info_t *registered = ext_registry
+                ? nmo_extension_registry_find(ext_registry, dep->guid)
                 : NULL;
 
             if (registered == NULL) {
                 missing++;
                 if (entry != NULL) {
                     entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
-                    if (plugin_manager == NULL) {
+                    if (ext_registry == NULL) {
                         entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE;
                     }
                 }
@@ -840,7 +840,7 @@ static int nmo_session_build_plugin_diagnostics(
         dep_count,
         missing,
         outdated,
-        plugin_manager != NULL ? 1 : 0);
+        ext_registry != NULL ? 1 : 0);
 
     if (out_missing != NULL) {
         *out_missing = missing;

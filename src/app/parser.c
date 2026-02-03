@@ -9,7 +9,7 @@
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
 #include "app/nmo_session.h"
-#include "app/nmo_plugin.h"
+#include "extension/nmo_extension_registry.h"
 #include "app/nmo_context.h"
 #include "app/nmo_finish_loading.h"
 #include "core/nmo_arena.h"
@@ -571,10 +571,10 @@ static int nmo_load_file_with_io(
         nmo_log(logger, NMO_LOG_INFO, "Phase 6: Checking plugin dependencies (%u plugins)",
             hdr1.plugin_dep_count);
 
-    nmo_plugin_manager_t *plugin_manager = nmo_session_get_plugin_manager(session);
+    nmo_extension_registry_t *ext_registry = nmo_session_get_extension_registry(session);
 
-    if (hdr1.plugin_dep_count > 0 && plugin_manager == NULL) {
-        nmo_log(logger, NMO_LOG_WARN, "  Plugin dependencies present but plugin manager is unavailable");
+    if (hdr1.plugin_dep_count > 0 && ext_registry == NULL) {
+        nmo_log(logger, NMO_LOG_WARN, "  Plugin dependencies present but extension registry is unavailable");
     }
 
     const nmo_session_plugin_diagnostics_t *diag = nmo_session_get_plugin_diagnostics(session);

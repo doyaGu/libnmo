@@ -4,7 +4,7 @@
  */
 
 #include "app/nmo_context.h"
-#include "app/nmo_plugin.h"
+#include "extension/nmo_extension_registry.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include "type/type_system.h"
@@ -59,7 +59,7 @@ typedef struct nmo_context {
     int logger_owned;
     nmo_type_registry_t *type_registry;      /* Schema v2 */
     nmo_manager_registry_t *manager_registry;
-    nmo_plugin_manager_t *plugin_manager;
+    nmo_extension_registry_t *extension_registry;
     nmo_arena_t *arena;
 
     /* Configuration */
@@ -180,8 +180,11 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
-    ctx->plugin_manager = nmo_plugin_manager_create(ctx);
-    if (ctx->plugin_manager == NULL) {
+    ctx->extension_registry = nmo_extension_registry_create(
+        ctx->allocator,
+        ctx->type_registry,
+        ctx->manager_registry);
+    if (ctx->extension_registry == NULL) {
         nmo_manager_registry_destroy(ctx->manager_registry);
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
@@ -222,8 +225,8 @@ void nmo_context_release(nmo_context_t *ctx) {
     /* If old value was 1, we just decremented to 0, so cleanup */
     if (old_refcount == 1) {
         /* Destroy owned resources */
-        if (ctx->plugin_manager != NULL) {
-            nmo_plugin_manager_destroy(ctx->plugin_manager);
+        if (ctx->extension_registry != NULL) {
+            nmo_extension_registry_destroy(ctx->extension_registry);
         }
 
         /* Destroy manager registry */
@@ -257,8 +260,8 @@ nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_context_t *ct
     return ctx ? ctx->manager_registry : NULL;
 }
 
-nmo_plugin_manager_t *nmo_context_get_plugin_manager(const nmo_context_t *ctx) {
-    return ctx ? ctx->plugin_manager : NULL;
+nmo_extension_registry_t *nmo_context_get_extension_registry(const nmo_context_t *ctx) {
+    return ctx ? ctx->extension_registry : NULL;
 }
 
 /**

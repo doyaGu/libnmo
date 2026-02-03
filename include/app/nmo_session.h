@@ -22,7 +22,7 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 typedef struct nmo_included_file nmo_included_file_t;
-typedef struct nmo_plugin_manager nmo_plugin_manager_t;
+typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_plugin_dep nmo_plugin_dep_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
@@ -82,9 +82,9 @@ NMO_API void nmo_session_destroy(nmo_session_t *session);
 NMO_API nmo_context_t *nmo_session_get_context(const nmo_session_t *session);
 
 /**
- * @brief Get plugin manager (borrowed from context)
+ * @brief Get extension registry (borrowed from context)
  */
-NMO_API nmo_plugin_manager_t *nmo_session_get_plugin_manager(const nmo_session_t *session);
+NMO_API nmo_extension_registry_t *nmo_session_get_extension_registry(const nmo_session_t *session);
 
 /**
  * @brief Get arena
@@ -443,7 +443,7 @@ typedef struct nmo_session_plugin_diagnostics {
     size_t entry_count;
     size_t missing_count;
     size_t outdated_count;
-    int plugin_manager_available;
+    int extension_registry_available;
 } nmo_session_plugin_diagnostics_t;
 
 NMO_API void nmo_session_set_plugin_diagnostics(
@@ -452,7 +452,7 @@ NMO_API void nmo_session_set_plugin_diagnostics(
     size_t entry_count,
     size_t missing_count,
     size_t outdated_count,
-    int plugin_manager_available);
+    int extension_registry_available);
 
 NMO_API const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     const nmo_session_t *session);

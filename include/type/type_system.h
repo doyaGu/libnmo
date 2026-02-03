@@ -23,7 +23,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_type_field nmo_type_field_t;
 typedef struct nmo_type_vtable nmo_type_vtable_t;
-typedef struct nmo_plugin nmo_plugin_t;  /* Use existing plugin type */
 typedef struct nmo_hash_table nmo_hash_table_t;
 struct nmo_chunk;  /* Forward declare for function pointers */
 
@@ -410,7 +409,7 @@ typedef struct nmo_type_descriptor {
     nmo_type_finish_loading_fn finish_loading; /* Optional post-deserialize hook */
     
     /* === Plugin Tracking (16 bytes) === */
-    const nmo_plugin_t *creator_plugin;  /* Plugin that registered this type */
+    nmo_guid_t creator_plugin_guid;      /* Extension plugin GUID that registered this type */
     nmo_manager_index_t saver_manager; /* Manager for custom serialization */
     uint32_t specialized_index;        /* 0-based index into metadata array (NMO_SPECIALIZED_INDEX_INVALID if none) */
     bool valid;                         /* FALSE after unregistration (soft invalidation) */
@@ -444,8 +443,7 @@ typedef struct nmo_type_registry {
     /* === Derivation Cache === */
     bool derivation_masks_valid;        /* FALSE when types change (lazy update) */
     
-    /* === Plugin Management === */
-    nmo_hash_table_t *plugin_map;    /* plugin_guid -> plugin_info */
+    /* === Plugin Tracking === */
     nmo_hash_table_t *type_to_plugin;/* type_id -> plugin_guid */
     
     /* === Specialized Metadata Storage === */
@@ -879,9 +877,9 @@ size_t nmo_type_registry_get_builtin_count(const nmo_type_registry_t *registry);
  * @brief Get number of plugin-defined types
  * 
  * @param registry Registry
- * @return Number of plugin types
+ * @return Number of plugin-registered types
  */
-size_t nmo_type_registry_get_plugin_count(const nmo_type_registry_t *registry);
+size_t nmo_type_registry_get_plugin_type_count(const nmo_type_registry_t *registry);
 
 /**
  * @brief Get number of Flags types
@@ -995,29 +993,23 @@ void nmo_type_registry_unregister_metadata(
     nmo_type_id_t type_id);
 
 /* ============================================================================
- * Plugin Management API (Cascade Deletion)
+ * Plugin Tracking API (Cascade Deletion)
  * ============================================================================ */
 
 /**
- * @brief Register plugin with registry
+ * @brief Set creator plugin GUID for a type
+ * 
+ * Associates a type with the extension plugin that registered it.
+ * Used for cascade deletion when unloading plugins.
  * 
  * @param registry Registry
- * @param plugin Plugin descriptor
+ * @param type_id Type ID
+ * @param plugin_guid Plugin GUID
  * @return nmo_ok() on success
  */
-nmo_status_t nmo_type_registry_register_plugin(
+nmo_status_t nmo_type_registry_set_creator_plugin(
     nmo_type_registry_t *registry,
-    const nmo_plugin_t *plugin);
-
-/**
- * @brief Get plugin info by GUID
- * 
- * @param registry Registry
- * @param plugin_guid Plugin GUID
- * @return Plugin descriptor, or NULL if not found
- */
-const nmo_plugin_t* nmo_type_registry_get_plugin(
-    const nmo_type_registry_t *registry,
+    nmo_type_id_t type_id,
     nmo_guid_t plugin_guid);
 
 /**

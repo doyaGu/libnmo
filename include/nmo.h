@@ -100,6 +100,13 @@
 #include "type/builtin_operations.h"
 #include "type/type_string.h"
 
+// Extension layer
+#include "extension/nmo_extension_abi.h"
+#include "extension/nmo_extension_registry.h"
+#include "extension/nmo_extension_loader.h"
+#include "extension/nmo_extension_host.h"
+#include "extension/nmo_extension_diagnostics.h"
+
 // Session layer
 #include "session/nmo_object_repository.h"
 #include "session/nmo_load_session.h"
@@ -112,7 +119,6 @@
 // App layer
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
-#include "app/nmo_plugin.h"
 #include "app/nmo_comparison.h"
 #include "app/nmo_finish_loading.h"
 #include "app/nmo_inspector.h"

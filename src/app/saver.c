@@ -22,7 +22,7 @@
 #include "app/nmo_save_buffer.h"
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
-#include "app/nmo_plugin.h"
+#include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_guid.h"
@@ -978,14 +978,14 @@ static nmo_status_t save_build_header1(nmo_save_context_t *ctx) {
             ctx->plugin_deps = stored_plugin_deps;
             ctx->plugin_count = stored_plugin_count;
         } else {
-            nmo_plugin_manager_t *plugin_manager = nmo_context_get_plugin_manager(ctx->context);
+            nmo_extension_registry_t *ext_registry = nmo_context_get_extension_registry(ctx->context);
             size_t plugin_count = 0;
-            const nmo_plugin_instance_info_t *instances =
-                (plugin_manager != NULL)
-                    ? nmo_plugin_manager_get_plugins(plugin_manager, &plugin_count)
+            const nmo_extension_plugin_info_t *plugins =
+                (ext_registry != NULL)
+                    ? nmo_extension_registry_list(ext_registry, &plugin_count)
                     : NULL;
 
-            if (instances != NULL && plugin_count > 0) {
+            if (plugins != NULL && plugin_count > 0) {
                 nmo_plugin_dep_t *deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
                     ctx->arena,
                     plugin_count * sizeof(nmo_plugin_dep_t),
@@ -996,8 +996,8 @@ static nmo_status_t save_build_header1(nmo_save_context_t *ctx) {
 
                 size_t written = 0;
                 for (size_t i = 0; i < plugin_count; ++i) {
-                    const nmo_plugin_t *plugin = instances[i].plugin;
-                    if (plugin == NULL || nmo_guid_is_null(plugin->guid)) {
+                    const nmo_extension_plugin_info_t *plugin = &plugins[i];
+                    if (nmo_guid_is_null(plugin->guid)) {
                         continue;
                     }
 

@@ -206,8 +206,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
         .description = NULL, \
         .fields = NULL, \
         .field_count = 0, \
-        .vtable = (_vtable), \
-        .creator_plugin = NULL \
+        .vtable = (_vtable) \
     }; \
     return nmo_type_registry_register(registry, &type_desc); \
 }
@@ -231,8 +230,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
         .fields = NULL, \
         .field_count = 0, \
         .vtable = (_vtable), \
-        .finish_loading = (_finish_loading), \
-        .creator_plugin = NULL \
+        .finish_loading = (_finish_loading) \
     }; \
     return nmo_type_registry_register(registry, &type_desc); \
 }

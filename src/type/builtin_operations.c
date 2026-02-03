@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file builtin_operations.c
  * @brief Main builtin operations registration
  *
@@ -41,7 +41,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     nmo_status_t result = nmo_type_registry_register(type_registry, &int_type);
@@ -64,7 +63,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &float_type);
@@ -87,7 +85,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &bool_type);
@@ -110,7 +107,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &vec2_type);
@@ -132,7 +128,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &vec3_type);
@@ -154,7 +149,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &vec4_type);
@@ -176,7 +170,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &quat_type);
@@ -198,7 +191,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &mat_type);
@@ -220,7 +212,6 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .fields = NULL,
         .field_count = 0,
         .vtable = NULL,
-        .creator_plugin = NULL
     };
 
     result = nmo_type_registry_register(type_registry, &color_type);

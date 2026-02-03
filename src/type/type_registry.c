@@ -10,7 +10,6 @@
  */
 
 #include "type/type_system.h"
-#include "type/nmo_plugin_types.h"  /* Need full nmo_plugin_t definition */
 #include "object/nmo_class_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
@@ -204,17 +203,7 @@ nmo_type_registry_t* nmo_type_registry_create(nmo_arena_t *arena) {
     );
     if (!registry->class_id_map) goto fail;
 
-    // Create plugin hash tables
-    registry->plugin_map = nmo_hash_table_create(
-        NULL,
-        sizeof(nmo_guid_t),
-        sizeof(nmo_plugin_t*),  // Store pointer, not struct
-        32,
-        guid_hash_func,
-        guid_compare_func
-    );
-    if (!registry->plugin_map) goto fail;
-
+    // Create plugin hash table
     registry->type_to_plugin = nmo_hash_table_create(
         NULL,
         sizeof(nmo_type_id_t),
@@ -270,9 +259,6 @@ void nmo_type_registry_destroy(nmo_type_registry_t *registry) {
     }
     if (registry->class_id_map) {
         nmo_hash_table_destroy(registry->class_id_map);
-    }
-    if (registry->plugin_map) {
-        nmo_hash_table_destroy(registry->plugin_map);
     }
     if (registry->type_to_plugin) {
         nmo_hash_table_destroy(registry->type_to_plugin);
@@ -440,11 +426,11 @@ nmo_status_t nmo_type_registry_register(
     }
 
     // Track plugin ownership if provided
-    if (type->creator_plugin) {
-        // Store plugin pointer in maps
+    if (!nmo_guid_is_null(type->creator_plugin_guid)) {
+        /* Store plugin GUID in map */
         result = nmo_hash_table_insert(registry->type_to_plugin,
                                        &type_id,
-                                       &type->creator_plugin->guid);
+                                       &type->creator_plugin_guid);
         if (result != NMO_OK) {
             if (type->class_id != 0) {
                 nmo_hash_table_remove(registry->class_id_map, &type->class_id);
@@ -458,28 +444,7 @@ nmo_status_t nmo_type_registry_register(
             *slot_ptr = NULL;
             return result;
         }
-        
-        // Ensure plugin is registered
-        if (!nmo_hash_table_contains(registry->plugin_map, &type->creator_plugin->guid)) {
-            result = nmo_hash_table_insert(registry->plugin_map,
-                                           &type->creator_plugin->guid,
-                                           &type->creator_plugin);
-            if (result != NMO_OK) {
-                nmo_hash_table_remove(registry->type_to_plugin, &type_id);
-                if (type->class_id != 0) {
-                    nmo_hash_table_remove(registry->class_id_map, &type->class_id);
-                }
-                if (type->name) {
-                    nmo_hash_table_remove(registry->name_map, &type->name);
-                }
-                nmo_hash_table_remove(registry->guid_map, &type->guid);
-                nmo_type_descriptor_t **slot_ptr =
-                    (nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, slot);
-                *slot_ptr = NULL;
-                return result;
-            }
-            registry->plugin_count++;
-        }
+        registry->plugin_count++;
     } else {
         registry->builtin_count++;
     }
@@ -526,30 +491,30 @@ nmo_status_t nmo_type_registry_unregister(
         nmo_hash_table_remove(registry->type_to_manager, &type_id);
     }
 
-    // Update stats
-    if (type->creator_plugin) {
-        // Note: Don't decrement plugin_count here, done in unregister_plugin_types
+    /* Update stats */
+    if (!nmo_guid_is_null(type->creator_plugin_guid)) {
+        /* Note: Don't decrement plugin_count here, done in unregister_plugin_types */
     } else {
         if (registry->builtin_count > 0) {
             registry->builtin_count--;
         }
     }
 
-    // Soft delete: mark invalid, keep slot for recycling
+    /* Soft delete: mark invalid, keep slot for recycling */
     type->valid = false;
     type->specialized_index = NMO_SPECIALIZED_INDEX_INVALID;
     type->saver_manager = NMO_MANAGER_INDEX_INVALID;
     nmo_type_descriptor_t **slot_ptr = (nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, type_id);
     *slot_ptr = NULL;
 
-    // Invalidate derivation masks
+    /* Invalidate derivation masks */
     registry->derivation_masks_valid = false;
     registry->registry_version++;
 
     return NMO_OK;
 }
 
-/* Note: nmo_type_registry_unregister_plugin_types() is now implemented in plugin_support.c
+/* Note: nmo_type_registry_unregister_plugin_types() is implemented in plugin_support.c
  * with full cascade deletion support (Phase 5.6)
  */
 
@@ -1351,7 +1316,7 @@ size_t nmo_type_registry_get_builtin_count(const nmo_type_registry_t *registry) 
     return registry ? registry->builtin_count : 0;
 }
 
-size_t nmo_type_registry_get_plugin_count(const nmo_type_registry_t *registry) {
+size_t nmo_type_registry_get_plugin_type_count(const nmo_type_registry_t *registry) {
     return registry ? registry->plugin_count : 0;
 }
 
@@ -1431,8 +1396,8 @@ size_t nmo_type_registry_get_memory_usage(const nmo_type_registry_t *registry) {
     total += registry->metadata.count * sizeof(nmo_specialized_metadata_t);
     
     // Hash tables (estimate: 2x key-value pairs + overhead)
-    // guid_map, name_map, class_id_map, type_to_metadata, plugin_map, type_to_plugin
-    size_t hash_table_overhead = 6 * 256;  // Rough estimate per table
+    // guid_map, name_map, class_id_map, type_to_metadata, type_to_plugin
+    size_t hash_table_overhead = 5 * 256;  // Rough estimate per table
     total += hash_table_overhead;
     
     // Arena overhead (estimate: 10% of total)

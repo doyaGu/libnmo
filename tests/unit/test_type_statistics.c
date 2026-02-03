@@ -8,7 +8,6 @@
 #include "core/nmo_guid.h"
 #include "type/type_system.h"
 #include "type/builtin_operations.h"
-#include "app/nmo_plugin.h"
 #include <string.h>
 
 /* ============================================================================

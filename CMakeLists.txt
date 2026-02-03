@@ -19,6 +19,15 @@ option(NMO_BUILD_EXAMPLES "Build examples" OFF)
 option(NMO_ENABLE_SIMD "Enable SIMD optimizations" OFF)
 option(NMO_BUILD_SHARED "Build shared library" OFF)
 
+# Sanitizers are great for catching memory issues, but aren't available on all
+# toolchains (notably some MinGW distributions on Windows). Keep them opt-in on
+# Windows and on by default on non-Windows GCC/Clang Debug builds.
+set(_nmo_enable_sanitizers_default OFF)
+if(NOT MSVC AND NOT WIN32)
+    set(_nmo_enable_sanitizers_default ON)
+endif()
+option(NMO_ENABLE_SANITIZERS "Enable ASan/UBSan in Debug builds when supported" ${_nmo_enable_sanitizers_default})
+
 # Set default build type to Release
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -36,8 +45,24 @@ else()
         add_compile_options(-O3)
     endif()
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        add_compile_options(-g -O0 -fsanitize=address -fsanitize=undefined)
-        add_link_options(-fsanitize=address -fsanitize=undefined)
+        add_compile_options(-g -O0)
+
+        if(NMO_ENABLE_SANITIZERS)
+            include(CheckCSourceCompiles)
+
+            set(CMAKE_REQUIRED_FLAGS "-fsanitize=address -fsanitize=undefined")
+            set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=address -fsanitize=undefined")
+            check_c_source_compiles("int main(void) { return 0; }" NMO_SANITIZERS_AVAILABLE)
+            unset(CMAKE_REQUIRED_FLAGS)
+            unset(CMAKE_REQUIRED_LINK_OPTIONS)
+
+            if(NMO_SANITIZERS_AVAILABLE)
+                add_compile_options(-fsanitize=address -fsanitize=undefined)
+                add_link_options(-fsanitize=address -fsanitize=undefined)
+            else()
+                message(WARNING "NMO_ENABLE_SANITIZERS is ON, but ASan/UBSan are not available; disabling.")
+            endif()
+        endif()
     endif()
 endif()
 
@@ -165,7 +190,7 @@ set(NMO_FORMAT_SOURCES
     src/format/nmo_stb_adapter.c
 )
 
-# Object layer sources (Phase 6)
+# Object layer sources
 set(NMO_OBJECT_SOURCES
     src/object/class_hierarchy.c
     src/object/object_type_common.c
@@ -217,7 +242,7 @@ set(NMO_OBJECT_SOURCES
     src/object/builtin/ckrendercontext_schemas.c
 )
 
-# Type System sources (Phase 5.5+)
+# Type System sources
 set(NMO_TYPE_SOURCES
     src/type/type_registry.c
     src/type/plugin_support.c
@@ -231,6 +256,14 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_logic.c
     src/type/builtin_bitwise.c
     src/type/builtin_trigonometry.c
+)
+
+# Extension layer sources
+set(NMO_EXTENSION_SOURCES
+    src/extension/extension_registry.c
+    src/extension/extension_loader.c
+    src/extension/extension_host.c
+    src/extension/extension_diagnostics.c
 )
 
 # Session layer sources
@@ -256,7 +289,6 @@ set(NMO_APP_SOURCES
     src/app/comparison.c
     src/app/stats.c
     src/app/inspector.c
-    src/app/nmo_plugin_manager.c
 )
 
 # Combine all sources
@@ -266,6 +298,7 @@ set(NMO_SOURCES
     ${NMO_FORMAT_SOURCES}
     ${NMO_OBJECT_SOURCES}
     ${NMO_TYPE_SOURCES}
+    ${NMO_EXTENSION_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_APP_SOURCES}
 )

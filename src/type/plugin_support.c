@@ -1,6 +1,6 @@
 /**
  * @file plugin_support.c
- * @brief Plugin management and cascade deletion implementation
+ * @brief Plugin tracking and cascade deletion implementation
  *
  * Implements plugin tracking, cascade deletion, type invalidation,
  * and specialized metadata management.
@@ -8,7 +8,6 @@
  */
 
 #include "type/type_system.h"
-#include "type/nmo_plugin_types.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
@@ -192,41 +191,37 @@ static nmo_status_t nmo_deep_copy_metadata(
 }
 
 /* ============================================================================
- * Plugin Registration
+ * Plugin Tracking
  * ============================================================================ */
 
-nmo_status_t nmo_type_registry_register_plugin(
+nmo_status_t nmo_type_registry_set_creator_plugin(
     nmo_type_registry_t *registry,
-    const nmo_plugin_t *plugin) 
+    nmo_type_id_t type_id,
+    nmo_guid_t plugin_guid)
 {
-    if (!registry || !plugin) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry or plugin pointer");
+    if (!registry) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
     }
 
-    // Check if already registered
-    if (nmo_hash_table_contains(registry->plugin_map, &plugin->guid)) {
-        NMO_RETURN_OK();  // Already registered, no-op
+    if (type_id < 0 || (size_t)type_id >= registry->types.count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
     }
 
-    // Insert plugin pointer into map
-    nmo_status_t insert_result = nmo_hash_table_insert(registry->plugin_map, &plugin->guid, &plugin);
-    if (insert_result != NMO_OK) {
+    nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, type_id);
+    if (!type || !type->valid) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid");
+    }
+
+    /* Set the creator plugin GUID in the descriptor */
+    type->creator_plugin_guid = plugin_guid;
+
+    /* Also track in the type_to_plugin map for cascade deletion */
+    nmo_status_t insert_result = nmo_hash_table_insert(registry->type_to_plugin, &type_id, &plugin_guid);
+    if (insert_result != NMO_OK && insert_result != NMO_ERR_ALREADY_EXISTS) {
         return insert_result;
     }
 
     NMO_RETURN_OK();
-}
-
-const nmo_plugin_t* nmo_type_registry_get_plugin(
-    const nmo_type_registry_t *registry,
-    nmo_guid_t plugin_guid) 
-{
-    if (!registry) return NULL;
-
-    const nmo_plugin_t *plugin = NULL;
-    nmo_status_t found = nmo_hash_table_get(registry->plugin_map, &plugin_guid, &plugin);
-
-    return (found == NMO_OK) ? plugin : NULL;
 }
 
 /* ============================================================================
@@ -278,7 +273,7 @@ nmo_status_t nmo_type_registry_unregister_plugin_types(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
     }
 
-    // First pass: count all types from this plugin
+    /* First pass: count all types from this plugin */
     size_t remove_count = 0;
     for (size_t i = 0; i < registry->types.count; i++) {
         const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
@@ -314,25 +309,19 @@ nmo_status_t nmo_type_registry_unregister_plugin_types(
         }
     }
 
-    // Second pass: unregister all collected types (with cascade deletion)
+    /* Second pass: unregister all collected types (with cascade deletion) */
     for (size_t i = 0; i < remove_count; i++) {
-        // Unregister derived types first
+        /* Unregister derived types first */
         nmo_status_t result = nmo_type_registry_unregister_derived(registry, types_to_remove[i]);
         if (result != NMO_OK) {
             return result;
         }
 
-        // Then unregister the type itself
+        /* Then unregister the type itself */
         result = nmo_type_registry_unregister(registry, types_to_remove[i]);
         if (result != NMO_OK) {
             return result;
         }
-    }
-
-    // Remove plugin from registry
-    nmo_hash_table_remove(registry->plugin_map, &plugin_guid);
-    if (remove_count > 0) {
-        registry->plugin_count--;
     }
 
     NMO_RETURN_OK();
