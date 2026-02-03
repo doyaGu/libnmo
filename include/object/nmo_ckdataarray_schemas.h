@@ -47,11 +47,11 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * Each type has specific serialization rules.
  */
 typedef enum nmo_ck_arraytype {
-    NMO_ARRAYTYPE_INT = 0,        /**< Integer (32-bit) */
-    NMO_ARRAYTYPE_FLOAT = 1,      /**< Float (32-bit) */
-    NMO_ARRAYTYPE_STRING = 2,     /**< String (null-terminated) */
-    NMO_ARRAYTYPE_OBJECT = 3,     /**< Object reference (CK_ID) */
-    NMO_ARRAYTYPE_PARAMETER = 4   /**< Parameter object (requires GUID) */
+    NMO_ARRAYTYPE_INT = 1,        /**< Integer (32-bit) */
+    NMO_ARRAYTYPE_FLOAT = 2,      /**< Float (32-bit) */
+    NMO_ARRAYTYPE_STRING = 3,     /**< String (null-terminated) */
+    NMO_ARRAYTYPE_OBJECT = 4,     /**< Object reference (CK_ID) */
+    NMO_ARRAYTYPE_PARAMETER = 5   /**< Parameter object (requires GUID) */
 } nmo_ck_arraytype_t;
 
 /* =============================================================================
