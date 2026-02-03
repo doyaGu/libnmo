@@ -1,4 +1,4 @@
-#ifndef NMO_SHARED_LIBRARY_H
+﻿#ifndef NMO_SHARED_LIBRARY_H
 #define NMO_SHARED_LIBRARY_H
 
 /**
@@ -24,7 +24,7 @@ typedef struct nmo_shared_library nmo_shared_library_t;
  * @param out_library Output pointer that receives the opened library handle.
  * @return NMO_OK on success or error code on failure.
  */
-NMO_API nmo_result_t nmo_shared_library_open(
+NMO_API nmo_status_t nmo_shared_library_open(
     nmo_allocator_t *allocator,
     const char *path,
     nmo_shared_library_t **out_library);
@@ -42,7 +42,7 @@ NMO_API void nmo_shared_library_close(nmo_shared_library_t *library);
  * @param out_symbol Output pointer storing the resolved symbol on success.
  * @return NMO_OK on success or error code on failure.
  */
-NMO_API nmo_result_t nmo_shared_library_get_symbol(
+NMO_API nmo_status_t nmo_shared_library_get_symbol(
     nmo_shared_library_t *library,
     const char *symbol_name,
     void **out_symbol);

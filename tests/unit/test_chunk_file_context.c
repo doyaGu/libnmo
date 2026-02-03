@@ -20,10 +20,10 @@ TEST(chunk_file_context, round_trip_runtime_ids) {
     ASSERT_NOT_NULL(runtime_to_file);
     ASSERT_NOT_NULL(file_to_runtime);
 
-    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, 1001, 5).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, 2002, 6).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, 5, 1001).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, 6, 2002).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, 1001, 5), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, 2002, 6), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, 5, 1001), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, 6, 2002), NMO_OK);
 
     nmo_chunk_file_context_t ctx = {
         .runtime_to_file = runtime_to_file,
@@ -49,11 +49,11 @@ TEST(chunk_file_context, round_trip_runtime_ids) {
     nmo_chunk_parser_set_file_context(parser, &ctx);
 
     nmo_object_id_t id = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_object_id(parser, &id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &id);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(id, (nmo_object_id_t)1001);
     parse_result = nmo_chunk_parser_read_object_id(parser, &id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(id, (nmo_object_id_t)2002);
 
     nmo_chunk_parser_destroy(parser);
@@ -78,8 +78,8 @@ TEST(chunk_file_context, disabled_context_uses_raw_ids) {
     ASSERT_NOT_NULL(parser);
     /* No context set */
     nmo_object_id_t id = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_object_id(parser, &id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &id);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(id, (nmo_object_id_t)42);
 
     nmo_chunk_parser_destroy(parser);

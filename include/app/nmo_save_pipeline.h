@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_save_pipeline.h
  * @brief Two-phase commit save pipeline (Phase 1.4)
  *
@@ -149,7 +149,7 @@ NMO_API void nmo_save_context_destroy(nmo_save_context_t *ctx);
  * @param ctx Save context
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_save_phase1_layout(nmo_save_context_t *ctx);
+NMO_API nmo_status_t nmo_save_phase1_layout(nmo_save_context_t *ctx);
 
 /**
  * @brief Phase 2: Pack, compress, and commit to file
@@ -165,7 +165,7 @@ NMO_API nmo_result_t nmo_save_phase1_layout(nmo_save_context_t *ctx);
  * @param path Output file path
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_save_phase2_commit(nmo_save_context_t *ctx, const char *path);
+NMO_API nmo_status_t nmo_save_phase2_commit(nmo_save_context_t *ctx, const char *path);
 
 /**
  * @brief Get save statistics after Phase 2 completes
@@ -189,7 +189,7 @@ NMO_API nmo_save_stats_t nmo_save_context_get_stats(const nmo_save_context_t *ct
  * @param options Save options (NULL for defaults)
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_save_file_ex(
+NMO_API nmo_status_t nmo_save_file_ex(
     nmo_session_t *session,
     const char *path,
     const nmo_save_options_t *options);

@@ -52,14 +52,14 @@ static void test_empty_data_section(void) {
     /* Serialize */
     uint8_t buffer[100];
     size_t bytes_written = 0;
-    nmo_result_t result = nmo_data_section_serialize(&data, 8, buffer, sizeof(buffer), &bytes_written, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_data_section_serialize(&data, 8, buffer, sizeof(buffer), &bytes_written, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(bytes_written, 0);
     
     /* Parse back */
     nmo_data_section_t parsed = {0};
     result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(parsed.manager_count, 0);
     ASSERT_EQ(parsed.object_count, 0);
     
@@ -92,15 +92,15 @@ static void test_manager_guid_roundtrip(void) {
     uint8_t* buffer = (uint8_t*)nmo_arena_alloc(arena, calculated_size + 100, 16);
     ASSERT_NOT_NULL(buffer);
     size_t bytes_written = 0;
-    nmo_result_t result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(bytes_written, expected_size);
     
     /* Parse it back */
     nmo_data_section_t parsed = {0};
     parsed.manager_count = 1;
     result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(parsed.manager_count, 1);
     ASSERT_NOT_NULL(parsed.managers);
     
@@ -139,15 +139,15 @@ static void test_object_metadata_roundtrip(void) {
     uint8_t* buffer = (uint8_t*)nmo_arena_alloc(arena, calculated_size + 100, 16);
     ASSERT_NOT_NULL(buffer);
     size_t bytes_written = 0;
-    nmo_result_t result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(bytes_written, expected_size);
     
     /* Parse it back */
     nmo_data_section_t parsed = {0};
     parsed.object_count = 2;
     result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(parsed.object_count, 2);
     ASSERT_NOT_NULL(parsed.objects);
     
@@ -192,8 +192,8 @@ static void test_mixed_data_roundtrip(void) {
     uint8_t* buffer = (uint8_t*)nmo_arena_alloc(arena, calculated_size + 100, 16);
     ASSERT_NOT_NULL(buffer);
     size_t bytes_written = 0;
-    nmo_result_t result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(bytes_written, expected_size);
     
     /* Parse it back */
@@ -201,7 +201,7 @@ static void test_mixed_data_roundtrip(void) {
     parsed.manager_count = 2;
     parsed.object_count = 3;
     result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     /* Verify managers */
     ASSERT_EQ(parsed.managers[0].guid.d1, 0xAAAAAAAA);
@@ -237,21 +237,21 @@ static void test_manager_with_chunk_data(void) {
     // they are set during chunk creation/serialization
     
     /* Write data using API instead of direct manipulation */
-    nmo_result_t write_result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    nmo_status_t write_result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(write_result, NMO_OK);
     write_result = nmo_chunk_write_dword(chunk, 0xDEADBEEF);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    ASSERT_EQ(write_result, NMO_OK);
     write_result = nmo_chunk_write_dword(chunk, 0xCAFEBABE);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    ASSERT_EQ(write_result, NMO_OK);
     write_result = nmo_chunk_write_dword(chunk, 0x12345678);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    ASSERT_EQ(write_result, NMO_OK);
     nmo_chunk_close(chunk);
     
     /* Serialize chunk to get its size */
     void* chunk_data = NULL;
     size_t chunk_size = 0;
-    nmo_result_t result = nmo_chunk_serialize_version1(chunk, &chunk_data, &chunk_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_serialize_version1(chunk, &chunk_data, &chunk_size, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(chunk_data);
     ASSERT_GT(chunk_size, 0);
     
@@ -274,7 +274,7 @@ static void test_manager_with_chunk_data(void) {
     ASSERT_NOT_NULL(buffer);
     size_t bytes_written = 0;
     result = nmo_data_section_serialize(&data, 8, buffer, calculated_size + 100, &bytes_written, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(bytes_written, expected_size);
     
     printf("  Data section serialized to %zu bytes\n", bytes_written);
@@ -283,7 +283,7 @@ static void test_manager_with_chunk_data(void) {
     nmo_data_section_t parsed = {0};
     parsed.manager_count = 1;
     result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(parsed.manager_count, 1);
     ASSERT_NOT_NULL(parsed.managers);
     
@@ -301,17 +301,17 @@ static void test_manager_with_chunk_data(void) {
     ASSERT_EQ(nmo_chunk_get_data_size(parsed_chunk), 12);  /* 3 DWORDs = 12 bytes */
     
     /* Verify chunk data by reading it back */
-    nmo_result_t read_result = nmo_chunk_start_read(parsed_chunk);
-    ASSERT_EQ(read_result.code, NMO_OK);
+    nmo_status_t read_result = nmo_chunk_start_read(parsed_chunk);
+    ASSERT_EQ(read_result, NMO_OK);
     uint32_t dword1, dword2, dword3;
     read_result = nmo_chunk_read_dword(parsed_chunk, &dword1);
-    ASSERT_EQ(read_result.code, NMO_OK);
+    ASSERT_EQ(read_result, NMO_OK);
     ASSERT_EQ(dword1, 0xDEADBEEF);
     read_result = nmo_chunk_read_dword(parsed_chunk, &dword2);
-    ASSERT_EQ(read_result.code, NMO_OK);
+    ASSERT_EQ(read_result, NMO_OK);
     ASSERT_EQ(dword2, 0xCAFEBABE);
     read_result = nmo_chunk_read_dword(parsed_chunk, &dword3);
-    ASSERT_EQ(read_result.code, NMO_OK);
+    ASSERT_EQ(read_result, NMO_OK);
     ASSERT_EQ(dword3, 0x12345678);
     
     nmo_arena_destroy(arena);
@@ -328,18 +328,18 @@ static void test_parse_with_chunk_pool(void) {
     nmo_chunk_t *chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    nmo_result_t write_result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    nmo_status_t write_result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(write_result, NMO_OK);
     write_result = nmo_chunk_write_dword(chunk, 0xDEADBEEF);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    ASSERT_EQ(write_result, NMO_OK);
     write_result = nmo_chunk_write_dword(chunk, 0xCAFEBABE);
-    ASSERT_EQ(write_result.code, NMO_OK);
+    ASSERT_EQ(write_result, NMO_OK);
     nmo_chunk_close(chunk);
 
     void *chunk_data = NULL;
     size_t chunk_size = 0;
-    nmo_result_t ser_result = nmo_chunk_serialize_version1(chunk, &chunk_data, &chunk_size, arena);
-    ASSERT_EQ(ser_result.code, NMO_OK);
+    nmo_status_t ser_result = nmo_chunk_serialize_version1(chunk, &chunk_data, &chunk_size, arena);
+    ASSERT_EQ(ser_result, NMO_OK);
     ASSERT_NOT_NULL(chunk_data);
     ASSERT_GT(chunk_size, 0u);
 
@@ -353,8 +353,8 @@ static void test_parse_with_chunk_pool(void) {
     nmo_data_section_t parsed = {0};
     parsed.object_count = 1;
 
-    nmo_result_t parse_result = nmo_data_section_parse(buffer, buffer_size, 8, &parsed, pool, arena);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_data_section_parse(buffer, buffer_size, 8, &parsed, pool, arena);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_NOT_NULL(parsed.objects);
     ASSERT_EQ(parsed.object_count, 1u);
     ASSERT_NOT_NULL(parsed.objects[0].chunk);

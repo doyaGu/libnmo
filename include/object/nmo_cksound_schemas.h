@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_cksound_schemas.h
  * @brief CKSound/CKWaveSound/CKMidiSound schema definitions
  *
@@ -22,7 +22,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
@@ -85,37 +85,37 @@ typedef struct nmo_ckmidisound_state {
 } nmo_ckmidisound_state_t;
 
 /* Serialization entry points */
-NMO_API nmo_result_t nmo_cksound_deserialize(
+NMO_API nmo_status_t nmo_cksound_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_cksound_serialize(
+NMO_API nmo_status_t nmo_cksound_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckwavesound_deserialize(
+NMO_API nmo_status_t nmo_ckwavesound_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckwavesound_serialize(
+NMO_API nmo_status_t nmo_ckwavesound_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckmidisound_deserialize(
+NMO_API nmo_status_t nmo_ckmidisound_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckmidisound_serialize(
+NMO_API nmo_status_t nmo_ckmidisound_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

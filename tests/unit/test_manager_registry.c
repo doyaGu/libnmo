@@ -59,8 +59,8 @@ TEST(manager_registry, register_single_manager) {
     nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
     ASSERT_NOT_NULL(manager);
 
-    nmo_result_t result = nmo_manager_registry_register(registry, 1, manager);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_manager_registry_register(registry, 1, manager);
+    ASSERT_EQ(NMO_OK, result);
 
     uint32_t count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(1, count);
@@ -86,8 +86,8 @@ TEST(manager_registry, register_multiple_managers) {
         nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
         ASSERT_NOT_NULL(manager);
 
-        nmo_result_t result = nmo_manager_registry_register(registry, (uint32_t)i, manager);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_manager_registry_register(registry, (uint32_t)i, manager);
+        ASSERT_EQ(NMO_OK, result);
     }
 
     uint32_t count = nmo_manager_registry_get_count(registry);
@@ -146,8 +146,8 @@ TEST(manager_registry, find_by_guid) {
     nmo_manager_t* manager = nmo_manager_create(guid, "GuidManager", NMO_PLUGIN_MANAGER_DLL);
     ASSERT_NOT_NULL(manager);
 
-    nmo_result_t result = nmo_manager_registry_register(registry, 77, manager);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_manager_registry_register(registry, 77, manager);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_manager_t* found = (nmo_manager_t*)nmo_manager_registry_find_by_guid(registry, guid);
     ASSERT_EQ(manager, found);
@@ -177,8 +177,8 @@ TEST(manager_registry, unregister_manager) {
     uint32_t count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(1, count);
 
-    nmo_result_t result = nmo_manager_registry_unregister(registry, 42);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_manager_registry_unregister(registry, 42);
+    ASSERT_EQ(NMO_OK, result);
 
     count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(0, count);
@@ -253,8 +253,8 @@ TEST(manager_registry, clear_all_managers) {
     uint32_t count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(5, count);
 
-    nmo_result_t result = nmo_manager_registry_clear(registry);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_manager_registry_clear(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     count = nmo_manager_registry_get_count(registry);
     ASSERT_EQ(0, count);
@@ -278,8 +278,8 @@ TEST(manager_registry, registry_resize) {
         nmo_manager_t* manager = nmo_manager_create(guid, "TestManager", NMO_PLUGIN_MANAGER_DLL);
         ASSERT_NOT_NULL(manager);
 
-        nmo_result_t result = nmo_manager_registry_register(registry, (uint32_t)i, manager);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_manager_registry_register(registry, (uint32_t)i, manager);
+        ASSERT_EQ(NMO_OK, result);
     }
 
     uint32_t count = nmo_manager_registry_get_count(registry);
@@ -304,8 +304,8 @@ TEST(manager_registry, error_handling) {
     ASSERT_NOT_NULL(registry);
 
     /* Test registering NULL manager */
-    nmo_result_t result = nmo_manager_registry_register(registry, 1, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_manager_registry_register(registry, 1, NULL);
+    ASSERT_NE(NMO_OK, result);
 
     /* Test registering duplicate ID */
     nmo_guid_t guid = nmo_guid_create(0x77777777, 0x88888888);
@@ -318,7 +318,7 @@ TEST(manager_registry, error_handling) {
     nmo_manager_registry_register(registry, 123, manager1);
 
     result = nmo_manager_registry_register(registry, 123, manager2);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
 
     /* Cleanup manager2 since it wasn't registered */
     nmo_manager_destroy(manager2);
@@ -331,15 +331,15 @@ TEST(manager_registry, error_handling) {
     ASSERT_NOT_NULL(guid_manager2);
 
     result = nmo_manager_registry_register(registry, 200, guid_manager1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_manager_registry_register(registry, 201, guid_manager2);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     nmo_manager_destroy(guid_manager2);
 
     /* Test unregistering non-existent manager */
     result = nmo_manager_registry_unregister(registry, 999);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
 
     /* Test NULL registry operations */
     uint32_t count = nmo_manager_registry_get_count(NULL);

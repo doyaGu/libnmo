@@ -33,8 +33,8 @@ static void setup(void) {
     ASSERT_NE(NULL, registry);
     
     // Register some builtin types for testing
-    nmo_result_t result = nmo_register_builtin_types(registry);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_register_builtin_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 }
 
 static void teardown(void) {
@@ -154,8 +154,8 @@ TEST(type_statistics, type_count_after_unregister) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
 
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
 
     size_t mid_total = nmo_type_registry_get_type_count(registry);
     size_t mid_builtin = nmo_type_registry_get_builtin_count(registry);
@@ -163,7 +163,7 @@ TEST(type_statistics, type_count_after_unregister) {
     ASSERT_EQ(before_builtin + 1, mid_builtin);
 
     result = nmo_type_registry_unregister(registry, guid_test1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     size_t after_total = nmo_type_registry_get_type_count(registry);
     size_t after_builtin = nmo_type_registry_get_builtin_count(registry);
@@ -194,8 +194,8 @@ TEST(type_statistics, plugin_count_after_plugin_type) {
     plugin_type.base_type = NMO_GUID_NULL;
     plugin_type.creator_plugin = &plugin;
 
-    nmo_result_t result = nmo_type_registry_register(registry, &plugin_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &plugin_type);
+    ASSERT_EQ(NMO_OK, result);
 
     size_t after = nmo_type_registry_get_plugin_count(registry);
     ASSERT_EQ(before + 1, after);
@@ -222,8 +222,8 @@ TEST(type_statistics, count_flags_after_registration) {
     flags_type.valid = true;
     flags_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &flags_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &flags_type);
+    ASSERT_EQ(NMO_OK, result);
     
     size_t after = nmo_type_registry_get_flags_count(registry);
     ASSERT_EQ(before + 1, after);
@@ -246,8 +246,8 @@ TEST(type_statistics, count_enum_after_registration) {
     enum_type.valid = true;
     enum_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &enum_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &enum_type);
+    ASSERT_EQ(NMO_OK, result);
     
     size_t after = nmo_type_registry_get_enum_count(registry);
     ASSERT_EQ(before + 1, after);
@@ -270,8 +270,8 @@ TEST(type_statistics, count_struct_after_registration) {
     struct_type.valid = true;
     struct_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &struct_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &struct_type);
+    ASSERT_EQ(NMO_OK, result);
     
     size_t after = nmo_type_registry_get_struct_count(registry);
     ASSERT_EQ(before + 1, after);
@@ -296,8 +296,8 @@ TEST(type_visibility, is_ui_visible_default) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     bool visible = nmo_type_registry_is_ui_visible(registry, guid_test1);
     ASSERT_TRUE(visible);
@@ -318,8 +318,8 @@ TEST(type_visibility, is_ui_visible_by_id) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     nmo_type_id_t type_id = nmo_type_registry_guid_to_type_id(registry, guid_test1);
     ASSERT_NE(NMO_TYPE_ID_INVALID, type_id);
@@ -343,15 +343,15 @@ TEST(type_visibility, set_visibility_hide) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     // Initially should be visible
     ASSERT_TRUE(nmo_type_registry_is_ui_visible(registry, guid_test1));
     
     // Hide it
     result = nmo_type_registry_set_ui_visibility(registry, guid_test1, false);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Now should be hidden
     ASSERT_FALSE(nmo_type_registry_is_ui_visible(registry, guid_test1));
@@ -372,17 +372,17 @@ TEST(type_visibility, set_visibility_show) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     // Hide it first
     result = nmo_type_registry_set_ui_visibility(registry, guid_test2, false);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FALSE(nmo_type_registry_is_ui_visible(registry, guid_test2));
     
     // Show it again
     result = nmo_type_registry_set_ui_visibility(registry, guid_test2, true);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Now should be visible
     ASSERT_TRUE(nmo_type_registry_is_ui_visible(registry, guid_test2));
@@ -403,15 +403,15 @@ TEST(type_visibility, set_visibility_toggle) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     // Toggle visibility multiple times
     for (int i = 0; i < 5; i++) {
         bool should_be_visible = (i % 2 == 0);
         
         result = nmo_type_registry_set_ui_visibility(registry, guid_test3, should_be_visible);
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
         
         bool is_visible = nmo_type_registry_is_ui_visible(registry, guid_test3);
         ASSERT_EQ(should_be_visible, is_visible);
@@ -436,8 +436,8 @@ TEST(type_visibility, set_visibility_not_found) {
     
     // Non-existent type should return error
     nmo_guid_t fake_guid = {0xFFFFFFFF, 0xFFFFFFFF};
-    nmo_result_t result = nmo_type_registry_set_ui_visibility(registry, fake_guid, true);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_set_ui_visibility(registry, fake_guid, true);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -462,8 +462,8 @@ TEST(type_visibility, null_registry_visibility) {
     ASSERT_FALSE(nmo_type_registry_is_ui_visible(NULL, test_guid));
     ASSERT_FALSE(nmo_type_registry_is_ui_visible_by_id(NULL, 0));
     
-    nmo_result_t result = nmo_type_registry_set_ui_visibility(NULL, test_guid, true);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_set_ui_visibility(NULL, test_guid, true);
+    ASSERT_NE(NMO_OK, result);
 }
 
 /* ============================================================================
@@ -490,8 +490,8 @@ TEST(type_statistics, memory_usage_grows_with_types) {
         test_type.valid = true;
         test_type.base_type = NMO_GUID_NULL;
         
-        nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     size_t after = nmo_type_registry_get_memory_usage(registry);

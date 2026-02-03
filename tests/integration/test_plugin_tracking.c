@@ -42,8 +42,8 @@ TEST(plugin_tracking, register_and_get_plugin) {
     plugin1.category = 0x01;
     
     /* Register plugin */
-    nmo_result_t result = nmo_type_registry_register_plugin(registry, &plugin1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_plugin(registry, &plugin1);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Retrieve plugin */
     const nmo_plugin_t *retrieved = nmo_type_registry_get_plugin(registry, PLUGIN_GUID_1);
@@ -79,8 +79,8 @@ TEST(plugin_tracking, register_multiple_plugins) {
     };
     
     for (int i = 0; i < 3; i++) {
-        nmo_result_t result = nmo_type_registry_register_plugin(registry, &plugins[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register_plugin(registry, &plugins[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Verify all plugins are retrievable */
@@ -117,12 +117,12 @@ TEST(plugin_tracking, duplicate_registration_is_noop) {
     plugin.category = 0x01;
     
     /* Register once */
-    nmo_result_t result1 = nmo_type_registry_register_plugin(registry, &plugin);
-    ASSERT_EQ(NMO_OK, result1.code);
+    nmo_status_t result1 = nmo_type_registry_register_plugin(registry, &plugin);
+    ASSERT_EQ(NMO_OK, result1);
     
     /* Register again (should be no-op) */
-    nmo_result_t result2 = nmo_type_registry_register_plugin(registry, &plugin);
-    ASSERT_EQ(NMO_OK, result2.code);
+    nmo_status_t result2 = nmo_type_registry_register_plugin(registry, &plugin);
+    ASSERT_EQ(NMO_OK, result2);
     
     /* Verify plugin is still retrievable */
     const nmo_plugin_t *retrieved = nmo_type_registry_get_plugin(registry, PLUGIN_GUID_1);
@@ -150,8 +150,8 @@ TEST(plugin_tracking, type_plugin_association) {
     plugin.version = 0x00010000;
     plugin.category = 0x01;
     
-    nmo_result_t result = nmo_type_registry_register_plugin(registry, &plugin);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_plugin(registry, &plugin);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register type associated with plugin */
     nmo_type_descriptor_t type = {0};
@@ -164,7 +164,7 @@ TEST(plugin_tracking, type_plugin_association) {
     type.valid = true;
     
     result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify type is registered */
     const nmo_type_descriptor_t *retrieved_type = 
@@ -195,8 +195,8 @@ TEST(plugin_tracking, multiple_types_same_plugin) {
     plugin.version = 0x00010000;
     plugin.category = 0x01;
     
-    nmo_result_t result = nmo_type_registry_register_plugin(registry, &plugin);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_plugin(registry, &plugin);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register three types from same plugin */
     nmo_type_descriptor_t types[3] = {
@@ -231,7 +231,7 @@ TEST(plugin_tracking, multiple_types_same_plugin) {
     
     for (int i = 0; i < 3; i++) {
         result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Verify all types are associated with the plugin */
@@ -265,8 +265,8 @@ TEST(plugin_tracking, unregister_plugin_types) {
     plugin.version = 0x00010000;
     plugin.category = 0x01;
     
-    nmo_result_t result = nmo_type_registry_register_plugin(registry, &plugin);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_plugin(registry, &plugin);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register two types from this plugin */
     nmo_type_descriptor_t type1 = {0};
@@ -288,9 +288,9 @@ TEST(plugin_tracking, unregister_plugin_types) {
     type2.valid = true;
     
     result = nmo_type_registry_register(registry, &type1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_register(registry, &type2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify types exist */
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, TYPE_GUID_CUSTOM_1));
@@ -298,7 +298,7 @@ TEST(plugin_tracking, unregister_plugin_types) {
     
     /* Unregister all plugin types */
     result = nmo_type_registry_unregister_plugin_types(registry, PLUGIN_GUID_1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify types are removed (or marked invalid) */
     const nmo_type_descriptor_t *removed1 = 
@@ -343,10 +343,10 @@ TEST(plugin_tracking, selective_plugin_unregistration) {
         .category = 0x02
     };
     
-    nmo_result_t result = nmo_type_registry_register_plugin(registry, &plugin1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_plugin(registry, &plugin1);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_register_plugin(registry, &plugin2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register types from both plugins */
     nmo_type_descriptor_t type_p1 = {
@@ -370,13 +370,13 @@ TEST(plugin_tracking, selective_plugin_unregistration) {
     };
     
     result = nmo_type_registry_register(registry, &type_p1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_register(registry, &type_p2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Unregister only plugin 1's types */
     result = nmo_type_registry_unregister_plugin_types(registry, PLUGIN_GUID_1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Plugin 1's type should be removed/invalid */
     const nmo_type_descriptor_t *p1_type = 
@@ -413,12 +413,12 @@ TEST(plugin_tracking, invalid_arguments) {
         .version = 0x00010000,
         .category = 0x01
     };
-    nmo_result_t result = nmo_type_registry_register_plugin(NULL, &plugin);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_plugin(NULL, &plugin);
+    ASSERT_NE(NMO_OK, result);
     
     /* NULL plugin */
     result = nmo_type_registry_register_plugin(registry, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     /* NULL registry for get */
     const nmo_plugin_t *retrieved = nmo_type_registry_get_plugin(NULL, PLUGIN_GUID_1);

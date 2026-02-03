@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_cklight_schemas.h
  * @brief CKLight schema definitions header
  * 
@@ -24,7 +24,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
@@ -97,13 +97,13 @@ typedef struct nmo_cklight_state {
     float light_power;               ///< Intensity multiplier (default 1.0)
 } nmo_cklight_state_t;
 
-NMO_API nmo_result_t nmo_cklight_deserialize(
+NMO_API nmo_status_t nmo_cklight_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_cklight_serialize(
+NMO_API nmo_status_t nmo_cklight_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -111,7 +111,7 @@ NMO_API nmo_result_t nmo_cklight_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_cklight_vtable, nmo_register_cklight_type)
 
-NMO_API nmo_result_t nmo_cklight_finish_loading(
+NMO_API nmo_status_t nmo_cklight_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository);

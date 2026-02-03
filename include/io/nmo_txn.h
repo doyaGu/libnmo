@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_txn.h
  * @brief Transactional IO operations for atomic file writes
  *
@@ -18,7 +18,7 @@
  * nmo_txn_handle* txn = nmo_txn_open(&desc);
  * if (!txn) return ERROR;
  *
- * nmo_result_t result = nmo_txn_write(txn, data, size);
+ * nmo_status_t result = nmo_txn_write(txn, data, size);
  * if (result.code != NMO_OK) {
  *     nmo_txn_rollback(txn);
  *     nmo_txn_close(txn);
@@ -98,7 +98,7 @@ NMO_API nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc);
  * @note Multiple writes are supported and append to the temp file
  * @note Writes after commit/rollback will return NMO_ERR_INVALID_STATE
  */
-NMO_API nmo_result_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size_t size);
+NMO_API nmo_status_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size_t size);
 
 /**
  * @brief Commit transaction atomically
@@ -114,7 +114,7 @@ NMO_API nmo_result_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size
  * @note The temporary file is removed after successful commit
  * @note On failure, temporary file is preserved for debugging
  */
-NMO_API nmo_result_t nmo_txn_commit(nmo_txn_handle_t *txn);
+NMO_API nmo_status_t nmo_txn_commit(nmo_txn_handle_t *txn);
 
 /**
  * @brief Rollback transaction and discard changes
@@ -128,7 +128,7 @@ NMO_API nmo_result_t nmo_txn_commit(nmo_txn_handle_t *txn);
  * @note Subsequent writes will fail with NMO_ERR_INVALID_STATE
  * @note The temporary file is always removed
  */
-NMO_API nmo_result_t nmo_txn_rollback(nmo_txn_handle_t *txn);
+NMO_API nmo_status_t nmo_txn_rollback(nmo_txn_handle_t *txn);
 
 /**
  * @brief Close transaction and free resources

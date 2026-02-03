@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_cksceneobject_schemas.h
  * @brief CKSceneObject schema declarations
  */
@@ -45,7 +45,7 @@ typedef struct nmo_cksceneobject_state {
  * @param out_state Output state structure
  * @return Result indicating success or error
  */
-NMO_API nmo_result_t nmo_cksceneobject_deserialize(
+NMO_API nmo_status_t nmo_cksceneobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -59,7 +59,7 @@ NMO_API nmo_result_t nmo_cksceneobject_deserialize(
  * @param arena Arena allocator for error handling
  * @return Result indicating success or error
  */
-NMO_API nmo_result_t nmo_cksceneobject_serialize(
+NMO_API nmo_status_t nmo_cksceneobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

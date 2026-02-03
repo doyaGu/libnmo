@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file io_memory.c
  * @brief Memory IO operations implementation
  */
@@ -604,11 +604,11 @@ const void *nmo_io_memory_get_buffer(const nmo_io_memory_t *io_memory, size_t *o
 /**
  * Reset memory position to beginning
  */
-nmo_result_t nmo_io_memory_reset(nmo_io_memory_t *io_memory) {
+nmo_status_t nmo_io_memory_reset(nmo_io_memory_t *io_memory) {
     if (io_memory == NULL) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     io_memory->position = 0;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

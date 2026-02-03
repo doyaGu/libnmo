@@ -1,4 +1,4 @@
-#ifndef NMO_ERROR_H
+﻿#ifndef NMO_ERROR_H
 #define NMO_ERROR_H
 
 #include "nmo_types.h"
@@ -62,277 +62,188 @@ typedef enum nmo_severity {
     NMO_SEVERITY_FATAL,   /**< Fatal error (abort) */
 } nmo_severity_t;
 
-// Forward declarations
-typedef struct nmo_error nmo_error_t;
-typedef struct nmo_arena nmo_arena_t;
-
 /**
- * @brief Error structure with causal chain
- */
-typedef struct nmo_error {
-    nmo_error_code_t code;   /**< Error code */
-    nmo_severity_t severity; /**< Severity level */
-    const char *message;   /**< Error message */
-    const char *file;      /**< Source file (for debugging) */
-    int line;              /**< Source line (for debugging) */
-    nmo_error_t *cause;    /**< Causal error (chain) */
-    uint8_t owns_message; /**< Non-zero if message storage should be freed */
-    uint8_t from_arena;   /**< Non-zero if error was allocated from an arena */
-    uint16_t _reserved;   /**< Reserved for future use/padding */
-} nmo_error_t;
-
-/**
- * @brief Result type combining error code and error details
- */
-typedef struct nmo_result {
-    nmo_error_code_t code; /**< Error code */
-    nmo_error_t *error;  /**< Detailed error info (NULL if OK) */
-} nmo_result_t;
-
-/**
- * @brief Create error with message
- *
- * @param arena Arena for allocation (NULL for malloc)
- * @param code Error code
- * @param severity Severity level
- * @param message Error message
- * @param file Source file (__FILE__)
- * @param line Source line (__LINE__)
- * @return Error structure or NULL on allocation failure
- */
-NMO_API nmo_error_t *nmo_error_create(nmo_arena_t *arena,
-                                      nmo_error_code_t code,
-                                      nmo_severity_t severity,
-                                      const char *message,
-                                      const char *file,
-                                      int line);
-
-/**
- * @brief Create formatted error with message and explicit file/line
- *
- * Allocates storage for the formatted message using the provided arena or
- * the default allocator when arena is NULL.
- *
- * @param arena Arena for allocation (NULL for malloc)
- * @param code Error code
- * @param severity Severity level
- * @param file Source file (__FILE__)
- * @param line Source line (__LINE__)
- * @param fmt printf-style format string
- * @param ... Arguments for format string
- * @return Error structure or NULL on allocation failure
- */
-NMO_API nmo_error_t *nmo_error_createf_at(nmo_arena_t *arena,
-                                         nmo_error_code_t code,
-                                         nmo_severity_t severity,
-                                         const char *file,
-                                         int line,
-                                         const char *fmt, ...);
-
-/**
- * @brief Add causal error to error chain
- *
- * @param error Parent error
- * @param cause Causal error
- */
-NMO_API void nmo_error_add_cause(nmo_error_t *error, nmo_error_t *cause);
-
-/**
- * @brief Free a non-arena error chain created by the error helpers.
- *
- * Errors allocated from an arena are not freed (arena owns the memory).
- */
-NMO_API void nmo_error_free(nmo_error_t *error);
-
-/**
- * @brief Get error message for error code
- *
+ * @brief Convert an error code to a human-readable string
  * @param code Error code
  * @return Error message string
  */
-NMO_API const char *nmo_error_string(nmo_error_code_t code);
+NMO_API const char *nmo_error_string(nmo_status_t code);
+
+/* =============================================================================
+ * TLS Last-Error API (ABI Stable)
+ * =============================================================================
+ * Thread-local storage for detailed error information.
+ * - On failure: set last-error before returning non-OK status
+ * - On success: clear last-error before returning NMO_OK
+ * ============================================================================= */
 
 /**
- * @brief Create success result
- *
- * @return Success result
+ * @brief Clear thread-local last-error state
+ * 
+ * Called automatically on successful API returns.
  */
-NMO_API nmo_result_t nmo_result_ok(void);
+NMO_API void nmo_last_error_clear(void);
 
 /**
- * @brief Create error result
- *
- * @param error Error details
- * @return Error result
+ * @brief Get the last error code for this thread
+ * @return Error code, or NMO_OK if no error is set
  */
-NMO_API nmo_result_t nmo_result_error(nmo_error_t *error);
+NMO_API nmo_error_code_t nmo_last_error_code(void);
 
 /**
- * @brief Create formatted error result with printf-style formatting
- *
- * Allocates storage for the error message using the provided arena or the
- * default allocator when arena is NULL.
- *
- * @param arena Arena for allocations (optional)
+ * @brief Get the last error severity for this thread
+ * @return Severity level, or NMO_SEVERITY_DEBUG if no error is set
+ */
+NMO_API nmo_severity_t nmo_last_error_severity(void);
+
+/**
+ * @brief Get the source file where the last error occurred
+ * @return File name, or NULL if no error is set
+ * @note Valid until next libnmo call on this thread
+ */
+NMO_API const char *nmo_last_error_file(void);
+
+/**
+ * @brief Get the source line where the last error occurred
+ * @return Line number, or 0 if no error is set
+ */
+NMO_API int nmo_last_error_line(void);
+
+/**
+ * @brief Get the last error message for this thread
+ * @return Error message, or empty string if no error is set
+ * @note Valid until next libnmo call on this thread
+ */
+NMO_API const char *nmo_last_error_message(void);
+
+/**
+ * @brief Copy the last error message to a buffer
+ * @param dst Destination buffer (can be NULL if cap == 0)
+ * @param cap Buffer capacity in bytes
+ * @return Number of bytes needed (excluding NUL terminator)
+ * @note Always NUL-terminates if cap > 0, even if truncated
+ */
+NMO_API size_t nmo_last_error_message_copy(char *dst, size_t cap);
+
+/**
+ * @brief Copy the full error chain to a buffer
+ * @param dst Destination buffer (can be NULL if cap == 0)
+ * @param cap Buffer capacity in bytes
+ * @return Number of bytes needed (excluding NUL terminator)
+ * @note Always NUL-terminates if cap > 0, even if truncated
+ */
+NMO_API size_t nmo_last_error_chain_copy(char *dst, size_t cap);
+
+/**
+ * @brief Set last-error with formatted message (internal use)
  * @param code Error code
  * @param severity Severity level
- * @param fmt printf-style format string
- * @param ... Arguments for format string
- * @return Result describing the error
+ * @param file Source file
+ * @param line Source line
+ * @param fmt Format string
+ * @param ... Format arguments
  */
-NMO_API nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
-                                       nmo_error_code_t code,
-                                       nmo_severity_t severity,
-                                       const char *fmt, ...);
+NMO_API void nmo_last_error_setf(nmo_error_code_t code,
+                                  nmo_severity_t severity,
+                                  const char *file,
+                                  int line,
+                                  const char *fmt, ...);
+
+/* =============================================================================
+ * New-style macros for nmo_status_t returns
+ * ============================================================================= */
 
 /**
- * @brief Create formatted error result with explicit file/line
- *
- * Allocates storage for the error message using the provided arena or the
- * default allocator when arena is NULL.
- *
- * @param arena Arena for allocations (optional)
- * @param code Error code
- * @param severity Severity level
- * @param file Source file (__FILE__)
- * @param line Source line (__LINE__)
- * @param fmt printf-style format string
- * @param ... Arguments for format string
- * @return Result describing the error
+ * @brief Set last-error (does not return)
  */
-NMO_API nmo_result_t nmo_result_errorf_at(nmo_arena_t *arena,
-                                         nmo_error_code_t code,
-                                         nmo_severity_t severity,
-                                         const char *file,
-                                         int line,
-                                         const char *fmt, ...);
+#define NMO_SET_LAST_ERROR(code, severity, ...) \
+    nmo_last_error_setf((code), (severity), __FILE__, __LINE__, __VA_ARGS__)
 
 /**
- * @brief Add context to an error result by wrapping it in a new error node.
- *
- * If @p result is OK, it is returned unchanged.
- * If @p result is an error, a new error is allocated (using @p arena or the
- * default allocator) with the same error code, and the original error is
- * attached as a cause. This makes error chains more actionable without
- * duplicating error handling boilerplate at call sites.
- *
- * @param arena Arena for allocations (optional)
- * @param result Existing result (error or ok)
- * @param file Source file (__FILE__)
- * @param line Source line (__LINE__)
- * @param fmt printf-style context format string
- * @param ... Arguments for format string
- * @return Result with additional context on error
+ * @brief Set last-error and return the error code
  */
-NMO_API nmo_result_t nmo_result_add_contextf_at(nmo_arena_t *arena,
-                                               nmo_result_t result,
-                                               const char *file,
-                                               int line,
-                                               const char *fmt, ...);
-
-/**
- * @brief Check whether a result indicates success
- */
-static inline int nmo_result_is_ok(nmo_result_t result) {
-    return result.code == NMO_OK;
-}
-
-/**
- * @brief Check whether a result indicates failure
- */
-static inline int nmo_result_is_error(nmo_result_t result) {
-    return result.code != NMO_OK;
-}
-
-/**
- * @brief Check whether a result indicates a not-found condition
- */
-static inline int nmo_result_is_not_found(nmo_result_t result) {
-    return result.code == NMO_ERR_NOT_FOUND;
-}
-
-// Convenience macros
-#define NMO_ERROR(arena, code, severity, message) \
-    nmo_error_create(arena, code, severity, message, __FILE__, __LINE__)
-
-#define NMO_ERRORF(arena, code, severity, ...) \
-    nmo_error_createf_at((arena), (code), (severity), __FILE__, __LINE__, __VA_ARGS__)
-
-#define nmo_result_errorf(arena, code, severity, ...) \
-    nmo_result_errorf_at((arena), (code), (severity), __FILE__, __LINE__, __VA_ARGS__)
-
-#define NMO_RETURN_IF_ERROR(result) \
+#define NMO_RETURN_ERROR(code, severity, ...) \
     do { \
-        nmo_result_t _r = (result); \
-        if (_r.code != NMO_OK) { \
-            return _r; \
-        } \
-    } while (0)
-
-#define NMO_RETURN_IF_ERROR_DO(result, on_error) \
-    do { \
-        nmo_result_t _r = (result); \
-        if (_r.code != NMO_OK) { \
-            on_error; \
-            return _r; \
-        } \
+        nmo_last_error_setf((code), (severity), __FILE__, __LINE__, __VA_ARGS__); \
+        return (nmo_status_t)(code); \
     } while (0)
 
 /**
- * @brief Evaluate expression returning nmo_result_t; on error, wrap with context and return.
+ * @brief Clear last-error and return NMO_OK
  */
-#define NMO_RETURN_IF_ERROR_CTX(arena, expr, ...) \
-    do { \
-        nmo_result_t _r = (expr); \
-        if (_r.code != NMO_OK) { \
-            return nmo_result_add_contextf_at((arena), _r, __FILE__, __LINE__, __VA_ARGS__); \
-        } \
-    } while (0)
-
-/**
- * @brief Evaluate expression returning nmo_result_t; on error, wrap with context and goto label.
- */
-#define NMO_GOTO_IF_ERROR_CTX(arena, expr, label, ...) \
-    do { \
-        nmo_result_t _r = (expr); \
-        if (_r.code != NMO_OK) { \
-            _r = nmo_result_add_contextf_at((arena), _r, __FILE__, __LINE__, __VA_ARGS__); \
-            goto label; \
-        } \
-    } while (0)
-
-/**
- * @brief Ensure condition holds; otherwise return a formatted error.
- */
-#define NMO_ENSURE(arena, cond, code, severity, ...) \
-    do { \
-        if (!(cond)) { \
-            return nmo_result_errorf_at((arena), (code), (severity), __FILE__, __LINE__, __VA_ARGS__); \
-        } \
-    } while (0)
-
-#define NMO_RETURN_NULL_IF_ERROR(result) \
-    do { \
-        nmo_result_t _r = (result); \
-        if (_r.code != NMO_OK) { \
-            return NULL; \
-        } \
-    } while (0)
-
-#define NMO_RETURN_NULL_IF_ERROR_DO(result, on_error) \
-    do { \
-        nmo_result_t _r = (result); \
-        if (_r.code != NMO_OK) { \
-            on_error; \
-            return NULL; \
-        } \
-    } while (0)
-
-#define NMO_RETURN_ERROR(error) \
-    return nmo_result_error(error)
-
 #define NMO_RETURN_OK() \
-    return nmo_result_ok()
+    do { \
+        nmo_last_error_clear(); \
+        return NMO_OK; \
+    } while (0)
+
+/**
+ * @brief Check status and propagate error if not OK
+ */
+#define NMO_RETURN_IF_ERROR(status) \
+    do { \
+        nmo_status_t _s = (status); \
+        if (_s != NMO_OK) { \
+            return _s; \
+        } \
+    } while (0)
+
+/**
+ * @brief Check status, run cleanup, and propagate error if not OK
+ */
+#define NMO_RETURN_IF_ERROR_DO(status, action) \
+    do { \
+        nmo_status_t _s = (status); \
+        if (_s != NMO_OK) { \
+            action; \
+            return _s; \
+        } \
+    } while (0)
+
+/**
+ * @brief Check status and set contextual error before returning
+ */
+#define NMO_RETURN_IF_ERROR_CTX(status, ...) \
+    do { \
+        nmo_status_t _s = (status); \
+        if (_s != NMO_OK) { \
+            nmo_last_error_setf((nmo_error_code_t)_s, NMO_SEVERITY_ERROR, __FILE__, __LINE__, __VA_ARGS__); \
+            return _s; \
+        } \
+    } while (0)
+
+/**
+ * @brief Ensure condition is true, otherwise set last error and return code
+ */
+#define NMO_ENSURE(condition, code, severity, ...) \
+    do { \
+        if (!(condition)) { \
+            NMO_RETURN_ERROR((code), (severity), __VA_ARGS__); \
+        } \
+    } while (0)
+
+/**
+ * @brief Check status and return NULL if not OK
+ */
+#define NMO_RETURN_NULL_IF_ERROR(status) \
+    do { \
+        nmo_status_t _s = (status); \
+        if (_s != NMO_OK) { \
+            return NULL; \
+        } \
+    } while (0)
+
+/**
+ * @brief Check status, run cleanup, and return NULL if not OK
+ */
+#define NMO_RETURN_NULL_IF_ERROR_DO(status, action) \
+    do { \
+        nmo_status_t _s = (status); \
+        if (_s != NMO_OK) { \
+            action; \
+            return NULL; \
+        } \
+    } while (0)
 
 #ifdef __cplusplus
 }

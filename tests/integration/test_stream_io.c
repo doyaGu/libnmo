@@ -8,8 +8,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
-static void assert_result_ok(nmo_result_t result) {
-    ASSERT_EQ(NMO_OK, result.code);
+static void assert_result_ok(nmo_status_t result) {
+    ASSERT_EQ(NMO_OK, result);
 }
 
 static void create_test_object(nmo_arena_t *arena,
@@ -117,8 +117,8 @@ static void run_stream_roundtrip(int compress_flag) {
     ASSERT_EQ(2U, nmo_object_get_id(loaded));
     assert_chunk_payload(loaded, 200);
 
-    nmo_result_t eof_result = nmo_stream_reader_read_next_object(reader, object_arena, &loaded);
-    ASSERT_EQ(NMO_ERR_EOF, eof_result.code);
+    nmo_status_t eof_result = nmo_stream_reader_read_next_object(reader, object_arena, &loaded);
+    ASSERT_EQ(NMO_ERR_EOF, eof_result);
 
     nmo_arena_destroy(object_arena);
     nmo_stream_reader_destroy(reader);

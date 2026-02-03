@@ -143,8 +143,8 @@ TEST(io_file, close_file) {
     nmo_io_file_t *io = nmo_io_file_create(path, "rb");
     ASSERT_NOT_NULL(io);
     
-    nmo_result_t result = nmo_io_file_close(io);
-    ASSERT_TRUE(result.code == NMO_OK);
+    nmo_status_t result = nmo_io_file_close(io);
+    ASSERT_TRUE(result == NMO_OK);
     
     nmo_io_file_destroy(io);
     remove_temp_file(path);

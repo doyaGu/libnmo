@@ -7,8 +7,8 @@
 #include "test_framework.h"
 #include <limits.h>
 
-static void assert_ok(nmo_result_t result) {
-    ASSERT_EQ(NMO_OK, result.code);
+static void assert_ok(nmo_status_t result) {
+    ASSERT_EQ(NMO_OK, result);
 }
 
 TEST(nmo_string, init_and_assign) {
@@ -201,8 +201,8 @@ TEST(nmo_string, pop_back_and_capacity) {
     ASSERT_EQ(nmo_string_length(&str), nmo_string_capacity(&str));
 
     nmo_string_clear(&str);
-    nmo_result_t pop_empty = nmo_string_pop_back(&str, &last);
-    ASSERT_EQ(NMO_ERR_INVALID_STATE, pop_empty.code);
+    nmo_status_t pop_empty = nmo_string_pop_back(&str, &last);
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, pop_empty);
 
     nmo_string_dispose(&str);
 }
@@ -232,14 +232,14 @@ TEST(nmo_string, overflow_guards) {
 
     assert_ok(nmo_string_assign(&str, "a"));
 
-    nmo_result_t append = nmo_string_append_len(&str, "b", SIZE_MAX);
-    ASSERT_EQ(NMO_ERR_NOMEM, append.code);
+    nmo_status_t append = nmo_string_append_len(&str, "b", SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, append);
 
-    nmo_result_t insert = nmo_string_insert(&str, 0, "c", SIZE_MAX);
-    ASSERT_EQ(NMO_ERR_NOMEM, insert.code);
+    nmo_status_t insert = nmo_string_insert(&str, 0, "c", SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, insert);
 
-    nmo_result_t replace = nmo_string_replace(&str, 0, 0, "d", SIZE_MAX);
-    ASSERT_EQ(NMO_ERR_NOMEM, replace.code);
+    nmo_status_t replace = nmo_string_replace(&str, 0, 0, "d", SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, replace);
 
     nmo_string_dispose(&str);
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_builder.h
  * @brief Builder pipeline for saving NMO files
  */
@@ -48,7 +48,7 @@ NMO_API void nmo_builder_destroy(nmo_builder_t *builder);
  * @param builder Builder
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_builder_start(nmo_builder_t *builder);
+NMO_API nmo_status_t nmo_builder_start(nmo_builder_t *builder);
 
 /**
  * Build next stage
@@ -73,7 +73,7 @@ NMO_API nmo_build_stage_t nmo_builder_get_current_stage(const nmo_builder_t *bui
  * @param size Data size
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_builder_add_object(
+NMO_API nmo_status_t nmo_builder_add_object(
     nmo_builder_t *builder, uint32_t object_id, uint32_t manager_id, const void *data, size_t size);
 
 /**
@@ -82,14 +82,14 @@ NMO_API nmo_result_t nmo_builder_add_object(
  * @param object Object to add as reference
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_object_t *object);
+NMO_API nmo_status_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_object_t *object);
 
 /**
  * Finish building
  * @param builder Builder
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_builder_finish(nmo_builder_t *builder);
+NMO_API nmo_status_t nmo_builder_finish(nmo_builder_t *builder);
 
 /**
  * Get builder error

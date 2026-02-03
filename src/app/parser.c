@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file parser.c
  * @brief Load and save pipeline implementation (Phase 9 & 10)
  *
@@ -413,15 +413,15 @@ static int nmo_load_file_with_io(
     /* Phase 2: Parse File Header */
     nmo_log(logger, NMO_LOG_INFO, "Phase 2: Parsing file header");
     nmo_file_header_t header;
-    nmo_result_t result = nmo_file_header_parse(io, &header);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_file_header_parse(io, &header);
+    if (result != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to parse file header");
         nmo_io_close(io);
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     result = nmo_file_header_validate(&header);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Invalid file header");
         nmo_io_close(io);
         return NMO_ERR_INVALID_ARGUMENT;
@@ -532,7 +532,7 @@ static int nmo_load_file_with_io(
         /* Phase 4: Parse Header1 */
         nmo_log(logger, NMO_LOG_INFO, "Phase 4: Parsing header1");
         result = nmo_header1_parse(hdr1_data, hdr1_size, &hdr1, arena);
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse header1");
             nmo_io_close(io);
             return NMO_ERR_INVALID_ARGUMENT;
@@ -734,11 +734,11 @@ static int nmo_load_file_with_io(
 
         result = nmo_data_section_parse(data_buffer, data_size, header.file_version,
                                         &data_sect, chunk_pool, arena);
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
             nmo_load_session_destroy(load_session);
             nmo_io_close(io);
-            return result.code;
+            return result;
         }
 
         nmo_log(logger, NMO_LOG_INFO, "  Data section parsed successfully");
@@ -954,8 +954,8 @@ static int nmo_load_file_with_io(
         size_t remap_error_count = 0;
         for (size_t i = 0; i < hdr1.object_count; i++) {
             if (created_objects[i] != NULL && created_objects[i]->chunk != NULL) {
-                nmo_result_t remap_result = nmo_chunk_remap_object_ids(created_objects[i]->chunk, remap_table);
-                if (remap_result.code != NMO_OK) {
+                nmo_status_t remap_result = nmo_chunk_remap_object_ids(created_objects[i]->chunk, remap_table);
+                if (remap_result != NMO_OK) {
                     nmo_log(logger, NMO_LOG_ERROR, "  Failed to remap IDs in object %zu chunk", i);
                     remap_error_count++;
                 }
@@ -965,8 +965,8 @@ static int nmo_load_file_with_io(
         if (data_sect.managers != NULL) {
             for (uint32_t i = 0; i < data_sect.manager_count; i++) {
                 if (data_sect.managers[i].chunk != NULL) {
-                    nmo_result_t remap_result = nmo_chunk_remap_object_ids(data_sect.managers[i].chunk, remap_table);
-                    if (remap_result.code != NMO_OK) {
+                    nmo_status_t remap_result = nmo_chunk_remap_object_ids(data_sect.managers[i].chunk, remap_table);
+                    if (remap_result != NMO_OK) {
                         nmo_log(logger, NMO_LOG_ERROR, "  Failed to remap IDs in manager %u chunk", i);
                         remap_error_count++;
                     }
@@ -1090,11 +1090,11 @@ static int nmo_load_file_with_io(
             continue;
         }
 
-        nmo_result_t read_result = nmo_chunk_start_read(obj->chunk);
-        if (read_result.code != NMO_OK) {
+        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
+        if (read_result != NMO_OK) {
             error_count++;
             nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to start chunk read: %d",
-                    i, obj->id, read_result.code);
+                    i, obj->id, read_result);
             continue;
         }
 
@@ -1136,11 +1136,11 @@ static int nmo_load_file_with_io(
         memset(state, 0, schema_type->size);
         
         /* Call vtable read function (schema-driven deserialization) */
-        nmo_result_t result = schema_type->vtable->deserialize(
+        nmo_status_t result = schema_type->vtable->deserialize(
             state, obj->chunk, schema_type, &ser_ctx);
         
         /* Check result */
-        if (result.code == NMO_OK) {
+        if (result == NMO_OK) {
             /* Store state in object for later access */
             nmo_object_set_data(obj, state);
             deserialized_count++;
@@ -1172,14 +1172,13 @@ static int nmo_load_file_with_io(
             nmo_chunk_close(obj->chunk);
         } else {
             error_count++;
-            const char *error_msg = result.error ? result.error->message : "unknown error";
+            char error_msg[1024];
+            nmo_last_error_message_copy(error_msg, sizeof(error_msg));
             nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u, class=0x%08X, type=%s): deserialization failed: %s",
                     i, obj->id, obj->class_id, class_name, error_msg);
             /* Chain the error for better debugging */
-            if (result.error != NULL) {
-                nmo_log(logger, NMO_LOG_ERROR, "    Error chain: code=%d, severity=%d",
-                        result.error->code, result.error->severity);
-            }
+            nmo_log(logger, NMO_LOG_ERROR, "    Error chain: code=%d",
+                    (int)nmo_last_error_code());
 
             nmo_chunk_close(obj->chunk);
         }
@@ -1301,10 +1300,10 @@ static int nmo_detect_file_compression(const char *path) {
     
     /* Parse the file header to check compression flags */
     nmo_file_header_t header;
-    nmo_result_t result = nmo_file_header_parse(io, &header);
+    nmo_status_t result = nmo_file_header_parse(io, &header);
     nmo_io_close(io);
     
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return -1;
     }
     
@@ -1412,7 +1411,7 @@ int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t fla
     options.validate_before_write = (flags & NMO_SAVE_VALIDATE_BEFORE) != 0;
 
     /* Delegate to two-phase commit implementation */
-    nmo_result_t result = nmo_save_file_ex(session, path, &options);
+    nmo_status_t result = nmo_save_file_ex(session, path, &options);
 
-    return result.code;
+    return result;
 }

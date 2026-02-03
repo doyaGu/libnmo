@@ -60,41 +60,41 @@ TEST(identifiers, write_and_read_identifiers) {
 
     // Read first identifier (should be 0x1111)
     uint32_t id = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_identifier(parser, &id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_identifier(parser, &id);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(id, 0x1111);
 
     // Read data after identifier 1
     uint32_t data = 0;
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0xAAAA);
 
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0xBBBB);
 
     // Seek to identifier 2
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x2222);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Read data after identifier 2
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0xCCCC);
 
     // Seek to identifier 3
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x3333);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Read data after identifier 3
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0xDDDD);
 
     // Try seeking to non-existent identifier (should fail)
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x9999);
-    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_EOF);
 
     // Cleanup
     nmo_chunk_parser_destroy(parser);
@@ -131,8 +131,8 @@ TEST(identifiers, seek_nonexistent_identifier) {
     ASSERT_NOT_NULL(parser);
 
     // Try seeking to non-existent identifier (should fail)
-    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x9999);
-    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+    nmo_status_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x9999);
+    ASSERT_EQ(parse_result, NMO_ERR_EOF);
 
     // Cleanup
     nmo_chunk_parser_destroy(parser);

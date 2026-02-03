@@ -41,11 +41,11 @@ static void setup_registries(void) {
     ASSERT_NE(NULL, operation_registry);
 
     /* Register builtin types and operations */
-    nmo_result_t result = nmo_register_builtin_types(type_registry);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_register_builtin_types(type_registry);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_register_builtin_operations(operation_registry, type_registry);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 }
 
 static void teardown_registries(void) {
@@ -74,7 +74,7 @@ TEST(builtin_operations, arithmetic_add_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -83,13 +83,13 @@ TEST(builtin_operations, arithmetic_add_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
     ASSERT_NE(NULL, cell->desc.function);
 
     int32_t a = 5, b = 3, result = 0;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(8, result);
 
     teardown_registries();
@@ -103,7 +103,7 @@ TEST(builtin_operations, arithmetic_subtract_float) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -112,12 +112,12 @@ TEST(builtin_operations, arithmetic_subtract_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 10.5f, b = 3.2f, result = 0.0f;
     res = cell->desc.function(&a, float_type, &b, float_type, &result, float_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_FLOAT_EQ(7.3f, result, 0.01f);
 
     teardown_registries();
@@ -131,7 +131,7 @@ TEST(builtin_operations, arithmetic_multiply_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -140,12 +140,12 @@ TEST(builtin_operations, arithmetic_multiply_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 7, b = 6, result = 0;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(42, result);
 
     teardown_registries();
@@ -159,7 +159,7 @@ TEST(builtin_operations, arithmetic_divide_int_by_zero) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -168,12 +168,12 @@ TEST(builtin_operations, arithmetic_divide_int_by_zero) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 10, b = 0, result = 0;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, int_type, NULL);
-    ASSERT_NE(NMO_OK, res.code); /* Should fail */
+    ASSERT_NE(NMO_OK, res); /* Should fail */
 
     teardown_registries();
 }
@@ -186,7 +186,7 @@ TEST(builtin_operations, arithmetic_negate_float) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -195,12 +195,12 @@ TEST(builtin_operations, arithmetic_negate_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 5.5f, result = 0.0f;
     res = cell->desc.function(&a, float_type, NULL, NULL, &result, float_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_FLOAT_EQ(-5.5f, result, 0.01f);
 
     teardown_registries();
@@ -214,7 +214,7 @@ TEST(builtin_operations, arithmetic_abs_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -223,12 +223,12 @@ TEST(builtin_operations, arithmetic_abs_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = -42, result = 0;
     res = cell->desc.function(&a, int_type, NULL, NULL, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(42, result);
 
     teardown_registries();
@@ -242,7 +242,7 @@ TEST(builtin_operations, arithmetic_power_float) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -251,12 +251,12 @@ TEST(builtin_operations, arithmetic_power_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 2.0f, b = 8.0f, result = 0.0f;
     res = cell->desc.function(&a, float_type, &b, float_type, &result, float_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_FLOAT_EQ(256.0f, result, 0.01f);
 
     teardown_registries();
@@ -274,7 +274,7 @@ TEST(builtin_operations, logic_and_bool) {
     ASSERT_NE(NULL, bool_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         bool_type,
@@ -283,12 +283,12 @@ TEST(builtin_operations, logic_and_bool) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     bool a = true, b = false, result = false;
     res = cell->desc.function(&a, bool_type, &b, bool_type, &result, bool_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(false, result);
 
     teardown_registries();
@@ -302,7 +302,7 @@ TEST(builtin_operations, logic_not_bool) {
     ASSERT_NE(NULL, bool_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         bool_type,
@@ -311,12 +311,12 @@ TEST(builtin_operations, logic_not_bool) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     bool a = true, result = false;
     res = cell->desc.function(&a, bool_type, NULL, NULL, &result, bool_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(false, result);
 
     teardown_registries();
@@ -336,7 +336,7 @@ TEST(builtin_operations, comparison_equal_int) {
     ASSERT_NE(NULL, bool_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -345,13 +345,13 @@ TEST(builtin_operations, comparison_equal_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 5, b = 5;
     bool result = false;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, bool_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(true, result);
 
     teardown_registries();
@@ -367,7 +367,7 @@ TEST(builtin_operations, comparison_less_float) {
     ASSERT_NE(NULL, bool_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -376,13 +376,13 @@ TEST(builtin_operations, comparison_less_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 3.5f, b = 7.5f;
     bool result = false;
     res = cell->desc.function(&a, float_type, &b, float_type, &result, bool_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(true, result);
 
     teardown_registries();
@@ -396,7 +396,7 @@ TEST(builtin_operations, comparison_min_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -405,12 +405,12 @@ TEST(builtin_operations, comparison_min_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 10, b = 5, result = 0;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(5, result);
 
     teardown_registries();
@@ -424,7 +424,7 @@ TEST(builtin_operations, comparison_max_float) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -433,12 +433,12 @@ TEST(builtin_operations, comparison_max_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 3.5f, b = 7.5f, result = 0.0f;
     res = cell->desc.function(&a, float_type, &b, float_type, &result, float_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_FLOAT_EQ(7.5f, result, 0.01f);
 
     teardown_registries();
@@ -456,7 +456,7 @@ TEST(builtin_operations, bitwise_and_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -465,12 +465,12 @@ TEST(builtin_operations, bitwise_and_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 0xC, b = 0xA, result = 0;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(0x8, result);
 
     teardown_registries();
@@ -484,7 +484,7 @@ TEST(builtin_operations, bitwise_shift_left_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -493,12 +493,12 @@ TEST(builtin_operations, bitwise_shift_left_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 5, b = 2, result = 0;
     res = cell->desc.function(&a, int_type, &b, int_type, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(20, result);
 
     teardown_registries();
@@ -512,7 +512,7 @@ TEST(builtin_operations, bitwise_not_int) {
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         int_type,
@@ -521,12 +521,12 @@ TEST(builtin_operations, bitwise_not_int) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     int32_t a = 0x0F, result = 0;
     res = cell->desc.function(&a, int_type, NULL, NULL, &result, int_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(~0x0F, result);
 
     teardown_registries();
@@ -544,7 +544,7 @@ TEST(builtin_operations, trigonometry_sin_float) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -553,12 +553,12 @@ TEST(builtin_operations, trigonometry_sin_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = (float)(M_PI / 2.0), result = 0.0f;
     res = cell->desc.function(&a, float_type, NULL, NULL, &result, float_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_FLOAT_EQ(1.0f, result, 0.001f);
 
     teardown_registries();
@@ -572,7 +572,7 @@ TEST(builtin_operations, trigonometry_cos_float) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -581,12 +581,12 @@ TEST(builtin_operations, trigonometry_cos_float) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 0.0f, result = 0.0f;
     res = cell->desc.function(&a, float_type, NULL, NULL, &result, float_type, NULL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_FLOAT_EQ(1.0f, result, 0.001f);
 
     teardown_registries();
@@ -600,7 +600,7 @@ TEST(builtin_operations, trigonometry_asin_domain_error) {
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t res = nmo_operation_registry_find(
+    nmo_status_t res = nmo_operation_registry_find(
         operation_registry,
         &op_guid,
         float_type,
@@ -609,12 +609,12 @@ TEST(builtin_operations, trigonometry_asin_domain_error) {
         &cell
     );
 
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
 
     float a = 2.0f, result = 0.0f;  /* Out of domain */
     res = cell->desc.function(&a, float_type, NULL, NULL, &result, float_type, NULL);
-    ASSERT_NE(NMO_OK, res.code); /* Should fail */
+    ASSERT_NE(NMO_OK, res); /* Should fail */
 
     teardown_registries();
 }

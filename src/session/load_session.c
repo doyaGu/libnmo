@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file load_session.c
  * @brief Load session implementation for object ID remapping
  */
@@ -108,9 +108,9 @@ int nmo_load_session_register(nmo_load_session_t *session,
     }
 
     /* Add mapping */
-    nmo_result_t result = nmo_hash_table_insert(session->id_mappings, &file_index, &obj->id);
-    if (nmo_result_is_error(result)) {
-        return result.code;
+    nmo_status_t result = nmo_hash_table_insert(session->id_mappings, &file_index, &obj->id);
+    if (result != NMO_OK) {
+        return result;
     }
 
     return NMO_OK;

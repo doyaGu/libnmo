@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file type_string_converters.c
  * @brief Implementation of type-to-string converters (Phase 6.4.2)
  *
@@ -23,14 +23,13 @@
  * Float Converters
  * ============================================================================ */
 
-nmo_result_t nmo_float_to_string(
+nmo_status_t nmo_float_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 16) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for float_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for float_to_string");
     }
 
     float f = *(const float*)value;
@@ -45,30 +44,29 @@ nmo_result_t nmo_float_to_string(
         snprintf(buffer, buffer_size, "%.6g", f);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_float_from_string(
+nmo_status_t nmo_float_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for float_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for float_from_string");
     }
 
     // Handle special cases
     if (strcmp(string, "NaN") == 0) {
         *(float*)value = NAN;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     if (strcmp(string, "Infinity") == 0 || strcmp(string, "+Infinity") == 0) {
         *(float*)value = INFINITY;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     if (strcmp(string, "-Infinity") == 0) {
         *(float*)value = -INFINITY;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     char *endptr;
@@ -76,27 +74,25 @@ nmo_result_t nmo_float_from_string(
     float result = strtof(string, &endptr);
 
     if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace(*endptr))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Invalid float format"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid float format");
     }
 
     *(float*)value = result;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Int Converters
  * ============================================================================ */
 
-nmo_result_t nmo_int_to_string(
+nmo_status_t nmo_int_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
     bool use_hex)
 {
     if (!value || !buffer || buffer_size < 16) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for int_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for int_to_string");
     }
 
     int32_t i = *(const int32_t*)value;
@@ -107,16 +103,15 @@ nmo_result_t nmo_int_to_string(
         snprintf(buffer, buffer_size, "%d", i);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_int_from_string(
+nmo_status_t nmo_int_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for int_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for int_from_string");
     }
 
     char *endptr;
@@ -127,41 +122,38 @@ nmo_result_t nmo_int_from_string(
     long result = strtol(string, &endptr, base);
 
     if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace(*endptr))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Invalid int format"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid int format");
     }
 
     *(int32_t*)value = (int32_t)result;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Bool Converters
  * ============================================================================ */
 
-nmo_result_t nmo_bool_to_string(
+nmo_status_t nmo_bool_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 6) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for bool_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for bool_to_string");
     }
 
     bool b = *(const bool*)value;
     snprintf(buffer, buffer_size, b ? "true" : "false");
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_bool_from_string(
+nmo_status_t nmo_bool_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for bool_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for bool_from_string");
     }
 
     // Skip whitespace
@@ -174,33 +166,31 @@ nmo_result_t nmo_bool_from_string(
                strcmp(string, "FALSE") == 0 || strcmp(string, "False") == 0) {
         *(bool*)value = false;
     } else {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Invalid bool format (expected true/false/1/0)"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid bool format (expected true/false/1/0)");
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Vector Converters
  * ============================================================================ */
 
-static nmo_result_t parse_float_tuple(
+static nmo_status_t parse_float_tuple(
     const char *kind,
     const char *string,
     float *out,
     int count)
 {
     if (!kind || !string || !out || count <= 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for parse_float_tuple"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for parse_float_tuple");
     }
 
     // Skip whitespace and opening parenthesis
     while (*string && isspace((unsigned char)*string)) string++;
     if (*string != '(') {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "%s must start with '('", kind);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                "%s must start with '('", kind);
     }
     string++;
 
@@ -213,8 +203,8 @@ static nmo_result_t parse_float_tuple(
         out[i] = strtof(string, &endptr);
 
         if (errno != 0 || endptr == string) {
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                     "Invalid %s component", kind);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                    "Invalid %s component", kind);
         }
 
         string = endptr;
@@ -222,8 +212,8 @@ static nmo_result_t parse_float_tuple(
 
         if (i < (count - 1)) {
             if (*string != ',' && *string != ';') {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "%s components must be separated by ','", kind);
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "%s components must be separated by ','", kind);
             }
             string++;
         }
@@ -232,64 +222,60 @@ static nmo_result_t parse_float_tuple(
     // Expect closing parenthesis
     while (*string && isspace((unsigned char)*string)) string++;
     if (*string != ')') {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "%s must end with ')'", kind);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                "%s must end with ')'", kind);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_vector2_to_string(
+nmo_status_t nmo_vector2_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 24) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for vector2_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector2_to_string");
     }
 
     const float *v = (const float*)value;
     snprintf(buffer, buffer_size, "(%.6g, %.6g)", v[0], v[1]);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_vector2_from_string(
+nmo_status_t nmo_vector2_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for vector2_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector2_from_string");
     }
 
     float *v = (float*)value;
     return parse_float_tuple("Vector2", string, v, 2);
 }
 
-nmo_result_t nmo_vector_to_string(
+nmo_status_t nmo_vector_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 32) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for vector_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector_to_string");
     }
 
     const float *v = (const float*)value;
     snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)", v[0], v[1], v[2]);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_vector_from_string(
+nmo_status_t nmo_vector_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for vector_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector_from_string");
     }
 
     float *v = (float*)value;
@@ -297,8 +283,7 @@ nmo_result_t nmo_vector_from_string(
     // Skip whitespace and opening parenthesis
     while (*string && isspace(*string)) string++;
     if (*string != '(') {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Vector must start with '('"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Vector must start with '('");
     }
     string++;
 
@@ -311,8 +296,7 @@ nmo_result_t nmo_vector_from_string(
         v[i] = strtof(string, &endptr);
         
         if (errno != 0 || endptr == string) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                NMO_SEVERITY_ERROR, "Invalid vector component"));
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid vector component");
         }
         
         string = endptr;
@@ -320,8 +304,7 @@ nmo_result_t nmo_vector_from_string(
         
         if (i < 2) {
             if (*string != ',') {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                    NMO_SEVERITY_ERROR, "Vector components must be separated by ','"));
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Vector components must be separated by ','");
             }
             string++;
         }
@@ -330,35 +313,32 @@ nmo_result_t nmo_vector_from_string(
     // Expect closing parenthesis
     while (*string && isspace(*string)) string++;
     if (*string != ')') {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Vector must end with ')'"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Vector must end with ')'");
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_vector4_to_string(
+nmo_status_t nmo_vector4_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 48) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for vector4_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector4_to_string");
     }
 
     const float *v = (const float*)value;
     snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", v[0], v[1], v[2], v[3]);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_vector4_from_string(
+nmo_status_t nmo_vector4_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for vector4_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for vector4_from_string");
     }
 
     float *v = (float*)value;
@@ -369,30 +349,28 @@ nmo_result_t nmo_vector4_from_string(
  * Quaternion Converters
  * ============================================================================ */
 
-nmo_result_t nmo_quaternion_to_string(
+nmo_status_t nmo_quaternion_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 48) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for quaternion_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for quaternion_to_string");
     }
 
     const float *q = (const float*)value;
     snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", 
              q[0], q[1], q[2], q[3]);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_quaternion_from_string(
+nmo_status_t nmo_quaternion_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for quaternion_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for quaternion_from_string");
     }
 
     float *q = (float*)value;
@@ -400,8 +378,7 @@ nmo_result_t nmo_quaternion_from_string(
     // Skip whitespace and opening parenthesis
     while (*string && isspace(*string)) string++;
     if (*string != '(') {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Quaternion must start with '('"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Quaternion must start with '('");
     }
     string++;
 
@@ -414,8 +391,7 @@ nmo_result_t nmo_quaternion_from_string(
         q[i] = strtof(string, &endptr);
         
         if (errno != 0 || endptr == string) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                NMO_SEVERITY_ERROR, "Invalid quaternion component"));
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid quaternion component");
         }
         
         string = endptr;
@@ -423,8 +399,7 @@ nmo_result_t nmo_quaternion_from_string(
         
         if (i < 3) {
             if (*string != ',') {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                    NMO_SEVERITY_ERROR, "Quaternion components must be separated by ','"));
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Quaternion components must be separated by ','");
             }
             string++;
         }
@@ -433,25 +408,23 @@ nmo_result_t nmo_quaternion_from_string(
     // Expect closing parenthesis
     while (*string && isspace(*string)) string++;
     if (*string != ')') {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Quaternion must end with ')'"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Quaternion must end with ')'");
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Matrix/Color Converters
  * ============================================================================ */
 
-nmo_result_t nmo_matrix_to_string(
+nmo_status_t nmo_matrix_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 128) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for matrix_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for matrix_to_string");
     }
 
     const nmo_matrix_t *m = (const nmo_matrix_t*)value;
@@ -461,21 +434,20 @@ nmo_result_t nmo_matrix_to_string(
              m->m[1][0], m->m[1][1], m->m[1][2], m->m[1][3],
              m->m[2][0], m->m[2][1], m->m[2][2], m->m[2][3],
              m->m[3][0], m->m[3][1], m->m[3][2], m->m[3][3]);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_matrix_from_string(
+nmo_status_t nmo_matrix_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for matrix_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for matrix_from_string");
     }
 
     float tmp[16];
-    nmo_result_t r = parse_float_tuple("Matrix", string, tmp, 16);
-    if (nmo_result_is_error(r)) {
+    nmo_status_t r = parse_float_tuple("Matrix", string, tmp, 16);
+    if (r != NMO_OK) {
         return r;
     }
 
@@ -485,31 +457,29 @@ nmo_result_t nmo_matrix_from_string(
             m->m[row][col] = tmp[row * 4 + col];
         }
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_color_to_string(
+nmo_status_t nmo_color_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 48) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for color_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for color_to_string");
     }
 
     const float *c = (const float*)value;
     snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", c[0], c[1], c[2], c[3]);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_color_from_string(
+nmo_status_t nmo_color_from_string(
     void *value,
     const char *string)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for color_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for color_from_string");
     }
 
     float *c = (float*)value;
@@ -520,7 +490,7 @@ nmo_result_t nmo_color_from_string(
  * Enum/Flags Converters (require type metadata)
  * ============================================================================ */
 
-nmo_result_t nmo_enum_to_string(
+nmo_status_t nmo_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -529,13 +499,11 @@ nmo_result_t nmo_enum_to_string(
     bool use_name)
 {
     if (!value || !type || !buffer || buffer_size < 16) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for enum_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for enum_to_string");
     }
 
     if (!(type->category & NMO_TYPE_CATEGORY_ENUM)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Type is not an enum"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not an enum");
     }
 
     int32_t enum_value = *(const int32_t*)value;
@@ -543,48 +511,46 @@ nmo_result_t nmo_enum_to_string(
     // If name not requested or no registry, output numeric value
     if (!use_name || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
         snprintf(buffer, buffer_size, "%d", enum_value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Access enum metadata from registry
     if (type->specialized_index >= registry->metadata.count) {
         snprintf(buffer, buffer_size, "%d", enum_value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
         snprintf(buffer, buffer_size, "%d", enum_value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Search for matching enum value
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
         if (metadata->enum_meta.values[i].value == enum_value) {
             snprintf(buffer, buffer_size, "%s", metadata->enum_meta.values[i].name);
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
     // No name found, output numeric value
     snprintf(buffer, buffer_size, "%d", enum_value);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_enum_from_string(
+nmo_status_t nmo_enum_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     const char *string)
 {
     if (!value || !type || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for enum_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for enum_from_string");
     }
 
     if (!(type->category & NMO_TYPE_CATEGORY_ENUM)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Type is not an enum"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not an enum");
     }
 
     // Try to match name in enum metadata
@@ -595,7 +561,7 @@ nmo_result_t nmo_enum_from_string(
             for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
                 if (strcmp(metadata->enum_meta.values[i].name, string) == 0) {
                     *(int32_t*)value = (int32_t)metadata->enum_meta.values[i].value;
-                    return nmo_result_ok();
+                    NMO_RETURN_OK();
                 }
             }
         }
@@ -607,19 +573,18 @@ nmo_result_t nmo_enum_from_string(
     long result = strtol(string, &endptr, 0);
 
     if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace(*endptr))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-            NMO_SEVERITY_ERROR, "Invalid enum value"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid enum value");
     }
 
     *(int32_t*)value = (int32_t)result;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Flags Converters
  * ============================================================================ */
 
-nmo_result_t nmo_flags_to_string(
+nmo_status_t nmo_flags_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -628,13 +593,11 @@ nmo_result_t nmo_flags_to_string(
     bool use_names)
 {
     if (!value || !type || !buffer || buffer_size < 16) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for flags_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for flags_to_string");
     }
 
     if (!(type->category & NMO_TYPE_CATEGORY_FLAGS)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Type is not flags"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not flags");
     }
 
     uint32_t flags_value = *(const uint32_t*)value;
@@ -642,19 +605,19 @@ nmo_result_t nmo_flags_to_string(
     // If names not requested or no registry, output hex
     if (!use_names || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
         snprintf(buffer, buffer_size, "0x%X", flags_value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Access flags metadata from registry
     if (type->specialized_index >= registry->metadata.count) {
         snprintf(buffer, buffer_size, "0x%X", flags_value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
         snprintf(buffer, buffer_size, "0x%X", flags_value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Build name1|name2 format
@@ -680,23 +643,21 @@ nmo_result_t nmo_flags_to_string(
         buffer[offset] = '\0';
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_flags_from_string(
+nmo_status_t nmo_flags_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     const char *string)
 {
     if (!value || !type || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for flags_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for flags_from_string");
     }
 
     if (!(type->category & NMO_TYPE_CATEGORY_FLAGS)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Type is not flags"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type is not flags");
     }
 
     // Try hex format first
@@ -705,7 +666,7 @@ nmo_result_t nmo_flags_from_string(
         unsigned long result = strtoul(string, &endptr, 16);
         if (errno == 0 && *endptr == '\0') {
             *(uint32_t*)value = (uint32_t)result;
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
@@ -715,7 +676,7 @@ nmo_result_t nmo_flags_from_string(
     unsigned long result = strtoul(string, &endptr, 0);
     if (errno == 0 && *endptr == '\0') {
         *(uint32_t*)value = (uint32_t)result;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Parse name1|name2 format from metadata
@@ -748,8 +709,7 @@ nmo_result_t nmo_flags_from_string(
                 }
                 
                 if (!found) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                        NMO_SEVERITY_ERROR, "Unknown flag name"));
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unknown flag name");
                 }
                 
                 // Move to next
@@ -757,12 +717,11 @@ nmo_result_t nmo_flags_from_string(
             }
             
             *(uint32_t*)value = flags_result;
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
-    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-        NMO_SEVERITY_ERROR, "Invalid flags format"));
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid flags format");
 }
 
 /* ============================================================================
@@ -869,42 +828,39 @@ size_t nmo_string_unescape(
  * String Converters
  * ============================================================================ */
 
-nmo_result_t nmo_string_to_string(
+nmo_status_t nmo_string_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size)
 {
     if (!value || !buffer || buffer_size < 3) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for string_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for string_to_string");
     }
 
     const char *str = *(const char**)value;
     if (!str) {
         snprintf(buffer, buffer_size, "\"\"");
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     nmo_string_escape(str, buffer, buffer_size);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_from_string(
+nmo_status_t nmo_string_from_string(
     void *value,
     const char *string,
     nmo_arena_t *arena)
 {
     if (!value || !string || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for string_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for string_from_string");
     }
 
     // Estimate unescaped length (worst case: same as input)
     size_t max_len = strlen(string) + 1;
     char *temp = (char*)nmo_arena_alloc(arena, max_len, 1);
     if (!temp) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-            NMO_SEVERITY_ERROR, "Failed to allocate string buffer"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate string buffer");
     }
 
     nmo_string_unescape(string, temp, max_len);
@@ -913,14 +869,13 @@ nmo_result_t nmo_string_from_string(
     size_t actual_len = strlen(temp) + 1;
     char *result = (char*)nmo_arena_alloc(arena, actual_len, 1);
     if (!result) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-            NMO_SEVERITY_ERROR, "Failed to allocate final string"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate final string");
     }
 
     memcpy(result, temp, actual_len);
     *(char**)value = result;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -954,50 +909,46 @@ static bool nmo_object_name_is_safe_token(const char *name)
     return true;
 }
 
-nmo_result_t nmo_object_id_to_string(
+nmo_status_t nmo_object_id_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
     struct nmo_session *session)
 {
     if (!value || !buffer || buffer_size == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for object_id_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object_id_to_string");
     }
 
-    nmo_id_t id = *(const nmo_id_t*)value;
+    nmo_object_id_t id = *(const nmo_object_id_t*)value;
 
     if (session && g_object_id_to_name_resolver) {
         const char *name = NULL;
-        nmo_result_t resolved = g_object_id_to_name_resolver(session, id, &name);
-        if (resolved.code == NMO_OK && nmo_object_name_is_safe_token(name)) {
+        nmo_status_t resolved = g_object_id_to_name_resolver(session, id, &name);
+        if (resolved == NMO_OK && nmo_object_name_is_safe_token(name)) {
             size_t len = strlen(name);
             if (len + 1 > buffer_size) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-                    NMO_SEVERITY_ERROR, "Buffer too small for object name"));
+                NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for object name");
             }
 
             memcpy(buffer, name, len + 1);
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
     int written = snprintf(buffer, buffer_size, "#%u", id);
     if (written < 0 || (size_t)written >= buffer_size) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_BUFFER_OVERRUN,
-            NMO_SEVERITY_ERROR, "Buffer too small for object id"));
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for object id");
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_object_id_from_string(
+nmo_status_t nmo_object_id_from_string(
     void *value,
     const char *string,
     struct nmo_session *session)
 {
     if (!value || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for object_id_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object_id_from_string");
     }
 
     // Parse #id format
@@ -1006,30 +957,29 @@ nmo_result_t nmo_object_id_from_string(
         char *endptr;
         unsigned long id = strtoul(string, &endptr, 10);
         if (errno == 0 && *endptr == '\0') {
-            *(nmo_id_t*)value = (nmo_id_t)id;
-            return nmo_result_ok();
+            *(nmo_object_id_t*)value = (nmo_object_id_t)id;
+            NMO_RETURN_OK();
         }
     }
 
     // Name lookup (optional)
     if (session && g_object_name_to_id_resolver) {
-        nmo_id_t resolved_id = 0;
-        nmo_result_t resolved = g_object_name_to_id_resolver(session, string, &resolved_id);
-        if (resolved.code == NMO_OK) {
-            *(nmo_id_t*)value = resolved_id;
+        nmo_object_id_t resolved_id = 0;
+        nmo_status_t resolved = g_object_name_to_id_resolver(session, string, &resolved_id);
+        if (resolved == NMO_OK) {
+            *(nmo_object_id_t*)value = resolved_id;
         }
         return resolved;
     }
 
-    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-        NMO_SEVERITY_ERROR, "Invalid object ID format (expected #id)"));
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid object ID format (expected #id)");
 }
 
 /* ============================================================================
  * General-Purpose Dispatcher
  * ============================================================================ */
 
-nmo_result_t nmo_type_value_to_string(
+nmo_status_t nmo_type_value_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -1037,8 +987,7 @@ nmo_result_t nmo_type_value_to_string(
     size_t buffer_size)
 {
     if (!value || !type || !buffer) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for type_value_to_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for type_value_to_string");
     }
 
     // Dispatch based on type category
@@ -1093,18 +1042,17 @@ nmo_result_t nmo_type_value_to_string(
 
     // Default: hex dump
     snprintf(buffer, buffer_size, "<binary %u bytes>", type->size);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_value_from_string(
+nmo_status_t nmo_type_value_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     const char *string)
 {
     if (!value || !type || !string) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for type_value_from_string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for type_value_from_string");
     }
 
     // Dispatch based on type category
@@ -1157,6 +1105,5 @@ nmo_result_t nmo_type_value_from_string(
         return nmo_bool_from_string(value, string);
     }
 
-    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_IMPLEMENTED,
-        NMO_SEVERITY_ERROR, "Type-from-string not implemented for this type"));
+    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR, "Type-from-string not implemented for this type");
 }

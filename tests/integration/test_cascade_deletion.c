@@ -42,8 +42,8 @@ TEST(cascade_deletion, two_level_hierarchy) {
     base_type.base_type = NMO_GUID_NULL;
     base_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &base_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &base_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register derived type */
     nmo_type_descriptor_t derived_type = {0};
@@ -56,7 +56,7 @@ TEST(cascade_deletion, two_level_hierarchy) {
     derived_type.valid = true;
     
     result = nmo_type_registry_register(registry, &derived_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify both types exist */
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_BASE));
@@ -64,7 +64,7 @@ TEST(cascade_deletion, two_level_hierarchy) {
     
     /* Cascade delete derived types of base */
     result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Base type should still exist */
     const nmo_type_descriptor_t *base_check = 
@@ -127,8 +127,8 @@ TEST(cascade_deletion, three_level_hierarchy) {
     
     /* Register all types */
     for (int i = 0; i < 3; i++) {
-        nmo_result_t result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &types[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Verify all exist */
@@ -137,8 +137,8 @@ TEST(cascade_deletion, three_level_hierarchy) {
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_DERIVED1_1));
     
     /* Cascade delete from base (should remove entire chain) */
-    nmo_result_t result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Base should still exist */
     const nmo_type_descriptor_t *base = 
@@ -227,13 +227,13 @@ TEST(cascade_deletion, multiple_branches) {
     
     /* Register all types */
     for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
-        nmo_result_t result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &types[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Cascade delete all derived from base */
-    nmo_result_t result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Base should remain valid */
     const nmo_type_descriptor_t *base = 
@@ -320,13 +320,13 @@ TEST(cascade_deletion, selective_branch) {
     };
     
     for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
-        nmo_result_t result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &types[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Delete only Derived1 branch */
-    nmo_result_t result = nmo_type_registry_unregister_derived(registry, GUID_DERIVED1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_unregister_derived(registry, GUID_DERIVED1);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Base, Derived1, Derived2, Derived2_1 should remain valid */
     ASSERT_TRUE(nmo_type_registry_find_by_guid(registry, GUID_BASE)->valid);
@@ -388,13 +388,13 @@ TEST(cascade_deletion, independent_types_preserved) {
     };
     
     for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
-        nmo_result_t result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &types[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Cascade delete base's derived types */
-    nmo_result_t result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Independent type should remain valid */
     const nmo_type_descriptor_t *independent = 
@@ -440,12 +440,12 @@ TEST(cascade_deletion, no_derived_types) {
     base_type.base_type = NMO_GUID_NULL;
     base_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &base_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &base_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Cascade delete (should be no-op) */
     result = nmo_type_registry_unregister_derived(registry, GUID_BASE);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Base type should still be valid */
     const nmo_type_descriptor_t *check = 
@@ -469,13 +469,13 @@ TEST(cascade_deletion, invalid_arguments) {
     ASSERT_NE(NULL, registry);
     
     /* NULL registry */
-    nmo_result_t result = nmo_type_registry_unregister_derived(NULL, GUID_BASE);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_unregister_derived(NULL, GUID_BASE);
+    ASSERT_NE(NMO_OK, result);
     
     /* Non-existent GUID (should succeed with no-op) */
     nmo_guid_t nonexistent = {0xFFFFFFFF, 0xFFFFFFFF};
     result = nmo_type_registry_unregister_derived(registry, nonexistent);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);

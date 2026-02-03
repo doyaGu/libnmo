@@ -39,15 +39,15 @@ TEST(chunk_raw_bitmap, write_read_argb32_roundtrip) {
     prepare_argb_image(&desc, arena, 32, 32, 0xFF3366CCu);
 
     nmo_chunk_start_write(chunk);
-    nmo_result_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_close(chunk);
 
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t out_desc;
     uint8_t *out_pixels = NULL;
     result = nmo_chunk_read_raw_bitmap(chunk, &out_desc, &out_pixels);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(out_pixels);
     ASSERT_EQ(out_desc.width, 32);
     ASSERT_EQ(out_desc.height, 32);
@@ -79,15 +79,15 @@ TEST(chunk_raw_bitmap, write_read_gradient) {
     }
 
     nmo_chunk_start_write(chunk);
-    nmo_result_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_close(chunk);
 
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t read_desc;
     uint8_t *read_pixels = NULL;
     result = nmo_chunk_read_raw_bitmap(chunk, &read_desc, &read_pixels);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(read_pixels);
     ASSERT_EQ(read_desc.width, 256);
     ASSERT_EQ(read_desc.height, 1);
@@ -144,15 +144,15 @@ TEST(chunk_raw_bitmap, write_read_rgb565_conversion) {
     }
 
     nmo_chunk_start_write(chunk);
-    nmo_result_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_close(chunk);
 
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t read_desc;
     uint8_t *decoded_pixels = NULL;
     result = nmo_chunk_read_raw_bitmap(chunk, &read_desc, &decoded_pixels);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(decoded_pixels);
     ASSERT_EQ(read_desc.width, desc.width);
     ASSERT_EQ(read_desc.height, desc.height);
@@ -191,15 +191,15 @@ TEST(chunk_raw_bitmap, empty_descriptor_writes_zero) {
     memset(&desc, 0, sizeof(desc));
 
     nmo_chunk_start_write(chunk);
-    nmo_result_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_write_raw_bitmap(chunk, &desc);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_close(chunk);
 
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t read_desc;
     uint8_t *pixels = NULL;
     result = nmo_chunk_read_raw_bitmap(chunk, &read_desc, &pixels);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NULL(pixels);
     ASSERT_EQ(read_desc.width, 0);
     ASSERT_EQ(read_desc.height, 0);

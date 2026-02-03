@@ -328,20 +328,20 @@ TEST(chunk_api, identifiers) {
     
     // Seek to first identifier
     int32_t val;
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, 0xAAAA);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, 0xAAAA);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_read_int(chunk, &val);
     ASSERT_EQ(val, 20);
     
     // Seek to second identifier
     result = nmo_chunk_seek_identifier(chunk, 0xBBBB);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_read_int(chunk, &val);
     ASSERT_EQ(val, 40);
     
     // Try to seek non-existent identifier
     result = nmo_chunk_seek_identifier(chunk, 0xCCCC);
-    ASSERT_NE(result.code, NMO_OK);
+    ASSERT_NE(result, NMO_OK);
     
     nmo_arena_destroy(arena);
 }
@@ -354,30 +354,30 @@ TEST(chunk_api, manager_sequence) {
     ASSERT_NOT_NULL(chunk);
     
     // Start write mode
-    nmo_result_t result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
     
     // Start manager sequence
     nmo_guid_t mgr_guid = {0x12345678, 0x9ABCDEF0};
     result = nmo_chunk_start_manager_sequence(chunk, mgr_guid, 3);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     // Note: Can't directly access chunk_options, but functionality is verified by successful manager operations
     
     uint32_t entry_values[3] = {0xAABBCCDD, 0x11223344, 0x55667788};
     for (int i = 0; i < 3; ++i) {
         result = nmo_chunk_write_dword(chunk, entry_values[i]);
-        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(result, NMO_OK);
     }
     
     // Start read mode
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Read manager sequence header
     nmo_guid_t read_guid;
     size_t count = 0;
     result = nmo_chunk_start_manager_read_sequence(chunk, &read_guid, &count);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(read_guid.d1, mgr_guid.d1);
     ASSERT_EQ(read_guid.d2, mgr_guid.d2);
     ASSERT_EQ(count, 3u);
@@ -386,7 +386,7 @@ TEST(chunk_api, manager_sequence) {
     uint32_t value;
     for (int i = 0; i < 3; ++i) {
         result = nmo_chunk_read_dword(chunk, &value);
-        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(result, NMO_OK);
         ASSERT_EQ(value, entry_values[i]);
     }
     
@@ -400,49 +400,49 @@ TEST(chunk_api, sub_chunks) {
     // Create sub-chunk
     nmo_chunk_t* sub = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(sub);
-    nmo_result_t result = nmo_chunk_start_write(sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_start_write(sub);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_write_dword(sub, 0x12345678);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_write_string(sub, "SubChunkData");
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Create parent chunk
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Start sub-chunk sequence
     result = nmo_chunk_start_sub_chunk_sequence(chunk, 2);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     // Note: Can't directly access chunk_options, but functionality is verified by successful sub-chunk operations
     
     // Write sub-chunks
     result = nmo_chunk_write_sub_chunk(chunk, sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_write_sub_chunk(chunk, sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Start read mode
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Read sub-chunk count
     uint32_t count;
     result = nmo_chunk_read_dword(chunk, &count);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(count, 2);
     
     // Read first sub-chunk
     nmo_chunk_t* read_sub;
     result = nmo_chunk_read_sub_chunk(chunk, &read_sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_start_read(read_sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     uint32_t dword;
     result = nmo_chunk_read_dword(read_sub, &dword);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(dword, 0x12345678);
     char* str;
     size_t str_len = nmo_chunk_read_string(read_sub, &str);
@@ -451,11 +451,11 @@ TEST(chunk_api, sub_chunks) {
     
     // Read second sub-chunk
     result = nmo_chunk_read_sub_chunk(chunk, &read_sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_start_read(read_sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_read_dword(read_sub, &dword);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(dword, 0x12345678);
     
     nmo_arena_destroy(arena);
@@ -469,28 +469,28 @@ TEST(chunk_api, arrays) {
     ASSERT_NOT_NULL(chunk);
     
     // Start write mode
-    nmo_result_t result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
     
     // Write int array
     int int_array[] = {1, 2, 3, 4, 5};
     result = nmo_chunk_write_array(chunk, int_array, 5, sizeof(int));
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Write float array
     float float_array[] = {1.5f, 2.5f, 3.5f};
     result = nmo_chunk_write_array(chunk, float_array, 3, sizeof(float));
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Start read mode
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Read int array
     void* read_array;
     size_t count, elem_size;
     result = nmo_chunk_read_array(chunk, &read_array, &count, &elem_size);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(count, 5);
     ASSERT_EQ(elem_size, sizeof(int));
     int* int_ptr = (int*)read_array;
@@ -500,7 +500,7 @@ TEST(chunk_api, arrays) {
     
     // Read float array
     result = nmo_chunk_read_array(chunk, &read_array, &count, &elem_size);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(count, 3);
     ASSERT_EQ(elem_size, sizeof(float));
     float* float_ptr = (float*)read_array;
@@ -519,20 +519,20 @@ TEST(chunk_api, compression) {
     ASSERT_NOT_NULL(chunk);
     
     // Start write mode
-    nmo_result_t result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
     
     // Write repetitive data (compresses well)
     for (int i = 0; i < 100; i++) {
         result = nmo_chunk_write_int(chunk, 0x12345678);
-        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(result, NMO_OK);
     }
     
     size_t original_size = nmo_chunk_get_data_size(chunk) / 4; // Convert bytes to DWORDs
     
     // Pack
     result = nmo_chunk_pack(chunk, 6);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     // Note: Can't directly access chunk_options or unpack_size
     // Verify compression worked by checking that data size changed
     size_t packed_size = nmo_chunk_get_data_size(chunk) / 4; // Convert bytes to DWORDs
@@ -540,18 +540,18 @@ TEST(chunk_api, compression) {
     
     // Unpack
     result = nmo_chunk_unpack(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     // Note: Can't directly access chunk_options
     // Verify unpack worked by checking data size is restored
     ASSERT_EQ(nmo_chunk_get_data_size(chunk) / 4, original_size); // Convert bytes to DWORDs
     
     // Verify data integrity
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     for (int i = 0; i < 100; i++) {
         int32_t value;
         result = nmo_chunk_read_int(chunk, &value);
-        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(result, NMO_OK);
         ASSERT_EQ(value, 0x12345678);
     }
     
@@ -565,30 +565,30 @@ TEST(chunk_api, compression_new_api) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    nmo_result_t result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
 
     for (int i = 0; i < 128; ++i) {
         result = nmo_chunk_write_int(chunk, 0x11111111);
-        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(result, NMO_OK);
     }
 
     size_t original_bytes = nmo_chunk_get_data_size(chunk);
     ASSERT_GT(original_bytes, 0U);
 
     result = nmo_chunk_compress(chunk, 6);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_LT(nmo_chunk_get_data_size(chunk), original_bytes);
 
     result = nmo_chunk_decompress(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(nmo_chunk_get_data_size(chunk), original_bytes);
 
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     for (int i = 0; i < 64; ++i) {
         result = nmo_chunk_write_int(chunk, i);
-        ASSERT_EQ(result.code, NMO_OK);
+        ASSERT_EQ(result, NMO_OK);
     }
 
     size_t noisy_bytes = nmo_chunk_get_data_size(chunk);
@@ -596,7 +596,7 @@ TEST(chunk_api, compression_new_api) {
 
     // Use an extremely small ratio to guarantee compression is skipped
     result = nmo_chunk_compress_if_beneficial(chunk, 6, 0.01f);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(nmo_chunk_get_data_size(chunk), noisy_bytes);
 
     nmo_arena_destroy(arena);
@@ -610,34 +610,34 @@ TEST(chunk_api, crc) {
     ASSERT_NOT_NULL(chunk);
     
     // Start write mode
-    nmo_result_t result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
     
     // Write test data
     result = nmo_chunk_write_int(chunk, 0x11111111);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_write_int(chunk, 0x22222222);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     result = nmo_chunk_write_int(chunk, 0x33333333);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // Compute CRC
     uint32_t crc;
     result = nmo_chunk_compute_crc(chunk, 1, &crc);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     
     // CRC should be deterministic
     uint32_t crc2;
     result = nmo_chunk_compute_crc(chunk, 1, &crc2);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(crc, crc2);
     
     // Different data should give different CRC
     result = nmo_chunk_write_int(chunk, 0x44444444);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     uint32_t crc3;
     result = nmo_chunk_compute_crc(chunk, 1, &crc3);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NE(crc3, crc);
     
     nmo_arena_destroy(arena);

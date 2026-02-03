@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file string.c
  * @brief Dynamic string implementation mirroring key XString features.
  */
@@ -33,18 +33,16 @@ static int nmo_string_validate(nmo_string_t *string) {
     return string != NULL;
 }
 
-static nmo_result_t nmo_string_ensure_capacity(nmo_string_t *string, size_t needed) {
+static nmo_status_t nmo_string_ensure_capacity(nmo_string_t *string, size_t needed) {
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
 
     if (needed <= string->capacity) {
         if (string->data != NULL) {
             string->data[string->length] = '\0';
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t target = string->capacity ? string->capacity : NMO_STRING_DEFAULT_CAPACITY;
@@ -57,17 +55,13 @@ static nmo_result_t nmo_string_ensure_capacity(nmo_string_t *string, size_t need
     }
 
     if (target >= SIZE_MAX) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Requested string capacity is too large"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Requested string capacity is too large");
     }
 
     size_t bytes = target + 1u;
     char *buffer = (char *)nmo_alloc(&string->allocator, bytes, alignof(char));
     if (buffer == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to allocate string buffer"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate string buffer");
     }
 
     if (string->data != NULL && string->length > 0) {
@@ -83,18 +77,16 @@ static nmo_result_t nmo_string_ensure_capacity(nmo_string_t *string, size_t need
     string->data = buffer;
     string->capacity = target;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_string_prepare_write(nmo_string_t *string, size_t total_length) {
+static nmo_status_t nmo_string_prepare_write(nmo_string_t *string, size_t total_length) {
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
 
-    nmo_result_t reserve = nmo_string_ensure_capacity(string, total_length);
-    if (reserve.code != NMO_OK) {
+    nmo_status_t reserve = nmo_string_ensure_capacity(string, total_length);
+    if (reserve != NMO_OK) {
         return reserve;
     }
 
@@ -102,16 +94,14 @@ static nmo_result_t nmo_string_prepare_write(nmo_string_t *string, size_t total_
         size_t bytes = (string->capacity ? string->capacity : 1u) + 1u;
         string->data = (char *)nmo_alloc(&string->allocator, bytes, alignof(char));
         if (string->data == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate string buffer"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate string buffer");
         }
         string->capacity = bytes - 1u;
         string->length = 0;
         string->data[0] = '\0';
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 static inline size_t nmo_string_min_size(size_t a, size_t b) {
@@ -130,33 +120,31 @@ static inline int nmo_string_case_cmp_char(char a, char b) {
 /* Initialization / lifetime                                                  */
 /* ------------------------------------------------------------------------- */
 
-nmo_result_t nmo_string_init(nmo_string_t *string, const nmo_allocator_t *allocator) {
+nmo_status_t nmo_string_init(nmo_string_t *string, const nmo_allocator_t *allocator) {
     if (string == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
 
     memset(string, 0, sizeof(*string));
     string->allocator = allocator ? *allocator : nmo_allocator_default();
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_init_cstr(nmo_string_t *string,
+nmo_status_t nmo_string_init_cstr(nmo_string_t *string,
                                   const char *cstr,
                                   const nmo_allocator_t *allocator) {
-    nmo_result_t init = nmo_string_init(string, allocator);
-    if (init.code != NMO_OK) {
+    nmo_status_t init = nmo_string_init(string, allocator);
+    if (init != NMO_OK) {
         return init;
     }
     return nmo_string_assign(string, cstr);
 }
 
-nmo_result_t nmo_string_init_view(nmo_string_t *string,
+nmo_status_t nmo_string_init_view(nmo_string_t *string,
                                   nmo_string_view_t view,
                                   const nmo_allocator_t *allocator) {
-    nmo_result_t init = nmo_string_init(string, allocator);
-    if (init.code != NMO_OK) {
+    nmo_status_t init = nmo_string_init(string, allocator);
+    if (init != NMO_OK) {
         return init;
     }
     return nmo_string_assign_view(string, view);
@@ -208,15 +196,13 @@ char *nmo_string_data(nmo_string_t *string) {
     return string->data;
 }
 
-nmo_result_t nmo_string_reserve(nmo_string_t *string, size_t capacity) {
+nmo_status_t nmo_string_reserve(nmo_string_t *string, size_t capacity) {
     return nmo_string_ensure_capacity(string, capacity);
 }
 
-nmo_result_t nmo_string_shrink_to_fit(nmo_string_t *string) {
+nmo_status_t nmo_string_shrink_to_fit(nmo_string_t *string) {
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
 
     if (string->length == 0u) {
@@ -225,19 +211,17 @@ nmo_result_t nmo_string_shrink_to_fit(nmo_string_t *string) {
             string->data = NULL;
         }
         string->capacity = 0u;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (string->length == string->capacity) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t bytes = string->length + 1u;
     char *buffer = (char *)nmo_alloc(&string->allocator, bytes, alignof(char));
     if (buffer == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to allocate shrink buffer"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate shrink buffer");
     }
 
     memcpy(buffer, string->data, string->length);
@@ -249,7 +233,7 @@ nmo_result_t nmo_string_shrink_to_fit(nmo_string_t *string) {
 
     string->data = buffer;
     string->capacity = string->length;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_string_clear(nmo_string_t *string) {
@@ -266,25 +250,23 @@ void nmo_string_clear(nmo_string_t *string) {
 /* Assignment / append                                                        */
 /* ------------------------------------------------------------------------- */
 
-nmo_result_t nmo_string_assign(nmo_string_t *string, const char *cstr) {
+nmo_status_t nmo_string_assign(nmo_string_t *string, const char *cstr) {
     if (cstr == NULL) {
         nmo_string_clear(string);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     return nmo_string_assign_len(string, cstr, strlen(cstr));
 }
 
-nmo_result_t nmo_string_assign_len(nmo_string_t *string,
+nmo_status_t nmo_string_assign_len(nmo_string_t *string,
                                    const char *data,
                                    size_t length) {
     if (length > 0 && data == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "data must not be NULL when length > 0"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "data must not be NULL when length > 0");
     }
 
-    nmo_result_t prep = nmo_string_prepare_write(string, length);
-    if (prep.code != NMO_OK) {
+    nmo_status_t prep = nmo_string_prepare_write(string, length);
+    if (prep != NMO_OK) {
         return prep;
     }
 
@@ -294,10 +276,10 @@ nmo_result_t nmo_string_assign_len(nmo_string_t *string,
 
     string->length = length;
     string->data[length] = '\0';
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_assign_view(nmo_string_t *string,
+nmo_status_t nmo_string_assign_view(nmo_string_t *string,
                                     nmo_string_view_t view) {
     if (view.length == 0) {
         return nmo_string_assign_len(string, NULL, 0);
@@ -305,111 +287,95 @@ nmo_result_t nmo_string_assign_view(nmo_string_t *string,
     return nmo_string_assign_len(string, view.data, view.length);
 }
 
-nmo_result_t nmo_string_copy(nmo_string_t *dest,
+nmo_status_t nmo_string_copy(nmo_string_t *dest,
                              const nmo_string_t *src) {
     if (dest == src) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     if (src == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "source string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "source string must not be NULL");
     }
     return nmo_string_assign_len(dest, src->data, src->length);
 }
 
-nmo_result_t nmo_string_append(nmo_string_t *string, const char *cstr) {
+nmo_status_t nmo_string_append(nmo_string_t *string, const char *cstr) {
     if (cstr == NULL) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     return nmo_string_append_len(string, cstr, strlen(cstr));
 }
 
-nmo_result_t nmo_string_append_len(nmo_string_t *string,
+nmo_status_t nmo_string_append_len(nmo_string_t *string,
                                    const char *data,
                                    size_t length) {
     if (length == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     if (data == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "data must not be NULL when length > 0"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "data must not be NULL when length > 0");
     }
     size_t new_length = 0;
     if (nmo_size_add_overflow(nmo_string_length(string), length, &new_length)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "string length overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
-    nmo_result_t prep = nmo_string_prepare_write(string, new_length);
-    if (prep.code != NMO_OK) {
+    nmo_status_t prep = nmo_string_prepare_write(string, new_length);
+    if (prep != NMO_OK) {
         return prep;
     }
 
     memcpy(string->data + string->length, data, length);
     string->length = new_length;
     string->data[string->length] = '\0';
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_append_view(nmo_string_t *string,
+nmo_status_t nmo_string_append_view(nmo_string_t *string,
                                     nmo_string_view_t view) {
     return nmo_string_append_len(string, view.data, view.length);
 }
 
-nmo_result_t nmo_string_append_char(nmo_string_t *string, char ch) {
+nmo_status_t nmo_string_append_char(nmo_string_t *string, char ch) {
     size_t new_length = 0;
     if (nmo_size_add_overflow(nmo_string_length(string), 1u, &new_length)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "string length overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
-    nmo_result_t prep = nmo_string_prepare_write(string, new_length);
-    if (prep.code != NMO_OK) {
+    nmo_status_t prep = nmo_string_prepare_write(string, new_length);
+    if (prep != NMO_OK) {
         return prep;
     }
 
     string->data[string->length++] = ch;
     string->data[string->length] = '\0';
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ------------------------------------------------------------------------- */
 /* Mutation helpers                                                           */
 /* ------------------------------------------------------------------------- */
 
-nmo_result_t nmo_string_insert(nmo_string_t *string,
+nmo_status_t nmo_string_insert(nmo_string_t *string,
                                size_t index,
                                const char *data,
                                size_t length) {
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
     if (index > string->length) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS,
-                                          NMO_SEVERITY_ERROR,
-                                          "Insertion index out of bounds"));
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "Insertion index out of bounds");
     }
     if (length == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     if (data == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "data must not be NULL when length > 0"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "data must not be NULL when length > 0");
     }
 
     size_t new_length = 0;
     if (nmo_size_add_overflow(string->length, length, &new_length)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "string length overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
-    nmo_result_t prep = nmo_string_prepare_write(string, new_length);
-    if (prep.code != NMO_OK) {
+    nmo_status_t prep = nmo_string_prepare_write(string, new_length);
+    if (prep != NMO_OK) {
         return prep;
     }
 
@@ -417,69 +383,57 @@ nmo_result_t nmo_string_insert(nmo_string_t *string,
     memmove(dst + length, dst, string->length - index + 1u);
     memcpy(dst, data, length);
     string->length = new_length;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_erase(nmo_string_t *string,
+nmo_status_t nmo_string_erase(nmo_string_t *string,
                               size_t index,
                               size_t length) {
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
     if (index > string->length) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS,
-                                          NMO_SEVERITY_ERROR,
-                                          "Erase index out of bounds"));
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "Erase index out of bounds");
     }
     if (length == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     size_t available = string->length - index;
     size_t erase_count = length > available ? available : length;
     if (erase_count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     char *dst = string->data + index;
     memmove(dst, dst + erase_count, available - erase_count + 1u);
     string->length -= erase_count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_replace(nmo_string_t *string,
+nmo_status_t nmo_string_replace(nmo_string_t *string,
                                 size_t index,
                                 size_t length,
                                 const char *data,
                                 size_t new_length) {
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
     if (index > string->length) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS,
-                                          NMO_SEVERITY_ERROR,
-                                          "Replace index out of bounds"));
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "Replace index out of bounds");
     }
     if (new_length > 0 && data == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "data must not be NULL when new_length > 0"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "data must not be NULL when new_length > 0");
     }
 
     size_t current_span = nmo_string_min_size(length, string->length - index);
     size_t base_length = string->length - current_span;
     size_t updated_length = 0;
     if (nmo_size_add_overflow(base_length, new_length, &updated_length)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "string length overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
 
-    nmo_result_t prep = nmo_string_prepare_write(string, updated_length);
-    if (prep.code != NMO_OK) {
+    nmo_status_t prep = nmo_string_prepare_write(string, updated_length);
+    if (prep != NMO_OK) {
         return prep;
     }
 
@@ -498,22 +452,18 @@ nmo_result_t nmo_string_replace(nmo_string_t *string,
 
     string->length = updated_length;
     string->data[string->length] = '\0';
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_replace_all(nmo_string_t *string,
+nmo_status_t nmo_string_replace_all(nmo_string_t *string,
                                     nmo_string_view_t needle,
                                     nmo_string_view_t replacement,
                                     size_t *out_count) {
     if (needle.length == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "needle must not be empty"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "needle must not be empty");
     }
     if (!nmo_string_validate(string)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
 
     size_t pos = 0;
@@ -523,12 +473,12 @@ nmo_result_t nmo_string_replace_all(nmo_string_t *string,
         if (found == SIZE_MAX) {
             break;
         }
-        nmo_result_t repl = nmo_string_replace(string,
+        nmo_status_t repl = nmo_string_replace(string,
                                                found,
                                                needle.length,
                                                replacement.data,
                                                replacement.length);
-        if (repl.code != NMO_OK) {
+        if (repl != NMO_OK) {
             return repl;
         }
         pos = found + replacement.length;
@@ -538,7 +488,7 @@ nmo_result_t nmo_string_replace_all(nmo_string_t *string,
     if (out_count != NULL) {
         *out_count = replaced;
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -788,24 +738,20 @@ int nmo_string_slice_view(const nmo_string_t *string,
     return 1;
 }
 
-nmo_result_t nmo_string_substr(nmo_string_t *dest,
+nmo_status_t nmo_string_substr(nmo_string_t *dest,
                                const nmo_string_t *src,
                                size_t start,
                                size_t length) {
     if (dest == NULL || src == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid substring arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid substring arguments");
     }
     nmo_string_view_t view;
     if (!nmo_string_slice_view(src, start, length, &view)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_OUT_OF_BOUNDS,
-                                          NMO_SEVERITY_ERROR,
-                                          "Substring range out of bounds"));
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "Substring range out of bounds");
     }
     if (view.length == 0) {
         nmo_string_clear(dest);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
     return nmo_string_assign_len(dest, view.data, view.length);
 }
@@ -875,14 +821,12 @@ void nmo_string_trim(nmo_string_t *string) {
 /* Formatting                                                                 */
 /* ------------------------------------------------------------------------- */
 
-static nmo_result_t nmo_string_vformat_internal(nmo_string_t *string,
+static nmo_status_t nmo_string_vformat_internal(nmo_string_t *string,
                                                 int append,
                                                 const char *fmt,
                                                 va_list args) {
     if (!nmo_string_validate(string) || fmt == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid format arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid format arguments");
     }
 
     va_list copy;
@@ -895,9 +839,7 @@ static nmo_result_t nmo_string_vformat_internal(nmo_string_t *string,
     va_end(copy);
 
     if (needed < 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_FORMAT,
-                                          NMO_SEVERITY_ERROR,
-                                          "vsnprintf failed"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "vsnprintf failed");
     }
 
     size_t offset = append ? string->length : 0u;
@@ -907,8 +849,8 @@ static nmo_result_t nmo_string_vformat_internal(nmo_string_t *string,
         string->length = 0;
     }
 
-    nmo_result_t prep = nmo_string_prepare_write(string, total_length);
-    if (prep.code != NMO_OK) {
+    nmo_status_t prep = nmo_string_prepare_write(string, total_length);
+    if (prep != NMO_OK) {
         return prep;
     }
 
@@ -919,34 +861,34 @@ static nmo_result_t nmo_string_vformat_internal(nmo_string_t *string,
 
     string->length = total_length;
     string->data[string->length] = '\0';
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_string_format(nmo_string_t *string,
+nmo_status_t nmo_string_format(nmo_string_t *string,
                                const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    nmo_result_t result = nmo_string_vformat_internal(string, 0, fmt, args);
+    nmo_status_t result = nmo_string_vformat_internal(string, 0, fmt, args);
     va_end(args);
     return result;
 }
 
-nmo_result_t nmo_string_formatv(nmo_string_t *string,
+nmo_status_t nmo_string_formatv(nmo_string_t *string,
                                 const char *fmt,
                                 va_list args) {
     return nmo_string_vformat_internal(string, 0, fmt, args);
 }
 
-nmo_result_t nmo_string_append_format(nmo_string_t *string,
+nmo_status_t nmo_string_append_format(nmo_string_t *string,
                                       const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    nmo_result_t result = nmo_string_vformat_internal(string, 1, fmt, args);
+    nmo_status_t result = nmo_string_vformat_internal(string, 1, fmt, args);
     va_end(args);
     return result;
 }
 
-nmo_result_t nmo_string_append_formatv(nmo_string_t *string,
+nmo_status_t nmo_string_append_formatv(nmo_string_t *string,
                                        const char *fmt,
                                        va_list args) {
     return nmo_string_vformat_internal(string, 1, fmt, args);
@@ -1075,32 +1017,28 @@ int nmo_string_to_double(const nmo_string_t *string, double *out_value) {
     return 1;
 }
 
-nmo_result_t nmo_string_from_int(nmo_string_t *string, int value) {
+nmo_status_t nmo_string_from_int(nmo_string_t *string, int value) {
     return nmo_string_format(string, "%d", value);
 }
 
-nmo_result_t nmo_string_from_uint32(nmo_string_t *string, uint32_t value) {
+nmo_status_t nmo_string_from_uint32(nmo_string_t *string, uint32_t value) {
     return nmo_string_format(string, "%u", value);
 }
 
-nmo_result_t nmo_string_from_float(nmo_string_t *string, float value) {
+nmo_status_t nmo_string_from_float(nmo_string_t *string, float value) {
     return nmo_string_format(string, "%g", value);
 }
 
-nmo_result_t nmo_string_from_double(nmo_string_t *string, double value) {
+nmo_status_t nmo_string_from_double(nmo_string_t *string, double value) {
     return nmo_string_format(string, "%g", value);
 }
 
-nmo_result_t nmo_string_pop_back(nmo_string_t *string, char *out_char) {
+nmo_status_t nmo_string_pop_back(nmo_string_t *string, char *out_char) {
     if (string == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "string must not be NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "string must not be NULL");
     }
     if (string->length == 0 || string->data == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "Cannot pop from empty string"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Cannot pop from empty string");
     }
     string->length -= 1u;
     char value = string->data[string->length];
@@ -1108,5 +1046,5 @@ nmo_result_t nmo_string_pop_back(nmo_string_t *string, char *out_char) {
     if (out_char != NULL) {
         *out_char = value;
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

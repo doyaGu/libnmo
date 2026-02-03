@@ -26,7 +26,7 @@ static nmo_guid_t type_guid2 = {0x40000002, 0x00000002};
 static int serialize_call_count = 0;
 static int deserialize_call_count = 0;
 
-static nmo_result_t mock_serialize(
+static nmo_status_t mock_serialize(
     const void *instance,
     struct nmo_chunk *chunk,
     void *manager_context) {
@@ -34,10 +34,10 @@ static nmo_result_t mock_serialize(
     (void)chunk;
     (void)manager_context;
     serialize_call_count++;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t mock_deserialize(
+static nmo_status_t mock_deserialize(
     void *instance,
     struct nmo_chunk *chunk,
     void *manager_context) {
@@ -45,7 +45,7 @@ static nmo_result_t mock_deserialize(
     (void)chunk;
     (void)manager_context;
     deserialize_call_count++;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 static void setup(void) {
@@ -77,10 +77,10 @@ static void teardown(void) {
 TEST(custom_managers, register_manager) {
     setup();
     
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Verify manager count
     size_t count = nmo_type_registry_get_manager_count(registry);
@@ -92,15 +92,15 @@ TEST(custom_managers, register_manager) {
 TEST(custom_managers, register_multiple_managers) {
     setup();
     
-    nmo_result_t result1 = nmo_type_registry_register_saver_manager(
+    nmo_status_t result1 = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "Manager1", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result1.code);
+    ASSERT_EQ(NMO_OK, result1);
     
-    nmo_result_t result2 = nmo_type_registry_register_saver_manager(
+    nmo_status_t result2 = nmo_type_registry_register_saver_manager(
         registry, manager_guid2, "Manager2", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result2.code);
+    ASSERT_EQ(NMO_OK, result2);
     
     size_t count = nmo_type_registry_get_manager_count(registry);
     ASSERT_EQ(2, count);
@@ -111,16 +111,16 @@ TEST(custom_managers, register_multiple_managers) {
 TEST(custom_managers, register_duplicate_guid_fails) {
     setup();
     
-    nmo_result_t result1 = nmo_type_registry_register_saver_manager(
+    nmo_status_t result1 = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "Manager1", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result1.code);
+    ASSERT_EQ(NMO_OK, result1);
     
     // Try to register same GUID again
-    nmo_result_t result2 = nmo_type_registry_register_saver_manager(
+    nmo_status_t result2 = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "Manager2", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_NE(NMO_OK, result2.code);
+    ASSERT_NE(NMO_OK, result2);
     
     teardown();
 }
@@ -129,16 +129,16 @@ TEST(custom_managers, register_null_callbacks_fails) {
     setup();
     
     // NULL serialize
-    nmo_result_t result1 = nmo_type_registry_register_saver_manager(
+    nmo_status_t result1 = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "Manager1", 
         NULL, mock_deserialize, NULL);
-    ASSERT_NE(NMO_OK, result1.code);
+    ASSERT_NE(NMO_OK, result1);
     
     // NULL deserialize
-    nmo_result_t result2 = nmo_type_registry_register_saver_manager(
+    nmo_status_t result2 = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "Manager1", 
         mock_serialize, NULL, NULL);
-    ASSERT_NE(NMO_OK, result2.code);
+    ASSERT_NE(NMO_OK, result2);
     
     teardown();
 }
@@ -146,10 +146,10 @@ TEST(custom_managers, register_null_callbacks_fails) {
 TEST(custom_managers, get_manager_by_guid) {
     setup();
     
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_saver_manager_t *manager = 
         nmo_type_registry_get_saver_manager(registry, manager_guid1);
@@ -175,16 +175,16 @@ TEST(custom_managers, get_nonexistent_manager) {
 TEST(custom_managers, unregister_manager) {
     setup();
     
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     size_t before = nmo_type_registry_get_manager_count(registry);
     ASSERT_EQ(1, before);
     
     result = nmo_type_registry_unregister_saver_manager(registry, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     size_t after = nmo_type_registry_get_manager_count(registry);
     ASSERT_EQ(0, after);
@@ -196,8 +196,8 @@ TEST(custom_managers, unregister_nonexistent_manager_fails) {
     setup();
     
     nmo_guid_t fake_guid = {0x99999999, 0x99999999};
-    nmo_result_t result = nmo_type_registry_unregister_saver_manager(registry, fake_guid);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_unregister_saver_manager(registry, fake_guid);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -220,18 +220,18 @@ TEST(custom_managers, associate_type_with_manager) {
     type_desc.base_type = NMO_GUID_NULL;
     type_desc.saver_manager = NMO_MANAGER_INDEX_INVALID;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type_desc);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type_desc);
+    ASSERT_EQ(NMO_OK, result);
     
     // Register manager
     result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Associate type with manager
     result = nmo_type_registry_set_type_manager(registry, type_guid1, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Verify association
     const nmo_saver_manager_t *manager = 
@@ -246,15 +246,15 @@ TEST(custom_managers, set_manager_for_nonexistent_type_fails) {
     setup();
     
     // Register manager
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Try to associate nonexistent type
     nmo_guid_t fake_type = {0x99999999, 0x99999999};
     result = nmo_type_registry_set_type_manager(registry, fake_type, manager_guid1);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -273,13 +273,13 @@ TEST(custom_managers, set_nonexistent_manager_fails) {
     type_desc.base_type = NMO_GUID_NULL;
     type_desc.saver_manager = NMO_MANAGER_INDEX_INVALID;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type_desc);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type_desc);
+    ASSERT_EQ(NMO_OK, result);
     
     // Try to associate with nonexistent manager
     nmo_guid_t fake_manager = {0x99999999, 0x99999999};
     result = nmo_type_registry_set_type_manager(registry, type_guid1, fake_manager);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -298,17 +298,17 @@ TEST(custom_managers, clear_type_manager_association) {
     type_desc.base_type = NMO_GUID_NULL;
     type_desc.saver_manager = NMO_MANAGER_INDEX_INVALID;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type_desc);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type_desc);
+    ASSERT_EQ(NMO_OK, result);
     
     // Register and associate manager
     result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     result = nmo_type_registry_set_type_manager(registry, type_guid1, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Verify association exists
     const nmo_saver_manager_t *manager1 = 
@@ -317,7 +317,7 @@ TEST(custom_managers, clear_type_manager_association) {
     
     // Clear association
     result = nmo_type_registry_clear_type_manager(registry, type_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Verify association cleared
     const nmo_saver_manager_t *manager2 = 
@@ -341,8 +341,8 @@ TEST(custom_managers, get_type_manager_no_association) {
     type_desc.base_type = NMO_GUID_NULL;
     type_desc.saver_manager = NMO_MANAGER_INDEX_INVALID;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type_desc);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type_desc);
+    ASSERT_EQ(NMO_OK, result);
     
     // Should return NULL
     const nmo_saver_manager_t *manager = 
@@ -366,21 +366,21 @@ TEST(custom_managers, unregister_manager_clears_type_associations) {
     type_desc.base_type = NMO_GUID_NULL;
     type_desc.saver_manager = NMO_MANAGER_INDEX_INVALID;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type_desc);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type_desc);
+    ASSERT_EQ(NMO_OK, result);
     
     // Register and associate manager
     result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "TestManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     result = nmo_type_registry_set_type_manager(registry, type_guid1, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Unregister manager
     result = nmo_type_registry_unregister_saver_manager(registry, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Type should no longer have manager association
     const nmo_saver_manager_t *manager = 
@@ -396,26 +396,26 @@ TEST(custom_managers, unregister_manager_clears_type_associations) {
 
 TEST(custom_managers, null_registry_safety) {
     // All operations should handle NULL registry gracefully
-    nmo_result_t result;
+    nmo_status_t result;
     
     result = nmo_type_registry_register_saver_manager(
         NULL, manager_guid1, "Test", mock_serialize, mock_deserialize, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     result = nmo_type_registry_unregister_saver_manager(NULL, manager_guid1);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     const nmo_saver_manager_t *manager = nmo_type_registry_get_saver_manager(NULL, manager_guid1);
     ASSERT_EQ(NULL, manager);
     
     result = nmo_type_registry_set_type_manager(NULL, type_guid1, manager_guid1);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     manager = nmo_type_registry_get_type_manager(NULL, type_guid1);
     ASSERT_EQ(NULL, manager);
     
     result = nmo_type_registry_clear_type_manager(NULL, type_guid1);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     size_t count = nmo_type_registry_get_manager_count(NULL);
     ASSERT_EQ(0, count);
@@ -429,10 +429,10 @@ TEST(custom_managers, multiple_types_one_manager) {
     setup();
     
     // Register manager
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "SharedManager", 
         mock_serialize, mock_deserialize, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Register two types
     nmo_type_descriptor_t type1 = {0};
@@ -456,15 +456,15 @@ TEST(custom_managers, multiple_types_one_manager) {
     type2.saver_manager = NMO_MANAGER_INDEX_INVALID;
     
     result = nmo_type_registry_register(registry, &type1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_register(registry, &type2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Associate both with same manager
     result = nmo_type_registry_set_type_manager(registry, type_guid1, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_set_type_manager(registry, type_guid2, manager_guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     // Verify both associations
     const nmo_saver_manager_t *mgr1 = nmo_type_registry_get_type_manager(registry, type_guid1);
@@ -482,10 +482,10 @@ TEST(custom_managers, manager_context_preserved) {
     
     int context_value = 42;
     
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry, manager_guid1, "ContextManager", 
         mock_serialize, mock_deserialize, &context_value);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_saver_manager_t *manager = 
         nmo_type_registry_get_saver_manager(registry, manager_guid1);

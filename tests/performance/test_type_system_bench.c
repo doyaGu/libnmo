@@ -81,8 +81,8 @@ TEST(type_system_bench, registration_throughput) {
             .category = NMO_TYPE_CATEGORY_PRIMITIVE
         };
         
-        nmo_result_t result = nmo_type_registry_register(bench_registry, &type);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(bench_registry, &type);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     double end = get_time_ms();
@@ -217,13 +217,13 @@ TEST(type_system_bench, enum_registration) {
         char name[64];
         snprintf(name, sizeof(name), "BenchEnum_%04d", i);
         
-        nmo_result_t result = nmo_type_registry_register_enum(
+        nmo_status_t result = nmo_type_registry_register_enum(
             bench_registry,
             guid,
             name,
             "VALUE_A=0,VALUE_B=1,VALUE_C=2,VALUE_D=3"
         );
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     double end = get_time_ms();
@@ -260,13 +260,13 @@ TEST(type_system_bench, flags_registration) {
         char name[64];
         snprintf(name, sizeof(name), "BenchFlags_%04d", i);
         
-        nmo_result_t result = nmo_type_registry_register_flags(
+        nmo_status_t result = nmo_type_registry_register_flags(
             bench_registry,
             guid,
             name,
             "FLAG_A=0x1,FLAG_B=0x2,FLAG_C=0x4,FLAG_D=0x8"
         );
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     double end = get_time_ms();
@@ -352,8 +352,8 @@ TEST(type_system_bench, unregistration_throughput) {
     double start = get_time_ms();
     
     for (int i = 0; i < BENCH_TYPE_COUNT; i++) {
-        nmo_result_t result = nmo_type_registry_unregister(bench_registry, guids[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_unregister(bench_registry, guids[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     double end = get_time_ms();

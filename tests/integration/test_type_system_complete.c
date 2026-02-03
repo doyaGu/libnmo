@@ -23,7 +23,7 @@ typedef struct {
 } pixel_t;
 
 /* Operation implementation: Pixel + Pixel = Pixel (Component-wise add) */
-static nmo_result_t op_pixel_add(
+static nmo_status_t op_pixel_add(
     const void *p1_data, const nmo_type_descriptor_t *p1_type,
     const void *p2_data, const nmo_type_descriptor_t *p2_type,
     void *result_data, const nmo_type_descriptor_t *result_type,
@@ -40,18 +40,18 @@ static nmo_result_t op_pixel_add(
     res->b = a->b + b->b;
     res->color_type = a->color_type; /* Keep first color type */
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* Mock Manager Serialization */
-static nmo_result_t mock_manager_serialize(const void *instance, struct nmo_chunk *chunk, void *ctx) {
+static nmo_status_t mock_manager_serialize(const void *instance, struct nmo_chunk *chunk, void *ctx) {
     (void)instance; (void)chunk; (void)ctx;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t mock_manager_deserialize(void *instance, struct nmo_chunk *chunk, void *ctx) {
+static nmo_status_t mock_manager_deserialize(void *instance, struct nmo_chunk *chunk, void *ctx) {
     (void)instance; (void)chunk; (void)ctx;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -72,10 +72,10 @@ TEST(integration, type_system_complete_workflow) {
     /* 2. Register Custom Enum (Color) */
     /* RED=1, GREEN=2, BLUE=3 */
     const char *enum_def = "RED=1,GREEN=2,BLUE=3";
-    nmo_result_t res = nmo_type_registry_register_enum_string(
+    nmo_status_t res = nmo_type_registry_register_enum_string(
         type_reg, GUID_ENUM_COLOR, "ColorEnum", enum_def
     );
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     
     /* Verify Enum */
     const nmo_type_descriptor_t *enum_type = nmo_type_registry_find_by_guid(type_reg, GUID_ENUM_COLOR);
@@ -113,7 +113,7 @@ TEST(integration, type_system_complete_workflow) {
     res = nmo_type_registry_register_struct(
         type_reg, &struct_def, NULL
     );
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
 
     /* Verify Struct */
     const nmo_type_descriptor_t *struct_type = nmo_type_registry_find_by_guid(type_reg, GUID_STRUCT_PIXEL);
@@ -132,7 +132,7 @@ TEST(integration, type_system_complete_workflow) {
     };
 
     res = nmo_operation_registry_register(op_reg, &op_desc, type_reg);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
 
     /* 5. Execute Operation */
     /* Find operation */
@@ -140,7 +140,7 @@ TEST(integration, type_system_complete_workflow) {
     res = nmo_operation_registry_find(
         op_reg, &GUID_OP_ADD, struct_type, struct_type, type_reg, &cell
     );
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, cell);
     ASSERT_NE(NULL, cell->desc.function);
 
@@ -161,11 +161,11 @@ TEST(integration, type_system_complete_workflow) {
         type_reg, GUID_MANAGER_PIXEL, "PixelManager",
         mock_manager_serialize, mock_manager_deserialize, NULL
     );
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
 
     /* Associate Manager with Type */
     res = nmo_type_registry_set_type_manager(type_reg, GUID_STRUCT_PIXEL, GUID_MANAGER_PIXEL);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
 
     /* Verify Association */
     const nmo_saver_manager_t *mgr = nmo_type_registry_get_type_manager(

@@ -1,4 +1,4 @@
-#include "format/nmo_chunk_writer.h"
+﻿#include "format/nmo_chunk_writer.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
@@ -266,11 +266,11 @@ static int encode_object_id(const nmo_chunk_writer_t *w,
     }
 
     nmo_object_id_t file_id = 0;
-    nmo_result_t remap = nmo_id_remap_lookup_id(w->file_context->runtime_to_file,
+    nmo_status_t remap = nmo_id_remap_lookup_id(w->file_context->runtime_to_file,
                                                 id,
                                                 &file_id);
-    if (remap.code != NMO_OK) {
-        return remap.code;
+    if (remap != NMO_OK) {
+        return remap;
     }
 
     *out_value = (uint32_t) file_id;
@@ -1345,7 +1345,7 @@ nmo_chunk_t *nmo_chunk_writer_finalize(nmo_chunk_writer_t *w) {
     }
 
     // Copy data to chunk
-    nmo_result_t result = nmo_arena_array_resize(&w->chunk->data, w->data_size);
+    nmo_status_t result = nmo_arena_array_resize(&w->chunk->data, w->data_size);
     NMO_RETURN_NULL_IF_ERROR(result);
     uint32_t *chunk_data = NMO_ARENA_ARRAY_DATA(uint32_t, &w->chunk->data);
     if (w->data_size > 0) {

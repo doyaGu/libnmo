@@ -19,10 +19,10 @@ static int file_is_compressed(const char *path) {
     }
 
     nmo_file_header_t header;
-    nmo_result_t result = nmo_file_header_parse(io, &header);
+    nmo_status_t result = nmo_file_header_parse(io, &header);
     nmo_io_close(io);
 
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return -1;
     }
 
@@ -108,10 +108,10 @@ static int test_mmap_load_files(void) {
 
         int result = nmo_load_file_ex(session, filename, &opts);
         if (result == NMO_OK) {
-            printf("âœ“ SUCCESS\n");
+            printf("âœ?SUCCESS\n");
             files_loaded++;
         } else {
-            printf("âœ— FAILED (error %d)\n", result);
+            printf("âœ?FAILED (error %d)\n", result);
         }
 
         nmo_session_destroy(session);

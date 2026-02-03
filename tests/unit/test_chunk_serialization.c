@@ -39,8 +39,8 @@ TEST(chunk_serialization, version_info_packing) {
     chunk->chunk_options = 0x07;      // IDS|CHN|MAN (NOT FILE - IDS aren't serialized in file mode)
 
     // Add some data
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
     data[0] = 0xAABBCCDD;
@@ -48,7 +48,7 @@ TEST(chunk_serialization, version_info_packing) {
 
     // Add IDs to trigger CHNK_OPTION_IDS
     resize_result = nmo_arena_array_resize(&chunk->ids, 1);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
     ASSERT_NOT_NULL(ids);
     ids[0] = 0x99887766;
@@ -56,15 +56,15 @@ TEST(chunk_serialization, version_info_packing) {
     // Serialize
     void *buffer = NULL;
     size_t buffer_size = 0;
-    nmo_result_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(buffer);
     ASSERT_GT(buffer_size, 0);
 
     // Deserialize
     nmo_chunk_t *chunk2 = NULL;
     result = nmo_chunk_deserialize(buffer, buffer_size, arena, &chunk2);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(chunk2);
 
     // Verify all fields match
@@ -106,8 +106,8 @@ TEST(chunk_serialization, full_serialization) {
     chunk->chunk_version = 7;
 
     // Add data
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
     data[0] = 100;
@@ -116,7 +116,7 @@ TEST(chunk_serialization, full_serialization) {
 
     // Add IDs
     resize_result = nmo_arena_array_resize(&chunk->ids, 2);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
     ASSERT_NOT_NULL(ids);
     ids[0] = 1001;
@@ -124,7 +124,7 @@ TEST(chunk_serialization, full_serialization) {
 
     // Add managers
     resize_result = nmo_arena_array_resize(&chunk->managers, 1);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->managers);
     ASSERT_NOT_NULL(managers);
     managers[0] = 999;
@@ -135,12 +135,12 @@ TEST(chunk_serialization, full_serialization) {
     // Serialize and deserialize
     void *buffer = NULL;
     size_t buffer_size = 0;
-    nmo_result_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_chunk_t *chunk2 = NULL;
     result = nmo_chunk_deserialize(buffer, buffer_size, arena, &chunk2);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     // Verify all data
     ASSERT_EQ(chunk2->data_version, 5);
@@ -191,12 +191,12 @@ TEST(chunk_serialization, empty_chunk) {
     // Serialize and deserialize
     void *buffer = NULL;
     size_t buffer_size = 0;
-    nmo_result_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_chunk_t *chunk2 = NULL;
     result = nmo_chunk_deserialize(buffer, buffer_size, arena, &chunk2);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     // Verify
     ASSERT_EQ(chunk2->data_version, 1);
@@ -227,12 +227,12 @@ TEST(chunk_serialization, bit_pattern_integrity) {
 
             void *buffer = NULL;
             size_t buffer_size = 0;
-            nmo_result_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
-            ASSERT_EQ(result.code, NMO_OK);
+            nmo_status_t result = nmo_chunk_serialize(chunk, &buffer, &buffer_size, arena);
+            ASSERT_EQ(result, NMO_OK);
 
             nmo_chunk_t *chunk2 = NULL;
             result = nmo_chunk_deserialize(buffer, buffer_size, arena, &chunk2);
-            ASSERT_EQ(result.code, NMO_OK);
+            ASSERT_EQ(result, NMO_OK);
 
             ASSERT_EQ(chunk2->data_version, dv);
             ASSERT_EQ(chunk2->chunk_class_id, cid);

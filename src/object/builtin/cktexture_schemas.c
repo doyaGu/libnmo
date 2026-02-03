@@ -66,7 +66,7 @@ static size_t nmo_cktexture_identifier_payload_size(nmo_chunk_t *chunk) {
     return (end_pos - (id_pos + 2)) * sizeof(uint32_t);
 }
 
-static nmo_result_t nmo_cktexture_read_reader_slot(
+static nmo_status_t nmo_cktexture_read_reader_slot(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_cktexture_reader_slot_t *slot)
@@ -75,88 +75,88 @@ static nmo_result_t nmo_cktexture_read_reader_slot(
     memset(slot, 0, sizeof(*slot));
 
     uint32_t format_type = 0;
-    nmo_result_t result = nmo_chunk_read_dword(chunk, &format_type);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_read_dword(chunk, &format_type);
+    if (result != NMO_OK) return result;
     slot->format_type = format_type;
 
     if (format_type == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     uint32_t extension = 0;
     result = nmo_chunk_read_dword(chunk, &extension);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->extension = extension;
 
     result = nmo_chunk_read_guid(chunk, &slot->reader_guid);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     void *data = NULL;
     size_t size = 0;
     result = nmo_chunk_read_buffer(chunk, &data, &size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->data = (uint8_t *)data;
     slot->data_size = (uint32_t)size;
 
     if (format_type == 2) {
         int32_t distinct = 0;
         result = nmo_chunk_read_int(chunk, &distinct);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         slot->alpha_count = (uint32_t)distinct;
         if (distinct == 1) {
             int32_t alpha_value = 0;
             result = nmo_chunk_read_int(chunk, &alpha_value);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             slot->alpha_value = (uint32_t)alpha_value;
         } else if (distinct > 1) {
             void *alpha_plane = NULL;
             size_t alpha_size = 0;
             result = nmo_chunk_read_buffer(chunk, &alpha_plane, &alpha_size);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             slot->alpha_plane = (uint8_t *)alpha_plane;
             slot->alpha_plane_size = (uint32_t)alpha_size;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_write_reader_slot(
+static nmo_status_t nmo_cktexture_write_reader_slot(
     nmo_chunk_t *chunk,
     const nmo_cktexture_reader_slot_t *slot)
 {
-    nmo_result_t result = nmo_chunk_write_dword(chunk, slot->format_type);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_write_dword(chunk, slot->format_type);
+    if (result != NMO_OK) return result;
 
     if (slot->format_type == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     result = nmo_chunk_write_buffer_no_size(chunk, &slot->extension, sizeof(uint32_t));
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_guid(chunk, slot->reader_guid);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_buffer(chunk, slot->data, slot->data_size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     if (slot->format_type == 2) {
         result = nmo_chunk_write_int(chunk, (int32_t)slot->alpha_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         if (slot->alpha_count == 1) {
             result = nmo_chunk_write_int(chunk, (int32_t)slot->alpha_value);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         } else if (slot->alpha_count > 1) {
             result = nmo_chunk_write_buffer(chunk, slot->alpha_plane, slot->alpha_plane_size);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_read_raw_slot(
+static nmo_status_t nmo_cktexture_read_raw_slot(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_cktexture_raw_slot_t *slot)
@@ -165,100 +165,100 @@ static nmo_result_t nmo_cktexture_read_raw_slot(
     memset(slot, 0, sizeof(*slot));
 
     int32_t bpp = 0;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &bpp);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &bpp);
+    if (result != NMO_OK) return result;
     slot->bits_per_pixel = bpp;
 
     if (bpp == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     result = nmo_chunk_read_int(chunk, &slot->width);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_read_int(chunk, &slot->height);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_read_dword(chunk, &slot->alpha_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_read_dword(chunk, &slot->red_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_read_dword(chunk, &slot->green_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_read_dword(chunk, &slot->blue_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_read_dword(chunk, &slot->compression);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     void *buffer = NULL;
     size_t size = 0;
     result = nmo_chunk_read_buffer(chunk, &buffer, &size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->blue_data = (uint8_t *)buffer;
     slot->blue_size = (uint32_t)size;
 
     buffer = NULL;
     size = 0;
     result = nmo_chunk_read_buffer(chunk, &buffer, &size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->green_data = (uint8_t *)buffer;
     slot->green_size = (uint32_t)size;
 
     buffer = NULL;
     size = 0;
     result = nmo_chunk_read_buffer(chunk, &buffer, &size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->red_data = (uint8_t *)buffer;
     slot->red_size = (uint32_t)size;
 
     buffer = NULL;
     size = 0;
     result = nmo_chunk_read_buffer(chunk, &buffer, &size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->alpha_data = (uint8_t *)buffer;
     slot->alpha_size = (uint32_t)size;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_write_raw_slot(
+static nmo_status_t nmo_cktexture_write_raw_slot(
     nmo_chunk_t *chunk,
     const nmo_cktexture_raw_slot_t *slot)
 {
-    nmo_result_t result = nmo_chunk_write_int(chunk, slot->bits_per_pixel);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_write_int(chunk, slot->bits_per_pixel);
+    if (result != NMO_OK) return result;
 
     if (slot->bits_per_pixel == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     result = nmo_chunk_write_int(chunk, slot->width);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_int(chunk, slot->height);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_dword(chunk, slot->alpha_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_dword(chunk, slot->red_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_dword(chunk, slot->green_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_dword(chunk, slot->blue_mask);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_dword(chunk, slot->compression);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_buffer(chunk, slot->blue_data, slot->blue_size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_buffer(chunk, slot->green_data, slot->green_size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_buffer(chunk, slot->red_data, slot->red_size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     result = nmo_chunk_write_buffer(chunk, slot->alpha_data, slot->alpha_size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_read_bitmap2_slot(
+static nmo_status_t nmo_cktexture_read_bitmap2_slot(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_cktexture_bitmap2_slot_t *slot)
@@ -267,47 +267,46 @@ static nmo_result_t nmo_cktexture_read_bitmap2_slot(
     memset(slot, 0, sizeof(*slot));
 
     int32_t header = 0;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &header);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &header);
+    if (result != NMO_OK) return result;
     slot->header_size = header;
 
     void *buffer = NULL;
     size_t size = 0;
     result = nmo_chunk_read_buffer(chunk, &buffer, &size);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
     slot->buffer = (uint8_t *)buffer;
     slot->buffer_size = (uint32_t)size;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_write_bitmap2_slot(
+static nmo_status_t nmo_cktexture_write_bitmap2_slot(
     nmo_chunk_t *chunk,
     const nmo_cktexture_bitmap2_slot_t *slot)
 {
-    nmo_result_t result = nmo_chunk_write_int(chunk, slot->header_size);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_write_int(chunk, slot->header_size);
+    if (result != NMO_OK) return result;
     return nmo_chunk_write_buffer(chunk, slot->buffer, slot->buffer_size);
 }
 
-static nmo_result_t nmo_cktexture_read_slot_filenames(
+static nmo_status_t nmo_cktexture_read_slot_filenames(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_ck_texture_state_t *state)
 {
     int32_t count = 0;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+    if (result != NMO_OK) return result;
     if (count < 0) count = 0;
 
     if (count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     char **names = (char **)nmo_arena_alloc(arena, sizeof(char *) * (size_t)count, _Alignof(char *));
     if (!names) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-            "Failed to allocate slot filenames"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate slot filenames");
     }
 
     for (int32_t i = 0; i < count; ++i) {
@@ -320,10 +319,10 @@ static nmo_result_t nmo_cktexture_read_slot_filenames(
     state->slot_filenames = names;
     state->has_slot_filenames = 1;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_cktexture_deserialize(
+nmo_status_t nmo_cktexture_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -334,18 +333,17 @@ nmo_result_t nmo_cktexture_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
     {
-        nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+        if (result != NMO_OK) return result;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXREADER).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXREADER) == NMO_OK) {
         int32_t count = 0;
         nmo_chunk_read_int(chunk, &count);
         if (count < 0) count = 0;
@@ -354,18 +352,17 @@ nmo_result_t nmo_cktexture_deserialize(
             nmo_cktexture_reader_slot_t *slots = (nmo_cktexture_reader_slot_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_cktexture_reader_slot_t) * (size_t)count, _Alignof(nmo_cktexture_reader_slot_t));
             if (!slots) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                    "Failed to allocate reader slots"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate reader slots");
             }
             for (int32_t i = 0; i < count; ++i) {
-                nmo_result_t result = nmo_cktexture_read_reader_slot(chunk, arena, &slots[i]);
-                if (result.code != NMO_OK) return result;
+                nmo_status_t result = nmo_cktexture_read_reader_slot(chunk, arena, &slots[i]);
+                if (result != NMO_OK) return result;
             }
             out_state->bitmap_kind = NMO_CKTEXTURE_BITMAP_READER;
             out_state->reader_slots = slots;
             out_state->slot_count = (uint32_t)count;
         }
-    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED).code == NMO_OK) {
+    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED) == NMO_OK) {
         int32_t count = 0;
         nmo_chunk_read_int(chunk, &count);
         if (count < 0) count = 0;
@@ -374,18 +371,17 @@ nmo_result_t nmo_cktexture_deserialize(
             nmo_cktexture_raw_slot_t *slots = (nmo_cktexture_raw_slot_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_cktexture_raw_slot_t) * (size_t)count, _Alignof(nmo_cktexture_raw_slot_t));
             if (!slots) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                    "Failed to allocate raw slots"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw slots");
             }
             for (int32_t i = 0; i < count; ++i) {
-                nmo_result_t result = nmo_cktexture_read_raw_slot(chunk, arena, &slots[i]);
-                if (result.code != NMO_OK) return result;
+                nmo_status_t result = nmo_cktexture_read_raw_slot(chunk, arena, &slots[i]);
+                if (result != NMO_OK) return result;
             }
             out_state->bitmap_kind = NMO_CKTEXTURE_BITMAP_RAW;
             out_state->raw_slots = slots;
             out_state->slot_count = (uint32_t)count;
         }
-    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXBITMAPS).code == NMO_OK) {
+    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXBITMAPS) == NMO_OK) {
         int32_t count = 0;
         nmo_chunk_read_int(chunk, &count);
         if (count < 0) count = 0;
@@ -394,12 +390,11 @@ nmo_result_t nmo_cktexture_deserialize(
             nmo_cktexture_bitmap2_slot_t *slots = (nmo_cktexture_bitmap2_slot_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_cktexture_bitmap2_slot_t) * (size_t)count, _Alignof(nmo_cktexture_bitmap2_slot_t));
             if (!slots) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                    "Failed to allocate bitmap2 slots"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bitmap2 slots");
             }
             for (int32_t i = 0; i < count; ++i) {
-                nmo_result_t result = nmo_cktexture_read_bitmap2_slot(chunk, arena, &slots[i]);
-                if (result.code != NMO_OK) return result;
+                nmo_status_t result = nmo_cktexture_read_bitmap2_slot(chunk, arena, &slots[i]);
+                if (result != NMO_OK) return result;
             }
             out_state->bitmap_kind = NMO_CKTEXTURE_BITMAP_BITMAP2;
             out_state->bitmap2_slots = slots;
@@ -407,19 +402,19 @@ nmo_result_t nmo_cktexture_deserialize(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXFILENAMES).code == NMO_OK) {
-        nmo_result_t result = nmo_cktexture_read_slot_filenames(chunk, arena, out_state);
-        if (result.code != NMO_OK) return result;
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXFILENAMES) == NMO_OK) {
+        nmo_status_t result = nmo_cktexture_read_slot_filenames(chunk, arena, out_state);
+        if (result != NMO_OK) return result;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME) == NMO_OK) {
         char *movie = NULL;
         nmo_chunk_read_string(chunk, &movie);
         out_state->movie_filename = movie;
         out_state->has_movie_filename = (movie != NULL);
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD) == NMO_OK) {
         int32_t threshold = 0;
         nmo_chunk_read_int(chunk, &threshold);
         out_state->pick_threshold = threshold;
@@ -428,7 +423,7 @@ nmo_result_t nmo_cktexture_deserialize(
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
     if (data_version < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXTRANSPARENT).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXTRANSPARENT) == NMO_OK) {
             uint32_t color = 0;
             uint32_t transparency = 0;
             nmo_chunk_read_dword(chunk, &color);
@@ -438,14 +433,14 @@ nmo_result_t nmo_cktexture_deserialize(
             out_state->is_transparent = (transparency != 0);
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXCURRENTIMAGE).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXCURRENTIMAGE) == NMO_OK) {
             int32_t slot = 0;
             nmo_chunk_read_int(chunk, &slot);
             out_state->current_slot = slot;
             out_state->has_current_slot = 1;
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP) == NMO_OK) {
             size_t payload = nmo_cktexture_identifier_payload_size(chunk);
             int32_t use_mipmap = 0;
             nmo_chunk_read_int(chunk, &use_mipmap);
@@ -455,7 +450,7 @@ nmo_result_t nmo_cktexture_deserialize(
             }
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXSYSTEMCACHING).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXSYSTEMCACHING) == NMO_OK) {
             uint32_t save_options = 0;
             nmo_chunk_read_dword(chunk, &save_options);
             out_state->save_options = (uint16_t)(save_options & 0xFF);
@@ -468,10 +463,10 @@ nmo_result_t nmo_cktexture_deserialize(
             out_state->save_format_size = size;
         }
 
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OLDTEXONLY).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OLDTEXONLY) == NMO_OK) {
         size_t payload = nmo_cktexture_identifier_payload_size(chunk);
         uint32_t dword = 0;
         nmo_chunk_read_dword(chunk, &dword);
@@ -519,7 +514,7 @@ nmo_result_t nmo_cktexture_deserialize(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP) == NMO_OK) {
         int32_t count = 0;
         nmo_chunk_read_int(chunk, &count);
         if (count < 0) count = 0;
@@ -527,12 +522,11 @@ nmo_result_t nmo_cktexture_deserialize(
             nmo_cktexture_raw_slot_t *mips = (nmo_cktexture_raw_slot_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_cktexture_raw_slot_t) * (size_t)count, _Alignof(nmo_cktexture_raw_slot_t));
             if (!mips) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                    "Failed to allocate mipmap slots"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate mipmap slots");
             }
             for (int32_t i = 0; i < count; ++i) {
-                nmo_result_t result = nmo_cktexture_read_raw_slot(chunk, arena, &mips[i]);
-                if (result.code != NMO_OK) return result;
+                nmo_status_t result = nmo_cktexture_read_raw_slot(chunk, arena, &mips[i]);
+                if (result != NMO_OK) return result;
             }
             out_state->has_user_mipmaps = 1;
             out_state->user_mipmap_count = (uint32_t)count;
@@ -540,7 +534,7 @@ nmo_result_t nmo_cktexture_deserialize(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT) == NMO_OK) {
         void *format = NULL;
         size_t size = 0;
         nmo_chunk_read_buffer(chunk, &format, &size);
@@ -549,7 +543,7 @@ nmo_result_t nmo_cktexture_deserialize(
         out_state->save_format_size = size;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -567,7 +561,7 @@ NMO_DEFINE_OBJECT_SCHEMA(
     NMO_GUID_CKBEOBJECT
 )
 
-nmo_result_t nmo_cktexture_serialize(
+nmo_status_t nmo_cktexture_serialize(
     const void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -575,47 +569,45 @@ nmo_result_t nmo_cktexture_serialize(
 {
     (void)type;
     const nmo_ck_texture_state_t *state = (const nmo_ck_texture_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!state || !chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_serialize");
     }
 
     {
-        nmo_result_t result = nmo_ckbeobject_serialize(&state->base, chunk, NULL, context);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_ckbeobject_serialize(&state->base, chunk, NULL, context);
+        if (result != NMO_OK) return result;
     }
 
     if (state->bitmap_kind == NMO_CKTEXTURE_BITMAP_READER && state->reader_slots && state->slot_count > 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_cktexture_write_reader_slot(chunk, &state->reader_slots[i]);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     } else if (state->bitmap_kind == NMO_CKTEXTURE_BITMAP_RAW && state->raw_slots && state->slot_count > 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_cktexture_write_raw_slot(chunk, &state->raw_slots[i]);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     } else if (state->bitmap_kind == NMO_CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots && state->slot_count > 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXBITMAPS);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXBITMAPS);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_cktexture_write_bitmap2_slot(chunk, &state->bitmap2_slots[i]);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
     if (state->has_slot_filenames && state->slot_filenames && state->slot_count > 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXFILENAMES);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXFILENAMES);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             nmo_chunk_write_string(chunk, state->slot_filenames[i]);
@@ -623,20 +615,20 @@ nmo_result_t nmo_cktexture_serialize(
     }
 
     if (state->has_movie_filename && state->movie_filename) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_string(chunk, state->movie_filename);
     }
 
     if (state->has_pick_threshold && state->pick_threshold != 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, state->pick_threshold);
     }
 
     if (state->has_oldtexonly) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY);
+        if (result != NMO_OK) return result;
 
         uint32_t dword = (uint32_t)(state->mipmap_level & 0xFF);
         dword |= ((uint32_t)(state->save_options & 0xFF) << 16);
@@ -660,27 +652,27 @@ nmo_result_t nmo_cktexture_serialize(
     }
 
     if (state->has_save_format && state->save_format_data && state->save_format_size > 0) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_buffer(chunk, state->save_format_data, state->save_format_size);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
     if (state->has_user_mipmaps && state->user_mipmap_count > 0 && state->user_mipmaps) {
-        nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_USERMIPMAP);
-        if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_USERMIPMAP);
+        if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->user_mipmap_count);
         for (uint32_t i = 0; i < state->user_mipmap_count; ++i) {
             result = nmo_cktexture_write_raw_slot(chunk, &state->user_mipmaps[i]);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
  
-nmo_result_t nmo_cktexture_finish_loading(
+nmo_status_t nmo_cktexture_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -688,5 +680,5 @@ nmo_result_t nmo_cktexture_finish_loading(
     (void)instance;
     (void)arena;
     (void)repository;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

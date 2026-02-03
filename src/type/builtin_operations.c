@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_operations.c
  * @brief Main builtin operations registration
  *
@@ -19,9 +19,9 @@
  * Type Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
+nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     if (!type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry");
     }
 
@@ -43,8 +43,8 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .creator_plugin = NULL
     };
 
-    nmo_result_t result = nmo_type_registry_register(type_registry, &int_type);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = nmo_type_registry_register(type_registry, &int_type);
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -67,7 +67,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &float_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -90,7 +90,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &bool_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -113,7 +113,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &vec2_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -135,7 +135,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &vec3_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -157,7 +157,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &vec4_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -179,7 +179,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &quat_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -201,7 +201,7 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &mat_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -223,57 +223,57 @@ nmo_result_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     };
 
     result = nmo_type_registry_register(type_registry, &color_type);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Operation Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_builtin_operations(
+nmo_status_t nmo_register_builtin_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL operation_registry or type_registry");
     }
 
-    nmo_result_t result;
+    nmo_status_t result;
 
     /* Register arithmetic operations (16 operations: 8 INT + 8 FLOAT) */
     result = nmo_register_arithmetic_operations(operation_registry, type_registry);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
     /* Register logic operations (4 operations: BOOL only) */
     result = nmo_register_logic_operations(operation_registry, type_registry);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
     /* Register comparison operations (16 operations: 8 INT + 8 FLOAT) */
     result = nmo_register_comparison_operations(operation_registry, type_registry);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
     /* Register bitwise operations (7 operations: INT only) */
     result = nmo_register_bitwise_operations(operation_registry, type_registry);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
     /* Register trigonometry operations (6 operations: FLOAT only) */
     result = nmo_register_trigonometry_operations(operation_registry, type_registry);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

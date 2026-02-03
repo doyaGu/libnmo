@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file object_repository.c
  * @brief Object repository implementation with generic hash tables
  */
@@ -178,18 +178,18 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) 
     }
 
     /* Add to ID map */
-    nmo_result_t insert_result = nmo_indexed_map_insert(repo->id_map, &obj->id, &obj);
-    if (nmo_result_is_error(insert_result)) {
-        return insert_result.code;
+    nmo_status_t insert_result = nmo_indexed_map_insert(repo->id_map, &obj->id, &obj);
+    if (insert_result != NMO_OK) {
+        return insert_result;
     }
 
     /* Add to name table if object has a name */
     if (obj->name != NULL && obj->name[0] != '\0') {
-        nmo_result_t name_result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
-        if (nmo_result_is_error(name_result)) {
+        nmo_status_t name_result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
+        if (name_result != NMO_OK) {
             /* Rollback ID insertion */
             nmo_indexed_map_remove(repo->id_map, &obj->id);
-            return name_result.code;
+            return name_result;
         }
     }
 
@@ -216,7 +216,7 @@ nmo_object_t *nmo_object_repository_find_by_id(const nmo_object_repository_t *re
     }
 
     nmo_object_t *obj = NULL;
-    if (nmo_result_is_ok(nmo_indexed_map_get(repo->id_map, &id, &obj))) {
+    if (nmo_indexed_map_get(repo->id_map, &id, &obj) == NMO_OK) {
         return obj;
     }
 
@@ -233,7 +233,7 @@ nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_repository_t *
     }
 
     nmo_object_t *obj = NULL;
-    if (nmo_result_is_ok(nmo_hash_table_get(repo->name_table, &name, &obj))) {
+    if (nmo_hash_table_get(repo->name_table, &name, &obj) == NMO_OK) {
         return obj;
     }
 
@@ -250,7 +250,7 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
 
     /* Get object before removing */
     nmo_object_t *obj = NULL;
-    if (nmo_result_is_error(nmo_indexed_map_get(repo->id_map, &id, &obj))) {
+    if (nmo_indexed_map_get(repo->id_map, &id, &obj) != NMO_OK) {
         return NMO_ERR_INVALID_ARGUMENT; /* Not found */
     }
 
@@ -262,7 +262,7 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
     /* Remove from name table if has name */
     if (obj != NULL && obj->name != NULL && obj->name[0] != '\0') {
         nmo_object_t *mapped = NULL;
-        if (nmo_result_is_ok(nmo_hash_table_get(repo->name_table, &obj->name, &mapped))
+        if (nmo_hash_table_get(repo->name_table, &obj->name, &mapped) == NMO_OK
             && mapped == obj) {
             nmo_object_t *replacement = NULL;
             size_t total_count = nmo_indexed_map_get_count(repo->id_map);

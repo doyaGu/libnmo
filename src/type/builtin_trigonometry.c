@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_trigonometry.c
  * @brief Builtin trigonometry operations implementation
  *
@@ -14,7 +14,7 @@
  * Float Trigonometry Operations
  * ============================================================================ */
 
-static nmo_result_t op_sin_float(
+static nmo_status_t op_sin_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -22,10 +22,10 @@ static nmo_result_t op_sin_float(
     const float a = *(const float *)p1_data;
     *(float *)result_data = sinf(a);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_cos_float(
+static nmo_status_t op_cos_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -33,10 +33,10 @@ static nmo_result_t op_cos_float(
     const float a = *(const float *)p1_data;
     *(float *)result_data = cosf(a);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_tan_float(
+static nmo_status_t op_tan_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -44,10 +44,10 @@ static nmo_result_t op_tan_float(
     const float a = *(const float *)p1_data;
     *(float *)result_data = tanf(a);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_asin_float(
+static nmo_status_t op_asin_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -55,14 +55,15 @@ static nmo_result_t op_asin_float(
     const float a = *(const float *)p1_data;
 
     if (a < -1.0f || a > 1.0f) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "asin domain error: input must be in [-1, 1]");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "asin domain error: input must be in [-1, 1]");
     }
 
     *(float *)result_data = asinf(a);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_acos_float(
+static nmo_status_t op_acos_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -70,14 +71,15 @@ static nmo_result_t op_acos_float(
     const float a = *(const float *)p1_data;
 
     if (a < -1.0f || a > 1.0f) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "acos domain error: input must be in [-1, 1]");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "acos domain error: input must be in [-1, 1]");
     }
 
     *(float *)result_data = acosf(a);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_atan_float(
+static nmo_status_t op_atan_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -85,19 +87,20 @@ static nmo_result_t op_atan_float(
     const float a = *(const float *)p1_data;
     *(float *)result_data = atanf(a);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_trigonometry_operations(
+nmo_status_t nmo_register_trigonometry_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL operation_registry or type_registry");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL operation_registry or type_registry");
     }
 
     nmo_operation_desc_t operations[] = {

@@ -91,71 +91,71 @@ static bool color_equals(const nmo_color_t *a, const nmo_color_t *b, float epsil
 // =============================================================================
 
 TEST(chunk_helpers, object_id_array_empty) {
-    nmo_result_t result;
+    nmo_status_t result;
 
     // Write empty array
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_object_id_array(chunk, NULL, 0);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_object_id_t *ids = NULL;
     size_t count = 0;
     result = nmo_chunk_read_object_id_array(chunk, &ids, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(0, count);
     ASSERT_EQ(NULL, ids);
 }
 
 TEST(chunk_helpers, object_id_array_single) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_object_id_t original_ids[] = {42};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_object_id_array(chunk, original_ids, 1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_object_id_t *ids = NULL;
     size_t count = 0;
     result = nmo_chunk_read_object_id_array(chunk, &ids, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(1, count);
     ASSERT_NE(NULL, ids);
     ASSERT_EQ(42, ids[0]);
 }
 
 TEST(chunk_helpers, object_id_array_multiple) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_object_id_t original_ids[] = {1, 2, 100, 0, 999};
     const size_t original_count = sizeof(original_ids) / sizeof(original_ids[0]);
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_object_id_array(chunk, original_ids, original_count);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_object_id_t *ids = NULL;
     size_t count = 0;
     result = nmo_chunk_read_object_id_array(chunk, &ids, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(original_count, count);
     ASSERT_NE(NULL, ids);
 
@@ -169,25 +169,25 @@ TEST(chunk_helpers, object_id_array_multiple) {
 // =============================================================================
 
 TEST(chunk_helpers, int_array_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     int32_t original_array[] = {-100, 0, 42, 999, INT32_MIN, INT32_MAX};
     const size_t original_count = sizeof(original_array) / sizeof(original_array[0]);
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_int_array(chunk, original_array, original_count);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     int32_t *array = NULL;
     size_t count = 0;
     result = nmo_chunk_read_int_array(chunk, &array, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(original_count, count);
     ASSERT_NE(NULL, array);
 
@@ -197,25 +197,25 @@ TEST(chunk_helpers, int_array_roundtrip) {
 }
 
 TEST(chunk_helpers, float_array_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     float original_array[] = {-1.5f, 0.0f, 3.14f, 999.999f, -FLT_MAX, FLT_MAX};
     const size_t original_count = sizeof(original_array) / sizeof(original_array[0]);
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_float_array(chunk, original_array, original_count);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     float *array = NULL;
     size_t count = 0;
     result = nmo_chunk_read_float_array(chunk, &array, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(original_count, count);
     ASSERT_NE(NULL, array);
 
@@ -225,25 +225,25 @@ TEST(chunk_helpers, float_array_roundtrip) {
 }
 
 TEST(chunk_helpers, dword_array_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     uint32_t original_array[] = {0, 1, 255, 65535, 0xDEADBEEF, UINT32_MAX};
     const size_t original_count = sizeof(original_array) / sizeof(original_array[0]);
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_dword_array(chunk, original_array, original_count);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     uint32_t *array = NULL;
     size_t count = 0;
     result = nmo_chunk_read_dword_array(chunk, &array, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(original_count, count);
     ASSERT_NE(NULL, array);
 
@@ -253,25 +253,25 @@ TEST(chunk_helpers, dword_array_roundtrip) {
 }
 
 TEST(chunk_helpers, byte_array_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     uint8_t original_array[] = {0, 1, 127, 128, 255};
     const size_t original_count = sizeof(original_array) / sizeof(original_array[0]);
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_byte_array(chunk, original_array, original_count);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     uint8_t *array = NULL;
     size_t count = 0;
     result = nmo_chunk_read_byte_array(chunk, &array, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(original_count, count);
     ASSERT_NE(NULL, array);
 
@@ -281,25 +281,25 @@ TEST(chunk_helpers, byte_array_roundtrip) {
 }
 
 TEST(chunk_helpers, string_array_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     const char *original_strings[] = {"hello", "world", "", "test string"};
     const size_t original_count = sizeof(original_strings) / sizeof(original_strings[0]);
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_string_array(chunk, original_strings, original_count);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     char **strings = NULL;
     size_t count = 0;
     result = nmo_chunk_read_string_array(chunk, &strings, &count, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(original_count, count);
     ASSERT_NE(NULL, strings);
 
@@ -313,133 +313,133 @@ TEST(chunk_helpers, string_array_roundtrip) {
 // =============================================================================
 
 TEST(chunk_helpers, vector2_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_vector2_t original = {1.5f, -2.7f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_vector2(chunk, &original);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_vector2_t vec;
     result = nmo_chunk_read_vector2(chunk, &vec);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(vector2_equals(&original, &vec, 0.0001f));
 }
 
 TEST(chunk_helpers, vector2_zero) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_vector2_t zero = {0.0f, 0.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_vector2(chunk, &zero);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_vector2_t vec;
     result = nmo_chunk_read_vector2(chunk, &vec);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(vector2_equals(&zero, &vec, 0.0001f));
 }
 
 TEST(chunk_helpers, vector3_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_vector_t original = {1.5f, -2.7f, 3.14f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_vector3(chunk, &original);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_vector_t vec;
     result = nmo_chunk_read_vector3(chunk, &vec);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(vector3_equals(&original, &vec, 0.0001f));
 }
 
 TEST(chunk_helpers, vector3_zero) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_vector_t zero = {0.0f, 0.0f, 0.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_vector3(chunk, &zero);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_vector_t vec;
     result = nmo_chunk_read_vector3(chunk, &vec);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(vector3_equals(&zero, &vec, 0.0001f));
 }
 
 TEST(chunk_helpers, vector3_infinity) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_vector_t inf = {INFINITY, -INFINITY, 0.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_vector3(chunk, &inf);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_vector_t vec;
     result = nmo_chunk_read_vector3(chunk, &vec);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(vector3_equals(&inf, &vec, 0.0001f));
 }
 
 TEST(chunk_helpers, vector4_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_vector4_t original = {1.0f, 2.0f, 3.0f, 4.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_vector4(chunk, &original);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_vector4_t vec;
     result = nmo_chunk_read_vector4(chunk, &vec);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(vector4_equals(&original, &vec, 0.0001f));
 }
@@ -449,45 +449,45 @@ TEST(chunk_helpers, vector4_roundtrip) {
 // =============================================================================
 
 TEST(chunk_helpers, quaternion_identity) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_quaternion_t identity = {0.0f, 0.0f, 0.0f, 1.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_quaternion(chunk, &identity);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_quaternion_t quat;
     result = nmo_chunk_read_quaternion(chunk, &quat);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(quaternion_equals(&identity, &quat, 0.0001f));
 }
 
 TEST(chunk_helpers, quaternion_roundtrip) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_quaternion_t original = {0.5f, 0.5f, 0.5f, 0.5f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_quaternion(chunk, &original);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_quaternion_t quat;
     result = nmo_chunk_read_quaternion(chunk, &quat);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(quaternion_equals(&original, &quat, 0.0001f));
 }
@@ -497,7 +497,7 @@ TEST(chunk_helpers, quaternion_roundtrip) {
 // =============================================================================
 
 TEST(chunk_helpers, matrix_identity) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_matrix_t identity = {
         {{1, 0, 0, 0},
          {0, 1, 0, 0},
@@ -507,46 +507,46 @@ TEST(chunk_helpers, matrix_identity) {
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_matrix(chunk, &identity);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_matrix_t mat;
     result = nmo_chunk_read_matrix(chunk, &mat);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(matrix_equals(&identity, &mat, 0.0001f));
 }
 
 TEST(chunk_helpers, matrix_zero) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_matrix_t zero = {{{0}}};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_matrix(chunk, &zero);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_matrix_t mat;
     result = nmo_chunk_read_matrix(chunk, &mat);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(matrix_equals(&zero, &mat, 0.0001f));
 }
 
 TEST(chunk_helpers, matrix_arbitrary) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_matrix_t original = {
         {{1.1f, 2.2f, 3.3f, 4.4f},
          {5.5f, 6.6f, 7.7f, 8.8f},
@@ -556,18 +556,18 @@ TEST(chunk_helpers, matrix_arbitrary) {
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_matrix(chunk, &original);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_matrix_t mat;
     result = nmo_chunk_read_matrix(chunk, &mat);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(matrix_equals(&original, &mat, 0.0001f));
 }
@@ -577,67 +577,67 @@ TEST(chunk_helpers, matrix_arbitrary) {
 // =============================================================================
 
 TEST(chunk_helpers, color_white) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_color_t white = {1.0f, 1.0f, 1.0f, 1.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_color(chunk, &white);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_color_t color;
     result = nmo_chunk_read_color(chunk, &color);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(color_equals(&white, &color, 0.0001f));
 }
 
 TEST(chunk_helpers, color_black) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_color_t black = {0.0f, 0.0f, 0.0f, 1.0f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_color(chunk, &black);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_color_t color;
     result = nmo_chunk_read_color(chunk, &color);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(color_equals(&black, &color, 0.0001f));
 }
 
 TEST(chunk_helpers, color_arbitrary) {
-    nmo_result_t result;
+    nmo_status_t result;
     nmo_color_t original = {0.2f, 0.4f, 0.6f, 0.8f};
 
     // Write
     result = nmo_chunk_start_write(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_chunk_write_color(chunk, &original);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     // Read back
     result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_color_t color;
     result = nmo_chunk_read_color(chunk, &color);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_TRUE(color_equals(&original, &color, 0.0001f));
 }

@@ -7,14 +7,14 @@
 #include <stdint.h>
 #include <string.h>
 
-static nmo_result_t make_error(nmo_error_code_t code, const char *message);
+static nmo_status_t make_error(nmo_error_code_t code, const char *message);
 static const char *nmo_chunk_bitmap_default_extension(const nmo_image_codec_t *codec);
 
 static inline nmo_chunk_parser_state_t *nmo_chunk_bitmap_get_state(nmo_chunk_t *chunk) {
     return chunk ? (nmo_chunk_parser_state_t *)chunk->parser_state : NULL;
 }
 
-static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
+static nmo_status_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
                                                size_t size,
                                                const uint8_t **out_ptr) {
     if (!chunk || !out_ptr) {
@@ -23,7 +23,7 @@ static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
 
     if (size == 0) {
         *out_ptr = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t dwords = (size + 3u) / 4u;
@@ -36,10 +36,10 @@ static nmo_result_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
     const uint8_t *src = (const uint8_t *)&data[state->current_pos];
     *out_ptr = src;
     state->current_pos += dwords;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
+static nmo_status_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
                                                           nmo_arena_t *arena,
                                                           void **out_data,
                                                           size_t *out_size,
@@ -63,7 +63,7 @@ static nmo_result_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
 
     if (size == 0) {
         *out_data = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t dwords = (size + 3u) / 4u;
@@ -80,19 +80,22 @@ static nmo_result_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
     state->current_pos += dwords;
 
     *out_data = buffer;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_chunk_bitmap_cleanup_arena(nmo_arena_t *scratch, nmo_result_t result) {
+static nmo_status_t nmo_chunk_bitmap_cleanup_arena(nmo_arena_t *scratch, nmo_status_t result) {
     if (scratch) {
         nmo_arena_destroy(scratch);
+    }
+    if (result == NMO_OK) {
+        nmo_last_error_clear();
     }
     return result;
 }
 
 #define NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch) \
     do { \
-        if ((result).code != NMO_OK) { \
+        if ((result) != NMO_OK) { \
             return nmo_chunk_bitmap_cleanup_arena((scratch), (result)); \
         } \
     } while (0)
@@ -188,7 +191,7 @@ static const nmo_image_codec_t *nmo_chunk_bitmap_resolve_codec(const nmo_bitmap_
     return codec;
 }
 
-static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
+static nmo_status_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
                                                           const char signature[5],
                                                           const uint8_t *encoded_data,
                                                           size_t encoded_size) {
@@ -198,11 +201,11 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
 
     size_t total_size = encoded_size + 5u;
     if (total_size == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t dwords = (total_size + 3u) / 4u;
-    nmo_result_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
@@ -233,7 +236,7 @@ static nmo_result_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 static inline uint32_t nmo_chunk_bitmap_pack_argb(uint8_t r,
@@ -292,14 +295,14 @@ static uint32_t nmo_chunk_bitmap_extension_tag(const char bytes[4]) {
            ((uint32_t)(uint8_t)bytes[2] << 16u);
 }
 
-static nmo_result_t nmo_chunk_bitmap_check_desc(const nmo_image_desc_t *desc) {
+static nmo_status_t nmo_chunk_bitmap_check_desc(const nmo_image_desc_t *desc) {
     if (!desc || desc->width <= 0 || desc->height <= 0 || !desc->image_data) {
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Invalid image descriptor");
     }
     if (desc->height > 0 && desc->width > INT32_MAX / desc->height) {
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Bitmap dimensions overflow");
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 static inline uint32_t nmo_chunk_bitmap_read_pixel(const uint8_t *ptr, int bytes_per_pixel) {
@@ -322,7 +325,7 @@ static inline uint32_t nmo_chunk_bitmap_read_pixel(const uint8_t *ptr, int bytes
     }
 }
 
-static nmo_result_t nmo_chunk_bitmap_convert_interleaved(const nmo_image_desc_t *desc,
+static nmo_status_t nmo_chunk_bitmap_convert_interleaved(const nmo_image_desc_t *desc,
                                                          int channels,
                                                          nmo_arena_t *arena,
                                                          uint8_t **out_pixels) {
@@ -386,10 +389,10 @@ static nmo_result_t nmo_chunk_bitmap_convert_interleaved(const nmo_image_desc_t 
     }
 
     *out_pixels = buffer;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_chunk_bitmap_copy_rgba_to_rgb(const uint8_t *rgba,
+static nmo_status_t nmo_chunk_bitmap_copy_rgba_to_rgb(const uint8_t *rgba,
                                                       size_t pixel_count,
                                                       nmo_arena_t *arena,
                                                       uint8_t **out_rgb) {
@@ -413,7 +416,7 @@ static nmo_result_t nmo_chunk_bitmap_copy_rgba_to_rgb(const uint8_t *rgba,
     }
 
     *out_rgb = rgb;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 static bool nmo_chunk_bitmap_alpha_is_constant(const uint8_t *rgba,
@@ -441,7 +444,7 @@ static bool nmo_chunk_bitmap_alpha_is_constant(const uint8_t *rgba,
     return true;
 }
 
-static nmo_result_t nmo_chunk_bitmap_extract_alpha_plane(const uint8_t *rgba,
+static nmo_status_t nmo_chunk_bitmap_extract_alpha_plane(const uint8_t *rgba,
                                                          size_t pixel_count,
                                                          nmo_arena_t *arena,
                                                          uint8_t **out_plane) {
@@ -459,18 +462,19 @@ static nmo_result_t nmo_chunk_bitmap_extract_alpha_plane(const uint8_t *rgba,
     }
 
     *out_plane = plane;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t write_empty_bitmap_marker(nmo_chunk_t *chunk) {
+static nmo_status_t write_empty_bitmap_marker(nmo_chunk_t *chunk) {
     return nmo_chunk_write_int(chunk, 0);
 }
 
-static nmo_result_t make_error(nmo_error_code_t code, const char *message) {
-    return nmo_result_error(NMO_ERROR(NULL, code, NMO_SEVERITY_ERROR, message));
+static nmo_status_t make_error(nmo_error_code_t code, const char *message) {
+    nmo_last_error_setf(code, NMO_SEVERITY_ERROR, __FILE__, __LINE__, "%s", message);
+    return code;
 }
 
-nmo_result_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
                                         const nmo_image_desc_t *desc) {
     if (!chunk || !desc) {
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Invalid chunk or descriptor");
@@ -522,7 +526,7 @@ nmo_result_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
         return make_error(NMO_ERR_NOMEM, "Failed to allocate bitmap scratch arena");
     }
 
-    nmo_result_t result = nmo_chunk_write_int(chunk, desc->bits_per_pixel);
+    nmo_status_t result = nmo_chunk_write_int(chunk, desc->bits_per_pixel);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
     result = nmo_chunk_write_int(chunk, desc->width);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
@@ -618,7 +622,7 @@ nmo_result_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
     return nmo_chunk_bitmap_cleanup_arena(scratch, result);
 }
 
-nmo_result_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
                                             const nmo_image_desc_t *desc,
                                             const nmo_bitmap_properties_t *props) {
     if (!chunk || !desc || !desc->image_data) {
@@ -645,7 +649,7 @@ nmo_result_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
     }
 
     uint8_t *rgba_pixels = NULL;
-    nmo_result_t result = nmo_chunk_bitmap_convert_interleaved(desc, 4, scratch, &rgba_pixels);
+    nmo_status_t result = nmo_chunk_bitmap_convert_interleaved(desc, 4, scratch, &rgba_pixels);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
 
     uint8_t *encoded_rgb = NULL;
@@ -727,10 +731,10 @@ nmo_result_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
         }
     }
 
-    return nmo_chunk_bitmap_cleanup_arena(scratch, nmo_result_ok());
+    return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
 }
 
-nmo_result_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
                                            const nmo_image_desc_t *desc,
                                            const nmo_bitmap_properties_t *props) {
     if (!chunk || !desc || !desc->image_data) {
@@ -756,7 +760,7 @@ nmo_result_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
     }
 
     uint8_t *rgba_pixels = NULL;
-    nmo_result_t result = nmo_chunk_bitmap_convert_interleaved(desc, 4, scratch, &rgba_pixels);
+    nmo_status_t result = nmo_chunk_bitmap_convert_interleaved(desc, 4, scratch, &rgba_pixels);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
 
     const size_t pixel_count = (size_t)desc->width * (size_t)desc->height;
@@ -808,7 +812,7 @@ nmo_result_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
     return nmo_chunk_bitmap_cleanup_arena(scratch, result);
 }
 
-nmo_result_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
                                        nmo_image_desc_t *out_desc,
                                        uint8_t **out_pixels) {
     if (!chunk || !out_desc || !out_pixels) {
@@ -819,11 +823,11 @@ nmo_result_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
     memset(out_desc, 0, sizeof(*out_desc));
 
     int32_t original_bpp = 0;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &original_bpp);
+    nmo_status_t result = nmo_chunk_read_int(chunk, &original_bpp);
     NMO_RETURN_IF_ERROR(result);
 
     if (original_bpp == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     int32_t width = 0;
@@ -943,10 +947,10 @@ nmo_result_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
 
     (void)original_bpp;
 
-    return nmo_chunk_bitmap_cleanup_arena(scratch, nmo_result_ok());
+    return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
 }
 
-nmo_result_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
                                            nmo_image_desc_t *out_desc,
                                            uint8_t **out_pixels) {
     if (!chunk || !out_desc || !out_pixels) {
@@ -957,11 +961,11 @@ nmo_result_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
     memset(out_desc, 0, sizeof(*out_desc));
 
     int32_t storage_type = 0;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &storage_type);
+    nmo_status_t result = nmo_chunk_read_int(chunk, &storage_type);
     NMO_RETURN_IF_ERROR(result);
 
     if (storage_type == NMO_BITMAP_STORE_NONE) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     uint32_t extension_tag = 0;
@@ -1095,10 +1099,10 @@ nmo_result_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
     nmo_image_desc_init_argb32(out_desc, width, height);
     out_desc->image_data = final_pixels;
     *out_pixels = final_pixels;
-    return nmo_chunk_bitmap_cleanup_arena(scratch, nmo_result_ok());
+    return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
 }
 
-nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
                                           nmo_image_desc_t *out_desc,
                                           uint8_t **out_pixels) {
     if (!chunk || !out_desc || !out_pixels) {
@@ -1110,7 +1114,7 @@ nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
 
     int32_t total_a = 0;
     int32_t total_b = 0;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &total_a);
+    nmo_status_t result = nmo_chunk_read_int(chunk, &total_a);
     NMO_RETURN_IF_ERROR(result);
     result = nmo_chunk_read_int(chunk, &total_b);
     NMO_RETURN_IF_ERROR(result);
@@ -1120,7 +1124,7 @@ nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
     }
 
     if (total_a <= 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (total_a < 5) {
@@ -1221,5 +1225,5 @@ nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
     nmo_image_desc_init_argb32(out_desc, decoded_width, decoded_height);
     out_desc->image_data = final_pixels;
     *out_pixels = final_pixels;
-    return nmo_chunk_bitmap_cleanup_arena(scratch, nmo_result_ok());
+    return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
 }

@@ -40,8 +40,8 @@ static void setup(void) {
     int_type->category = NMO_TYPE_CATEGORY_SCALAR;
     int_type->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_POD;
     int_type->valid = true;
-    nmo_result_t result = nmo_type_registry_register(test_registry, int_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(test_registry, int_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* float type */
     nmo_type_descriptor_t *float_type = (nmo_type_descriptor_t*)
@@ -55,7 +55,7 @@ static void setup(void) {
     float_type->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_POD;
     float_type->valid = true;
     result = nmo_type_registry_register(test_registry, float_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* CKBYTE type (uint8_t) */
     nmo_type_descriptor_t *byte_type = (nmo_type_descriptor_t*)
@@ -69,7 +69,7 @@ static void setup(void) {
     byte_type->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_POD;
     byte_type->valid = true;
     result = nmo_type_registry_register(test_registry, byte_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 }
 
 static void teardown(void) {
@@ -97,10 +97,10 @@ TEST(struct_registration, calculate_layout_basic) {
     };
     
     uint32_t total_size, alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         test_registry, fields, 2, 0, false, &total_size, &alignment);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(8, total_size);  /* int(4) + float(4) */
     ASSERT_EQ(4, alignment);   /* max(4, 4) */
     
@@ -118,10 +118,10 @@ TEST(struct_registration, calculate_layout_with_padding) {
     };
     
     uint32_t total_size, alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         test_registry, fields, 3, 0, false, &total_size, &alignment);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(12, total_size);  /* 1 + 3 pad + 4 + 1 + 3 pad = 12 */
     ASSERT_EQ(4, alignment);    /* Aligned to int */
     
@@ -139,10 +139,10 @@ TEST(struct_registration, calculate_layout_packed) {
     };
     
     uint32_t total_size, alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         test_registry, fields, 3, 0, true, &total_size, &alignment);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(6, total_size);  /* 1 + 4 + 1 = 6 (no padding) */
     ASSERT_EQ(1, alignment);   /* Packed = byte alignment */
     
@@ -159,10 +159,10 @@ TEST(struct_registration, calculate_layout_custom_alignment) {
     };
     
     uint32_t total_size, alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         test_registry, fields, 2, 16, false, &total_size, &alignment);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(16, total_size);  /* 8 bytes + 8 bytes padding to reach 16 */
     ASSERT_EQ(16, alignment);
     
@@ -179,19 +179,19 @@ TEST(struct_registration, calculate_layout_null_params) {
     uint32_t total_size, alignment;
     
     /* NULL registry */
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         NULL, fields, 1, 0, false, &total_size, &alignment);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     /* NULL fields */
     result = nmo_type_calculate_layout(
         test_registry, NULL, 1, 0, false, &total_size, &alignment);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     /* Zero field count */
     result = nmo_type_calculate_layout(
         test_registry, fields, 0, 0, false, &total_size, &alignment);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -205,10 +205,10 @@ TEST(struct_registration, calculate_layout_unknown_field_type) {
     };
     
     uint32_t total_size, alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         test_registry, fields, 1, 0, false, &total_size, &alignment);
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -237,9 +237,9 @@ TEST(struct_registration, register_struct_simple) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT(!nmo_guid_is_null(guid));
     
     /* Verify type is registered */
@@ -272,8 +272,8 @@ TEST(struct_registration, register_struct_metadata_mapping) {
     };
 
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
 
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
     ASSERT_NE(NULL, type_desc);
@@ -308,9 +308,9 @@ TEST(struct_registration, register_struct_with_custom_guid) {
     };
     
     nmo_guid_t out_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &out_guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &out_guid);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT(nmo_guid_equals(custom_guid, out_guid));
     
     teardown();
@@ -336,9 +336,9 @@ TEST(struct_registration, register_struct_packed) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
     ASSERT_NE(NULL, type_desc);
@@ -365,12 +365,12 @@ TEST(struct_registration, register_struct_null_params) {
     nmo_guid_t guid;
     
     /* NULL registry */
-    nmo_result_t result = nmo_type_registry_register_struct(NULL, &struct_def, &guid);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(NULL, &struct_def, &guid);
+    ASSERT_NE(NMO_OK, result);
     
     /* NULL struct_def */
     result = nmo_type_registry_register_struct(test_registry, NULL, &guid);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -390,9 +390,9 @@ TEST(struct_registration, register_struct_empty_name) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -408,9 +408,9 @@ TEST(struct_registration, register_struct_no_fields) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -432,12 +432,12 @@ TEST(struct_registration, register_struct_already_exists) {
     nmo_guid_t guid1, guid2;
     
     /* First registration */
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid1);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Second registration (should fail) */
     result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid2);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -457,9 +457,9 @@ TEST(struct_registration, register_struct_unknown_field_type) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -484,9 +484,9 @@ TEST(struct_registration, register_struct_with_description) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
     ASSERT_NE(NULL, type_desc);
@@ -516,8 +516,8 @@ TEST(struct_registration, get_type_size) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
     
     uint32_t size = nmo_type_get_size(test_registry, guid);
     ASSERT_EQ(12, size);  /* 3 * sizeof(int) */
@@ -541,8 +541,8 @@ TEST(struct_registration, get_type_alignment) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &struct_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
     
     uint32_t alignment = nmo_type_get_alignment(test_registry, guid);
     ASSERT_EQ(4, alignment);  /* Aligned to int */
@@ -575,7 +575,7 @@ TEST(struct_string_registration, register_struct_string_basic) {
     const char *field_types[] = { "float", "float", "float" };
     nmo_guid_t struct_guid = { 0x12345678, 0x87654321 };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         struct_guid,
         "Vector3",
@@ -583,7 +583,7 @@ TEST(struct_string_registration, register_struct_string_basic) {
         3
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify the struct was registered */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(
@@ -603,7 +603,7 @@ TEST(struct_string_registration, register_struct_string_auto_guid) {
     /* Register with NULL_GUID to auto-generate */
     const char *field_types[] = { "int", "int" };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         NMO_NULL_GUID,
         "Point2D",
@@ -611,7 +611,7 @@ TEST(struct_string_registration, register_struct_string_auto_guid) {
         2
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify struct was registered with auto-generated GUID */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_name(
@@ -629,7 +629,7 @@ TEST(struct_string_registration, register_struct_string_multiple_fields) {
     /* Register struct with different field types */
     const char *field_types[] = { "int", "float", "CKBYTE", "int" };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         NMO_NULL_GUID,
         "MixedStruct",
@@ -637,7 +637,7 @@ TEST(struct_string_registration, register_struct_string_multiple_fields) {
         4
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_name(
         test_registry, "MixedStruct");
@@ -654,7 +654,7 @@ TEST(struct_string_registration, register_struct_string_null_registry) {
     
     const char *field_types[] = { "int" };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         NULL,
         NMO_NULL_GUID,
         "TestStruct",
@@ -662,7 +662,7 @@ TEST(struct_string_registration, register_struct_string_null_registry) {
         1
     );
     
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 }
 
 TEST(struct_string_registration, register_struct_string_null_name) {
@@ -670,7 +670,7 @@ TEST(struct_string_registration, register_struct_string_null_name) {
     
     const char *field_types[] = { "int" };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         NMO_NULL_GUID,
         NULL,
@@ -678,7 +678,7 @@ TEST(struct_string_registration, register_struct_string_null_name) {
         1
     );
     
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -686,7 +686,7 @@ TEST(struct_string_registration, register_struct_string_null_name) {
 TEST(struct_string_registration, register_struct_string_null_field_types) {
     setup();
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         NMO_NULL_GUID,
         "TestStruct",
@@ -694,7 +694,7 @@ TEST(struct_string_registration, register_struct_string_null_field_types) {
         1
     );
     
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -704,7 +704,7 @@ TEST(struct_string_registration, register_struct_string_zero_fields) {
     
     const char *field_types[] = { "int" };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         NMO_NULL_GUID,
         "EmptyStruct",
@@ -712,7 +712,7 @@ TEST(struct_string_registration, register_struct_string_zero_fields) {
         0
     );
     
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -723,7 +723,7 @@ TEST(struct_string_registration, register_struct_string_invalid_field_type) {
     /* Try to register struct with non-existent field type */
     const char *field_types[] = { "int", "NonExistentType", "float" };
     
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         NMO_NULL_GUID,
         "BadStruct",
@@ -731,7 +731,7 @@ TEST(struct_string_registration, register_struct_string_invalid_field_type) {
         3
     );
     
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
     
     teardown();
 }
@@ -743,14 +743,14 @@ TEST(struct_string_registration, register_struct_string_already_exists) {
     nmo_guid_t struct_guid = { 0xAABBCCDD, 0xEEFF0011 };
     
     /* Register first time */
-    nmo_result_t result = nmo_type_registry_register_struct_string(
+    nmo_status_t result = nmo_type_registry_register_struct_string(
         test_registry,
         struct_guid,
         "DuplicateStruct",
         field_types,
         2
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Try to register again with same GUID */
     result = nmo_type_registry_register_struct_string(
@@ -761,7 +761,7 @@ TEST(struct_string_registration, register_struct_string_already_exists) {
         2
     );
     
-    ASSERT_EQ(NMO_ERR_ALREADY_EXISTS, result.code);
+    ASSERT_EQ(NMO_ERR_ALREADY_EXISTS, result);
     
     teardown();
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_logic.c
  * @brief Builtin logic and comparison operations implementation
  *
@@ -16,7 +16,7 @@
  * Boolean Logic Operations
  * ============================================================================ */
 
-static nmo_result_t op_and_bool(
+static nmo_status_t op_and_bool(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -25,10 +25,10 @@ static nmo_result_t op_and_bool(
     const bool b = *(const bool *)p2_data;
     *(bool *)result_data = a && b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_or_bool(
+static nmo_status_t op_or_bool(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -37,10 +37,10 @@ static nmo_result_t op_or_bool(
     const bool b = *(const bool *)p2_data;
     *(bool *)result_data = a || b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_not_bool(
+static nmo_status_t op_not_bool(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -48,10 +48,10 @@ static nmo_result_t op_not_bool(
     const bool a = *(const bool *)p1_data;
     *(bool *)result_data = !a;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_xor_bool(
+static nmo_status_t op_xor_bool(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -60,14 +60,14 @@ static nmo_result_t op_xor_bool(
     const bool b = *(const bool *)p2_data;
     *(bool *)result_data = (a && !b) || (!a && b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Integer Comparison Operations
  * ============================================================================ */
 
-static nmo_result_t op_equal_int(
+static nmo_status_t op_equal_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -76,10 +76,10 @@ static nmo_result_t op_equal_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(bool *)result_data = (a == b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_not_equal_int(
+static nmo_status_t op_not_equal_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -88,10 +88,10 @@ static nmo_result_t op_not_equal_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(bool *)result_data = (a != b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_less_int(
+static nmo_status_t op_less_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -100,10 +100,10 @@ static nmo_result_t op_less_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(bool *)result_data = (a < b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_less_equal_int(
+static nmo_status_t op_less_equal_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -112,10 +112,10 @@ static nmo_result_t op_less_equal_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(bool *)result_data = (a <= b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_greater_int(
+static nmo_status_t op_greater_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -124,10 +124,10 @@ static nmo_result_t op_greater_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(bool *)result_data = (a > b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_greater_equal_int(
+static nmo_status_t op_greater_equal_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -136,10 +136,10 @@ static nmo_result_t op_greater_equal_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(bool *)result_data = (a >= b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_min_int(
+static nmo_status_t op_min_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -148,10 +148,10 @@ static nmo_result_t op_min_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = (a < b) ? a : b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_max_int(
+static nmo_status_t op_max_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -160,14 +160,14 @@ static nmo_result_t op_max_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = (a > b) ? a : b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Float Comparison Operations
  * ============================================================================ */
 
-static nmo_result_t op_equal_float(
+static nmo_status_t op_equal_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -176,10 +176,10 @@ static nmo_result_t op_equal_float(
     const float b = *(const float *)p2_data;
     *(bool *)result_data = (a == b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_not_equal_float(
+static nmo_status_t op_not_equal_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -188,10 +188,10 @@ static nmo_result_t op_not_equal_float(
     const float b = *(const float *)p2_data;
     *(bool *)result_data = (a != b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_less_float(
+static nmo_status_t op_less_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -200,10 +200,10 @@ static nmo_result_t op_less_float(
     const float b = *(const float *)p2_data;
     *(bool *)result_data = (a < b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_less_equal_float(
+static nmo_status_t op_less_equal_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -212,10 +212,10 @@ static nmo_result_t op_less_equal_float(
     const float b = *(const float *)p2_data;
     *(bool *)result_data = (a <= b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_greater_float(
+static nmo_status_t op_greater_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -224,10 +224,10 @@ static nmo_result_t op_greater_float(
     const float b = *(const float *)p2_data;
     *(bool *)result_data = (a > b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_greater_equal_float(
+static nmo_status_t op_greater_equal_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -236,10 +236,10 @@ static nmo_result_t op_greater_equal_float(
     const float b = *(const float *)p2_data;
     *(bool *)result_data = (a >= b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_min_float(
+static nmo_status_t op_min_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -248,10 +248,10 @@ static nmo_result_t op_min_float(
     const float b = *(const float *)p2_data;
     *(float *)result_data = (a < b) ? a : b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_max_float(
+static nmo_status_t op_max_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -260,19 +260,20 @@ static nmo_result_t op_max_float(
     const float b = *(const float *)p2_data;
     *(float *)result_data = (a > b) ? a : b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Registration Functions
  * ============================================================================ */
 
-nmo_result_t nmo_register_logic_operations(
+nmo_status_t nmo_register_logic_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL operation_registry or type_registry");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL operation_registry or type_registry");
     }
 
     nmo_operation_desc_t operations[] = {
@@ -327,12 +328,13 @@ nmo_result_t nmo_register_logic_operations(
     return nmo_operation_registry_register_bulk(operation_registry, operations, count, type_registry, NULL);
 }
 
-nmo_result_t nmo_register_comparison_operations(
+nmo_status_t nmo_register_comparison_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL operation_registry or type_registry");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL operation_registry or type_registry");
     }
 
     nmo_operation_desc_t operations[] = {

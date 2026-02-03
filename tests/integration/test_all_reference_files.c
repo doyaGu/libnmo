@@ -60,9 +60,9 @@ static int test_parse_single_file(const char* filepath) {
     // Parse header
     nmo_file_header_t header;
     memset(&header, 0, sizeof(header));
-    nmo_result_t result = nmo_file_header_parse(io, &header);
+    nmo_status_t result = nmo_file_header_parse(io, &header);
     
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         error_msg = "Header parse failed";
         nmo_io_close(io);
         record_result(filepath, success_flags, 0, 0, 0, error_msg);
@@ -76,7 +76,7 @@ static int test_parse_single_file(const char* filepath) {
     
     // Validate header
     result = nmo_file_header_validate(&header);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         error_msg = "Header validation failed";
         nmo_io_close(io);
         record_result(filepath, success_flags, obj_count, mgr_count, version, error_msg);
@@ -131,7 +131,7 @@ static int test_parse_single_file(const char* filepath) {
         hdr1.object_count = header.object_count;
         result = nmo_header1_parse(hdr1_buffer, header.hdr1_unpack_size, &hdr1, arena);
         
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             error_msg = "Header1 parse failed";
             nmo_arena_destroy(arena);
             nmo_io_close(io);
@@ -211,7 +211,7 @@ static int test_parse_single_file(const char* filepath) {
             
             free(data_buffer);
             
-            if (result.code != NMO_OK) {
+            if (result != NMO_OK) {
                 error_msg = "Data section parse failed";
                 nmo_arena_destroy(arena);
                 nmo_io_close(io);

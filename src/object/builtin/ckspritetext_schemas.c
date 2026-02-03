@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file ckspritetext_schemas.c
  * @brief CKSpriteText schema implementation
  * @author libnmo
@@ -60,7 +60,7 @@ static void ckspritetext_init_defaults(
 /**
  * @brief Deserialize identifier 0x01000000 (text string)
  */
-static nmo_result_t deserialize_text_content(
+static nmo_status_t deserialize_text_content(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_ck_spritetext_state_t *state
@@ -71,7 +71,7 @@ static nmo_result_t deserialize_text_content(
     
     state->text_content = text_str ? text_str : nmo_arena_strdup(arena, "");
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -92,13 +92,13 @@ NMO_DEFINE_OBJECT_SCHEMA(
 /**
  * @brief Deserialize identifier 0x02000000 (font properties)
  */
-static nmo_result_t deserialize_font_properties(
+static nmo_status_t deserialize_font_properties(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_ck_spritetext_state_t *state
 ) {
     char *font_name = NULL;
-    nmo_result_t result;
+    nmo_status_t result;
     
     /* Read font name */
     size_t len = nmo_chunk_read_string(chunk, &font_name);
@@ -108,84 +108,61 @@ static nmo_result_t deserialize_font_properties(
     
     /* Read font size */
     result = nmo_chunk_read_int(chunk, &state->font.size);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read font size (identifier 0x02000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "Failed to read font size (identifier 0x02000000)");
     }
     
     /* Read font weight */
     result = nmo_chunk_read_int(chunk, &state->font.weight);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read font weight (identifier 0x02000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "Failed to read font weight (identifier 0x02000000)");
     }
     
     /* Read italic flag */
     result = nmo_chunk_read_int(chunk, &state->font.italic);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read italic flag (identifier 0x02000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "Failed to read italic flag (identifier 0x02000000)");
     }
 
     /* Read underline flag */
     result = nmo_chunk_read_int(chunk, &state->font.underline);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read underline flag (identifier 0x02000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "Failed to read underline flag (identifier 0x02000000)");
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
  * @brief Deserialize identifier 0x04000000 (text and background colors)
  */
-static nmo_result_t deserialize_colors(
+static nmo_status_t deserialize_colors(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_ck_spritetext_state_t *state
 ) {
-    nmo_result_t result;
+    (void)arena;
+    nmo_status_t result;
     
     /* Read font color */
     result = nmo_chunk_read_dword(chunk, &state->font_color);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read font color (identifier 0x04000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "Failed to read font color (identifier 0x04000000)");
     }
     
     /* Read background color */
     result = nmo_chunk_read_dword(chunk, &state->background_color);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read background color (identifier 0x04000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+            "Failed to read background color (identifier 0x04000000)");
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -198,19 +175,19 @@ static nmo_result_t deserialize_colors(
  * - 0x02000000: Font properties (optional, defaults to Arial 12pt normal)
  * - 0x04000000: Colors (optional, defaults to white on transparent)
  */
-static nmo_result_t ckspritetext_deserialize_modern(
+static nmo_status_t ckspritetext_deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_ck_spritetext_state_t *out_state
 ) {
-    nmo_result_t result;
+    nmo_status_t result;
     
     /* Initialize text/font defaults (base handled separately) */
     ckspritetext_init_defaults(out_state, arena);
     
     /* Process identifier 0x01000000: Text string */
     result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_TEXT);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         result = deserialize_text_content(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
     } else {
@@ -220,7 +197,7 @@ static nmo_result_t ckspritetext_deserialize_modern(
     
     /* Process identifier 0x02000000: Font properties */
     result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_FONT);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         result = deserialize_font_properties(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
     } else {
@@ -234,14 +211,14 @@ static nmo_result_t ckspritetext_deserialize_modern(
     
     /* Process identifier 0x04000000: Colors */
     result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_COLOR);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         result = deserialize_colors(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
     } else {
         /* Already initialized to defaults (white on transparent) */
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ========================================================================
@@ -258,19 +235,18 @@ static nmo_result_t ckspritetext_deserialize_modern(
  * - 0x02000000: Font properties (always written)
  * - 0x04000000: Colors (always written)
  */
-static nmo_result_t ckspritetext_serialize_modern(
+static nmo_status_t ckspritetext_serialize_modern(
     const nmo_ck_spritetext_state_t *state,
     nmo_chunk_t *chunk,
     nmo_arena_t *arena
 ) {
-    nmo_result_t result;
+    (void)arena;
+    nmo_status_t result;
     
     /* Validate font name before serialization */
     if (!state->font.font_name || state->font.font_name[0] == '\0') {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "CKSpriteText: Cannot serialize with NULL or empty font name"
-        ));
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "CKSpriteText: Cannot serialize with NULL or empty font name");
     }
     
     /* Write identifier 0x01000000: Text string */
@@ -278,13 +254,9 @@ static nmo_result_t ckspritetext_serialize_modern(
     NMO_RETURN_IF_ERROR(result);
     
     result = nmo_chunk_write_string(chunk, state->text_content ? state->text_content : "");
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
-            "Failed to write text string (identifier 0x01000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
+            "Failed to write text string (identifier 0x01000000)");
     }
     
     /* Write identifier 0x02000000: Font properties */
@@ -292,13 +264,9 @@ static nmo_result_t ckspritetext_serialize_modern(
     NMO_RETURN_IF_ERROR(result);
     
     result = nmo_chunk_write_string(chunk, state->font.font_name);
-    if (result.code != NMO_OK) {
-        nmo_error_t *err = NMO_ERROR(
-            arena, NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
-            "Failed to write font name (identifier 0x02000000)"
-        );
-        nmo_error_add_cause(err, result.error);
-        return nmo_result_error(err);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
+            "Failed to write font name (identifier 0x02000000)");
     }
     
     result = nmo_chunk_write_int(chunk, state->font.size);
@@ -323,7 +291,7 @@ static nmo_result_t ckspritetext_serialize_modern(
     result = nmo_chunk_write_dword(chunk, state->background_color);
     NMO_RETURN_IF_ERROR(result);
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ========================================================================
@@ -342,7 +310,7 @@ static nmo_result_t ckspritetext_serialize_modern(
  * - Ensures font name is not empty (sets "Arial" as fallback)
  * - Clears needs_redraw flag
  */
-static nmo_result_t ckspritetext_finish_loading(
+static nmo_status_t ckspritetext_finish_loading(
     nmo_ck_spritetext_state_t *state,
     void *context,
     nmo_arena_t *arena
@@ -353,10 +321,8 @@ static nmo_result_t ckspritetext_finish_loading(
     if (!state->font.font_name || state->font.font_name[0] == '\0') {
         state->font.font_name = nmo_arena_strdup(arena, "Arial");
         if (!state->font.font_name) {
-            return nmo_result_error(NMO_ERROR(
-                arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                "Failed to allocate fallback font name"
-            ));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to allocate fallback font name");
         }
     }
     
@@ -383,14 +349,14 @@ static nmo_result_t ckspritetext_finish_loading(
     /* Clear redraw flag */
     state->needs_redraw = false;
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ========================================================================
  * CKSpriteText Deserialization / Serialization
  * ======================================================================== */
 
-nmo_result_t nmo_ckspritetext_deserialize(
+nmo_status_t nmo_ckspritetext_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -401,28 +367,26 @@ nmo_result_t nmo_ckspritetext_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_ckspritetext_deserialize"
-        ));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Invalid arguments to nmo_ckspritetext_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ck2dentity_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ck2dentity_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
     result = ckspritetext_deserialize_modern(chunk, arena, out_state);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
 
     return ckspritetext_finish_loading(out_state, NULL, arena);
 }
 
-nmo_result_t nmo_ckspritetext_serialize(
+nmo_status_t nmo_ckspritetext_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -433,14 +397,12 @@ nmo_result_t nmo_ckspritetext_serialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
-        return nmo_result_error(NMO_ERROR(
-            arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_ckspritetext_serialize"
-        ));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Invalid arguments to nmo_ckspritetext_serialize");
     }
 
-    nmo_result_t result = nmo_ck2dentity_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ck2dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 

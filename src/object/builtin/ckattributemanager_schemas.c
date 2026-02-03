@@ -45,7 +45,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckattributemanager_deserialize(
+nmo_status_t nmo_ckattributemanager_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -56,36 +56,33 @@ nmo_result_t nmo_ckattributemanager_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_deserialize");
     }
 
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckattributemanager_state_t));
 
     /* Seek identifier */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
+    if (result != NMO_OK) {
         /* No data to load - this is valid */
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Read counts */
     int32_t category_count, attribute_count;
     result = nmo_chunk_read_int(chunk, &category_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_read_int(chunk, &attribute_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     if (category_count < 0 || category_count > 10000) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-            NMO_SEVERITY_ERROR, "Invalid category count"));
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid category count");
     }
 
     if (attribute_count < 0 || attribute_count > 100000) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-            NMO_SEVERITY_ERROR, "Invalid attribute count"));
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid attribute count");
     }
 
     out_state->category_count = (uint32_t)category_count;
@@ -97,8 +94,7 @@ nmo_result_t nmo_ckattributemanager_deserialize(
             arena, category_count * sizeof(nmo_ckattribute_category_t),
             _Alignof(nmo_ckattribute_category_t));
         if (!out_state->categories) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                NMO_SEVERITY_ERROR, "Failed to allocate categories"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate categories");
         }
         memset(out_state->categories, 0, category_count * sizeof(nmo_ckattribute_category_t));
 
@@ -106,7 +102,7 @@ nmo_result_t nmo_ckattributemanager_deserialize(
         for (int32_t i = 0; i < category_count; i++) {
             int32_t present;
             result = nmo_chunk_read_int(chunk, &present);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             nmo_ckattribute_category_t *cat = &out_state->categories[i];
             cat->present = (present != 0);
@@ -117,7 +113,7 @@ nmo_result_t nmo_ckattributemanager_deserialize(
                 cat->name = name;
 
                 result = nmo_chunk_read_dword(chunk, &cat->flags);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
             }
         }
     }
@@ -128,8 +124,7 @@ nmo_result_t nmo_ckattributemanager_deserialize(
             arena, attribute_count * sizeof(nmo_ckattribute_descriptor_t),
             _Alignof(nmo_ckattribute_descriptor_t));
         if (!out_state->attributes) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                NMO_SEVERITY_ERROR, "Failed to allocate attributes"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate attributes");
         }
         memset(out_state->attributes, 0, attribute_count * sizeof(nmo_ckattribute_descriptor_t));
 
@@ -137,7 +132,7 @@ nmo_result_t nmo_ckattributemanager_deserialize(
         for (int32_t i = 0; i < attribute_count; i++) {
             int32_t present;
             result = nmo_chunk_read_int(chunk, &present);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             nmo_ckattribute_descriptor_t *attr = &out_state->attributes[i];
             attr->present = (present != 0);
@@ -148,21 +143,21 @@ nmo_result_t nmo_ckattributemanager_deserialize(
                 attr->name = name;
 
                 result = nmo_chunk_read_guid(chunk, &attr->parameter_type_guid);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
 
                 result = nmo_chunk_read_int(chunk, &attr->category_index);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
 
                 result = nmo_chunk_read_int(chunk, &attr->compatible_class_id);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
 
                 result = nmo_chunk_read_dword(chunk, &attr->flags);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
             }
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -181,42 +176,39 @@ nmo_result_t nmo_ckattributemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckattributemanager_serialize(
+nmo_status_t nmo_ckattributemanager_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
+    (void)context;
     const nmo_ckattributemanager_state_t *in_state =
         (const nmo_ckattributemanager_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_serialize");
     }
 
-    nmo_result_t result;
+    nmo_status_t result;
 
     /* Write identifier */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write counts */
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->category_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->attribute_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     if (in_state->category_count > 0 && in_state->categories == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Attribute categories missing"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Attribute categories missing");
     }
     if (in_state->attribute_count > 0 && in_state->attributes == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Attribute descriptors missing"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Attribute descriptors missing");
     }
 
     /* Write categories */
@@ -224,14 +216,14 @@ nmo_result_t nmo_ckattributemanager_serialize(
         const nmo_ckattribute_category_t *cat = &in_state->categories[i];
 
         result = nmo_chunk_write_int(out_chunk, cat->present ? 1 : 0);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         if (cat->present) {
             result = nmo_chunk_write_string(out_chunk, cat->name ? cat->name : "");
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_dword(out_chunk, cat->flags);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
@@ -240,26 +232,26 @@ nmo_result_t nmo_ckattributemanager_serialize(
         const nmo_ckattribute_descriptor_t *attr = &in_state->attributes[i];
 
         result = nmo_chunk_write_int(out_chunk, attr->present ? 1 : 0);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         if (attr->present) {
             result = nmo_chunk_write_string(out_chunk, attr->name ? attr->name : "");
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_guid(out_chunk, attr->parameter_type_guid);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_int(out_chunk, attr->category_index);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_int(out_chunk, attr->compatible_class_id);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_dword(out_chunk, attr->flags);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 

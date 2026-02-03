@@ -47,11 +47,11 @@ TEST(txn_windows, basic_commit) {
     nmo_txn_handle_t* txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result = nmo_txn_write(txn, TEST_DATA, strlen(TEST_DATA));
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_write(txn, TEST_DATA, strlen(TEST_DATA));
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 
@@ -79,8 +79,8 @@ TEST(txn_windows, rollback) {
     ASSERT_NOT_NULL(txn);
 
     nmo_txn_write(txn, "This should disappear", 21);
-    nmo_result_t result = nmo_txn_rollback(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_rollback(txn);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 
@@ -104,8 +104,8 @@ TEST(txn_windows, replace_existing) {
     ASSERT_NOT_NULL(txn);
 
     nmo_txn_write(txn, new_data, strlen(new_data));
-    nmo_result_t result = nmo_txn_commit(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_commit(txn);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 
@@ -129,13 +129,13 @@ TEST(txn_windows, multiple_writes) {
     nmo_txn_handle_t* txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result1 = nmo_txn_write(txn, "Part1", 5);
-    nmo_result_t result2 = nmo_txn_write(txn, "Part2", 5);
-    nmo_result_t result3 = nmo_txn_write(txn, "Part3", 5);
+    nmo_status_t result1 = nmo_txn_write(txn, "Part1", 5);
+    nmo_status_t result2 = nmo_txn_write(txn, "Part2", 5);
+    nmo_status_t result3 = nmo_txn_write(txn, "Part3", 5);
 
-    ASSERT_TRUE(result1.code == NMO_OK &&
-                result2.code == NMO_OK &&
-                result3.code == NMO_OK);
+    ASSERT_TRUE(result1 == NMO_OK &&
+                result2 == NMO_OK &&
+                result3 == NMO_OK);
 
     nmo_txn_commit(txn);
     nmo_txn_close(txn);

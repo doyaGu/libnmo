@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file io_file.c
  * @brief File IO operations implementation
  */
@@ -353,9 +353,9 @@ int64_t nmo_io_file_tell(nmo_io_file_t *io_file) {
 /**
  * Close file
  */
-nmo_result_t nmo_io_file_close(nmo_io_file_t *io_file) {
+nmo_status_t nmo_io_file_close(nmo_io_file_t *io_file) {
     if (io_file == NULL) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (io_file->fp != NULL) {
@@ -363,5 +363,5 @@ nmo_result_t nmo_io_file_close(nmo_io_file_t *io_file) {
         io_file->fp = NULL;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

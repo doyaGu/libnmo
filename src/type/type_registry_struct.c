@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file type_registry_struct.c
  * @brief Struct type registration with automatic layout calculation (Phase 6.2 Task 6.2.4)
  * 
@@ -69,7 +69,7 @@ uint32_t nmo_type_get_size(
     return type_desc->size;
 }
 
-nmo_result_t nmo_type_calculate_layout(
+nmo_status_t nmo_type_calculate_layout(
     const nmo_type_registry_t *type_registry,
     nmo_struct_field_def_t *fields,
     size_t field_count,
@@ -79,9 +79,8 @@ nmo_result_t nmo_type_calculate_layout(
     uint32_t *out_alignment
 ) {
     if (!type_registry || !fields || field_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Invalid parameters for layout calculation");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters for layout calculation");
     }
     
     uint32_t offset = 0;
@@ -98,16 +97,15 @@ nmo_result_t nmo_type_calculate_layout(
         if (nmo_guid_is_null(field->type_guid)) {
             /* Parse type name to get GUID and array info */
             if (!field->type_name) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                         NMO_SEVERITY_ERROR,
-                                         "Field '%s' has no type specified",
-                                         field->name ? field->name : "(unnamed)");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Field '%s' has no type specified",
+                                        field->name ? field->name : "(unnamed)");
             }
             
             nmo_type_parse_result_t parse_result;
-            nmo_result_t result = nmo_type_registry_parse_type_name(
+            nmo_status_t result = nmo_type_registry_parse_type_name(
                 type_registry, field->type_name, &parse_result);
-            if (nmo_result_is_error(result)) {
+            if (result != NMO_OK) {
                 return result;
             }
             field_type_guid = parse_result.base_type_guid;
@@ -124,18 +122,16 @@ nmo_result_t nmo_type_calculate_layout(
         const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(
             type_registry, field_type_guid);
         if (!field_type) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
-                                     NMO_SEVERITY_ERROR,
-                                     "Field type not found for field '%s'",
-                                     field->name ? field->name : "(unnamed)");
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Field type not found for field '%s'",
+                                    field->name ? field->name : "(unnamed)");
         }
         
         /* Support nested structs - they're just regular types with struct category */
         if (field_type->category == NMO_TYPE_CATEGORY_STRUCT && !field_type->valid) {
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Cannot use incomplete struct type '%s' as field",
-                                     field_type->name);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Cannot use incomplete struct type '%s' as field",
+                                    field_type->name);
         }
         
         /* Calculate field size (including arrays) */
@@ -182,27 +178,24 @@ nmo_result_t nmo_type_calculate_layout(
  * Struct Type Registration
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_register_struct(
+nmo_status_t nmo_type_registry_register_struct(
     nmo_type_registry_t *type_registry,
     const nmo_struct_type_def_t *struct_def,
     nmo_guid_t *out_guid
 ) {
     if (!type_registry || !struct_def) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL type_registry or struct_def");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry or struct_def");
     }
     
     if (!struct_def->name || struct_def->name[0] == '\0') {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Struct type name cannot be empty");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Struct type name cannot be empty");
     }
     
     if (!struct_def->fields || struct_def->field_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Struct must have at least one field");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Struct must have at least one field");
     }
     
     /* Generate GUID for the struct type */
@@ -212,10 +205,9 @@ nmo_result_t nmo_type_registry_register_struct(
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (existing) {
-        return nmo_result_errorf(NULL, NMO_ERR_ALREADY_EXISTS,
-                                 NMO_SEVERITY_ERROR,
-                                 "Struct type '%s' already registered",
-                                 struct_def->name);
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                "Struct type '%s' already registered",
+                                struct_def->name);
     }
     
     nmo_arena_t *arena = type_registry->arena;
@@ -225,9 +217,8 @@ nmo_result_t nmo_type_registry_register_struct(
         nmo_arena_alloc(arena, sizeof(nmo_struct_field_def_t) * struct_def->field_count,
                         alignof(nmo_struct_field_def_t));
     if (!fields) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate fields array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate fields array");
     }
     
     /* Copy fields */
@@ -235,11 +226,11 @@ nmo_result_t nmo_type_registry_register_struct(
     
     /* Calculate layout */
     uint32_t total_size, struct_alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         type_registry, fields, struct_def->field_count,
         struct_def->alignment, struct_def->packed,
         &total_size, &struct_alignment);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
     
@@ -248,9 +239,8 @@ nmo_result_t nmo_type_registry_register_struct(
         nmo_arena_alloc(arena, sizeof(nmo_struct_descriptor_t) * struct_def->field_count,
                         alignof(nmo_struct_descriptor_t));
     if (!struct_fields) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate struct descriptors");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate struct descriptors");
     }
     
     /* Build struct descriptors with calculated offsets */
@@ -262,9 +252,8 @@ nmo_result_t nmo_type_registry_register_struct(
         /* Copy field name */
         field_desc->name = nmo_arena_strdup(arena, field_def->name);
         if (!field_desc->name) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to copy field name");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy field name");
         }
         
         /* Parse type name to get array info if needed */
@@ -273,9 +262,9 @@ nmo_result_t nmo_type_registry_register_struct(
         
         if (field_def->type_name) {
             nmo_type_parse_result_t parse_result;
-            nmo_result_t parse_res = nmo_type_registry_parse_type_name(
+            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
                 type_registry, field_def->type_name, &parse_result);
-            if (nmo_result_is_ok(parse_res)) {
+            if (parse_res == NMO_OK) {
                 field_type_guid = parse_result.base_type_guid;
                 array_count = parse_result.array_count;
             }
@@ -285,9 +274,8 @@ nmo_result_t nmo_type_registry_register_struct(
         const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(
             type_registry, field_type_guid);
         if (!field_type) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
-                                     NMO_SEVERITY_ERROR,
-                                     "Field type not found");
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Field type not found");
         }
         
         /* Calculate field size (including arrays) */
@@ -315,9 +303,8 @@ nmo_result_t nmo_type_registry_register_struct(
     nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
         nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
     if (!spec_meta) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate specialized metadata");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate specialized metadata");
     }
     
     spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
@@ -330,9 +317,8 @@ nmo_result_t nmo_type_registry_register_struct(
     nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
         nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     if (!type_desc) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate struct type descriptor");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate struct type descriptor");
     }
     
     /* Initialize all fields to zero */
@@ -341,9 +327,8 @@ nmo_result_t nmo_type_registry_register_struct(
     /* Copy struct type name */
     const char *type_name = nmo_arena_strdup(arena, struct_def->name);
     if (!type_name) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to copy struct type name");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to copy struct type name");
     }
     
     /* Initialize type descriptor */
@@ -366,7 +351,7 @@ nmo_result_t nmo_type_registry_register_struct(
     
     /* Register type in registry */
     result = nmo_type_registry_register(type_registry, type_desc);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -374,9 +359,8 @@ nmo_result_t nmo_type_registry_register_struct(
     nmo_type_descriptor_t *registered =
         (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (!registered) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to find registered struct type");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Failed to find registered struct type");
     }
 
     /* Update type_id in metadata */
@@ -384,17 +368,17 @@ nmo_result_t nmo_type_registry_register_struct(
 
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
-    nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (nmo_result_is_error(append_res)) {
+    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
+    if (append_res != NMO_OK) {
         (void)nmo_type_registry_unregister(type_registry, type_guid);
         return append_res;
     }
 
     /* Add to type_id -> metadata_index hash table */
-    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
                                                     &registered->id,
                                                     &metadata_index);
-    if (nmo_result_is_error(map_result)) {
+    if (map_result != NMO_OK) {
         nmo_arena_array_pop(&type_registry->metadata, NULL);
         (void)nmo_type_registry_unregister(type_registry, type_guid);
         return map_result;
@@ -449,16 +433,15 @@ static incomplete_struct_t *find_incomplete_struct(
  * Incremental Struct Building Implementation
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_begin_struct(
+nmo_status_t nmo_type_registry_begin_struct(
     nmo_type_registry_t *type_registry,
     const char *name,
     nmo_guid_t guid,
     nmo_type_id_t *out_type_id
 ) {
     if (!type_registry || !name || !name[0]) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL type_registry or empty name");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry or empty name");
     }
     
     /* Generate GUID if null */
@@ -469,9 +452,8 @@ nmo_result_t nmo_type_registry_begin_struct(
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, guid);
     if (existing) {
-        return nmo_result_errorf(NULL, NMO_ERR_ALREADY_EXISTS,
-                                 NMO_SEVERITY_ERROR,
-                                 "Struct type '%s' already registered", name);
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                "Struct type '%s' already registered", name);
     }
     
     nmo_arena_t *arena = type_registry->arena;
@@ -480,9 +462,8 @@ nmo_result_t nmo_type_registry_begin_struct(
     incomplete_struct_t *incomplete = (incomplete_struct_t*)
         nmo_arena_alloc(arena, sizeof(incomplete_struct_t), alignof(incomplete_struct_t));
     if (!incomplete) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate incomplete struct state");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate incomplete struct state");
     }
     
     /* Initialize incomplete struct */
@@ -497,18 +478,16 @@ nmo_result_t nmo_type_registry_begin_struct(
         nmo_arena_alloc(arena, sizeof(nmo_struct_field_def_t) * incomplete->field_capacity,
                         alignof(nmo_struct_field_def_t));
     if (!incomplete->fields) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate field array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate field array");
     }
     
     /* Create placeholder type descriptor (invalid until finalized) */
     nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
         nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     if (!type_desc) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate type descriptor");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate type descriptor");
     }
     
     memset(type_desc, 0, sizeof(nmo_type_descriptor_t));
@@ -519,17 +498,16 @@ nmo_result_t nmo_type_registry_begin_struct(
     type_desc->description = NULL;
     
     /* Register placeholder (will be updated on finalize) */
-    nmo_result_t result = nmo_type_registry_register(type_registry, type_desc);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = nmo_type_registry_register(type_registry, type_desc);
+    if (result != NMO_OK) {
         return result;
     }
     
     /* Find registered type to get assigned ID and reset valid flag */
     nmo_type_descriptor_t *registered = (nmo_type_descriptor_t*)nmo_type_registry_find_by_guid(type_registry, guid);
     if (!registered) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to find just-registered type");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Failed to find just-registered type");
     }
     
     /* Store incomplete state after registration */
@@ -545,30 +523,27 @@ nmo_result_t nmo_type_registry_begin_struct(
     NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_registry_add_field(
+nmo_status_t nmo_type_registry_add_field(
     nmo_type_registry_t *type_registry,
     nmo_type_id_t struct_type_id,
     const char *field_name,
     const char *field_type_name
 ) {
     if (!type_registry || !field_name || !field_type_name) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL parameters");
     }
     
     /* Find incomplete struct */
     incomplete_struct_t *incomplete = find_incomplete_struct(type_registry, struct_type_id);
     if (!incomplete) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Invalid struct type ID or struct already finalized");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid struct type ID or struct already finalized");
     }
     
     if (incomplete->finalized) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Struct already finalized");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Struct already finalized");
     }
     
     /* Check capacity */
@@ -580,9 +555,8 @@ nmo_result_t nmo_type_registry_add_field(
                             sizeof(nmo_struct_field_def_t) * new_capacity,
                             alignof(nmo_struct_field_def_t));
         if (!new_fields) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to grow field array");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to grow field array");
         }
         
         /* Copy existing fields */
@@ -603,9 +577,8 @@ nmo_result_t nmo_type_registry_add_field(
     field->default_value = NULL;
     
     if (!field->name || !field->type_name) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to copy field strings");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to copy field strings");
     }
     
     incomplete->field_count++;
@@ -613,34 +586,30 @@ nmo_result_t nmo_type_registry_add_field(
     NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_registry_finalize_struct(
+nmo_status_t nmo_type_registry_finalize_struct(
     nmo_type_registry_t *type_registry,
     nmo_type_id_t struct_type_id
 ) {
     if (!type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL type_registry");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry");
     }
     
     /* Find incomplete struct */
     incomplete_struct_t *incomplete = find_incomplete_struct(type_registry, struct_type_id);
     if (!incomplete) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Invalid struct type ID or struct already finalized");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid struct type ID or struct already finalized");
     }
     
     if (incomplete->finalized) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Struct already finalized");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Struct already finalized");
     }
     
     if (incomplete->field_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Cannot finalize struct with no fields");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Cannot finalize struct with no fields");
     }
     
     nmo_arena_t *arena = type_registry->arena;
@@ -651,9 +620,9 @@ nmo_result_t nmo_type_registry_finalize_struct(
         
         if (nmo_guid_is_null(field->type_guid) && field->type_name) {
             nmo_type_parse_result_t parse_result;
-            nmo_result_t parse_res = nmo_type_registry_parse_type_name(
+            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
                 type_registry, field->type_name, &parse_result);
-            if (nmo_result_is_error(parse_res)) {
+            if (parse_res != NMO_OK) {
                 return parse_res;
             }
             field->type_guid = parse_result.base_type_guid;
@@ -662,10 +631,10 @@ nmo_result_t nmo_type_registry_finalize_struct(
     
     /* Calculate layout */
     uint32_t total_size, struct_alignment;
-    nmo_result_t result = nmo_type_calculate_layout(
+    nmo_status_t result = nmo_type_calculate_layout(
         type_registry, incomplete->fields, incomplete->field_count,
         0, false, &total_size, &struct_alignment);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
     
@@ -674,9 +643,8 @@ nmo_result_t nmo_type_registry_finalize_struct(
         nmo_arena_alloc(arena, sizeof(nmo_struct_descriptor_t) * incomplete->field_count,
                         alignof(nmo_struct_descriptor_t));
     if (!struct_fields) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate struct descriptors");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate struct descriptors");
     }
     
     /* Build field descriptors with calculated offsets */
@@ -690,10 +658,9 @@ nmo_result_t nmo_type_registry_finalize_struct(
         if (!field_type) {
             char guid_str[64];
             nmo_guid_format(field_def->type_guid, guid_str, sizeof(guid_str));
-            return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
-                                     NMO_SEVERITY_ERROR,
-                                     "Field type not found for '%s' (GUID: %s)",
-                                     field_def->name, guid_str);
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Field type not found for '%s' (GUID: %s)",
+                                    field_def->name, guid_str);
         }
         
         uint32_t field_align = field_type->alignment;
@@ -714,9 +681,8 @@ nmo_result_t nmo_type_registry_finalize_struct(
     nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
         nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
     if (!spec_meta) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate specialized metadata");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate specialized metadata");
     }
     
     spec_meta->type_id = struct_type_id;
@@ -727,14 +693,14 @@ nmo_result_t nmo_type_registry_finalize_struct(
     
     /* Add to registry metadata array */
     size_t metadata_index = type_registry->metadata.count;
-    nmo_result_t res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (nmo_result_is_error(res)) return res;
+    nmo_status_t res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
+    if (res != NMO_OK) return res;
 
     /* Add to type_id -> metadata_index hash table */
-    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
                                                     &struct_type_id,
                                                     &metadata_index);
-    if (nmo_result_is_error(map_result)) {
+    if (map_result != NMO_OK) {
         nmo_arena_array_pop(&type_registry->metadata, NULL);
         return map_result;
     }
@@ -757,7 +723,7 @@ nmo_result_t nmo_type_registry_finalize_struct(
  * String-Based Struct Registration (Phase 6.2 Task 6.2.3)
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_register_struct_string(
+nmo_status_t nmo_type_registry_register_struct_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *type_name,
@@ -765,17 +731,15 @@ nmo_result_t nmo_type_registry_register_struct_string(
     size_t field_count
 ) {
     if (!type_registry || !type_name || !field_type_names || field_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL argument or empty field list");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL argument or empty field list");
     }
     
     /* Validate all field type names exist */
     for (size_t i = 0; i < field_count; i++) {
         if (!field_type_names[i] || field_type_names[i][0] == '\0') {
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Field type name cannot be NULL or empty at index %zu", i);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Field type name cannot be NULL or empty at index %zu", i);
         }
     }
     
@@ -788,9 +752,8 @@ nmo_result_t nmo_type_registry_register_struct_string(
     /* Create temporary arena for field definitions */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
     if (!temp_arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to create temporary arena");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create temporary arena");
     }
     
     /* Allocate field definitions array */
@@ -798,9 +761,8 @@ nmo_result_t nmo_type_registry_register_struct_string(
         nmo_arena_alloc(temp_arena, sizeof(nmo_struct_field_def_t) * field_count, 8);
     if (!fields) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate field definitions");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate field definitions");
     }
     
     /* Initialize fields by parsing type names */
@@ -809,15 +771,14 @@ nmo_result_t nmo_type_registry_register_struct_string(
         
         /* Parse type name to get GUID and array info */
         nmo_type_parse_result_t parse_result;
-        nmo_result_t parse_res = nmo_type_registry_parse_type_name(
+        nmo_status_t parse_res = nmo_type_registry_parse_type_name(
             type_registry, type_name_str, &parse_result);
         
-        if (nmo_result_is_error(parse_res)) {
+        if (parse_res != NMO_OK) {
             nmo_arena_destroy(temp_arena);
-            return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
-                                     NMO_SEVERITY_ERROR,
-                                     "Field type '%s' not found at index %zu",
-                                     type_name_str, i);
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Field type '%s' not found at index %zu",
+                                    type_name_str, i);
         }
         
         /* Generate default field name */
@@ -834,9 +795,8 @@ nmo_result_t nmo_type_registry_register_struct_string(
         
         if (!fields[i].name || !fields[i].type_name) {
             nmo_arena_destroy(temp_arena);
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to copy field strings");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy field strings");
         }
     }
     
@@ -853,7 +813,7 @@ nmo_result_t nmo_type_registry_register_struct_string(
     
     /* Register struct */
     nmo_guid_t out_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         type_registry, &struct_def, &out_guid);
     
     /* Clean up temporary arena */

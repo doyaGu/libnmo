@@ -1,4 +1,4 @@
-// chunk_compression.c - Chunk compression/decompression helpers
+﻿// chunk_compression.c - Chunk compression/decompression helpers
 
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
@@ -21,7 +21,7 @@ static int clamp_compression_level(int level) {
     return level;
 }
 
-static nmo_result_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
+static nmo_status_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
                                                     int compression_level,
                                                     uint8_t **out_bytes,
                                                     size_t *out_size) {
@@ -31,7 +31,7 @@ static nmo_result_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
     if (src_size == 0) {
         *out_bytes = NULL;
         *out_size = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     const uint32_t *src_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -40,8 +40,7 @@ static nmo_result_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
     nmo_allocator_t alloc = nmo_allocator_default();
     uint8_t *buffer = (uint8_t *)nmo_alloc(&alloc, (size_t)dest_capacity, 16);
     if (buffer == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate compression scratch buffer"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate compression scratch buffer");
     }
 
     mz_ulong dest_size = dest_capacity;
@@ -50,23 +49,22 @@ static nmo_result_t chunk_generate_compressed_bytes(nmo_chunk_t *chunk,
                                  clamp_compression_level(compression_level));
     if (mz_result != MZ_OK) {
         nmo_free(&alloc, buffer);
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR, "Compression failed"));
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Compression failed");
     }
 
     *out_bytes = buffer;
     *out_size = (size_t)dest_size;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
+static nmo_status_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
                                                     const uint8_t *compressed,
                                                     size_t compressed_size,
                                                     size_t original_dwords) {
     size_t dest_dwords = (compressed_size + sizeof(uint32_t) - 1) / sizeof(uint32_t);
     size_t dest_bytes = dest_dwords * sizeof(uint32_t);
 
-    nmo_result_t result = nmo_arena_array_resize(&chunk->data, dest_dwords);
+    nmo_status_t result = nmo_arena_array_resize(&chunk->data, dest_dwords);
     NMO_RETURN_IF_ERROR(result);
 
     uint32_t *new_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -82,23 +80,23 @@ static nmo_result_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
     chunk->uncompressed_size = original_dwords * sizeof(uint32_t);
     chunk->is_compressed = 1;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
+nmo_status_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (chunk->data.count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     uint8_t *compressed = NULL;
     size_t compressed_size = 0;
-    nmo_result_t result = chunk_generate_compressed_bytes(chunk, compression_level,
+    nmo_status_t result = chunk_generate_compressed_bytes(chunk, compression_level,
                                                           &compressed, &compressed_size);
     NMO_RETURN_IF_ERROR(result);
 
@@ -107,7 +105,7 @@ nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
             nmo_allocator_t alloc = nmo_allocator_default();
             nmo_free(&alloc, compressed);
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t original_dwords = chunk->data.count;
@@ -118,7 +116,7 @@ nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level) {
     return result;
 }
 
-nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
                                               int compression_level,
                                               float min_ratio) {
     if (min_ratio <= 0.0f || min_ratio > 1.0f) {
@@ -128,17 +126,17 @@ nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t original_size = chunk->data.count * sizeof(uint32_t);
     if (original_size == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     uint8_t *compressed = NULL;
     size_t compressed_size = 0;
-    nmo_result_t result = chunk_generate_compressed_bytes(chunk, compression_level,
+    nmo_status_t result = chunk_generate_compressed_bytes(chunk, compression_level,
                                                           &compressed, &compressed_size);
     NMO_RETURN_IF_ERROR(result);
 
@@ -148,14 +146,14 @@ nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
             nmo_allocator_t alloc = nmo_allocator_default();
             nmo_free(&alloc, compressed);
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     int should_keep = (ratio <= (double)min_ratio);
     if (!should_keep) {
         nmo_allocator_t alloc = nmo_allocator_default();
         nmo_free(&alloc, compressed);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     result = chunk_commit_compressed_payload(chunk, compressed, compressed_size, chunk->data.count);
@@ -164,24 +162,22 @@ nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
     return result;
 }
 
-nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
+nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (!(chunk->chunk_options & NMO_CHUNK_OPTION_PACKED)) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (chunk->unpack_size == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR, "No unpack size specified"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No unpack size specified");
     }
 
     const uint32_t *src_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     size_t available_bytes = chunk->data.count * sizeof(uint32_t);
     size_t used_bytes = (chunk->compressed_size > 0) ? chunk->compressed_size : available_bytes;
     if (used_bytes > available_bytes) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
-                                          NMO_SEVERITY_ERROR, "Compressed size exceeds buffer"));
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Compressed size exceeds buffer");
     }
     mz_ulong src_len = (mz_ulong) used_bytes;
 
@@ -189,8 +185,7 @@ nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     uint32_t *decompressed = (uint32_t *) nmo_arena_alloc(chunk->arena,
                                                           dest_len, sizeof(uint32_t));
     if (!decompressed) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate decompression buffer"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate decompression buffer");
     }
 
     // Decompress
@@ -198,17 +193,15 @@ nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
                                (const unsigned char *) src_data, src_len);
 
     if (result != MZ_OK) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR, "Decompression failed"));
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Decompression failed");
     }
 
     // Verify decompressed size
     if (dest_len != chunk->unpack_size * sizeof(uint32_t)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
-                                          NMO_SEVERITY_ERROR, "Decompressed size mismatch"));
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Decompressed size mismatch");
     }
 
-    nmo_result_t set_result = nmo_arena_array_set_data(&chunk->data, decompressed, chunk->unpack_size);
+    nmo_status_t set_result = nmo_arena_array_set_data(&chunk->data, decompressed, chunk->unpack_size);
     NMO_RETURN_IF_ERROR(set_result);
     chunk->chunk_options &= ~NMO_CHUNK_OPTION_PACKED;
     chunk->compressed_size = 0;
@@ -216,13 +209,13 @@ nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     chunk->is_compressed = 0;
     chunk->unpack_size = 0;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level) {
+nmo_status_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level) {
     return nmo_chunk_compress(chunk, compression_level);
 }
 
-nmo_result_t nmo_chunk_unpack(nmo_chunk_t *chunk) {
+nmo_status_t nmo_chunk_unpack(nmo_chunk_t *chunk) {
     return nmo_chunk_decompress(chunk);
 }

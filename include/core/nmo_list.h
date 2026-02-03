@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_list.h
  * @brief Arena-backed doubly linked list container.
  *
@@ -86,12 +86,12 @@ nmo_list_node_t *nmo_list_insert_before(nmo_list_t *list,
  * @param out_element Optional pointer receiving the removed value.
  * @return NMO_OK on success, NMO_ERR_NOT_FOUND if list is empty.
  */
-nmo_result_t nmo_list_pop_back(nmo_list_t *list, void *out_element);
+nmo_status_t nmo_list_pop_back(nmo_list_t *list, void *out_element);
 
 /**
  * @brief Pop the element at the front of the list.
  */
-nmo_result_t nmo_list_pop_front(nmo_list_t *list, void *out_element);
+nmo_status_t nmo_list_pop_front(nmo_list_t *list, void *out_element);
 
 /**
  * @brief Remove a node from the list.

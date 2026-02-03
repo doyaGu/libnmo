@@ -58,8 +58,8 @@ TEST(enum_flags, register_enum_success) {
     
     /* Register enum */
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Lookup registered type */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
@@ -98,10 +98,10 @@ TEST(enum_flags, register_enum_metadata_mapping) {
 
     nmo_guid_t guid1;
     nmo_guid_t guid2;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def1, &guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def1, &guid1);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_register_enum(g_type_registry, &enum_def2, &guid2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     const nmo_type_descriptor_t *type1 = nmo_type_registry_find_by_guid(g_type_registry, guid1);
     const nmo_type_descriptor_t *type2 = nmo_type_registry_find_by_guid(g_type_registry, guid2);
@@ -139,8 +139,8 @@ TEST(enum_flags, unregister_enum_clears_metadata_mapping) {
     };
 
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
 
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type);
@@ -149,7 +149,7 @@ TEST(enum_flags, unregister_enum_clears_metadata_mapping) {
     ASSERT_NE(NULL, nmo_type_registry_get_metadata(g_type_registry, type_id));
 
     result = nmo_type_registry_unregister(g_type_registry, guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_EQ(NULL, nmo_type_registry_get_metadata(g_type_registry, type_id));
 
@@ -169,12 +169,12 @@ TEST(enum_flags, register_enum_null_params) {
     
     /* Test NULL registry */
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(NULL, &enum_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(NULL, &enum_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* Test NULL enum_def */
     result = nmo_type_registry_register_enum(g_type_registry, NULL, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -191,8 +191,8 @@ TEST(enum_flags, register_enum_empty_name) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -208,8 +208,8 @@ TEST(enum_flags, register_enum_no_values) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -230,8 +230,8 @@ TEST(enum_flags, register_enum_duplicate_names) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -249,13 +249,13 @@ TEST(enum_flags, register_enum_already_exists) {
     
     /* Register first time - should succeed */
     nmo_guid_t guid1;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid1);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register second time with same name - should fail */
     nmo_guid_t guid2;
     result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid2);
-    ASSERT_EQ(NMO_ERR_ALREADY_EXISTS, result.code);
+    ASSERT_EQ(NMO_ERR_ALREADY_EXISTS, result);
     
     teardown();
 }
@@ -277,8 +277,8 @@ TEST(enum_flags, register_enum_with_negative_values) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify type registered successfully */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
@@ -303,11 +303,11 @@ TEST(enum_flags, change_enum_string_add_value_success) {
     };
 
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_type_registry_change_enum_string(g_type_registry, guid, "RED=0,GREEN=1,BLUE=2");
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type_desc);
@@ -345,16 +345,16 @@ TEST(enum_flags, change_enum_string_rejects_incompatible_changes) {
     };
 
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(g_type_registry, &enum_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Cannot remove existing value */
     result = nmo_type_registry_change_enum_string(g_type_registry, guid, "A=0");
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     /* Cannot change existing value's numeric mapping */
     result = nmo_type_registry_change_enum_string(g_type_registry, guid, "A=0,B=2");
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     teardown();
 }
@@ -383,8 +383,8 @@ TEST(enum_flags, register_flags_success) {
     
     /* Register flags */
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Lookup registered type */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
@@ -409,12 +409,12 @@ TEST(enum_flags, register_flags_null_params) {
     
     /* Test NULL registry */
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(NULL, &flags_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(NULL, &flags_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* Test NULL flags_def */
     result = nmo_type_registry_register_flags(g_type_registry, NULL, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -431,8 +431,8 @@ TEST(enum_flags, register_flags_empty_name) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -448,8 +448,8 @@ TEST(enum_flags, register_flags_no_bits) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -470,8 +470,8 @@ TEST(enum_flags, register_flags_duplicate_names) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -492,8 +492,8 @@ TEST(enum_flags, register_flags_duplicate_masks) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -513,8 +513,8 @@ TEST(enum_flags, register_flags_invalid_mask) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -536,8 +536,8 @@ TEST(enum_flags, register_flags_with_default_value) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify registration successful */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
@@ -562,11 +562,11 @@ TEST(enum_flags, change_flags_string_add_bit_success) {
     };
 
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_type_registry_change_flags_string(g_type_registry, guid, "READ=0x01,WRITE=0x02,EXECUTE=0x04");
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, type_desc);
@@ -604,16 +604,16 @@ TEST(enum_flags, change_flags_string_rejects_incompatible_changes) {
     };
 
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_flags(g_type_registry, &flags_def, &guid);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Cannot remove existing bit */
     result = nmo_type_registry_change_flags_string(g_type_registry, guid, "BIT_A=0x01");
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     /* Cannot change existing bit's mask */
     result = nmo_type_registry_change_flags_string(g_type_registry, guid, "BIT_A=0x01,BIT_B=0x04");
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     teardown();
 }

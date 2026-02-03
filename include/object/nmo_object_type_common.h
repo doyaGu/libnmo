@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_object_type_common.h
  * @brief Common helpers for CKObject-derived type vtables
  */
@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* Default lifecycle / operations */
-NMO_API nmo_result_t nmo_object_default_create(
+NMO_API nmo_status_t nmo_object_default_create(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
@@ -29,73 +29,73 @@ NMO_API void nmo_object_default_destroy(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_object_default_copy(
+NMO_API nmo_status_t nmo_object_default_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena);
 
 /* Shared deep-copy / validate implementations used by object vtables. */
-NMO_API nmo_result_t nmo_object_copy(
+NMO_API nmo_status_t nmo_object_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena);
 
-NMO_API nmo_result_t nmo_object_validate(
+NMO_API nmo_status_t nmo_object_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_object_default_validate(
+NMO_API nmo_status_t nmo_object_default_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_object_default_to_string(
+NMO_API nmo_status_t nmo_object_default_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     char *buffer,
     size_t buffer_size,
     void *context);
 
-NMO_API nmo_result_t nmo_object_default_from_string(
+NMO_API nmo_status_t nmo_object_default_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const char *string,
     void *context);
 
 /* Generic deep-copy helpers */
-NMO_API nmo_result_t nmo_object_copy_bytes(
+NMO_API nmo_status_t nmo_object_copy_bytes(
     nmo_arena_t *arena,
     void **dst,
     const void *src,
     size_t size);
 
-NMO_API nmo_result_t nmo_object_copy_array(
+NMO_API nmo_status_t nmo_object_copy_array(
     nmo_arena_t *arena,
     void **dst,
     const void *src,
     size_t elem_size,
     uint32_t count);
 
-NMO_API nmo_result_t nmo_object_copy_string(
+NMO_API nmo_status_t nmo_object_copy_string(
     nmo_arena_t *arena,
     char **dst,
     const char *src);
 
-NMO_API nmo_result_t nmo_object_copy_string_array(
+NMO_API nmo_status_t nmo_object_copy_string_array(
     nmo_arena_t *arena,
     char ***dst,
     char *const *src,
     uint32_t count);
 
-NMO_API nmo_result_t nmo_object_copy_chunk(
+NMO_API nmo_status_t nmo_object_copy_chunk(
     nmo_arena_t *arena,
     nmo_chunk_t **dst,
     nmo_chunk_t *src);
 
-NMO_API nmo_result_t nmo_object_copy_chunk_array(
+NMO_API nmo_status_t nmo_object_copy_chunk_array(
     nmo_arena_t *arena,
     nmo_chunk_t ***dst,
     nmo_chunk_t *const *src,
@@ -105,16 +105,16 @@ NMO_API nmo_result_t nmo_object_copy_chunk_array(
 #define NMO_VALIDATE_COUNT(ptr, count, label) \
     do { \
         if ((count) > 0 && !(ptr)) { \
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
-                                     "Missing %s array for count %u", (label), (count)); \
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
+                                    "Missing %s array for count %u", (label), (count)); \
         } \
     } while (0)
 
 #define NMO_VALIDATE_BYTES(ptr, size, label) \
     do { \
         if ((size) > 0 && !(ptr)) { \
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
-                                     "Missing %s buffer for size %zu", (label), (size_t)(size)); \
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
+                                    "Missing %s buffer for size %zu", (label), (size_t)(size)); \
         } \
     } while (0)
 
@@ -140,8 +140,8 @@ static uint32_t _name##_hash(const void *instance) { \
 
 /* Registration helper for per-schema files */
 #define NMO_DEFINE_OBJECT_REGISTRATION(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable) \
-NMO_API nmo_result_t _func(nmo_type_registry_t *registry) { \
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
+NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
                "NULL type registry"); \
     nmo_type_descriptor_t type_desc = { \
         .guid = (_guid), \
@@ -165,7 +165,7 @@ NMO_API nmo_result_t _func(nmo_type_registry_t *registry) { \
 /* Declarations for schema headers */
 #define NMO_DECLARE_OBJECT_SCHEMA(_vtable, _register_fn) \
     NMO_API extern nmo_type_vtable_t _vtable; \
-    NMO_API nmo_result_t _register_fn(nmo_type_registry_t *registry);
+    NMO_API nmo_status_t _register_fn(nmo_type_registry_t *registry);
 
 /* Definition helper for schema source files */
 #define NMO_DEFINE_OBJECT_SCHEMA(_prefix, _state_t, _serialize, _deserialize, _guid, _name, _class_id, _base_guid) \

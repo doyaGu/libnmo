@@ -51,11 +51,11 @@ TEST(chunk_advanced, lendian16_array) {
     // Read back with 16-bit endian conversion
     void *read_data = NULL;
     size_t read_count = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian16(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_array_lendian16(parser,
                                                                       &read_data,
                                                                       &read_count,
                                                                       arena);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_count, (size_t)element_count);
     ASSERT_NOT_NULL(read_data);
 
@@ -94,10 +94,10 @@ TEST(chunk_advanced, lendian16_buffer) {
     ASSERT_NOT_NULL(parser);
 
     uint16_t read_buffer[4];
-    nmo_result_t parse_result = nmo_chunk_parser_read_buffer_lendian16(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_buffer_lendian16(parser,
                                                                        buffer_size,
                                                                        read_buffer);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Verify data
     for (int i = 0; i < 4; i++) {
@@ -137,18 +137,18 @@ TEST(chunk_advanced, math_vector) {
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
 
     nmo_vector2_t read_v2;
-    nmo_result_t parse_result = nmo_chunk_parser_read_vector2(parser, &read_v2);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_vector2(parser, &read_v2);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_TRUE(read_v2.x == v2.x && read_v2.y == v2.y);
 
     nmo_vector_t read_v3;
     parse_result = nmo_chunk_parser_read_vector(parser, &read_v3);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_TRUE(read_v3.x == v3.x && read_v3.y == v3.y && read_v3.z == v3.z);
 
     nmo_vector4_t read_v4;
     parse_result = nmo_chunk_parser_read_vector4(parser, &read_v4);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_TRUE(read_v4.x == v4.x && read_v4.y == v4.y &&
                 read_v4.z == v4.z && read_v4.w == v4.w);
 
@@ -180,8 +180,8 @@ TEST(chunk_advanced, math_matrix) {
     // Read back
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     nmo_matrix_t read_mat;
-    nmo_result_t parse_result = nmo_chunk_parser_read_matrix(parser, &read_mat);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_matrix(parser, &read_mat);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Verify
     for (int i = 0; i < 4; i++) {
@@ -210,8 +210,8 @@ TEST(chunk_advanced, math_quaternion) {
 
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     nmo_quaternion_t read_quat;
-    nmo_result_t parse_result = nmo_chunk_parser_read_quaternion(parser, &read_quat);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_quaternion(parser, &read_quat);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     ASSERT_TRUE(read_quat.x == quat.x && read_quat.y == quat.y &&
                 read_quat.z == quat.z && read_quat.w == quat.w);
@@ -312,20 +312,20 @@ TEST(chunk_advanced, seek_identifier_with_size) {
 
     // Seek to first identifier
     size_t size1;
-    nmo_result_t parse_result = nmo_chunk_parser_seek_identifier_with_size(parser, 0x1000, &size1);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_seek_identifier_with_size(parser, 0x1000, &size1);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(size1, 2);
 
     // Seek to second identifier
     size_t size2;
     parse_result = nmo_chunk_parser_seek_identifier_with_size(parser, 0x2000, &size2);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(size2, 1);
 
     // Seek to third identifier
     size_t size3;
     parse_result = nmo_chunk_parser_seek_identifier_with_size(parser, 0x3000, &size3);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(size3, 3);
 
     nmo_chunk_parser_destroy(parser);
@@ -350,8 +350,8 @@ TEST(chunk_advanced, edge_empty_array) {
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     void *data = NULL;
     size_t count = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian16(parser, &data, &count, arena);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_array_lendian16(parser, &data, &count, arena);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(count, 0u);
     ASSERT_NULL(data);
 
@@ -377,10 +377,10 @@ TEST(chunk_advanced, edge_odd_buffer) {
     // Read back
     nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
     uint8_t read_data[7];
-    nmo_result_t parse_result = nmo_chunk_parser_read_buffer_nosize(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_buffer_nosize(parser,
                                                                     sizeof(read_data),
                                                                     read_data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Verify
     for (size_t i = 0; i < sizeof(test_data); i++) {

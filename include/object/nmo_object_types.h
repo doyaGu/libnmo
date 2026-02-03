@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_object_types.h
  * @brief Virtools object type definitions integrated with type system
  * 
@@ -150,7 +150,7 @@ typedef struct nmo_arena nmo_arena_t;
  * 
  * @note This replaces nmo_register_builtin_schemas() from legacy system
  */
-NMO_API nmo_result_t nmo_register_object_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register base object types only
@@ -166,7 +166,7 @@ NMO_API nmo_result_t nmo_register_object_types(nmo_type_registry_t *registry);
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_base_object_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_base_object_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register 2D entity types
@@ -177,7 +177,7 @@ NMO_API nmo_result_t nmo_register_base_object_types(nmo_type_registry_t *registr
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_2d_entity_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_2d_entity_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register 3D entity types
@@ -188,7 +188,7 @@ NMO_API nmo_result_t nmo_register_2d_entity_types(nmo_type_registry_t *registry)
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_3d_entity_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_3d_entity_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register resource types
@@ -199,7 +199,7 @@ NMO_API nmo_result_t nmo_register_3d_entity_types(nmo_type_registry_t *registry)
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_resource_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_resource_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register behavior types
@@ -210,7 +210,7 @@ NMO_API nmo_result_t nmo_register_resource_types(nmo_type_registry_t *registry);
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_behavior_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_behavior_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register parameter types
@@ -221,7 +221,7 @@ NMO_API nmo_result_t nmo_register_behavior_types(nmo_type_registry_t *registry);
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_parameter_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_parameter_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register extended 3D entity types
@@ -232,7 +232,7 @@ NMO_API nmo_result_t nmo_register_parameter_types(nmo_type_registry_t *registry)
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_extended_3d_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_extended_3d_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register utility object types
@@ -244,7 +244,7 @@ NMO_API nmo_result_t nmo_register_extended_3d_types(nmo_type_registry_t *registr
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_utility_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_utility_types(nmo_type_registry_t *registry);
 
 /**
  * @brief Register mesh variant types
@@ -255,7 +255,7 @@ NMO_API nmo_result_t nmo_register_utility_types(nmo_type_registry_t *registry);
  * @param registry Type registry
  * @return nmo_ok() on success, error on failure
  */
-NMO_API nmo_result_t nmo_register_mesh_types(nmo_type_registry_t *registry);
+NMO_API nmo_status_t nmo_register_mesh_types(nmo_type_registry_t *registry);
 
 /* ============================================================================
  * Helper Functions

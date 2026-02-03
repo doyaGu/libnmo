@@ -14,82 +14,40 @@ TEST(error, code_ok) {
 }
 
 /**
- * Test error creation
+ * Test nmo_status_t return codes
  */
-TEST(error, create) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_error_t* err = nmo_error_create(arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Test error", __FILE__, __LINE__);
-    ASSERT_NOT_NULL(err);
-    ASSERT_EQ(err->code, NMO_ERR_INVALID_ARGUMENT);
-    ASSERT_EQ(err->severity, NMO_SEVERITY_ERROR);
-    ASSERT_STR_EQ(err->message, "Test error");
-    
-    nmo_arena_destroy(arena);
+TEST(error, status_codes) {
+    nmo_last_error_clear();
+    nmo_status_t result = NMO_OK;
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_TRUE(result == NMO_OK);
+    ASSERT_FALSE(result != NMO_OK);
 }
 
 /**
- * Test error message
+ * Test TLS last-error API
  */
-TEST(error, message) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
-    ASSERT_NOT_NULL(arena);
+TEST(error, last_error_api) {
+    /* Clear any previous errors */
+    nmo_last_error_clear();
+    ASSERT_EQ(nmo_last_error_code(), NMO_OK);
     
-    nmo_error_t* err = nmo_error_create(arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Test error message", __FILE__, __LINE__);
-    ASSERT_NOT_NULL(err);
+    /* Set an error using the TLS API */
+    nmo_last_error_setf(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, __FILE__, __LINE__, "Test error %d", 42);
+    ASSERT_EQ(nmo_last_error_code(), NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_last_error_severity(), NMO_SEVERITY_ERROR);
     
-    const char* msg = nmo_error_string(NMO_ERR_INVALID_ARGUMENT);
-    ASSERT_NOT_NULL(msg);
-    ASSERT_TRUE(strlen(msg) > 0);
+    char msg[256];
+    nmo_last_error_message_copy(msg, sizeof(msg));
+    ASSERT_TRUE(strstr(msg, "Test error 42") != NULL);
     
-    nmo_arena_destroy(arena);
-}
-
-/**
- * Test result creation
- */
-TEST(error, result_create) {
-    nmo_result_t result = nmo_result_ok();
-    ASSERT_EQ(result.code, NMO_OK);
-    ASSERT_NULL(result.error);
-    
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_error_t* err = nmo_error_create(arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Test error", __FILE__, __LINE__);
-    nmo_result_t error_result = nmo_result_error(err);
-    ASSERT_EQ(error_result.code, NMO_ERR_INVALID_ARGUMENT);
-    ASSERT_EQ(error_result.error, err);
-    
-    nmo_arena_destroy(arena);
-}
-
-TEST(error, free_non_arena_chain) {
-    nmo_error_t *cause = nmo_error_createf_at(NULL,
-                                              NMO_ERR_INVALID_ARGUMENT,
-                                              NMO_SEVERITY_ERROR,
-                                              __FILE__,
-                                              __LINE__,
-                                              "Cause %d", 1);
-    ASSERT_NOT_NULL(cause);
-
-    nmo_error_t *err = nmo_error_createf_at(NULL,
-                                            NMO_ERR_INVALID_STATE,
-                                            NMO_SEVERITY_ERROR,
-                                            __FILE__,
-                                            __LINE__,
-                                            "Top error");
-    ASSERT_NOT_NULL(err);
-    nmo_error_add_cause(err, cause);
-
-    nmo_error_free(err);
+    /* Clear and verify */
+    nmo_last_error_clear();
+    ASSERT_EQ(nmo_last_error_code(), NMO_OK);
 }
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(error, code_ok);
-    REGISTER_TEST(error, create);
-    REGISTER_TEST(error, message);
-    REGISTER_TEST(error, result_create);
-    REGISTER_TEST(error, free_non_arena_chain);
+    REGISTER_TEST(error, status_codes);
+    REGISTER_TEST(error, last_error_api);
 TEST_MAIN_END()

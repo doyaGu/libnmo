@@ -1,4 +1,4 @@
-#include "core/nmo_shared_library.h"
+﻿#include "core/nmo_shared_library.h"
 
 #include "core/nmo_allocator.h"
 #include "core/nmo_error.h"
@@ -24,16 +24,16 @@ struct nmo_shared_library {
 #endif
 };
 
-static nmo_result_t nmo_shared_library_make_error(
+static nmo_status_t nmo_shared_library_make_error(
     nmo_error_code_t code,
     const char *context,
     const char *detail)
 {
     if (detail != NULL && detail[0] != '\0') {
-        return nmo_result_errorf(NULL, code, NMO_SEVERITY_ERROR, "%s: %s", context, detail);
+        NMO_RETURN_ERROR(code, NMO_SEVERITY_ERROR, "%s: %s", context, detail);
     }
 
-    return nmo_result_errorf(NULL, code, NMO_SEVERITY_ERROR, "%s", context);
+    NMO_RETURN_ERROR(code, NMO_SEVERITY_ERROR, "%s", context);
 }
 
 #ifdef _WIN32
@@ -92,7 +92,7 @@ static void nmo_shared_library_release(nmo_shared_library_t *library) {
     nmo_free(&library->allocator, library);
 }
 
-nmo_result_t nmo_shared_library_open(
+nmo_status_t nmo_shared_library_open(
     nmo_allocator_t *allocator,
     const char *path,
     nmo_shared_library_t **out_library)
@@ -153,7 +153,7 @@ nmo_result_t nmo_shared_library_open(
 #endif
 
     *out_library = library;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_shared_library_close(nmo_shared_library_t *library) {
@@ -173,7 +173,7 @@ void nmo_shared_library_close(nmo_shared_library_t *library) {
     nmo_shared_library_release(library);
 }
 
-nmo_result_t nmo_shared_library_get_symbol(
+nmo_status_t nmo_shared_library_get_symbol(
     nmo_shared_library_t *library,
     const char *symbol_name,
     void **out_symbol)
@@ -217,7 +217,7 @@ nmo_result_t nmo_shared_library_get_symbol(
     *out_symbol = symbol;
 #endif
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 const char *nmo_shared_library_get_path(const nmo_shared_library_t *library) {

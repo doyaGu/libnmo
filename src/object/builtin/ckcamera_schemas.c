@@ -66,7 +66,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckcamera_deserialize(
+nmo_status_t nmo_ckcamera_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -77,41 +77,39 @@ nmo_result_t nmo_ckcamera_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments to CKCamera deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKCamera deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
     // First deserialize parent CK3dEntity data
-    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
     if (nmo_chunk_get_data_version(chunk) < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAFOV).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAFOV) == NMO_OK) {
             (void)nmo_chunk_read_float(chunk, &out_state->fov);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPROJTYPE).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPROJTYPE) == NMO_OK) {
             (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAOTHOZOOM).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAOTHOZOOM) == NMO_OK) {
             (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAASPECT).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAASPECT) == NMO_OK) {
             (void)nmo_chunk_read_int(chunk, &out_state->width);
             (void)nmo_chunk_read_int(chunk, &out_state->height);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPLANES).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPLANES) == NMO_OK) {
             (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
             (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAONLY).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAONLY) == NMO_OK) {
         (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
         (void)nmo_chunk_read_float(chunk, &out_state->fov);
         (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
@@ -125,7 +123,7 @@ nmo_result_t nmo_ckcamera_deserialize(
         (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -140,7 +138,7 @@ nmo_result_t nmo_ckcamera_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckcamera_serialize(
+nmo_status_t nmo_ckcamera_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -151,41 +149,39 @@ nmo_result_t nmo_ckcamera_serialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments to CKCamera serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKCamera serialize");
     }
 
     // First serialize parent CK3dEntity data
-    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CAMERAONLY);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_dword(out_chunk, in_state->projection_type);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_float(out_chunk, in_state->fov);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_float(out_chunk, in_state->orthographic_zoom);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     uint32_t packed = ((uint32_t)(in_state->height & 0xFFFF) << 16) |
         (uint32_t)(in_state->width & 0xFFFF);
     result = nmo_chunk_write_dword(out_chunk, packed);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_float(out_chunk, in_state->near_plane);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_float(out_chunk, in_state->far_plane);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -214,7 +210,7 @@ NMO_DEFINE_OBJECT_SCHEMA(
  * @param repository Object repository for reference resolution
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckcamera_finish_loading(
+nmo_status_t nmo_ckcamera_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -223,7 +219,7 @@ nmo_result_t nmo_ckcamera_finish_loading(
     (void)instance;
     (void)arena;
     (void)repository;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 

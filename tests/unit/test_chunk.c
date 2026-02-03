@@ -54,8 +54,8 @@ TEST(chunk, serialization) {
     // Serialize
     void* out_data = NULL;
     size_t out_size = 0;
-    nmo_result_t result = nmo_chunk_serialize(chunk, &out_data, &out_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_serialize(chunk, &out_data, &out_size, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(out_data);
     ASSERT_GT(out_size, 0);
     
@@ -75,8 +75,8 @@ TEST(chunk, create_null_arena) {
  * Test 5: Serialize with NULL parameters
  */
 TEST(chunk, serialize_null_params) {
-    nmo_result_t result = nmo_chunk_serialize(NULL, NULL, NULL, NULL);
-    ASSERT_NE(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_serialize(NULL, NULL, NULL, NULL);
+    ASSERT_NE(result, NMO_OK);
 }
 
 /**
@@ -99,8 +99,8 @@ TEST(chunk, get_operations_null) {
  * Test 7: Add sub-chunk with NULL parameters
  */
 TEST(chunk, add_subchunk_null) {
-    nmo_result_t result = nmo_chunk_add_sub_chunk(NULL, NULL);
-    ASSERT_NE(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_add_sub_chunk(NULL, NULL);
+    ASSERT_NE(result, NMO_OK);
     
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -109,7 +109,7 @@ TEST(chunk, add_subchunk_null) {
     ASSERT_NOT_NULL(chunk);
     
     result = nmo_chunk_add_sub_chunk(chunk, NULL);
-    ASSERT_NE(result.code, NMO_OK);
+    ASSERT_NE(result, NMO_OK);
     
     nmo_chunk_destroy(chunk);
     nmo_arena_destroy(arena);

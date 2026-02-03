@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_id_remap.h
  * @brief ID remapping for NeMo chunks
  * 
@@ -63,7 +63,7 @@ void nmo_id_remap_destroy(nmo_id_remap_t *remap);
  * @param new_id New ID
  * @return NMO_OK on success, error code on failure
  */
-nmo_result_t nmo_id_remap_add(nmo_id_remap_t *remap, nmo_object_id_t old_id, nmo_object_id_t new_id);
+nmo_status_t nmo_id_remap_add(nmo_id_remap_t *remap, nmo_object_id_t old_id, nmo_object_id_t new_id);
 
 /**
  * @brief Look up a new ID for an old ID
@@ -73,7 +73,7 @@ nmo_result_t nmo_id_remap_add(nmo_id_remap_t *remap, nmo_object_id_t old_id, nmo
  * @param out_new_id Output for new ID (only set if found)
  * @return NMO_OK if mapping found, NMO_ERR_NOT_FOUND if not found
  */
-nmo_result_t nmo_id_remap_lookup_id(const nmo_id_remap_t *remap, nmo_object_id_t old_id, nmo_object_id_t *out_new_id);
+nmo_status_t nmo_id_remap_lookup_id(const nmo_id_remap_t *remap, nmo_object_id_t old_id, nmo_object_id_t *out_new_id);
 
 /**
  * @brief Get the number of mappings in the table

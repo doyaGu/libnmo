@@ -36,7 +36,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ck3dobject_deserialize(
+nmo_status_t nmo_ck3dobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -47,9 +47,7 @@ nmo_result_t nmo_ck3dobject_deserialize(
         nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments to CK3dObject deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dObject deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
@@ -69,7 +67,7 @@ nmo_result_t nmo_ck3dobject_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ck3dobject_serialize(
+nmo_status_t nmo_ck3dobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -80,9 +78,7 @@ nmo_result_t nmo_ck3dobject_serialize(
         nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments to CK3dObject serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dObject serialize");
     }
 
     return nmo_ck3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
@@ -99,7 +95,7 @@ nmo_result_t nmo_ck3dobject_serialize(
  * @param repository Object repository for reference resolution
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ck3dobject_finish_loading(
+nmo_status_t nmo_ck3dobject_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -108,7 +104,7 @@ nmo_result_t nmo_ck3dobject_finish_loading(
     (void)instance;
     (void)arena;
     (void)repository;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

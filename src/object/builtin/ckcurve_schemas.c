@@ -25,39 +25,38 @@
 #define CK_STATESAVE_CURVESAVEPOINTS       0xFF000000u
 #define CK_STATESAVE_CURVEONLY             0xFFC00000u
 
-static nmo_result_t read_object_sequence(
+static nmo_status_t read_object_sequence(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_object_id_t **out_ids,
     uint32_t *out_count)
 {
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    if (result != NMO_OK) return result;
 
     if (count == 0) {
         *out_ids = NULL;
         *out_count = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     *out_count = (uint32_t)count;
     *out_ids = (nmo_object_id_t *)nmo_arena_alloc(
         arena, sizeof(nmo_object_id_t) * (*out_count), _Alignof(nmo_object_id_t));
     if (!*out_ids) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-            NMO_SEVERITY_ERROR, "Failed to allocate object ID array"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
     }
 
     for (uint32_t i = 0; i < *out_count; ++i) {
         result = nmo_chunk_read_object_sequence_item(chunk, &(*out_ids)[i]);
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             *out_count = i;
             break;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -86,58 +85,57 @@ NMO_DEFINE_OBJECT_SCHEMA(
     NMO_GUID_CK3DENTITY
 )
 
-static nmo_result_t write_object_sequence(
+static nmo_status_t write_object_sequence(
     nmo_chunk_t *chunk,
     const nmo_object_id_t *ids,
     uint32_t count)
 {
-    nmo_result_t result = nmo_chunk_write_object_sequence_start(chunk, count);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, count);
+    if (result != NMO_OK) return result;
 
     for (uint32_t i = 0; i < count; ++i) {
         result = nmo_chunk_write_object_sequence_item(chunk, ids[i]);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_ckcurve_deserialize_internal(
+static nmo_status_t nmo_ckcurve_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
     nmo_ckcurve_state_t *out_state)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (data_version < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVECONTROLPOINT).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVECONTROLPOINT) == NMO_OK) {
             out_state->has_curve_data = 1;
             (void)read_object_sequence(chunk, arena,
                                        &out_state->control_point_ids,
                                        &out_state->control_point_count);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF) == NMO_OK) {
             (void)nmo_chunk_read_float(chunk, &out_state->fitting_coeff);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESTEPS).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESTEPS) == NMO_OK) {
             (void)nmo_chunk_read_dword(chunk, &out_state->step_count);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEOPEN).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEOPEN) == NMO_OK) {
             (void)nmo_chunk_read_dword(chunk, &out_state->opened);
         }
     } else {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY) == NMO_OK) {
             out_state->has_curve_data = 1;
             (void)read_object_sequence(chunk, arena,
                                        &out_state->control_point_ids,
@@ -148,7 +146,7 @@ static nmo_result_t nmo_ckcurve_deserialize_internal(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESAVEPOINTS).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESAVEPOINTS) == NMO_OK) {
         uint32_t count = 0;
         (void)nmo_chunk_read_dword(chunk, &count);
         if (count > 0) {
@@ -157,8 +155,7 @@ static nmo_result_t nmo_ckcurve_deserialize_internal(
                 arena, sizeof(nmo_ckcurve_point_subchunk_t) * count,
                 _Alignof(nmo_ckcurve_point_subchunk_t));
             if (!out_state->sub_points) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                    NMO_SEVERITY_ERROR, "Failed to allocate curve subchunk array"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate curve subchunk array");
             }
 
             for (uint32_t i = 0; i < count; ++i) {
@@ -168,78 +165,75 @@ static nmo_result_t nmo_ckcurve_deserialize_internal(
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_ckcurve_serialize_internal(
+static nmo_status_t nmo_ckcurve_serialize_internal(
     const nmo_ckcurve_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_serialize");
     }
 
-    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     if (in_state->has_curve_data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEONLY);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = write_object_sequence(out_chunk,
                            in_state->control_point_ids,
                            in_state->control_point_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->fitting_coeff);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->step_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->opened);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
     if (in_state->sub_point_count > 0 && in_state->sub_points) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVESAVEPOINTS);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->sub_point_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         for (uint32_t i = 0; i < in_state->sub_point_count; ++i) {
             nmo_chunk_t *sub = in_state->sub_points[i].chunk;
             if (!sub) {
                 sub = nmo_chunk_create(arena);
             }
             result = nmo_chunk_write_object_id(out_chunk, in_state->sub_points[i].point_id);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             result = nmo_chunk_write_sub_chunk(out_chunk, sub);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_ckcurvepoint_deserialize_internal(
+static nmo_status_t nmo_ckcurvepoint_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
     nmo_ckcurvepoint_state_t *out_state)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (data_version < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA) == NMO_OK) {
             out_state->has_default_data = 1;
             (void)nmo_chunk_read_object_id(chunk, &out_state->curve_id);
             (void)nmo_chunk_read_int(chunk, &out_state->use_tcb);
@@ -252,23 +246,23 @@ static nmo_result_t nmo_ckcurvepoint_deserialize_internal(
             (void)nmo_chunk_read_float(chunk, &tmp);
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB) == NMO_OK) {
             (void)nmo_chunk_read_float(chunk, &out_state->tension);
             (void)nmo_chunk_read_float(chunk, &out_state->continuity);
             (void)nmo_chunk_read_float(chunk, &out_state->bias);
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTCURVEPOS).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTCURVEPOS) == NMO_OK) {
             out_state->has_reserved_vector = 1;
             (void)nmo_chunk_read_vector3(chunk, &out_state->reserved_vector);
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTANGENTS).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTANGENTS) == NMO_OK) {
             (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_in);
             (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_out);
         }
     } else {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA) == NMO_OK) {
             out_state->has_default_data = 1;
             (void)nmo_chunk_read_object_id(chunk, &out_state->curve_id);
             (void)nmo_chunk_read_int(chunk, &out_state->use_tcb);
@@ -281,55 +275,53 @@ static nmo_result_t nmo_ckcurvepoint_deserialize_internal(
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_ckcurvepoint_serialize_internal(
+static nmo_status_t nmo_ckcurvepoint_serialize_internal(
     const nmo_ckcurvepoint_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_serialize");
     }
 
-    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     if (in_state->has_default_data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->curve_id);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->use_tcb);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->linear);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->tension);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->continuity);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->bias);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->tangent_in);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->tangent_out);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
     if (in_state->has_reserved_vector) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTCURVEPOS);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->reserved_vector);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_ckcurve_deserialize(
+nmo_status_t nmo_ckcurve_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -340,7 +332,7 @@ nmo_result_t nmo_ckcurve_deserialize(
     return nmo_ckcurve_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_result_t nmo_ckcurve_serialize(
+nmo_status_t nmo_ckcurve_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -351,7 +343,7 @@ nmo_result_t nmo_ckcurve_serialize(
     return nmo_ckcurve_serialize_internal(in_state, out_chunk, context);
 }
 
-nmo_result_t nmo_ckcurvepoint_deserialize(
+nmo_status_t nmo_ckcurvepoint_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -362,7 +354,7 @@ nmo_result_t nmo_ckcurvepoint_deserialize(
     return nmo_ckcurvepoint_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_result_t nmo_ckcurvepoint_serialize(
+nmo_status_t nmo_ckcurvepoint_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

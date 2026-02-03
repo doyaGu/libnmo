@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_ckmaterial_schemas.h
  * @brief CKMaterial schema definitions
  * @author libnmo
@@ -204,13 +204,13 @@ typedef struct nmo_ck_material_state {
  * Public API
  * ======================================================================== */
 
-NMO_API nmo_result_t nmo_ckmaterial_deserialize(
+NMO_API nmo_status_t nmo_ckmaterial_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckmaterial_serialize(
+NMO_API nmo_status_t nmo_ckmaterial_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -218,7 +218,7 @@ NMO_API nmo_result_t nmo_ckmaterial_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_ckmaterial_vtable, nmo_register_ckmaterial_type)
 
-NMO_API nmo_result_t nmo_ckmaterial_finish_loading(
+NMO_API nmo_status_t nmo_ckmaterial_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository);

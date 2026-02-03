@@ -335,29 +335,21 @@ error:
 /**
  * @brief Write data to transaction
  */
-nmo_result_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size_t size) {
+nmo_status_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size_t size) {
     if (!txn) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR, "Transaction handle is NULL");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Transaction handle is NULL");
     }
 
     if (!data && size > 0) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR, "Data pointer is NULL");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Data pointer is NULL");
     }
 
     if (txn->state != NMO_TXN_STATE_ACTIVE) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                     NMO_SEVERITY_ERROR, "Transaction is not active");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Transaction is not active");
     }
 
     if (txn->file_handle == INVALID_HANDLE_VALUE) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                     NMO_SEVERITY_ERROR, "File handle is invalid");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "File handle is invalid");
     }
 
     // Write data
@@ -373,44 +365,34 @@ nmo_result_t nmo_txn_write(nmo_txn_handle_t *txn, const void *data, size_t size)
                                NULL);
 
         if (!result) {
-            nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                         NMO_SEVERITY_ERROR, "Failed to write to temporary file");
-            return nmo_result_error(err);
+            NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to write to temporary file");
         }
 
         if (written == 0) {
             // Unexpected EOF (should not happen with regular files)
-            nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                         NMO_SEVERITY_ERROR, "Unexpected EOF while writing");
-            return nmo_result_error(err);
+            NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Unexpected EOF while writing");
         }
 
         total_written += written;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
  * @brief Commit transaction atomically
  */
-nmo_result_t nmo_txn_commit(nmo_txn_handle_t *txn) {
+nmo_status_t nmo_txn_commit(nmo_txn_handle_t *txn) {
     if (!txn) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR, "Transaction handle is NULL");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Transaction handle is NULL");
     }
 
     if (txn->state != NMO_TXN_STATE_ACTIVE) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                     NMO_SEVERITY_ERROR, "Transaction is not active");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Transaction is not active");
     }
 
     if (txn->file_handle == INVALID_HANDLE_VALUE) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                     NMO_SEVERITY_ERROR, "File handle is invalid");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "File handle is invalid");
     }
 
     // Sync data to disk based on durability setting
@@ -433,17 +415,13 @@ nmo_result_t nmo_txn_commit(nmo_txn_handle_t *txn) {
     }
 
     if (!sync_result) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                     NMO_SEVERITY_ERROR, "Failed to sync file to disk");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to sync file to disk");
     }
 
     // Close the file handle before rename
     if (!CloseHandle(txn->file_handle)) {
         txn->file_handle = INVALID_HANDLE_VALUE; // Mark as closed even if close failed
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                     NMO_SEVERITY_ERROR, "Failed to close temporary file");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to close temporary file");
     }
     txn->file_handle = INVALID_HANDLE_VALUE;
 
@@ -461,29 +439,23 @@ nmo_result_t nmo_txn_commit(nmo_txn_handle_t *txn) {
     if (wfinal) nmo_free(&txn->allocator, wfinal);
 
     if (!rename_result) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                     NMO_SEVERITY_ERROR, "Failed to rename temporary file to final path");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to rename temporary file to final path");
     }
 
     txn->state = NMO_TXN_STATE_COMMITTED;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
  * @brief Rollback transaction and discard changes
  */
-nmo_result_t nmo_txn_rollback(nmo_txn_handle_t *txn) {
+nmo_status_t nmo_txn_rollback(nmo_txn_handle_t *txn) {
     if (!txn) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR, "Transaction handle is NULL");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Transaction handle is NULL");
     }
 
     if (txn->state != NMO_TXN_STATE_ACTIVE) {
-        nmo_error_t *err = NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                     NMO_SEVERITY_ERROR, "Transaction is not active");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Transaction is not active");
     }
 
     // Close file handle if open
@@ -502,7 +474,7 @@ nmo_result_t nmo_txn_rollback(nmo_txn_handle_t *txn) {
     }
 
     txn->state = NMO_TXN_STATE_ROLLED_BACK;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**

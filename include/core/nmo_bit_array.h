@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_bit_array.h
  * @brief Dynamic bitset primitive mirroring Virtools XBitArray.
  *
@@ -36,7 +36,7 @@ typedef struct nmo_bit_array {
  * @param initial_bits Initial number of addressable bits (rounded up to a multiple of 32).
  * @param allocator Allocator to use (NULL for default).
  */
-NMO_API nmo_result_t nmo_bit_array_init(nmo_bit_array_t *array,
+NMO_API nmo_status_t nmo_bit_array_init(nmo_bit_array_t *array,
                                         size_t initial_bits,
                                         const nmo_allocator_t *allocator);
 
@@ -53,22 +53,22 @@ NMO_API size_t nmo_bit_array_capacity(const nmo_bit_array_t *array);
 /**
  * @brief Ensure at least \p bit_count bits are addressable.
  */
-NMO_API nmo_result_t nmo_bit_array_reserve(nmo_bit_array_t *array, size_t bit_count);
+NMO_API nmo_status_t nmo_bit_array_reserve(nmo_bit_array_t *array, size_t bit_count);
 
 /**
  * @brief Set a bit to 1, expanding the array if needed.
  */
-NMO_API nmo_result_t nmo_bit_array_set(nmo_bit_array_t *array, size_t index);
+NMO_API nmo_status_t nmo_bit_array_set(nmo_bit_array_t *array, size_t index);
 
 /**
  * @brief Clear a bit to 0. Out-of-range indices are ignored.
  */
-NMO_API nmo_result_t nmo_bit_array_clear(nmo_bit_array_t *array, size_t index);
+NMO_API nmo_status_t nmo_bit_array_clear(nmo_bit_array_t *array, size_t index);
 
 /**
  * @brief Toggle the value of a bit, expanding if needed.
  */
-NMO_API nmo_result_t nmo_bit_array_toggle(nmo_bit_array_t *array, size_t index);
+NMO_API nmo_status_t nmo_bit_array_toggle(nmo_bit_array_t *array, size_t index);
 
 /**
  * @brief Test whether a bit is set.
@@ -115,19 +115,19 @@ NMO_API size_t nmo_bit_array_find_nth_unset(nmo_bit_array_t *array, size_t ordin
 /**
  * @brief In-place AND with another bit array.
  */
-NMO_API nmo_result_t nmo_bit_array_and(nmo_bit_array_t *array,
+NMO_API nmo_status_t nmo_bit_array_and(nmo_bit_array_t *array,
                                        const nmo_bit_array_t *other);
 
 /**
  * @brief In-place OR with another bit array.
  */
-NMO_API nmo_result_t nmo_bit_array_or(nmo_bit_array_t *array,
+NMO_API nmo_status_t nmo_bit_array_or(nmo_bit_array_t *array,
                                       const nmo_bit_array_t *other);
 
 /**
  * @brief In-place XOR with another bit array.
  */
-NMO_API nmo_result_t nmo_bit_array_xor(nmo_bit_array_t *array,
+NMO_API nmo_status_t nmo_bit_array_xor(nmo_bit_array_t *array,
                                        const nmo_bit_array_t *other);
 
 /**

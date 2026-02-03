@@ -39,8 +39,8 @@ TEST(specialized_metadata, enum_registration) {
     enum_type.alignment = 4;
     enum_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &enum_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &enum_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Get registered type to obtain type_id */
     const nmo_type_descriptor_t *registered_type = 
@@ -64,7 +64,7 @@ TEST(specialized_metadata, enum_registration) {
     
     /* Register metadata */
     result = nmo_type_registry_register_metadata(registry, &metadata);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Retrieve metadata */
     const nmo_specialized_metadata_t *retrieved = 
@@ -104,8 +104,8 @@ TEST(specialized_metadata, struct_registration) {
     struct_type.alignment = 4;
     struct_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &struct_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &struct_type);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *registered_type = 
         nmo_type_registry_find_by_guid(registry, GUID_STRUCT_POINT);
@@ -142,7 +142,7 @@ TEST(specialized_metadata, struct_registration) {
     
     /* Register metadata */
     result = nmo_type_registry_register_metadata(registry, &metadata);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Retrieve metadata */
     const nmo_specialized_metadata_t *retrieved = 
@@ -183,8 +183,8 @@ TEST(specialized_metadata, flags_registration) {
     flags_type.alignment = 4;
     flags_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &flags_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &flags_type);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *registered_type = 
         nmo_type_registry_find_by_guid(registry, GUID_FLAGS_PERMS);
@@ -207,7 +207,7 @@ TEST(specialized_metadata, flags_registration) {
     
     /* Register metadata */
     result = nmo_type_registry_register_metadata(registry, &metadata);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Retrieve metadata */
     const nmo_specialized_metadata_t *retrieved = 
@@ -268,8 +268,8 @@ TEST(specialized_metadata, multiple_types) {
     
     nmo_type_id_t type_ids[3];
     for (int i = 0; i < 3; i++) {
-        nmo_result_t result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &types[i]);
+        ASSERT_EQ(NMO_OK, result);
         
         const nmo_type_descriptor_t *reg = 
             nmo_type_registry_find_by_guid(registry, types[i].guid);
@@ -308,8 +308,8 @@ TEST(specialized_metadata, multiple_types) {
     };
     
     for (int i = 0; i < 3; i++) {
-        nmo_result_t result = nmo_type_registry_register_metadata(registry, &metadatas[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register_metadata(registry, &metadatas[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Verify all metadata is retrievable */
@@ -344,8 +344,8 @@ TEST(specialized_metadata, unregistration) {
     enum_type.alignment = 4;
     enum_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &enum_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &enum_type);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *reg_type = 
         nmo_type_registry_find_by_guid(registry, GUID_ENUM_COLOR);
@@ -363,7 +363,7 @@ TEST(specialized_metadata, unregistration) {
     metadata.enum_meta.value_count = 1;
     
     result = nmo_type_registry_register_metadata(registry, &metadata);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify metadata exists */
     ASSERT_NE(NULL, nmo_type_registry_get_metadata(registry, type_id));
@@ -398,8 +398,8 @@ TEST(specialized_metadata, specialized_index_field) {
     enum_type.alignment = 4;
     enum_type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &enum_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &enum_type);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *reg_type = 
         nmo_type_registry_find_by_guid(registry, GUID_ENUM_COLOR);
@@ -421,7 +421,7 @@ TEST(specialized_metadata, specialized_index_field) {
     metadata.enum_meta.value_count = 1;
     
     result = nmo_type_registry_register_metadata(registry, &metadata);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Check that specialized_index is now set */
     reg_type = nmo_type_registry_find_by_guid(registry, GUID_ENUM_COLOR);
@@ -451,7 +451,7 @@ TEST(specialized_metadata, deep_copy_inputs) {
     enum_type.size = 4;
     enum_type.alignment = 4;
     enum_type.valid = true;
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &enum_type).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &enum_type));
 
     nmo_type_descriptor_t struct_type = {0};
     struct_type.guid = GUID_STRUCT_POINT;
@@ -460,7 +460,7 @@ TEST(specialized_metadata, deep_copy_inputs) {
     struct_type.size = 8;
     struct_type.alignment = 4;
     struct_type.valid = true;
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &struct_type).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &struct_type));
 
     nmo_type_descriptor_t flags_type = {0};
     flags_type.guid = GUID_FLAGS_PERMS;
@@ -469,7 +469,7 @@ TEST(specialized_metadata, deep_copy_inputs) {
     flags_type.size = 4;
     flags_type.alignment = 4;
     flags_type.valid = true;
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &flags_type).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &flags_type));
 
     nmo_type_id_t enum_id = nmo_type_registry_find_by_guid(registry, GUID_ENUM_COLOR)->id;
     nmo_type_id_t struct_id = nmo_type_registry_find_by_guid(registry, GUID_STRUCT_POINT)->id;
@@ -486,7 +486,7 @@ TEST(specialized_metadata, deep_copy_inputs) {
     enum_meta.metadata_type = NMO_METADATA_TYPE_ENUM;
     enum_meta.enum_meta.values = enum_values;
     enum_meta.enum_meta.value_count = 1;
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &enum_meta).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &enum_meta));
 
     char field_name[] = "x";
     char field_desc[] = "XCoord";
@@ -506,7 +506,7 @@ TEST(specialized_metadata, deep_copy_inputs) {
     struct_meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
     struct_meta.struct_meta.fields = struct_fields;
     struct_meta.struct_meta.field_count = 1;
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &struct_meta).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &struct_meta));
 
     char flag_name[] = "Read";
     char flag_desc[] = "ReadPerm";
@@ -518,7 +518,7 @@ TEST(specialized_metadata, deep_copy_inputs) {
     flags_meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
     flags_meta.flags_meta.bits = flags_bits;
     flags_meta.flags_meta.bit_count = 1;
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &flags_meta).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register_metadata(registry, &flags_meta));
 
     /* Mutate inputs after registration */
     enum_name[0] = 'X';
@@ -578,12 +578,12 @@ TEST(specialized_metadata, invalid_arguments) {
     metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
     
     /* NULL registry */
-    nmo_result_t result = nmo_type_registry_register_metadata(NULL, &metadata);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_metadata(NULL, &metadata);
+    ASSERT_NE(NMO_OK, result);
     
     /* NULL metadata */
     result = nmo_type_registry_register_metadata(registry, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     /* NULL registry for get */
     const nmo_specialized_metadata_t *retrieved = 

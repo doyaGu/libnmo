@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file context.c
  * @brief Global context implementation (Phase 8.1)
  */
@@ -67,64 +67,57 @@ typedef struct nmo_context {
 
 } nmo_context_t;
 
-static nmo_result_t nmo_context_object_id_to_name_resolver(
+static nmo_status_t nmo_context_object_id_to_name_resolver(
     const void *session_ptr,
-    nmo_id_t id,
+    nmo_object_id_t id,
     const char **out_name)
 {
     if (!session_ptr || !out_name) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for object id->name resolver"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object id->name resolver");
     }
 
     const nmo_session_t *session = (const nmo_session_t*)session_ptr;
     const nmo_object_repository_t *repo = nmo_session_get_repository(session);
     if (!repo) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-            NMO_SEVERITY_ERROR, "Session repository is not available"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Session repository is not available");
     }
 
     nmo_object_t *object = nmo_object_repository_find_by_id(repo, (nmo_object_id_t)id);
     if (!object) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Object not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Object not found");
     }
 
     const char *name = nmo_object_get_name(object);
     if (!name || name[0] == '\0') {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Object has no name"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Object has no name");
     }
 
     *out_name = name;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_context_object_name_to_id_resolver(
+static nmo_status_t nmo_context_object_name_to_id_resolver(
     const void *session_ptr,
     const char *name,
-    nmo_id_t *out_id)
+    nmo_object_id_t *out_id)
 {
     if (!session_ptr || !name || !out_id) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments for object name->id resolver"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object name->id resolver");
     }
 
     const nmo_session_t *session = (const nmo_session_t*)session_ptr;
     const nmo_object_repository_t *repo = nmo_session_get_repository(session);
     if (!repo) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-            NMO_SEVERITY_ERROR, "Session repository is not available"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Session repository is not available");
     }
 
     nmo_object_t *object = nmo_object_repository_find_by_name((nmo_object_repository_t*)repo, name);
     if (!object) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-            NMO_SEVERITY_ERROR, "Object name not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Object name not found");
     }
 
-    *out_id = (nmo_id_t)nmo_object_get_id(object);
-    return nmo_result_ok();
+    *out_id = (nmo_object_id_t)nmo_object_get_id(object);
+    NMO_RETURN_OK();
 }
 
 /**
@@ -168,8 +161,8 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     }
 
     /* Register built-in object types in type registry */
-    nmo_result_t type_result = nmo_register_object_types(ctx->type_registry);
-    if (type_result.code != NMO_OK) {
+    nmo_status_t type_result = nmo_register_object_types(ctx->type_registry);
+    if (type_result != NMO_OK) {
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);

@@ -38,8 +38,8 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     /* Serialize chunk */
     void *data = NULL;
     size_t size = 0;
-    nmo_result_t res = nmo_chunk_serialize_version1(chunk, &data, &size, arena);
-    ASSERT_EQ(res.code, NMO_OK);
+    nmo_status_t res = nmo_chunk_serialize_version1(chunk, &data, &size, arena);
+    ASSERT_EQ(res, NMO_OK);
     ASSERT_NOT_NULL(data);
     ASSERT_GT(size, 0);
 
@@ -52,7 +52,7 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     ASSERT_NOT_NULL(read_chunk);
     
     res = nmo_chunk_parse(read_chunk, data, size);
-    ASSERT_EQ(res.code, NMO_OK);
+    ASSERT_EQ(res, NMO_OK);
     ASSERT_NOT_NULL(read_chunk);
     ASSERT_EQ(read_chunk->chunk_version, NMO_CHUNK_VERSION_1);
 
@@ -65,13 +65,13 @@ TEST(chunk_serialize, serialize_and_deserialize) {
 
     /* Read and verify data */
     int32_t int_val = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_int(parser, &int_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_int(parser, &int_val);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(int_val, 42);
 
     float float_val = 0.0f;
     parse_result = nmo_chunk_parser_read_float(parser, &float_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_FLOAT_EQ(float_val, 3.14f, 0.001f);
 
     /* Cleanup */

@@ -56,7 +56,7 @@ static uint32_t nmo_pack_color(float r, float g, float b, float a) {
     return (aa << 24) | (rr << 16) | (gg << 8) | bb;
 }
 
-nmo_result_t nmo_ckmaterial_deserialize(
+nmo_status_t nmo_ckmaterial_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -64,21 +64,19 @@ nmo_result_t nmo_ckmaterial_deserialize(
 {
     (void)type;
     nmo_ck_material_state_t *out_state = (nmo_ck_material_state_t *)instance;
-        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
     {
-        nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
-            if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+            if (result != NMO_OK) return result;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA) == NMO_OK) {
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
         if (data_version < 5) {
@@ -163,27 +161,27 @@ nmo_result_t nmo_ckmaterial_deserialize(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA2).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA2) == NMO_OK) {
         nmo_chunk_read_object_id(chunk, &out_state->texture_ids[1]);
         nmo_chunk_read_object_id(chunk, &out_state->texture_ids[2]);
         nmo_chunk_read_object_id(chunk, &out_state->texture_ids[3]);
         out_state->has_additional_textures = 1;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA3).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA3) == NMO_OK) {
         nmo_chunk_read_dword(chunk, &out_state->effect);
         out_state->has_effect = 1;
         out_state->has_effect_param = 0;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA5).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA5) == NMO_OK) {
         nmo_chunk_read_object_id(chunk, &out_state->effect_parameter_id);
         nmo_chunk_read_dword(chunk, &out_state->effect);
         out_state->has_effect = 1;
         out_state->has_effect_param = 1;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -201,7 +199,7 @@ NMO_DEFINE_OBJECT_SCHEMA(
     NMO_GUID_CKBEOBJECT
 )
 
-nmo_result_t nmo_ckmaterial_finish_loading(
+nmo_status_t nmo_ckmaterial_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -209,10 +207,10 @@ nmo_result_t nmo_ckmaterial_finish_loading(
     (void)instance;
     (void)arena;
     (void)repository;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_ckmaterial_serialize(
+nmo_status_t nmo_ckmaterial_serialize(
     const void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -220,20 +218,18 @@ nmo_result_t nmo_ckmaterial_serialize(
 {
     (void)type;
     const nmo_ck_material_state_t *state = (const nmo_ck_material_state_t *)instance;
-        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!state || !chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_serialize");
     }
 
     {
-        nmo_result_t result = nmo_ckbeobject_serialize(&state->base, chunk, NULL, context);
-            if (result.code != NMO_OK) return result;
+        nmo_status_t result = nmo_ckbeobject_serialize(&state->base, chunk, NULL, context);
+            if (result != NMO_OK) return result;
     }
 
-    nmo_result_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA);
+    if (result != NMO_OK) return result;
 
     nmo_chunk_write_dword(chunk, state->diffuse_color);
     nmo_chunk_write_dword(chunk, state->ambient_color);
@@ -248,23 +244,23 @@ nmo_result_t nmo_ckmaterial_serialize(
     if (state->has_effect) {
         if (state->has_effect_param) {
             result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA5);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             nmo_chunk_write_object_id(chunk, state->effect_parameter_id);
         } else {
             result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA3);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
         nmo_chunk_write_dword(chunk, state->effect);
     }
 
     if (state->has_effect && state->has_additional_textures) {
         result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA2);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         nmo_chunk_write_object_id(chunk, state->texture_ids[1]);
         nmo_chunk_write_object_id(chunk, state->texture_ids[2]);
         nmo_chunk_write_object_id(chunk, state->texture_ids[3]);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 

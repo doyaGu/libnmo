@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file manager_registry.c
  * @brief Manager registry implementation with indexed map
  */
@@ -100,66 +100,54 @@ void nmo_manager_registry_destroy(nmo_manager_registry_t *registry) {
 /**
  * Register manager
  */
-nmo_result_t nmo_manager_registry_register(
+nmo_status_t nmo_manager_registry_register(
     nmo_manager_registry_t *registry, uint32_t manager_id, void *manager) {
-    nmo_result_t result;
 
     if (registry == NULL || manager == NULL) {
-        result.code = NMO_ERR_INVALID_ARGUMENT;
-        result.error = NULL;
-        return result;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry or manager");
     }
 
     /* Check if manager already registered */
     if (nmo_indexed_map_contains(registry->managers_by_id, &manager_id)) {
-        result.code = NMO_ERR_INVALID_ARGUMENT;
-        result.error = NULL;
-        return result;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Manager already registered by ID");
     }
 
     nmo_manager_t *mgr = (nmo_manager_t *)manager;
 
     if (nmo_indexed_map_contains(registry->managers_by_guid, &mgr->guid)) {
-        result.code = NMO_ERR_INVALID_ARGUMENT;
-        result.error = NULL;
-        return result;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Manager already registered by GUID");
     }
 
     /* Insert manager */
-    nmo_result_t insert_result = nmo_indexed_map_insert(registry->managers_by_id, &manager_id, &mgr);
+    nmo_status_t insert_result = nmo_indexed_map_insert(registry->managers_by_id, &manager_id, &mgr);
     NMO_RETURN_IF_ERROR(insert_result);
 
     insert_result = nmo_indexed_map_insert(registry->managers_by_guid, &mgr->guid, &mgr);
     NMO_RETURN_IF_ERROR_DO(insert_result,
         nmo_indexed_map_remove(registry->managers_by_id, &manager_id));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
  * Unregister manager
  */
-nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, uint32_t manager_id) {
-    nmo_result_t result;
+nmo_status_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, uint32_t manager_id) {
 
     if (registry == NULL) {
-        result.code = NMO_ERR_INVALID_ARGUMENT;
-        result.error = NULL;
-        return result;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry");
     }
 
     /* Get manager before removing */
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager).code == NMO_OK && manager != NULL) {
+    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager) == NMO_OK && manager != NULL) {
         nmo_manager_destroy(manager);
         nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
         nmo_indexed_map_remove(registry->managers_by_guid, &manager->guid);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
-    result.code = NMO_ERR_INVALID_ARGUMENT;
-    result.error = NULL;
-    return result;
+    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Manager not found");
 }
 
 /**
@@ -171,7 +159,7 @@ void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, uint32_t 
     }
 
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager).code == NMO_OK) {
+    if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager) == NMO_OK) {
         return manager;
     }
 
@@ -218,13 +206,9 @@ uint32_t nmo_manager_registry_get_id_at(const nmo_manager_registry_t *registry, 
 /**
  * Clear all managers
  */
-nmo_result_t nmo_manager_registry_clear(nmo_manager_registry_t *registry) {
-    nmo_result_t result;
-
+nmo_status_t nmo_manager_registry_clear(nmo_manager_registry_t *registry) {
     if (registry == NULL) {
-        result.code = NMO_ERR_INVALID_ARGUMENT;
-        result.error = NULL;
-        return result;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     /* Destroy all managers */
@@ -239,7 +223,7 @@ nmo_result_t nmo_manager_registry_clear(nmo_manager_registry_t *registry) {
     nmo_indexed_map_clear(registry->managers_by_id);
     nmo_indexed_map_clear(registry->managers_by_guid);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void *nmo_manager_registry_find_by_guid(
@@ -250,7 +234,7 @@ void *nmo_manager_registry_find_by_guid(
     }
 
     nmo_manager_t *manager = NULL;
-    if (nmo_indexed_map_get(registry->managers_by_guid, &guid, &manager).code == NMO_OK) {
+    if (nmo_indexed_map_get(registry->managers_by_guid, &guid, &manager) == NMO_OK) {
         return manager;
     }
 

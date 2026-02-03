@@ -25,8 +25,8 @@ TEST(header1, serialization) {
     
     void* out_data;
     size_t out_size;
-    nmo_result_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(out_data);
     ASSERT_TRUE(out_size > 0);
     
@@ -53,8 +53,8 @@ TEST(header1, round_trip) {
     
     void* out_data;
     size_t out_size;
-    nmo_result_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(out_data);
     ASSERT_TRUE(out_size > 0);
     
@@ -64,7 +64,7 @@ TEST(header1, round_trip) {
     parsed_header.object_count = 0;  // Must be set before parsing
     
     result = nmo_header1_parse(out_data, out_size, &parsed_header, arena);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(parsed_header.object_count, 0);
     ASSERT_NULL(parsed_header.objects);
     ASSERT_EQ(parsed_header.plugin_dep_count, 0);
@@ -120,8 +120,8 @@ TEST(header1, included_metadata_only) {
     memset(&header, 0, sizeof(header));
     header.object_count = 0;
 
-    nmo_result_t result = nmo_header1_parse(buffer, pos, &header, arena);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_header1_parse(buffer, pos, &header, arena);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(2u, header.included_file_count);
     ASSERT_NOT_NULL(header.included_files);
     ASSERT_STR_EQ(header.included_files[0].name, "a.txt");
@@ -149,8 +149,8 @@ TEST(header1, size_overflow) {
 
     void* out_data = NULL;
     size_t out_size = 0;
-    nmo_result_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
-    ASSERT_EQ(result.code, NMO_ERR_CORRUPT);
+    nmo_status_t result = nmo_header1_serialize(&header, &out_data, &out_size, arena);
+    ASSERT_EQ(result, NMO_ERR_CORRUPT);
 
     nmo_arena_destroy(arena);
 }

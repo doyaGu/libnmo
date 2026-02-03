@@ -9,7 +9,7 @@
  * - CKParameter::Save writes: identifier(0x40), GUID, mode, data
  * - CKParameter::Load reads: GUID (with migration), mode, data
  * - Supports 5 storage modes: buffer, object reference, manager int, sub-chunk, none
- * - Handles GUID migrations: OLDMESSAGE→MESSAGE, OLDATTRIBUTE→ATTRIBUTE, ID→OBJECT, OLDTIME→TIME
+ * - Handles GUID migrations: OLDMESSAGE��MESSAGE, OLDATTRIBUTE��ATTRIBUTE, ID��OBJECT, OLDTIME��TIME
  * 
  * Key design decisions:
  * - Store raw buffer data for round-trip safety
@@ -56,7 +56,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckparameter_deserialize(
+nmo_status_t nmo_ckparameter_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -67,8 +67,7 @@ nmo_result_t nmo_ckparameter_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_deserialize");
     }
 
     /* Initialize state */
@@ -77,19 +76,19 @@ nmo_result_t nmo_ckparameter_deserialize(
     out_state->has_state = false;
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     /* Seek parameter identifier - optional section */
     result = nmo_chunk_seek_identifier(chunk, CK_PARAM_IDENTIFIER);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         /* No parameter data - valid for reference-only objects */
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Read parameter type GUID */
     result = nmo_chunk_read_guid(chunk, &out_state->type_guid);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -100,39 +99,39 @@ nmo_result_t nmo_ckparameter_deserialize(
         size_t pos_bytes = pos_dwords * sizeof(uint32_t);
         if (pos_bytes >= data_size) {
             out_state->has_state = false;
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
     /* Read parameter state */
     uint32_t param_state = 0;
     result = nmo_chunk_read_dword(chunk, &param_state);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
     out_state->has_state = true;
 
     if (param_state == 3) {
         out_state->mode = NMO_CKPARAM_MODE_NONE;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (param_state == 0) {
         out_state->mode = NMO_CKPARAM_MODE_SUBCHUNK;
         result = nmo_chunk_read_sub_chunk(chunk, &out_state->subchunk);
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             out_state->subchunk = NULL;
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (param_state == 2) {
         out_state->mode = NMO_CKPARAM_MODE_OBJECT;
         result = nmo_chunk_read_object_id(chunk, &out_state->object_id);
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             return result;
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (param_state == 1) {
@@ -140,29 +139,29 @@ nmo_result_t nmo_ckparameter_deserialize(
         void *buffer_ptr = NULL;
         size_t buffer_size = 0;
         result = nmo_chunk_read_buffer(chunk, &buffer_ptr, &buffer_size);
-        if (result.code == NMO_OK && buffer_size > 0) {
+        if (result == NMO_OK && buffer_size > 0) {
             out_state->buffer_data = (uint8_t *)nmo_arena_alloc(arena, buffer_size, 1);
             if (out_state->buffer_data) {
                 memcpy(out_state->buffer_data, buffer_ptr, buffer_size);
                 out_state->buffer_size = buffer_size;
             }
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Manager-specific int mode: param_state is manager_guid.d1 */
     out_state->mode = NMO_CKPARAM_MODE_MANAGER;
     out_state->manager_guid.d1 = param_state;
     result = nmo_chunk_read_dword(chunk, &out_state->manager_guid.d2);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
     result = nmo_chunk_read_dword(chunk, &out_state->manager_value);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -181,7 +180,7 @@ nmo_result_t nmo_ckparameter_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckparameter_serialize(
+nmo_status_t nmo_ckparameter_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -189,25 +188,23 @@ nmo_result_t nmo_ckparameter_serialize(
 {
     (void)type;
     const nmo_ckparameter_state_t *in_state = (const nmo_ckparameter_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
-    nmo_result_t result;
+    nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_serialize");
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
     result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write parameter identifier */
     result = nmo_chunk_write_identifier(out_chunk, CK_PARAM_IDENTIFIER);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write parameter type GUID */
     result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write parameter state and payload if present */
     if (!in_state->has_state) {
@@ -222,7 +219,7 @@ nmo_result_t nmo_ckparameter_serialize(
             inferred_has_state = true;
         }
         if (!inferred_has_state) {
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
@@ -230,45 +227,45 @@ nmo_result_t nmo_ckparameter_serialize(
     switch (in_state->mode) {
         case NMO_CKPARAM_MODE_NONE:
             result = nmo_chunk_write_dword(out_chunk, 3);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             break;
 
         case NMO_CKPARAM_MODE_SUBCHUNK:
             result = nmo_chunk_write_dword(out_chunk, 0);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             result = nmo_chunk_write_sub_chunk(out_chunk, in_state->subchunk);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             break;
 
         case NMO_CKPARAM_MODE_OBJECT:
             result = nmo_chunk_write_dword(out_chunk, 2);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             result = nmo_chunk_write_object_id(out_chunk, in_state->object_id);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             break;
 
         case NMO_CKPARAM_MODE_MANAGER:
             result = nmo_chunk_write_dword(out_chunk, in_state->manager_guid.d1);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, in_state->manager_guid.d2);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, in_state->manager_value);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             break;
 
         case NMO_CKPARAM_MODE_BUFFER:
         default:
             result = nmo_chunk_write_dword(out_chunk, 1);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
             if (in_state->buffer_data && in_state->buffer_size > 0) {
                 result = nmo_chunk_write_buffer(out_chunk, in_state->buffer_data,
                     in_state->buffer_size);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
             }
             break;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

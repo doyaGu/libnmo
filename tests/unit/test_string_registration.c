@@ -40,14 +40,14 @@ TEST(string_registration, register_enum_string_basic) {
     setup();
     
     nmo_guid_t guid = {0x12345678, 0x9ABCDEF0};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         "TestEnum",
         "RED=0, GREEN=1, BLUE=2"
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify enum was registered */
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
@@ -76,14 +76,14 @@ TEST(string_registration, register_enum_string_with_hex_values) {
     setup();
     
     nmo_guid_t guid = {0x11111111, 0x22222222};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         "HexEnum",
         "FLAG_A=0x01, FLAG_B=0x10, FLAG_C=0xFF"
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, desc);
@@ -101,14 +101,14 @@ TEST(string_registration, register_enum_string_auto_guid) {
     setup();
     
     nmo_guid_t null_guid = NMO_NULL_GUID;
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         null_guid,
         "AutoGuidEnum",
         "VALUE1=0, VALUE2=1"
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Find by name since GUID was auto-generated */
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_name(g_type_registry, "AutoGuidEnum");
@@ -123,30 +123,30 @@ TEST(string_registration, register_enum_string_auto_guid) {
 
 TEST(string_registration, register_enum_string_null_registry) {
     nmo_guid_t guid = {0x1, 0x2};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         NULL,
         guid,
         "Test",
         "A=0"
     );
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 }
 
 TEST(string_registration, register_enum_string_null_name) {
     setup();
     
     nmo_guid_t guid = {0x1, 0x2};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         NULL,
         "A=0"
     );
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -155,15 +155,15 @@ TEST(string_registration, register_enum_string_null_data) {
     setup();
     
     nmo_guid_t guid = {0x1, 0x2};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         "Test",
         NULL
     );
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -172,14 +172,14 @@ TEST(string_registration, register_enum_string_invalid_syntax) {
     setup();
     
     nmo_guid_t guid = {0x1, 0x2};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         "Test",
         "INVALID SYNTAX"
     );
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -188,14 +188,14 @@ TEST(string_registration, register_enum_string_with_whitespace) {
     setup();
     
     nmo_guid_t guid = {0xAABBCCDD, 0xEEFFFFFF};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         "WhitespaceEnum",
         "  A = 0 ,  B = 1 ,  C = 2  "
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, desc);
@@ -217,14 +217,14 @@ TEST(string_registration, register_flags_string_basic) {
     setup();
     
     nmo_guid_t guid = {0x98765432, 0x11223344};
-    nmo_result_t result = nmo_type_registry_register_flags_string(
+    nmo_status_t result = nmo_type_registry_register_flags_string(
         g_type_registry,
         guid,
         "TestFlags",
         "READ=0x01, WRITE=0x02, EXECUTE=0x04"
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, desc);
@@ -251,14 +251,14 @@ TEST(string_registration, register_flags_string_powers_of_two) {
     setup();
     
     nmo_guid_t guid = {0x55555555, 0x66666666};
-    nmo_result_t result = nmo_type_registry_register_flags_string(
+    nmo_status_t result = nmo_type_registry_register_flags_string(
         g_type_registry,
         guid,
         "PowerFlags",
         "BIT0=0x01, BIT1=0x02, BIT2=0x04, BIT3=0x08, BIT4=0x10"
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_guid(g_type_registry, guid);
     ASSERT_NE(NULL, desc);
@@ -278,14 +278,14 @@ TEST(string_registration, register_flags_string_auto_guid) {
     setup();
     
     nmo_guid_t null_guid = NMO_NULL_GUID;
-    nmo_result_t result = nmo_type_registry_register_flags_string(
+    nmo_status_t result = nmo_type_registry_register_flags_string(
         g_type_registry,
         null_guid,
         "AutoFlags",
         "FLAG_A=0x01, FLAG_B=0x02"
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *desc = nmo_type_registry_find_by_name(g_type_registry, "AutoFlags");
     ASSERT_NE(NULL, desc);
@@ -300,16 +300,16 @@ TEST(string_registration, register_flags_string_null_params) {
     nmo_guid_t guid = {0x1, 0x2};
     
     /* NULL registry */
-    nmo_result_t result1 = nmo_type_registry_register_flags_string(NULL, guid, "Test", "A=0x01");
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result1.code);
+    nmo_status_t result1 = nmo_type_registry_register_flags_string(NULL, guid, "Test", "A=0x01");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result1);
     
     /* NULL name */
-    nmo_result_t result2 = nmo_type_registry_register_flags_string(g_type_registry, guid, NULL, "A=0x01");
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result2.code);
+    nmo_status_t result2 = nmo_type_registry_register_flags_string(g_type_registry, guid, NULL, "A=0x01");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result2);
     
     /* NULL data */
-    nmo_result_t result3 = nmo_type_registry_register_flags_string(g_type_registry, guid, "Test", NULL);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result3.code);
+    nmo_status_t result3 = nmo_type_registry_register_flags_string(g_type_registry, guid, "Test", NULL);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result3);
     
     teardown();
 }
@@ -319,14 +319,14 @@ TEST(string_registration, register_flags_string_invalid_mask) {
     
     nmo_guid_t guid = {0x1, 0x2};
     /* 0x03 is not a power of 2 - should fail validation */
-    nmo_result_t result = nmo_type_registry_register_flags_string(
+    nmo_status_t result = nmo_type_registry_register_flags_string(
         g_type_registry,
         guid,
         "InvalidFlags",
         "INVALID=0x03"
     );
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -339,14 +339,14 @@ TEST(string_registration, change_enum_string_not_found) {
     setup();
     
     nmo_guid_t guid = {0x1, 0x2};
-    nmo_result_t result = nmo_type_registry_change_enum_string(
+    nmo_status_t result = nmo_type_registry_change_enum_string(
         g_type_registry,
         guid,
         "NEW=0"
     );
 
     /* Type does not exist yet */
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
     
     teardown();
 }
@@ -355,20 +355,20 @@ TEST(string_registration, change_enum_string_success) {
     setup();
     
     nmo_guid_t guid = {0x10, 0x20};
-    nmo_result_t result = nmo_type_registry_register_enum_string(
+    nmo_status_t result = nmo_type_registry_register_enum_string(
         g_type_registry,
         guid,
         "MyEnum",
         "A=0,B=1"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_type_registry_change_enum_string(
         g_type_registry,
         guid,
         "A=0,B=1,C=2"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Removing existing values must fail */
     result = nmo_type_registry_change_enum_string(
@@ -376,7 +376,7 @@ TEST(string_registration, change_enum_string_success) {
         guid,
         "A=0"
     );
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -385,14 +385,14 @@ TEST(string_registration, change_flags_string_not_found) {
     setup();
 
     nmo_guid_t guid = {0x1, 0x2};
-    nmo_result_t result = nmo_type_registry_change_flags_string(
+    nmo_status_t result = nmo_type_registry_change_flags_string(
         g_type_registry,
         guid,
         "NEW=0x01"
     );
 
     /* Type does not exist yet */
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
 
     teardown();
 }
@@ -401,20 +401,20 @@ TEST(string_registration, change_flags_string_success) {
     setup();
 
     nmo_guid_t guid = {0x11, 0x22};
-    nmo_result_t result = nmo_type_registry_register_flags_string(
+    nmo_status_t result = nmo_type_registry_register_flags_string(
         g_type_registry,
         guid,
         "MyFlags",
         "READ=0x01,WRITE=0x02"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_type_registry_change_flags_string(
         g_type_registry,
         guid,
         "READ=0x01,WRITE=0x02,EXECUTE=0x04"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Removing existing bits must fail */
     result = nmo_type_registry_change_flags_string(
@@ -422,7 +422,7 @@ TEST(string_registration, change_flags_string_success) {
         guid,
         "READ=0x01"
     );
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     teardown();
 }

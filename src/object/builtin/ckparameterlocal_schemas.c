@@ -31,7 +31,7 @@
  *
  * Reference: reference/src/CKParameterLocal.cpp:131-145
  */
-nmo_result_t nmo_ckparameterlocal_deserialize(
+nmo_status_t nmo_ckparameterlocal_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -39,30 +39,28 @@ nmo_result_t nmo_ckparameterlocal_deserialize(
 {
     (void)type;
     nmo_ckparameterlocal_state_t *out_state = (nmo_ckparameterlocal_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     memset(out_state, 0, sizeof(nmo_ckparameterlocal_state_t));
 
     /* Read base CKParameter state (merged into this chunk by AddChunkAndDelete) */
-    nmo_result_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     /* Check if "myself" parameter */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_MYSELF).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_MYSELF) == NMO_OK) {
         out_state->is_myself = 1;
     }
 
     /* Check if setting */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING) == NMO_OK) {
         out_state->is_setting = 1;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -70,7 +68,7 @@ nmo_result_t nmo_ckparameterlocal_deserialize(
  *
  * Reference: reference/src/CKParameterLocal.cpp:119-130
  */
-nmo_result_t nmo_ckparameterlocal_serialize(
+nmo_status_t nmo_ckparameterlocal_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -78,12 +76,10 @@ nmo_result_t nmo_ckparameterlocal_serialize(
 {
     (void)type;
     const nmo_ckparameterlocal_state_t *in_state = (const nmo_ckparameterlocal_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
-    nmo_result_t result;
+    nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     /* Write base state (CKObject when "myself", otherwise CKParameter) */
@@ -92,21 +88,21 @@ nmo_result_t nmo_ckparameterlocal_serialize(
     } else {
         result = nmo_ckparameter_serialize(&in_state->base, out_chunk, NULL, context);
     }
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write "myself" flag if needed */
     if (in_state->is_myself) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_MYSELF);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
     /* Write setting flag if needed */
     if (in_state->is_setting) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

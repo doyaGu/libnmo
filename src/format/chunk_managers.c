@@ -1,4 +1,4 @@
-// chunk_managers.c - Manager sequence operations
+﻿// chunk_managers.c - Manager sequence operations
 // Implements: start_manager_sequence, write/read_manager_int, start_manager_read_sequence
 
 #include "format/nmo_chunk_api.h"
@@ -17,7 +17,7 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // Manager Sequences
 // =============================================================================
 
-nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
                                               nmo_guid_t manager_guid,
                                               size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -27,13 +27,12 @@ nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR, "Failed to get parser state"));
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
     }
 
     // Track sequence start in manager list (CK2 AddEntries)
     uint32_t sentinel = 0xFFFFFFFFu;
-    nmo_result_t list_result = nmo_arena_array_append(&chunk->managers, &sentinel);
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->managers, &sentinel);
     NMO_RETURN_IF_ERROR(list_result);
 
     uint32_t pos = (uint32_t) state->current_pos;
@@ -41,19 +40,19 @@ nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
     NMO_RETURN_IF_ERROR(list_result);
 
     // Write count then manager GUID
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     return nmo_chunk_write_guid(chunk, manager_guid);
 }
 
-nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
                                          nmo_guid_t manager_guid,
                                          uint32_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     /* CK2 behavior: CheckSize(12) BEFORE checking/creating m_Managers */
-    nmo_result_t result = nmo_chunk_check_size(chunk, 3 * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, 3 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     /* Set MAN flag */
@@ -61,13 +60,12 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR, "Failed to get parser state"));
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
     }
 
     /* CK2 behavior: AddEntry(CurrentPos) - track position of GUID start */
     uint32_t pos = (uint32_t) state->current_pos;
-    nmo_result_t list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->managers, &pos);
     NMO_RETURN_IF_ERROR(list_result);
 
     /* Write manager GUID and value (CK2 order: d1, d2, value) */
@@ -81,10 +79,10 @@ nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
                                         nmo_guid_t *out_manager_guid,
                                         uint32_t *out_value) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_manager_guid, out_value, "Invalid arguments");
@@ -97,22 +95,22 @@ nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
     out_manager_guid->d2 = data[state->current_pos++];
     *out_value = data[state->current_pos++];
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
                                                    nmo_guid_t *out_manager_guid,
                                                    size_t *out_count) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_manager_guid, out_count, "Invalid arguments");
 
     // Read count then manager GUID
     uint32_t count_u32 = 0;
-    nmo_result_t result = nmo_chunk_read_dword(chunk, &count_u32);
+    nmo_status_t result = nmo_chunk_read_dword(chunk, &count_u32);
     NMO_RETURN_IF_ERROR(result);
 
     result = nmo_chunk_read_guid(chunk, out_manager_guid);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = (size_t)count_u32;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

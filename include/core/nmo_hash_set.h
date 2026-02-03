@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_hash_set.h
  * @brief Generic hash set implementation with allocator-based storage.
  *
@@ -72,7 +72,7 @@ void nmo_hash_set_set_lifecycle(nmo_hash_set_t *set,
  * @param key Pointer to key data.
  * @return Result with NMO_OK on success or NMO_ERR_ALREADY_EXISTS if present.
  */
-nmo_result_t nmo_hash_set_insert(nmo_hash_set_t *set, const void *key);
+nmo_status_t nmo_hash_set_insert(nmo_hash_set_t *set, const void *key);
 
 /**
  * @brief Remove a key from the set.
@@ -81,7 +81,7 @@ nmo_result_t nmo_hash_set_insert(nmo_hash_set_t *set, const void *key);
  * @param key Pointer to key data.
  * @return Result with NMO_OK if removed or NMO_ERR_NOT_FOUND if absent.
  */
-nmo_result_t nmo_hash_set_remove(nmo_hash_set_t *set, const void *key);
+nmo_status_t nmo_hash_set_remove(nmo_hash_set_t *set, const void *key);
 
 /**
  * @brief Check if a key exists inside the set.
@@ -101,7 +101,7 @@ size_t nmo_hash_set_get_capacity(const nmo_hash_set_t *set);
 /**
  * @brief Reserve storage for at least the specified number of keys.
  */
-nmo_result_t nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity);
+nmo_status_t nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity);
 
 /**
  * @brief Rehash to a new capacity (rounded to power of two).
@@ -110,7 +110,7 @@ nmo_result_t nmo_hash_set_reserve(nmo_hash_set_t *set, size_t capacity);
  * @param capacity Desired capacity (must be >= current count)
  * @return Result with NMO_OK on success or error code on failure
  */
-nmo_result_t nmo_hash_set_rehash(nmo_hash_set_t *set, size_t capacity);
+nmo_status_t nmo_hash_set_rehash(nmo_hash_set_t *set, size_t capacity);
 
 /**
  * @brief Resize set capacity (alias of rehash).
@@ -119,7 +119,7 @@ nmo_result_t nmo_hash_set_rehash(nmo_hash_set_t *set, size_t capacity);
  * @param capacity Desired capacity (must be >= current count)
  * @return Result with NMO_OK on success or error code on failure
  */
-nmo_result_t nmo_hash_set_resize(nmo_hash_set_t *set, size_t capacity);
+nmo_status_t nmo_hash_set_resize(nmo_hash_set_t *set, size_t capacity);
 
 /**
  * @brief Get current load factor (count / capacity).

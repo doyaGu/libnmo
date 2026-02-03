@@ -74,18 +74,18 @@ TEST(chunk_writer, roundtrip) {
     ASSERT_NOT_NULL(parser);
 
     uint32_t read_value;
-    nmo_result_t parse_result = nmo_chunk_parser_read_dword(parser, &read_value);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_dword(parser, &read_value);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(test_value, read_value);
 
     float read_float;
     parse_result = nmo_chunk_parser_read_float(parser, &read_float);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_TRUE(read_float >= 2.71f && read_float <= 2.72f);
 
     char* read_str = NULL;
     parse_result = nmo_chunk_parser_read_string(parser, &read_str, arena);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_NOT_NULL(read_str);
     ASSERT_EQ(0, strcmp(read_str, test_str));
 

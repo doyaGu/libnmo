@@ -20,26 +20,25 @@
 #define CK_STATESAVE_IOM_CHUNKS 0x01234567u
 #define CK_STATESAVE_IOM_GUID   0x87654321u
 
-static nmo_result_t nmo_ckinterfaceobjectmanager_deserialize_internal(
+static nmo_status_t nmo_ckinterfaceobjectmanager_deserialize_internal(
     nmo_ckinterfaceobjectmanager_state_t *out_state,
     nmo_chunk_t *chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_CHUNKS).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_CHUNKS) == NMO_OK) {
         int32_t count = 0;
-        nmo_result_t result = nmo_chunk_read_int(chunk, &count);
-        if (result.code == NMO_OK && count > 0) {
+        nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+        if (result == NMO_OK && count > 0) {
             out_state->chunk_count = count;
             out_state->chunks = (nmo_chunk_t **)nmo_arena_alloc(
                 arena, sizeof(nmo_chunk_t *) * (size_t)count, _Alignof(nmo_chunk_t *));
@@ -51,11 +50,11 @@ static nmo_result_t nmo_ckinterfaceobjectmanager_deserialize_internal(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_GUID).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_GUID) == NMO_OK) {
         (void)nmo_chunk_read_guid(chunk, &out_state->guid);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -73,25 +72,24 @@ NMO_DEFINE_OBJECT_SCHEMA(
     NMO_GUID_CKOBJECT
 )
 
-static nmo_result_t nmo_ckinterfaceobjectmanager_serialize_internal(
+static nmo_status_t nmo_ckinterfaceobjectmanager_serialize_internal(
     const nmo_ckinterfaceobjectmanager_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_serialize");
     }
 
-    nmo_result_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_IOM_CHUNKS);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_int(out_chunk, in_state->chunk_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     for (int32_t i = 0; i < in_state->chunk_count; ++i) {
         nmo_chunk_t *sub = NULL;
@@ -102,16 +100,16 @@ static nmo_result_t nmo_ckinterfaceobjectmanager_serialize_internal(
             sub = nmo_chunk_create(arena);
         }
         result = nmo_chunk_write_sub_chunk(out_chunk, sub);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_IOM_GUID);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     return nmo_chunk_write_guid(out_chunk, in_state->guid);
 }
 
-nmo_result_t nmo_ckinterfaceobjectmanager_deserialize(
+nmo_status_t nmo_ckinterfaceobjectmanager_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -122,7 +120,7 @@ nmo_result_t nmo_ckinterfaceobjectmanager_deserialize(
     return nmo_ckinterfaceobjectmanager_deserialize_internal(out_state, chunk, context);
 }
 
-nmo_result_t nmo_ckinterfaceobjectmanager_serialize(
+nmo_status_t nmo_ckinterfaceobjectmanager_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

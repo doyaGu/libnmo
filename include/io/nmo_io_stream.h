@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_io_stream.h
  * @brief Streaming reader/writer helpers for large Virtools files (Phase 8)
  */
@@ -76,13 +76,13 @@ NMO_API const nmo_manager_data_t *nmo_stream_reader_get_managers(
  * @param out_object Output pointer for created object
  * @return NMO_OK on success, NMO_ERR_EOF when there are no more objects
  */
-NMO_API nmo_result_t nmo_stream_reader_read_next_object(
+NMO_API nmo_status_t nmo_stream_reader_read_next_object(
     nmo_stream_reader_t *reader,
     nmo_arena_t *arena,
     nmo_object_t **out_object);
 
 /** Skip the next object chunk without allocating it */
-NMO_API nmo_result_t nmo_stream_reader_skip_object(nmo_stream_reader_t *reader);
+NMO_API nmo_status_t nmo_stream_reader_skip_object(nmo_stream_reader_t *reader);
 
 /**
  * @brief Writer options controlling compression behavior.
@@ -116,12 +116,12 @@ NMO_API nmo_stream_writer_t *nmo_stream_writer_create(
  * @param object Object to serialize (chunk + metadata required)
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_stream_writer_write_object(
+NMO_API nmo_status_t nmo_stream_writer_write_object(
     nmo_stream_writer_t *writer,
     const nmo_object_t *object);
 
 /** Finalize writer: flush compression stream and patch header */
-NMO_API nmo_result_t nmo_stream_writer_finalize(nmo_stream_writer_t *writer);
+NMO_API nmo_status_t nmo_stream_writer_finalize(nmo_stream_writer_t *writer);
 
 /** Destroy writer (automatically finalizes if needed) */
 NMO_API void nmo_stream_writer_destroy(nmo_stream_writer_t *writer);

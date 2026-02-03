@@ -74,8 +74,8 @@ TEST(phase6_integration, type_register_and_convert) {
         .flags = 0
     };
     
-    nmo_result_t result = nmo_type_registry_register(test_registry, &int_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(test_registry, &int_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify type can be found */
     const nmo_type_descriptor_t *found = nmo_type_registry_find_by_guid(test_registry, GUID_TEST_INT);
@@ -97,13 +97,13 @@ TEST(phase6_integration, enum_register_and_convert) {
     setup();
     
     /* Register enum type using parser */
-    nmo_result_t result = nmo_type_registry_register_enum(
+    nmo_status_t result = nmo_type_registry_register_enum(
         test_registry,
         GUID_TEST_ENUM,
         "TestEnumType",
         "VALUE_A=0,VALUE_B=1,VALUE_C=2"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify enum was registered */
     const nmo_type_descriptor_t *enum_type = nmo_type_registry_find_by_guid(test_registry, GUID_TEST_ENUM);
@@ -125,13 +125,13 @@ TEST(phase6_integration, flags_register_and_convert) {
     setup();
     
     /* Register flags type */
-    nmo_result_t result = nmo_type_registry_register_flags(
+    nmo_status_t result = nmo_type_registry_register_flags(
         test_registry,
         GUID_TEST_FLAGS,
         "TestFlagsType",
         "FLAG_A=0x1,FLAG_B=0x2,FLAG_C=0x4,FLAG_D=0x8"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify flags was registered */
     const nmo_type_descriptor_t *flags_type = nmo_type_registry_find_by_guid(test_registry, GUID_TEST_FLAGS);
@@ -160,8 +160,8 @@ TEST(phase6_integration, type_inheritance_chain) {
         .category = NMO_TYPE_CATEGORY_PRIMITIVE,
         .parent_guid = NMO_GUID_NULL
     };
-    nmo_result_t result = nmo_type_registry_register(test_registry, &base_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(test_registry, &base_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register derived type */
     nmo_type_descriptor_t derived_type = {
@@ -172,7 +172,7 @@ TEST(phase6_integration, type_inheritance_chain) {
         .parent_guid = GUID_TEST_INT
     };
     result = nmo_type_registry_register(test_registry, &derived_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Check inheritance relationship */
     int is_derived = nmo_type_is_derived_from(test_registry, GUID_TEST_DERIVED, GUID_TEST_INT);
@@ -195,12 +195,12 @@ TEST(phase6_integration, type_inheritance_chain) {
  * ============================================================================ */
 
 /* Mock manager callbacks */
-static nmo_result_t mock_manager_serialize(void *data, void *chunk, void *context) {
+static nmo_status_t mock_manager_serialize(void *data, void *chunk, void *context) {
     (void)data; (void)chunk; (void)context;
     return nmo_ok();
 }
 
-static nmo_result_t mock_manager_deserialize(void *chunk, void **out_data, void *context) {
+static nmo_status_t mock_manager_deserialize(void *chunk, void **out_data, void *context) {
     (void)chunk; (void)out_data; (void)context;
     return nmo_ok();
 }
@@ -218,8 +218,8 @@ TEST(phase6_integration, custom_manager_registration) {
     };
     
     /* Register manager */
-    nmo_result_t result = nmo_type_registry_register_saver_manager(test_registry, &manager);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_saver_manager(test_registry, &manager);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Retrieve manager */
     const nmo_saver_manager_t *found = nmo_type_registry_get_saver_manager(test_registry, GUID_TEST_MANAGER);
@@ -229,7 +229,7 @@ TEST(phase6_integration, custom_manager_registration) {
     
     /* Unregister manager */
     result = nmo_type_registry_unregister_saver_manager(test_registry, GUID_TEST_MANAGER);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify unregistered */
     found = nmo_type_registry_get_saver_manager(test_registry, GUID_TEST_MANAGER);
@@ -252,8 +252,8 @@ TEST(phase6_integration, type_manager_association) {
         .size = sizeof(int),
         .category = NMO_TYPE_CATEGORY_PRIMITIVE
     };
-    nmo_result_t result = nmo_type_registry_register(test_registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(test_registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register manager */
     nmo_saver_manager_t manager = {
@@ -263,11 +263,11 @@ TEST(phase6_integration, type_manager_association) {
         .deserialize = mock_manager_deserialize
     };
     result = nmo_type_registry_register_saver_manager(test_registry, &manager);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Associate type with manager */
     result = nmo_type_registry_set_type_manager(test_registry, GUID_TEST_INT, GUID_TEST_MANAGER);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Retrieve association */
     nmo_guid_t mgr_guid = nmo_type_registry_get_type_manager(test_registry, GUID_TEST_INT);
@@ -275,7 +275,7 @@ TEST(phase6_integration, type_manager_association) {
     
     /* Clear association */
     result = nmo_type_registry_clear_type_manager(test_registry, GUID_TEST_INT);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify cleared */
     mgr_guid = nmo_type_registry_get_type_manager(test_registry, GUID_TEST_INT);
@@ -298,8 +298,8 @@ TEST(phase6_integration, ui_visibility_control) {
         .size = sizeof(int),
         .category = NMO_TYPE_CATEGORY_PRIMITIVE
     };
-    nmo_result_t result = nmo_type_registry_register(test_registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(test_registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Default should be visible */
     int visible = nmo_type_registry_is_ui_visible(test_registry, GUID_TEST_INT);
@@ -307,7 +307,7 @@ TEST(phase6_integration, ui_visibility_control) {
     
     /* Hide the type */
     result = nmo_type_registry_set_ui_visibility(test_registry, GUID_TEST_INT, 0);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify hidden */
     visible = nmo_type_registry_is_ui_visible(test_registry, GUID_TEST_INT);
@@ -315,7 +315,7 @@ TEST(phase6_integration, ui_visibility_control) {
     
     /* Show again */
     result = nmo_type_registry_set_ui_visibility(test_registry, GUID_TEST_INT, 1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify visible again */
     visible = nmo_type_registry_is_ui_visible(test_registry, GUID_TEST_INT);
@@ -346,8 +346,8 @@ TEST(phase6_integration, memory_usage_tracking) {
             .size = sizeof(int) * (i + 1),
             .category = NMO_TYPE_CATEGORY_PRIMITIVE
         };
-        nmo_result_t result = nmo_type_registry_register(test_registry, &type);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(test_registry, &type);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Memory usage should have increased */
@@ -369,13 +369,13 @@ TEST(phase6_integration, full_type_lifecycle) {
     setup();
     
     /* 1. Register enum type */
-    nmo_result_t result = nmo_type_registry_register_enum(
+    nmo_status_t result = nmo_type_registry_register_enum(
         test_registry,
         GUID_TEST_ENUM,
         "LifecycleEnum",
         "STATE_INIT=0,STATE_RUNNING=1,STATE_STOPPED=2"
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* 2. Query the type */
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(test_registry, GUID_TEST_ENUM);
@@ -391,7 +391,7 @@ TEST(phase6_integration, full_type_lifecycle) {
     
     /* 5. Unregister the type */
     result = nmo_type_registry_unregister(test_registry, GUID_TEST_ENUM);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* 6. Verify unregistered */
     type = nmo_type_registry_find_by_guid(test_registry, GUID_TEST_ENUM);
@@ -422,8 +422,8 @@ TEST(phase6_integration, bulk_registration_performance) {
             .category = NMO_TYPE_CATEGORY_PRIMITIVE
         };
         
-        nmo_result_t result = nmo_type_registry_register(test_registry, &type);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(test_registry, &type);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Verify all registered */

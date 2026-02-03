@@ -35,8 +35,8 @@ TEST(chunk_parser, cursor_operations) {
     ASSERT_NOT_NULL(chunk);
 
     // Add 10 DWORDs of data
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
@@ -46,12 +46,12 @@ TEST(chunk_parser, cursor_operations) {
     // Test tell/seek/skip
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0);
 
-    nmo_result_t parse_result = nmo_chunk_parser_seek(parser, 5);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_seek(parser, 5);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 5);
 
     parse_result = nmo_chunk_parser_skip(parser, 3);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 8);
 
     ASSERT_EQ(nmo_chunk_parser_remaining(parser), 2);
@@ -68,8 +68,8 @@ TEST(chunk_parser, primitive_reads) {
     ASSERT_NOT_NULL(chunk);
 
     // Create test data
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
@@ -85,41 +85,41 @@ TEST(chunk_parser, primitive_reads) {
 
     // Test byte read
     uint8_t byte_val;
-    nmo_result_t parse_result = nmo_chunk_parser_read_byte(parser, &byte_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_byte(parser, &byte_val);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(byte_val, 0x78);
 
     // Reset for word test
     parse_result = nmo_chunk_parser_seek(parser, 0);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     uint16_t word_val;
     parse_result = nmo_chunk_parser_read_word(parser, &word_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(word_val, 0x5678);
 
     // Reset for dword test
     parse_result = nmo_chunk_parser_seek(parser, 0);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     uint32_t dword_val;
     parse_result = nmo_chunk_parser_read_dword(parser, &dword_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(dword_val, 0x12345678);
 
     // Test int read
     int32_t int_val;
     parse_result = nmo_chunk_parser_read_int(parser, &int_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Test float read
     float float_val;
     parse_result = nmo_chunk_parser_read_float(parser, &float_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_TRUE(float_val >= 3.14f && float_val <= 3.15f);
 
     // Test GUID read
     nmo_guid_t guid_val;
     parse_result = nmo_chunk_parser_read_guid(parser, &guid_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(guid_val.d1, 0x11111111);
     ASSERT_EQ(guid_val.d2, 0x22222222);
 
@@ -140,8 +140,8 @@ TEST(chunk_parser, string_read) {
     uint32_t str_len = (uint32_t)strlen(test_str);
     uint32_t str_size = str_len + 1;  // Include null terminator
 
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 3);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
@@ -152,8 +152,8 @@ TEST(chunk_parser, string_read) {
     ASSERT_NOT_NULL(parser);
 
     char* read_str = NULL;
-    nmo_result_t parse_result = nmo_chunk_parser_read_string(parser, &read_str, arena);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_string(parser, &read_str, arena);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_NOT_NULL(read_str);
     ASSERT_TRUE(strcmp(read_str, test_str) == 0);
 
@@ -168,8 +168,8 @@ TEST(chunk_parser, object_sequence_state) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 6);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 6);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
@@ -184,29 +184,29 @@ TEST(chunk_parser, object_sequence_state) {
     ASSERT_NOT_NULL(parser);
 
     size_t count = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_start_object_sequence(parser, &count);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_start_object_sequence(parser, &count);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(3u, count);
 
     nmo_object_id_t obj_id = 0;
     parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ((nmo_object_id_t)101, obj_id);
     parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ((nmo_object_id_t)202, obj_id);
     parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ((nmo_object_id_t)303, obj_id);
 
     uint32_t sentinel = 0;
     parse_result = nmo_chunk_parser_read_dword(parser, &sentinel);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0xDEADBEEF, sentinel);
 
     uint32_t tail = 0;
     parse_result = nmo_chunk_parser_read_dword(parser, &tail);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x01020304, tail);
 
     nmo_chunk_parser_destroy(parser);
@@ -220,8 +220,8 @@ TEST(chunk_parser, manager_sequence_state) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 6);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 6);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
@@ -238,23 +238,23 @@ TEST(chunk_parser, manager_sequence_state) {
 
     nmo_guid_t header_guid;
     size_t count = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_start_manager_sequence(parser, &header_guid, &count);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_start_manager_sequence(parser, &header_guid, &count);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(2u, count);
     ASSERT_EQ(guid.d1, header_guid.d1);
     ASSERT_EQ(guid.d2, header_guid.d2);
 
     int32_t value = 0;
     parse_result = nmo_chunk_parser_read_manager_int_sequence(parser, &value);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x11111111, value);
     parse_result = nmo_chunk_parser_read_manager_int_sequence(parser, &value);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x22222222, value);
 
     uint32_t tail = 0;
     parse_result = nmo_chunk_parser_read_dword(parser, &tail);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x33333333, tail);
 
     nmo_chunk_parser_destroy(parser);
@@ -275,8 +275,8 @@ TEST(chunk_parser, identifier_navigation) {
     // Pos 4: [0xID2, 8]
     // Pos 6: [payload]
     // Pos 8: [0xID3, 0]
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 10);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
     memset(data, 0, 10 * sizeof(uint32_t));
@@ -292,18 +292,18 @@ TEST(chunk_parser, identifier_navigation) {
 
     // Read the first identifier to set the initial state
     uint32_t id;
-    nmo_result_t parse_result = nmo_chunk_parser_read_identifier(parser, &id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_identifier(parser, &id);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(id, 0x1D1D1D1D);
 
     // Seek to the third identifier (0x3D3D3D3D)
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x3D3D3D3D);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 10); // Cursor should be after the [ID, NextPos] pair
 
     // Try to seek a non-existent ID
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0xBADBAD);
-    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_EOF);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -317,8 +317,8 @@ TEST(chunk_parser, bounds_checking) {
     ASSERT_NOT_NULL(chunk);
 
     // Create chunk with 1 DWORD
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 1);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 1);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
     data[0] = 0x12345678;
@@ -328,12 +328,12 @@ TEST(chunk_parser, bounds_checking) {
 
     // First read should succeed
     uint32_t val;
-    nmo_result_t parse_result = nmo_chunk_parser_read_dword(parser, &val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_dword(parser, &val);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     // Second read should fail (EOF)
     parse_result = nmo_chunk_parser_read_dword(parser, &val);
-    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_EOF);
 
     // at_end should return true
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
@@ -349,8 +349,8 @@ TEST(chunk_parser, array_lendian_overflow) {
     nmo_chunk_t* chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
 
-    nmo_result_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
-    ASSERT_EQ(resize_result.code, NMO_OK);
+    nmo_status_t resize_result = nmo_arena_array_resize(&chunk->data, 2);
+    ASSERT_EQ(resize_result, NMO_OK);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(data);
 
@@ -362,12 +362,12 @@ TEST(chunk_parser, array_lendian_overflow) {
 
     void *array = NULL;
     size_t count = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_array_lendian(parser, &array, &count, arena);
+    nmo_status_t parse_result = nmo_chunk_parser_read_array_lendian(parser, &array, &count, arena);
 
     if (SIZE_MAX == UINT32_MAX) {
-        ASSERT_EQ(parse_result.code, NMO_ERR_INVALID_FORMAT);
+        ASSERT_EQ(parse_result, NMO_ERR_INVALID_FORMAT);
     } else {
-        ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+        ASSERT_EQ(parse_result, NMO_ERR_EOF);
     }
     ASSERT_NULL(array);
     ASSERT_EQ(count, 0u);

@@ -32,8 +32,8 @@ TEST(header, write_and_read) {
     nmo_io_interface_t *write_io = nmo_memory_io_open_write(1024);
     ASSERT_NOT_NULL(write_io);
 
-    nmo_result_t result = nmo_header_write(header, write_io);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_header_write(header, write_io);
+    ASSERT_EQ(result, NMO_OK);
 
     /* Get written data - DON'T close write_io yet! */
     size_t written_size = 0;
@@ -49,7 +49,7 @@ TEST(header, write_and_read) {
     ASSERT_NOT_NULL(read_io);
 
     result = nmo_header_parse(read_header, read_io);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     /* Clean up */
     nmo_io_close(read_io);
@@ -62,8 +62,8 @@ TEST(header, validate) {
     nmo_header_t *header = nmo_header_create();
     ASSERT_NOT_NULL(header);
 
-    nmo_result_t result = nmo_header_validate(header);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_header_validate(header);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_header_destroy(header);
 }

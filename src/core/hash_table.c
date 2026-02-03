@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file hash_table.c
  * @brief Generic hash table implementation with linear probing
  */
@@ -332,51 +332,41 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
     }
 }
 
-nmo_result_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value) {
+nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, const void *value) {
     if (table == NULL || key == NULL || value == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid hash table insert arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid hash table insert arguments");
     }
 
     if (table->capacity == 0) {
         size_t new_capacity = nmo_hash_table_next_capacity(DEFAULT_INITIAL_CAPACITY);
         int result = nmo_hash_table_rehash_internal(table, new_capacity);
         if (result != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to grow hash table"));
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to grow hash table");
         }
     }
 
     if (nmo_hash_table_should_grow(table)) {
         size_t new_capacity = table->capacity << 1;
         if (new_capacity == 0 || new_capacity <= table->capacity) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Hash table capacity overflow"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Hash table capacity overflow");
         }
         int result = nmo_hash_table_rehash_internal(table, new_capacity);
         if (result != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to rehash hash table"));
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to rehash hash table");
         }
     }
 
     int found = 0;
     int slot = nmo_hash_table_find_slot(table, key, &found);
     if (slot < 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to find hash table slot"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Failed to find hash table slot");
     }
 
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
     if (found) {
         nmo_hash_table_dispose_value(table, (size_t)slot);
         nmo_hash_table_copy_value(table, value_dest, value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     uint8_t *key_dest = table->keys + ((size_t)slot * table->key_size);
@@ -384,22 +374,18 @@ nmo_result_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, con
     nmo_hash_table_copy_value(table, value_dest, value);
     table->states[slot] = NMO_HASH_ENTRY_OCCUPIED;
     table->count++;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, void *value_out) {
+nmo_status_t nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, void *value_out) {
     if (table == NULL || key == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid hash table get arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid hash table get arguments");
     }
 
     int found = 0;
     int slot = nmo_hash_table_find_slot(table, key, &found);
     if (slot < 0 || !found) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO,
-                                          "Key not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "Key not found");
     }
 
     if (value_out != NULL) {
@@ -407,22 +393,18 @@ nmo_result_t nmo_hash_table_get(const nmo_hash_table_t *table, const void *key, 
                                   value_out,
                                   table->values + ((size_t)slot * table->value_size));
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_hash_table_remove(nmo_hash_table_t *table, const void *key) {
+nmo_status_t nmo_hash_table_remove(nmo_hash_table_t *table, const void *key) {
     if (table == NULL || key == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid hash table remove arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid hash table remove arguments");
     }
 
     int found = 0;
     int slot = nmo_hash_table_find_slot(table, key, &found);
     if (slot < 0 || !found) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO,
-                                          "Key not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "Key not found");
     }
 
     nmo_hash_table_dispose_entry(table, (size_t)slot);
@@ -430,12 +412,12 @@ nmo_result_t nmo_hash_table_remove(nmo_hash_table_t *table, const void *key) {
     if (table->count > 0) {
         table->count--;
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 int nmo_hash_table_contains(const nmo_hash_table_t *table, const void *key) {
-    nmo_result_t result = nmo_hash_table_get(table, key, NULL);
-    return result.code == NMO_OK ? 1 : 0;
+    nmo_status_t result = nmo_hash_table_get(table, key, NULL);
+    return result == NMO_OK ? 1 : 0;
 }
 
 size_t nmo_hash_table_get_count(const nmo_hash_table_t *table) {
@@ -446,63 +428,49 @@ size_t nmo_hash_table_get_capacity(const nmo_hash_table_t *table) {
     return table ? table->capacity : 0;
 }
 
-nmo_result_t nmo_hash_table_reserve(nmo_hash_table_t *table, size_t capacity) {
+nmo_status_t nmo_hash_table_reserve(nmo_hash_table_t *table, size_t capacity) {
     if (table == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid hash table reserve arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid hash table reserve arguments");
     }
     if (capacity <= table->capacity) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t target = nmo_hash_table_next_capacity(capacity);
     if (target == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid hash table reserve capacity"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Invalid hash table reserve capacity");
     }
 
     int result = nmo_hash_table_rehash_internal(table, target);
     if (result != NMO_OK) {
-        return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to reserve hash table capacity"));
+        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to reserve hash table capacity");
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_hash_table_rehash(nmo_hash_table_t *table, size_t capacity) {
+nmo_status_t nmo_hash_table_rehash(nmo_hash_table_t *table, size_t capacity) {
     if (table == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid hash table rehash arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid hash table rehash arguments");
     }
 
     if (capacity < table->count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Rehash capacity smaller than count"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Rehash capacity smaller than count");
     }
 
     size_t target = nmo_hash_table_next_capacity(capacity);
     if (target == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Hash table rehash capacity overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Hash table rehash capacity overflow");
     }
 
     int result = nmo_hash_table_rehash_internal(table, target);
     if (result != NMO_OK) {
-        return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to rehash hash table"));
+        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to rehash hash table");
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_hash_table_resize(nmo_hash_table_t *table, size_t capacity) {
+nmo_status_t nmo_hash_table_resize(nmo_hash_table_t *table, size_t capacity) {
     return nmo_hash_table_rehash(table, capacity);
 }
 

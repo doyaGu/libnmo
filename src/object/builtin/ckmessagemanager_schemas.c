@@ -44,7 +44,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckmessagemanager_deserialize(
+nmo_status_t nmo_ckmessagemanager_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -55,45 +55,41 @@ nmo_result_t nmo_ckmessagemanager_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_deserialize");
     }
 
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckmessagemanager_state_t));
 
     /* Seek identifier */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESSAGEMANAGER);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESSAGEMANAGER);
+    if (result != NMO_OK) {
         /* No data to load - this is valid */
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Read message type count */
     int32_t type_count;
     result = nmo_chunk_read_int(chunk, &type_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     if (type_count < 0) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-            NMO_SEVERITY_ERROR, "Invalid message type count"));
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid message type count");
     }
 
     if (type_count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (type_count > 10000) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-            NMO_SEVERITY_ERROR, "Invalid message type count"));
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid message type count");
     }
 
     out_state->message_type_count = (uint32_t)type_count;
     out_state->message_type_names = (const char **)nmo_arena_alloc(
         arena, type_count * sizeof(char *), _Alignof(char *));
     if (!out_state->message_type_names) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-            NMO_SEVERITY_ERROR, "Failed to allocate message type names"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate message type names");
     }
 
     /* Read each message type name */
@@ -103,7 +99,7 @@ nmo_result_t nmo_ckmessagemanager_deserialize(
         out_state->message_type_names[i] = name; /* Chunk manages the buffer */
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -122,25 +118,23 @@ nmo_result_t nmo_ckmessagemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckmessagemanager_serialize(
+nmo_status_t nmo_ckmessagemanager_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
+    (void)context;
     const nmo_ckmessagemanager_state_t *in_state =
         (const nmo_ckmessagemanager_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_serialize");
     }
 
     if (in_state->message_type_count > 0 && in_state->message_type_names == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Message type names missing"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Message type names missing");
     }
 
     /* Don't write if no used message types (all names empty) */
@@ -155,26 +149,26 @@ nmo_result_t nmo_ckmessagemanager_serialize(
         }
     }
     if (used_count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
-    nmo_result_t result;
+    nmo_status_t result;
 
     /* Write identifier */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESSAGEMANAGER);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write message type count */
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->message_type_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write each message type name */
     for (uint32_t i = 0; i < in_state->message_type_count; i++) {
         const char *name = in_state->message_type_names[i];
         result = nmo_chunk_write_string(out_chunk, name ? name : "");
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 

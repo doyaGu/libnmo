@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_manager_registry.h
  * @brief Manager registry for managing object managers
  */
@@ -40,7 +40,7 @@ NMO_API void nmo_manager_registry_destroy(nmo_manager_registry_t *registry);
  * @param manager Manager instance
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_manager_registry_register(
+NMO_API nmo_status_t nmo_manager_registry_register(
     nmo_manager_registry_t *registry, uint32_t manager_id, void *manager);
 
 /**
@@ -49,7 +49,7 @@ NMO_API nmo_result_t nmo_manager_registry_register(
  * @param manager_id Manager ID
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, uint32_t manager_id);
+NMO_API nmo_status_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, uint32_t manager_id);
 
 /**
  * Get manager by ID
@@ -97,7 +97,7 @@ NMO_API uint32_t nmo_manager_registry_get_id_at(const nmo_manager_registry_t *re
  * @param registry Registry
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_manager_registry_clear(nmo_manager_registry_t *registry);
+NMO_API nmo_status_t nmo_manager_registry_clear(nmo_manager_registry_t *registry);
 
 #ifdef __cplusplus
 }

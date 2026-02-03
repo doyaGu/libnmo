@@ -1,4 +1,4 @@
-#include "format/nmo_chunk_parser.h"
+﻿#include "format/nmo_chunk_parser.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
 #include <string.h>
@@ -9,7 +9,7 @@
 #define NMO_CHUNK_PARSER_DATA_SIZE(p) ((p)->chunk->data.count)
 
 #define NMO_PARSER_RETURN_ERROR(code, message) \
-    return nmo_result_error(NMO_ERROR(NULL, (code), NMO_SEVERITY_ERROR, (message)))
+    NMO_RETURN_ERROR((code), NMO_SEVERITY_ERROR, (message))
 #define NMO_PARSER_RETURN_INVALID_ARGUMENT(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, (message))
 #define NMO_PARSER_RETURN_INVALID_OFFSET(message) \
@@ -112,7 +112,7 @@ size_t nmo_chunk_parser_tell(nmo_chunk_parser_t *p) {
     return p->cursor;
 }
 
-nmo_result_t nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos) {
+nmo_status_t nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos) {
     if (p == NULL || p->chunk == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser");
     }
@@ -122,10 +122,10 @@ nmo_result_t nmo_chunk_parser_seek(nmo_chunk_parser_t *p, size_t pos) {
     }
 
     p->cursor = pos;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords) {
+nmo_status_t nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords) {
     if (p == NULL || p->chunk == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser");
     }
@@ -135,7 +135,7 @@ nmo_result_t nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords) {
     }
 
     p->cursor += dwords;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 size_t nmo_chunk_parser_remaining(nmo_chunk_parser_t *p) {
@@ -154,7 +154,7 @@ int nmo_chunk_parser_at_end(nmo_chunk_parser_t *p) {
     return nmo_chunk_parser_remaining(p) == 0;
 }
 
-nmo_result_t nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out) {
+nmo_status_t nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -168,10 +168,10 @@ nmo_result_t nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out) {
     *out = (uint8_t) (dword & 0xFF);
     p->cursor++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out) {
+nmo_status_t nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -185,10 +185,10 @@ nmo_result_t nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out) {
     *out = (uint16_t) (dword & 0xFFFF);
     p->cursor++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
+nmo_status_t nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -200,10 +200,10 @@ nmo_result_t nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
     *out = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
     p->cursor++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
+nmo_status_t nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -217,10 +217,10 @@ nmo_result_t nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     memcpy(out, &value, sizeof(int32_t));
     p->cursor++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out) {
+nmo_status_t nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -234,10 +234,10 @@ nmo_result_t nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out) {
     memcpy(out, &value, sizeof(float));
     p->cursor++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out) {
+nmo_status_t nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -250,7 +250,7 @@ nmo_result_t nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out) 
     out->d2 = NMO_CHUNK_PARSER_DATA(p)[p->cursor + 1];
     p->cursor += 2;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -263,7 +263,7 @@ nmo_result_t nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out) 
  * @param manager Output manager GUID (can be NULL)
  * @return Manager int value, or 0 on error
  */
-nmo_result_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
                                                nmo_guid_t *manager,
                                                int32_t *out_value) {
     if (p == NULL || out_value == NULL) {
@@ -286,7 +286,7 @@ nmo_result_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
 
     // Read and return value
     *out_value = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -298,7 +298,7 @@ nmo_result_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
  * @param p Parser
  * @return Manager int value, or 0 on error
  */
-nmo_result_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p,
                                                         int32_t *out_value) {
     if (p == NULL || out_value == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
@@ -317,10 +317,10 @@ nmo_result_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p,
     if (p->manager_sequence_remaining == 0) {
         p->in_manager_sequence = 0;
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p,
                                                      nmo_guid_t *out_manager,
                                                      size_t *out_count) {
     if (p == NULL || p->chunk == NULL || out_count == NULL) {
@@ -345,7 +345,7 @@ nmo_result_t nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p,
     }
 
     *out_count = count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -360,7 +360,7 @@ nmo_result_t nmo_chunk_parser_start_manager_sequence(nmo_chunk_parser_t *p,
  * @param arena Arena for allocation
  * @return Element count, or 0 on error/empty array
  */
-nmo_result_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
                                                  void **array,
                                                  size_t *out_count,
                                                  nmo_arena_t *arena) {
@@ -383,7 +383,7 @@ nmo_result_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
 
     // Check for valid parameters
     if (data_size_bytes == 0 || element_count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Calculate needed DWORDs (round up)
@@ -414,10 +414,10 @@ nmo_result_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
     // Set output
     *array = array_data;
     *out_count = (size_t) element_count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
                                                    void **array,
                                                    size_t *out_count,
                                                    nmo_arena_t *arena) {
@@ -439,7 +439,7 @@ nmo_result_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
     if (data_size_bytes == 0 || element_count == 0) {
         *array = NULL;
         *out_count = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
 #if SIZE_MAX == UINT32_MAX
@@ -475,13 +475,13 @@ nmo_result_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
 
     *array = array_data;
     *out_count = (size_t) element_count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p,
                                                     size_t bytes,
                                                     void *buffer) {
-    nmo_result_t result = nmo_chunk_parser_read_buffer_nosize(p, bytes, buffer);
+    nmo_status_t result = nmo_chunk_parser_read_buffer_nosize(p, bytes, buffer);
     NMO_RETURN_IF_ERROR(result);
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -490,16 +490,16 @@ nmo_result_t nmo_chunk_parser_read_buffer_lendian16(nmo_chunk_parser_t *p,
     }
 #endif
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_t bytes) {
+nmo_status_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size_t bytes) {
     if (p == NULL || dest == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
 
     if (bytes == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Calculate DWORDs needed (with padding)
@@ -513,10 +513,10 @@ nmo_result_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size
     memcpy(dest, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
     p->cursor += dwords_needed;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t *arena) {
+nmo_status_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t *arena) {
     if (p == NULL || out == NULL || arena == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -524,7 +524,7 @@ nmo_result_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo
     // CK2 WriteString stores size = strlen + 1 (includes null terminator)
     // Reference: CKStateChunk::ReadString() (CKStateChunk.cpp:1218-1244)
     uint32_t size;
-    nmo_result_t result = nmo_chunk_parser_read_dword(p, &size);
+    nmo_status_t result = nmo_chunk_parser_read_dword(p, &size);
     NMO_RETURN_IF_ERROR(result);
 
     if (size == 0) {
@@ -535,7 +535,7 @@ nmo_result_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo
         }
         str[0] = '\0';
         *out = str;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate buffer for string (size already includes null terminator)
@@ -552,10 +552,10 @@ nmo_result_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo
     str[size - 1] = '\0';
     *out = str;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
                                          void **out,
                                          size_t *size,
                                          nmo_arena_t *arena) {
@@ -565,14 +565,14 @@ nmo_result_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
 
     // Read buffer size (4 bytes)
     uint32_t buf_size;
-    nmo_result_t result = nmo_chunk_parser_read_dword(p, &buf_size);
+    nmo_status_t result = nmo_chunk_parser_read_dword(p, &buf_size);
     NMO_RETURN_IF_ERROR(result);
 
     *size = buf_size;
 
     if (buf_size == 0) {
         *out = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate buffer
@@ -586,7 +586,7 @@ nmo_result_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
     NMO_RETURN_IF_ERROR(result);
 
     *out = buffer;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -601,13 +601,13 @@ nmo_result_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
  * @param buffer Destination buffer (must be pre-allocated)
  * @return NMO_OK on success, error code on failure
  */
-nmo_result_t nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, void *buffer) {
+nmo_status_t nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t bytes, void *buffer) {
     if (p == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser");
     }
 
     if (bytes == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (buffer == NULL) {
@@ -626,10 +626,10 @@ nmo_result_t nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t b
     memcpy(buffer, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], bytes);
     p->cursor += dwords_needed;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p,
                                                           size_t value_count,
                                                           void *buffer) {
     if (p == NULL) {
@@ -637,7 +637,7 @@ nmo_result_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p
     }
 
     if (value_count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (buffer == NULL) {
@@ -658,10 +658,10 @@ nmo_result_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p
         out[i] = value;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out) {
+nmo_status_t nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -681,10 +681,10 @@ nmo_result_t nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_
 #endif
 
     *out = (uint32_t)low | ((uint32_t)high << 16);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
                                                         uint32_t *out,
                                                         size_t count) {
     if (p == NULL || out == NULL) {
@@ -692,15 +692,15 @@ nmo_result_t nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
     }
 
     if (count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     for (size_t i = 0; i < count; i++) {
-        nmo_result_t result = nmo_chunk_parser_read_dword_as_words(p, &out[i]);
+        nmo_status_t result = nmo_chunk_parser_read_dword_as_words(p, &out[i]);
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -742,7 +742,7 @@ const uint32_t *nmo_chunk_parser_lock_read_buffer(nmo_chunk_parser_t *p) {
  * @param out Output object ID
  * @return NMO_OK on success, error code on failure
  */
-nmo_result_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out) {
+nmo_status_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_id_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -770,7 +770,7 @@ nmo_result_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
             resolved_id = 0;
         }
         *out = resolved_id;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // VERSION1+ format: single DWORD, possibly remapped via file context
@@ -779,11 +779,11 @@ nmo_result_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
         p->file_context->file_to_runtime != NULL &&
         raw_id != 0) {
         nmo_object_id_t remapped = 0;
-        nmo_result_t remap = nmo_id_remap_lookup_id(
+        nmo_status_t remap = nmo_id_remap_lookup_id(
             p->file_context->file_to_runtime,
             (nmo_object_id_t) raw_id,
             &remapped);
-        if (remap.code == NMO_OK) {
+        if (remap == NMO_OK) {
             resolved_id = remapped;
         }
     }
@@ -797,10 +797,10 @@ nmo_result_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_t *out_count) {
+nmo_status_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_t *out_count) {
     if (p == NULL || p->chunk == NULL || out_count == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -813,7 +813,7 @@ nmo_result_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_
     p->object_sequence_remaining = count;
     p->in_object_sequence = (count > 0);
     *out_count = count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -824,7 +824,7 @@ nmo_result_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_
  *
  * Reference: CKStateChunk::ReadIdentifier() (CKStateChunk.cpp:225-231)
  */
-nmo_result_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier) {
+nmo_status_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *identifier) {
     if (p == NULL || identifier == NULL || p->chunk == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -843,7 +843,7 @@ nmo_result_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *i
     // Advance cursor by 2 (skip [ID][NextPos] pair)
     p->cursor += 2;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -862,7 +862,7 @@ nmo_result_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *i
  * @param identifier Target identifier to find
  * @return NMO_OK if found, NMO_ERR_EOF if not found
  */
-nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier) {
+nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier) {
     if (p == NULL || p->chunk == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser");
     }
@@ -908,7 +908,7 @@ nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
         if (current_pos != 0) {
             p->prev_identifier_pos = current_pos;
             p->cursor = current_pos + 2;
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
@@ -937,10 +937,10 @@ nmo_result_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
     p->prev_identifier_pos = current_pos;
     p->cursor = current_pos + 2;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
                                                         uint32_t identifier,
                                                         size_t *out_size) {
     if (p == NULL || p->chunk == NULL) {
@@ -952,8 +952,8 @@ nmo_result_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
     size_t saved_prev_id = p->prev_identifier_pos;
 
     // Seek to the identifier
-    nmo_result_t result = nmo_chunk_parser_seek_identifier(p, identifier);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_chunk_parser_seek_identifier(p, identifier);
+    if (result != NMO_OK) {
         // Restore position on failure
         p->cursor = saved_cursor;
         p->prev_identifier_pos = saved_prev_id;
@@ -983,7 +983,7 @@ nmo_result_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -996,7 +996,7 @@ nmo_result_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
  * @param p Parser
  * @return Number of sub-chunks, or negative error code on failure
  */
-nmo_result_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t *out_count) {
+nmo_status_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t *out_count) {
     if (p == NULL || out_count == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1011,7 +1011,7 @@ nmo_result_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t 
     p->subchunk_sequence_remaining = count;
     p->in_subchunk_sequence = (count > 0);
     *out_count = count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -1026,7 +1026,7 @@ nmo_result_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t 
  * @param out_chunk Output sub-chunk pointer
  * @return NMO_OK on success, error code on failure
  */
-nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
+nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
                                             nmo_arena_t *arena,
                                             nmo_chunk_t **out_chunk) {
     if (p == NULL || arena == NULL || out_chunk == NULL) {
@@ -1050,7 +1050,7 @@ nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     if (size_dwords == 0) {
         // Empty sub-chunk (NULL marker)
         consume_subchunk_slot(p);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Check if we have enough data for the header
@@ -1123,7 +1123,7 @@ nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
             NMO_PARSER_RETURN_EOF("Cannot read subchunk data");
         }
 
-        nmo_result_t result = nmo_arena_array_resize(&sub->data, chunk_size);
+        nmo_status_t result = nmo_arena_array_resize(&sub->data, chunk_size);
         NMO_RETURN_IF_ERROR(result);
 
         uint32_t *sub_data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
@@ -1139,7 +1139,7 @@ nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
             NMO_PARSER_RETURN_EOF("Cannot read subchunk ids");
         }
 
-        nmo_result_t result = nmo_arena_array_resize(&sub->ids, id_count);
+        nmo_status_t result = nmo_arena_array_resize(&sub->ids, id_count);
         NMO_RETURN_IF_ERROR(result);
 
         uint32_t *sub_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->ids);
@@ -1156,7 +1156,7 @@ nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
         }
 
         // These are chunk refs/offsets in embedded sub-chunk encoding.
-        nmo_result_t result = nmo_arena_array_resize(&sub->chunk_refs, chunk_count);
+        nmo_status_t result = nmo_arena_array_resize(&sub->chunk_refs, chunk_count);
         NMO_RETURN_IF_ERROR(result);
 
         uint32_t *sub_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->chunk_refs);
@@ -1172,7 +1172,7 @@ nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
             NMO_PARSER_RETURN_EOF("Cannot read subchunk managers");
         }
 
-        nmo_result_t result = nmo_arena_array_resize(&sub->managers, manager_count);
+        nmo_status_t result = nmo_arena_array_resize(&sub->managers, manager_count);
         NMO_RETURN_IF_ERROR(result);
 
         uint32_t *sub_mgrs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
@@ -1189,12 +1189,12 @@ nmo_result_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
 
     *out_chunk = sub;
     consume_subchunk_slot(p);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // Math type read functions
 
-nmo_result_t nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *out) {
+nmo_status_t nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1209,10 +1209,10 @@ nmo_result_t nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t 
     out->y = data[1];
     p->cursor += 2;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *out) {
+nmo_status_t nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1228,10 +1228,10 @@ nmo_result_t nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *o
     out->z = data[2];
     p->cursor += 3;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *out) {
+nmo_status_t nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1248,10 +1248,10 @@ nmo_result_t nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t 
     out->w = data[3];
     p->cursor += 4;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *out) {
+nmo_status_t nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1264,10 +1264,10 @@ nmo_result_t nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *o
     memcpy(out->m, &NMO_CHUNK_PARSER_DATA(p)[p->cursor], 16 * sizeof(float));
     p->cursor += 16;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaternion_t *out) {
+nmo_status_t nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quaternion_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1284,10 +1284,10 @@ nmo_result_t nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quatern
     out->w = data[3];
     p->cursor += 4;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out) {
+nmo_status_t nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out) {
     if (p == NULL || out == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1304,5 +1304,5 @@ nmo_result_t nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out
     out->a = data[3];
     p->cursor += 4;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

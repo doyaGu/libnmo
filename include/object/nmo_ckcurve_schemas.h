@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_ckcurve_schemas.h
  * @brief CKCurve and CKCurvePoint schema definitions
  */
@@ -18,7 +18,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
@@ -67,25 +67,25 @@ typedef struct nmo_ckcurvepoint_state {
     nmo_vector_t reserved_vector;
 } nmo_ckcurvepoint_state_t;
 
-NMO_API nmo_result_t nmo_ckcurve_deserialize(
+NMO_API nmo_status_t nmo_ckcurve_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckcurve_serialize(
+NMO_API nmo_status_t nmo_ckcurve_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckcurvepoint_deserialize(
+NMO_API nmo_status_t nmo_ckcurvepoint_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckcurvepoint_serialize(
+NMO_API nmo_status_t nmo_ckcurvepoint_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

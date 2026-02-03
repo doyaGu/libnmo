@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_ckanimation_schemas.h
  * @brief CKAnimation, CKKeyedAnimation, CKObjectAnimation schema definitions
  */
@@ -18,7 +18,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
@@ -113,37 +113,37 @@ typedef struct nmo_ckobjectanimation_state {
     size_t raw_tail_size;
 } nmo_ckobjectanimation_state_t;
 
-NMO_API nmo_result_t nmo_ckanimation_deserialize(
+NMO_API nmo_status_t nmo_ckanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckanimation_serialize(
+NMO_API nmo_status_t nmo_ckanimation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckkeyedanimation_deserialize(
+NMO_API nmo_status_t nmo_ckkeyedanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckkeyedanimation_serialize(
+NMO_API nmo_status_t nmo_ckkeyedanimation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckobjectanimation_deserialize(
+NMO_API nmo_status_t nmo_ckobjectanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckobjectanimation_serialize(
+NMO_API nmo_status_t nmo_ckobjectanimation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

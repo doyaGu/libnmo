@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_chunk_api.h
  * @brief High-level CKStateChunk-compatible API
  * 
@@ -69,14 +69,13 @@ typedef struct nmo_chunk_parser_state {
 
 #define NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, message) \
     NMO_CHUNK_CHECK_BOUNDS_OR((chunk), (dwords), \
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF, \
-                                          NMO_SEVERITY_ERROR, (message))));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "%s", (message)));
 
 #define NMO_CHUNK_CHECK_BOUNDS(chunk, dwords) \
     NMO_CHUNK_CHECK_BOUNDS_MSG((chunk), (dwords), "Cannot read beyond data")
 
 #define NMO_CHUNK_RETURN_ERROR(code, severity, message) \
-    return nmo_result_error(NMO_ERROR(NULL, (code), (severity), (message)))
+    NMO_RETURN_ERROR((code), (severity), "%s", (message))
 
 #define NMO_CHUNK_RETURN_INVALID_ARGUMENT(message) \
     NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, (message))
@@ -136,7 +135,7 @@ typedef struct nmo_chunk_parser_state {
  * @param chunk Chunk to start reading (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk);
+NMO_API nmo_status_t nmo_chunk_start_read(nmo_chunk_t *chunk);
 
 /**
  * @brief Start write mode
@@ -147,7 +146,7 @@ NMO_API nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk);
  * @param chunk Chunk to start writing (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_start_write(nmo_chunk_t *chunk);
+NMO_API nmo_status_t nmo_chunk_start_write(nmo_chunk_t *chunk);
 
 /**
  * @brief Close chunk and finalize
@@ -274,7 +273,7 @@ NMO_API size_t nmo_chunk_get_position(const nmo_chunk_t *chunk);
  * @param pos Position in DWORDs
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos);
+NMO_API nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos);
 
 /**
  * @brief Skip forward
@@ -283,7 +282,7 @@ NMO_API nmo_result_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos);
  * @param dwords Number of DWORDs to skip
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords);
+NMO_API nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords);
 
 // =============================================================================
 // MEMORY MANAGEMENT
@@ -299,7 +298,7 @@ NMO_API nmo_result_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords);
  * @param needed_bytes Number of bytes needed from current position
  * @return NMO_OK on success, NMO_ERR_NOMEM on allocation failure
  */
-NMO_API nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes);
+NMO_API nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes);
 
 // =============================================================================
 // PRIMITIVE TYPES - WRITE
@@ -312,7 +311,7 @@ NMO_API nmo_result_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_byte
  * @param value Byte value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value);
+NMO_API nmo_status_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value);
 
 /**
  * @brief Write word (stored as DWORD with padding)
@@ -321,7 +320,7 @@ NMO_API nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value);
  * @param value Word value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value);
+NMO_API nmo_status_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value);
 
 /**
  * @brief Write 32-bit integer
@@ -330,7 +329,7 @@ NMO_API nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value);
  * @param value Integer value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value);
+NMO_API nmo_status_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value);
 
 /**
  * @brief Write 32-bit unsigned integer (DWORD)
@@ -339,7 +338,7 @@ NMO_API nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value);
  * @param value DWORD value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value);
+NMO_API nmo_status_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value);
 
 /**
  * @brief Write float
@@ -348,7 +347,7 @@ NMO_API nmo_result_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value);
  * @param value Float value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value);
+NMO_API nmo_status_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value);
 
 /**
  * @brief Write GUID (8 bytes = 2 DWORDs)
@@ -357,7 +356,7 @@ NMO_API nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value);
  * @param value GUID value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value);
+NMO_API nmo_status_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value);
 
 /**
  * @brief Write null-terminated string
@@ -369,7 +368,7 @@ NMO_API nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value);
  * @param str String to write (NULL = empty string)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str);
+NMO_API nmo_status_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str);
 
 /**
  * @brief Write buffer with size prefix
@@ -381,7 +380,7 @@ NMO_API nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str)
  * @param size Buffer size in bytes
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
                                             const void *data,
                                             size_t size);
 
@@ -396,7 +395,7 @@ NMO_API nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
  * @param size Buffer size in bytes
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
                                                     const void *data,
                                                     size_t size);
 
@@ -409,7 +408,7 @@ NMO_API nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
  * @param id Object ID (0 = null reference)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id);
+NMO_API nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id);
 
 // =============================================================================
 // PRIMITIVE TYPES - READ
@@ -422,7 +421,7 @@ NMO_API nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id
  * @param out_value Output value (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value);
+NMO_API nmo_status_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value);
 
 /**
  * @brief Read word
@@ -431,7 +430,7 @@ NMO_API nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value)
  * @param out_value Output value (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value);
+NMO_API nmo_status_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value);
 
 /**
  * @brief Read 32-bit integer
@@ -440,7 +439,7 @@ NMO_API nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value
  * @param out_value Output value (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value);
+NMO_API nmo_status_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value);
 
 /**
  * @brief Read 32-bit unsigned integer (DWORD)
@@ -449,7 +448,7 @@ NMO_API nmo_result_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value);
  * @param out_value Output value (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_value);
+NMO_API nmo_status_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_value);
 
 /**
  * @brief Read float
@@ -458,7 +457,7 @@ NMO_API nmo_result_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_valu
  * @param out_value Output value (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value);
+NMO_API nmo_status_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value);
 
 /**
  * @brief Read GUID
@@ -467,7 +466,7 @@ NMO_API nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value);
  * @param out_value Output value (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value);
+NMO_API nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value);
 
 /**
  * @brief Read string (arena-allocated)
@@ -488,7 +487,7 @@ NMO_API size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str);
  * @param out_size Output size in bytes (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
                                            void **out_data,
                                            size_t *out_size);
 
@@ -514,7 +513,7 @@ NMO_API size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
  * @param out_id Output ID (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
+NMO_API nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
 
 // =============================================================================
 // PRIMITIVE ARRAYS
@@ -530,7 +529,7 @@ NMO_API nmo_result_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_
  * @param count Number of elements
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
                                                 const int32_t *array,
                                                 size_t count);
 
@@ -543,7 +542,7 @@ NMO_API nmo_result_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
  * @param arena Arena for allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
                                                int32_t **out_array,
                                                size_t *out_count,
                                                nmo_arena_t *arena);
@@ -556,7 +555,7 @@ NMO_API nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
  * @param count Number of elements
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
                                                   const float *array,
                                                   size_t count);
 
@@ -569,7 +568,7 @@ NMO_API nmo_result_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
  * @param arena Arena for allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
                                                  float **out_array,
                                                  size_t *out_count,
                                                  nmo_arena_t *arena);
@@ -582,7 +581,7 @@ NMO_API nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
  * @param count Number of elements
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
                                                   const uint32_t *array,
                                                   size_t count);
 
@@ -595,7 +594,7 @@ NMO_API nmo_result_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
  * @param arena Arena for allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
                                                  uint32_t **out_array,
                                                  size_t *out_count,
                                                  nmo_arena_t *arena);
@@ -608,7 +607,7 @@ NMO_API nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
  * @param count Number of elements
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
                                                  const uint8_t *array,
                                                  size_t count);
 
@@ -621,7 +620,7 @@ NMO_API nmo_result_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
  * @param arena Arena for allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
                                                 uint8_t **out_array,
                                                 size_t *out_count,
                                                 nmo_arena_t *arena);
@@ -634,7 +633,7 @@ NMO_API nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
  * @param count Number of strings
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
                                                    const char * const *strings,
                                                    size_t count);
 
@@ -647,7 +646,7 @@ NMO_API nmo_result_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
  * @param arena Arena for allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
                                                   char ***out_strings,
                                                   size_t *out_count,
                                                   nmo_arena_t *arena);
@@ -663,7 +662,7 @@ NMO_API nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
  * @param count Number of IDs
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
                                                       const nmo_object_id_t *ids,
                                                       size_t count);
 
@@ -679,7 +678,7 @@ NMO_API nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
  * @param arena Arena for allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
                                                      nmo_object_id_t **out_ids,
                                                      size_t *out_count,
                                                      nmo_arena_t *arena);
@@ -695,7 +694,7 @@ NMO_API nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
  * @param vec Vector to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_vector2(nmo_chunk_t *chunk, const nmo_vector2_t *vec);
+NMO_API nmo_status_t nmo_chunk_write_vector2(nmo_chunk_t *chunk, const nmo_vector2_t *vec);
 
 /**
  * @brief Read 2D vector
@@ -704,7 +703,7 @@ NMO_API nmo_result_t nmo_chunk_write_vector2(nmo_chunk_t *chunk, const nmo_vecto
  * @param out_vec Output vector (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_vector2(nmo_chunk_t *chunk, nmo_vector2_t *out_vec);
+NMO_API nmo_status_t nmo_chunk_read_vector2(nmo_chunk_t *chunk, nmo_vector2_t *out_vec);
 
 /**
  * @brief Write 3D vector (12 bytes = 3 floats)
@@ -713,7 +712,7 @@ NMO_API nmo_result_t nmo_chunk_read_vector2(nmo_chunk_t *chunk, nmo_vector2_t *o
  * @param vec Vector to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_vector3(nmo_chunk_t *chunk, const nmo_vector_t *vec);
+NMO_API nmo_status_t nmo_chunk_write_vector3(nmo_chunk_t *chunk, const nmo_vector_t *vec);
 
 /**
  * @brief Read 3D vector
@@ -722,7 +721,7 @@ NMO_API nmo_result_t nmo_chunk_write_vector3(nmo_chunk_t *chunk, const nmo_vecto
  * @param out_vec Output vector (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_vector3(nmo_chunk_t *chunk, nmo_vector_t *out_vec);
+NMO_API nmo_status_t nmo_chunk_read_vector3(nmo_chunk_t *chunk, nmo_vector_t *out_vec);
 
 /**
  * @brief Write 4D vector (16 bytes = 4 floats)
@@ -731,7 +730,7 @@ NMO_API nmo_result_t nmo_chunk_read_vector3(nmo_chunk_t *chunk, nmo_vector_t *ou
  * @param vec Vector to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_vector4(nmo_chunk_t *chunk, const nmo_vector4_t *vec);
+NMO_API nmo_status_t nmo_chunk_write_vector4(nmo_chunk_t *chunk, const nmo_vector4_t *vec);
 
 /**
  * @brief Read 4D vector
@@ -740,7 +739,7 @@ NMO_API nmo_result_t nmo_chunk_write_vector4(nmo_chunk_t *chunk, const nmo_vecto
  * @param out_vec Output vector (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_vector4(nmo_chunk_t *chunk, nmo_vector4_t *out_vec);
+NMO_API nmo_status_t nmo_chunk_read_vector4(nmo_chunk_t *chunk, nmo_vector4_t *out_vec);
 
 // =============================================================================
 // MATH TYPES - QUATERNION
@@ -753,7 +752,7 @@ NMO_API nmo_result_t nmo_chunk_read_vector4(nmo_chunk_t *chunk, nmo_vector4_t *o
  * @param quat Quaternion to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_quaternion(nmo_chunk_t *chunk, const nmo_quaternion_t *quat);
+NMO_API nmo_status_t nmo_chunk_write_quaternion(nmo_chunk_t *chunk, const nmo_quaternion_t *quat);
 
 /**
  * @brief Read quaternion
@@ -762,7 +761,7 @@ NMO_API nmo_result_t nmo_chunk_write_quaternion(nmo_chunk_t *chunk, const nmo_qu
  * @param out_quat Output quaternion (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_quaternion(nmo_chunk_t *chunk, nmo_quaternion_t *out_quat);
+NMO_API nmo_status_t nmo_chunk_read_quaternion(nmo_chunk_t *chunk, nmo_quaternion_t *out_quat);
 
 // =============================================================================
 // MATH TYPES - MATRIX
@@ -775,7 +774,7 @@ NMO_API nmo_result_t nmo_chunk_read_quaternion(nmo_chunk_t *chunk, nmo_quaternio
  * @param mat Matrix to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_matrix(nmo_chunk_t *chunk, const nmo_matrix_t *mat);
+NMO_API nmo_status_t nmo_chunk_write_matrix(nmo_chunk_t *chunk, const nmo_matrix_t *mat);
 
 /**
  * @brief Read 4x4 matrix
@@ -784,7 +783,7 @@ NMO_API nmo_result_t nmo_chunk_write_matrix(nmo_chunk_t *chunk, const nmo_matrix
  * @param out_mat Output matrix (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_matrix(nmo_chunk_t *chunk, nmo_matrix_t *out_mat);
+NMO_API nmo_status_t nmo_chunk_read_matrix(nmo_chunk_t *chunk, nmo_matrix_t *out_mat);
 
 // =============================================================================
 // MATH TYPES - COLOR
@@ -797,7 +796,7 @@ NMO_API nmo_result_t nmo_chunk_read_matrix(nmo_chunk_t *chunk, nmo_matrix_t *out
  * @param color Color to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_color(nmo_chunk_t *chunk, const nmo_color_t *color);
+NMO_API nmo_status_t nmo_chunk_write_color(nmo_chunk_t *chunk, const nmo_color_t *color);
 
 /**
  * @brief Read RGBA color
@@ -806,7 +805,7 @@ NMO_API nmo_result_t nmo_chunk_write_color(nmo_chunk_t *chunk, const nmo_color_t
  * @param out_color Output color (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_color(nmo_chunk_t *chunk, nmo_color_t *out_color);
+NMO_API nmo_status_t nmo_chunk_read_color(nmo_chunk_t *chunk, nmo_color_t *out_color);
 
 // =============================================================================
 // OBJECT ID SEQUENCES
@@ -845,7 +844,7 @@ NMO_API uint32_t nmo_chunk_get_object_id(const nmo_chunk_t *chunk, size_t index)
  * @param count Number of objects in sequence
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count);
+NMO_API nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count);
 
 /**
  * @brief Write object ID sequence item
@@ -856,7 +855,7 @@ NMO_API nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, s
  * @param id Object ID
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t id);
+NMO_API nmo_status_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t id);
 
 /**
  * @brief Start reading object ID sequence
@@ -867,7 +866,7 @@ NMO_API nmo_result_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nm
  * @param out_count Output count (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count);
+NMO_API nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count);
 
 /**
  * @brief Read object ID sequence item
@@ -878,7 +877,7 @@ NMO_API nmo_result_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, si
  * @param out_id Output ID (required)
  * @return NMO_OK on success, NMO_ERR_EOF if no data available
  */
-NMO_API nmo_result_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
+NMO_API nmo_status_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
 
 // =============================================================================
 // MANAGER SEQUENCES
@@ -895,7 +894,7 @@ NMO_API nmo_result_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo
  * @param count Number of entries in sequence
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
                                                       nmo_guid_t manager_guid,
                                                       size_t count);
 
@@ -910,7 +909,7 @@ NMO_API nmo_result_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
  * @param value Integer value
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
                                                  nmo_guid_t manager_guid,
                                                  uint32_t value);
 
@@ -924,7 +923,7 @@ NMO_API nmo_result_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
  * @param out_value Output value (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
                                                 nmo_guid_t *out_manager_guid,
                                                 uint32_t *out_value);
 
@@ -939,7 +938,7 @@ NMO_API nmo_result_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
  * @param out_count Output count (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
                                                            nmo_guid_t *out_manager_guid,
                                                            size_t *out_count);
 
@@ -978,7 +977,7 @@ NMO_API nmo_chunk_t *nmo_chunk_get_sub_chunk(const nmo_chunk_t *chunk, uint32_t 
  * @param sub_chunk Sub-chunk to add (required)
  * @return NMO_OK on success, NMO_ERR_NOMEM on allocation failure
  */
-NMO_API nmo_result_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk);
+NMO_API nmo_status_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk);
 
 /**
  * @brief Write sub-chunk
@@ -990,7 +989,7 @@ NMO_API nmo_result_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *su
  * @param sub Sub-chunk to write (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub);
+NMO_API nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub);
 
 /**
  * @brief Write sub-chunk in a sequence
@@ -1003,7 +1002,7 @@ NMO_API nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *
  * @param sub Sub-chunk to write (can be NULL to emit a null marker)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t *sub);
+NMO_API nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t *sub);
 
 /**
  * @brief Read sub-chunk
@@ -1014,7 +1013,7 @@ NMO_API nmo_result_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_
  * @param out_sub Output sub-chunk (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub);
+NMO_API nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub);
 
 /**
  * @brief Start reading sub-chunk sequence
@@ -1026,7 +1025,7 @@ NMO_API nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **
  * @param out_count Output count of sub-chunks (optional, can be NULL)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count);
+NMO_API nmo_status_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count);
 
 /**
  * @brief Start sub-chunk sequence
@@ -1037,7 +1036,7 @@ NMO_API nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk,
  * @param count Number of sub-chunks
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count);
+NMO_API nmo_status_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count);
 
 // =============================================================================
 // IDENTIFIERS
@@ -1052,7 +1051,7 @@ NMO_API nmo_result_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size
  * @param id Identifier value (should be unique within chunk)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id);
+NMO_API nmo_status_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id);
 
 /**
  * @brief Read identifier
@@ -1061,7 +1060,7 @@ NMO_API nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id)
  * @param out_id Output identifier (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id);
+NMO_API nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id);
 
 /**
  * @brief Seek to identifier
@@ -1073,7 +1072,7 @@ NMO_API nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out
  * @param id Identifier to find
  * @return NMO_OK if found, NMO_ERR_NOT_FOUND if not found
  */
-NMO_API nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id);
+NMO_API nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id);
 
 // =============================================================================
 // COMPRESSION
@@ -1091,7 +1090,7 @@ NMO_API nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id);
  * @param compression_level Compression level (0-9, values <0 fall back to 6)
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level);
+NMO_API nmo_status_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_level);
 
 /**
  * @brief Compress chunk payload only if compression helps.
@@ -1105,7 +1104,7 @@ NMO_API nmo_result_t nmo_chunk_compress(nmo_chunk_t *chunk, int compression_leve
  *        compressed size must be <= original_size * min_ratio.
  * @return NMO_OK on success, NMO_ERR_INVALID_ARGUMENT on bad ratio
  */
-NMO_API nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
                                                       int compression_level,
                                                       float min_ratio);
 
@@ -1118,17 +1117,17 @@ NMO_API nmo_result_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
  * @param chunk Chunk to decompress (required)
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_chunk_decompress(nmo_chunk_t *chunk);
+NMO_API nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk);
 
 /**
  * @brief Legacy helper that forwards to nmo_chunk_compress().
  */
-NMO_API nmo_result_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level);
+NMO_API nmo_status_t nmo_chunk_pack(nmo_chunk_t *chunk, int compression_level);
 
 /**
  * @brief Legacy helper that forwards to nmo_chunk_decompress().
  */
-NMO_API nmo_result_t nmo_chunk_unpack(nmo_chunk_t *chunk);
+NMO_API nmo_status_t nmo_chunk_unpack(nmo_chunk_t *chunk);
 
 // =============================================================================
 // ID REMAPPING
@@ -1163,7 +1162,7 @@ NMO_API nmo_result_t nmo_chunk_unpack(nmo_chunk_t *chunk);
  * @note Only works for chunks with version >= CHUNK_VERSION1 (4)
  * @note Legacy format (version < 4) with magic markers is not supported
  */
-NMO_API nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
                                                 const nmo_id_remap_t *remap);
 
 // =============================================================================
@@ -1176,7 +1175,7 @@ NMO_API nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
  * Writes bits-per-pixel, dimensions, channel masks, compression flag (0)
  * followed by R/G/B/(A) planes with bottom-up scanlines.
  */
-NMO_API nmo_result_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
                                                 const nmo_image_desc_t *desc);
 
 /**
@@ -1184,7 +1183,7 @@ NMO_API nmo_result_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
  *
  * Reconstructs a 32-bit ARGB image descriptor allocated from the chunk arena.
  */
-NMO_API nmo_result_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
                                                nmo_image_desc_t *out_desc,
                                                uint8_t **out_pixels);
 
@@ -1193,14 +1192,14 @@ NMO_API nmo_result_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
  *
  * Uses registered codecs (PNG/JPG/etc.) to store compressed bitmap data.
  */
-NMO_API nmo_result_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
                                                     const nmo_image_desc_t *desc,
                                                     const nmo_bitmap_properties_t *props);
 
 /**
  * @brief Read encoded bitmap payload (CKStateChunk::ReadBitmap2)
  */
-NMO_API nmo_result_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
                                                    nmo_image_desc_t *out_desc,
                                                    uint8_t **out_pixels);
 
@@ -1209,14 +1208,14 @@ NMO_API nmo_result_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
  *
  * Stores "CKxxx" signature followed by codec output for backward compatibility.
  */
-NMO_API nmo_result_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
                                                    const nmo_image_desc_t *desc,
                                                    const nmo_bitmap_properties_t *props);
 
 /**
  * @brief Read legacy bitmap payload (CKStateChunk::ReadBitmap)
  */
-NMO_API nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
                                                   nmo_image_desc_t *out_desc,
                                                   uint8_t **out_pixels);
 
@@ -1236,7 +1235,7 @@ NMO_API nmo_result_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
  * @param elem_size Size of each element in bytes
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_write_array(nmo_chunk_t *chunk,
                                            const void *array,
                                            size_t count,
                                            size_t elem_size);
@@ -1253,7 +1252,7 @@ NMO_API nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
  * @param out_elem_size Output element size (derived from total_bytes / count)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_read_array(nmo_chunk_t *chunk,
                                           void **out_array,
                                           size_t *out_count,
                                           size_t *out_elem_size);
@@ -1268,7 +1267,7 @@ NMO_API nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
  * @param out_crc Output CRC value (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_compute_crc(nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_compute_crc(nmo_chunk_t *chunk,
                                            uint32_t initial_crc,
                                            uint32_t *out_crc);
 

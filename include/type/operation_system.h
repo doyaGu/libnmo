@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file operation_system.h
  * @brief Parameter operation system (Phase 6.1)
  *
@@ -56,7 +56,7 @@ typedef struct nmo_operation_registry nmo_operation_registry_t;
  * - Function must not allocate memory (use provided buffer)
  * - Thread-safety: Function must be reentrant (no shared state)
  */
-typedef nmo_result_t (*nmo_operation_fn)(
+typedef nmo_status_t (*nmo_operation_fn)(
     const void *p1_data,
     const nmo_type_descriptor_t *p1_type,
     const void *p2_data,
@@ -247,7 +247,7 @@ NMO_API void nmo_operation_registry_destroy(nmo_operation_registry_t *registry);
  * - Type GUIDs must exist in type_registry
  * - Function pointer must be valid for the lifetime of the registry
  */
-NMO_API nmo_result_t nmo_operation_registry_register(
+NMO_API nmo_status_t nmo_operation_registry_register(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *desc,
     const nmo_type_registry_t *type_registry
@@ -270,7 +270,7 @@ NMO_API nmo_result_t nmo_operation_registry_register(
  * - Continues registration on errors, logging failures if logger provided
  * - Returns error only if no operations successfully registered
  */
-NMO_API nmo_result_t nmo_operation_registry_register_bulk(
+NMO_API nmo_status_t nmo_operation_registry_register_bulk(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *descs,
     uint32_t count,
@@ -301,7 +301,7 @@ NMO_API nmo_result_t nmo_operation_registry_register_bulk(
  * - Returns highest priority match if multiple matches exist
  * - Increments call_count in matched cell
  */
-NMO_API nmo_result_t nmo_operation_registry_find(
+NMO_API nmo_status_t nmo_operation_registry_find(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
@@ -326,7 +326,7 @@ NMO_API nmo_result_t nmo_operation_registry_find(
  * @param out_cell       Output cell pointer (set to NULL if not found)
  * @return NMO_OK if found, NMO_ERR_NOT_FOUND if no match
  */
-NMO_API nmo_result_t nmo_operation_registry_find_typed(
+NMO_API nmo_status_t nmo_operation_registry_find_typed(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
@@ -352,7 +352,7 @@ NMO_API nmo_result_t nmo_operation_registry_find_typed(
  * @param type_registry  Type registry for inheritance matching (optional, can be NULL)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_operation_registry_execute(
+NMO_API nmo_status_t nmo_operation_registry_execute(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const void *p1_data,
@@ -388,12 +388,12 @@ NMO_API const nmo_operation_family_t *nmo_operation_registry_get_family(
  * @param user_data User data for callback
  * @return NMO_OK on success, error code on failure
  */
-typedef nmo_result_t (*nmo_operation_enum_fn)(
+typedef nmo_status_t (*nmo_operation_enum_fn)(
     const nmo_operation_tree_cell_t *cell,
     void *user_data
 );
 
-NMO_API nmo_result_t nmo_operation_family_enumerate(
+NMO_API nmo_status_t nmo_operation_family_enumerate(
     const nmo_operation_family_t *family,
     nmo_operation_enum_fn callback,
     void *user_data

@@ -1,4 +1,4 @@
-// chunk_crc.c - CRC computation
+﻿// chunk_crc.c - CRC computation
 // Implements: compute_crc
 
 #include "format/nmo_chunk_api.h"
@@ -9,14 +9,14 @@
 // CRC
 // =============================================================================
 
-nmo_result_t nmo_chunk_compute_crc(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_compute_crc(nmo_chunk_t *chunk,
                                    uint32_t initial_crc,
                                    uint32_t *out_crc) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_crc, "Invalid arguments");
 
     if (chunk->data.count == 0) {
         *out_crc = initial_crc;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Compute Adler32 CRC
@@ -27,5 +27,5 @@ nmo_result_t nmo_chunk_compute_crc(nmo_chunk_t *chunk,
                               byte_size);
 
     *out_crc = (uint32_t) crc;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

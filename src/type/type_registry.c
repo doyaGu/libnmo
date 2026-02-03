@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file type_registry.c
  * @brief Implementation of unified type registry with GUID-based O(1) lookup
  *
@@ -58,20 +58,19 @@ static size_t compat_mask_growth_bits(size_t required_bits) {
     return ((required_bits + chunk - 1u) / chunk) * chunk;
 }
 
-static nmo_result_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, nmo_type_descriptor_t *type) {
+static nmo_status_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, nmo_type_descriptor_t *type) {
     if (!registry || !type) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to ensure_compat_mask_capacity"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to ensure_compat_mask_capacity");
     }
 
     const size_t required_bits = compat_mask_growth_bits(registry->types.count);
     if (type->compat_mask.bits.alloc.alloc == NULL) {
         nmo_allocator_t alloc = arena_allocator_from_registry(registry);
-        nmo_result_t init = nmo_bit_array_init(&type->compat_mask.bits, required_bits, &alloc);
-        if (nmo_result_is_error(init)) {
+        nmo_status_t init = nmo_bit_array_init(&type->compat_mask.bits, required_bits, &alloc);
+        if (init != NMO_OK) {
             return init;
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     return nmo_bit_array_reserve(&type->compat_mask.bits, required_bits);
@@ -165,10 +164,10 @@ nmo_type_registry_t* nmo_type_registry_create(nmo_arena_t *arena) {
     registry->derivation_masks_valid = false;
 
     // Initialize type array
-    if (nmo_result_is_error(nmo_arena_array_init(&registry->types,
-                                                 sizeof(nmo_type_descriptor_t*),
-                                                 32,
-                                                 arena))) {
+    if (nmo_arena_array_init(&registry->types,
+                             sizeof(nmo_type_descriptor_t*),
+                             32,
+                             arena) != NMO_OK) {
         goto fail;
     }
 
@@ -238,18 +237,18 @@ nmo_type_registry_t* nmo_type_registry_create(nmo_arena_t *arena) {
     if (!registry->type_to_metadata) goto fail;
 
     // Initialize metadata array (lazy init with 0 capacity)
-    if (nmo_result_is_error(nmo_arena_array_init(&registry->metadata,
-                                                 sizeof(nmo_specialized_metadata_t*),
-                                                 0,
-                                                 arena))) {
+    if (nmo_arena_array_init(&registry->metadata,
+                             sizeof(nmo_specialized_metadata_t*),
+                             0,
+                             arena) != NMO_OK) {
         goto fail;
     }
     
     // Initialize saver managers array (lazy init with 0 capacity)
-    if (nmo_result_is_error(nmo_arena_array_init(&registry->saver_managers,
-                                                 sizeof(nmo_saver_manager_t*),
-                                                 0,
-                                                 arena))) {
+    if (nmo_arena_array_init(&registry->saver_managers,
+                             sizeof(nmo_saver_manager_t*),
+                             0,
+                             arena) != NMO_OK) {
         goto fail;
     }
 
@@ -291,22 +290,20 @@ void nmo_type_registry_destroy(nmo_type_registry_t *registry) {
     // Arena owns all memory, no need to free types/metadata/manager arrays
 }
 
-nmo_result_t nmo_type_registry_register(
+nmo_status_t nmo_type_registry_register(
     nmo_type_registry_t *registry,
     const nmo_type_descriptor_t *descriptor) 
 {
     if (!registry || !descriptor) {
-        nmo_result_t result = { NMO_ERR_INVALID_ARGUMENT, NULL };
-        return result;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL registry or descriptor");
     }
 
     // Check for GUID collision
     nmo_type_id_t existing_id;
-    if (nmo_result_is_ok(nmo_hash_table_get(registry->guid_map,
-                                           &descriptor->guid,
-                                           &existing_id))) {
-        nmo_result_t result = { NMO_ERR_ALREADY_EXISTS, NULL };
-        return result;
+    if (nmo_hash_table_get(registry->guid_map, &descriptor->guid, &existing_id) == NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                "Type GUID already registered");
     }
 
     // Find slot (reuse NULL slots before expanding)
@@ -317,8 +314,8 @@ nmo_result_t nmo_type_registry_register(
         sizeof(nmo_type_descriptor_t),
         _Alignof(nmo_type_descriptor_t));
     if (!type) {
-        nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-        return result;
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate type descriptor");
     }
     
     memcpy(type, descriptor, sizeof(nmo_type_descriptor_t));
@@ -333,8 +330,7 @@ nmo_result_t nmo_type_registry_register(
     if (type->name) {
         const char *name_copy = nmo_arena_strdup(registry->arena, type->name);
         if (!name_copy) {
-            nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-            return result;
+            return NMO_ERR_NOMEM;
         }
         type->name = name_copy;
     }
@@ -347,8 +343,7 @@ nmo_result_t nmo_type_registry_register(
         if (!is_incomplete_struct) {
             const char *desc_copy = nmo_arena_strdup(registry->arena, type->description);
             if (!desc_copy) {
-                nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-                return result;
+                return NMO_ERR_NOMEM;
             }
             type->description = desc_copy;
         }
@@ -361,24 +356,21 @@ nmo_result_t nmo_type_registry_register(
             sizeof(nmo_type_field_t) * type->field_count,
             _Alignof(nmo_type_field_t));
         if (!fields_copy) {
-            nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-            return result;
+            return NMO_ERR_NOMEM;
         }
         memcpy(fields_copy, type->fields, sizeof(nmo_type_field_t) * type->field_count);
         for (size_t i = 0; i < type->field_count; i++) {
             if (fields_copy[i].name) {
                 const char *field_name = nmo_arena_strdup(registry->arena, fields_copy[i].name);
                 if (!field_name) {
-                    nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-                    return result;
+                    return NMO_ERR_NOMEM;
                 }
                 fields_copy[i].name = field_name;
             }
             if (fields_copy[i].description) {
                 const char *field_desc = nmo_arena_strdup(registry->arena, fields_copy[i].description);
                 if (!field_desc) {
-                    nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-                    return result;
+                    return NMO_ERR_NOMEM;
                 }
                 fields_copy[i].description = field_desc;
             }
@@ -388,8 +380,7 @@ nmo_result_t nmo_type_registry_register(
                     fields_copy[i].size,
                     _Alignof(max_align_t));
                 if (!default_copy) {
-                    nmo_result_t result = { NMO_ERR_NOMEM, NULL };
-                    return result;
+                    return NMO_ERR_NOMEM;
                 }
                 memcpy(default_copy, fields_copy[i].default_value, fields_copy[i].size);
                 fields_copy[i].default_value = default_copy;
@@ -410,22 +401,21 @@ nmo_result_t nmo_type_registry_register(
         *slot_ptr = type;
     } else {
         // Append new slot
-        nmo_result_t res = nmo_arena_array_append(&registry->types, &type);
-        if (nmo_result_is_error(res)) return res;
+        nmo_status_t res = nmo_arena_array_append(&registry->types, &type);
+        if (res != NMO_OK) return res;
     }
 
     // Insert into hash tables
-    nmo_result_t result = nmo_hash_table_insert(registry->guid_map, &type->guid, &type_id);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = nmo_hash_table_insert(registry->guid_map, &type->guid, &type_id);
+    if (result != NMO_OK) {
         nmo_type_descriptor_t **slot_ptr = (nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, slot);
         *slot_ptr = NULL;
-        nmo_result_t res = { result.code, NULL };
-        return res;
+        return result;
     }
 
     if (type->name) {
         result = nmo_hash_table_insert(registry->name_map, &type->name, &type_id);
-        if (nmo_result_is_error(result)) {
+        if (result != NMO_OK) {
             nmo_hash_table_remove(registry->guid_map, &type->guid);
             nmo_type_descriptor_t **slot_ptr =
                 (nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, slot);
@@ -437,7 +427,7 @@ nmo_result_t nmo_type_registry_register(
     // Insert into class_id map if this is a Virtools object type
     if (type->class_id != 0) {
         result = nmo_hash_table_insert(registry->class_id_map, &type->class_id, &type_id);
-        if (nmo_result_is_error(result)) {
+        if (result != NMO_OK) {
             if (type->name) {
                 nmo_hash_table_remove(registry->name_map, &type->name);
             }
@@ -455,7 +445,7 @@ nmo_result_t nmo_type_registry_register(
         result = nmo_hash_table_insert(registry->type_to_plugin,
                                        &type_id,
                                        &type->creator_plugin->guid);
-        if (nmo_result_is_error(result)) {
+        if (result != NMO_OK) {
             if (type->class_id != 0) {
                 nmo_hash_table_remove(registry->class_id_map, &type->class_id);
             }
@@ -474,7 +464,7 @@ nmo_result_t nmo_type_registry_register(
             result = nmo_hash_table_insert(registry->plugin_map,
                                            &type->creator_plugin->guid,
                                            &type->creator_plugin);
-            if (nmo_result_is_error(result)) {
+            if (result != NMO_OK) {
                 nmo_hash_table_remove(registry->type_to_plugin, &type_id);
                 if (type->class_id != 0) {
                     nmo_hash_table_remove(registry->class_id_map, &type->class_id);
@@ -498,30 +488,26 @@ nmo_result_t nmo_type_registry_register(
     registry->derivation_masks_valid = false;
     registry->registry_version++;
 
-    nmo_result_t success = { NMO_OK, NULL };
-    return success;
+    return NMO_OK;
 }
 
-nmo_result_t nmo_type_registry_unregister(
+nmo_status_t nmo_type_registry_unregister(
     nmo_type_registry_t *registry,
     nmo_guid_t guid) 
 {
     if (!registry) {
-        nmo_result_t result = { NMO_ERR_INVALID_ARGUMENT, NULL };
-        return result;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     // Find type by GUID
     nmo_type_id_t type_id;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map, &guid, &type_id))) {
-        nmo_result_t result = { NMO_ERR_NOT_FOUND, NULL };
-        return result;
+    if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) != NMO_OK) {
+        return NMO_ERR_NOT_FOUND;
     }
 
     nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, type_id);
     if (!type) {
-        nmo_result_t result = { NMO_ERR_NOT_FOUND, NULL };
-        return result;
+        return NMO_ERR_NOT_FOUND;
     }
 
     // Remove from hash tables
@@ -560,8 +546,7 @@ nmo_result_t nmo_type_registry_unregister(
     registry->derivation_masks_valid = false;
     registry->registry_version++;
 
-    nmo_result_t success = { NMO_OK, NULL };
-    return success;
+    return NMO_OK;
 }
 
 /* Note: nmo_type_registry_unregister_plugin_types() is now implemented in plugin_support.c
@@ -575,7 +560,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_guid(
     if (!registry) return NULL;
 
     nmo_type_id_t type_id;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map, &guid, &type_id))) {
+    if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) != NMO_OK) {
         return NULL;
     }
 
@@ -592,7 +577,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_name(
     if (!registry || !name) return NULL;
 
     nmo_type_id_t type_id;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->name_map, &name, &type_id))) {
+    if (nmo_hash_table_get(registry->name_map, &name, &type_id) != NMO_OK) {
         return NULL;
     }
 
@@ -609,9 +594,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
     if (!registry || class_id == 0) return NULL;
 
     nmo_type_id_t type_id;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->class_id_map,
-                                               &class_id,
-                                               &type_id))) {
+    if (nmo_hash_table_get(registry->class_id_map, &class_id, &type_id) != NMO_OK) {
         return NULL;
     }
 
@@ -669,7 +652,7 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
     for (size_t i = 0; i < registry->types.count; i++) {
         nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, i);
         if (type && type->valid) {
-            if (nmo_result_is_error(ensure_compat_mask_capacity(registry, type))) {
+            if (ensure_compat_mask_capacity(registry, type) != NMO_OK) {
                 return;
             }
         }
@@ -840,7 +823,7 @@ bool nmo_type_is_derived_from(
     return result;
 }
 
-nmo_result_t nmo_type_get_inheritance_chain(
+nmo_status_t nmo_type_get_inheritance_chain(
     const nmo_type_registry_t *registry,
     nmo_type_id_t type_id,
     nmo_type_id_t **out_chain,
@@ -848,17 +831,17 @@ nmo_result_t nmo_type_get_inheritance_chain(
     nmo_arena_t *arena) {
     
     if (!registry || !out_chain || !out_count || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter");
     }
     
     // Validate type ID
     if (type_id < 0 || (size_t)type_id >= registry->types.count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
     }
     
     const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (!type || !type->valid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid or unregistered type"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid or unregistered type");
     }
     
     // Count chain length (walk up base_type chain)
@@ -876,9 +859,7 @@ nmo_result_t nmo_type_get_inheritance_chain(
         
         // Lookup parent by GUID (returns 1 if found, 0 if not)
         nmo_type_id_t parent_id;
-        if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map,
-                                                   &current->base_type,
-                                                   &parent_id))) {
+        if (nmo_hash_table_get(registry->guid_map, &current->base_type, &parent_id) != NMO_OK) {
             break; // Broken chain (parent not registered)
         }
         
@@ -886,7 +867,7 @@ nmo_result_t nmo_type_get_inheritance_chain(
         
         // Prevent infinite loops
         if (chain_length > 1000) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Circular inheritance detected"));
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Circular inheritance detected");
         }
     }
     
@@ -895,7 +876,7 @@ nmo_result_t nmo_type_get_inheritance_chain(
         chain_length * sizeof(nmo_type_id_t), 
         _Alignof(nmo_type_id_t));
     if (!chain) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chain array"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chain array");
     }
     
     // Fill array (most-derived to least-derived)
@@ -911,9 +892,7 @@ nmo_result_t nmo_type_get_inheritance_chain(
         }
         
         nmo_type_id_t parent_id;
-        if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map,
-                                                   &current->base_type,
-                                                   &parent_id))) {
+        if (nmo_hash_table_get(registry->guid_map, &current->base_type, &parent_id) != NMO_OK) {
             break;
         }
         
@@ -922,7 +901,7 @@ nmo_result_t nmo_type_get_inheritance_chain(
     
     *out_chain = chain;
     *out_count = index;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 bool nmo_type_is_compatible(
@@ -965,9 +944,7 @@ int32_t nmo_type_get_derivation_depth(
         }
         
         nmo_type_id_t next_id;
-        if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map,
-                                                   &current->base_type,
-                                                   &next_id))) {
+        if (nmo_hash_table_get(registry->guid_map, &current->base_type, &next_id) != NMO_OK) {
             break; // Broken chain
         }
         
@@ -999,32 +976,32 @@ nmo_type_id_t nmo_type_registry_guid_to_type_id(
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_ok(nmo_hash_table_get(registry->guid_map, &guid, &type_id))) {
+    if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) == NMO_OK) {
         return type_id;
     }
     return NMO_TYPE_ID_INVALID;
 }
 
-nmo_result_t nmo_type_registry_type_id_to_guid(
+nmo_status_t nmo_type_registry_type_id_to_guid(
     const nmo_type_registry_t *registry,
     nmo_type_id_t type_id,
     nmo_guid_t *out_guid) {
     
     if (!registry || !out_guid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter");
     }
     
     if (type_id < 0 || (size_t)type_id >= registry->types.count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
     }
     
     const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (!type || !type->valid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid");
     }
     
     *out_guid = type->guid;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 const char* nmo_type_registry_guid_to_name(
@@ -1039,27 +1016,27 @@ const char* nmo_type_registry_guid_to_name(
     return (*(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id))->name;
 }
 
-nmo_result_t nmo_type_registry_name_to_guid(
+nmo_status_t nmo_type_registry_name_to_guid(
     const nmo_type_registry_t *registry,
     const char *name,
     nmo_guid_t *out_guid) {
     
     if (!registry || !name || !out_guid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter");
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->name_map, &name, &type_id))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type name not found"));
+    if (nmo_hash_table_get(registry->name_map, &name, &type_id) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type name not found");
     }
     
     const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (!type || !type->valid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type invalid"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type invalid");
     }
     
     *out_guid = type->guid;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 const char* nmo_type_registry_type_id_to_name(
@@ -1089,88 +1066,86 @@ nmo_type_id_t nmo_type_registry_name_to_type_id(
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_ok(nmo_hash_table_get(registry->name_map, &name, &type_id))) {
+    if (nmo_hash_table_get(registry->name_map, &name, &type_id) == NMO_OK) {
         return type_id;
     }
     return NMO_TYPE_ID_INVALID;
 }
 
-nmo_result_t nmo_type_registry_class_id_to_guid(
+nmo_status_t nmo_type_registry_class_id_to_guid(
     const nmo_type_registry_t *registry,
     uint32_t class_id,
     nmo_guid_t *out_guid) {
     
     if (!registry || !out_guid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter");
     }
     
     if (!registry->class_id_map) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "ClassID map not initialized"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "ClassID map not initialized");
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->class_id_map,
-                                               &class_id,
-                                               &type_id))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "ClassID not found"));
+    if (nmo_hash_table_get(registry->class_id_map, &class_id, &type_id) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "ClassID not found");
     }
     
     const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (!type || !type->valid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type invalid"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type invalid");
     }
     
     *out_guid = type->guid;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_registry_guid_to_class_id(
+nmo_status_t nmo_type_registry_guid_to_class_id(
     const nmo_type_registry_t *registry,
     nmo_guid_t guid,
     uint32_t *out_class_id) {
     
     if (!registry || !out_class_id) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter");
     }
     
     nmo_type_id_t type_id = nmo_type_registry_guid_to_type_id(registry, guid);
     if (type_id == NMO_TYPE_ID_INVALID) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found");
     }
     
     const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (type->class_id == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type has no ClassID"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type has no ClassID");
     }
     
     *out_class_id = type->class_id;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_registry_type_id_to_class_id(
+nmo_status_t nmo_type_registry_type_id_to_class_id(
     const nmo_type_registry_t *registry,
     nmo_type_id_t type_id,
     uint32_t *out_class_id) {
     
     if (!registry || !out_class_id) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL parameter");
     }
     
     if (type_id < 0 || (size_t)type_id >= registry->types.count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
     }
     
     const nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (!type || !type->valid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid");
     }
     
     if (type->class_id == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type has no ClassID"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Type has no ClassID");
     }
     
     *out_class_id = type->class_id;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 nmo_type_id_t nmo_type_registry_class_id_to_type_id(
@@ -1182,7 +1157,7 @@ nmo_type_id_t nmo_type_registry_class_id_to_type_id(
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_ok(nmo_hash_table_get(registry->class_id_map, &class_id, &type_id))) {
+    if (nmo_hash_table_get(registry->class_id_map, &class_id, &type_id) == NMO_OK) {
         if (type_id < 0 || (size_t)type_id >= registry->types.count) {
             return NMO_TYPE_ID_INVALID;
         }
@@ -1320,7 +1295,7 @@ bool nmo_type_registry_is_ui_visible(
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map, &guid, &type_id))) {
+    if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) != NMO_OK) {
         return false;
     }
     
@@ -1344,27 +1319,27 @@ bool nmo_type_registry_is_ui_visible_by_id(
     return !(type->category & NMO_TYPE_CATEGORY_HIDDEN);
 }
 
-nmo_result_t nmo_type_registry_set_ui_visibility(
+nmo_status_t nmo_type_registry_set_ui_visibility(
     nmo_type_registry_t *registry,
     nmo_guid_t guid,
     bool visible) {
     
     if (!registry) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
     }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->guid_map, &guid, &type_id))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found"));
+    if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found");
     }
     
     if (type_id < 0 || (size_t)type_id >= registry->types.count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
     }
     
     nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
     if (!type || !type->valid) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid");
     }
     
     // Toggle NMO_TYPE_CATEGORY_HIDDEN flag
@@ -1374,14 +1349,14 @@ nmo_result_t nmo_type_registry_set_ui_visibility(
         type->category |= NMO_TYPE_CATEGORY_HIDDEN;   // Set hidden flag
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Phase 6.6: Custom Manager Registration Implementation
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_register_saver_manager(
+nmo_status_t nmo_type_registry_register_saver_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t manager_guid,
     const char *name,
@@ -1390,20 +1365,18 @@ nmo_result_t nmo_type_registry_register_saver_manager(
     void *manager_context) {
     
     if (!registry) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
     }
     
     if (!serialize || !deserialize) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL serialize/deserialize callbacks"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL serialize/deserialize callbacks");
     }
     
     // Check if manager already registered
     if (registry->manager_guid_map) {
         nmo_manager_index_t existing_index = NMO_MANAGER_INDEX_INVALID;
-        if (nmo_result_is_ok(nmo_hash_table_get(registry->manager_guid_map,
-                                               &manager_guid,
-                                               &existing_index))) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR, "Manager already registered"));
+        if (nmo_hash_table_get(registry->manager_guid_map, &manager_guid, &existing_index) == NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR, "Manager already registered");
         }
     }
     
@@ -1426,7 +1399,7 @@ nmo_result_t nmo_type_registry_register_saver_manager(
                 nmo_hash_table_destroy(registry->type_to_manager);
                 registry->type_to_manager = NULL;
             }
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to create manager hash tables"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to create manager hash tables");
         }
     }
     
@@ -1435,7 +1408,7 @@ nmo_result_t nmo_type_registry_register_saver_manager(
         registry->arena, sizeof(nmo_saver_manager_t), _Alignof(nmo_saver_manager_t));
     
     if (!manager) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager descriptor"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager descriptor");
     }
     
     // Initialize manager
@@ -1443,7 +1416,7 @@ nmo_result_t nmo_type_registry_register_saver_manager(
     if (name) {
         manager->name = nmo_arena_strdup(registry->arena, name);
         if (!manager->name) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy manager name"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy manager name");
         }
     } else {
         manager->name = NULL;
@@ -1454,36 +1427,34 @@ nmo_result_t nmo_type_registry_register_saver_manager(
     
     // Add to array and hash table
     nmo_manager_index_t manager_index = (nmo_manager_index_t)registry->saver_managers.count;
-    nmo_result_t res = nmo_arena_array_append(&registry->saver_managers, &manager);
-    if (nmo_result_is_error(res)) return res;
+    nmo_status_t res = nmo_arena_array_append(&registry->saver_managers, &manager);
+    if (res != NMO_OK) return res;
     
-    nmo_result_t map_result = nmo_hash_table_insert(registry->manager_guid_map, &manager_guid, &manager_index);
-    if (nmo_result_is_error(map_result)) {
+    nmo_status_t map_result = nmo_hash_table_insert(registry->manager_guid_map, &manager_guid, &manager_index);
+    if (map_result != NMO_OK) {
         nmo_arena_array_pop(&registry->saver_managers, NULL);
         return map_result;
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_registry_unregister_saver_manager(
+nmo_status_t nmo_type_registry_unregister_saver_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t manager_guid) {
     
     if (!registry || !registry->manager_guid_map) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry or no managers"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry or no managers");
     }
     
     // Find manager
     nmo_manager_index_t manager_index = NMO_MANAGER_INDEX_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->manager_guid_map,
-                                               &manager_guid,
-                                               &manager_index))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Manager not found"));
+    if (nmo_hash_table_get(registry->manager_guid_map, &manager_guid, &manager_index) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Manager not found");
     }
     
     if (manager_index < 0 || (size_t)manager_index >= registry->saver_managers.count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid manager index"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid manager index");
     }
     
     // Clear all type associations with this manager
@@ -1492,9 +1463,7 @@ nmo_result_t nmo_type_registry_unregister_saver_manager(
         for (size_t i = 0; i < registry->types.count; i++) {
             nmo_manager_index_t type_manager_idx = NMO_MANAGER_INDEX_INVALID;
             nmo_type_id_t tid = (nmo_type_id_t)i;
-            if (nmo_result_is_ok(nmo_hash_table_get(registry->type_to_manager,
-                                                   &tid,
-                                                   &type_manager_idx))) {
+            if (nmo_hash_table_get(registry->type_to_manager, &tid, &type_manager_idx) == NMO_OK) {
                 if (type_manager_idx == manager_index) {
                     nmo_hash_table_remove(registry->type_to_manager, &tid);
                     
@@ -1518,7 +1487,7 @@ nmo_result_t nmo_type_registry_unregister_saver_manager(
     // Remove from GUID map
     nmo_hash_table_remove(registry->manager_guid_map, &manager_guid);
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 const nmo_saver_manager_t* nmo_type_registry_get_saver_manager(
@@ -1528,9 +1497,7 @@ const nmo_saver_manager_t* nmo_type_registry_get_saver_manager(
     if (!registry || !registry->manager_guid_map) return NULL;
     
     nmo_manager_index_t manager_index = NMO_MANAGER_INDEX_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->manager_guid_map,
-                                               &manager_guid,
-                                               &manager_index))) {
+    if (nmo_hash_table_get(registry->manager_guid_map, &manager_guid, &manager_index) != NMO_OK) {
         return NULL;
     }
     
@@ -1542,31 +1509,29 @@ const nmo_saver_manager_t* nmo_type_registry_get_saver_manager(
     return manager;
 }
 
-nmo_result_t nmo_type_registry_set_type_manager(
+nmo_status_t nmo_type_registry_set_type_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t type_guid,
     nmo_guid_t manager_guid) {
     
     if (!registry) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
     }
     
     // Find type
     nmo_type_id_t type_id = nmo_type_registry_guid_to_type_id(registry, type_guid);
     if (type_id == NMO_TYPE_ID_INVALID) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found");
     }
     
     // Find manager
     if (!registry->manager_guid_map) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "No managers registered"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "No managers registered");
     }
     
     nmo_manager_index_t manager_index = NMO_MANAGER_INDEX_INVALID;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->manager_guid_map,
-                                               &manager_guid,
-                                               &manager_index))) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Manager not found"));
+    if (nmo_hash_table_get(registry->manager_guid_map, &manager_guid, &manager_index) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Manager not found");
     }
     
     // Update type descriptor
@@ -1582,12 +1547,12 @@ nmo_result_t nmo_type_registry_set_type_manager(
             16, NULL, NULL);
     }
     
-    nmo_result_t map_result = nmo_hash_table_insert(registry->type_to_manager, &type_id, &manager_index);
-    if (nmo_result_is_error(map_result)) {
+    nmo_status_t map_result = nmo_hash_table_insert(registry->type_to_manager, &type_id, &manager_index);
+    if (map_result != NMO_OK) {
         return map_result;
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 const nmo_saver_manager_t* nmo_type_registry_get_type_manager(
@@ -1610,9 +1575,7 @@ const nmo_saver_manager_t* nmo_type_registry_get_type_manager(
     // Fallback to hash table (should match)
     if (registry->type_to_manager) {
         nmo_manager_index_t manager_index = NMO_MANAGER_INDEX_INVALID;
-        if (nmo_result_is_ok(nmo_hash_table_get(registry->type_to_manager,
-                                               &type_id,
-                                               &manager_index))) {
+        if (nmo_hash_table_get(registry->type_to_manager, &type_id, &manager_index) == NMO_OK) {
             if (manager_index >= 0 && (size_t)manager_index < registry->saver_managers.count) {
                 return *(nmo_saver_manager_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->saver_managers, manager_index);
             }
@@ -1622,16 +1585,16 @@ const nmo_saver_manager_t* nmo_type_registry_get_type_manager(
     return NULL;
 }
 
-nmo_result_t nmo_type_registry_clear_type_manager(
+nmo_status_t nmo_type_registry_clear_type_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t type_guid) {
     
     if (!registry) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
     }
     
     nmo_type_id_t type_id = nmo_type_registry_guid_to_type_id(registry, type_guid);
-    if (type_id == NMO_TYPE_ID_INVALID) return nmo_result_ok();
+    if (type_id == NMO_TYPE_ID_INVALID) NMO_RETURN_OK();
     
     // Update type descriptor
     nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
@@ -1644,7 +1607,7 @@ nmo_result_t nmo_type_registry_clear_type_manager(
         nmo_hash_table_remove(registry->type_to_manager, &type_id);
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 size_t nmo_type_registry_get_manager_count(const nmo_type_registry_t *registry) {

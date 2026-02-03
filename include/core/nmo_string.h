@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_string.h
  * @brief Dynamic UTF-8 string utilities mirroring Virtools XString behaviour.
  *
@@ -92,14 +92,14 @@ static inline nmo_string_view_t nmo_string_view_from_string(const nmo_string_t *
  * - nmo_string_dispose(&str)
  */
 
-NMO_API nmo_result_t nmo_string_init(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_init(nmo_string_t *string,
                                      const nmo_allocator_t *allocator);
 
-NMO_API nmo_result_t nmo_string_init_cstr(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_init_cstr(nmo_string_t *string,
                                           const char *cstr,
                                           const nmo_allocator_t *allocator);
 
-NMO_API nmo_result_t nmo_string_init_view(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_init_view(nmo_string_t *string,
                                           nmo_string_view_t view,
                                           const nmo_allocator_t *allocator);
 
@@ -115,48 +115,48 @@ NMO_API int nmo_string_empty(const nmo_string_t *string);
 NMO_API const char *nmo_string_c_str(const nmo_string_t *string);
 NMO_API char *nmo_string_data(nmo_string_t *string);
 
-NMO_API nmo_result_t nmo_string_reserve(nmo_string_t *string, size_t capacity);
-NMO_API nmo_result_t nmo_string_shrink_to_fit(nmo_string_t *string);
+NMO_API nmo_status_t nmo_string_reserve(nmo_string_t *string, size_t capacity);
+NMO_API nmo_status_t nmo_string_shrink_to_fit(nmo_string_t *string);
 NMO_API void nmo_string_clear(nmo_string_t *string);
 
 /* ------------------------------------------------------------------------- */
 /* Assignment / append                                                        */
 /* ------------------------------------------------------------------------- */
 
-NMO_API nmo_result_t nmo_string_assign(nmo_string_t *string, const char *cstr);
-NMO_API nmo_result_t nmo_string_assign_len(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_assign(nmo_string_t *string, const char *cstr);
+NMO_API nmo_status_t nmo_string_assign_len(nmo_string_t *string,
                                            const char *data,
                                            size_t length);
-NMO_API nmo_result_t nmo_string_assign_view(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_assign_view(nmo_string_t *string,
                                             nmo_string_view_t view);
-NMO_API nmo_result_t nmo_string_copy(nmo_string_t *dest,
+NMO_API nmo_status_t nmo_string_copy(nmo_string_t *dest,
                                      const nmo_string_t *src);
 
-NMO_API nmo_result_t nmo_string_append(nmo_string_t *string, const char *cstr);
-NMO_API nmo_result_t nmo_string_append_len(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_append(nmo_string_t *string, const char *cstr);
+NMO_API nmo_status_t nmo_string_append_len(nmo_string_t *string,
                                            const char *data,
                                            size_t length);
-NMO_API nmo_result_t nmo_string_append_view(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_append_view(nmo_string_t *string,
                                             nmo_string_view_t view);
-NMO_API nmo_result_t nmo_string_append_char(nmo_string_t *string, char ch);
+NMO_API nmo_status_t nmo_string_append_char(nmo_string_t *string, char ch);
 
 /* ------------------------------------------------------------------------- */
 /* Mutation helpers                                                           */
 /* ------------------------------------------------------------------------- */
 
-NMO_API nmo_result_t nmo_string_insert(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_insert(nmo_string_t *string,
                                        size_t index,
                                        const char *data,
                                        size_t length);
-NMO_API nmo_result_t nmo_string_erase(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_erase(nmo_string_t *string,
                                       size_t index,
                                       size_t length);
-NMO_API nmo_result_t nmo_string_replace(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_replace(nmo_string_t *string,
                                         size_t index,
                                         size_t length,
                                         const char *data,
                                         size_t new_length);
-NMO_API nmo_result_t nmo_string_replace_all(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_replace_all(nmo_string_t *string,
                                             nmo_string_view_t needle,
                                             nmo_string_view_t replacement,
                                             size_t *out_count);
@@ -202,7 +202,7 @@ NMO_API int nmo_string_slice_view(const nmo_string_t *string,
                                   size_t start,
                                   size_t length,
                                   nmo_string_view_t *out_view);
-NMO_API nmo_result_t nmo_string_substr(nmo_string_t *dest,
+NMO_API nmo_status_t nmo_string_substr(nmo_string_t *dest,
                                        const nmo_string_t *src,
                                        size_t start,
                                        size_t length);
@@ -221,14 +221,14 @@ NMO_API void nmo_string_trim(nmo_string_t *string);
 /* Formatting                                                                 */
 /* ------------------------------------------------------------------------- */
 
-NMO_API nmo_result_t nmo_string_format(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_format(nmo_string_t *string,
                                        const char *fmt, ...);
-NMO_API nmo_result_t nmo_string_formatv(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_formatv(nmo_string_t *string,
                                         const char *fmt,
                                         va_list args);
-NMO_API nmo_result_t nmo_string_append_format(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_append_format(nmo_string_t *string,
                                               const char *fmt, ...);
-NMO_API nmo_result_t nmo_string_append_formatv(nmo_string_t *string,
+NMO_API nmo_status_t nmo_string_append_formatv(nmo_string_t *string,
                                                const char *fmt,
                                                va_list args);
 
@@ -241,11 +241,11 @@ NMO_API int nmo_string_to_uint32(const nmo_string_t *string, uint32_t *out_value
 NMO_API int nmo_string_to_float(const nmo_string_t *string, float *out_value);
 NMO_API int nmo_string_to_double(const nmo_string_t *string, double *out_value);
 
-NMO_API nmo_result_t nmo_string_from_int(nmo_string_t *string, int value);
-NMO_API nmo_result_t nmo_string_from_uint32(nmo_string_t *string, uint32_t value);
-NMO_API nmo_result_t nmo_string_from_float(nmo_string_t *string, float value);
-NMO_API nmo_result_t nmo_string_from_double(nmo_string_t *string, double value);
-NMO_API nmo_result_t nmo_string_pop_back(nmo_string_t *string, char *out_char);
+NMO_API nmo_status_t nmo_string_from_int(nmo_string_t *string, int value);
+NMO_API nmo_status_t nmo_string_from_uint32(nmo_string_t *string, uint32_t value);
+NMO_API nmo_status_t nmo_string_from_float(nmo_string_t *string, float value);
+NMO_API nmo_status_t nmo_string_from_double(nmo_string_t *string, double value);
+NMO_API nmo_status_t nmo_string_pop_back(nmo_string_t *string, char *out_char);
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file inspector.c
  * @brief Implementation of chunk inspection and debugging utilities
  * 

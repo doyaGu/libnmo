@@ -19,10 +19,10 @@ extern "C" {
 #define NMO_VERSION_PATCH 0
 
 // Common types
+typedef int32_t nmo_status_t;
 typedef uint32_t nmo_object_id_t;
 typedef uint32_t nmo_class_id_t;
 typedef uint32_t nmo_manager_id_t;
-typedef uint32_t nmo_id_t;  /* Alias for nmo_object_id_t */
 
 // Special object ID values
 #define NMO_OBJECT_ID_NONE ((nmo_object_id_t)0)

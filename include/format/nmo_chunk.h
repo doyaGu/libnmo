@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_chunk.h
  * @brief CKStateChunk - Low-level chunk structure and core operations
  *
@@ -154,7 +154,7 @@ NMO_API nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena)
  * @param arena Arena for output buffer allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
                                          void **out_data,
                                          size_t *out_size,
                                          nmo_arena_t *arena);
@@ -182,7 +182,7 @@ NMO_API nmo_result_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
  * @param arena Arena for output buffer allocation (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
+NMO_API nmo_status_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
                                                   void **out_data,
                                                   size_t *out_size,
                                                   nmo_arena_t *arena);
@@ -199,7 +199,7 @@ NMO_API nmo_result_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
  * @param out_chunk Output chunk pointer (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_deserialize(const void *data,
+NMO_API nmo_status_t nmo_chunk_deserialize(const void *data,
                                            size_t size,
                                            nmo_arena_t *arena,
                                            nmo_chunk_t **out_chunk);
@@ -218,7 +218,7 @@ NMO_API nmo_result_t nmo_chunk_deserialize(const void *data,
  * @param size Data size in bytes
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size);
+NMO_API nmo_status_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size);
 
 /**
  * @brief Write chunk to data buffer
@@ -241,7 +241,7 @@ NMO_API size_t nmo_chunk_write(const nmo_chunk_t *chunk, void *buffer, size_t si
  * @param out_header Output header structure (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *out_header);
+NMO_API nmo_status_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *out_header);
 
 #ifdef __cplusplus
 }

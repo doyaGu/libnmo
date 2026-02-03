@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_array.h
  * @brief Generic dynamic array with allocator-based memory management
  * 
@@ -46,7 +46,7 @@ typedef struct nmo_array {
  * @param allocator Allocator to use (NULL for default)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_array_init(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_init(nmo_array_t *array,
                                      size_t element_size,
                                      size_t initial_capacity,
                                      const nmo_allocator_t *allocator);
@@ -64,29 +64,29 @@ NMO_API void nmo_array_set_lifecycle(nmo_array_t *array,
 /**
  * @brief Reserve capacity in array
  */
-NMO_API nmo_result_t nmo_array_reserve(nmo_array_t *array, size_t capacity);
+NMO_API nmo_status_t nmo_array_reserve(nmo_array_t *array, size_t capacity);
 
 /**
  * @brief Ensure space for additional elements
  */
-NMO_API nmo_result_t nmo_array_ensure_space(nmo_array_t *array, size_t additional);
+NMO_API nmo_status_t nmo_array_ensure_space(nmo_array_t *array, size_t additional);
 
 /**
  * @brief Append an element to array
  */
-NMO_API nmo_result_t nmo_array_append(nmo_array_t *array, const void *element);
+NMO_API nmo_status_t nmo_array_append(nmo_array_t *array, const void *element);
 
 /**
  * @brief Append multiple elements to array
  */
-NMO_API nmo_result_t nmo_array_append_array(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_append_array(nmo_array_t *array,
                                              const void *elements,
                                              size_t count);
 
 /**
  * @brief Extend array with uninitialized space
  */
-NMO_API nmo_result_t nmo_array_extend(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_extend(nmo_array_t *array,
                                        size_t additional,
                                        void **out_begin);
 
@@ -98,26 +98,26 @@ NMO_API void *nmo_array_get(const nmo_array_t *array, size_t index);
 /**
  * @brief Set element at index
  */
-NMO_API nmo_result_t nmo_array_set(nmo_array_t *array, size_t index, const void *element);
+NMO_API nmo_status_t nmo_array_set(nmo_array_t *array, size_t index, const void *element);
 
 /**
  * @brief Insert element at position
  */
-NMO_API nmo_result_t nmo_array_insert(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_insert(nmo_array_t *array,
                                        size_t index,
                                        const void *element);
 
 /**
  * @brief Remove element at index
  */
-NMO_API nmo_result_t nmo_array_remove(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_remove(nmo_array_t *array,
                                        size_t index,
                                        void *out_element);
 
 /**
  * @brief Pop element from end
  */
-NMO_API nmo_result_t nmo_array_pop(nmo_array_t *array, void *out_element);
+NMO_API nmo_status_t nmo_array_pop(nmo_array_t *array, void *out_element);
 
 /**
  * @brief Get pointer to first element
@@ -140,14 +140,14 @@ NMO_API void nmo_array_clear(nmo_array_t *array);
  * Disposes existing elements and frees the previous backing store before
  * taking ownership of the new data buffer.
  */
-NMO_API nmo_result_t nmo_array_set_data(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_set_data(nmo_array_t *array,
                                          void *data,
                                          size_t count);
 
 /**
  * @brief Allocate and initialize array
  */
-NMO_API nmo_result_t nmo_array_alloc(nmo_array_t *array,
+NMO_API nmo_status_t nmo_array_alloc(nmo_array_t *array,
                                       size_t element_size,
                                       size_t count,
                                       const nmo_allocator_t *allocator);
@@ -158,7 +158,7 @@ NMO_API nmo_result_t nmo_array_alloc(nmo_array_t *array,
  * The destination inherits lifecycle hooks from the source and uses the
  * copy callback (or memcpy fallback) to duplicate elements.
  */
-NMO_API nmo_result_t nmo_array_clone(const nmo_array_t *src,
+NMO_API nmo_status_t nmo_array_clone(const nmo_array_t *src,
                                       nmo_array_t *dest,
                                       const nmo_allocator_t *allocator);
 
@@ -177,7 +177,7 @@ NMO_API void *nmo_array_data(const nmo_array_t *array);
 /**
  * @brief Swap contents of two arrays
  */
-NMO_API nmo_result_t nmo_array_swap(nmo_array_t *a, nmo_array_t *b);
+NMO_API nmo_status_t nmo_array_swap(nmo_array_t *a, nmo_array_t *b);
 
 /**
  * @brief Find first occurrence of element
@@ -194,12 +194,12 @@ NMO_API int nmo_array_contains(const nmo_array_t *array, const void *element);
 /**
  * @brief Shrink capacity to match count
  */
-NMO_API nmo_result_t nmo_array_shrink_to_fit(nmo_array_t *array);
+NMO_API nmo_status_t nmo_array_shrink_to_fit(nmo_array_t *array);
 
 /**
  * @brief Resize array to specified count
  */
-NMO_API nmo_result_t nmo_array_resize(nmo_array_t *array, size_t new_count);
+NMO_API nmo_status_t nmo_array_resize(nmo_array_t *array, size_t new_count);
 
 /* Convenience macros */
 #define NMO_ARRAY_GET(type, array_ptr, index) \

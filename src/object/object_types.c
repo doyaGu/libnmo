@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file object_types.c
  * @brief Implementation of Virtools object type registration
  * 
@@ -71,8 +71,8 @@
  * Base Object Types Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_base_object_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_base_object_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckobject_type(registry));
@@ -80,30 +80,30 @@ nmo_result_t nmo_register_base_object_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_ckbeobject_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckrenderobject_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * 2D Entity Types Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_2d_entity_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_2d_entity_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ck2dentity_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_cksprite_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckspritetext_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * 3D Entity Types Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_3d_entity_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_3d_entity_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ck3dentity_type(registry));
@@ -112,88 +112,88 @@ nmo_result_t nmo_register_3d_entity_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_cklight_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckcharacter_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Resource Types Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_resource_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_resource_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckmaterial_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_cktexture_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckmesh_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Behavior Types Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_behavior_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_behavior_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckbehavior_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckbehaviorio_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckbehaviorlink_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Scene Management Types
  * ============================================================================ */
 
-static nmo_result_t nmo_register_scene_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+static nmo_status_t nmo_register_scene_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckscene_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_cklevel_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckgroup_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Data Structure Types
  * ============================================================================ */
 
-static nmo_result_t nmo_register_data_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+static nmo_status_t nmo_register_data_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckdataarray_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Animation Types
  * ============================================================================ */
 
-static nmo_result_t nmo_register_animation_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+static nmo_status_t nmo_register_animation_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckanimation_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckkeyedanimation_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckobjectanimation_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Parameter Types (Extended)
  * ============================================================================ */
 
-nmo_result_t nmo_register_parameter_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_parameter_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckparameter_type(registry));
@@ -202,15 +202,15 @@ nmo_result_t nmo_register_parameter_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_ckparameterlocal_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckparameteroperation_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Extended 3D Entity Types
  * ============================================================================ */
 
-nmo_result_t nmo_register_extended_3d_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_extended_3d_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_cktargetcamera_type(registry));
@@ -220,15 +220,15 @@ nmo_result_t nmo_register_extended_3d_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_ckcurvepoint_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckbodypart_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Utility Object Types
  * ============================================================================ */
 
-nmo_result_t nmo_register_utility_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_utility_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckrendercontext_type(registry));
@@ -243,29 +243,29 @@ nmo_result_t nmo_register_utility_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_ckinterfaceobjectmanager_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_cklayer_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Mesh Variant Types
  * ============================================================================ */
 
-nmo_result_t nmo_register_mesh_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_mesh_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     NMO_RETURN_IF_ERROR(nmo_register_ckgrid_type(registry));
     NMO_RETURN_IF_ERROR(nmo_register_ckpatchmesh_type(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Main Registration Function
  * ============================================================================ */
 
-nmo_result_t nmo_register_object_types(nmo_type_registry_t *registry) {
-    NMO_ENSURE(NULL, registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry) {
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
     /* Register in hierarchy order (base types first) */
@@ -290,7 +290,7 @@ nmo_result_t nmo_register_object_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_extended_3d_types(registry));
     NMO_RETURN_IF_ERROR(nmo_register_mesh_types(registry));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

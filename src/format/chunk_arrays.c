@@ -1,4 +1,4 @@
-// chunk_arrays.c - Array serialization for CKStateChunk
+﻿// chunk_arrays.c - Array serialization for CKStateChunk
 // Implements: generic arrays, typed arrays (object_id, int, float, dword, byte, string)
 
 #include "format/nmo_chunk.h"
@@ -19,7 +19,7 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // Generic Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_array(nmo_chunk_t *chunk,
                                    const void *array,
                                    size_t count,
                                    size_t elem_size) {
@@ -30,31 +30,31 @@ nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
     }
 
     if (count == 0 || elem_size == 0) {
-        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
         NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     if (count > (size_t) INT_MAX || elem_size > (size_t) INT_MAX) {
-        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
         NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     if (count > SIZE_MAX / elem_size) {
-        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
         NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
     size_t total_size = count * elem_size;
     if (total_size > (size_t) INT_MAX) {
-        nmo_result_t result = nmo_chunk_write_dword(chunk, 0);
+        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
         NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
 
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
     NMO_RETURN_IF_ERROR(result);
 
     result = nmo_chunk_write_dword(chunk, (uint32_t) count);
@@ -63,14 +63,14 @@ nmo_result_t nmo_chunk_write_array(nmo_chunk_t *chunk,
     return nmo_chunk_write_buffer_no_size(chunk, array, total_size);
 }
 
-nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_array(nmo_chunk_t *chunk,
                                   void **out_array,
                                   size_t *out_count,
                                   size_t *out_elem_size) {
     NMO_CHUNK_CHECK_ARGS3(chunk, out_array, out_count, out_elem_size, "Invalid arguments");
 
     uint32_t total_size = 0;
-    nmo_result_t result = nmo_chunk_read_dword(chunk, &total_size);
+    nmo_status_t result = nmo_chunk_read_dword(chunk, &total_size);
     NMO_RETURN_IF_ERROR(result);
 
     uint32_t count = 0;
@@ -81,7 +81,7 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
         *out_array = NULL;
         *out_count = 0;
         *out_elem_size = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (total_size % count != 0) {
@@ -111,14 +111,14 @@ nmo_result_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     *out_count = count;
     *out_elem_size = total_size / count;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Object ID Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
                                              nmo_object_id_t **out_ids,
                                              size_t *out_count,
                                              nmo_arena_t *arena) {
@@ -127,7 +127,7 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
 
     // Start sequence and get count
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
@@ -135,7 +135,7 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
     // Handle empty array
     if (count == 0) {
         *out_ids = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate array
@@ -158,10 +158,10 @@ nmo_result_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
     }
 
     *out_ids = ids;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
                                               const nmo_object_id_t *ids,
                                               size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -169,7 +169,7 @@ nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, ids, "Non-zero count with NULL array");
 
     // Write count with sequence marker
-    nmo_result_t result = nmo_chunk_write_object_sequence_start(chunk, count);
+    nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write IDs
@@ -178,14 +178,14 @@ nmo_result_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Integer Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
                                        int32_t **out_array,
                                        size_t *out_count,
                                        nmo_arena_t *arena) {
@@ -194,7 +194,7 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
 
     // Start sequence and get count
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
@@ -202,7 +202,7 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
     // Handle empty array
     if (count == 0) {
         *out_array = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate array
@@ -227,10 +227,10 @@ nmo_result_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
     }
 
     *out_array = array;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
                                         const int32_t *array,
                                         size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -238,7 +238,7 @@ nmo_result_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write ints
@@ -247,14 +247,14 @@ nmo_result_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Float Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
                                          float **out_array,
                                          size_t *out_count,
                                          nmo_arena_t *arena) {
@@ -263,7 +263,7 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
 
     // Start sequence and get count
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
@@ -271,7 +271,7 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
     // Handle empty array
     if (count == 0) {
         *out_array = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate array
@@ -296,10 +296,10 @@ nmo_result_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
     }
 
     *out_array = array;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
                                           const float *array,
                                           size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -307,7 +307,7 @@ nmo_result_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write floats
@@ -316,14 +316,14 @@ nmo_result_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // DWORD Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
                                          uint32_t **out_array,
                                          size_t *out_count,
                                          nmo_arena_t *arena) {
@@ -332,7 +332,7 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
 
     // Start sequence and get count
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
@@ -340,7 +340,7 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
     // Handle empty array
     if (count == 0) {
         *out_array = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate array
@@ -363,10 +363,10 @@ nmo_result_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
     }
 
     *out_array = array;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
                                           const uint32_t *array,
                                           size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -374,7 +374,7 @@ nmo_result_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write dwords
@@ -383,14 +383,14 @@ nmo_result_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Byte Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
                                         uint8_t **out_array,
                                         size_t *out_count,
                                         nmo_arena_t *arena) {
@@ -399,7 +399,7 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
 
     // Start sequence and get count
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
@@ -407,7 +407,7 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
     // Handle empty array
     if (count == 0) {
         *out_array = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate array
@@ -430,17 +430,17 @@ nmo_result_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
     }
 
     *out_array = array;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
                                          const uint8_t *array,
                                          size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
 
     // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write bytes
@@ -449,14 +449,14 @@ nmo_result_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // String Arrays
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
                                           char ***out_strings,
                                           size_t *out_count,
                                           nmo_arena_t *arena) {
@@ -465,7 +465,7 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
 
     // Start sequence and get count
     size_t count = 0;
-    nmo_result_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = count;
@@ -473,7 +473,7 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
     // Handle empty array
     if (count == 0) {
         *out_strings = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate string pointer array
@@ -499,10 +499,10 @@ nmo_result_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
     }
 
     *out_strings = strings;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
                                            const char * const *strings,
                                            size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -510,7 +510,7 @@ nmo_result_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, strings, "Non-zero count with NULL array");
 
     // Write count
-    nmo_result_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write strings
@@ -519,5 +519,5 @@ nmo_result_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

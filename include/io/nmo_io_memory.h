@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_io_memory.h
  * @brief Memory IO operations
  */
@@ -88,7 +88,7 @@ NMO_API const void *nmo_io_memory_get_buffer(const nmo_io_memory_t *io_memory, s
  * @param io_memory Memory IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_io_memory_reset(nmo_io_memory_t *io_memory);
+NMO_API nmo_status_t nmo_io_memory_reset(nmo_io_memory_t *io_memory);
 
 /**
  * Open a read-only memory buffer and return an IO interface

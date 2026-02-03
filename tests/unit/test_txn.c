@@ -75,11 +75,11 @@ TEST(txn, write_and_commit) {
     nmo_txn_handle_t *txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result = nmo_txn_write(txn, data, data_size);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_txn_write(txn, data, data_size);
+    ASSERT_EQ(result, NMO_OK);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_txn_close(txn);
 
@@ -112,11 +112,11 @@ TEST(txn, write_and_rollback) {
     nmo_txn_handle_t *txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result = nmo_txn_write(txn, data, data_size);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_txn_write(txn, data, data_size);
+    ASSERT_EQ(result, NMO_OK);
 
     result = nmo_txn_rollback(txn);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_txn_close(txn);
 
@@ -144,14 +144,14 @@ TEST(txn, multiple_writes) {
     nmo_txn_handle_t *txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result = nmo_txn_write(txn, chunk1, strlen(chunk1));
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_txn_write(txn, chunk1, strlen(chunk1));
+    ASSERT_EQ(result, NMO_OK);
 
     result = nmo_txn_write(txn, chunk2, strlen(chunk2));
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_txn_close(txn);
 
@@ -188,11 +188,11 @@ TEST(txn, overwrite_existing) {
     nmo_txn_handle_t *txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result = nmo_txn_write(txn, new_data, strlen(new_data));
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_txn_write(txn, new_data, strlen(new_data));
+    ASSERT_EQ(result, NMO_OK);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_txn_close(txn);
 
@@ -226,8 +226,8 @@ TEST(txn, durability_modes) {
         nmo_txn_handle_t *txn = nmo_txn_open(&desc);
         ASSERT_NOT_NULL(txn);
         nmo_txn_write(txn, data, data_size);
-        nmo_result_t result = nmo_txn_commit(txn);
-        ASSERT_EQ(result.code, NMO_OK);
+        nmo_status_t result = nmo_txn_commit(txn);
+        ASSERT_EQ(result, NMO_OK);
         nmo_txn_close(txn);
         ASSERT_TRUE(file_exists(path1));
     }
@@ -243,8 +243,8 @@ TEST(txn, durability_modes) {
         nmo_txn_handle_t *txn = nmo_txn_open(&desc);
         ASSERT_NOT_NULL(txn);
         nmo_txn_write(txn, data, data_size);
-        nmo_result_t result = nmo_txn_commit(txn);
-        ASSERT_EQ(result.code, NMO_OK);
+        nmo_status_t result = nmo_txn_commit(txn);
+        ASSERT_EQ(result, NMO_OK);
         nmo_txn_close(txn);
         ASSERT_TRUE(file_exists(path2));
     }
@@ -260,8 +260,8 @@ TEST(txn, durability_modes) {
         nmo_txn_handle_t *txn = nmo_txn_open(&desc);
         ASSERT_NOT_NULL(txn);
         nmo_txn_write(txn, data, data_size);
-        nmo_result_t result = nmo_txn_commit(txn);
-        ASSERT_EQ(result.code, NMO_OK);
+        nmo_status_t result = nmo_txn_commit(txn);
+        ASSERT_EQ(result, NMO_OK);
         nmo_txn_close(txn);
         ASSERT_TRUE(file_exists(path3));
     }
@@ -286,8 +286,8 @@ TEST(txn, empty_commit) {
     ASSERT_NOT_NULL(txn);
 
     /* Commit without writing anything */
-    nmo_result_t result = nmo_txn_commit(txn);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_txn_commit(txn);
+    ASSERT_EQ(result, NMO_OK);
 
     nmo_txn_close(txn);
 

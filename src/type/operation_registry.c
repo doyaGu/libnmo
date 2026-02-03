@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file operation_registry.c
  * @brief Operation registry implementation (Phase 6.1)
  */
@@ -44,9 +44,7 @@ static nmo_operation_family_t *find_or_create_family(
 ) {
     /* Search in hash map first (O(1)) */
     uint32_t family_index = 0;
-    if (nmo_result_is_ok(nmo_hash_table_get(registry->family_map,
-                                           operation_guid,
-                                           &family_index))) {
+    if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) == NMO_OK) {
         return registry->families[family_index];
     }
     
@@ -98,9 +96,7 @@ static nmo_operation_family_t *find_or_create_family(
     registry->families[family_index] = family;
     
     /* Add to hash map */
-    if (nmo_result_is_error(nmo_hash_table_insert(registry->family_map,
-                                                  operation_guid,
-                                                  &family_index))) {
+    if (nmo_hash_table_insert(registry->family_map, operation_guid, &family_index) != NMO_OK) {
         registry->families[family_index] = NULL;
         return NULL;
     }
@@ -223,7 +219,7 @@ static nmo_operation_p2_layer_t *find_or_create_p2_layer(
 /**
  * @brief Insert or update operation cell in P2 layer
  */
-static nmo_result_t insert_operation_cell(
+static nmo_status_t insert_operation_cell(
     nmo_operation_registry_t *registry,
     nmo_operation_p2_layer_t *p2_layer,
     const nmo_operation_desc_t *desc,
@@ -242,7 +238,7 @@ static nmo_result_t insert_operation_cell(
                 cell->p2_type = p2_type;
                 cell->result_type = result_type;
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
     
@@ -256,8 +252,8 @@ static nmo_result_t insert_operation_cell(
             alignof(nmo_operation_tree_cell_t)
         );
         if (!new_cells) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to expand cell array");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to expand cell array");
         }
         
         /* Copy existing cells */
@@ -278,7 +274,7 @@ static nmo_result_t insert_operation_cell(
     
     registry->total_operations++;
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -344,20 +340,20 @@ void nmo_operation_registry_destroy(nmo_operation_registry_t *registry) {
  * Operation Registration
  * ============================================================================ */
 
-nmo_result_t nmo_operation_registry_register(
+nmo_status_t nmo_operation_registry_register(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *desc,
     const nmo_type_registry_t *type_registry
 ) {
     if (!registry || !desc || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
     
     /* Validate operation descriptor */
     if (!desc->function) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Operation function is NULL");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Operation function is NULL");
     }
     
     /* Resolve type descriptors from type registry */
@@ -365,16 +361,16 @@ nmo_result_t nmo_operation_registry_register(
         type_registry, desc->p1_type_guid
     );
     if (!p1_type) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "P1 type not found in type registry");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "P1 type not found in type registry");
     }
     
     const nmo_type_descriptor_t *p2_type = NULL;
     if (!(desc->flags & NMO_OP_UNARY)) {
         p2_type = nmo_type_registry_find_by_guid(type_registry, desc->p2_type_guid);
         if (!p2_type) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                     "P2 type not found in type registry");
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "P2 type not found in type registry");
         }
     }
     
@@ -382,23 +378,23 @@ nmo_result_t nmo_operation_registry_register(
         type_registry, desc->result_type_guid
     );
     if (!result_type) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "Result type not found in type registry");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "Result type not found in type registry");
     }
     
     /* Navigate 4D tree: Operation -> P1 -> P2 -> Cell */
     nmo_operation_family_t *family = find_or_create_family(registry, &desc->operation_guid);
     if (!family) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to create operation family");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create operation family");
     }
     
     nmo_operation_p1_layer_t *p1_layer = find_or_create_p1_layer(
         registry, family, &desc->p1_type_guid
     );
     if (!p1_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to create P1 layer");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create P1 layer");
     }
     
     /* For unary operations, use NULL_GUID for P2 */
@@ -409,16 +405,16 @@ nmo_result_t nmo_operation_registry_register(
         registry, p1_layer, &p2_guid
     );
     if (!p2_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to create P2 layer");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create P2 layer");
     }
     
     /* Insert operation cell */
-    nmo_result_t result = insert_operation_cell(
+    nmo_status_t result = insert_operation_cell(
         registry, p2_layer, desc, p1_type, p2_type, result_type
     );
     
-    if (nmo_result_is_ok(result)) {
+    if (result == NMO_OK) {
         /* Update family metadata */
         if (!family->name) {
             family->name = desc->name;
@@ -430,7 +426,7 @@ nmo_result_t nmo_operation_registry_register(
     return result;
 }
 
-nmo_result_t nmo_operation_registry_register_bulk(
+nmo_status_t nmo_operation_registry_register_bulk(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *descs,
     uint32_t count,
@@ -438,23 +434,25 @@ nmo_result_t nmo_operation_registry_register_bulk(
     nmo_logger_t *logger
 ) {
     if (!registry || !descs || count == 0 || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
     
     /* Register operations one by one */
     uint32_t success_count = 0;
     for (uint32_t i = 0; i < count; i++) {
-        nmo_result_t result = nmo_operation_registry_register(
+        nmo_status_t result = nmo_operation_registry_register(
             registry, &descs[i], type_registry
         );
         
-        if (nmo_result_is_error(result)) {
+        if (result != NMO_OK) {
             /* Log error if logger provided */
             if (logger) {
+                char err_msg[256];
+                nmo_last_error_message_copy(err_msg, sizeof(err_msg));
                 nmo_log_warn(logger, "Failed to register operation %u (%s): %s", 
                            i, descs[i].name ? descs[i].name : "unnamed",
-                           result.error ? result.error->message : "Unknown error");
+                           err_msg[0] ? err_msg : "Unknown error");
             }
         } else {
             success_count++;
@@ -463,11 +461,11 @@ nmo_result_t nmo_operation_registry_register_bulk(
     
     /* Return success if at least one operation registered */
     if (success_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                                 "Failed to register any operations");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                                "Failed to register any operations");
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -520,7 +518,7 @@ static const nmo_operation_tree_cell_t *find_cell_by_result(
     return NULL;
 }
 
-static nmo_result_t find_p2_layer(
+static nmo_status_t find_p2_layer(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
@@ -529,25 +527,23 @@ static nmo_result_t find_p2_layer(
     const nmo_operation_p2_layer_t **out_p2_layer
 ) {
     if (!registry || !operation_guid || !p1_type || !out_p2_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
 
     *out_p2_layer = NULL;
 
     /* Step 1: Find operation family by GUID (O(1) hash lookup) */
     uint32_t family_index = 0;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->family_map,
-                                               operation_guid,
-                                               &family_index))) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "Operation family not found");
+    if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                    "Operation family not found");
     }
 
     const nmo_operation_family_t *family = registry->families[family_index];
     if (!family) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                 "Family index points to NULL");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Family index points to NULL");
     }
 
     /* Step 2: Find P1 layer by type GUID (linear search with inheritance fallback) */
@@ -592,8 +588,8 @@ static nmo_result_t find_p2_layer(
     }
 
     if (!p1_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "P1 type not found in family (no compatible type)");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "P1 type not found in family (no compatible type)");
     }
 
     /* Step 3: Find P2 layer by type GUID (linear search with inheritance fallback) */
@@ -639,15 +635,15 @@ static nmo_result_t find_p2_layer(
     }
 
     if (!p2_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "P2 type not found in P1 layer (no compatible type)");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "P2 type not found in P1 layer (no compatible type)");
     }
 
     *out_p2_layer = p2_layer;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_operation_registry_find_typed(
+nmo_status_t nmo_operation_registry_find_typed(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
@@ -657,24 +653,24 @@ nmo_result_t nmo_operation_registry_find_typed(
     const nmo_operation_tree_cell_t **out_cell
 ) {
     if (!registry || !operation_guid || !p1_type || !result_type || !out_cell) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
 
     *out_cell = NULL;
     registry->total_lookups++;
 
     const nmo_operation_p2_layer_t *p2_layer = NULL;
-    nmo_result_t layer_result = find_p2_layer(
+    nmo_status_t layer_result = find_p2_layer(
         registry, operation_guid, p1_type, p2_type, type_registry, &p2_layer);
-    if (nmo_result_is_error(layer_result)) {
+    if (layer_result != NMO_OK) {
         return layer_result;
     }
 
     const nmo_operation_tree_cell_t *cell = find_cell_by_result(p2_layer, result_type->guid);
     if (!cell) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "No operation cell found for requested result type");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "No operation cell found for requested result type");
     }
 
     /* Update statistics (mutable cast for statistics) */
@@ -683,10 +679,10 @@ nmo_result_t nmo_operation_registry_find_typed(
 
     *out_cell = cell;
     registry->cache_hits++;  /* Placeholder - no real cache yet */
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_operation_registry_find(
+nmo_status_t nmo_operation_registry_find(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
@@ -695,8 +691,8 @@ nmo_result_t nmo_operation_registry_find(
     const nmo_operation_tree_cell_t **out_cell
 ) {
     if (!registry || !operation_guid || !p1_type || !out_cell) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
     
     *out_cell = NULL;
@@ -704,17 +700,15 @@ nmo_result_t nmo_operation_registry_find(
     
     /* Step 1: Find operation family by GUID (O(1) hash lookup) */
     uint32_t family_index = 0;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->family_map,
-                                               operation_guid,
-                                               &family_index))) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "Operation family not found");
+    if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                    "Operation family not found");
     }
     
     const nmo_operation_family_t *family = registry->families[family_index];
     if (!family) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                 "Family index points to NULL");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Family index points to NULL");
     }
     
     /* Step 2: Find P1 layer by type GUID (linear search with inheritance fallback) */
@@ -759,8 +753,8 @@ nmo_result_t nmo_operation_registry_find(
     }
     
     if (!p1_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "P1 type not found in family (no compatible type)");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "P1 type not found in family (no compatible type)");
     }
     
     /* Step 3: Find P2 layer by type GUID (linear search with inheritance fallback) */
@@ -806,15 +800,15 @@ nmo_result_t nmo_operation_registry_find(
     }
     
     if (!p2_layer) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "P2 type not found in P1 layer (no compatible type)");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "P2 type not found in P1 layer (no compatible type)");
     }
     
     /* Step 4: Find operation cell (best match) */
     const nmo_operation_tree_cell_t *cell = find_cell_best(p2_layer);
     if (!cell) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "No operation cell found in P2 layer");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "No operation cell found in P2 layer");
     }
     
     /* Update statistics (mutable cast for statistics) */
@@ -824,10 +818,10 @@ nmo_result_t nmo_operation_registry_find(
     *out_cell = cell;
     registry->cache_hits++;  /* Placeholder - no real cache yet */
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_operation_registry_execute(
+nmo_status_t nmo_operation_registry_execute(
     nmo_operation_registry_t *registry,
     const nmo_guid_t *operation_guid,
     const void *p1_data,
@@ -839,23 +833,23 @@ nmo_result_t nmo_operation_registry_execute(
     const nmo_type_registry_t *type_registry
 ) {
     if (!registry || !operation_guid || !p1_data || !p1_type || !result_data || !result_type) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
     
     /* Find operation */
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t result = nmo_operation_registry_find_typed(
+    nmo_status_t result = nmo_operation_registry_find_typed(
         registry, operation_guid, p1_type, p2_type, result_type, type_registry, &cell
     );
     
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
     
     if (!cell || !cell->desc.function) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                 "Operation not found");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "Operation not found");
     }
     
     /* Execute operation */
@@ -881,9 +875,7 @@ const nmo_operation_family_t *nmo_operation_registry_get_family(
     
     /* Lookup in hash map */
     uint32_t family_index = 0;
-    if (nmo_result_is_error(nmo_hash_table_get(registry->family_map,
-                                               operation_guid,
-                                               &family_index))) {
+    if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) != NMO_OK) {
         return NULL;
     }
     
@@ -894,14 +886,14 @@ const nmo_operation_family_t *nmo_operation_registry_get_family(
     return registry->families[family_index];
 }
 
-nmo_result_t nmo_operation_family_enumerate(
+nmo_status_t nmo_operation_family_enumerate(
     const nmo_operation_family_t *family,
     nmo_operation_enum_fn callback,
     void *user_data
 ) {
     if (!family || !callback) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid parameters");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid parameters");
     }
     
     /* Enumerate all operations in family (3-level nested loop) */
@@ -914,15 +906,15 @@ nmo_result_t nmo_operation_family_enumerate(
             for (uint32_t k = 0; k < p2_layer->cell_count; k++) {
                 const nmo_operation_tree_cell_t *cell = &p2_layer->cells[k];
                 
-                nmo_result_t result = callback(cell, user_data);
-                if (nmo_result_is_error(result)) {
+                nmo_status_t result = callback(cell, user_data);
+                if (result != NMO_OK) {
                     return result;  /* Stop on error */
                 }
             }
         }
     }
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

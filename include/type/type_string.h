@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file type_string.h
  * @brief Type-to-string and string-to-type conversion system (Phase 6.4)
  *
@@ -54,9 +54,9 @@ struct nmo_session;
  * @param id        Object ID
  * @param out_name  Receives pointer to a NUL-terminated name (must outlive call)
  */
-typedef nmo_result_t (*nmo_object_id_to_name_resolver_fn)(
+typedef nmo_status_t (*nmo_object_id_to_name_resolver_fn)(
     const void *session,
-    nmo_id_t id,
+    nmo_object_id_t id,
     const char **out_name
 );
 
@@ -67,10 +67,10 @@ typedef nmo_result_t (*nmo_object_id_to_name_resolver_fn)(
  * @param name      Object name
  * @param out_id    Receives resolved object ID
  */
-typedef nmo_result_t (*nmo_object_name_to_id_resolver_fn)(
+typedef nmo_status_t (*nmo_object_name_to_id_resolver_fn)(
     const void *session,
     const char *name,
-    nmo_id_t *out_id
+    nmo_object_id_t *out_id
 );
 
 /**
@@ -106,7 +106,7 @@ NMO_API void nmo_type_string_set_object_resolvers(
  *
  * Reference: CKParameterTypeDesc::ToString (CKParameterManager.cpp:1345)
  */
-NMO_API nmo_result_t nmo_type_value_to_string(
+NMO_API nmo_status_t nmo_type_value_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -130,7 +130,7 @@ NMO_API nmo_result_t nmo_type_value_to_string(
  *
  * Reference: CKParameterTypeDesc::FromString (CKParameterManager.cpp:1391)
  */
-NMO_API nmo_result_t nmo_type_value_from_string(
+NMO_API nmo_status_t nmo_type_value_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -157,13 +157,13 @@ NMO_API nmo_result_t nmo_type_value_from_string(
 /**
  * @brief Float to string: "3.14159" or "-2.5e-3"
  */
-NMO_API nmo_result_t nmo_float_to_string(
+NMO_API nmo_status_t nmo_float_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_float_from_string(
+NMO_API nmo_status_t nmo_float_from_string(
     void *value,
     const char *string
 );
@@ -171,14 +171,14 @@ NMO_API nmo_result_t nmo_float_from_string(
 /**
  * @brief Int to string: "42" or "0x2A"
  */
-NMO_API nmo_result_t nmo_int_to_string(
+NMO_API nmo_status_t nmo_int_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
     bool use_hex  /**< true for "0x..." format */
 );
 
-NMO_API nmo_result_t nmo_int_from_string(
+NMO_API nmo_status_t nmo_int_from_string(
     void *value,
     const char *string
 );
@@ -186,13 +186,13 @@ NMO_API nmo_result_t nmo_int_from_string(
 /**
  * @brief Bool to string: "true" or "false"
  */
-NMO_API nmo_result_t nmo_bool_to_string(
+NMO_API nmo_status_t nmo_bool_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_bool_from_string(
+NMO_API nmo_status_t nmo_bool_from_string(
     void *value,
     const char *string
 );
@@ -200,24 +200,24 @@ NMO_API nmo_result_t nmo_bool_from_string(
 /**
  * @brief Vector (3D) to string: "(1.0, 2.0, 3.0)"
  */
-NMO_API nmo_result_t nmo_vector2_to_string(
+NMO_API nmo_status_t nmo_vector2_to_string(
     const void *value,  /**< float[2] */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_vector2_from_string(
+NMO_API nmo_status_t nmo_vector2_from_string(
     void *value,  /**< float[2] */
     const char *string
 );
 
-NMO_API nmo_result_t nmo_vector_to_string(
+NMO_API nmo_status_t nmo_vector_to_string(
     const void *value,  /**< float[3] */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_vector_from_string(
+NMO_API nmo_status_t nmo_vector_from_string(
     void *value,  /**< float[3] */
     const char *string
 );
@@ -225,13 +225,13 @@ NMO_API nmo_result_t nmo_vector_from_string(
 /**
  * @brief Vector4 to string: "(x, y, z, w)"
  */
-NMO_API nmo_result_t nmo_vector4_to_string(
+NMO_API nmo_status_t nmo_vector4_to_string(
     const void *value,  /**< float[4] */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_vector4_from_string(
+NMO_API nmo_status_t nmo_vector4_from_string(
     void *value,  /**< float[4] */
     const char *string
 );
@@ -239,13 +239,13 @@ NMO_API nmo_result_t nmo_vector4_from_string(
 /**
  * @brief Quaternion to string: "(x, y, z, w)"
  */
-NMO_API nmo_result_t nmo_quaternion_to_string(
+NMO_API nmo_status_t nmo_quaternion_to_string(
     const void *value,  /**< float[4] */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_quaternion_from_string(
+NMO_API nmo_status_t nmo_quaternion_from_string(
     void *value,  /**< float[4] */
     const char *string
 );
@@ -253,13 +253,13 @@ NMO_API nmo_result_t nmo_quaternion_from_string(
 /**
  * @brief Matrix (4x4) to string
  */
-NMO_API nmo_result_t nmo_matrix_to_string(
+NMO_API nmo_status_t nmo_matrix_to_string(
     const void *value,  /**< nmo_matrix_t */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_matrix_from_string(
+NMO_API nmo_status_t nmo_matrix_from_string(
     void *value,  /**< nmo_matrix_t */
     const char *string
 );
@@ -267,13 +267,13 @@ NMO_API nmo_result_t nmo_matrix_from_string(
 /**
  * @brief Color (RGBA) to string
  */
-NMO_API nmo_result_t nmo_color_to_string(
+NMO_API nmo_status_t nmo_color_to_string(
     const void *value,  /**< float[4] */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_color_from_string(
+NMO_API nmo_status_t nmo_color_from_string(
     void *value,  /**< float[4] */
     const char *string
 );
@@ -291,7 +291,7 @@ NMO_API nmo_result_t nmo_color_from_string(
  *
  * Reference: CKEnumStruct::GetEnumEntry (CKParameterManager.cpp:298-304)
  */
-NMO_API nmo_result_t nmo_enum_to_string(
+NMO_API nmo_status_t nmo_enum_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -300,7 +300,7 @@ NMO_API nmo_result_t nmo_enum_to_string(
     bool use_name
 );
 
-NMO_API nmo_result_t nmo_enum_from_string(
+NMO_API nmo_status_t nmo_enum_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -320,7 +320,7 @@ NMO_API nmo_result_t nmo_enum_from_string(
  *
  * Reference: CKFlagsStruct (CKParameterManager.cpp:298-304)
  */
-NMO_API nmo_result_t nmo_flags_to_string(
+NMO_API nmo_status_t nmo_flags_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -329,7 +329,7 @@ NMO_API nmo_result_t nmo_flags_to_string(
     bool use_names
 );
 
-NMO_API nmo_result_t nmo_flags_from_string(
+NMO_API nmo_status_t nmo_flags_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -339,13 +339,13 @@ NMO_API nmo_result_t nmo_flags_from_string(
 /**
  * @brief String to string: "\"Hello\\nWorld\"" (with escaping)
  */
-NMO_API nmo_result_t nmo_string_to_string(
+NMO_API nmo_status_t nmo_string_to_string(
     const void *value,  /**< const char* */
     char *buffer,
     size_t buffer_size
 );
 
-NMO_API nmo_result_t nmo_string_from_string(
+NMO_API nmo_status_t nmo_string_from_string(
     void *value,  /**< char** (arena-allocated) */
     const char *string,
     nmo_arena_t *arena
@@ -354,20 +354,20 @@ NMO_API nmo_result_t nmo_string_from_string(
 /**
  * @brief Object ID to string: "#12345" or "ObjectName"
  *
- * @param value          Pointer to object ID (nmo_id_t)
+ * @param value          Pointer to object ID (nmo_object_id_t)
  * @param buffer         Output buffer
  * @param buffer_size    Buffer capacity
  * @param session        Session for object name lookup (can be NULL)
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_object_id_to_string(
+NMO_API nmo_status_t nmo_object_id_to_string(
     const void *value,
     char *buffer,
     size_t buffer_size,
     struct nmo_session *session  /**< Optional - for name lookup */
 );
 
-NMO_API nmo_result_t nmo_object_id_from_string(
+NMO_API nmo_status_t nmo_object_id_from_string(
     void *value,
     const char *string,
     struct nmo_session *session  /**< Optional - for name lookup */

@@ -35,9 +35,9 @@ static void tracked_value_dispose(void *element, void *user_data) {
 
 TEST(nmo_array, init_with_capacity) {
     nmo_array_t array;
-    nmo_result_t result = nmo_array_init(&array, sizeof(uint32_t), 8, NULL);
+    nmo_status_t result = nmo_array_init(&array, sizeof(uint32_t), 8, NULL);
 
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NOT_NULL(array.data);
     ASSERT_EQ(0u, array.count);
     ASSERT_EQ(8u, array.capacity);
@@ -48,9 +48,9 @@ TEST(nmo_array, init_with_capacity) {
 
 TEST(nmo_array, alloc_sets_initial_count) {
     nmo_array_t array;
-    nmo_result_t result = nmo_array_alloc(&array, sizeof(uint16_t), 5, NULL);
+    nmo_status_t result = nmo_array_alloc(&array, sizeof(uint16_t), 5, NULL);
 
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NOT_NULL(array.data);
     ASSERT_EQ(5u, array.count);
     ASSERT_EQ(5u, array.capacity);
@@ -61,8 +61,8 @@ TEST(nmo_array, alloc_sets_initial_count) {
 
 TEST(nmo_array, append_and_get) {
     nmo_array_t array;
-    nmo_result_t result = nmo_array_init(&array, sizeof(uint32_t), 0, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_init(&array, sizeof(uint32_t), 0, NULL);
+    ASSERT_EQ(NMO_OK, result);
 
     for (uint32_t i = 0; i < 10; ++i) {
         NMO_ARRAY_APPEND(uint32_t, &array, i);
@@ -96,21 +96,21 @@ TEST(nmo_array, set_insert_remove_pop) {
     }
 
     uint32_t replacement = 100;
-    nmo_result_t result = nmo_array_set(&array, 1, &replacement);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_set(&array, 1, &replacement);
+    ASSERT_EQ(NMO_OK, result);
 
     uint32_t insert_value = 200;
     result = nmo_array_insert(&array, 1, &insert_value);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     uint32_t removed = 0;
     result = nmo_array_remove(&array, 2, &removed);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(100u, removed);
 
     uint32_t popped = 0;
     result = nmo_array_pop(&array, &popped);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3u, popped);
 
     uint32_t *values = (uint32_t *)array.data;
@@ -125,12 +125,12 @@ TEST(nmo_array, append_array_and_extend) {
     nmo_array_init(&array, sizeof(uint32_t), 0, NULL);
 
     uint32_t initial[] = {1, 2, 3};
-    nmo_result_t result = nmo_array_append_array(&array, initial, 3);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_append_array(&array, initial, 3);
+    ASSERT_EQ(NMO_OK, result);
 
     void *block = NULL;
     result = nmo_array_extend(&array, 2, &block);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NOT_NULL(block);
 
     uint32_t *extended = (uint32_t *)block;
@@ -150,8 +150,8 @@ TEST(nmo_array, reserve_and_ensure_space) {
     nmo_array_t array;
     nmo_array_init(&array, sizeof(uint32_t), 0, NULL);
 
-    nmo_result_t result = nmo_array_reserve(&array, 4);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_reserve(&array, 4);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(4u, array.capacity);
 
     for (uint32_t i = 0; i < 4; ++i) {
@@ -159,7 +159,7 @@ TEST(nmo_array, reserve_and_ensure_space) {
     }
 
     result = nmo_array_ensure_space(&array, 10);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_TRUE(array.capacity >= array.count + 10);
 
     nmo_array_dispose(&array);
@@ -198,14 +198,14 @@ TEST(nmo_array, set_data_and_clone) {
     ASSERT_NOT_NULL(data);
     memcpy(data, values, bytes);
 
-    nmo_result_t result = nmo_array_set_data(&array, data, 3);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_set_data(&array, data, 3);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3u, array.count);
     ASSERT_EQ(3u, array.capacity);
 
     nmo_array_t clone;
     result = nmo_array_clone(&array, &clone, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(array.count, clone.count);
     ASSERT_TRUE(memcmp(array.data, clone.data, bytes) == 0);
 
@@ -228,13 +228,13 @@ TEST(nmo_array, clone_preserves_lifecycle_copy) {
     nmo_array_set_lifecycle(&array, &lifecycle);
 
     nmo_array_t clone;
-    nmo_result_t result = nmo_array_clone(&array, &clone, NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_clone(&array, &clone, NULL);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3u, copy_count);
 
     tracked_value_t extra = {99};
     result = nmo_array_append(&clone, &extra);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(4u, copy_count);
 
     nmo_array_dispose(&clone);
@@ -251,20 +251,20 @@ TEST(nmo_array, swap_resize_and_shrink) {
     nmo_array_append_array(&first, a_values, 2);
     nmo_array_append_array(&second, b_values, 3);
 
-    nmo_result_t result = nmo_array_swap(&first, &second);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_swap(&first, &second);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3u, first.count);
     ASSERT_EQ(2u, second.count);
 
     result = nmo_array_resize(&first, 5);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(5u, first.count);
     uint32_t *grown = NMO_ARRAY_GET(uint32_t, &first, 4);
     ASSERT_NOT_NULL(grown);
     ASSERT_EQ(0u, *grown);
 
     result = nmo_array_shrink_to_fit(&first);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(first.capacity, first.count);
 
     nmo_array_dispose(&first);
@@ -276,17 +276,17 @@ TEST(nmo_array, invalid_arguments) {
     nmo_array_init(&array, sizeof(uint32_t), 0, NULL);
 
     uint32_t value = 1;
-    nmo_result_t result = nmo_array_set(&array, 0, &value);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_array_set(&array, 0, &value);
+    ASSERT_NE(NMO_OK, result);
 
     result = nmo_array_insert(&array, 0, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
 
     result = nmo_array_remove(&array, 0, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
 
     result = nmo_array_pop(&array, NULL);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
 
     ASSERT_NULL(nmo_array_get(&array, 0));
     ASSERT_NULL(nmo_array_front(&array));

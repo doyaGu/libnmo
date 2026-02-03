@@ -1,4 +1,4 @@
-#include "io/nmo_io_stream.h"
+﻿#include "io/nmo_io_stream.h"
 
 #include "io/nmo_io_file.h"
 #include "io/nmo_io.h"
@@ -74,11 +74,9 @@ struct nmo_stream_writer {
 // Reader helpers
 // =============================================================================
 
-static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
+static nmo_status_t reader_fill_output(nmo_stream_reader_t *reader) {
     if (reader->stream_finished) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_INFO,
-                                          "Data section fully consumed"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "Data section fully consumed");
     }
 
     reader->out_pos = 0;
@@ -87,9 +85,7 @@ static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
     if (!reader->data_compressed) {
         if (reader->compressed_remaining == 0) {
             reader->stream_finished = 1;
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                              NMO_SEVERITY_INFO,
-                                              "No more uncompressed data"));
+            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "No more uncompressed data");
         }
 
         size_t to_read = reader->buffer_size;
@@ -101,9 +97,7 @@ static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
         int io_result = nmo_io_read(reader->io, reader->out_buffer, to_read, &bytes_read);
         if (io_result != NMO_OK || bytes_read == 0) {
             reader->stream_finished = 1;
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_READ_FILE,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to stream data section"));
+            NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "Failed to stream data section");
         }
 
         reader->out_filled = bytes_read;
@@ -111,16 +105,14 @@ static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
         if (reader->compressed_remaining == 0) {
             reader->stream_finished = 1;
         }
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (!reader->zstream_initialized) {
         memset(&reader->zstream, 0, sizeof(reader->zstream));
         int mz_result = mz_inflateInit(&reader->zstream);
         if (mz_result != MZ_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to initialize inflate stream"));
+            NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to initialize inflate stream");
         }
         reader->zstream_initialized = 1;
     }
@@ -139,9 +131,7 @@ static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
             int io_result = nmo_io_read(reader->io, reader->in_buffer, to_read, &bytes_read);
             if (io_result != NMO_OK || bytes_read == 0) {
                 reader->stream_finished = 1;
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_READ_FILE,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to read compressed data"));
+                NMO_RETURN_ERROR(NMO_ERR_CANT_READ_FILE, NMO_SEVERITY_ERROR, "Failed to read compressed data");
             }
 
             reader->compressed_remaining -= bytes_read;
@@ -154,9 +144,7 @@ static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
             reader->stream_finished = 1;
             break;
         } else if (status != MZ_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                              NMO_SEVERITY_ERROR,
-                                              "Inflate failed"));
+            NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Inflate failed");
         }
 
         if (reader->zstream.avail_in == 0 && reader->compressed_remaining == 0) {
@@ -177,19 +165,15 @@ static nmo_result_t reader_fill_output(nmo_stream_reader_t *reader) {
 
     reader->out_filled = reader->buffer_size - reader->zstream.avail_out;
     if (reader->out_filled == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_INFO,
-                                          "No more decompressed bytes available"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "No more decompressed bytes available");
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t reader_copy_bytes(nmo_stream_reader_t *reader, void *dst, size_t size) {
+static nmo_status_t reader_copy_bytes(nmo_stream_reader_t *reader, void *dst, size_t size) {
     if (size > reader->uncompressed_remaining) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_INFO,
-                                          "Attempted to read beyond data section"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "Attempted to read beyond data section");
     }
 
     uint8_t *out = (uint8_t *)dst;
@@ -198,7 +182,7 @@ static nmo_result_t reader_copy_bytes(nmo_stream_reader_t *reader, void *dst, si
         if (available == 0) {
             reader->out_pos = 0;
             reader->out_filled = 0;
-            nmo_result_t fill_result = reader_fill_output(reader);
+            nmo_status_t fill_result = reader_fill_output(reader);
             NMO_RETURN_IF_ERROR(fill_result);
             available = reader->out_filled;
         }
@@ -210,14 +194,12 @@ static nmo_result_t reader_copy_bytes(nmo_stream_reader_t *reader, void *dst, si
         size -= chunk;
         reader->uncompressed_remaining -= chunk;
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t reader_skip_bytes(nmo_stream_reader_t *reader, size_t size) {
+static nmo_status_t reader_skip_bytes(nmo_stream_reader_t *reader, size_t size) {
     if (size > reader->uncompressed_remaining) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_INFO,
-                                          "Attempted to skip beyond data section"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "Attempted to skip beyond data section");
     }
 
     while (size > 0) {
@@ -225,7 +207,7 @@ static nmo_result_t reader_skip_bytes(nmo_stream_reader_t *reader, size_t size) 
         if (available == 0) {
             reader->out_pos = 0;
             reader->out_filled = 0;
-            nmo_result_t fill_result = reader_fill_output(reader);
+            nmo_status_t fill_result = reader_fill_output(reader);
             NMO_RETURN_IF_ERROR(fill_result);
             available = reader->out_filled;
         }
@@ -235,22 +217,22 @@ static nmo_result_t reader_skip_bytes(nmo_stream_reader_t *reader, size_t size) 
         size -= chunk;
         reader->uncompressed_remaining -= chunk;
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t reader_read_u32(nmo_stream_reader_t *reader, uint32_t *value) {
+static nmo_status_t reader_read_u32(nmo_stream_reader_t *reader, uint32_t *value) {
     uint32_t tmp = 0;
-    nmo_result_t result = reader_copy_bytes(reader, &tmp, sizeof(uint32_t));
+    nmo_status_t result = reader_copy_bytes(reader, &tmp, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
     *value = nmo_read_u32_le((const uint8_t *)&tmp);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t reader_load_managers(nmo_stream_reader_t *reader) {
+static nmo_status_t reader_load_managers(nmo_stream_reader_t *reader) {
     if (reader->header.file_version < 6 || reader->header.manager_count == 0) {
         reader->managers = NULL;
         reader->manager_count = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t total = reader->header.manager_count;
@@ -260,22 +242,20 @@ static nmo_result_t reader_load_managers(nmo_stream_reader_t *reader) {
         sizeof(nmo_manager_data_t) * total,
         _Alignof(nmo_manager_data_t));
     if (reader->managers == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to allocate manager cache"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager cache");
     }
     memset(reader->managers, 0, sizeof(nmo_manager_data_t) * total);
 
     for (uint32_t i = 0; i < reader->manager_count; ++i) {
         nmo_manager_data_t *mgr = &reader->managers[i];
-        nmo_result_t res = reader_copy_bytes(reader, &mgr->guid, sizeof(nmo_guid_t));
-        if (res.code != NMO_OK) {
+        nmo_status_t res = reader_copy_bytes(reader, &mgr->guid, sizeof(nmo_guid_t));
+        if (res != NMO_OK) {
             return res;
         }
 
         uint32_t data_size = 0;
         res = reader_read_u32(reader, &data_size);
-        if (res.code != NMO_OK) {
+        if (res != NMO_OK) {
             return res;
         }
         mgr->data_size = data_size;
@@ -283,30 +263,26 @@ static nmo_result_t reader_load_managers(nmo_stream_reader_t *reader) {
         if (data_size > 0) {
             void *buffer = nmo_arena_alloc(reader->arena, data_size, 4);
             if (buffer == NULL) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to allocate manager blob"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager blob");
             }
             res = reader_copy_bytes(reader, buffer, data_size);
-            if (res.code != NMO_OK) {
+            if (res != NMO_OK) {
                 return res;
             }
 
             mgr->chunk = nmo_chunk_create(reader->arena);
             if (mgr->chunk == NULL) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to create manager chunk"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to create manager chunk");
             }
 
             res = nmo_chunk_parse(mgr->chunk, buffer, data_size);
-            if (res.code != NMO_OK) {
+            if (res != NMO_OK) {
                 return res;
             }
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 nmo_stream_reader_t *nmo_stream_reader_create(const char *path,
@@ -340,7 +316,7 @@ nmo_stream_reader_t *nmo_stream_reader_create(const char *path,
         return NULL;
     }
 
-    nmo_result_t result = nmo_file_header_parse(reader->io, &reader->header);
+    nmo_status_t result = nmo_file_header_parse(reader->io, &reader->header);
     NMO_RETURN_NULL_IF_ERROR_DO(result, {
         nmo_io_close(reader->io);
         if (reader->owns_arena) {
@@ -479,63 +455,53 @@ const nmo_manager_data_t *nmo_stream_reader_get_managers(const nmo_stream_reader
     return reader ? reader->managers : NULL;
 }
 
-nmo_result_t nmo_stream_reader_read_next_object(nmo_stream_reader_t *reader,
+nmo_status_t nmo_stream_reader_read_next_object(nmo_stream_reader_t *reader,
                                                 nmo_arena_t *arena,
                                                 nmo_object_t **out_object) {
     if (reader == NULL || arena == NULL || out_object == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     if (reader->next_object_index >= reader->objects_total) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_INFO,
-                                          "No more objects available"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "No more objects available");
     }
 
     uint32_t stored_id = 0;
     if (reader->header.file_version < 7) {
-        nmo_result_t id_res = reader_read_u32(reader, &stored_id);
-        if (id_res.code != NMO_OK) {
+        nmo_status_t id_res = reader_read_u32(reader, &stored_id);
+        if (id_res != NMO_OK) {
             return id_res;
         }
     }
 
     uint32_t chunk_size = 0;
-    nmo_result_t size_res = reader_read_u32(reader, &chunk_size);
-    if (size_res.code != NMO_OK) {
+    nmo_status_t size_res = reader_read_u32(reader, &chunk_size);
+    if (size_res != NMO_OK) {
         return size_res;
     }
 
     nmo_chunk_t *chunk = NULL;
     if (chunk_size > 0) {
         if (chunk_size > reader->uncompressed_remaining || chunk_size > STREAM_MAX_CHUNK_SIZE) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
-                                              NMO_SEVERITY_ERROR,
-                                              "Chunk size exceeds remaining data"));
+            NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Chunk size exceeds remaining data");
         }
         void *buffer = nmo_arena_alloc(arena, chunk_size, 4);
         if (buffer == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate chunk buffer"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk buffer");
         }
 
-        nmo_result_t copy_res = reader_copy_bytes(reader, buffer, chunk_size);
-        if (copy_res.code != NMO_OK) {
+        nmo_status_t copy_res = reader_copy_bytes(reader, buffer, chunk_size);
+        if (copy_res != NMO_OK) {
             return copy_res;
         }
 
         chunk = nmo_chunk_create(arena);
         if (chunk == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate chunk"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk");
         }
 
-        nmo_result_t parse_res = nmo_chunk_parse(chunk, buffer, chunk_size);
-        if (parse_res.code != NMO_OK) {
+        nmo_status_t parse_res = nmo_chunk_parse(chunk, buffer, chunk_size);
+        if (parse_res != NMO_OK) {
             return parse_res;
         }
     }
@@ -550,9 +516,7 @@ nmo_result_t nmo_stream_reader_read_next_object(nmo_stream_reader_t *reader,
 
     nmo_object_t *object = nmo_object_create(arena, runtime_id, class_id);
     if (object == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to allocate object"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object");
     }
 
     if (desc && desc->name) {
@@ -569,58 +533,52 @@ nmo_result_t nmo_stream_reader_read_next_object(nmo_stream_reader_t *reader,
 
     reader->next_object_index++;
     *out_object = object;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_stream_reader_skip_object(nmo_stream_reader_t *reader) {
+nmo_status_t nmo_stream_reader_skip_object(nmo_stream_reader_t *reader) {
     if (reader == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Reader is NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Reader is NULL");
     }
 
     if (reader->next_object_index >= reader->objects_total) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_INFO,
-                                          "No more objects to skip"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO, "No more objects to skip");
     }
 
     if (reader->header.file_version < 7) {
-        nmo_result_t id_res = reader_skip_bytes(reader, sizeof(uint32_t));
-        if (id_res.code != NMO_OK) {
+        nmo_status_t id_res = reader_skip_bytes(reader, sizeof(uint32_t));
+        if (id_res != NMO_OK) {
             return id_res;
         }
     }
 
     uint32_t chunk_size = 0;
-    nmo_result_t size_res = reader_read_u32(reader, &chunk_size);
-    if (size_res.code != NMO_OK) {
+    nmo_status_t size_res = reader_read_u32(reader, &chunk_size);
+    if (size_res != NMO_OK) {
         return size_res;
     }
 
     if (chunk_size > 0) {
         if (chunk_size > reader->uncompressed_remaining || chunk_size > STREAM_MAX_CHUNK_SIZE) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
-                                              NMO_SEVERITY_ERROR,
-                                              "Chunk size exceeds remaining data"));
+            NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Chunk size exceeds remaining data");
         }
-        nmo_result_t skip_res = reader_skip_bytes(reader, chunk_size);
-        if (skip_res.code != NMO_OK) {
+        nmo_status_t skip_res = reader_skip_bytes(reader, chunk_size);
+        if (skip_res != NMO_OK) {
             return skip_res;
         }
     }
 
     reader->next_object_index++;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Writer helpers
 // =============================================================================
 
-static nmo_result_t writer_finish_deflate(nmo_stream_writer_t *writer) {
+static nmo_status_t writer_finish_deflate(nmo_stream_writer_t *writer) {
     if (!writer->compress_data || !writer->zstream_initialized) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     int status;
@@ -628,9 +586,7 @@ static nmo_result_t writer_finish_deflate(nmo_stream_writer_t *writer) {
         if (writer->zstream.avail_out == 0) {
             int io_res = nmo_io_write(writer->io, writer->out_buffer, writer->buffer_size);
             if (io_res != NMO_OK) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to flush compressed block"));
+                NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to flush compressed block");
             }
             writer->data_compressed_bytes += writer->buffer_size;
             writer->zstream.next_out = writer->out_buffer;
@@ -643,9 +599,7 @@ static nmo_result_t writer_finish_deflate(nmo_stream_writer_t *writer) {
         if (produced > 0) {
             int io_res = nmo_io_write(writer->io, writer->out_buffer, produced);
             if (io_res != NMO_OK) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to flush compressed data"));
+                NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to flush compressed data");
             }
             writer->data_compressed_bytes += produced;
             writer->zstream.next_out = writer->out_buffer;
@@ -654,31 +608,27 @@ static nmo_result_t writer_finish_deflate(nmo_stream_writer_t *writer) {
     } while (status == MZ_OK);
 
     if (status != MZ_STREAM_END) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to finish deflate stream"));
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to finish deflate stream");
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t writer_write_bytes(nmo_stream_writer_t *writer,
+static nmo_status_t writer_write_bytes(nmo_stream_writer_t *writer,
                                        const void *data,
                                        size_t size) {
     writer->data_uncompressed_bytes += size;
 
     if (!writer->compress_data) {
         if (size == 0) {
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         int io_res = nmo_io_write(writer->io, data, size);
         if (io_res != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to write data"));
+            NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to write data");
         }
         writer->data_compressed_bytes += size;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (!writer->zstream_initialized) {
@@ -687,9 +637,7 @@ static nmo_result_t writer_write_bytes(nmo_stream_writer_t *writer,
         writer->zstream.avail_out = (unsigned int)writer->buffer_size;
         int status = mz_deflateInit(&writer->zstream, writer->compression_level);
         if (status != MZ_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to initialize deflate stream"));
+            NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to initialize deflate stream");
         }
         writer->zstream_initialized = 1;
     }
@@ -701,9 +649,7 @@ static nmo_result_t writer_write_bytes(nmo_stream_writer_t *writer,
         if (writer->zstream.avail_out == 0) {
             int io_res = nmo_io_write(writer->io, writer->out_buffer, writer->buffer_size);
             if (io_res != NMO_OK) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to write compressed buffer"));
+                NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to write compressed buffer");
             }
             writer->data_compressed_bytes += writer->buffer_size;
             writer->zstream.next_out = writer->out_buffer;
@@ -715,18 +661,14 @@ static nmo_result_t writer_write_bytes(nmo_stream_writer_t *writer,
             if (status == MZ_BUF_ERROR && writer->zstream.avail_out == 0) {
                 continue;
             }
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INTERNAL,
-                                              NMO_SEVERITY_ERROR,
-                                              "Deflate error"));
+            NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Deflate error");
         }
 
         size_t produced = writer->buffer_size - writer->zstream.avail_out;
         if (produced > 0) {
             int io_res = nmo_io_write(writer->io, writer->out_buffer, produced);
             if (io_res != NMO_OK) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CANT_WRITE_FILE,
-                                                  NMO_SEVERITY_ERROR,
-                                                  "Failed to flush compressed bytes"));
+                NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR, "Failed to flush compressed bytes");
             }
             writer->data_compressed_bytes += produced;
             writer->zstream.next_out = writer->out_buffer;
@@ -734,7 +676,7 @@ static nmo_result_t writer_write_bytes(nmo_stream_writer_t *writer,
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 nmo_stream_writer_t *nmo_stream_writer_create(const char *path,
@@ -787,7 +729,7 @@ nmo_stream_writer_t *nmo_stream_writer_create(const char *path,
         return NULL;
     }
 
-    nmo_result_t header_result = nmo_file_header_serialize(&writer->header, writer->io);
+    nmo_status_t header_result = nmo_file_header_serialize(&writer->header, writer->io);
     NMO_RETURN_NULL_IF_ERROR_DO(header_result, nmo_stream_writer_destroy(writer));
 
     if (options && options->header1_data && options->header1_size > 0) {
@@ -806,24 +748,18 @@ nmo_stream_writer_t *nmo_stream_writer_create(const char *path,
     return writer;
 }
 
-nmo_result_t nmo_stream_writer_write_object(nmo_stream_writer_t *writer,
+nmo_status_t nmo_stream_writer_write_object(nmo_stream_writer_t *writer,
                                             const nmo_object_t *object) {
     if (writer == NULL || object == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid writer or object"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid writer or object");
     }
 
     if (writer->finalized) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "Writer already finalized"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Writer already finalized");
     }
 
     if (writer->header.object_count && writer->objects_written >= writer->header.object_count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "Object count exceeds header declaration"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Object count exceeds header declaration");
     }
 
     const nmo_chunk_t *chunk = nmo_object_get_chunk(object);
@@ -835,8 +771,8 @@ nmo_result_t nmo_stream_writer_write_object(nmo_stream_writer_t *writer,
             chunk_data = chunk->raw_data;
             chunk_size = chunk->raw_size;
         } else {
-            nmo_result_t res = nmo_chunk_serialize(chunk, (void **)&chunk_data, &chunk_size, writer->scratch_arena);
-            if (res.code != NMO_OK) {
+            nmo_status_t res = nmo_chunk_serialize(chunk, (void **)&chunk_data, &chunk_size, writer->scratch_arena);
+            if (res != NMO_OK) {
                 return res;
             }
         }
@@ -849,22 +785,22 @@ nmo_result_t nmo_stream_writer_write_object(nmo_stream_writer_t *writer,
         }
         uint8_t buffer[4];
         nmo_write_u32_le(buffer, obj_id);
-        nmo_result_t res = writer_write_bytes(writer, buffer, sizeof(buffer));
-        if (res.code != NMO_OK) {
+        nmo_status_t res = writer_write_bytes(writer, buffer, sizeof(buffer));
+        if (res != NMO_OK) {
             return res;
         }
     }
 
     uint8_t size_buffer[4];
     nmo_write_u32_le(size_buffer, (uint32_t)chunk_size);
-    nmo_result_t res = writer_write_bytes(writer, size_buffer, sizeof(size_buffer));
-    if (res.code != NMO_OK) {
+    nmo_status_t res = writer_write_bytes(writer, size_buffer, sizeof(size_buffer));
+    if (res != NMO_OK) {
         return res;
     }
 
     if (chunk_size > 0) {
         res = writer_write_bytes(writer, chunk_data, chunk_size);
-        if (res.code != NMO_OK) {
+        if (res != NMO_OK) {
             return res;
         }
     }
@@ -874,23 +810,21 @@ nmo_result_t nmo_stream_writer_write_object(nmo_stream_writer_t *writer,
     }
 
     writer->objects_written++;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_stream_writer_finalize(nmo_stream_writer_t *writer) {
+nmo_status_t nmo_stream_writer_finalize(nmo_stream_writer_t *writer) {
     if (writer == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Writer is NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Writer is NULL");
     }
 
     if (writer->finalized) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (writer->compress_data && writer->zstream_initialized) {
-        nmo_result_t flush_res = writer_finish_deflate(writer);
-        if (flush_res.code != NMO_OK) {
+        nmo_status_t flush_res = writer_finish_deflate(writer);
+        if (flush_res != NMO_OK) {
             return flush_res;
         }
         mz_deflateEnd(&writer->zstream);
@@ -901,13 +835,13 @@ nmo_result_t nmo_stream_writer_finalize(nmo_stream_writer_t *writer) {
     writer->header.data_unpack_size = (uint32_t)writer->data_uncompressed_bytes;
 
     nmo_io_seek(writer->io, 0, NMO_SEEK_SET);
-    nmo_result_t header_res = nmo_file_header_serialize(&writer->header, writer->io);
-    if (header_res.code != NMO_OK) {
+    nmo_status_t header_res = nmo_file_header_serialize(&writer->header, writer->io);
+    if (header_res != NMO_OK) {
         return header_res;
     }
 
     writer->finalized = 1;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_stream_writer_destroy(nmo_stream_writer_t *writer) {

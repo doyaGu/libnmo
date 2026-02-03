@@ -57,9 +57,9 @@ TEST(type_string, float_to_string_normal) {
     
     char buffer[64];
     float value = 3.14159f;
-    nmo_result_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("3.14159", buffer);
     
     teardown();
@@ -70,9 +70,9 @@ TEST(type_string, float_to_string_negative) {
     
     char buffer[64];
     float value = -2.71828f;
-    nmo_result_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("-2.71828", buffer);
     
     teardown();
@@ -83,9 +83,9 @@ TEST(type_string, float_to_string_nan) {
     
     char buffer[64];
     float value = NAN;
-    nmo_result_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("NaN", buffer);
     
     teardown();
@@ -96,9 +96,9 @@ TEST(type_string, float_to_string_infinity) {
     
     char buffer[64];
     float value = INFINITY;
-    nmo_result_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_float_to_string(&value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("Infinity", buffer);
     
     teardown();
@@ -108,9 +108,9 @@ TEST(type_string, float_from_string_normal) {
     setup();
     
     float value = 0.0f;
-    nmo_result_t result = nmo_float_from_string(&value, "3.14159");
+    nmo_status_t result = nmo_float_from_string(&value, "3.14159");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FLOAT_EQ(3.14159f, value, 0.00001f);
     
     teardown();
@@ -120,9 +120,9 @@ TEST(type_string, float_from_string_scientific) {
     setup();
     
     float value = 0.0f;
-    nmo_result_t result = nmo_float_from_string(&value, "2.5e-3");
+    nmo_status_t result = nmo_float_from_string(&value, "2.5e-3");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FLOAT_EQ(0.0025f, value, 0.000001f);
     
     teardown();
@@ -132,9 +132,9 @@ TEST(type_string, float_from_string_nan) {
     setup();
     
     float value = 0.0f;
-    nmo_result_t result = nmo_float_from_string(&value, "NaN");
+    nmo_status_t result = nmo_float_from_string(&value, "NaN");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_TRUE(isnan(value));
     
     teardown();
@@ -147,11 +147,11 @@ TEST(type_string, float_roundtrip) {
     char buffer[64];
     float parsed = 0.0f;
     
-    nmo_result_t r1 = nmo_float_to_string(&original, buffer, sizeof(buffer));
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_float_to_string(&original, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_float_from_string(&parsed, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_float_from_string(&parsed, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_FLOAT_EQ(original, parsed, 0.001f);
     
@@ -167,9 +167,9 @@ TEST(type_string, int_to_string_decimal) {
     
     char buffer[64];
     int32_t value = 42;
-    nmo_result_t result = nmo_int_to_string(&value, buffer, sizeof(buffer), false);
+    nmo_status_t result = nmo_int_to_string(&value, buffer, sizeof(buffer), false);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("42", buffer);
     
     teardown();
@@ -180,9 +180,9 @@ TEST(type_string, int_to_string_negative) {
     
     char buffer[64];
     int32_t value = -100;
-    nmo_result_t result = nmo_int_to_string(&value, buffer, sizeof(buffer), false);
+    nmo_status_t result = nmo_int_to_string(&value, buffer, sizeof(buffer), false);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("-100", buffer);
     
     teardown();
@@ -193,9 +193,9 @@ TEST(type_string, int_to_string_hex) {
     
     char buffer[64];
     int32_t value = 255;
-    nmo_result_t result = nmo_int_to_string(&value, buffer, sizeof(buffer), true);
+    nmo_status_t result = nmo_int_to_string(&value, buffer, sizeof(buffer), true);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("0xFF", buffer);
     
     teardown();
@@ -205,9 +205,9 @@ TEST(type_string, int_from_string_decimal) {
     setup();
     
     int32_t value = 0;
-    nmo_result_t result = nmo_int_from_string(&value, "42");
+    nmo_status_t result = nmo_int_from_string(&value, "42");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(42, value);
     
     teardown();
@@ -217,9 +217,9 @@ TEST(type_string, int_from_string_hex) {
     setup();
     
     int32_t value = 0;
-    nmo_result_t result = nmo_int_from_string(&value, "0x2A");
+    nmo_status_t result = nmo_int_from_string(&value, "0x2A");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(42, value);
     
     teardown();
@@ -229,9 +229,9 @@ TEST(type_string, int_from_string_negative) {
     setup();
     
     int32_t value = 0;
-    nmo_result_t result = nmo_int_from_string(&value, "-100");
+    nmo_status_t result = nmo_int_from_string(&value, "-100");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(-100, value);
     
     teardown();
@@ -244,11 +244,11 @@ TEST(type_string, int_roundtrip_decimal) {
     char buffer[64];
     int32_t parsed = 0;
     
-    nmo_result_t r1 = nmo_int_to_string(&original, buffer, sizeof(buffer), false);
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_int_to_string(&original, buffer, sizeof(buffer), false);
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_int_from_string(&parsed, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_int_from_string(&parsed, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
@@ -262,11 +262,11 @@ TEST(type_string, int_roundtrip_hex) {
     char buffer[64];
     int32_t parsed = 0;
     
-    nmo_result_t r1 = nmo_int_to_string(&original, buffer, sizeof(buffer), true);
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_int_to_string(&original, buffer, sizeof(buffer), true);
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_int_from_string(&parsed, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_int_from_string(&parsed, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
@@ -282,9 +282,9 @@ TEST(type_string, bool_to_string_true) {
     
     char buffer[64];
     bool value = true;
-    nmo_result_t result = nmo_bool_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_bool_to_string(&value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("true", buffer);
     
     teardown();
@@ -295,9 +295,9 @@ TEST(type_string, bool_to_string_false) {
     
     char buffer[64];
     bool value = false;
-    nmo_result_t result = nmo_bool_to_string(&value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_bool_to_string(&value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("false", buffer);
     
     teardown();
@@ -307,9 +307,9 @@ TEST(type_string, bool_from_string_true) {
     setup();
     
     bool value = false;
-    nmo_result_t result = nmo_bool_from_string(&value, "true");
+    nmo_status_t result = nmo_bool_from_string(&value, "true");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_TRUE(value);
     
     teardown();
@@ -319,9 +319,9 @@ TEST(type_string, bool_from_string_false) {
     setup();
     
     bool value = true;
-    nmo_result_t result = nmo_bool_from_string(&value, "false");
+    nmo_status_t result = nmo_bool_from_string(&value, "false");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FALSE(value);
     
     teardown();
@@ -331,9 +331,9 @@ TEST(type_string, bool_from_string_one) {
     setup();
     
     bool value = false;
-    nmo_result_t result = nmo_bool_from_string(&value, "1");
+    nmo_status_t result = nmo_bool_from_string(&value, "1");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_TRUE(value);
     
     teardown();
@@ -343,9 +343,9 @@ TEST(type_string, bool_from_string_zero) {
     setup();
     
     bool value = true;
-    nmo_result_t result = nmo_bool_from_string(&value, "0");
+    nmo_status_t result = nmo_bool_from_string(&value, "0");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FALSE(value);
     
     teardown();
@@ -358,11 +358,11 @@ TEST(type_string, bool_roundtrip) {
     char buffer[64];
     bool parsed = false;
     
-    nmo_result_t r1 = nmo_bool_to_string(&original, buffer, sizeof(buffer));
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_bool_to_string(&original, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_bool_from_string(&parsed, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_bool_from_string(&parsed, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
@@ -378,9 +378,9 @@ TEST(type_string, vector_to_string) {
     
     char buffer[128];
     float value[3] = {1.0f, 2.0f, 3.0f};
-    nmo_result_t result = nmo_vector_to_string(value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_vector_to_string(value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("(1, 2, 3)", buffer);
     
     teardown();
@@ -390,9 +390,9 @@ TEST(type_string, vector_from_string) {
     setup();
     
     float value[3] = {0.0f, 0.0f, 0.0f};
-    nmo_result_t result = nmo_vector_from_string(value, "(1.5, 2.5, 3.5)");
+    nmo_status_t result = nmo_vector_from_string(value, "(1.5, 2.5, 3.5)");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FLOAT_EQ(1.5f, value[0], 0.001f);
     ASSERT_FLOAT_EQ(2.5f, value[1], 0.001f);
     ASSERT_FLOAT_EQ(3.5f, value[2], 0.001f);
@@ -404,9 +404,9 @@ TEST(type_string, vector_from_string_spaces) {
     setup();
     
     float value[3] = {0.0f, 0.0f, 0.0f};
-    nmo_result_t result = nmo_vector_from_string(value, "( 10 , 20 , 30 )");
+    nmo_status_t result = nmo_vector_from_string(value, "( 10 , 20 , 30 )");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FLOAT_EQ(10.0f, value[0], 0.001f);
     ASSERT_FLOAT_EQ(20.0f, value[1], 0.001f);
     ASSERT_FLOAT_EQ(30.0f, value[2], 0.001f);
@@ -421,11 +421,11 @@ TEST(type_string, vector_roundtrip) {
     char buffer[128];
     float parsed[3] = {0.0f, 0.0f, 0.0f};
     
-    nmo_result_t r1 = nmo_vector_to_string(original, buffer, sizeof(buffer));
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_vector_to_string(original, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_vector_from_string(parsed, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_vector_from_string(parsed, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_FLOAT_EQ(original[0], parsed[0], 0.001f);
     ASSERT_FLOAT_EQ(original[1], parsed[1], 0.001f);
@@ -443,9 +443,9 @@ TEST(type_string, quaternion_to_string) {
     
     char buffer[128];
     float value[4] = {0.707f, 0.0f, 0.707f, 0.0f};
-    nmo_result_t result = nmo_quaternion_to_string(value, buffer, sizeof(buffer));
+    nmo_status_t result = nmo_quaternion_to_string(value, buffer, sizeof(buffer));
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("(0.707, 0, 0.707, 0)", buffer);
     
     teardown();
@@ -455,9 +455,9 @@ TEST(type_string, quaternion_from_string) {
     setup();
     
     float value[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    nmo_result_t result = nmo_quaternion_from_string(value, "(0.5, 0.5, 0.5, 0.5)");
+    nmo_status_t result = nmo_quaternion_from_string(value, "(0.5, 0.5, 0.5, 0.5)");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_FLOAT_EQ(0.5f, value[0], 0.001f);
     ASSERT_FLOAT_EQ(0.5f, value[1], 0.001f);
     ASSERT_FLOAT_EQ(0.5f, value[2], 0.001f);
@@ -473,11 +473,11 @@ TEST(type_string, quaternion_roundtrip) {
     char buffer[128];
     float parsed[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     
-    nmo_result_t r1 = nmo_quaternion_to_string(original, buffer, sizeof(buffer));
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_quaternion_to_string(original, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_quaternion_from_string(parsed, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_quaternion_from_string(parsed, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_FLOAT_EQ(original[0], parsed[0], 0.001f);
     ASSERT_FLOAT_EQ(original[1], parsed[1], 0.001f);
@@ -497,18 +497,18 @@ TEST(type_string, enum_to_string_by_name) {
     
     // Register enum type: Color { RED=1, GREEN=2, BLUE=3 }
     nmo_guid_t enum_guid = {0x12345678, 0x00000001};
-    nmo_result_t reg_result = nmo_type_registry_register_enum(
+    nmo_status_t reg_result = nmo_type_registry_register_enum(
         registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
-    ASSERT_EQ(NMO_OK, reg_result.code);
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
     ASSERT_NE(NULL, type);
     
     char buffer[64];
     int32_t value = 2;  // GREEN
-    nmo_result_t result = nmo_enum_to_string(&value, type, buffer, sizeof(buffer), true);
+    nmo_status_t result = nmo_enum_to_string(&value, type, buffer, sizeof(buffer), true);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("GREEN", buffer);
     
     teardown();
@@ -524,9 +524,9 @@ TEST(type_string, enum_to_string_by_value) {
     
     char buffer[64];
     int32_t value = 2;
-    nmo_result_t result = nmo_enum_to_string(&value, type, buffer, sizeof(buffer), false);
+    nmo_status_t result = nmo_enum_to_string(&value, type, buffer, sizeof(buffer), false);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("2", buffer);
     
     teardown();
@@ -541,9 +541,9 @@ TEST(type_string, enum_from_string_by_name) {
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
     
     int32_t value = 0;
-    nmo_result_t result = nmo_enum_from_string(&value, type, "BLUE");
+    nmo_status_t result = nmo_enum_from_string(&value, type, "BLUE");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, value);
     
     teardown();
@@ -558,9 +558,9 @@ TEST(type_string, enum_from_string_by_value) {
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
     
     int32_t value = 0;
-    nmo_result_t result = nmo_enum_from_string(&value, type, "2");
+    nmo_status_t result = nmo_enum_from_string(&value, type, "2");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(2, value);
     
     teardown();
@@ -578,11 +578,11 @@ TEST(type_string, enum_roundtrip) {
     char buffer[64];
     int32_t parsed = 0;
     
-    nmo_result_t r1 = nmo_enum_to_string(&original, type, buffer, sizeof(buffer), true);
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_enum_to_string(&original, type, buffer, sizeof(buffer), true);
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_enum_from_string(&parsed, type, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_enum_from_string(&parsed, type, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
@@ -600,18 +600,18 @@ TEST(type_string, flags_to_string_by_names) {
     
     // Register flags type: FileMode { READ=1, WRITE=2, EXECUTE=4 }
     nmo_guid_t flags_guid = {0x12345678, 0x00000002};
-    nmo_result_t reg_result = nmo_type_registry_register_flags(
+    nmo_status_t reg_result = nmo_type_registry_register_flags(
         registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
-    ASSERT_EQ(NMO_OK, reg_result.code);
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
     ASSERT_NE(NULL, type);
     
     char buffer[128];
     uint32_t value = 3;  // READ | WRITE
-    nmo_result_t result = nmo_flags_to_string(&value, type, buffer, sizeof(buffer), true);
+    nmo_status_t result = nmo_flags_to_string(&value, type, buffer, sizeof(buffer), true);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("READ|WRITE", buffer);
     
     teardown();
@@ -627,9 +627,9 @@ TEST(type_string, flags_to_string_by_hex) {
     
     char buffer[128];
     uint32_t value = 7;  // READ | WRITE | EXECUTE
-    nmo_result_t result = nmo_flags_to_string(&value, type, buffer, sizeof(buffer), false);
+    nmo_status_t result = nmo_flags_to_string(&value, type, buffer, sizeof(buffer), false);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("0x7", buffer);
     
     teardown();
@@ -644,9 +644,9 @@ TEST(type_string, flags_from_string_by_names) {
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
     
     uint32_t value = 0;
-    nmo_result_t result = nmo_flags_from_string(&value, type, "READ|EXECUTE");
+    nmo_status_t result = nmo_flags_from_string(&value, type, "READ|EXECUTE");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(5u, value);  // 1 | 4
     
     teardown();
@@ -661,9 +661,9 @@ TEST(type_string, flags_from_string_by_hex) {
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
     
     uint32_t value = 0;
-    nmo_result_t result = nmo_flags_from_string(&value, type, "0x3");
+    nmo_status_t result = nmo_flags_from_string(&value, type, "0x3");
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3u, value);
     
     teardown();
@@ -681,11 +681,11 @@ TEST(type_string, flags_roundtrip) {
     char buffer[128];
     uint32_t parsed = 0;
     
-    nmo_result_t r1 = nmo_flags_to_string(&original, type, buffer, sizeof(buffer), true);
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_flags_to_string(&original, type, buffer, sizeof(buffer), true);
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_flags_from_string(&parsed, type, buffer);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_flags_from_string(&parsed, type, buffer);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
@@ -795,10 +795,10 @@ TEST(type_string, object_id_to_string) {
     setup();
     
     char buffer[64];
-    nmo_id_t value = 12345;
-    nmo_result_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), NULL);
+    nmo_object_id_t value = 12345;
+    nmo_status_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), NULL);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("#12345", buffer);
     
     teardown();
@@ -807,10 +807,10 @@ TEST(type_string, object_id_to_string) {
 TEST(type_string, object_id_from_string) {
     setup();
     
-    nmo_id_t value = 0;
-    nmo_result_t result = nmo_object_id_from_string(&value, "#12345", NULL);
+    nmo_object_id_t value = 0;
+    nmo_status_t result = nmo_object_id_from_string(&value, "#12345", NULL);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(12345u, value);
     
     teardown();
@@ -819,15 +819,15 @@ TEST(type_string, object_id_from_string) {
 TEST(type_string, object_id_roundtrip) {
     setup();
     
-    nmo_id_t original = 99999;
+    nmo_object_id_t original = 99999;
     char buffer[64];
-    nmo_id_t parsed = 0;
+    nmo_object_id_t parsed = 0;
     
-    nmo_result_t r1 = nmo_object_id_to_string(&original, buffer, sizeof(buffer), NULL);
-    ASSERT_EQ(NMO_OK, r1.code);
+    nmo_status_t r1 = nmo_object_id_to_string(&original, buffer, sizeof(buffer), NULL);
+    ASSERT_EQ(NMO_OK, r1);
     
-    nmo_result_t r2 = nmo_object_id_from_string(&parsed, buffer, NULL);
-    ASSERT_EQ(NMO_OK, r2.code);
+    nmo_status_t r2 = nmo_object_id_from_string(&parsed, buffer, NULL);
+    ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
@@ -838,57 +838,57 @@ typedef struct test_object_name_session {
     int unused;
 } test_object_name_session_t;
 
-static nmo_result_t test_object_id_to_name(const void *session, nmo_id_t id, const char **out_name)
+static nmo_status_t test_object_id_to_name(const void *session, nmo_object_id_t id, const char **out_name)
 {
     (void)session;
     if (!out_name) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "out_name is NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "out_name is NULL");
     }
 
     if (id == 42) {
         *out_name = "Ball_01";
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     *out_name = NULL;
-    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-        NMO_SEVERITY_ERROR, "Object not found"));
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND,
+        NMO_SEVERITY_ERROR, "Object not found");
 }
 
-static nmo_result_t test_object_name_to_id(const void *session, const char *name, nmo_id_t *out_id)
+static nmo_status_t test_object_name_to_id(const void *session, const char *name, nmo_object_id_t *out_id)
 {
     (void)session;
     if (!name || !out_id) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     if (strcmp(name, "Ball_01") == 0) {
         *out_id = 42;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
-    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-        NMO_SEVERITY_ERROR, "Object name not found"));
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND,
+        NMO_SEVERITY_ERROR, "Object name not found");
 }
 
-static nmo_result_t test_object_id_to_unsafe_name(const void *session, nmo_id_t id, const char **out_name)
+static nmo_status_t test_object_id_to_unsafe_name(const void *session, nmo_object_id_t id, const char **out_name)
 {
     (void)session;
     if (!out_name) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "out_name is NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT,
+            NMO_SEVERITY_ERROR, "out_name is NULL");
     }
 
     if (id == 42) {
         *out_name = "Ball 01"; // unsafe (space)
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     *out_name = NULL;
-    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-        NMO_SEVERITY_ERROR, "Object not found"));
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND,
+        NMO_SEVERITY_ERROR, "Object not found");
 }
 
 TEST(type_string, object_id_to_string_uses_name_resolver) {
@@ -899,10 +899,10 @@ TEST(type_string, object_id_to_string_uses_name_resolver) {
     nmo_type_string_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
 
     char buffer[64];
-    nmo_id_t value = 42;
-    nmo_result_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), (struct nmo_session*)&session);
+    nmo_object_id_t value = 42;
+    nmo_status_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), (struct nmo_session*)&session);
 
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("Ball_01", buffer);
 
     nmo_type_string_set_object_resolvers(NULL, NULL);
@@ -916,10 +916,10 @@ TEST(type_string, object_id_from_string_uses_name_resolver) {
 
     nmo_type_string_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
 
-    nmo_id_t value = 0;
-    nmo_result_t result = nmo_object_id_from_string(&value, "Ball_01", (struct nmo_session*)&session);
+    nmo_object_id_t value = 0;
+    nmo_status_t result = nmo_object_id_from_string(&value, "Ball_01", (struct nmo_session*)&session);
 
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(42u, value);
 
     nmo_type_string_set_object_resolvers(NULL, NULL);
@@ -934,10 +934,10 @@ TEST(type_string, object_id_to_string_falls_back_on_unsafe_name) {
     nmo_type_string_set_object_resolvers(test_object_id_to_unsafe_name, test_object_name_to_id);
 
     char buffer[64];
-    nmo_id_t value = 42;
-    nmo_result_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), (struct nmo_session*)&session);
+    nmo_object_id_t value = 42;
+    nmo_status_t result = nmo_object_id_to_string(&value, buffer, sizeof(buffer), (struct nmo_session*)&session);
 
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("#42", buffer);
 
     nmo_type_string_set_object_resolvers(NULL, NULL);
@@ -951,10 +951,10 @@ TEST(type_string, object_id_from_string_name_not_found) {
 
     nmo_type_string_set_object_resolvers(test_object_id_to_name, test_object_name_to_id);
 
-    nmo_id_t value = 0;
-    nmo_result_t result = nmo_object_id_from_string(&value, "DoesNotExist", (struct nmo_session*)&session);
+    nmo_object_id_t value = 0;
+    nmo_status_t result = nmo_object_id_from_string(&value, "DoesNotExist", (struct nmo_session*)&session);
 
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, result.code);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
 
     nmo_type_string_set_object_resolvers(NULL, NULL);
     teardown();

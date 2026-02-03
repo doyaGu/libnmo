@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file type_registry_enum.c
  * @brief Enum and flags type registration implementation (Phase 6.2 Task 6.2.3)
  * 
@@ -28,31 +28,28 @@
  * @brief Validate enum value definitions
  * @return NMO_OK if valid, error code otherwise
  */
-static nmo_result_t validate_enum_values(
+static nmo_status_t validate_enum_values(
     const nmo_enum_value_def_t *values,
     size_t value_count
 ) {
     if (!values || value_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Enum must have at least one value");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Enum must have at least one value");
     }
     
     /* Check for duplicate names */
     for (size_t i = 0; i < value_count; i++) {
         if (!values[i].name || values[i].name[0] == '\0') {
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Enum value name cannot be empty");
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Enum value name cannot be empty");
         }
         
         /* Check for duplicate names */
         for (size_t j = i + 1; j < value_count; j++) {
             if (strcmp(values[i].name, values[j].name) == 0) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                         NMO_SEVERITY_ERROR,
-                                         "Duplicate enum value name: '%s'",
-                                         values[i].name);
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Duplicate enum value name: '%s'",
+                                        values[i].name);
             }
         }
     }
@@ -64,47 +61,42 @@ static nmo_result_t validate_enum_values(
  * @brief Validate flags bit definitions
  * @return NMO_OK if valid, error code otherwise
  */
-static nmo_result_t validate_flags_bits(
+static nmo_status_t validate_flags_bits(
     const nmo_flags_bit_def_t *bits,
     size_t bit_count
 ) {
     if (!bits || bit_count == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Flags must have at least one bit");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Flags must have at least one bit");
     }
     
     /* Check for duplicate names and bit masks */
     for (size_t i = 0; i < bit_count; i++) {
         if (!bits[i].name || bits[i].name[0] == '\0') {
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Flags bit name cannot be empty");
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Flags bit name cannot be empty");
         }
         
         /* Validate mask is a power of 2 (single bit) */
         if (bits[i].mask == 0 || (bits[i].mask & (bits[i].mask - 1)) != 0) {
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Flags bit mask must be a power of 2 (got 0x%llx for '%s')",
-                                     (unsigned long long)bits[i].mask, bits[i].name);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Flags bit mask must be a power of 2 (got 0x%llx for '%s')",
+                                    (unsigned long long)bits[i].mask, bits[i].name);
         }
         
         /* Check for duplicate names */
         for (size_t j = i + 1; j < bit_count; j++) {
             if (strcmp(bits[i].name, bits[j].name) == 0) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                         NMO_SEVERITY_ERROR,
-                                         "Duplicate flags bit name: '%s'",
-                                         bits[i].name);
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Duplicate flags bit name: '%s'",
+                                        bits[i].name);
             }
             
             /* Check for duplicate bit masks */
             if (bits[i].mask == bits[j].mask) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                         NMO_SEVERITY_ERROR,
-                                         "Duplicate bit mask 0x%llx for '%s' and '%s'",
-                                         (unsigned long long)bits[i].mask, bits[i].name, bits[j].name);
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Duplicate bit mask 0x%llx for '%s' and '%s'",
+                                        (unsigned long long)bits[i].mask, bits[i].name, bits[j].name);
             }
         }
     }
@@ -116,26 +108,24 @@ static nmo_result_t validate_flags_bits(
  * Enum Registration
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_register_enum(
+nmo_status_t nmo_type_registry_register_enum(
     nmo_type_registry_t *type_registry,
     const nmo_enum_type_def_t *enum_def,
     nmo_guid_t *out_guid
 ) {
     if (!type_registry || !enum_def) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL type_registry or enum_def");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry or enum_def");
     }
     
     if (!enum_def->name || enum_def->name[0] == '\0') {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Enum type name cannot be empty");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Enum type name cannot be empty");
     }
     
     /* Validate enum values */
-    nmo_result_t result = validate_enum_values(enum_def->values, enum_def->value_count);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = validate_enum_values(enum_def->values, enum_def->value_count);
+        if (result != NMO_OK) {
         return result;
     }
     
@@ -150,10 +140,9 @@ nmo_result_t nmo_type_registry_register_enum(
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (existing) {
-        return nmo_result_errorf(NULL, NMO_ERR_ALREADY_EXISTS,
-                                 NMO_SEVERITY_ERROR,
-                                 "Enum type '%s' already registered",
-                                 enum_def->name);
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                "Enum type '%s' already registered",
+                                enum_def->name);
     }
     
     nmo_arena_t *arena = type_registry->arena;
@@ -162,9 +151,8 @@ nmo_result_t nmo_type_registry_register_enum(
     nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
         nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     if (!type_desc) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate enum type descriptor");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate enum type descriptor");
     }
     
     /* Initialize all fields to zero */
@@ -173,9 +161,8 @@ nmo_result_t nmo_type_registry_register_enum(
     /* Copy enum type name */
     const char *type_name = nmo_arena_strdup(arena, enum_def->name);
     if (!type_name) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to copy enum type name");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to copy enum type name");
     }
     
     /* Allocate enum descriptors array */
@@ -183,18 +170,16 @@ nmo_result_t nmo_type_registry_register_enum(
         nmo_arena_alloc(arena, sizeof(nmo_enum_descriptor_t) * enum_def->value_count,
                         alignof(nmo_enum_descriptor_t));
     if (!enum_values) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate enum values array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate enum values array");
     }
     
     /* Copy enum values */
     for (size_t i = 0; i < enum_def->value_count; i++) {
         enum_values[i].name = nmo_arena_strdup(arena, enum_def->values[i].name);
         if (!enum_values[i].name) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to copy enum value name");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy enum value name");
         }
         enum_values[i].value = enum_def->values[i].value;
         enum_values[i].description = enum_def->values[i].description ? 
@@ -206,9 +191,8 @@ nmo_result_t nmo_type_registry_register_enum(
     nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
         nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
     if (!spec_meta) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate specialized metadata");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate specialized metadata");
     }
     
     spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
@@ -232,7 +216,7 @@ nmo_result_t nmo_type_registry_register_enum(
     
     /* Register type in registry */
     result = nmo_type_registry_register(type_registry, type_desc);
-    if (nmo_result_is_error(result)) {
+        if (result != NMO_OK) {
         return result;
     }
 
@@ -240,9 +224,8 @@ nmo_result_t nmo_type_registry_register_enum(
     nmo_type_descriptor_t *registered =
         (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (!registered) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to find registered enum type");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Failed to find registered enum type");
     }
 
     /* Update type_id in metadata */
@@ -250,17 +233,17 @@ nmo_result_t nmo_type_registry_register_enum(
 
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
-    nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (nmo_result_is_error(append_res)) {
+    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
+        if (append_res != NMO_OK) {
         (void)nmo_type_registry_unregister(type_registry, type_guid);
         return append_res;
     }
 
     /* Add to type_id -> metadata_index hash table */
-    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
                                                     &registered->id,
                                                     &metadata_index);
-    if (nmo_result_is_error(map_result)) {
+        if (map_result != NMO_OK) {
         nmo_arena_array_pop(&type_registry->metadata, NULL);
         (void)nmo_type_registry_unregister(type_registry, type_guid);
         return map_result;
@@ -281,26 +264,24 @@ nmo_result_t nmo_type_registry_register_enum(
  * Flags Type Registration
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_register_flags(
+nmo_status_t nmo_type_registry_register_flags(
     nmo_type_registry_t *type_registry,
     const nmo_flags_type_def_t *flags_def,
     nmo_guid_t *out_guid
 ) {
     if (!type_registry || !flags_def) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL type_registry or flags_def");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry or flags_def");
     }
     
     if (!flags_def->name || flags_def->name[0] == '\0') {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Flags type name cannot be empty");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Flags type name cannot be empty");
     }
     
     /* Validate flags bits */
-    nmo_result_t result = validate_flags_bits(flags_def->bits, flags_def->bit_count);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = validate_flags_bits(flags_def->bits, flags_def->bit_count);
+    if (result != NMO_OK) {
         return result;
     }
     
@@ -315,10 +296,9 @@ nmo_result_t nmo_type_registry_register_flags(
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (existing) {
-        return nmo_result_errorf(NULL, NMO_ERR_ALREADY_EXISTS,
-                                 NMO_SEVERITY_ERROR,
-                                 "Flags type '%s' already registered",
-                                 flags_def->name);
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                "Flags type '%s' already registered",
+                                flags_def->name);
     }
     
     nmo_arena_t *arena = type_registry->arena;
@@ -327,9 +307,8 @@ nmo_result_t nmo_type_registry_register_flags(
     nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
         nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     if (!type_desc) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate flags type descriptor");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate flags type descriptor");
     }
     
     /* Initialize all fields to zero */
@@ -338,9 +317,8 @@ nmo_result_t nmo_type_registry_register_flags(
     /* Copy flags type name */
     const char *type_name = nmo_arena_strdup(arena, flags_def->name);
     if (!type_name) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to copy flags type name");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to copy flags type name");
     }
     
     /* Allocate flags descriptors array */
@@ -348,18 +326,16 @@ nmo_result_t nmo_type_registry_register_flags(
         nmo_arena_alloc(arena, sizeof(nmo_flags_descriptor_t) * flags_def->bit_count,
                         alignof(nmo_flags_descriptor_t));
     if (!flags_bits) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate flags bits array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate flags bits array");
     }
     
     /* Copy flags bits */
     for (size_t i = 0; i < flags_def->bit_count; i++) {
         flags_bits[i].name = nmo_arena_strdup(arena, flags_def->bits[i].name);
         if (!flags_bits[i].name) {
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to copy flags bit name");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy flags bit name");
         }
         flags_bits[i].mask = flags_def->bits[i].mask;
         flags_bits[i].description = flags_def->bits[i].description ? 
@@ -371,9 +347,8 @@ nmo_result_t nmo_type_registry_register_flags(
     nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
         nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
     if (!spec_meta) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate specialized metadata");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate specialized metadata");
     }
     
     spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
@@ -397,7 +372,7 @@ nmo_result_t nmo_type_registry_register_flags(
     
     /* Register type in registry */
     result = nmo_type_registry_register(type_registry, type_desc);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -405,9 +380,8 @@ nmo_result_t nmo_type_registry_register_flags(
     nmo_type_descriptor_t *registered =
         (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (!registered) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to find registered flags type");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Failed to find registered flags type");
     }
 
     /* Update type_id in metadata */
@@ -415,17 +389,17 @@ nmo_result_t nmo_type_registry_register_flags(
 
     /* Add metadata to registry */
     size_t metadata_index = type_registry->metadata.count;
-    nmo_result_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (nmo_result_is_error(append_res)) {
+    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
+    if (append_res != NMO_OK) {
         (void)nmo_type_registry_unregister(type_registry, type_guid);
         return append_res;
     }
 
     /* Add to type_id -> metadata_index hash table */
-    nmo_result_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
                                                     &registered->id,
                                                     &metadata_index);
-    if (nmo_result_is_error(map_result)) {
+    if (map_result != NMO_OK) {
         nmo_arena_array_pop(&type_registry->metadata, NULL);
         (void)nmo_type_registry_unregister(type_registry, type_guid);
         return map_result;
@@ -446,32 +420,30 @@ nmo_result_t nmo_type_registry_register_flags(
  * String-Based Registration API (Phase 6.2, Task 6.2.2)
  * ============================================================================ */
 
-nmo_result_t nmo_type_registry_register_enum_string(
+nmo_status_t nmo_type_registry_register_enum_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *type_name,
     const char *enum_data
 ) {
     if (!type_registry || !type_name || !enum_data) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL argument to register_enum_string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL argument to register_enum_string");
     }
     
     /* Create temporary arena for parsing */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
     if (!temp_arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to create temporary arena");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create temporary arena");
     }
     
     /* Parse enum definition string */
     nmo_enum_value_def_t *values = NULL;
     size_t value_count = 0;
-    nmo_result_t result = nmo_parse_enum_string(enum_data, &values, &value_count, temp_arena);
+    nmo_status_t result = nmo_parse_enum_string(enum_data, &values, &value_count, temp_arena);
     
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
@@ -502,32 +474,30 @@ nmo_result_t nmo_type_registry_register_enum_string(
     return result;
 }
 
-nmo_result_t nmo_type_registry_register_flags_string(
+nmo_status_t nmo_type_registry_register_flags_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *type_name,
     const char *flags_data
 ) {
     if (!type_registry || !type_name || !flags_data) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL argument to register_flags_string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL argument to register_flags_string");
     }
     
     /* Create temporary arena for parsing */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
     if (!temp_arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to create temporary arena");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create temporary arena");
     }
     
     /* Parse flags definition string */
     nmo_enum_value_def_t *parsed_values = NULL;
     size_t value_count = 0;
-    nmo_result_t result = nmo_parse_flags_string(flags_data, &parsed_values, &value_count, temp_arena);
+    nmo_status_t result = nmo_parse_flags_string(flags_data, &parsed_values, &value_count, temp_arena);
     
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
@@ -537,9 +507,8 @@ nmo_result_t nmo_type_registry_register_flags_string(
         nmo_arena_alloc(temp_arena, sizeof(nmo_flags_bit_def_t) * value_count, 8);
     if (!bits) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate flags bits array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate flags bits array");
     }
     
     for (size_t i = 0; i < value_count; i++) {
@@ -574,62 +543,56 @@ nmo_result_t nmo_type_registry_register_flags_string(
     return result;
 }
 
-nmo_result_t nmo_type_registry_change_enum_string(
+nmo_status_t nmo_type_registry_change_enum_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *new_enum_data
 ) {
     if (!type_registry || nmo_guid_is_null(type_guid) || !new_enum_data) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL argument to change_enum_string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL argument to change_enum_string");
     }
 
     nmo_type_descriptor_t *type =
         (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (!type || !type->valid) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
-                                 NMO_SEVERITY_ERROR,
-                                 "Type not found");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "Type not found");
     }
     if (!(type->category & NMO_TYPE_CATEGORY_ENUM)) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Type is not an enum");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Type is not an enum");
     }
     if (type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID ||
         type->specialized_index >= type_registry->metadata.count) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Enum type has no specialized metadata");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Enum type has no specialized metadata");
     }
 
     nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t **)
         nmo_arena_array_get(&type_registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Enum metadata mismatch");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Enum metadata mismatch");
     }
 
     /* Parse new enum definition into a temporary arena. */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
     if (!temp_arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to create temporary arena");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create temporary arena");
     }
 
     nmo_enum_value_def_t *parsed_values = NULL;
     size_t parsed_count = 0;
-    nmo_result_t result = nmo_parse_enum_string(new_enum_data, &parsed_values, &parsed_count, temp_arena);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = nmo_parse_enum_string(new_enum_data, &parsed_values, &parsed_count, temp_arena);
+    if (result != NMO_OK) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
 
     result = validate_enum_values(parsed_values, parsed_count);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
@@ -645,12 +608,11 @@ nmo_result_t nmo_type_registry_change_enum_string(
                 found = true;
                 if (parsed_values[j].value != old_value) {
                     nmo_arena_destroy(temp_arena);
-                    return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                             NMO_SEVERITY_ERROR,
-                                             "Enum value '%s' cannot change (old=%lld new=%lld)",
-                                             old_name,
-                                             (long long)old_value,
-                                             (long long)parsed_values[j].value);
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                            "Enum value '%s' cannot change (old=%lld new=%lld)",
+                                            old_name,
+                                            (long long)old_value,
+                                            (long long)parsed_values[j].value);
                 }
                 break;
             }
@@ -658,9 +620,8 @@ nmo_result_t nmo_type_registry_change_enum_string(
 
         if (!found) {
             nmo_arena_destroy(temp_arena);
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Enum value '%s' cannot be removed", old_name);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Enum value '%s' cannot be removed", old_name);
         }
     }
 
@@ -683,7 +644,7 @@ nmo_result_t nmo_type_registry_change_enum_string(
     /* No changes needed. */
     if (add_count == 0) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     nmo_arena_t *arena = type_registry->arena;
@@ -694,9 +655,8 @@ nmo_result_t nmo_type_registry_change_enum_string(
         alignof(nmo_enum_descriptor_t));
     if (!new_values) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate new enum values array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate new enum values array");
     }
 
     /* Copy old values first (preserve existing order and strings). */
@@ -721,9 +681,8 @@ nmo_result_t nmo_type_registry_change_enum_string(
         const char *name_copy = nmo_arena_strdup(arena, parsed_values[j].name);
         if (!name_copy) {
             nmo_arena_destroy(temp_arena);
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to copy new enum value name");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy new enum value name");
         }
 
         new_values[out_index].name = name_copy;
@@ -739,59 +698,53 @@ nmo_result_t nmo_type_registry_change_enum_string(
     metadata->enum_meta.value_count = new_count;
 
     nmo_arena_destroy(temp_arena);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_type_registry_change_flags_string(
+nmo_status_t nmo_type_registry_change_flags_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *new_flags_data
 ) {
     if (!type_registry || nmo_guid_is_null(type_guid) || !new_flags_data) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "NULL argument to change_flags_string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL argument to change_flags_string");
     }
 
     nmo_type_descriptor_t *type =
         (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
     if (!type || !type->valid) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND,
-                                 NMO_SEVERITY_ERROR,
-                                 "Type not found");
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                "Type not found");
     }
     if (!(type->category & NMO_TYPE_CATEGORY_FLAGS)) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                 NMO_SEVERITY_ERROR,
-                                 "Type is not flags");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Type is not flags");
     }
     if (type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID ||
         type->specialized_index >= type_registry->metadata.count) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Flags type has no specialized metadata");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Flags type has no specialized metadata");
     }
 
     nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t **)
         nmo_arena_array_get(&type_registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
-        return nmo_result_errorf(NULL, NMO_ERR_INTERNAL,
-                                 NMO_SEVERITY_ERROR,
-                                 "Flags metadata mismatch");
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Flags metadata mismatch");
     }
 
     /* Parse new flags definition into a temporary arena. */
     nmo_arena_t *temp_arena = nmo_arena_create(NULL, 4096);
     if (!temp_arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to create temporary arena");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to create temporary arena");
     }
 
     nmo_enum_value_def_t *parsed_values = NULL;
     size_t parsed_count = 0;
-    nmo_result_t result = nmo_parse_flags_string(new_flags_data, &parsed_values, &parsed_count, temp_arena);
-    if (nmo_result_is_error(result)) {
+    nmo_status_t result = nmo_parse_flags_string(new_flags_data, &parsed_values, &parsed_count, temp_arena);
+    if (result != NMO_OK) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
@@ -801,9 +754,8 @@ nmo_result_t nmo_type_registry_change_flags_string(
         temp_arena, sizeof(nmo_flags_bit_def_t) * parsed_count, alignof(nmo_flags_bit_def_t));
     if (!parsed_bits) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate parsed flags bits");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate parsed flags bits");
     }
     for (size_t i = 0; i < parsed_count; i++) {
         parsed_bits[i].name = parsed_values[i].name;
@@ -812,7 +764,7 @@ nmo_result_t nmo_type_registry_change_flags_string(
     }
 
     result = validate_flags_bits(parsed_bits, parsed_count);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         nmo_arena_destroy(temp_arena);
         return result;
     }
@@ -828,12 +780,11 @@ nmo_result_t nmo_type_registry_change_flags_string(
                 found = true;
                 if (parsed_bits[j].mask != old_mask) {
                     nmo_arena_destroy(temp_arena);
-                    return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                             NMO_SEVERITY_ERROR,
-                                             "Flags bit '%s' cannot change (old=0x%llx new=0x%llx)",
-                                             old_name,
-                                             (unsigned long long)old_mask,
-                                             (unsigned long long)parsed_bits[j].mask);
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                            "Flags bit '%s' cannot change (old=0x%llx new=0x%llx)",
+                                            old_name,
+                                            (unsigned long long)old_mask,
+                                            (unsigned long long)parsed_bits[j].mask);
                 }
                 break;
             }
@@ -841,9 +792,8 @@ nmo_result_t nmo_type_registry_change_flags_string(
 
         if (!found) {
             nmo_arena_destroy(temp_arena);
-            return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                     NMO_SEVERITY_ERROR,
-                                     "Flags bit '%s' cannot be removed", old_name);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Flags bit '%s' cannot be removed", old_name);
         }
     }
 
@@ -865,7 +815,7 @@ nmo_result_t nmo_type_registry_change_flags_string(
 
     if (add_count == 0) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     nmo_arena_t *arena = type_registry->arena;
@@ -876,9 +826,8 @@ nmo_result_t nmo_type_registry_change_flags_string(
         alignof(nmo_flags_descriptor_t));
     if (!new_bits) {
         nmo_arena_destroy(temp_arena);
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                 NMO_SEVERITY_ERROR,
-                                 "Failed to allocate new flags bits array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate new flags bits array");
     }
 
     for (size_t i = 0; i < old_count; i++) {
@@ -901,9 +850,8 @@ nmo_result_t nmo_type_registry_change_flags_string(
         const char *name_copy = nmo_arena_strdup(arena, parsed_bits[j].name);
         if (!name_copy) {
             nmo_arena_destroy(temp_arena);
-            return nmo_result_errorf(NULL, NMO_ERR_NOMEM,
-                                     NMO_SEVERITY_ERROR,
-                                     "Failed to copy new flags bit name");
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy new flags bit name");
         }
 
         new_bits[out_index].name = name_copy;
@@ -918,5 +866,5 @@ nmo_result_t nmo_type_registry_change_flags_string(
     metadata->flags_meta.bit_count = new_count;
 
     nmo_arena_destroy(temp_arena);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

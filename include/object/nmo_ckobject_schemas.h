@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_ckobject_schemas.h
  * @brief Public API for CKObject schema-based serialization
  *
@@ -20,7 +20,6 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
@@ -59,7 +58,7 @@ typedef struct nmo_ckobject_state {
 /**
  * @brief Deserialize CKObject from chunk (implementation)
  */
-NMO_API nmo_result_t nmo_ckobject_deserialize(
+NMO_API nmo_status_t nmo_ckobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -83,7 +82,7 @@ NMO_API nmo_result_t nmo_ckobject_deserialize(
 /**
  * @brief Serialize CKObject to chunk (implementation)
  */
-NMO_API nmo_result_t nmo_ckobject_serialize(
+NMO_API nmo_status_t nmo_ckobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -110,7 +109,7 @@ NMO_DECLARE_OBJECT_SCHEMA(nmo_ckobject_vtable, nmo_register_ckobject_type)
  * 
  * Base class implementation does nothing - derived classes override.
  */
-NMO_API nmo_result_t nmo_ckobject_finish_loading(
+NMO_API nmo_status_t nmo_ckobject_finish_loading(
     void *state,
     void *context);
 

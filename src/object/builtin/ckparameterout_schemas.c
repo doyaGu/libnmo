@@ -30,7 +30,7 @@
  *
  * Reference: reference/src/CKParameterOut.cpp:145-160
  */
-nmo_result_t nmo_ckparameterout_deserialize(
+nmo_status_t nmo_ckparameterout_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -41,21 +41,20 @@ nmo_result_t nmo_ckparameterout_deserialize(
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     memset(out_state, 0, sizeof(nmo_ckparameterout_state_t));
 
     /* Read base CKParameter state (merged into this chunk by AddChunkAndDelete) */
-    nmo_result_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     /* Read destinations if present */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS) == NMO_OK) {
         int32_t count;
-        nmo_result_t result = nmo_chunk_read_int(chunk, &count);
-        if (result.code == NMO_OK && count > 0) {
+        nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+        if (result == NMO_OK && count > 0) {
             out_state->destination_count = (uint32_t)count;
             out_state->destination_ids = (nmo_object_id_t *)nmo_arena_alloc(
                 arena, count * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
@@ -68,7 +67,7 @@ nmo_result_t nmo_ckparameterout_deserialize(
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -76,7 +75,7 @@ nmo_result_t nmo_ckparameterout_deserialize(
  *
  * Reference: reference/src/CKParameterOut.cpp:130-142
  */
-nmo_result_t nmo_ckparameterout_serialize(
+nmo_status_t nmo_ckparameterout_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -84,33 +83,31 @@ nmo_result_t nmo_ckparameterout_serialize(
 {
     (void)type;
     const nmo_ckparameterout_state_t *in_state = (const nmo_ckparameterout_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
-    nmo_result_t result;
+    nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     /* Write base CKParameter state (merged into this chunk by AddChunkAndDelete) */
     result = nmo_ckparameter_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write destinations if any */
     if (in_state->destination_count > 0 && in_state->destination_ids) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->destination_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         for (uint32_t i = 0; i < in_state->destination_count; i++) {
             result = nmo_chunk_write_object_id(out_chunk, in_state->destination_ids[i]);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

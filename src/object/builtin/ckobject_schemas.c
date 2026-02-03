@@ -45,42 +45,41 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckobject_deserialize(
+nmo_status_t nmo_ckobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
+    (void)context;
     nmo_ckobject_state_t *out_state = (nmo_ckobject_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_deserialize");
     }
 
     /* Initialize to default (visible) */
     out_state->visibility_flags = NMO_CKOBJECT_VISIBLE;
 
     /* Check for OBJECTHIDDEN identifier (highest priority) */
-    nmo_result_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJECTHIDDEN);
-    if (result.code == NMO_OK) {
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJECTHIDDEN);
+    if (result == NMO_OK) {
         /* Object is completely hidden (no VISIBLE, no HIERARCHICAL) */
         out_state->visibility_flags = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Check for OBJECTHIERAHIDDEN identifier */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJECTHIERAHIDDEN);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         /* Object is hierarchically hidden (no VISIBLE, but has HIERARCHICAL) */
         out_state->visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* No special identifiers found -> object is visible (default already set) */
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -100,20 +99,19 @@ nmo_result_t nmo_ckobject_deserialize(
  * @param arena     Arena for temporary allocations (not needed for CKObject)
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckobject_serialize(
+nmo_status_t nmo_ckobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    (void)context;
     const nmo_ckobject_state_t *in_state = (const nmo_ckobject_state_t *)instance;
     
     if (in_state == NULL || out_chunk == NULL) {
-        nmo_error_t *err = NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_serialize");
-        return nmo_result_error(err);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "Invalid arguments to nmo_ckobject_serialize");
     }
 
     /* Write appropriate identifier based on visibility state */
@@ -128,7 +126,7 @@ nmo_result_t nmo_ckobject_serialize(
     }
     /* If visible (default), no identifier is written */
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -145,14 +143,14 @@ nmo_result_t nmo_ckobject_serialize(
  * @param context Serialization context (unused in base implementation)
  * @return Always NMO_OK
  */
-nmo_result_t nmo_ckobject_finish_loading(
+nmo_status_t nmo_ckobject_finish_loading(
     void *state,
     void *context)
 {
     /* Base implementation does nothing */
     (void)state;
     (void)context;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

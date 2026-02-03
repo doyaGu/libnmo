@@ -84,20 +84,20 @@ TEST(advanced_struct, incremental_build_basic) {
     
     /* Begin struct */
     nmo_type_id_t type_id;
-    nmo_result_t result = nmo_type_registry_begin_struct(
+    nmo_status_t result = nmo_type_registry_begin_struct(
         test_registry, "IncrementalStruct", NMO_NULL_GUID, &type_id);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Add fields */
     result = nmo_type_registry_add_field(test_registry, type_id, "x", "int");
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     result = nmo_type_registry_add_field(test_registry, type_id, "y", "int");
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Finalize */
     result = nmo_type_registry_finalize_struct(test_registry, type_id);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_get_by_id(test_registry, type_id);
@@ -119,13 +119,13 @@ TEST(advanced_struct, incremental_build_many_fields) {
     for (int i = 0; i < 15; i++) {
         char field_name[32];
         snprintf(field_name, sizeof(field_name), "field%d", i);
-        nmo_result_t result = nmo_type_registry_add_field(
+        nmo_status_t result = nmo_type_registry_add_field(
             test_registry, type_id, field_name, "int");
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
     }
     
-    nmo_result_t result = nmo_type_registry_finalize_struct(test_registry, type_id);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_finalize_struct(test_registry, type_id);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_get_by_id(test_registry, type_id);
     ASSERT_EQ(60, type_desc->size);  /* 15 * 4 */
@@ -139,14 +139,14 @@ TEST(advanced_struct, incremental_build_null_params) {
     nmo_type_id_t type_id;
     
     /* NULL registry */
-    nmo_result_t result = nmo_type_registry_begin_struct(
+    nmo_status_t result = nmo_type_registry_begin_struct(
         NULL, "Test", NMO_NULL_GUID, &type_id);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     /* Empty name */
     result = nmo_type_registry_begin_struct(
         test_registry, "", NMO_NULL_GUID, &type_id);
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -158,8 +158,8 @@ TEST(advanced_struct, incremental_finalize_without_fields) {
     nmo_type_registry_begin_struct(test_registry, "Empty", NMO_NULL_GUID, &type_id);
     
     /* Try to finalize without adding fields */
-    nmo_result_t result = nmo_type_registry_finalize_struct(test_registry, type_id);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_finalize_struct(test_registry, type_id);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -173,8 +173,8 @@ TEST(advanced_struct, incremental_add_after_finalize) {
     nmo_type_registry_finalize_struct(test_registry, type_id);
     
     /* Try to add field after finalization */
-    nmo_result_t result = nmo_type_registry_add_field(test_registry, type_id, "y", "int");
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_add_field(test_registry, type_id, "y", "int");
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -200,9 +200,9 @@ TEST(advanced_struct, array_field_basic) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &struct_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify size: int(4) + float[10](40) = 44 */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
@@ -228,9 +228,9 @@ TEST(advanced_struct, array_field_multidimensional) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &struct_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
     ASSERT_EQ(64, type_desc->size);  /* 16 * 4 */
@@ -255,9 +255,9 @@ TEST(advanced_struct, array_field_mixed_types) {
     };
     
     nmo_guid_t guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &struct_def, &guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Size: int(4) + float[3](12) + int[4](16) = 32 */
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(test_registry, guid);
@@ -287,9 +287,9 @@ TEST(advanced_struct, nested_struct_basic) {
     };
     
     nmo_guid_t vec2_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &vec2_def, &vec2_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register outer struct with nested Vector2 */
     nmo_struct_field_def_t rect_fields[] = {
@@ -307,7 +307,7 @@ TEST(advanced_struct, nested_struct_basic) {
     nmo_guid_t rect_guid;
     result = nmo_type_registry_register_struct(
         test_registry, &rect_def, &rect_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify size: Vector2(8) + Vector2(8) = 16 */
     const nmo_type_descriptor_t *rect_type = nmo_type_registry_find_by_guid(test_registry, rect_guid);
@@ -355,9 +355,9 @@ TEST(advanced_struct, nested_struct_deep) {
         .fields = poly_fields, .field_count = 3
     };
     nmo_guid_t poly_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &poly_def, &poly_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Size: Point(8) -> Line(16) -> Triangle(48) */
     const nmo_type_descriptor_t *poly_type = nmo_type_registry_find_by_guid(test_registry, poly_guid);
@@ -391,9 +391,9 @@ TEST(advanced_struct, nested_struct_with_arrays) {
         .fields = path_fields, .field_count = 1
     };
     nmo_guid_t path_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &path_def, &path_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Size: Vector3[5] = 12 * 5 = 60 */
     const nmo_type_descriptor_t *path_type = nmo_type_registry_find_by_guid(test_registry, path_guid);
@@ -420,11 +420,11 @@ TEST(advanced_struct, nested_struct_incomplete_error) {
         .fields = outer_fields, .field_count = 1
     };
     nmo_guid_t outer_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &outer_def, &outer_guid);
     
     /* Should fail because inner struct is incomplete */
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -474,9 +474,9 @@ TEST(advanced_struct, complex_game_entity) {
         .fields = entity_fields, .field_count = 4
     };
     nmo_guid_t entity_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(
+    nmo_status_t result = nmo_type_registry_register_struct(
         test_registry, &entity_def, &entity_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Size: int(4) + Transform(36) + float[3](12) + float(4) = 56 */
     const nmo_type_descriptor_t *entity_type = nmo_type_registry_find_by_guid(test_registry, entity_guid);

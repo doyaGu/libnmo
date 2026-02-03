@@ -71,15 +71,15 @@ TEST(chunk_encoded_bitmap, png_roundtrip) {
     };
 
     nmo_chunk_start_write(chunk);
-    nmo_result_t result = nmo_chunk_write_encoded_bitmap(chunk, &desc, &props);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_write_encoded_bitmap(chunk, &desc, &props);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_close(chunk);
 
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
     result = nmo_chunk_read_encoded_bitmap(chunk, &decoded, &decoded_pixels);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(decoded_pixels);
     ASSERT_EQ(decoded.width, desc.width);
     ASSERT_EQ(decoded.height, desc.height);
@@ -108,15 +108,15 @@ TEST(chunk_encoded_bitmap, jpeg_with_alpha_plane) {
     };
 
     nmo_chunk_start_write(chunk);
-    nmo_result_t result = nmo_chunk_write_encoded_bitmap(chunk, &desc, &props);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_write_encoded_bitmap(chunk, &desc, &props);
+    ASSERT_EQ(result, NMO_OK);
     nmo_chunk_close(chunk);
 
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
     result = nmo_chunk_read_encoded_bitmap(chunk, &decoded, &decoded_pixels);
-    ASSERT_EQ(result.code, NMO_OK);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(decoded_pixels);
     ASSERT_EQ(decoded.width, desc.width);
     ASSERT_EQ(decoded.height, desc.height);

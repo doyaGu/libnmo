@@ -1,4 +1,4 @@
-// chunk_primitives.c - Primitive type serialization for CKStateChunk
+﻿// chunk_primitives.c - Primitive type serialization for CKStateChunk
 // Implements: byte, word, int, dword, float, GUID, string, buffer, object_id
 
 #include "format/nmo_chunk.h"
@@ -21,10 +21,10 @@ static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
 // Primitive Types - Write
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
+nmo_status_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -36,13 +36,13 @@ nmo_result_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
+nmo_status_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -54,13 +54,13 @@ nmo_result_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
+nmo_status_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -72,17 +72,17 @@ nmo_result_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value) {
+nmo_status_t nmo_chunk_write_dword(nmo_chunk_t *chunk, uint32_t value) {
     return nmo_chunk_write_int(chunk, (int32_t) value);
 }
 
-nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
+nmo_status_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -97,13 +97,13 @@ nmo_result_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
+nmo_status_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -116,14 +116,14 @@ nmo_result_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Primitive Types - Read
 // =============================================================================
 
-nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
+nmo_status_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
@@ -132,10 +132,10 @@ nmo_result_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
     uint32_t *data = get_data_u32(chunk);
     *out_value = (uint8_t) (data[state->current_pos++] & 0xFF);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
+nmo_status_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
@@ -144,10 +144,10 @@ nmo_result_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
     uint32_t *data = get_data_u32(chunk);
     *out_value = (uint16_t) (data[state->current_pos++] & 0xFFFF);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value) {
+nmo_status_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
@@ -156,14 +156,14 @@ nmo_result_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value) {
     uint32_t *data = get_data_u32(chunk);
     *out_value = (int32_t) data[state->current_pos++];
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_value) {
+nmo_status_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_value) {
     return nmo_chunk_read_int(chunk, (int32_t *) out_value);
 }
 
-nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
+nmo_status_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
@@ -174,10 +174,10 @@ nmo_result_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
     uint32_t raw = data[state->current_pos++];
     memcpy(out_value, &raw, sizeof(raw));
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
+nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 2);
@@ -187,14 +187,14 @@ nmo_result_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
     out_value->d1 = data[state->current_pos++];
     out_value->d2 = data[state->current_pos++];
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // Complex Types - String
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
+nmo_status_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Calculate size
@@ -202,7 +202,7 @@ nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
     size_t dwords = (len + 3) / 4;          // Round up to DWORDs
 
     // Write length
-    nmo_result_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -220,7 +220,7 @@ nmo_result_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
@@ -266,7 +266,7 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
 // Complex Types - Buffer
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
                                     const void *data,
                                     size_t size) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
@@ -274,7 +274,7 @@ nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
     size_t dwords = (size + 3) / 4;
 
     // Write size
-    nmo_result_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -292,21 +292,21 @@ nmo_result_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
                                             const void *data,
                                             size_t size) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (size == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t dwords = (size + 3) / 4;
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -319,10 +319,10 @@ nmo_result_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
                                    void **out_data,
                                    size_t *out_size) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_data, out_size, "Invalid arguments");
@@ -337,7 +337,7 @@ nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
 
     if (size == 0) {
         *out_data = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t dwords = (size + 3) / 4;
@@ -354,7 +354,7 @@ nmo_result_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     state->current_pos += dwords;
 
     *out_data = data;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
@@ -395,10 +395,10 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
 // Object References
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
+nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -406,7 +406,7 @@ nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     // Track position if ID is non-zero (internal remap list)
     if (id != 0) {
         uint32_t pos = (uint32_t) state->current_pos;
-        nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
+        nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
         NMO_RETURN_IF_ERROR(list_result);
         /* CKStateChunk: file-mode does NOT serialize ID lists */
         if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {
@@ -422,10 +422,10 @@ nmo_result_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
+nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
@@ -434,5 +434,5 @@ nmo_result_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_i
     uint32_t *data_dwords = get_data_u32(chunk);
     *out_id = data_dwords[state->current_pos++];
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

@@ -101,8 +101,8 @@ TEST(dynamic_types_integration, register_all_type_kinds) {
         .default_value = 0
     };
     nmo_guid_t color_guid;
-    nmo_result_t result = nmo_type_registry_register_enum(test_registry, &color_enum, &color_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(test_registry, &color_enum, &color_guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register flags */
     nmo_flags_bit_def_t perms[] = {
@@ -116,7 +116,7 @@ TEST(dynamic_types_integration, register_all_type_kinds) {
     };
     nmo_guid_t perm_guid;
     result = nmo_type_registry_register_flags(test_registry, &perm_flags, &perm_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register struct */
     nmo_struct_field_def_t fields[] = {
@@ -131,7 +131,7 @@ TEST(dynamic_types_integration, register_all_type_kinds) {
     };
     nmo_guid_t point_guid;
     result = nmo_type_registry_register_struct(test_registry, &point_struct, &point_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify all types are registered */
     const nmo_type_descriptor_t *color_type = nmo_type_registry_find_by_guid(test_registry, color_guid);
@@ -223,8 +223,8 @@ TEST(dynamic_types_integration, struct_with_multiple_field_types) {
         .field_count = 4
     };
     nmo_guid_t entity_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &entity_struct, &entity_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &entity_struct, &entity_guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify struct */
     const nmo_type_descriptor_t *entity_type = nmo_type_registry_find_by_guid(test_registry, entity_guid);
@@ -263,8 +263,8 @@ TEST(dynamic_types_integration, large_struct_with_many_fields) {
     };
     
     nmo_guid_t big_guid;
-    nmo_result_t result = nmo_type_registry_register_struct(test_registry, &big_struct, &big_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_struct(test_registry, &big_struct, &big_guid);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *big_type = nmo_type_registry_find_by_guid(test_registry, big_guid);
     ASSERT_NE(NULL, big_type);
@@ -296,10 +296,10 @@ TEST(dynamic_types_integration, parse_registered_type_names) {
     
     /* Parse the registered type name */
     nmo_type_parse_result_t parse_result;
-    nmo_result_t result = nmo_type_registry_parse_type_name(
+    nmo_status_t result = nmo_type_registry_parse_type_name(
         test_registry, "Vector2", &parse_result);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT(nmo_guid_equals(vec2_guid, parse_result.base_type_guid));
     ASSERT_EQ(0, parse_result.array_count);
     ASSERT_EQ(0, parse_result.pointer_depth);
@@ -315,10 +315,10 @@ TEST(dynamic_types_integration, parse_builtin_types) {
     
     for (int i = 0; i < 5; i++) {
         nmo_type_parse_result_t parse_result;
-        nmo_result_t result = nmo_type_registry_parse_type_name(
+        nmo_status_t result = nmo_type_registry_parse_type_name(
             test_registry, builtin_names[i], &parse_result);
         
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
         ASSERT(!nmo_guid_is_null(parse_result.base_type_guid));
     }
     
@@ -340,8 +340,8 @@ TEST(dynamic_types_integration, prevent_duplicate_names_across_types) {
         .value_count = 2
     };
     nmo_guid_t enum_guid;
-    nmo_result_t result = nmo_type_registry_register_enum(test_registry, &status_enum, &enum_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register_enum(test_registry, &status_enum, &enum_guid);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Try to register struct with same name "Status" */
     nmo_struct_field_def_t fields[] = { { .name = "code", .type_name = "int" } };
@@ -355,7 +355,7 @@ TEST(dynamic_types_integration, prevent_duplicate_names_across_types) {
     result = nmo_type_registry_register_struct(test_registry, &status_struct, &struct_guid);
     
     /* Should fail due to duplicate name (same GUID generated from name) */
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown();
 }
@@ -388,8 +388,8 @@ TEST(dynamic_types_integration, benchmark_type_registration) {
         };
         
         nmo_guid_t guid;
-        nmo_result_t result = nmo_type_registry_register_enum(test_registry, &enum_def, &guid);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register_enum(test_registry, &enum_def, &guid);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     clock_t end = clock();

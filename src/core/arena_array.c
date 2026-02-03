@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file arena_array.c
  * @brief Generic dynamic array implementation with arena-based memory management
  * 
@@ -131,14 +131,12 @@ void nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
     }
 }
 
-nmo_result_t nmo_arena_array_init(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_init(nmo_arena_array_t *array,
                                    size_t element_size,
                                    size_t initial_capacity,
                                    nmo_arena_t *arena) {
     if (!array || !arena || element_size == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array init arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array init arguments");
     }
 
     array->data = NULL;
@@ -155,39 +153,31 @@ nmo_result_t nmo_arena_array_init(nmo_arena_array_t *array,
         return nmo_arena_array_reserve(array, initial_capacity);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) {
+nmo_status_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) {
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array argument"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array argument");
     }
 
     if (array->arena == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "array has no arena"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "array has no arena");
     }
 
     if (capacity <= array->capacity) {
-        return nmo_result_ok(); // Already have enough capacity
+        NMO_RETURN_OK(); // Already have enough capacity
     }
 
     size_t new_size = 0;
     if (nmo_size_mul_overflow(capacity, array->element_size, &new_size)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "array byte size overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array byte size overflow");
     }
 
     size_t alignment = nmo_array_alignment(array->element_size);
     void *new_data = nmo_arena_alloc(array->arena, new_size, alignment);
     if (!new_data) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to allocate array memory"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate array memory");
     }
 
     // Move existing data if any
@@ -201,25 +191,21 @@ nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) 
     array->data = new_data;
     array->capacity = capacity;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size_t additional) {
+nmo_status_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size_t additional) {
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array argument"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array argument");
     }
 
     if (additional > 0 && array->count > SIZE_MAX - additional) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "array size overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array size overflow");
     }
 
     size_t required = array->count + additional;
     if (required <= array->capacity) {
-        return nmo_result_ok(); // Already have enough space
+        NMO_RETURN_OK(); // Already have enough space
     }
 
     // Exponential growth: start with 4, then double
@@ -235,15 +221,13 @@ nmo_result_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size_t addit
     return nmo_arena_array_reserve(array, new_capacity);
 }
 
-nmo_result_t nmo_arena_array_append(nmo_arena_array_t *array, const void *element) {
+nmo_status_t nmo_arena_array_append(nmo_arena_array_t *array, const void *element) {
     if (!array || !element) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array append arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array append arguments");
     }
 
-    nmo_result_t result = nmo_arena_array_ensure_space(array, 1);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_arena_array_ensure_space(array, 1);
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -251,24 +235,22 @@ nmo_result_t nmo_arena_array_append(nmo_arena_array_t *array, const void *elemen
     nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
     array->count++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_append_array(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_append_array(nmo_arena_array_t *array,
                                            const void *elements,
                                            size_t count) {
     if (!array || (!elements && count > 0)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array append array arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array append array arguments");
     }
 
     if (count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
-    nmo_result_t result = nmo_arena_array_ensure_space(array, count);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_arena_array_ensure_space(array, count);
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -276,22 +258,20 @@ nmo_result_t nmo_arena_array_append_array(nmo_arena_array_t *array,
     nmo_arena_array_copy_range(array, dest, (const uint8_t *)elements, count);
     array->count += count;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_extend(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_extend(nmo_arena_array_t *array,
                                      size_t additional,
                                      void **out_begin) {
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array extend arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array extend arguments");
     }
 
     uint8_t *start = NULL;
     if (additional > 0) {
-        nmo_result_t result = nmo_arena_array_ensure_space(array, additional);
-        if (result.code != NMO_OK) {
+        nmo_status_t result = nmo_arena_array_ensure_space(array, additional);
+        if (result != NMO_OK) {
             return result;
         }
     }
@@ -306,7 +286,7 @@ nmo_result_t nmo_arena_array_extend(nmo_arena_array_t *array,
 
     array->count += additional;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void *nmo_arena_array_get(const nmo_arena_array_t *array, size_t index) {
@@ -318,18 +298,16 @@ void *nmo_arena_array_get(const nmo_arena_array_t *array, size_t index) {
     return data + (index * array->element_size);
 }
 
-nmo_result_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index, const void *element) {
+nmo_status_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index, const void *element) {
     if (!array || !element || index >= array->count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array set arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array set arguments");
     }
 
     uint8_t *dest = (uint8_t *)array->data + (index * array->element_size);
     nmo_arena_array_dispose_range(array, index, 1);
     nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void *nmo_arena_array_front(const nmo_arena_array_t *array) {
@@ -348,17 +326,15 @@ void *nmo_arena_array_back(const nmo_arena_array_t *array) {
     return data + ((array->count - 1) * array->element_size);
 }
 
-nmo_result_t nmo_arena_array_insert(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_insert(nmo_arena_array_t *array,
                                      size_t index,
                                      const void *element) {
     if (!array || !element || index > array->count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array insert arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array insert arguments");
     }
 
-    nmo_result_t result = nmo_arena_array_ensure_space(array, 1);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_arena_array_ensure_space(array, 1);
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -376,16 +352,14 @@ nmo_result_t nmo_arena_array_insert(nmo_arena_array_t *array,
     nmo_container_copy_element(&array->lifecycle, dest, element, array->element_size);
     array->count++;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_remove(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_remove(nmo_arena_array_t *array,
                                      size_t index,
                                      void *out_element) {
     if (!array || index >= array->count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array remove arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array remove arguments");
     }
 
     uint8_t *base = (uint8_t *)array->data;
@@ -407,14 +381,12 @@ nmo_result_t nmo_arena_array_remove(nmo_arena_array_t *array,
 
     array->count--;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_element) {
+nmo_status_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_element) {
     if (!array || array->count == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array pop arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array pop arguments");
     }
 
     uint8_t *base = (uint8_t *)array->data;
@@ -427,7 +399,7 @@ nmo_result_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_element) {
     nmo_arena_array_dispose_range(array, array->count - 1, 1);
     array->count--;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_arena_array_clear(nmo_arena_array_t *array) {
@@ -439,13 +411,11 @@ void nmo_arena_array_clear(nmo_arena_array_t *array) {
     array->count = 0;
 }
 
-nmo_result_t nmo_arena_array_set_data(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_set_data(nmo_arena_array_t *array,
                                        void *data,
                                        size_t count) {
     if (!array || (!data && count > 0)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array set_data arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array set_data arguments");
     }
 
     nmo_arena_array_dispose_range(array, 0, array->count);
@@ -453,17 +423,15 @@ nmo_result_t nmo_arena_array_set_data(nmo_arena_array_t *array,
     array->count = count;
     array->capacity = count; // Set capacity to count since data is pre-allocated
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
+nmo_status_t nmo_arena_array_alloc(nmo_arena_array_t *array,
                                     size_t element_size,
                                     size_t count,
                                     nmo_arena_t *arena) {
     if (!array || !arena || element_size == 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array alloc arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array alloc arguments");
     }
 
     // Initialize array structure
@@ -478,43 +446,37 @@ nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
     array->lifecycle.user_data = NULL;
 
     if (count == 0) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     // Allocate memory
     size_t size = 0;
     if (nmo_size_mul_overflow(count, element_size, &size)) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "array byte size overflow"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array byte size overflow");
     }
     size_t alignment = nmo_array_alignment(element_size);
     void *data = nmo_arena_alloc(arena, size, alignment);
     if (!data) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to allocate array memory"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate array memory");
     }
 
     array->data = data;
     array->count = count;
     array->capacity = count;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_arena_array_clone(const nmo_arena_array_t *src,
+nmo_status_t nmo_arena_array_clone(const nmo_arena_array_t *src,
                                     nmo_arena_array_t *dest,
                                     nmo_arena_t *arena) {
     if (!src || !dest || !arena) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array clone arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array clone arguments");
     }
 
     // Initialize destination array
-    nmo_result_t result = nmo_arena_array_init(dest, src->element_size, src->count, arena);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_arena_array_init(dest, src->element_size, src->count, arena);
+    if (result != NMO_OK) {
         return result;
     }
     nmo_arena_array_set_lifecycle(dest, &src->lifecycle);
@@ -522,12 +484,12 @@ nmo_result_t nmo_arena_array_clone(const nmo_arena_array_t *src,
     // Copy data if any
     if (src->count > 0 && src->data) {
         result = nmo_arena_array_append_array(dest, src->data, src->count);
-        if (result.code != NMO_OK) {
+        if (result != NMO_OK) {
             return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_arena_array_reset(nmo_arena_array_t *array) {
@@ -568,24 +530,20 @@ void *nmo_arena_array_data(const nmo_arena_array_t *array) {
     return array ? array->data : NULL;
 }
 
-nmo_result_t nmo_arena_array_swap(nmo_arena_array_t *a, nmo_arena_array_t *b) {
+nmo_status_t nmo_arena_array_swap(nmo_arena_array_t *a, nmo_arena_array_t *b) {
     if (!a || !b) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array swap arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array swap arguments");
     }
     
     if (a->element_size != b->element_size) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Cannot swap arrays with different element sizes"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Cannot swap arrays with different element sizes");
     }
 
     nmo_arena_array_t temp = *a;
     *a = *b;
     *b = temp;
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 int nmo_arena_array_find(const nmo_arena_array_t *array,
@@ -612,27 +570,25 @@ int nmo_arena_array_contains(const nmo_arena_array_t *array, const void *element
     return nmo_arena_array_find(array, element, NULL);
 }
 
-nmo_result_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new_count) {
+nmo_status_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new_count) {
     if (!array) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid array argument"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid array argument");
     }
 
     if (new_count == array->count) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     if (new_count < array->count) {
         /* Shrink: dispose trailing elements */
         nmo_arena_array_dispose_range(array, new_count, array->count - new_count);
         array->count = new_count;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Grow: ensure capacity and zero-initialize new elements */
-    nmo_result_t result = nmo_arena_array_ensure_space(array, new_count - array->count);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_arena_array_ensure_space(array, new_count - array->count);
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -641,5 +597,5 @@ nmo_result_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new_count) 
     memset(new_start, 0, new_bytes);
     array->count = new_count;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file indexed_map.c
  * @brief Generic indexed map implementation (hash table + dense array)
  */
@@ -415,25 +415,19 @@ void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
     }
 }
 
-nmo_result_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *value) {
+nmo_status_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, const void *value) {
     if (map == NULL || key == NULL || value == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid indexed map insert arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid indexed map insert arguments");
     }
 
     if (map->capacity == 0) {
         size_t new_capacity = indexed_map_next_capacity(DEFAULT_INITIAL_CAPACITY);
         if (new_capacity == 0) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Indexed map capacity overflow"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Indexed map capacity overflow");
         }
         int result = indexed_map_rehash(map, new_capacity);
         if (result != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to grow indexed map"));
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to grow indexed map");
         }
     }
 
@@ -441,33 +435,25 @@ nmo_result_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, con
     if ((double)(map->count + 1) > max_entries) {
         size_t new_capacity = map->capacity << 1;
         if (new_capacity == 0 || new_capacity <= map->capacity) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Indexed map capacity overflow"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Indexed map capacity overflow");
         }
         int result = indexed_map_rehash(map, new_capacity);
         if (result != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)result,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to rehash indexed map"));
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR, "Failed to rehash indexed map");
         }
     }
 
     if (map->count >= map->array_capacity) {
         int grow = indexed_map_grow_dense(map);
         if (grow != NMO_OK) {
-            return nmo_result_error(NMO_ERROR(NULL, (nmo_error_code_t)grow,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to grow indexed map dense storage"));
+            NMO_RETURN_ERROR(grow, NMO_SEVERITY_ERROR, "Failed to grow indexed map dense storage");
         }
     }
 
     int found = 0;
     int slot = indexed_map_find_slot(map, key, &found);
     if (slot < 0) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to find indexed map slot"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Failed to find indexed map slot");
     }
 
     if (found) {
@@ -479,7 +465,7 @@ nmo_result_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, con
         indexed_map_copy_value(map,
                                map->dense_values + (dense_index * map->value_size),
                                value);
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     size_t dense_index = map->count;
@@ -488,22 +474,18 @@ nmo_result_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, con
     map->states[slot] = INDEXED_MAP_ENTRY_OCCUPIED;
     map->hash_to_dense[slot] = dense_index;
     map->count++;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_indexed_map_get(const nmo_indexed_map_t *map, const void *key, void *value_out) {
+nmo_status_t nmo_indexed_map_get(const nmo_indexed_map_t *map, const void *key, void *value_out) {
     if (map == NULL || key == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid indexed map get arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid indexed map get arguments");
     }
 
     int found = 0;
     int slot = indexed_map_find_slot(map, key, &found);
     if (slot < 0 || !found) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO,
-                                          "Key not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "Key not found");
     }
 
     size_t dense_index = map->hash_to_dense[slot];
@@ -512,22 +494,18 @@ nmo_result_t nmo_indexed_map_get(const nmo_indexed_map_t *map, const void *key, 
                                value_out,
                                map->dense_values + (dense_index * map->value_size));
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key) {
+nmo_status_t nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key) {
     if (map == NULL || key == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid indexed map remove arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid indexed map remove arguments");
     }
 
     int found = 0;
     int slot = indexed_map_find_slot(map, key, &found);
     if (slot < 0 || !found) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO,
-                                          "Key not found"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "Key not found");
     }
 
     size_t dense_index = map->hash_to_dense[slot];
@@ -550,12 +528,12 @@ nmo_result_t nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key) {
 
     map->count--;
     map->states[slot] = INDEXED_MAP_ENTRY_TOMBSTONE;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 int nmo_indexed_map_contains(const nmo_indexed_map_t *map, const void *key) {
-    nmo_result_t result = nmo_indexed_map_get(map, key, NULL);
-    return result.code == NMO_OK ? 1 : 0;
+    nmo_status_t result = nmo_indexed_map_get(map, key, NULL);
+    return result == NMO_OK ? 1 : 0;
 }
 
 size_t nmo_indexed_map_get_count(const nmo_indexed_map_t *map) {

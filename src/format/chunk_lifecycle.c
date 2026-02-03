@@ -1,4 +1,4 @@
-// chunk_lifecycle.c - Chunk lifecycle and mode management
+﻿// chunk_lifecycle.c - Chunk lifecycle and mode management
 // Implements: start_read, start_write, close, clear, metadata access
 
 #include "format/nmo_chunk_api.h"
@@ -32,7 +32,7 @@ static nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // Lifecycle Management
 // =============================================================================
 
-nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
+nmo_status_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -44,10 +44,10 @@ nmo_result_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
     state->current_pos = 0;
     state->prev_identifier_pos = 0; // Reset to beginning
     state->data_size = chunk->data.count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
+nmo_status_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -66,7 +66,7 @@ nmo_result_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
     /* CK2 behavior: StartWrite() sets m_ChunkVersion = CHUNK_VERSION4 (7) */
     chunk->chunk_version = NMO_CHUNK_VERSION_4;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_chunk_close(nmo_chunk_t *chunk) {

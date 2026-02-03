@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_arena_array.h
  * @brief Generic dynamic array with arena-based memory management
  * 
@@ -46,7 +46,7 @@ typedef struct nmo_arena_array {
  * @param arena Arena for allocations (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_init(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_init(nmo_arena_array_t *array,
                                            size_t element_size,
                                            size_t initial_capacity,
                                            nmo_arena_t *arena);
@@ -76,7 +76,7 @@ NMO_API void nmo_arena_array_set_lifecycle(nmo_arena_array_t *array,
  * @param capacity Minimum capacity required
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity);
+NMO_API nmo_status_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity);
 
 /**
  * @brief Ensure space for additional elements
@@ -88,7 +88,7 @@ NMO_API nmo_result_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t ca
  * @param additional Number of additional elements needed
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size_t additional);
+NMO_API nmo_status_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size_t additional);
 
 /**
  * @brief Append an element to array
@@ -97,7 +97,7 @@ NMO_API nmo_result_t nmo_arena_array_ensure_space(nmo_arena_array_t *array, size
  * @param element Pointer to element data (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_append(nmo_arena_array_t *array, const void *element);
+NMO_API nmo_status_t nmo_arena_array_append(nmo_arena_array_t *array, const void *element);
 
 /**
  * @brief Append multiple elements to array
@@ -107,7 +107,7 @@ NMO_API nmo_result_t nmo_arena_array_append(nmo_arena_array_t *array, const void
  * @param count Number of elements to append
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_append_array(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_append_array(nmo_arena_array_t *array,
                                                    const void *elements,
                                                    size_t count);
 
@@ -122,7 +122,7 @@ NMO_API nmo_result_t nmo_arena_array_append_array(nmo_arena_array_t *array,
  * @param out_begin Optional pointer that receives the first new element
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_extend(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_extend(nmo_arena_array_t *array,
                                              size_t additional,
                                              void **out_begin);
 
@@ -143,7 +143,7 @@ NMO_API void *nmo_arena_array_get(const nmo_arena_array_t *array, size_t index);
  * @param element Pointer to element data (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index, const void *element);
+NMO_API nmo_status_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index, const void *element);
 
 /**
  * @brief Insert element at the specified position (with shifting)
@@ -153,7 +153,7 @@ NMO_API nmo_result_t nmo_arena_array_set(nmo_arena_array_t *array, size_t index,
  * @param element Pointer to element data (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_insert(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_insert(nmo_arena_array_t *array,
                                              size_t index,
                                              const void *element);
 
@@ -167,7 +167,7 @@ NMO_API nmo_result_t nmo_arena_array_insert(nmo_arena_array_t *array,
  * @param out_element Optional pointer receiving removed element data
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_remove(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_remove(nmo_arena_array_t *array,
                                              size_t index,
                                              void *out_element);
 
@@ -178,7 +178,7 @@ NMO_API nmo_result_t nmo_arena_array_remove(nmo_arena_array_t *array,
  * @param out_element Optional pointer receiving removed element
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_element);
+NMO_API nmo_status_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_element);
 
 /**
  * @brief Get pointer to first element (or NULL if empty)
@@ -212,7 +212,7 @@ NMO_API void nmo_arena_array_clear(nmo_arena_array_t *array);
  * @param count Number of elements in data
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_set_data(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_set_data(nmo_arena_array_t *array,
                                                void *data,
                                                size_t count);
 
@@ -228,7 +228,7 @@ NMO_API nmo_result_t nmo_arena_array_set_data(nmo_arena_array_t *array,
  * @param arena Arena for allocations (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
+NMO_API nmo_status_t nmo_arena_array_alloc(nmo_arena_array_t *array,
                                             size_t element_size,
                                             size_t count,
                                             nmo_arena_t *arena);
@@ -244,7 +244,7 @@ NMO_API nmo_result_t nmo_arena_array_alloc(nmo_arena_array_t *array,
  * @param arena Arena for destination allocations (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_clone(const nmo_arena_array_t *src,
+NMO_API nmo_status_t nmo_arena_array_clone(const nmo_arena_array_t *src,
                                             nmo_arena_array_t *dest,
                                             nmo_arena_t *arena);
 
@@ -312,7 +312,7 @@ NMO_API void *nmo_arena_array_data(const nmo_arena_array_t *array);
  * @param b Second array (required)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_swap(nmo_arena_array_t *a, nmo_arena_array_t *b);
+NMO_API nmo_status_t nmo_arena_array_swap(nmo_arena_array_t *a, nmo_arena_array_t *b);
 
 /**
  * @brief Find first occurrence of element
@@ -347,7 +347,7 @@ NMO_API int nmo_arena_array_contains(const nmo_arena_array_t *array, const void 
  * @param new_count New element count
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new_count);
+NMO_API nmo_status_t nmo_arena_array_resize(nmo_arena_array_t *array, size_t new_count);
 
 /* Convenience macros for typed array operations */
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file id_remap.c
  * @brief ID remapping compatibility layer implementation
  */
@@ -61,8 +61,8 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
     /* Add all mappings (file object index -> runtime ID) */
     size_t failed_count = 0;
     for (size_t i = 0; i < count; i++) {
-        nmo_result_t add_result = nmo_id_remap_add(remap, file_indices[i], runtime_ids[i]);
-        if (nmo_result_is_error(add_result)) {
+        nmo_status_t add_result = nmo_id_remap_add(remap, file_indices[i], runtime_ids[i]);
+        if (add_result != NMO_OK) {
             failed_count++;
         }
     }
@@ -83,8 +83,8 @@ int nmo_id_remap_lookup(const nmo_id_remap_table_t *table,
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_result_t result = nmo_id_remap_lookup_id((nmo_id_remap_t *) table, old_id, new_id);
-    return result.code;
+    nmo_status_t result = nmo_id_remap_lookup_id((nmo_id_remap_t *) table, old_id, new_id);
+    return result;
 }
 
 size_t nmo_id_remap_table_get_count(const nmo_id_remap_table_t *table) {
@@ -199,8 +199,8 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
             }
         }
 
-        nmo_result_t result = nmo_id_remap_add(plan->remap, runtime_id, file_id);
-        if (nmo_result_is_ok(result)) {
+        nmo_status_t result = nmo_id_remap_add(plan->remap, runtime_id, file_id);
+        if (result == NMO_OK) {
             plan->objects_remapped++;
         }
     }

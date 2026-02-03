@@ -63,7 +63,7 @@ static void teardown_context(test_context_t *ctx) {
  * ============================================================================ */
 
 /* Simple integer addition */
-static nmo_result_t mock_add_int(
+static nmo_status_t mock_add_int(
     const void *p1_data,
     const nmo_type_descriptor_t *p1_type,
     const void *p2_data,
@@ -83,10 +83,10 @@ static nmo_result_t mock_add_int(
     
     *result = *a + *b;
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t mock_add_int_to_float(
+static nmo_status_t mock_add_int_to_float(
     const void *p1_data,
     const nmo_type_descriptor_t *p1_type,
     const void *p2_data,
@@ -103,11 +103,11 @@ static nmo_result_t mock_add_int_to_float(
     const int32_t a = *(const int32_t *)p1_data;
     const int32_t b = *(const int32_t *)p2_data;
     *(float *)result_data = (float)(a + b);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* Simple integer negation (unary) */
-static nmo_result_t mock_negate_int(
+static nmo_status_t mock_negate_int(
     const void *p1_data,
     const nmo_type_descriptor_t *p1_type,
     const void *p2_data,
@@ -127,7 +127,7 @@ static nmo_result_t mock_negate_int(
     
     *result = -*a;
     
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -179,8 +179,8 @@ TEST(operation_registry, register_operation_success) {
     int_type.size = sizeof(int32_t);
     int_type.alignment = alignof(int32_t);
     
-    nmo_result_t result = nmo_type_registry_register(ctx->type_registry, &int_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(ctx->type_registry, &int_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register operation: INT + INT -> INT */
     nmo_operation_desc_t desc = {0};
@@ -200,7 +200,7 @@ TEST(operation_registry, register_operation_success) {
         ctx->type_registry
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify statistics */
     uint64_t total_ops = 0;
@@ -223,14 +223,14 @@ TEST(operation_registry, register_operation_not_implemented) {
     desc.flags = NMO_OP_BINARY | NMO_OP_COMMUTATIVE;
     desc.name = "Add";
     
-    nmo_result_t result = nmo_operation_registry_register(
+    nmo_status_t result = nmo_operation_registry_register(
         ctx->operation_registry,
         &desc,
         ctx->type_registry
     );
     
     /* Should fail because types are not registered yet */
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown_context(ctx);
 }
@@ -242,16 +242,16 @@ TEST(operation_registry, register_null_params) {
     nmo_operation_desc_t desc = {0};
     
     /* NULL registry */
-    nmo_result_t result = nmo_operation_registry_register(NULL, &desc, ctx->type_registry);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_operation_registry_register(NULL, &desc, ctx->type_registry);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* NULL descriptor */
     result = nmo_operation_registry_register(ctx->operation_registry, NULL, ctx->type_registry);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* NULL type registry */
     result = nmo_operation_registry_register(ctx->operation_registry, &desc, NULL);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown_context(ctx);
 }
@@ -267,8 +267,8 @@ TEST(operation_registry, register_unary_operation) {
     int_type.size = sizeof(int32_t);
     int_type.alignment = alignof(int32_t);
     
-    nmo_result_t result = nmo_type_registry_register(ctx->type_registry, &int_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(ctx->type_registry, &int_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register unary operation: -INT -> INT */
     nmo_operation_desc_t desc = {0};
@@ -288,7 +288,7 @@ TEST(operation_registry, register_unary_operation) {
         ctx->type_registry
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     teardown_context(ctx);
 }
@@ -347,7 +347,7 @@ TEST(operation_registry, register_bulk_operations) {
     descs[2].priority = 100;
     descs[2].name = "Add";
     
-    nmo_result_t result = nmo_operation_registry_register_bulk(
+    nmo_status_t result = nmo_operation_registry_register_bulk(
         ctx->operation_registry,
         descs,
         3,
@@ -355,7 +355,7 @@ TEST(operation_registry, register_bulk_operations) {
         NULL  /* No logger for this test */
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify statistics (should have 3 operations) */
     uint64_t total_ops = 0;
@@ -395,7 +395,7 @@ TEST(operation_registry, find_operation_success) {
     
     /* Find the operation */
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t result = nmo_operation_registry_find(
+    nmo_status_t result = nmo_operation_registry_find(
         ctx->operation_registry,
         &GUID_OP_ADD,
         &int_type,
@@ -404,7 +404,7 @@ TEST(operation_registry, find_operation_success) {
         &cell
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
     ASSERT_EQ(mock_add_int, cell->desc.function);
     ASSERT_EQ(100, cell->desc.priority);
@@ -421,7 +421,7 @@ TEST(operation_registry, find_operation_not_implemented) {
     type_desc.guid = GUID_TYPE_INT;
     
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t result = nmo_operation_registry_find(
+    nmo_status_t result = nmo_operation_registry_find(
         ctx->operation_registry,
         &GUID_OP_ADD,
         &type_desc,
@@ -431,7 +431,7 @@ TEST(operation_registry, find_operation_not_implemented) {
     );
 
     /* Should fail - family not found */
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     ASSERT_EQ(NULL, cell);
     
     teardown_context(ctx);
@@ -445,20 +445,20 @@ TEST(operation_registry, find_null_params) {
     const nmo_operation_tree_cell_t *cell = NULL;
     
     /* NULL registry */
-    nmo_result_t result = nmo_operation_registry_find(NULL, &GUID_OP_ADD, &type_desc, &type_desc, NULL, &cell);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    nmo_status_t result = nmo_operation_registry_find(NULL, &GUID_OP_ADD, &type_desc, &type_desc, NULL, &cell);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* NULL operation GUID */
     result = nmo_operation_registry_find(ctx->operation_registry, NULL, &type_desc, &type_desc, NULL, &cell);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* NULL p1_type */
     result = nmo_operation_registry_find(ctx->operation_registry, &GUID_OP_ADD, NULL, &type_desc, NULL, &cell);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     /* NULL out_cell */
     result = nmo_operation_registry_find(ctx->operation_registry, &GUID_OP_ADD, &type_desc, &type_desc, NULL, NULL);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown_context(ctx);
 }
@@ -491,7 +491,7 @@ TEST(operation_registry, execute_operation_success) {
     int32_t b = 3;
     int32_t result = 0;
     
-    nmo_result_t exec_result = nmo_operation_registry_execute(
+    nmo_status_t exec_result = nmo_operation_registry_execute(
         ctx->operation_registry,
         &GUID_OP_ADD,
         &a, &int_type,
@@ -500,7 +500,7 @@ TEST(operation_registry, execute_operation_success) {
         ctx->type_registry
     );
     
-    ASSERT_EQ(NMO_OK, exec_result.code);
+    ASSERT_EQ(NMO_OK, exec_result);
     ASSERT_EQ(8, result);
     
     teardown_context(ctx);
@@ -516,14 +516,14 @@ TEST(operation_registry, execute_selects_requested_result_type) {
     int_type.name = "INT";
     int_type.size = sizeof(int32_t);
     int_type.alignment = alignof(int32_t);
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type));
 
     nmo_type_descriptor_t float_type = {0};
     float_type.guid = GUID_TYPE_FLOAT;
     float_type.name = "FLOAT";
     float_type.size = sizeof(float);
     float_type.alignment = alignof(float);
-    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &float_type).code);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &float_type));
 
     /* Register two cells for the same (op, p1, p2), with different result types */
     nmo_operation_desc_t int_result = {0};
@@ -535,7 +535,7 @@ TEST(operation_registry, execute_selects_requested_result_type) {
     int_result.flags = NMO_OP_BINARY;
     int_result.priority = 50;
     int_result.name = "Add";
-    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &int_result, ctx->type_registry).code);
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &int_result, ctx->type_registry));
 
     nmo_operation_desc_t float_result = {0};
     float_result.operation_guid = GUID_OP_ADD;
@@ -546,7 +546,7 @@ TEST(operation_registry, execute_selects_requested_result_type) {
     float_result.flags = NMO_OP_BINARY;
     float_result.priority = 100; /* Higher priority, but must still be selected by result_type */
     float_result.name = "Add";
-    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &float_result, ctx->type_registry).code);
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &float_result, ctx->type_registry));
 
     const int32_t a = 3;
     const int32_t b = 5;
@@ -557,7 +557,7 @@ TEST(operation_registry, execute_selects_requested_result_type) {
     ASSERT_NE(NULL, int_desc);
     ASSERT_NE(NULL, float_desc);
 
-    nmo_result_t exec_result = nmo_operation_registry_execute(
+    nmo_status_t exec_result = nmo_operation_registry_execute(
         ctx->operation_registry,
         &GUID_OP_ADD,
         &a, int_desc,
@@ -566,7 +566,7 @@ TEST(operation_registry, execute_selects_requested_result_type) {
         ctx->type_registry
     );
 
-    ASSERT_EQ(NMO_OK, exec_result.code);
+    ASSERT_EQ(NMO_OK, exec_result);
     ASSERT_TRUE(out == 8.0f);
 
     teardown_context(ctx);
@@ -610,11 +610,11 @@ TEST(operation_registry, get_family_success) {
 }
 
 /* Enumeration callback for testing */
-static nmo_result_t enum_callback(const nmo_operation_tree_cell_t *cell, void *user_data) {
+static nmo_status_t enum_callback(const nmo_operation_tree_cell_t *cell, void *user_data) {
     int *count = (int *)user_data;
     (*count)++;
     (void)cell;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 TEST(operation_registry, enumerate_family_success) {
@@ -647,9 +647,9 @@ TEST(operation_registry, enumerate_family_success) {
     ASSERT_NE(NULL, family);
     
     int count = 0;
-    nmo_result_t result = nmo_operation_family_enumerate(family, enum_callback, &count);
+    nmo_status_t result = nmo_operation_family_enumerate(family, enum_callback, &count);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(1, count);
     
     teardown_context(ctx);
@@ -728,10 +728,10 @@ TEST(operation_registry, find_with_inheritance_exact_match) {
         .priority = 100
     };
     
-    nmo_result_t result = nmo_operation_registry_register(
+    nmo_status_t result = nmo_operation_registry_register(
         ctx->operation_registry, &op_desc, ctx->type_registry
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Find with exact match (should succeed) */
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -744,7 +744,7 @@ TEST(operation_registry, find_with_inheritance_exact_match) {
         &cell
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
     ASSERT_EQ(mock_add_int, cell->desc.function);
     
@@ -792,10 +792,10 @@ TEST(operation_registry, find_with_inheritance_derived_type) {
         .priority = 100
     };
     
-    nmo_result_t result = nmo_operation_registry_register(
+    nmo_status_t result = nmo_operation_registry_register(
         ctx->operation_registry, &op_desc, ctx->type_registry
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Find with DERIVED type (should match via inheritance) */
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -808,7 +808,7 @@ TEST(operation_registry, find_with_inheritance_derived_type) {
         &cell
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
     ASSERT_EQ(mock_add_int, cell->desc.function);
     
@@ -866,10 +866,10 @@ TEST(operation_registry, find_with_inheritance_multi_level) {
         .priority = 100
     };
     
-    nmo_result_t result = nmo_operation_registry_register(
+    nmo_status_t result = nmo_operation_registry_register(
         ctx->operation_registry, &op_desc, ctx->type_registry
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Find with LEAF type (should match via 2-level inheritance) */
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -882,7 +882,7 @@ TEST(operation_registry, find_with_inheritance_multi_level) {
         &cell
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
     ASSERT_EQ(mock_add_int, cell->desc.function);
     
@@ -929,10 +929,10 @@ TEST(operation_registry, find_with_inheritance_no_match) {
         .priority = 100
     };
     
-    nmo_result_t result = nmo_operation_registry_register(
+    nmo_status_t result = nmo_operation_registry_register(
         ctx->operation_registry, &op_desc, ctx->type_registry
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Find with type2 (should fail - no inheritance relationship) */
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -945,7 +945,7 @@ TEST(operation_registry, find_with_inheritance_no_match) {
         &cell
     );
     
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown_context(ctx);
 }
@@ -1017,7 +1017,7 @@ TEST(operation_registry, find_with_inheritance_closest_match) {
     
     /* Find with Leaf type - should prefer Middle over Root (closer match) */
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t result = nmo_operation_registry_find(
+    nmo_status_t result = nmo_operation_registry_find(
         ctx->operation_registry,
         &op_guid,
         &leaf_type,
@@ -1026,7 +1026,7 @@ TEST(operation_registry, find_with_inheritance_closest_match) {
         &cell
     );
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
     /* Should match Middle (depth=1) instead of Root (depth=2) */
     ASSERT_EQ(mock_negate_int, cell->desc.function);
@@ -1077,7 +1077,7 @@ TEST(operation_registry, find_without_type_registry_no_inheritance) {
     
     /* Find with derived type but WITHOUT type_registry (NULL) */
     const nmo_operation_tree_cell_t *cell = NULL;
-    nmo_result_t result = nmo_operation_registry_find(
+    nmo_status_t result = nmo_operation_registry_find(
         ctx->operation_registry,
         &op_guid,
         &derived_type,
@@ -1087,7 +1087,7 @@ TEST(operation_registry, find_without_type_registry_no_inheritance) {
     );
     
     /* Should fail without inheritance matching */
-    ASSERT_NE(NMO_OK, result.code);
+    ASSERT_NE(NMO_OK, result);
     
     teardown_context(ctx);
 }
@@ -1125,7 +1125,7 @@ TEST(operation_registry, performance_register_100_operations) {
     
     /* Benchmark registration time */
     clock_t start = clock();
-    nmo_result_t result = nmo_operation_registry_register_bulk(
+    nmo_status_t result = nmo_operation_registry_register_bulk(
         ctx->operation_registry,
         descs,
         100,
@@ -1136,7 +1136,7 @@ TEST(operation_registry, performance_register_100_operations) {
     
     double elapsed_ms = ((double)(end - start) / CLOCKS_PER_SEC) * 1000.0;
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Performance requirement: < 10ms for 100 operations */
     /* Note: Actual performance: ~%.3fms */
@@ -1177,12 +1177,12 @@ TEST(operation_registry, performance_lookup_1000_operations) {
     desc.priority = 100;
     desc.name = "Add";
     
-    nmo_result_t result = nmo_operation_registry_register(
+    nmo_status_t result = nmo_operation_registry_register(
         ctx->operation_registry,
         &desc,
         ctx->type_registry
     );
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Benchmark 1000 lookups */
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -1197,7 +1197,7 @@ TEST(operation_registry, performance_lookup_1000_operations) {
             ctx->type_registry,
             &cell
         );
-        ASSERT_EQ(NMO_OK, result.code);
+        ASSERT_EQ(NMO_OK, result);
         ASSERT_NE(NULL, cell);
     }
     

@@ -1,4 +1,4 @@
-#ifndef NMO_TYPE_TYPE_SYSTEM_H
+﻿#ifndef NMO_TYPE_TYPE_SYSTEM_H
 #define NMO_TYPE_TYPE_SYSTEM_H
 
 #include "nmo_types.h"
@@ -282,18 +282,18 @@ static inline void nmo_compat_mask_clear(nmo_compatibility_mask_t *mask) {
  * Type Virtual Table (Zero-cost Extension Points)
  * ============================================================================ */
 
-typedef nmo_result_t (*nmo_type_create_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_create_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
 typedef void (*nmo_type_destroy_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
-typedef nmo_result_t (*nmo_type_copy_fn)(const void *src, void *dst, const nmo_type_descriptor_t *type, nmo_arena_t *arena);
-typedef nmo_result_t (*nmo_type_serialize_fn)(const void *instance, struct nmo_chunk *chunk, const nmo_type_descriptor_t *type, void *context);
-typedef nmo_result_t (*nmo_type_deserialize_fn)(void *instance, struct nmo_chunk *chunk, const nmo_type_descriptor_t *type, void *context);
-typedef nmo_result_t (*nmo_type_validate_fn)(const void *instance, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_copy_fn)(const void *src, void *dst, const nmo_type_descriptor_t *type, nmo_arena_t *arena);
+typedef nmo_status_t (*nmo_type_serialize_fn)(const void *instance, struct nmo_chunk *chunk, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_deserialize_fn)(void *instance, struct nmo_chunk *chunk, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_validate_fn)(const void *instance, const nmo_type_descriptor_t *type, void *context);
 typedef bool (*nmo_type_equals_fn)(const void *a, const void *b);
 typedef uint32_t (*nmo_type_hash_fn)(const void *instance);
 
 /* Phase 6.4: String conversion function pointers */
-typedef nmo_result_t (*nmo_type_to_string_fn)(const void *value, const nmo_type_descriptor_t *type, char *buffer, size_t buffer_size, void *context);
-typedef nmo_result_t (*nmo_type_from_string_fn)(void *value, const nmo_type_descriptor_t *type, const char *string, void *context);
+typedef nmo_status_t (*nmo_type_to_string_fn)(const void *value, const nmo_type_descriptor_t *type, char *buffer, size_t buffer_size, void *context);
+typedef nmo_status_t (*nmo_type_from_string_fn)(void *value, const nmo_type_descriptor_t *type, const char *string, void *context);
 
 typedef struct nmo_type_vtable_t {
     /* Lifecycle hooks */
@@ -336,7 +336,7 @@ struct nmo_chunk;
  * @param manager_context Manager-specific context
  * @return nmo_ok() on success
  */
-typedef nmo_result_t (*nmo_manager_serialize_fn)(
+typedef nmo_status_t (*nmo_manager_serialize_fn)(
     const void *instance,
     struct nmo_chunk *chunk,
     void *manager_context);
@@ -351,7 +351,7 @@ typedef nmo_result_t (*nmo_manager_serialize_fn)(
  * @param manager_context Manager-specific context
  * @return nmo_ok() on success
  */
-typedef nmo_result_t (*nmo_manager_deserialize_fn)(
+typedef nmo_status_t (*nmo_manager_deserialize_fn)(
     void *instance,
     struct nmo_chunk *chunk,
     void *manager_context);
@@ -481,7 +481,7 @@ void nmo_type_registry_destroy(nmo_type_registry_t *registry);
  * @param descriptor Type descriptor to register
  * @return nmo_ok() on success, error on failure
  */
-nmo_result_t nmo_type_registry_register(
+nmo_status_t nmo_type_registry_register(
     nmo_type_registry_t *registry,
     const nmo_type_descriptor_t *descriptor);
 
@@ -495,7 +495,7 @@ nmo_result_t nmo_type_registry_register(
  * @param guid Type GUID to unregister
  * @return nmo_ok() on success, error if not found
  */
-nmo_result_t nmo_type_registry_unregister(
+nmo_status_t nmo_type_registry_unregister(
     nmo_type_registry_t *registry,
     nmo_guid_t guid);
 
@@ -509,7 +509,7 @@ nmo_result_t nmo_type_registry_unregister(
  * @param plugin_guid Plugin GUID
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_registry_unregister_plugin_types(
+nmo_status_t nmo_type_registry_unregister_plugin_types(
     nmo_type_registry_t *registry,
     nmo_guid_t plugin_guid);
 
@@ -609,7 +609,7 @@ bool nmo_type_is_derived_from(
  * @param arena Arena allocator for output array
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_get_inheritance_chain(
+nmo_status_t nmo_type_get_inheritance_chain(
     const nmo_type_registry_t *registry,
     nmo_type_id_t type_id,
     nmo_type_id_t **out_chain,
@@ -663,7 +663,7 @@ int32_t nmo_type_get_derivation_depth(
  * explicitly states the conversion direction, making the code self-documenting.
  *
  * TODO: Consider adding a generic conversion function for plugin extensibility:
- *   nmo_result_t nmo_type_convert(const nmo_type_registry_t *registry,
+ *   nmo_status_t nmo_type_convert(const nmo_type_registry_t *registry,
  *                                 nmo_type_identifier_type_t from_type,
  *                                 const void *from_value,
  *                                 nmo_type_identifier_type_t to_type,
@@ -689,7 +689,7 @@ nmo_type_id_t nmo_type_registry_guid_to_type_id(
  * @param out_guid Output: Type GUID
  * @return nmo_ok() on success, error if invalid ID
  */
-nmo_result_t nmo_type_registry_type_id_to_guid(
+nmo_status_t nmo_type_registry_type_id_to_guid(
     const nmo_type_registry_t *registry,
     nmo_type_id_t type_id,
     nmo_guid_t *out_guid);
@@ -713,7 +713,7 @@ const char* nmo_type_registry_guid_to_name(
  * @param out_guid Output: Type GUID
  * @return nmo_ok() on success, error if not found
  */
-nmo_result_t nmo_type_registry_name_to_guid(
+nmo_status_t nmo_type_registry_name_to_guid(
     const nmo_type_registry_t *registry,
     const char *name,
     nmo_guid_t *out_guid);
@@ -748,7 +748,7 @@ nmo_type_id_t nmo_type_registry_name_to_type_id(
  * @param out_guid Output: Type GUID
  * @return nmo_ok() on success, error if not found
  */
-nmo_result_t nmo_type_registry_class_id_to_guid(
+nmo_status_t nmo_type_registry_class_id_to_guid(
     const nmo_type_registry_t *registry,
     uint32_t class_id,
     nmo_guid_t *out_guid);
@@ -761,7 +761,7 @@ nmo_result_t nmo_type_registry_class_id_to_guid(
  * @param out_class_id Output: Virtools CK_CLASSID
  * @return nmo_ok() on success, error if not found or type has no ClassID
  */
-nmo_result_t nmo_type_registry_guid_to_class_id(
+nmo_status_t nmo_type_registry_guid_to_class_id(
     const nmo_type_registry_t *registry,
     nmo_guid_t guid,
     uint32_t *out_class_id);
@@ -774,7 +774,7 @@ nmo_result_t nmo_type_registry_guid_to_class_id(
  * @param out_class_id Output: Virtools CK_CLASSID
  * @return nmo_ok() on success, error if invalid ID or type has no ClassID
  */
-nmo_result_t nmo_type_registry_type_id_to_class_id(
+nmo_status_t nmo_type_registry_type_id_to_class_id(
     const nmo_type_registry_t *registry,
     nmo_type_id_t type_id,
     uint32_t *out_class_id);
@@ -911,7 +911,7 @@ bool nmo_type_registry_is_ui_visible_by_id(
  * @param visible true to make visible, false to hide
  * @return nmo_ok() on success, error if type not found
  */
-nmo_result_t nmo_type_registry_set_ui_visibility(
+nmo_status_t nmo_type_registry_set_ui_visibility(
     nmo_type_registry_t *registry,
     nmo_guid_t guid,
     bool visible);
@@ -928,7 +928,7 @@ nmo_result_t nmo_type_registry_set_ui_visibility(
  *        deep-copied into the registry arena, so caller buffers may be temporary.
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_registry_register_metadata(
+nmo_status_t nmo_type_registry_register_metadata(
     nmo_type_registry_t *registry,
     const nmo_specialized_metadata_t *metadata);
 
@@ -964,7 +964,7 @@ void nmo_type_registry_unregister_metadata(
  * @param plugin Plugin descriptor
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_registry_register_plugin(
+nmo_status_t nmo_type_registry_register_plugin(
     nmo_type_registry_t *registry,
     const nmo_plugin_t *plugin);
 
@@ -989,7 +989,7 @@ const nmo_plugin_t* nmo_type_registry_get_plugin(
  * @param base_guid Base type GUID
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_registry_unregister_derived(
+nmo_status_t nmo_type_registry_unregister_derived(
     nmo_type_registry_t *registry,
     nmo_guid_t base_guid);
 
@@ -1003,7 +1003,7 @@ nmo_result_t nmo_type_registry_unregister_derived(
  * @param guid Type GUID
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_registry_invalidate(
+nmo_status_t nmo_type_registry_invalidate(
     nmo_type_registry_t *registry,
     nmo_guid_t guid);
 
@@ -1028,7 +1028,7 @@ nmo_result_t nmo_type_registry_invalidate(
  * @param manager_context Manager-specific context (optional)
  * @return nmo_ok() on success, error if GUID already registered
  */
-nmo_result_t nmo_type_registry_register_saver_manager(
+nmo_status_t nmo_type_registry_register_saver_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t manager_guid,
     const char *name,
@@ -1046,7 +1046,7 @@ nmo_result_t nmo_type_registry_register_saver_manager(
  * @param manager_guid Manager GUID
  * @return nmo_ok() on success, error if not found
  */
-nmo_result_t nmo_type_registry_unregister_saver_manager(
+nmo_status_t nmo_type_registry_unregister_saver_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t manager_guid);
 
@@ -1072,7 +1072,7 @@ const nmo_saver_manager_t* nmo_type_registry_get_saver_manager(
  * @param manager_guid Manager GUID
  * @return nmo_ok() on success, error if type or manager not found
  */
-nmo_result_t nmo_type_registry_set_type_manager(
+nmo_status_t nmo_type_registry_set_type_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t type_guid,
     nmo_guid_t manager_guid);
@@ -1097,7 +1097,7 @@ const nmo_saver_manager_t* nmo_type_registry_get_type_manager(
  * @param type_guid Type GUID
  * @return nmo_ok() on success
  */
-nmo_result_t nmo_type_registry_clear_type_manager(
+nmo_status_t nmo_type_registry_clear_type_manager(
     nmo_type_registry_t *registry,
     nmo_guid_t type_guid);
 

@@ -20,27 +20,27 @@ TEST(chunk_id_remap, id_remap_basic) {
     ASSERT_NOT_NULL(remap);
     
     // Add some mappings
-    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(remap, 102, 202).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 102, 202), NMO_OK);
     
     // Lookup existing IDs
     nmo_object_id_t new_id;
-    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 100, &new_id).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 100, &new_id), NMO_OK);
     ASSERT_EQ(new_id, 200);
     
-    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 101, &new_id).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 101, &new_id), NMO_OK);
     ASSERT_EQ(new_id, 201);
     
-    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 102, &new_id).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 102, &new_id), NMO_OK);
     ASSERT_EQ(new_id, 202);
     
     // Lookup non-existent ID
-    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 999, &new_id).code, NMO_ERR_NOT_FOUND);
+    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 999, &new_id), NMO_ERR_NOT_FOUND);
     
     // Clear and verify
     nmo_id_remap_clear(remap);
-    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 100, &new_id).code, NMO_ERR_NOT_FOUND);
+    ASSERT_EQ(nmo_id_remap_lookup_id(remap, 100, &new_id), NMO_ERR_NOT_FOUND);
     
     nmo_arena_destroy(arena);
 }
@@ -68,11 +68,11 @@ TEST(chunk_id_remap, single_id_remap) {
     nmo_id_remap_t* remap = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(remap);
     
-    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201), NMO_OK);
     
     // Apply remapping
-    ASSERT_EQ(nmo_chunk_remap_object_ids(chunk, remap).code, NMO_OK);
+    ASSERT_EQ(nmo_chunk_remap_object_ids(chunk, remap), NMO_OK);
     
     // Read back and verify
     nmo_chunk_start_read(chunk);
@@ -123,11 +123,11 @@ TEST(chunk_id_remap, sequence_id_remap) {
     
     // Map all IDs
     for (int i = 0; i < 4; i++) {
-        ASSERT_EQ(nmo_id_remap_add(remap, 100 + i, 200 + i).code, NMO_OK);
+        ASSERT_EQ(nmo_id_remap_add(remap, 100 + i, 200 + i), NMO_OK);
     }
     
     // Apply remapping
-    ASSERT_EQ(nmo_chunk_remap_object_ids(chunk, remap).code, NMO_OK);
+    ASSERT_EQ(nmo_chunk_remap_object_ids(chunk, remap), NMO_OK);
     
     // Read back and verify
     // Note: The IDs are stored in the chunk->ids list and data buffer
@@ -178,12 +178,12 @@ TEST(chunk_id_remap, subchunk_id_remap) {
     nmo_id_remap_t* remap = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(remap);
     
-    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(remap, 102, 202).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 102, 202), NMO_OK);
     
     // Apply remapping (should recursively process sub-chunk)
-    ASSERT_EQ(nmo_chunk_remap_object_ids(parent, remap).code, NMO_OK);
+    ASSERT_EQ(nmo_chunk_remap_object_ids(parent, remap), NMO_OK);
     
     // Read back and verify
     nmo_chunk_start_read(parent);
@@ -200,8 +200,8 @@ TEST(chunk_id_remap, subchunk_id_remap) {
     
     // Read sub-chunk
     nmo_chunk_t* read_sub = NULL;
-    nmo_result_t result = nmo_chunk_read_sub_chunk(parent, &read_sub);
-    ASSERT_EQ(result.code, NMO_OK);
+    nmo_status_t result = nmo_chunk_read_sub_chunk(parent, &read_sub);
+    ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(read_sub);
     
     nmo_chunk_start_read(read_sub);
@@ -243,12 +243,12 @@ TEST(chunk_id_remap, zero_and_unchanged_ids) {
     nmo_id_remap_t* remap = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(remap);
     
-    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200).code, NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201).code, NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 100, 200), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(remap, 101, 201), NMO_OK);
     // Note: no mapping for 999
     
     // Apply remapping
-    ASSERT_EQ(nmo_chunk_remap_object_ids(chunk, remap).code, NMO_OK);
+    ASSERT_EQ(nmo_chunk_remap_object_ids(chunk, remap), NMO_OK);
     
     // Read back and verify
     nmo_chunk_start_read(chunk);

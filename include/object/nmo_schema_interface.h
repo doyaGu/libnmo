@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_schema_interface.h
  * @brief Unified serialization interface for CKObject class hierarchy
  * 
@@ -75,7 +75,7 @@ typedef struct nmo_serialize_context {
  * @param context Serialization context (nmo_serialize_context_t*)
  * @return nmo_ok() on success, error on failure
  */
-typedef nmo_result_t (*nmo_object_serialize_fn)(
+typedef nmo_status_t (*nmo_object_serialize_fn)(
     const void *instance,
     struct nmo_chunk *chunk,
     const nmo_type_descriptor_t *type,
@@ -92,7 +92,7 @@ typedef nmo_result_t (*nmo_object_serialize_fn)(
  * @param context Serialization context (nmo_serialize_context_t*)
  * @return nmo_ok() on success, error on failure
  */
-typedef nmo_result_t (*nmo_object_deserialize_fn)(
+typedef nmo_status_t (*nmo_object_deserialize_fn)(
     void *instance,
     struct nmo_chunk *chunk,
     const nmo_type_descriptor_t *type,
@@ -108,7 +108,7 @@ typedef nmo_result_t (*nmo_object_deserialize_fn)(
  * @param context Serialization context with repository for reference resolution
  * @return nmo_ok() on success, error on failure
  */
-typedef nmo_result_t (*nmo_object_finish_loading_fn)(
+typedef nmo_status_t (*nmo_object_finish_loading_fn)(
     void *instance,
     void *context);
 

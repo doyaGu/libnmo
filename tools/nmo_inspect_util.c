@@ -199,8 +199,8 @@ nmo_class_id_t nmo_inspect_class_id_from_name(const inspect_state_t *state, cons
         return 0;
     }
     uint32_t class_id_u32 = 0;
-    nmo_result_t rc = nmo_type_registry_type_id_to_class_id(registry, type_id, &class_id_u32);
-    if (rc.code != NMO_OK) {
+    nmo_status_t rc = nmo_type_registry_type_id_to_class_id(registry, type_id, &class_id_u32);
+    if (rc != NMO_OK) {
         return 0;
     }
     return (nmo_class_id_t)class_id_u32;

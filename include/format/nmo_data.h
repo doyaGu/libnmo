@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_data.h
  * @brief NMO Data section structures and parsing
  *
@@ -94,7 +94,7 @@ typedef struct nmo_data_section {
  * @param arena Arena allocator for temporary data
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_data_section_parse(
+NMO_API nmo_status_t nmo_data_section_parse(
     const void *data,
     size_t size,
     uint32_t file_version,
@@ -113,7 +113,7 @@ NMO_API nmo_result_t nmo_data_section_parse(
  * @param arena Arena for temporary allocations (required for chunk serialization)
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_data_section_serialize(
+NMO_API nmo_status_t nmo_data_section_serialize(
     const nmo_data_section_t *data_section,
     uint32_t file_version,
     void *buffer,

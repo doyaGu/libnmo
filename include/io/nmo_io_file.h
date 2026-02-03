@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_io_file.h
  * @brief File IO operations
  */
@@ -72,7 +72,7 @@ NMO_API int64_t nmo_io_file_tell(nmo_io_file_t *io_file);
  * @param io_file File IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_io_file_close(nmo_io_file_t *io_file);
+NMO_API nmo_status_t nmo_io_file_close(nmo_io_file_t *io_file);
 
 /**
  * Open a file and return an IO interface

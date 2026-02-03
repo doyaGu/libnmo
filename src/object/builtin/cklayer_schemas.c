@@ -16,7 +16,7 @@
 
 #define CK_STATESAVE_LAYERDATA 0x00000010u
 
-nmo_result_t nmo_cklayer_deserialize(
+nmo_status_t nmo_cklayer_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -24,20 +24,18 @@ nmo_result_t nmo_cklayer_deserialize(
 {
     (void)type;
     nmo_cklayer_state_t *out_state = (nmo_cklayer_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA).code != NMO_OK) {
-        return nmo_result_ok();
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA) != NMO_OK) {
+        NMO_RETURN_OK();
     }
 
     nmo_chunk_read_object_id(chunk, &out_state->grid_id);
@@ -46,22 +44,22 @@ nmo_result_t nmo_cklayer_deserialize(
     if (file_mode) {
         int32_t format = 0;
         int32_t version = 0;
-        if (nmo_chunk_read_int(chunk, &format).code == NMO_OK) {
+        if (nmo_chunk_read_int(chunk, &format) == NMO_OK) {
             out_state->format = format;
         }
-        if (nmo_chunk_read_int(chunk, &version).code == NMO_OK) {
+        if (nmo_chunk_read_int(chunk, &version) == NMO_OK) {
             out_state->version = version;
             out_state->has_version = 1;
         }
 
         if (out_state->has_version && out_state->version >= 1) {
             uint32_t color = 0;
-            if (nmo_chunk_read_dword(chunk, &color).code == NMO_OK) {
+            if (nmo_chunk_read_dword(chunk, &color) == NMO_OK) {
                 out_state->color_rgba = color;
                 out_state->has_color = 1;
             }
             if (out_state->version >= 3) {
-                if (nmo_chunk_read_guid(chunk, &out_state->param_guid).code == NMO_OK) {
+                if (nmo_chunk_read_guid(chunk, &out_state->param_guid) == NMO_OK) {
                     out_state->has_param_guid = 1;
                 }
             }
@@ -69,7 +67,7 @@ nmo_result_t nmo_cklayer_deserialize(
         }
     } else {
         int32_t type = 0;
-        if (nmo_chunk_read_int(chunk, &type).code == NMO_OK) {
+        if (nmo_chunk_read_int(chunk, &type) == NMO_OK) {
             out_state->type = type;
             out_state->has_type = 1;
         }
@@ -80,16 +78,16 @@ nmo_result_t nmo_cklayer_deserialize(
     if (out_state->format == 0) {
         void *raw = NULL;
         size_t raw_size = 0;
-        if (nmo_chunk_read_buffer(chunk, &raw, &raw_size).code == NMO_OK) {
+        if (nmo_chunk_read_buffer(chunk, &raw, &raw_size) == NMO_OK) {
             out_state->square_data = raw;
             out_state->square_data_size = raw_size;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_cklayer_serialize(
+nmo_status_t nmo_cklayer_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -97,18 +95,16 @@ nmo_result_t nmo_cklayer_serialize(
 {
     (void)type;
     const nmo_cklayer_state_t *in_state = (const nmo_cklayer_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_serialize");
     }
 
-    nmo_result_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LAYERDATA);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     nmo_chunk_write_object_id(out_chunk, in_state->grid_id);
 
@@ -133,7 +129,7 @@ nmo_result_t nmo_cklayer_serialize(
         return nmo_chunk_write_buffer(out_chunk, in_state->square_data, in_state->square_data_size);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

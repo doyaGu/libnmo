@@ -43,7 +43,7 @@ static void delete_file_utf8(const char* utf8_path) {
  */
 TEST(txn_utf8, chinese_filename) {
     const char* test_file_chinese = "测试文件_中文.dat";
-    const char* test_data = "UTF-8 content: 你好世界！";
+    const char* test_data = "UTF-8 content: 你好世界";
     
     delete_file_utf8(test_file_chinese);
 
@@ -56,11 +56,11 @@ TEST(txn_utf8, chinese_filename) {
     nmo_txn_handle_t* txn = nmo_txn_open(&desc);
     ASSERT_NOT_NULL(txn);
 
-    nmo_result_t result = nmo_txn_write(txn, test_data, strlen(test_data));
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_write(txn, test_data, strlen(test_data));
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 
@@ -72,7 +72,7 @@ TEST(txn_utf8, chinese_filename) {
  * Test with Japanese characters (日本語)
  */
 TEST(txn_utf8, japanese_filename) {
-    const char* test_file_japanese = "テスト_日本語.dat";
+    const char* test_file_japanese = "\xE3\x83\x86\xE3\x82\xB9\xE3\x83\x88_\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E.dat";
     
     delete_file_utf8(test_file_japanese);
 
@@ -83,14 +83,27 @@ TEST(txn_utf8, japanese_filename) {
     };
 
     nmo_txn_handle_t* txn = nmo_txn_open(&desc);
+    if (!txn) {
+        DWORD err = GetLastError();
+        char msg[256] = {0};
+        (void)FormatMessageA(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            NULL,
+            err,
+            0,
+            msg,
+            (DWORD)sizeof(msg),
+            NULL);
+        printf("nmo_txn_open failed for japanese filename. GetLastError=%lu (%s)\n", (unsigned long)err, msg);
+    }
     ASSERT_NOT_NULL(txn);
 
     const char* jp_data = "日本語のコンテンツ";
-    nmo_result_t result = nmo_txn_write(txn, jp_data, strlen(jp_data));
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_write(txn, jp_data, strlen(jp_data));
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 
@@ -116,11 +129,11 @@ TEST(txn_utf8, korean_filename) {
     ASSERT_NOT_NULL(txn);
 
     const char* kr_data = "한글 내용입니다";
-    nmo_result_t result = nmo_txn_write(txn, kr_data, strlen(kr_data));
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_write(txn, kr_data, strlen(kr_data));
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 
@@ -146,11 +159,11 @@ TEST(txn_utf8, emoji_filename) {
     ASSERT_NOT_NULL(txn);
 
     const char* emoji_data = "Content with emoji: 😀🎉🚀";
-    nmo_result_t result = nmo_txn_write(txn, emoji_data, strlen(emoji_data));
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_txn_write(txn, emoji_data, strlen(emoji_data));
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_txn_commit(txn);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_txn_close(txn);
 

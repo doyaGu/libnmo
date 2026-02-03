@@ -33,7 +33,7 @@
  *
  * Reference: reference/src/CKParameterIn.cpp:177-250
  */
-nmo_result_t nmo_ckparameterin_deserialize(
+nmo_status_t nmo_ckparameterin_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -41,23 +41,21 @@ nmo_result_t nmo_ckparameterin_deserialize(
 {
     (void)type;
     nmo_ckparameterin_state_t *out_state = (nmo_ckparameterin_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     memset(out_state, 0, sizeof(nmo_ckparameterin_state_t));
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    nmo_result_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (data_version >= 1) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
             if (data_version < 5) {
                 nmo_object_id_t legacy_id = 0;
@@ -65,7 +63,7 @@ nmo_result_t nmo_ckparameterin_deserialize(
             }
             nmo_chunk_read_object_id(chunk, &out_state->source_id);
             out_state->is_shared = 1;
-        } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE).code == NMO_OK) {
+        } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
             if (data_version < 5) {
                 nmo_object_id_t legacy_id = 0;
@@ -73,7 +71,7 @@ nmo_result_t nmo_ckparameterin_deserialize(
             }
             nmo_chunk_read_object_id(chunk, &out_state->source_id);
             out_state->is_shared = 0;
-        } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA).code == NMO_OK) {
+        } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
 
             nmo_object_id_t owner_id = 0;
@@ -92,32 +90,32 @@ nmo_result_t nmo_ckparameterin_deserialize(
             }
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED) == NMO_OK) {
             out_state->is_disabled = 1;
         }
     } else {
         /* Legacy path: keep minimal support by scanning known identifiers */
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED).code == NMO_OK) {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
             nmo_chunk_read_object_id(chunk, &out_state->source_id);
             out_state->is_shared = 1;
         }
         if (!out_state->is_shared &&
-            nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE).code == NMO_OK) {
+            nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
             nmo_chunk_read_object_id(chunk, &out_state->source_id);
         }
     }
 
     /* Check if disabled */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED) == NMO_OK) {
         out_state->is_disabled = 1;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -125,7 +123,7 @@ nmo_result_t nmo_ckparameterin_deserialize(
  *
  * Reference: reference/src/CKParameterIn.cpp:142-162
  */
-nmo_result_t nmo_ckparameterin_serialize(
+nmo_status_t nmo_ckparameterin_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -133,17 +131,15 @@ nmo_result_t nmo_ckparameterin_serialize(
 {
     (void)type;
     const nmo_ckparameterin_state_t *in_state = (const nmo_ckparameterin_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
-    nmo_result_t result;
+    nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
     result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write identifier based on shared/direct source */
     uint32_t identifier = in_state->is_shared
@@ -151,21 +147,21 @@ nmo_result_t nmo_ckparameterin_serialize(
         : CK_STATESAVE_PARAMETERIN_DATASOURCE;
 
     result = nmo_chunk_write_identifier(out_chunk, identifier);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_object_id(out_chunk, in_state->source_id);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write disabled flag if needed */
     if (in_state->is_disabled) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETERIN_DISABLED);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

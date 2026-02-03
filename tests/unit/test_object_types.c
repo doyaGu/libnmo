@@ -18,8 +18,8 @@ TEST(object_types, register_base_types) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     ASSERT_NE(NULL, registry);
 
-    nmo_result_t result = nmo_register_base_object_types(registry);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_register_base_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Verify CKObject was registered */
     const nmo_type_descriptor_t *ckobject = nmo_type_registry_find_by_guid(
@@ -39,8 +39,8 @@ TEST(object_types, register_all_types) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     ASSERT_NE(NULL, registry);
 
-    nmo_result_t result = nmo_register_object_types(registry);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_register_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Verify key types were registered */
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, NMO_GUID_CKOBJECT));
@@ -158,7 +158,7 @@ TEST(object_types, 3d_entity_hierarchy) {
     ASSERT_NE(NULL, entity3d);
     ASSERT_NE(NULL, camera);
 
-    /* Verify hierarchy: CKCamera â†’ CK3dEntity â†’ CKRenderObject â†’ CKBeObject â†’ CKSceneObject â†’ CKObject */
+    /* Verify hierarchy: CKCamera â†?CK3dEntity â†?CKRenderObject â†?CKBeObject â†?CKSceneObject â†?CKObject */
     ASSERT_TRUE(nmo_type_is_derived_from(registry, camera->id, entity3d->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, entity3d->id, renderobject->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, renderobject->id, beobject->id));

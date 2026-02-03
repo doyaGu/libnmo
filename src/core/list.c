@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file list.c
  * @brief Arena-backed doubly linked list implementation.
  */
@@ -269,16 +269,12 @@ nmo_list_node_t *nmo_list_insert_before(nmo_list_t *list,
     return node;
 }
 
-nmo_result_t nmo_list_pop_back(nmo_list_t *list, void *out_element) {
+nmo_status_t nmo_list_pop_back(nmo_list_t *list, void *out_element) {
     if (!list) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "NULL list"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL list");
     }
     if (!list->tail) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO,
-                                          "List is empty"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "List is empty");
     }
 
     nmo_list_node_t *node = list->tail;
@@ -288,19 +284,15 @@ nmo_result_t nmo_list_pop_back(nmo_list_t *list, void *out_element) {
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);
     nmo_list_release_node(list, node);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_list_pop_front(nmo_list_t *list, void *out_element) {
+nmo_status_t nmo_list_pop_front(nmo_list_t *list, void *out_element) {
     if (!list) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "NULL list"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL list");
     }
     if (!list->head) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOT_FOUND,
-                                          NMO_SEVERITY_INFO,
-                                          "List is empty"));
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO, "List is empty");
     }
 
     nmo_list_node_t *node = list->head;
@@ -310,7 +302,7 @@ nmo_result_t nmo_list_pop_front(nmo_list_t *list, void *out_element) {
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);
     nmo_list_release_node(list, node);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 void nmo_list_remove(nmo_list_t *list, nmo_list_node_t *node, void *out_element) {

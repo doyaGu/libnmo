@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file dynamic_types.h
  * @brief Dynamic type registration API (Phase 6.2)
  *
@@ -61,7 +61,7 @@ typedef struct nmo_type_parse_result_t {
  * Example:
  * @code
  * nmo_type_parse_result_t result;
- * nmo_result_t res = nmo_type_registry_parse_type_name(
+ * nmo_status_t res = nmo_type_registry_parse_type_name(
  *     registry, "int[10]", &result);
  * if (res.code == NMO_OK) {
  *     // result.base_type_guid = INT type GUID
@@ -70,7 +70,7 @@ typedef struct nmo_type_parse_result_t {
  * }
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_parse_type_name(
+NMO_API nmo_status_t nmo_type_registry_parse_type_name(
     const nmo_type_registry_t *type_registry,
     const char *type_name,
     nmo_type_parse_result_t *result
@@ -128,11 +128,11 @@ typedef struct nmo_enum_type_def_t {
  *     .default_value = 0
  * };
  * nmo_guid_t guid;
- * nmo_result_t res = nmo_type_registry_register_enum(
+ * nmo_status_t res = nmo_type_registry_register_enum(
  *     registry, &color_enum, &guid);
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_register_enum(
+NMO_API nmo_status_t nmo_type_registry_register_enum(
     nmo_type_registry_t *type_registry,
     const nmo_enum_type_def_t *enum_def,
     nmo_guid_t *out_guid
@@ -189,11 +189,11 @@ typedef struct nmo_flags_type_def_t {
  *     .bit_count = 3,
  *     .default_value = 0x01  // Read-only by default
  * };
- * nmo_result_t res = nmo_type_registry_register_flags(
+ * nmo_status_t res = nmo_type_registry_register_flags(
  *     registry, &perm_flags, NULL);
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_register_flags(
+NMO_API nmo_status_t nmo_type_registry_register_flags(
     nmo_type_registry_t *type_registry,
     const nmo_flags_type_def_t *flags_def,
     nmo_guid_t *out_guid
@@ -256,11 +256,11 @@ typedef struct nmo_struct_type_def_t {
  *     .alignment = 0,  // Auto
  *     .packed = false
  * };
- * nmo_result_t res = nmo_type_registry_register_struct(
+ * nmo_status_t res = nmo_type_registry_register_struct(
  *     registry, &vec3_struct, NULL);
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_register_struct(
+NMO_API nmo_status_t nmo_type_registry_register_struct(
     nmo_type_registry_t *type_registry,
     const nmo_struct_type_def_t *struct_def,
     nmo_guid_t *out_guid
@@ -282,7 +282,7 @@ NMO_API nmo_result_t nmo_type_registry_register_struct(
  * @param out_type_id Output type ID
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_type_registry_begin_struct(
+NMO_API nmo_status_t nmo_type_registry_begin_struct(
     nmo_type_registry_t *type_registry,
     const char *name,
     nmo_guid_t guid,
@@ -300,7 +300,7 @@ NMO_API nmo_result_t nmo_type_registry_begin_struct(
  * @param field_type_name Field type name (e.g., "int", "float[10]")
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_type_registry_add_field(
+NMO_API nmo_status_t nmo_type_registry_add_field(
     nmo_type_registry_t *type_registry,
     nmo_type_id_t struct_type_id,
     const char *field_name,
@@ -316,7 +316,7 @@ NMO_API nmo_result_t nmo_type_registry_add_field(
  * @param struct_type_id Struct type ID
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_type_registry_finalize_struct(
+NMO_API nmo_status_t nmo_type_registry_finalize_struct(
     nmo_type_registry_t *type_registry,
     nmo_type_id_t struct_type_id
 );
@@ -339,7 +339,7 @@ NMO_API nmo_result_t nmo_type_registry_finalize_struct(
  *
  * Example:
  * @code
- * nmo_result_t res = nmo_type_registry_register_enum_string(
+ * nmo_status_t res = nmo_type_registry_register_enum_string(
  *     registry,
  *     (nmo_guid_t){0x12345678, 0x12345678},
  *     "ColorEnum",
@@ -347,7 +347,7 @@ NMO_API nmo_result_t nmo_type_registry_finalize_struct(
  * );
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_register_enum_string(
+NMO_API nmo_status_t nmo_type_registry_register_enum_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *type_name,
@@ -368,7 +368,7 @@ NMO_API nmo_result_t nmo_type_registry_register_enum_string(
  *
  * Example:
  * @code
- * nmo_result_t res = nmo_type_registry_register_flags_string(
+ * nmo_status_t res = nmo_type_registry_register_flags_string(
  *     registry,
  *     (nmo_guid_t){0x87654321, 0x87654321},
  *     "FilePermissions",
@@ -376,7 +376,7 @@ NMO_API nmo_result_t nmo_type_registry_register_enum_string(
  * );
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_register_flags_string(
+NMO_API nmo_status_t nmo_type_registry_register_flags_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *type_name,
@@ -398,14 +398,14 @@ NMO_API nmo_result_t nmo_type_registry_register_flags_string(
  * @code
  * // Original: "RED=0,GREEN=1,BLUE=2"
  * // Add YELLOW without breaking compatibility:
- * nmo_result_t res = nmo_type_registry_change_enum_string(
+ * nmo_status_t res = nmo_type_registry_change_enum_string(
  *     registry,
  *     enum_guid,
  *     "RED=0,GREEN=1,BLUE=2,YELLOW=3"
  * );
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_change_enum_string(
+NMO_API nmo_status_t nmo_type_registry_change_enum_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *new_enum_data
@@ -426,14 +426,14 @@ NMO_API nmo_result_t nmo_type_registry_change_enum_string(
  * @code
  * // Original: "READ=0x01,WRITE=0x02"
  * // Add EXECUTE without breaking compatibility:
- * nmo_result_t res = nmo_type_registry_change_flags_string(
+ * nmo_status_t res = nmo_type_registry_change_flags_string(
  *     registry,
  *     flags_guid,
  *     "READ=0x01,WRITE=0x02,EXECUTE=0x04"
  * );
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_change_flags_string(
+NMO_API nmo_status_t nmo_type_registry_change_flags_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *new_flags_data
@@ -465,7 +465,7 @@ NMO_API nmo_result_t nmo_type_registry_change_flags_string(
  * Example:
  * @code
  * const char *field_types[] = {"float", "float", "float"};
- * nmo_result_t res = nmo_type_registry_register_struct_string(
+ * nmo_status_t res = nmo_type_registry_register_struct_string(
  *     registry,
  *     NMO_NULL_GUID,  // Auto-generate GUID
  *     "Vector3",
@@ -475,7 +475,7 @@ NMO_API nmo_result_t nmo_type_registry_change_flags_string(
  * // Creates struct with fields: field0 (float), field1 (float), field2 (float)
  * @endcode
  */
-NMO_API nmo_result_t nmo_type_registry_register_struct_string(
+NMO_API nmo_status_t nmo_type_registry_register_struct_string(
     nmo_type_registry_t *type_registry,
     nmo_guid_t type_guid,
     const char *type_name,
@@ -502,7 +502,7 @@ NMO_API nmo_result_t nmo_type_registry_register_struct_string(
  * @param out_alignment Output actual alignment
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_type_calculate_layout(
+NMO_API nmo_status_t nmo_type_calculate_layout(
     const nmo_type_registry_t *type_registry,
     nmo_struct_field_def_t *fields,
     size_t field_count,
@@ -562,14 +562,14 @@ NMO_API uint32_t nmo_type_get_size(
  * @code
  * nmo_enum_value_def_t *values;
  * size_t count;
- * nmo_result_t res = nmo_parse_flags_string(
+ * nmo_status_t res = nmo_parse_flags_string(
  *     "READ=1,WRITE=2,EXECUTE=4", &values, &count, arena);
  * // values[0] = {"READ", 1, NULL}
  * // values[1] = {"WRITE", 2, NULL}
  * // values[2] = {"EXECUTE", 4, NULL}
  * @endcode
  */
-NMO_API nmo_result_t nmo_parse_flags_string(
+NMO_API nmo_status_t nmo_parse_flags_string(
     const char *flags_str,
     nmo_enum_value_def_t **out_values,
     size_t *out_count,
@@ -598,14 +598,14 @@ NMO_API nmo_result_t nmo_parse_flags_string(
  * @code
  * nmo_enum_value_def_t *values;
  * size_t count;
- * nmo_result_t res = nmo_parse_enum_string(
+ * nmo_status_t res = nmo_parse_enum_string(
  *     "RED=0,GREEN=1,BLUE=2", &values, &count, arena);
  * // values[0] = {"RED", 0, NULL}
  * // values[1] = {"GREEN", 1, NULL}
  * // values[2] = {"BLUE", 2, NULL}
  * @endcode
  */
-NMO_API nmo_result_t nmo_parse_enum_string(
+NMO_API nmo_status_t nmo_parse_enum_string(
     const char *enum_str,
     nmo_enum_value_def_t **out_values,
     size_t *out_count,
@@ -633,14 +633,14 @@ NMO_API nmo_result_t nmo_parse_enum_string(
  * @code
  * char **names;
  * size_t count;
- * nmo_result_t res = nmo_parse_struct_fields(
+ * nmo_status_t res = nmo_parse_struct_fields(
  *     "Position,Rotation,Scale", &names, &count, arena);
  * // names[0] = "Position"
  * // names[1] = "Rotation"
  * // names[2] = "Scale"
  * @endcode
  */
-NMO_API nmo_result_t nmo_parse_struct_fields(
+NMO_API nmo_status_t nmo_parse_struct_fields(
     const char *field_names,
     char ***out_names,
     size_t *out_count,

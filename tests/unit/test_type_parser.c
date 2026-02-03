@@ -38,9 +38,9 @@ TEST(type_parser, parse_basic_int) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "int", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(false, result.is_array);
     ASSERT_EQ(false, result.is_pointer);
     ASSERT_EQ(0, result.array_count);
@@ -54,9 +54,9 @@ TEST(type_parser, parse_basic_float) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "float", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "float", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(false, result.is_array);
     ASSERT_EQ(false, result.is_pointer);
     
@@ -67,13 +67,13 @@ TEST(type_parser, parse_case_insensitive) {
     setup();
     
     nmo_type_parse_result_t result1, result2, result3;
-    nmo_result_t res1 = nmo_type_registry_parse_type_name(registry, "int", &result1);
-    nmo_result_t res2 = nmo_type_registry_parse_type_name(registry, "INT", &result2);
-    nmo_result_t res3 = nmo_type_registry_parse_type_name(registry, "InT", &result3);
+    nmo_status_t res1 = nmo_type_registry_parse_type_name(registry, "int", &result1);
+    nmo_status_t res2 = nmo_type_registry_parse_type_name(registry, "INT", &result2);
+    nmo_status_t res3 = nmo_type_registry_parse_type_name(registry, "InT", &result3);
     
-    ASSERT_EQ(NMO_OK, res1.code);
-    ASSERT_EQ(NMO_OK, res2.code);
-    ASSERT_EQ(NMO_OK, res3.code);
+    ASSERT_EQ(NMO_OK, res1);
+    ASSERT_EQ(NMO_OK, res2);
+    ASSERT_EQ(NMO_OK, res3);
     
     /* All should resolve to same GUID */
     ASSERT_EQ(result1.base_type_guid.d1, result2.base_type_guid.d1);
@@ -87,9 +87,9 @@ TEST(type_parser, parse_with_whitespace) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "  int  ", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "  int  ", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(false, result.is_array);
     
     teardown();
@@ -103,9 +103,9 @@ TEST(type_parser, parse_array_int10) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "int[10]", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int[10]", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(true, result.is_array);
     ASSERT_EQ(10, result.array_count);
     ASSERT_EQ(false, result.is_pointer);
@@ -117,9 +117,9 @@ TEST(type_parser, parse_array_float256) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "float[256]", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "float[256]", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(true, result.is_array);
     ASSERT_EQ(256, result.array_count);
     
@@ -130,11 +130,11 @@ TEST(type_parser, parse_array_with_spaces) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "int [ 5 ]", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int [ 5 ]", &result);
     
     /* Note: Current implementation doesn't handle spaces inside brackets */
     /* This is acceptable as it's not common usage */
-    ASSERT_NE(NMO_OK, res.code);
+    ASSERT_NE(NMO_OK, res);
     
     teardown();
 }
@@ -147,9 +147,9 @@ TEST(type_parser, parse_pointer_int) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "int*", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int*", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(true, result.is_pointer);
     ASSERT_EQ(1, result.pointer_depth);
     ASSERT_EQ(false, result.is_array);
@@ -161,9 +161,9 @@ TEST(type_parser, parse_double_pointer) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "int**", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int**", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(true, result.is_pointer);
     ASSERT_EQ(2, result.pointer_depth);
     
@@ -178,9 +178,9 @@ TEST(type_parser, parse_empty_string) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "", &result);
     
-    ASSERT_NE(NMO_OK, res.code);
+    ASSERT_NE(NMO_OK, res);
     
     teardown();
 }
@@ -189,10 +189,10 @@ TEST(type_parser, parse_unknown_type) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "UnknownType", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "UnknownType", &result);
     
-    ASSERT_NE(NMO_OK, res.code);
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, res.code);
+    ASSERT_NE(NMO_OK, res);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, res);
     
     teardown();
 }
@@ -201,13 +201,13 @@ TEST(type_parser, parse_null_params) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res1 = nmo_type_registry_parse_type_name(NULL, "int", &result);
-    nmo_result_t res2 = nmo_type_registry_parse_type_name(registry, NULL, &result);
-    nmo_result_t res3 = nmo_type_registry_parse_type_name(registry, "int", NULL);
+    nmo_status_t res1 = nmo_type_registry_parse_type_name(NULL, "int", &result);
+    nmo_status_t res2 = nmo_type_registry_parse_type_name(registry, NULL, &result);
+    nmo_status_t res3 = nmo_type_registry_parse_type_name(registry, "int", NULL);
     
-    ASSERT_NE(NMO_OK, res1.code);
-    ASSERT_NE(NMO_OK, res2.code);
-    ASSERT_NE(NMO_OK, res3.code);
+    ASSERT_NE(NMO_OK, res1);
+    ASSERT_NE(NMO_OK, res2);
+    ASSERT_NE(NMO_OK, res3);
     
     teardown();
 }
@@ -256,9 +256,9 @@ TEST(type_parser, parse_virtools_vector3) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "VxVector3", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "VxVector3", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(false, result.is_array);
     ASSERT_EQ(false, result.is_pointer);
     
@@ -269,9 +269,9 @@ TEST(type_parser, parse_virtools_color) {
     setup();
     
     nmo_type_parse_result_t result;
-    nmo_result_t res = nmo_type_registry_parse_type_name(registry, "VxColor", &result);
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "VxColor", &result);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     
     teardown();
 }
@@ -286,10 +286,10 @@ TEST(type_parser, parse_flags_simple) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "READ=1,WRITE=2,EXECUTE=4", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_NE(NULL, values);
     
@@ -309,11 +309,11 @@ TEST(type_parser, parse_flags_hex_values) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "FLAG1=0x01,FLAG2=0x02,FLAG4=0x04,FLAG8=0x08",
         &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(4, count);
     ASSERT_EQ(0x01, values[0].value);
     ASSERT_EQ(0x02, values[1].value);
@@ -329,11 +329,11 @@ TEST(type_parser, parse_flags_with_whitespace) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "  FLAG_A = 1 ,  FLAG_B = 2  ,  FLAG_C = 4  ",
         &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_STR_EQ("FLAG_A", values[0].name);
     ASSERT_STR_EQ("FLAG_B", values[1].name);
@@ -348,10 +348,10 @@ TEST(type_parser, parse_flags_single_entry) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "ENABLED=1", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(1, count);
     ASSERT_STR_EQ("ENABLED", values[0].name);
     ASSERT_EQ(1, values[0].value);
@@ -365,10 +365,10 @@ TEST(type_parser, parse_flags_zero_value) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "NONE=0,FLAG1=1", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(2, count);
     ASSERT_STR_EQ("NONE", values[0].name);
     ASSERT_EQ(0, values[0].value);
@@ -382,10 +382,10 @@ TEST(type_parser, parse_flags_combined_values) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "READ=1,WRITE=2,ALL=0xFF", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_EQ(0xFF, values[2].value);
     
@@ -398,11 +398,11 @@ TEST(type_parser, parse_flags_empty_string) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -413,11 +413,11 @@ TEST(type_parser, parse_flags_null_input) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         NULL, &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -428,11 +428,11 @@ TEST(type_parser, parse_flags_missing_equals) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "FLAG1=1,FLAG2", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -443,11 +443,11 @@ TEST(type_parser, parse_flags_invalid_identifier) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "1FLAG=1", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -458,11 +458,11 @@ TEST(type_parser, parse_flags_invalid_value) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "FLAG=xyz", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -473,11 +473,11 @@ TEST(type_parser, parse_flags_duplicate_name) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "FLAG=1,FLAG=2", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -488,10 +488,10 @@ TEST(type_parser, parse_enum_simple) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "RED=0,GREEN=1,BLUE=2", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_STR_EQ("RED", values[0].name);
     ASSERT_EQ(0, values[0].value);
@@ -509,10 +509,10 @@ TEST(type_parser, parse_enum_non_sequential) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "IDLE=0,RUNNING=10,STOPPED=20", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_EQ(0, values[0].value);
     ASSERT_EQ(10, values[1].value);
@@ -527,10 +527,10 @@ TEST(type_parser, parse_enum_negative_values) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "MINUS_ONE=-1,ZERO=0,ONE=1", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_EQ(-1, values[0].value);
     ASSERT_EQ(0, values[1].value);
@@ -545,10 +545,10 @@ TEST(type_parser, parse_enum_hex_values) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "LOW=0x00,MID=0x7F,HIGH=0xFF", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_EQ(0x00, values[0].value);
     ASSERT_EQ(0x7F, values[1].value);
@@ -563,11 +563,11 @@ TEST(type_parser, parse_enum_empty_string) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "   ", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -578,11 +578,11 @@ TEST(type_parser, parse_enum_duplicate_name) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "VALUE=0,VALUE=1", &values, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -593,10 +593,10 @@ TEST(type_parser, parse_struct_fields_simple) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "Position,Rotation,Scale", &names, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_NE(NULL, names);
     ASSERT_STR_EQ("Position", names[0]);
@@ -612,10 +612,10 @@ TEST(type_parser, parse_struct_fields_single) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "Value", &names, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(1, count);
     ASSERT_STR_EQ("Value", names[0]);
     
@@ -628,10 +628,10 @@ TEST(type_parser, parse_struct_fields_with_whitespace) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "  x , y  ,  z  ", &names, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_STR_EQ("x", names[0]);
     ASSERT_STR_EQ("y", names[1]);
@@ -646,10 +646,10 @@ TEST(type_parser, parse_struct_fields_underscore) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "field_1,field_2,_private_field", &names, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, count);
     ASSERT_STR_EQ("field_1", names[0]);
     ASSERT_STR_EQ("field_2", names[1]);
@@ -664,10 +664,10 @@ TEST(type_parser, parse_struct_fields_many) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "a,b,c,d,e,f,g,h,i,j", &names, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(10, count);
     ASSERT_STR_EQ("a", names[0]);
     ASSERT_STR_EQ("j", names[9]);
@@ -681,11 +681,11 @@ TEST(type_parser, parse_struct_fields_empty_string) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "", &names, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -696,11 +696,11 @@ TEST(type_parser, parse_struct_fields_null_input) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         NULL, &names, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
     
     teardown();
 }
@@ -711,11 +711,11 @@ TEST(type_parser, parse_struct_fields_empty_field) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "field1,,field2", &names, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -726,11 +726,11 @@ TEST(type_parser, parse_struct_fields_invalid_identifier) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "field1,2field", &names, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -741,11 +741,11 @@ TEST(type_parser, parse_struct_fields_special_chars) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "field-1,field@2", &names, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -756,11 +756,11 @@ TEST(type_parser, parse_struct_fields_duplicate_name) {
     char **names = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         "field,field", &names, &count, arena);
     
-    ASSERT_NE(NMO_OK, result.code);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result.code);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, result);
     
     teardown();
 }
@@ -771,10 +771,10 @@ TEST(type_parser, parse_flags_large_hex_value) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_flags_string(
+    nmo_status_t result = nmo_parse_flags_string(
         "ALL=0xFFFFFFFF", &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(1, count);
     ASSERT_EQ(0xFFFFFFFF, values[0].value);
     
@@ -787,11 +787,11 @@ TEST(type_parser, parse_enum_long_names) {
     nmo_enum_value_def_t *values = NULL;
     size_t count = 0;
     
-    nmo_result_t result = nmo_parse_enum_string(
+    nmo_status_t result = nmo_parse_enum_string(
         "VERY_LONG_ENUM_NAME_ONE=1,VERY_LONG_ENUM_NAME_TWO=2",
         &values, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(2, count);
     ASSERT_STR_EQ("VERY_LONG_ENUM_NAME_ONE", values[0].name);
     ASSERT_STR_EQ("VERY_LONG_ENUM_NAME_TWO", values[1].name);
@@ -812,10 +812,10 @@ TEST(type_parser, parse_struct_many_fields) {
         strcat(buffer, field);
     }
     
-    nmo_result_t result = nmo_parse_struct_fields(
+    nmo_status_t result = nmo_parse_struct_fields(
         buffer, &names, &count, arena);
     
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(50, count);
     ASSERT_STR_EQ("field0", names[0]);
     ASSERT_STR_EQ("field49", names[49]);

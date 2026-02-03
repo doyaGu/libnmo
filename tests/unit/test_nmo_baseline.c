@@ -44,8 +44,8 @@ static void test_parse_file(const char* filepath, const char* expected_signature
     nmo_file_header_t header;
     memset(&header, 0, sizeof(header));
 
-    nmo_result_t result = nmo_file_header_parse(io, &header);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_file_header_parse(io, &header);
+    ASSERT_EQ(NMO_OK, result);
     printf("Header parsed successfully\n");
 
     // Validate signature
@@ -54,7 +54,7 @@ static void test_parse_file(const char* filepath, const char* expected_signature
 
     // Validate header
     result = nmo_file_header_validate(&header);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     printf("Header validated successfully\n");
 
     // Print header information
@@ -137,8 +137,8 @@ static void test_parse_file(const char* filepath, const char* expected_signature
         nmo_header1_t hdr1;
         memset(&hdr1, 0, sizeof(hdr1));
         hdr1.object_count = header.object_count;  // Set from file header
-        nmo_result_t hdr1_result = nmo_header1_parse(hdr1_buffer, header.hdr1_unpack_size, &hdr1, arena);
-        ASSERT_EQ(NMO_OK, hdr1_result.code);
+        nmo_status_t hdr1_result = nmo_header1_parse(hdr1_buffer, header.hdr1_unpack_size, &hdr1, arena);
+        ASSERT_EQ(NMO_OK, hdr1_result);
 
         printf("  Objects parsed: %u\n", hdr1.object_count);
         printf("  Plugin dependencies: %u\n", hdr1.plugin_dep_count);
@@ -215,9 +215,9 @@ static void test_parse_file(const char* filepath, const char* expected_signature
             data_section.manager_count = header.manager_count;
             data_section.object_count = header.object_count;
 
-                nmo_result_t data_result = nmo_data_section_parse(data_buffer, data_size,
+                nmo_status_t data_result = nmo_data_section_parse(data_buffer, data_size,
                                                                    header.file_version, &data_section, NULL, arena);
-            ASSERT_EQ(NMO_OK, data_result.code);
+            ASSERT_EQ(NMO_OK, data_result);
 
             printf("  Managers parsed: %u\n", data_section.manager_count);
             printf("  Objects parsed: %u\n", data_section.object_count);

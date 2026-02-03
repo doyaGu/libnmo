@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_arithmetic.c
  * @brief Builtin arithmetic operations implementation
  *
@@ -17,7 +17,7 @@
  * Integer Arithmetic Operations
  * ============================================================================ */
 
-static nmo_result_t op_add_int(
+static nmo_status_t op_add_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -26,10 +26,10 @@ static nmo_result_t op_add_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = a + b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_subtract_int(
+static nmo_status_t op_subtract_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -38,10 +38,10 @@ static nmo_result_t op_subtract_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = a - b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_multiply_int(
+static nmo_status_t op_multiply_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -50,10 +50,10 @@ static nmo_result_t op_multiply_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = a * b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_divide_int(
+static nmo_status_t op_divide_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -62,14 +62,15 @@ static nmo_result_t op_divide_int(
     const int32_t b = *(const int32_t *)p2_data;
 
     if (b == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Division by zero");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Division by zero");
     }
 
     *(int32_t *)result_data = a / b;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_modulo_int(
+static nmo_status_t op_modulo_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -78,14 +79,15 @@ static nmo_result_t op_modulo_int(
     const int32_t b = *(const int32_t *)p2_data;
 
     if (b == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Modulo by zero");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Modulo by zero");
     }
 
     *(int32_t *)result_data = a % b;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_negate_int(
+static nmo_status_t op_negate_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -93,10 +95,10 @@ static nmo_result_t op_negate_int(
     const int32_t a = *(const int32_t *)p1_data;
     *(int32_t *)result_data = -a;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_abs_int(
+static nmo_status_t op_abs_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -104,10 +106,10 @@ static nmo_result_t op_abs_int(
     const int32_t a = *(const int32_t *)p1_data;
     *(int32_t *)result_data = (a < 0) ? -a : a;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_power_int(
+static nmo_status_t op_power_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -119,14 +121,14 @@ static nmo_result_t op_power_int(
     const double result = pow((double)a, (double)b);
     *(int32_t *)result_data = (int32_t)result;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Float Arithmetic Operations
  * ============================================================================ */
 
-static nmo_result_t op_add_float(
+static nmo_status_t op_add_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -135,10 +137,10 @@ static nmo_result_t op_add_float(
     const float b = *(const float *)p2_data;
     *(float *)result_data = a + b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_subtract_float(
+static nmo_status_t op_subtract_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -147,10 +149,10 @@ static nmo_result_t op_subtract_float(
     const float b = *(const float *)p2_data;
     *(float *)result_data = a - b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_multiply_float(
+static nmo_status_t op_multiply_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -159,10 +161,10 @@ static nmo_result_t op_multiply_float(
     const float b = *(const float *)p2_data;
     *(float *)result_data = a * b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_divide_float(
+static nmo_status_t op_divide_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -171,14 +173,15 @@ static nmo_result_t op_divide_float(
     const float b = *(const float *)p2_data;
 
     if (b == 0.0f) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Division by zero");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Division by zero");
     }
 
     *(float *)result_data = a / b;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_modulo_float(
+static nmo_status_t op_modulo_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -187,14 +190,15 @@ static nmo_result_t op_modulo_float(
     const float b = *(const float *)p2_data;
 
     if (b == 0.0f) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Modulo by zero");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Modulo by zero");
     }
 
     *(float *)result_data = fmodf(a, b);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_negate_float(
+static nmo_status_t op_negate_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -202,10 +206,10 @@ static nmo_result_t op_negate_float(
     const float a = *(const float *)p1_data;
     *(float *)result_data = -a;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_abs_float(
+static nmo_status_t op_abs_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -213,10 +217,10 @@ static nmo_result_t op_abs_float(
     const float a = *(const float *)p1_data;
     *(float *)result_data = fabsf(a);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_power_float(
+static nmo_status_t op_power_float(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -225,19 +229,19 @@ static nmo_result_t op_power_float(
     const float b = *(const float *)p2_data;
     *(float *)result_data = powf(a, b);
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_arithmetic_operations(
+nmo_status_t nmo_register_arithmetic_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL operation_registry or type_registry");
     }
 

@@ -1,4 +1,4 @@
-// chunk_sequences.c - Object sequence operations
+﻿// chunk_sequences.c - Object sequence operations
 // Implements: write/read_object_sequence_start/item
 
 #include "format/nmo_chunk_api.h"
@@ -9,7 +9,7 @@
 // Object Sequences
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count) {
+nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *) chunk->parser_state;
@@ -22,7 +22,7 @@ nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
     if (count > 0 && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {
         /* CK2: AddEntries adds -1 marker followed by position */
         uint32_t sentinel = 0xFFFFFFFFu;
-        nmo_result_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
+        nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
         NMO_RETURN_IF_ERROR(list_result);
 
         uint32_t pos = (uint32_t) state->current_pos;
@@ -37,25 +37,25 @@ nmo_result_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
     return nmo_chunk_write_int(chunk, (int32_t) count);
 }
 
-nmo_result_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t id) {
+nmo_status_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Sequence items should not add entries to the IDs list (CK2 behavior)
     return nmo_chunk_write_int(chunk, (int32_t) id);
 }
 
-nmo_result_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {
+nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_count, "Invalid arguments");
 
     int32_t count;
-    nmo_result_t result = nmo_chunk_read_int(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_int(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     *out_count = (size_t) count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
+nmo_status_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
     return nmo_chunk_read_object_id(chunk, out_id);
 }
 

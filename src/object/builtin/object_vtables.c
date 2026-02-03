@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file object_vtables.c
  * @brief CKObject-derived vtable definitions and copy/validate helpers
  */
@@ -57,7 +57,7 @@
  * Type-specific copy helpers
  * ============================================================================ */
 
-static nmo_result_t nmo_cktexture_copy_reader_slots(
+static nmo_status_t nmo_cktexture_copy_reader_slots(
     nmo_arena_t *arena,
     nmo_cktexture_reader_slot_t **dst,
     const nmo_cktexture_reader_slot_t *src,
@@ -71,10 +71,10 @@ static nmo_result_t nmo_cktexture_copy_reader_slots(
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].alpha_plane,
                                                   src[i].alpha_plane, src[i].alpha_plane_size));
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_copy_raw_slots(
+static nmo_status_t nmo_cktexture_copy_raw_slots(
     nmo_arena_t *arena,
     nmo_cktexture_raw_slot_t **dst,
     const nmo_cktexture_raw_slot_t *src,
@@ -92,10 +92,10 @@ static nmo_result_t nmo_cktexture_copy_raw_slots(
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].alpha_data,
                                                   src[i].alpha_data, src[i].alpha_size));
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_cktexture_copy_bitmap2_slots(
+static nmo_status_t nmo_cktexture_copy_bitmap2_slots(
     nmo_arena_t *arena,
     nmo_cktexture_bitmap2_slot_t **dst,
     const nmo_cktexture_bitmap2_slot_t *src,
@@ -107,10 +107,10 @@ static nmo_result_t nmo_cktexture_copy_bitmap2_slots(
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].buffer,
                                                   src[i].buffer, src[i].buffer_size));
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_copy_ckbeobject_state(
+static nmo_status_t nmo_copy_ckbeobject_state(
     nmo_arena_t *arena,
     nmo_ckbeobject_state_t *dst,
     const nmo_ckbeobject_state_t *src)
@@ -129,7 +129,7 @@ static nmo_result_t nmo_copy_ckbeobject_state(
                                  src->legacy_attributes_raw, src->legacy_attributes_size);
 }
 
-static nmo_result_t nmo_copy_ckparameter_state(
+static nmo_status_t nmo_copy_ckparameter_state(
     nmo_arena_t *arena,
     nmo_ckparameter_state_t *dst,
     const nmo_ckparameter_state_t *src)
@@ -139,7 +139,7 @@ static nmo_result_t nmo_copy_ckparameter_state(
     return nmo_object_copy_chunk(arena, &dst->subchunk, src->subchunk);
 }
 
-static nmo_result_t nmo_copy_ckmesh_state(
+static nmo_status_t nmo_copy_ckmesh_state(
     nmo_arena_t *arena,
     nmo_ck_mesh_state_t *dst,
     const nmo_ck_mesh_state_t *src)
@@ -175,10 +175,10 @@ static nmo_result_t nmo_copy_ckmesh_state(
                                                   src->material_channels[i].uv_count));
     }
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &dst->pm_data, src->pm_data, src->pm_data_size));
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_copy_ckpatchmesh_state(
+static nmo_status_t nmo_copy_ckpatchmesh_state(
     nmo_arena_t *arena,
     nmo_ckpatchmesh_state_t *dst,
     const nmo_ckpatchmesh_state_t *src)
@@ -216,10 +216,10 @@ static nmo_result_t nmo_copy_ckpatchmesh_state(
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&dst->legacy_material_ids,
                                               src->legacy_material_ids, sizeof(nmo_object_id_t),
                                               src->legacy_material_count));
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_copy_cksprite_bitmapdata(
+static nmo_status_t nmo_copy_cksprite_bitmapdata(
     nmo_arena_t *arena,
     nmo_ckbitmapdata_t *dst,
     const nmo_ckbitmapdata_t *src)
@@ -240,7 +240,7 @@ static nmo_result_t nmo_copy_cksprite_bitmapdata(
                                  src->raw_chunk_data, src->raw_chunk_size);
 }
 
-static nmo_result_t nmo_copy_cktexture_state(
+static nmo_status_t nmo_copy_cktexture_state(
     nmo_arena_t *arena,
     nmo_ck_texture_state_t *dst,
     const nmo_ck_texture_state_t *src)
@@ -272,18 +272,18 @@ static nmo_result_t nmo_copy_cktexture_state(
         NMO_RETURN_IF_ERROR(nmo_cktexture_copy_raw_slots(arena, &dst->user_mipmaps,
                                                          src->user_mipmaps, src->user_mipmap_count));
     }
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_object_copy(
+nmo_status_t nmo_object_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
     if (!src || !dst || !type) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "NULL src/dst/type in copy");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL src/dst/type in copy");
     }
     memcpy(dst, src, type->size);
 
@@ -381,7 +381,7 @@ nmo_result_t nmo_object_copy(
                     }
                 }
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_SCENE: {
             const nmo_ckscene_state_t *s = src;
@@ -397,7 +397,7 @@ nmo_result_t nmo_object_copy(
                     d->object_descs[i].initial_value = clone;
                 }
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_LEVEL: {
             const nmo_cklevel_state_t *s = src;
@@ -433,7 +433,7 @@ nmo_result_t nmo_object_copy(
                     d->sub_points[i].chunk = clone;
                 }
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_CHARACTER: {
             const nmo_ckcharacter_state_t *s = src;
@@ -452,7 +452,7 @@ nmo_result_t nmo_object_copy(
                     d->subparts[i].chunk = clone;
                 }
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_GRID: {
             const nmo_ckgrid_state_t *s = src;
@@ -469,7 +469,7 @@ nmo_result_t nmo_object_copy(
                                          s->square_data, s->square_data_size);
         }
         case NMO_CID_ANIMATION: {
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_KEYEDANIMATION: {
             const nmo_ckkeyedanimation_state_t *s = src;
@@ -486,7 +486,7 @@ nmo_result_t nmo_object_copy(
                     d->subanims[i].chunk = clone;
                 }
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_OBJECTANIMATION: {
             const nmo_ckobjectanimation_state_t *s = src;
@@ -535,7 +535,7 @@ nmo_result_t nmo_object_copy(
                 NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->bitmap_properties,
                                                           s->bitmap_properties, s->bitmap_properties_size));
             }
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
         case NMO_CID_SOUND: {
             const nmo_cksound_state_t *s = src;
@@ -560,19 +560,19 @@ nmo_result_t nmo_object_copy(
             return nmo_object_copy_chunk_array(arena, &d->chunks, s->chunks, (uint32_t)s->chunk_count);
         }
         default:
-            return nmo_result_ok();
+            NMO_RETURN_OK();
     }
 }
 
-nmo_result_t nmo_object_validate(
+nmo_status_t nmo_object_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)context;
     if (!instance || !type) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "NULL instance/type in validate");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL instance/type in validate");
     }
 
     switch (type->class_id) {
@@ -784,6 +784,6 @@ nmo_result_t nmo_object_validate(
             break;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 

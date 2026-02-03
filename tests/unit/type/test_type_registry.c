@@ -12,24 +12,24 @@ static const nmo_guid_t GUID_VECTOR3 = {0x48824eae, 0x2fe47960};     // CKPGUID_
 static const nmo_guid_t GUID_3DENTITY = {0x5b8a05d5, 0x31ea28d4};    // CKPGUID_3DENTITY
 static const nmo_guid_t GUID_CHARACTER = {0x35985c64, 0x51af1372};   // CKPGUID_CHARACTER
 
-static nmo_result_t dummy_manager_serialize(
+static nmo_status_t dummy_manager_serialize(
     const void *instance,
     struct nmo_chunk *chunk,
     void *manager_context) {
     (void)instance;
     (void)chunk;
     (void)manager_context;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t dummy_manager_deserialize(
+static nmo_status_t dummy_manager_deserialize(
     void *instance,
     struct nmo_chunk *chunk,
     void *manager_context) {
     (void)instance;
     (void)chunk;
     (void)manager_context;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -69,8 +69,8 @@ TEST(type_registry, register_simple_type) {
     int_type.size = 4;
     int_type.alignment = 4;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &int_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &int_type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify registration */
     ASSERT_EQ(1, registry->types.count);
@@ -159,8 +159,8 @@ TEST(type_registry, register_copies_name_and_fields) {
     type.fields = fields;
     type.field_count = 1;
 
-    nmo_result_t result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result);
 
     name_buf[0] = 'X';
     desc_buf[0] = 'Y';
@@ -189,8 +189,8 @@ TEST(type_registry, register_duplicate_guid_fails) {
     type1.category = NMO_TYPE_CATEGORY_SCALAR;
     type1.size = 4;
     
-    nmo_result_t result1 = nmo_type_registry_register(registry, &type1);
-    ASSERT_EQ(NMO_OK, result1.code);
+    nmo_status_t result1 = nmo_type_registry_register(registry, &type1);
+    ASSERT_EQ(NMO_OK, result1);
     
     /* Try to register same GUID again */
     nmo_type_descriptor_t type2 = {0};
@@ -199,8 +199,8 @@ TEST(type_registry, register_duplicate_guid_fails) {
     type2.category = NMO_TYPE_CATEGORY_SCALAR;
     type2.size = 4;
     
-    nmo_result_t result2 = nmo_type_registry_register(registry, &type2);
-    ASSERT_NE(NMO_OK, result2.code);
+    nmo_status_t result2 = nmo_type_registry_register(registry, &type2);
+    ASSERT_NE(NMO_OK, result2);
     
     /* Original type should still be there */
     const nmo_type_descriptor_t *found = nmo_type_registry_find_by_guid(registry, GUID_INT);
@@ -231,8 +231,8 @@ TEST(type_registry, compat_mask_supports_more_than_256_types) {
             type.base_type = prev_guid;
         }
 
-        nmo_result_t result = nmo_type_registry_register(registry, &type);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &type);
+        ASSERT_EQ(NMO_OK, result);
         prev_guid = type.guid;
     }
 
@@ -331,8 +331,8 @@ TEST(type_registry, find_by_class_id_direct) {
     object_type.valid = true;
     object_type.base_type = NMO_GUID_NULL;
 
-    nmo_result_t result = nmo_type_registry_register(registry, &object_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &object_type);
+    ASSERT_EQ(NMO_OK, result);
 
     const nmo_type_descriptor_t *found = nmo_type_registry_find_by_class_id(registry, 0x1001);
     ASSERT_NE(NULL, found);
@@ -361,15 +361,15 @@ TEST(type_registry, unregister_removes_lookups) {
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
 
-    nmo_result_t result = nmo_type_registry_register(registry, &test_type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_CHARACTER));
     ASSERT_NE(NULL, nmo_type_registry_find_by_name(registry, "TestCharacter"));
     ASSERT_NE(NULL, nmo_type_registry_find_by_class_id(registry, 0x2002));
 
     result = nmo_type_registry_unregister(registry, GUID_CHARACTER);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_EQ(NULL, nmo_type_registry_find_by_guid(registry, GUID_CHARACTER));
     ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "TestCharacter"));
@@ -470,14 +470,14 @@ TEST(type_registry, unregister_clears_type_manager_mapping) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
 
     nmo_guid_t manager_guid = {0xABCDEF01, 0x12345678};
-    nmo_result_t result = nmo_type_registry_register_saver_manager(
+    nmo_status_t result = nmo_type_registry_register_saver_manager(
         registry,
         manager_guid,
         "DummyManager",
         dummy_manager_serialize,
         dummy_manager_deserialize,
         NULL);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_type_descriptor_t type_a = {0};
     type_a.guid = GUID_INT;
@@ -486,15 +486,15 @@ TEST(type_registry, unregister_clears_type_manager_mapping) {
     type_a.size = 4;
     type_a.alignment = 4;
     result = nmo_type_registry_register(registry, &type_a);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     result = nmo_type_registry_set_type_manager(registry, GUID_INT, manager_guid);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_NE(NULL, nmo_type_registry_get_type_manager(registry, GUID_INT));
 
     result = nmo_type_registry_unregister(registry, GUID_INT);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_type_descriptor_t type_b = {0};
     type_b.guid = GUID_FLOAT;
@@ -503,7 +503,7 @@ TEST(type_registry, unregister_clears_type_manager_mapping) {
     type_b.size = 4;
     type_b.alignment = 4;
     result = nmo_type_registry_register(registry, &type_b);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
 
     ASSERT_EQ(NULL, nmo_type_registry_get_type_manager(registry, GUID_FLOAT));
 

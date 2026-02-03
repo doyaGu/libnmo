@@ -1,4 +1,4 @@
-#include "format/nmo_image_codec.h"
+﻿#include "format/nmo_image_codec.h"
 
 #include "format/nmo_stb_adapter.h"
 
@@ -15,7 +15,7 @@ static int g_codec_defaults_registered = 0;
 
 static inline void nmo_image_codec_ensure_defaults(void);
 
-static nmo_result_t nmo_image_codec_encode_stb(nmo_bitmap_format_t format,
+static nmo_status_t nmo_image_codec_encode_stb(nmo_bitmap_format_t format,
                                                const uint8_t *pixels,
                                                int width,
                                                int height,
@@ -26,10 +26,7 @@ static nmo_result_t nmo_image_codec_encode_stb(nmo_bitmap_format_t format,
                                                size_t *out_size) {
     if (!pixels || width <= 0 || height <= 0 || channels <= 0 || channels > 4 ||
         !arena || !out_data || !out_size) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments for image encode"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for image encode");
     }
 
     int quality = props ? props->quality : 0;
@@ -43,18 +40,15 @@ static nmo_result_t nmo_image_codec_encode_stb(nmo_bitmap_format_t format,
                                                quality,
                                                &encoded_size);
     if (!buffer || encoded_size == 0) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_FORMAT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to encode bitmap"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Failed to encode bitmap");
     }
 
     *out_data = buffer;
     *out_size = encoded_size;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_image_codec_decode_stb(const uint8_t *encoded_data,
+static nmo_status_t nmo_image_codec_decode_stb(const uint8_t *encoded_data,
                                                size_t encoded_size,
                                                int desired_channels,
                                                nmo_arena_t *arena,
@@ -64,17 +58,11 @@ static nmo_result_t nmo_image_codec_decode_stb(const uint8_t *encoded_data,
                                                int *out_channels) {
     if (!encoded_data || encoded_size == 0 || !arena || !out_width ||
         !out_height || !out_pixels || !out_channels) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid arguments for image decode"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for image decode");
     }
 
     if (encoded_size > (size_t)INT_MAX) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Encoded bitmap too large"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Encoded bitmap too large");
     }
 
     int width = 0;
@@ -88,20 +76,17 @@ static nmo_result_t nmo_image_codec_decode_stb(const uint8_t *encoded_data,
                                                 &found_channels,
                                                 desired_channels);
     if (!pixels) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_FORMAT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Failed to decode bitmap"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Failed to decode bitmap");
     }
 
     *out_width = width;
     *out_height = height;
     *out_pixels = pixels;
     *out_channels = desired_channels ? desired_channels : found_channels;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t nmo_image_codec_encode_png(const uint8_t *pixels,
+static nmo_status_t nmo_image_codec_encode_png(const uint8_t *pixels,
                                                int width,
                                                int height,
                                                int channels,
@@ -120,7 +105,7 @@ static nmo_result_t nmo_image_codec_encode_png(const uint8_t *pixels,
                                       out_size);
 }
 
-static nmo_result_t nmo_image_codec_encode_bmp(const uint8_t *pixels,
+static nmo_status_t nmo_image_codec_encode_bmp(const uint8_t *pixels,
                                                int width,
                                                int height,
                                                int channels,
@@ -139,7 +124,7 @@ static nmo_result_t nmo_image_codec_encode_bmp(const uint8_t *pixels,
                                       out_size);
 }
 
-static nmo_result_t nmo_image_codec_encode_tga(const uint8_t *pixels,
+static nmo_status_t nmo_image_codec_encode_tga(const uint8_t *pixels,
                                                int width,
                                                int height,
                                                int channels,
@@ -158,7 +143,7 @@ static nmo_result_t nmo_image_codec_encode_tga(const uint8_t *pixels,
                                       out_size);
 }
 
-static nmo_result_t nmo_image_codec_encode_jpg(const uint8_t *pixels,
+static nmo_status_t nmo_image_codec_encode_jpg(const uint8_t *pixels,
                                                int width,
                                                int height,
                                                int channels,
@@ -177,7 +162,7 @@ static nmo_result_t nmo_image_codec_encode_jpg(const uint8_t *pixels,
                                       out_size);
 }
 
-static nmo_result_t nmo_image_codec_decode_common(const uint8_t *encoded_data,
+static nmo_status_t nmo_image_codec_decode_common(const uint8_t *encoded_data,
                                                   size_t encoded_size,
                                                   int desired_channels,
                                                   nmo_arena_t *arena,
@@ -273,26 +258,20 @@ static inline void nmo_image_codec_ensure_defaults(void) {
     }
 }
 
-NMO_API nmo_result_t nmo_image_codec_register(const nmo_image_codec_t *codec) {
+NMO_API nmo_status_t nmo_image_codec_register(const nmo_image_codec_t *codec) {
     if (!codec) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Codec pointer is NULL"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Codec pointer is NULL");
     }
 
     if (codec->format <= NMO_BITMAP_FORMAT_RAW ||
         codec->format >= NMO_BITMAP_FORMAT_COUNT ||
         !codec->encode || !codec->decode) {
-        return nmo_result_error(NMO_ERROR(NULL,
-                                          NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR,
-                                          "Invalid codec description"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid codec description");
     }
 
     g_codecs[codec->format] = *codec;
     g_codec_registered[codec->format] = 1;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 NMO_API const nmo_image_codec_t *nmo_image_codec_get(nmo_bitmap_format_t format) {

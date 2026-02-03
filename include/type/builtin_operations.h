@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_operations.h
  * @brief Builtin operation definitions (Phase 6.1.4)
  *
@@ -98,7 +98,7 @@ extern "C" {
  * @param type_registry      Type registry with builtin types
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_register_builtin_operations(
+NMO_API nmo_status_t nmo_register_builtin_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );
@@ -112,14 +112,14 @@ NMO_API nmo_result_t nmo_register_builtin_operations(
  * @param type_registry Type registry
  * @return NMO_OK on success, error code on failure
  */
-NMO_API nmo_result_t nmo_register_builtin_types(
+NMO_API nmo_status_t nmo_register_builtin_types(
     nmo_type_registry_t *type_registry
 );
 
 /**
  * @brief Register arithmetic operations
  */
-NMO_API nmo_result_t nmo_register_arithmetic_operations(
+NMO_API nmo_status_t nmo_register_arithmetic_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );
@@ -127,7 +127,7 @@ NMO_API nmo_result_t nmo_register_arithmetic_operations(
 /**
  * @brief Register logic operations
  */
-NMO_API nmo_result_t nmo_register_logic_operations(
+NMO_API nmo_status_t nmo_register_logic_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );
@@ -135,7 +135,7 @@ NMO_API nmo_result_t nmo_register_logic_operations(
 /**
  * @brief Register comparison operations
  */
-NMO_API nmo_result_t nmo_register_comparison_operations(
+NMO_API nmo_status_t nmo_register_comparison_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );
@@ -143,7 +143,7 @@ NMO_API nmo_result_t nmo_register_comparison_operations(
 /**
  * @brief Register bitwise operations
  */
-NMO_API nmo_result_t nmo_register_bitwise_operations(
+NMO_API nmo_status_t nmo_register_bitwise_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );
@@ -151,7 +151,7 @@ NMO_API nmo_result_t nmo_register_bitwise_operations(
 /**
  * @brief Register trigonometry operations
  */
-NMO_API nmo_result_t nmo_register_trigonometry_operations(
+NMO_API nmo_status_t nmo_register_trigonometry_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );

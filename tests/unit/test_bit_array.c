@@ -12,15 +12,15 @@
 
 TEST(bit_array, basic_set_and_test) {
     nmo_bit_array_t bits;
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL));
     ASSERT_EQ(0u, nmo_bit_array_capacity(&bits));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 5).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 5));
     ASSERT_TRUE(nmo_bit_array_test(&bits, 5));
     ASSERT_FALSE(nmo_bit_array_test(&bits, 4));
     ASSERT_TRUE(nmo_bit_array_capacity(&bits) >= 6);
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_clear(&bits, 5).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_clear(&bits, 5));
     ASSERT_FALSE(nmo_bit_array_test(&bits, 5));
 
     nmo_bit_array_dispose(&bits);
@@ -28,12 +28,12 @@ TEST(bit_array, basic_set_and_test) {
 
 TEST(bit_array, toggle_and_fill) {
     nmo_bit_array_t bits;
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 64, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 64, NULL));
     ASSERT_EQ(64u, nmo_bit_array_capacity(&bits));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_toggle(&bits, 10).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_toggle(&bits, 10));
     ASSERT_TRUE(nmo_bit_array_test(&bits, 10));
-    ASSERT_EQ(NMO_OK, nmo_bit_array_toggle(&bits, 10).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_toggle(&bits, 10));
     ASSERT_FALSE(nmo_bit_array_test(&bits, 10));
 
     nmo_bit_array_fill(&bits, 1);
@@ -46,11 +46,11 @@ TEST(bit_array, toggle_and_fill) {
 
 TEST(bit_array, find_ordinals) {
     nmo_bit_array_t bits;
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 2).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 5).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 9).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 2));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 5));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&bits, 9));
 
     ASSERT_EQ(3u, nmo_bit_array_count_set(&bits));
     ASSERT_EQ(2u, nmo_bit_array_find_nth_set(&bits, 0));
@@ -72,29 +72,29 @@ TEST(bit_array, find_ordinals) {
 TEST(bit_array, bitwise_ops) {
     nmo_bit_array_t lhs;
     nmo_bit_array_t rhs;
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&lhs, 32, NULL).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&rhs, 32, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&lhs, 32, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&rhs, 32, NULL));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 1).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 3).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&rhs, 3).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&rhs, 4).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 1));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 3));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&rhs, 3));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&rhs, 4));
     ASSERT_TRUE(nmo_bit_array_test(&rhs, 4));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_and(&lhs, &rhs).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_and(&lhs, &rhs));
     ASSERT_FALSE(nmo_bit_array_test(&lhs, 1));
     ASSERT_TRUE(nmo_bit_array_test(&lhs, 3));
     ASSERT_FALSE(nmo_bit_array_test(&lhs, 4));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_or(&lhs, &rhs).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_or(&lhs, &rhs));
     ASSERT_TRUE(nmo_bit_array_test(&lhs, 4));
 
     /* Reset lhs to original pattern before exercising XOR/not */
     nmo_bit_array_clear_all(&lhs);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 1).code);
-    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 3).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 1));
+    ASSERT_EQ(NMO_OK, nmo_bit_array_set(&lhs, 3));
 
-    ASSERT_EQ(NMO_OK, nmo_bit_array_xor(&lhs, &rhs).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_xor(&lhs, &rhs));
     ASSERT_TRUE(nmo_bit_array_test(&lhs, 1));
     ASSERT_FALSE(nmo_bit_array_test(&lhs, 3));
     ASSERT_TRUE(nmo_bit_array_test(&lhs, 4));
@@ -109,7 +109,7 @@ TEST(bit_array, bitwise_ops) {
 
 TEST(bit_array, to_string) {
     nmo_bit_array_t bits;
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 8, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 8, NULL));
 
     nmo_bit_array_set(&bits, 0);
     nmo_bit_array_set(&bits, 3);
@@ -130,13 +130,13 @@ TEST(bit_array, to_string) {
 
 TEST(bit_array, overflow_guards) {
     nmo_bit_array_t bits;
-    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL).code);
+    ASSERT_EQ(NMO_OK, nmo_bit_array_init(&bits, 0, NULL));
 
-    nmo_result_t reserve_result = nmo_bit_array_reserve(&bits, SIZE_MAX);
-    ASSERT_EQ(NMO_ERR_NOMEM, reserve_result.code);
+    nmo_status_t reserve_result = nmo_bit_array_reserve(&bits, SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, reserve_result);
 
-    nmo_result_t set_result = nmo_bit_array_set(&bits, SIZE_MAX);
-    ASSERT_EQ(NMO_ERR_NOMEM, set_result.code);
+    nmo_status_t set_result = nmo_bit_array_set(&bits, SIZE_MAX);
+    ASSERT_EQ(NMO_ERR_NOMEM, set_result);
 
     ASSERT_EQ(SIZE_MAX, nmo_bit_array_find_nth_unset(&bits, SIZE_MAX));
 

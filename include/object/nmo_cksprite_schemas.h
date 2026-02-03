@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_cksprite_schemas.h
  * @brief Public API for CKSprite schema-based serialization
  *
@@ -29,7 +29,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /* =============================================================================
@@ -136,7 +136,7 @@ typedef struct nmo_cksprite_state {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-typedef nmo_result_t (*nmo_cksprite_deserialize_fn)(
+typedef nmo_status_t (*nmo_cksprite_deserialize_fn)(
     nmo_chunk_t *out_chunk,
     nmo_arena_t *arena,
     nmo_cksprite_state_t *out_state);
@@ -148,7 +148,7 @@ typedef nmo_result_t (*nmo_cksprite_deserialize_fn)(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-typedef nmo_result_t (*nmo_cksprite_serialize_fn)(
+typedef nmo_status_t (*nmo_cksprite_serialize_fn)(
     const nmo_cksprite_state_t *in_state,
     nmo_chunk_t *out_chunk,
     nmo_arena_t *arena);
@@ -175,7 +175,7 @@ typedef nmo_result_t (*nmo_cksprite_serialize_fn)(
  * @param out_state Output state structure
  * @return Result indicating success or error
  */
-NMO_API nmo_result_t nmo_cksprite_deserialize(
+NMO_API nmo_status_t nmo_cksprite_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -189,7 +189,7 @@ NMO_API nmo_result_t nmo_cksprite_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-NMO_API nmo_result_t nmo_cksprite_serialize(
+NMO_API nmo_status_t nmo_cksprite_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

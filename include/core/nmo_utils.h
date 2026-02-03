@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_utils.h
  * @brief Common utility functions and macros for libnmo
  * 
@@ -270,7 +270,7 @@ static inline int nmo_check_buffer_bounds(size_t pos, size_t needed, size_t tota
 /**
  * @brief Macro for buffer bounds checking with error handling
  * 
- * Usage in functions that return nmo_result_t:
+ * Usage in functions that return nmo_status_t:
  * NMO_CHECK_BUFFER_SIZE(pos, needed, size);
  */
 #define NMO_CHECK_BUFFER_SIZE(pos, needed, size)                              \

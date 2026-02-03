@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_header1.h
  * @brief NMO Header1 (object descriptors and plugin dependencies)
  */
@@ -79,7 +79,7 @@ typedef struct nmo_header1 {
  * @param arena Arena allocator for memory allocations
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_header1_parse(
+NMO_API nmo_status_t nmo_header1_parse(
     const void *data,
     size_t size,
     nmo_header1_t *header,
@@ -97,7 +97,7 @@ NMO_API nmo_result_t nmo_header1_parse(
  * @param arena Arena allocator for memory allocations
  * @return NMO_OK on success, error code otherwise
  */
-NMO_API nmo_result_t nmo_header1_serialize(
+NMO_API nmo_status_t nmo_header1_serialize(
     const nmo_header1_t *header,
     void **out_data,
     size_t *out_size,

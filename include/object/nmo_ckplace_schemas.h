@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_ckplace_schemas.h
  * @brief CKPlace schema definitions
  */
@@ -17,7 +17,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
@@ -47,13 +47,13 @@ typedef struct nmo_ckplace_state {
     nmo_object_id_t *reference_ids;
 } nmo_ckplace_state_t;
 
-NMO_API nmo_result_t nmo_ckplace_deserialize(
+NMO_API nmo_status_t nmo_ckplace_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckplace_serialize(
+NMO_API nmo_status_t nmo_ckplace_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

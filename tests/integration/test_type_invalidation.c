@@ -38,8 +38,8 @@ TEST(type_invalidation, basic_invalidation) {
     type.alignment = 4;
     type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Verify type is valid */
     const nmo_type_descriptor_t *registered = 
@@ -49,7 +49,7 @@ TEST(type_invalidation, basic_invalidation) {
     
     /* Invalidate the type */
     result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* After invalidation, type becomes invisible to public API (by design) */
     const nmo_type_descriptor_t *invalidated = 
@@ -105,15 +105,15 @@ TEST(type_invalidation, multiple_invalidations) {
     };
     
     for (int i = 0; i < 3; i++) {
-        nmo_result_t result = nmo_type_registry_register(registry, &types[i]);
-        ASSERT_EQ(NMO_OK, result.code);
+        nmo_status_t result = nmo_type_registry_register(registry, &types[i]);
+        ASSERT_EQ(NMO_OK, result);
     }
     
     /* Invalidate Type1 and Type3 */
-    nmo_result_t result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_invalidate(registry, GUID_TYPE3);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Check states - invalid types become invisible */
     const nmo_type_descriptor_t *t1 = 
@@ -157,15 +157,15 @@ TEST(type_invalidation, derivation_mask_invalidation) {
     type.alignment = 4;
     type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Manually mark masks as valid (simulating lazy update) */
     registry->derivation_masks_valid = true;
     
     /* Invalidate type should mark masks invalid again */
     result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Derivation masks should be invalid now */
     ASSERT_FALSE(registry->derivation_masks_valid);
@@ -202,18 +202,18 @@ TEST(type_invalidation, invalidation_vs_unregistration) {
     type2.alignment = 4;
     type2.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type1);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type1);
+    ASSERT_EQ(NMO_OK, result);
     result = nmo_type_registry_register(registry, &type2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Invalidate Type1 */
     result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Fully unregister Type2 */
     result = nmo_type_registry_unregister(registry, GUID_TYPE2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Both should be invisible to public API after invalidation/unregistration */
     const nmo_type_descriptor_t *check1 = 
@@ -248,8 +248,8 @@ TEST(type_invalidation, get_by_id_invalid_type) {
     type.alignment = 4;
     type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *registered = 
         nmo_type_registry_find_by_guid(registry, GUID_TYPE1);
@@ -258,7 +258,7 @@ TEST(type_invalidation, get_by_id_invalid_type) {
     
     /* Invalidate */
     result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Get by ID also filters invalid types (by design) */
     const nmo_type_descriptor_t *by_id = 
@@ -289,8 +289,8 @@ TEST(type_invalidation, reregistration_after_invalidation) {
     type.alignment = 4;
     type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *first_reg = 
         nmo_type_registry_find_by_guid(registry, GUID_TYPE1);
@@ -300,7 +300,7 @@ TEST(type_invalidation, reregistration_after_invalidation) {
     
     /* Fully unregister to free slot */
     result = nmo_type_registry_unregister(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Register new type (should reuse slot) */
     nmo_type_descriptor_t type2 = {0};
@@ -312,7 +312,7 @@ TEST(type_invalidation, reregistration_after_invalidation) {
     type2.valid = true;
     
     result = nmo_type_registry_register(registry, &type2);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     const nmo_type_descriptor_t *second_reg = 
         nmo_type_registry_find_by_guid(registry, GUID_TYPE2);
@@ -338,13 +338,13 @@ TEST(type_invalidation, invalid_arguments) {
     ASSERT_NE(NULL, registry);
     
     /* NULL registry */
-    nmo_result_t result = nmo_type_registry_invalidate(NULL, GUID_TYPE1);
-    ASSERT_NE(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_invalidate(NULL, GUID_TYPE1);
+    ASSERT_NE(NMO_OK, result);
     
     /* Non-existent GUID (should fail or be no-op) */
     nmo_guid_t nonexistent = {0xFFFFFFFF, 0xFFFFFFFF};
     result = nmo_type_registry_invalidate(registry, nonexistent);
-    ASSERT_NE(NMO_OK, result.code);  /* Expected to fail */
+    ASSERT_NE(NMO_OK, result);  /* Expected to fail */
     
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
@@ -370,16 +370,16 @@ TEST(type_invalidation, double_invalidation) {
     type.alignment = 4;
     type.valid = true;
     
-    nmo_result_t result = nmo_type_registry_register(registry, &type);
-    ASSERT_EQ(NMO_OK, result.code);
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Invalidate once */
     result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_EQ(NMO_OK, result.code);
+    ASSERT_EQ(NMO_OK, result);
     
     /* Invalidate again - should fail as type is no longer findable */
     result = nmo_type_registry_invalidate(registry, GUID_TYPE1);
-    ASSERT_NE(NMO_OK, result.code);  /* Expected to fail - type not found */
+    ASSERT_NE(NMO_OK, result);  /* Expected to fail - type not found */
     
     /* Type should not be visible */
     const nmo_type_descriptor_t *check = 

@@ -1,4 +1,4 @@
-#include "app/nmo_plugin.h"
+﻿#include "app/nmo_plugin.h"
 #include "app/nmo_context.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_error.h"
@@ -26,8 +26,8 @@ static int nmo_plugin_manager_reserve(nmo_plugin_manager_t *manager, size_t need
         return NMO_OK;
     }
 
-    nmo_result_t result = nmo_arena_array_reserve(&manager->instances, needed);
-    return result.code;
+    nmo_status_t result = nmo_arena_array_reserve(&manager->instances, needed);
+    return result;
 }
 
 static int nmo_plugin_manager_find_index_by_guid(const nmo_plugin_manager_t *manager, nmo_guid_t guid) {
@@ -75,11 +75,11 @@ nmo_plugin_manager_t *nmo_plugin_manager_create(nmo_context_t *ctx) {
     manager->allocator = allocator;
     manager->arena = arena;
 
-    nmo_result_t init_result = nmo_arena_array_init(&manager->instances,
+    nmo_status_t init_result = nmo_arena_array_init(&manager->instances,
                                               sizeof(nmo_plugin_instance_info_t),
                                               0,
                                               arena);
-    if (init_result.code != NMO_OK) {
+    if (init_result != NMO_OK) {
         return NULL;
     }
 
@@ -135,9 +135,9 @@ int nmo_plugin_manager_register(
         }
 
         nmo_plugin_instance_info_t *slot = NULL;
-        nmo_result_t extend = nmo_arena_array_extend(&manager->instances, 1, (void **)&slot);
-        if (extend.code != NMO_OK) {
-            return extend.code;
+        nmo_status_t extend = nmo_arena_array_extend(&manager->instances, 1, (void **)&slot);
+        if (extend != NMO_OK) {
+            return extend;
         }
         memset(slot, 0, sizeof(*slot));
         slot->plugin = plugin;
@@ -166,16 +166,16 @@ int nmo_plugin_manager_load_library(
     const char *export_name = (symbol_name != NULL) ? symbol_name : "nmo_plugin_get_info";
 
     nmo_shared_library_t *library = NULL;
-    nmo_result_t open_result = nmo_shared_library_open(manager->allocator, path, &library);
-    if (open_result.code != NMO_OK) {
-        return open_result.code;
+    nmo_status_t open_result = nmo_shared_library_open(manager->allocator, path, &library);
+    if (open_result != NMO_OK) {
+        return open_result;
     }
 
     void *symbol_ptr = NULL;
-    nmo_result_t symbol_result = nmo_shared_library_get_symbol(library, export_name, &symbol_ptr);
-    if (symbol_result.code != NMO_OK) {
+    nmo_status_t symbol_result = nmo_shared_library_get_symbol(library, export_name, &symbol_ptr);
+    if (symbol_result != NMO_OK) {
         nmo_shared_library_close(library);
-        return symbol_result.code;
+        return symbol_result;
     }
 
     union {
@@ -216,8 +216,8 @@ int nmo_plugin_manager_load_library(
         }
 
         nmo_plugin_instance_info_t *slot = NULL;
-        nmo_result_t extend = nmo_arena_array_extend(&manager->instances, 1, (void **)&slot);
-        if (extend.code != NMO_OK) {
+        nmo_status_t extend = nmo_arena_array_extend(&manager->instances, 1, (void **)&slot);
+        if (extend != NMO_OK) {
             continue;
         }
         memset(slot, 0, sizeof(*slot));

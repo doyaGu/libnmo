@@ -1,4 +1,4 @@
-// chunk_subchunks.c - Sub-chunk operations
+﻿// chunk_subchunks.c - Sub-chunk operations
 // Implements: write_sub_chunk, read_sub_chunk, start_sub_chunk_sequence
 
 #include "format/nmo_chunk_api.h"
@@ -17,8 +17,8 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // Sub-chunks
 // =============================================================================
 
-static nmo_result_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_t *sub) {
-    nmo_result_t result;
+static nmo_status_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_t *sub) {
+    nmo_status_t result;
 
     /* CK2 header layout: size, class_id, version, data_size, file_flag,
        id_count, chunk_count, manager_count (always present in CK2 writer) */
@@ -83,10 +83,10 @@ static nmo_result_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_
         NMO_RETURN_IF_ERROR(result);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
+nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (sub == NULL) {
@@ -95,7 +95,7 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
 
     /* Set CHN flag and track sub-chunk */
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-    nmo_result_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
     NMO_RETURN_IF_ERROR(list_result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -108,7 +108,7 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
 
     /* Track sub-chunk position before writing (CK2 AddEntry uses CurrentPos-1). */
     size_t refs_count_before = chunk->chunk_refs.count;
-    nmo_result_t result;
+    nmo_status_t result;
     {
         uint32_t header_pos = (uint32_t) size_header_offset;
         result = nmo_arena_array_append(&chunk->chunk_refs, &header_pos);
@@ -117,16 +117,16 @@ nmo_result_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
 
     /* Write payload */
     result = write_sub_chunk_payload(chunk, sub);
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         /* Roll back the appended entry to preserve consistency. */
         chunk->chunk_refs.count = refs_count_before;
         return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
+nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     if (sub == NULL) {
@@ -136,18 +136,18 @@ nmo_result_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
     /* In CK2, WriteSubChunkSequence does not add entries to the chunk refs list.
        The sequence marker added by StartSubChunkSequence tracks the sequence. */
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-    nmo_result_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
     NMO_RETURN_IF_ERROR(list_result);
 
     return write_sub_chunk_payload(chunk, sub);
 }
 
-nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count) {
+nmo_status_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Read sequence count (stored as single DWORD)
     uint32_t count;
-    nmo_result_t result = nmo_chunk_read_dword(chunk, &count);
+    nmo_status_t result = nmo_chunk_read_dword(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
     // Store count if requested
@@ -155,13 +155,13 @@ nmo_result_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t 
         *out_count = (size_t)count;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub) {
+nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_sub, "Invalid arguments");
 
-    nmo_result_t result;
+    nmo_status_t result;
 
     // Read header
     uint32_t total_size, version_info, data_size, file_flag;
@@ -173,15 +173,14 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     if (total_size == 0) {
         *out_sub = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     {
         nmo_chunk_parser_state_t *state = get_parser_state(chunk);
         if (state && (size_t)total_size + state->current_pos > chunk->data.count) {
             *out_sub = NULL;
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF, NMO_SEVERITY_ERROR,
-                                              "Sub-chunk out of bounds"));
+            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk out of bounds");
         }
     }
 
@@ -292,10 +291,10 @@ nmo_result_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (manager_count > 0) sub->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
     *out_sub = sub;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count) {
+nmo_status_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
@@ -307,7 +306,7 @@ nmo_result_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count
 
     // Track sequence start (CK2 AddEntries)
     uint32_t sentinel = 0xFFFFFFFFu;
-    nmo_result_t result = nmo_arena_array_append(&chunk->chunk_refs, &sentinel);
+    nmo_status_t result = nmo_arena_array_append(&chunk->chunk_refs, &sentinel);
     NMO_RETURN_IF_ERROR(result);
     {
         uint32_t pos = (uint32_t) state->current_pos;
@@ -325,17 +324,17 @@ nmo_result_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count
 /**
  * Add sub-chunk
  */
-nmo_result_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk) {
+nmo_status_t nmo_chunk_add_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub_chunk) {
     NMO_CHUNK_CHECK_ARGS(chunk, sub_chunk, "Invalid arguments");
 
     /* Add sub-chunk */
-    nmo_result_t result = nmo_arena_array_append(&chunk->chunks, &sub_chunk);
+    nmo_status_t result = nmo_arena_array_append(&chunk->chunks, &sub_chunk);
     NMO_RETURN_IF_ERROR(result);
 
     /* Set CHN flag */
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**

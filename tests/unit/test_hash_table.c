@@ -52,21 +52,21 @@ TEST(hash_table, basic) {
     // Insert some entries
     uint32_t key1 = 100;
     uint32_t value1 = 200;
-    ASSERT_EQ(nmo_hash_table_insert(table, &key1, &value1).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_insert(table, &key1, &value1), NMO_OK);
     ASSERT_EQ(nmo_hash_table_get_count(table), 1);
 
     // Get the value
     uint32_t retrieved = 0;
-    ASSERT_EQ(nmo_hash_table_get(table, &key1, &retrieved).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_get(table, &key1, &retrieved), NMO_OK);
     ASSERT_EQ(retrieved, value1);
 
     // Update the value
     uint32_t value2 = 300;
-    ASSERT_EQ(nmo_hash_table_insert(table, &key1, &value2).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_insert(table, &key1, &value2), NMO_OK);
     ASSERT_EQ(nmo_hash_table_get_count(table), 1);
 
     retrieved = 0;
-    ASSERT_EQ(nmo_hash_table_get(table, &key1, &retrieved).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_get(table, &key1, &retrieved), NMO_OK);
     ASSERT_EQ(retrieved, value2);
 
     // Check contains
@@ -76,7 +76,7 @@ TEST(hash_table, basic) {
     ASSERT_EQ(nmo_hash_table_contains(table, &key2), 0);
 
     // Remove
-    ASSERT_EQ(nmo_hash_table_remove(table, &key1).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_remove(table, &key1), NMO_OK);
     ASSERT_EQ(nmo_hash_table_get_count(table), 0);
     ASSERT_EQ(nmo_hash_table_contains(table, &key1), 0);
 
@@ -101,7 +101,7 @@ TEST(hash_table, multiple) {
     for (uint32_t i = 0; i < 100; i++) {
         uint32_t key = i;
         uint32_t value = i * 10;
-        ASSERT_EQ(nmo_hash_table_insert(table, &key, &value).code, NMO_OK);
+        ASSERT_EQ(nmo_hash_table_insert(table, &key, &value), NMO_OK);
     }
 
     ASSERT_EQ(nmo_hash_table_get_count(table), 100);
@@ -110,7 +110,7 @@ TEST(hash_table, multiple) {
     for (uint32_t i = 0; i < 100; i++) {
         uint32_t key = i;
         uint32_t value = 0;
-        ASSERT_EQ(nmo_hash_table_get(table, &key, &value).code, NMO_OK);
+        ASSERT_EQ(nmo_hash_table_get(table, &key, &value), NMO_OK);
         ASSERT_EQ(value, i * 10);
     }
 
@@ -158,9 +158,9 @@ TEST(hash_table, null_table) {
     uint32_t key = 100;
     uint32_t value = 200;
 
-    ASSERT_EQ(nmo_hash_table_insert(NULL, &key, &value).code, NMO_ERR_INVALID_ARGUMENT);
-    ASSERT_EQ(nmo_hash_table_get(NULL, &key, &value).code, NMO_ERR_INVALID_ARGUMENT);
-    ASSERT_EQ(nmo_hash_table_remove(NULL, &key).code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_insert(NULL, &key, &value), NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_get(NULL, &key, &value), NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_remove(NULL, &key), NMO_ERR_INVALID_ARGUMENT);
     ASSERT_EQ(nmo_hash_table_contains(NULL, &key), 0);
     ASSERT_EQ(nmo_hash_table_get_count(NULL), 0);
     ASSERT_EQ(nmo_hash_table_get_capacity(NULL), 0);
@@ -182,17 +182,17 @@ TEST(hash_table, null_pointers) {
     ASSERT_NOT_NULL(table);
 
     // Test insert with NULL key
-    ASSERT_EQ(nmo_hash_table_insert(table, NULL, &(uint32_t){200}).code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_insert(table, NULL, &(uint32_t){200}), NMO_ERR_INVALID_ARGUMENT);
 
     // Test insert with NULL value
-    ASSERT_EQ(nmo_hash_table_insert(table, &(uint32_t){100}, NULL).code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_insert(table, &(uint32_t){100}, NULL), NMO_ERR_INVALID_ARGUMENT);
 
     // Test get with NULL key
     uint32_t value;
-    ASSERT_EQ(nmo_hash_table_get(table, NULL, &value).code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_get(table, NULL, &value), NMO_ERR_INVALID_ARGUMENT);
 
     // Test remove with NULL key
-    ASSERT_EQ(nmo_hash_table_remove(table, NULL).code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(nmo_hash_table_remove(table, NULL), NMO_ERR_INVALID_ARGUMENT);
 
     // Test contains with NULL key
     ASSERT_EQ(nmo_hash_table_contains(table, NULL), 0);
@@ -234,8 +234,8 @@ TEST(hash_table, empty_operations) {
     uint32_t key = 100;
     uint32_t value = 0;
 
-    ASSERT_EQ(nmo_hash_table_get(table, &key, &value).code, NMO_ERR_NOT_FOUND);  // Should not find
-    ASSERT_EQ(nmo_hash_table_remove(table, &key).code, NMO_ERR_NOT_FOUND);       // Should not remove
+    ASSERT_EQ(nmo_hash_table_get(table, &key, &value), NMO_ERR_NOT_FOUND);  // Should not find
+    ASSERT_EQ(nmo_hash_table_remove(table, &key), NMO_ERR_NOT_FOUND);       // Should not remove
     ASSERT_EQ(nmo_hash_table_contains(table, &key), 0);     // Should not contain
     ASSERT_EQ(nmo_hash_table_get_count(table), 0);          // Should be empty
 
@@ -260,17 +260,17 @@ TEST(hash_table, duplicate_keys) {
     // Insert a key
     uint32_t key = 100;
     uint32_t value1 = 200;
-    ASSERT_EQ(nmo_hash_table_insert(table, &key, &value1).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_insert(table, &key, &value1), NMO_OK);
     ASSERT_EQ(nmo_hash_table_get_count(table), 1);
 
     // Insert the same key with different value (should update)
     uint32_t value2 = 300;
-    ASSERT_EQ(nmo_hash_table_insert(table, &key, &value2).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_insert(table, &key, &value2), NMO_OK);
     ASSERT_EQ(nmo_hash_table_get_count(table), 1);  // Still only one entry
 
     // Verify the value was updated
     uint32_t retrieved = 0;
-    ASSERT_EQ(nmo_hash_table_get(table, &key, &retrieved).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_get(table, &key, &retrieved), NMO_OK);
     ASSERT_EQ(retrieved, value2);  // Should have the new value
 
     nmo_hash_table_destroy(table);
@@ -301,15 +301,15 @@ TEST(hash_table, lifecycle_hooks) {
     uint32_t key1 = 1, key2 = 2, key3 = 3;
     uint32_t value1 = 10, value2 = 20, value3 = 30;
 
-    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &value1).code);
-    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key2, &value2).code);
-    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key3, &value3).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &value1));
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key2, &value2));
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key3, &value3));
 
     uint32_t updated = 100;
-    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &updated).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &updated));
     ASSERT_EQ(value_total, 10u); /* Old value1 disposed */
 
-    ASSERT_EQ(NMO_OK, nmo_hash_table_remove(table, &key2).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_table_remove(table, &key2));
     ASSERT_EQ(key_total, 2u);
     ASSERT_EQ(value_total, 30u); /* value2 disposed */
 
@@ -318,8 +318,8 @@ TEST(hash_table, lifecycle_hooks) {
     ASSERT_EQ(value_total, 160u);/* value1(updated) + value3 */
 
     nmo_hash_table_set_lifecycle(table, NULL, NULL);
-    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &value1).code);
-    ASSERT_EQ(NMO_OK, nmo_hash_table_remove(table, &key1).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_table_insert(table, &key1, &value1));
+    ASSERT_EQ(NMO_OK, nmo_hash_table_remove(table, &key1));
     ASSERT_EQ(key_total, 6u);
     ASSERT_EQ(value_total, 160u);
 
@@ -337,13 +337,13 @@ TEST(hash_table, reserve_invalid) {
     ASSERT_NOT_NULL(table);
 
     // Test reserve with NULL table
-    ASSERT_NE(nmo_hash_table_reserve(NULL, 100).code, NMO_OK);
+    ASSERT_NE(nmo_hash_table_reserve(NULL, 100), NMO_OK);
 
     // Test reserve with zero capacity (should be OK)
-    ASSERT_EQ(nmo_hash_table_reserve(table, 0).code, NMO_OK);
+    ASSERT_EQ(nmo_hash_table_reserve(table, 0), NMO_OK);
 
     // Test reserve with extremely large capacity
-    ASSERT_NE(nmo_hash_table_reserve(table, SIZE_MAX).code, NMO_OK);
+    ASSERT_NE(nmo_hash_table_reserve(table, SIZE_MAX), NMO_OK);
 
     nmo_hash_table_destroy(table);
 }

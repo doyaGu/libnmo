@@ -16,25 +16,23 @@
 
 #define CK_STATESAVE_SPRITE3DDATA 0x00400000u
 
-static nmo_result_t nmo_cksprite3d_deserialize_internal(
+static nmo_status_t nmo_cksprite3d_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
     nmo_cksprite3d_state_t *out_state)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite3d_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite3d_deserialize");
     }
 
     memset(out_state, 0, sizeof(*out_state));
 
-    nmo_result_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITE3DDATA).code == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITE3DDATA) == NMO_OK) {
         out_state->has_data = 1;
         (void)nmo_chunk_read_dword(chunk, &out_state->mode);
         (void)nmo_chunk_read_float(chunk, &out_state->half_width);
@@ -48,7 +46,7 @@ static nmo_result_t nmo_cksprite3d_deserialize_internal(
         (void)nmo_chunk_read_object_id(chunk, &out_state->material_id);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -66,51 +64,49 @@ NMO_DEFINE_OBJECT_SCHEMA(
     NMO_GUID_CK3DENTITY
 )
 
-static nmo_result_t nmo_cksprite3d_serialize_internal(
+static nmo_status_t nmo_cksprite3d_serialize_internal(
     const nmo_cksprite3d_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite3d_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite3d_serialize");
     }
 
-    nmo_result_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
     if (in_state->has_data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITE3DDATA);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->mode);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->half_width);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->half_height);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->offset.x);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->offset.y);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->uv_rect.left);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->uv_rect.top);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->uv_rect.right);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->uv_rect.bottom);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->material_id);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_cksprite3d_deserialize(
+nmo_status_t nmo_cksprite3d_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -121,7 +117,7 @@ nmo_result_t nmo_cksprite3d_deserialize(
     return nmo_cksprite3d_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_result_t nmo_cksprite3d_serialize(
+nmo_status_t nmo_cksprite3d_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,

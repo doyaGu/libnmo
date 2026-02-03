@@ -53,7 +53,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckgroup_deserialize(
+nmo_status_t nmo_ckgroup_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -64,29 +64,28 @@ nmo_result_t nmo_ckgroup_deserialize(
         nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_deserialize");
     }
 
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckgroup_state_t));
     
     /* Deserialize base CKBeObject state first */
-    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     /* Seek group data identifier */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GROUPALL);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         /* No group data - empty group is valid */
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Read object array using XObjectPointerArray::Load format
      * Reference: XObjectArray.cpp - array is stored as [count, id1, id2, ...] */
     int32_t count;
     result = nmo_chunk_read_int(chunk, &count);
-    if (result.code != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
 
@@ -94,8 +93,7 @@ nmo_result_t nmo_ckgroup_deserialize(
         /* Sanity check */
         const uint32_t MAX_GROUP_OBJECTS = 100000;
         if ((uint32_t)count > MAX_GROUP_OBJECTS) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Group object count exceeds maximum"));
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
         }
 
         out_state->object_count = (uint32_t)count;
@@ -106,22 +104,21 @@ nmo_result_t nmo_ckgroup_deserialize(
         );
 
         if (!out_state->object_ids) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                NMO_SEVERITY_ERROR, "Failed to allocate object ID array"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
         }
 
         /* Read object IDs */
         for (int32_t i = 0; i < count; i++) {
             result = nmo_chunk_read_object_id(chunk, &out_state->object_ids[i]);
-            if (result.code != NMO_OK) {
+            if (result != NMO_OK) {
                 /* Partial read - save what we got */
                 out_state->object_count = i;
-                return nmo_result_ok();
+                NMO_RETURN_OK();
             }
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -140,7 +137,7 @@ nmo_result_t nmo_ckgroup_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckgroup_serialize(
+nmo_status_t nmo_ckgroup_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -148,37 +145,35 @@ nmo_result_t nmo_ckgroup_serialize(
 {
     (void)type;
     const nmo_ckgroup_state_t *in_state = (const nmo_ckgroup_state_t *)instance;
-        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_serialize");
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
     /* Only write data if group is non-empty */
     if (in_state->object_count == 0 || !in_state->object_ids) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Write identifier */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GROUPALL);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write object count */
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     /* Write object IDs */
     for (uint32_t i = 0; i < in_state->object_count; i++) {
         result = nmo_chunk_write_object_id(out_chunk, in_state->object_ids[i]);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -214,22 +209,23 @@ NMO_DEFINE_OBJECT_SCHEMA(
  * @param repository Object repository for reference resolution (opaque void*)
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckgroup_finish_loading(
+nmo_status_t nmo_ckgroup_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
 {
     if (!instance) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_finish_loading"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_finish_loading");
     }
+
+    (void)arena;
 
     nmo_ckgroup_state_t *group_state = (nmo_ckgroup_state_t *)instance;
     nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
 
     /* Nothing to do for empty groups */
     if (group_state->object_count == 0 || !group_state->object_ids) {
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Validate and resolve all member object references
@@ -279,6 +275,6 @@ nmo_result_t nmo_ckgroup_finish_loading(
                       resolved_count, unresolved_count);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 

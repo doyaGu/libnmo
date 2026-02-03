@@ -56,7 +56,7 @@ static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckdataarray_deserialize(
+nmo_status_t nmo_ckdataarray_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -64,33 +64,32 @@ nmo_result_t nmo_ckdataarray_deserialize(
 {
     (void)type;
     nmo_ckdataarray_state_t *out_state = (nmo_ckdataarray_state_t *)instance;
-        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_deserialize");
     }
 
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckdataarray_state_t));
     
     /* Deserialize base CKBeObject state first */
-    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) return result;
     out_state->key_column = -1; /* Default: no key column */
 
-    result = nmo_result_ok();
+    nmo_last_error_clear();
+    result = NMO_OK;
 
     /* Read column formats */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYFORMAT);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         int32_t column_count;
         result = nmo_chunk_read_int(chunk, &column_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         if (column_count < 0 || column_count > 10000) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Invalid column count"));
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid column count");
         }
 
         out_state->column_count = (uint32_t)column_count;
@@ -99,8 +98,7 @@ nmo_result_t nmo_ckdataarray_deserialize(
                 nmo_arena_alloc(arena, column_count * sizeof(nmo_ckdataarray_column_format_t),
                                _Alignof(nmo_ckdataarray_column_format_t));
             if (!out_state->column_formats) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                    NMO_SEVERITY_ERROR, "Failed to allocate column formats"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate column formats");
             }
 
             /* Read each column format */
@@ -115,13 +113,13 @@ nmo_result_t nmo_ckdataarray_deserialize(
                 /* Read column type */
                 int32_t type;
                 result = nmo_chunk_read_int(chunk, &type);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
                 fmt->type = (nmo_ck_arraytype_t)((uint32_t)type);
 
                 /* Read parameter type GUID for PARAMETER columns */
                 if (fmt->type == NMO_ARRAYTYPE_PARAMETER) {
                     result = nmo_chunk_read_guid(chunk, &fmt->parameter_type_guid);
-                    if (result.code != NMO_OK) return result;
+                    if (result != NMO_OK) return result;
 
                     /* Handle legacy CKPGUID_OLDTIME (8-byte GUID) */
                     if (nmo_guid_equals(fmt->parameter_type_guid, CKPGUID_OLDTIME)) {
@@ -137,14 +135,13 @@ nmo_result_t nmo_ckdataarray_deserialize(
 
     /* Read data matrix */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYDATA);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         int32_t row_count;
         result = nmo_chunk_read_int(chunk, &row_count);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         if (row_count < 0 || row_count > 1000000) {
-            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                NMO_SEVERITY_ERROR, "Invalid row count"));
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid row count");
         }
 
         out_state->row_count = (uint32_t)row_count;
@@ -153,8 +150,7 @@ nmo_result_t nmo_ckdataarray_deserialize(
                 nmo_arena_alloc(arena, row_count * sizeof(nmo_ckdataarray_row_t),
                                _Alignof(nmo_ckdataarray_row_t));
             if (!out_state->rows) {
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                    NMO_SEVERITY_ERROR, "Failed to allocate rows"));
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate rows");
             }
 
             /* Read each row */
@@ -167,8 +163,7 @@ nmo_result_t nmo_ckdataarray_deserialize(
                         nmo_arena_alloc(arena, out_state->column_count * sizeof(nmo_ckdataarray_cell_t),
                                        _Alignof(nmo_ckdataarray_cell_t));
                     if (!row->cells) {
-                        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_NOMEM,
-                            NMO_SEVERITY_ERROR, "Failed to allocate row cells"));
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate row cells");
                     }
 
                     /* Read each cell */
@@ -179,12 +174,12 @@ nmo_result_t nmo_ckdataarray_deserialize(
                         switch (fmt->type) {
                         case NMO_ARRAYTYPE_INT:
                             result = nmo_chunk_read_int(chunk, &cell->int_value);
-                            if (result.code != NMO_OK) return result;
+                            if (result != NMO_OK) return result;
                             break;
 
                         case NMO_ARRAYTYPE_FLOAT:
                             result = nmo_chunk_read_float(chunk, &cell->float_value);
-                            if (result.code != NMO_OK) return result;
+                            if (result != NMO_OK) return result;
                             break;
 
                         case NMO_ARRAYTYPE_STRING: {
@@ -196,22 +191,21 @@ nmo_result_t nmo_ckdataarray_deserialize(
 
                         case NMO_ARRAYTYPE_OBJECT:
                             result = nmo_chunk_read_object_id(chunk, &cell->object_id);
-                            if (result.code != NMO_OK) return result;
+                            if (result != NMO_OK) return result;
                             break;
 
                         case NMO_ARRAYTYPE_PARAMETER:
                             if (nmo_chunk_is_file_mode(chunk)) {
                                 result = nmo_chunk_read_object_id(chunk, &cell->parameter_id);
-                                if (result.code != NMO_OK) return result;
+                                if (result != NMO_OK) return result;
                             } else {
                                 result = nmo_chunk_read_sub_chunk(chunk, &cell->parameter_chunk);
-                                if (result.code != NMO_OK) return result;
+                                if (result != NMO_OK) return result;
                             }
                             break;
 
                         default:
-                            return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                                NMO_SEVERITY_ERROR, "Unknown array type"));
+                            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Unknown array type");
                         }
                     }
                 } else {
@@ -223,22 +217,22 @@ nmo_result_t nmo_ckdataarray_deserialize(
 
     /* Read metadata members */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYMEMBERS);
-    if (result.code == NMO_OK) {
+    if (result == NMO_OK) {
         result = nmo_chunk_read_int(chunk, &out_state->order);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         int32_t column_index;
         result = nmo_chunk_read_int(chunk, &column_index);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
         out_state->column_index = (uint32_t)column_index;
 
         if (nmo_chunk_is_file_mode(chunk) || nmo_chunk_get_data_version(chunk) >= 5) {
             result = nmo_chunk_read_int(chunk, &out_state->key_column);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -257,7 +251,7 @@ nmo_result_t nmo_ckdataarray_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckdataarray_serialize(
+nmo_status_t nmo_ckdataarray_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -265,47 +259,46 @@ nmo_result_t nmo_ckdataarray_serialize(
 {
     (void)type;
     const nmo_ckdataarray_state_t *in_state = (const nmo_ckdataarray_state_t *)instance;
-        nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_serialize");
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) return result;
+    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) return result;
 
-    result = nmo_result_ok();
+    nmo_last_error_clear();
+    result = NMO_OK;
 
     /* Write column formats */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYFORMAT);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->column_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     for (uint32_t i = 0; i < in_state->column_count; i++) {
         const nmo_ckdataarray_column_format_t *fmt = &in_state->column_formats[i];
 
         result = nmo_chunk_write_string(out_chunk, fmt->name ? fmt->name : "");
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         result = nmo_chunk_write_dword(out_chunk, (uint32_t)fmt->type);
-        if (result.code != NMO_OK) return result;
+        if (result != NMO_OK) return result;
 
         if (fmt->type == NMO_ARRAYTYPE_PARAMETER) {
             result = nmo_chunk_write_guid(out_chunk, fmt->parameter_type_guid);
-            if (result.code != NMO_OK) return result;
+            if (result != NMO_OK) return result;
         }
     }
 
     /* Write data matrix */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYDATA);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->row_count);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     for (uint32_t row_idx = 0; row_idx < in_state->row_count; row_idx++) {
         const nmo_ckdataarray_row_t *row = &in_state->rows[row_idx];
@@ -317,55 +310,54 @@ nmo_result_t nmo_ckdataarray_serialize(
             switch (fmt->type) {
             case NMO_ARRAYTYPE_INT:
                 result = nmo_chunk_write_int(out_chunk, cell->int_value);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_FLOAT:
                 result = nmo_chunk_write_float(out_chunk, cell->float_value);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_STRING:
                 result = nmo_chunk_write_string(out_chunk, cell->string_value ? cell->string_value : "");
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_OBJECT:
                 result = nmo_chunk_write_object_id(out_chunk, cell->object_id);
-                if (result.code != NMO_OK) return result;
+                if (result != NMO_OK) return result;
                 break;
 
             case NMO_ARRAYTYPE_PARAMETER:
                 if (nmo_chunk_is_file_mode(out_chunk)) {
                     result = nmo_chunk_write_object_id(out_chunk, cell->parameter_id);
-                    if (result.code != NMO_OK) return result;
+                    if (result != NMO_OK) return result;
                 } else if (cell->parameter_chunk) {
                     result = nmo_chunk_write_sub_chunk(out_chunk, cell->parameter_chunk);
-                    if (result.code != NMO_OK) return result;
+                    if (result != NMO_OK) return result;
                 }
                 break;
 
             default:
-                return nmo_result_error(NMO_ERROR(arena, NMO_ERR_VALIDATION_FAILED,
-                    NMO_SEVERITY_ERROR, "Unknown array type"));
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Unknown array type");
             }
         }
     }
 
     /* Write metadata members */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAARRAYMEMBERS);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_int(out_chunk, in_state->order);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_dword(out_chunk, in_state->column_index);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_int(out_chunk, in_state->key_column);
-    if (result.code != NMO_OK) return result;
+    if (result != NMO_OK) return result;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

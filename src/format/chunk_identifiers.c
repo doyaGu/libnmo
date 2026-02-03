@@ -1,4 +1,4 @@
-// chunk_identifiers.c - Identifier operations
+﻿// chunk_identifiers.c - Identifier operations
 // Implements: write/read/seek_identifier
 
 #include "format/nmo_chunk_api.h"
@@ -16,16 +16,16 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 // Identifiers
 // =============================================================================
 
-nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
+nmo_status_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     /* CK2 behavior: Calls StartWrite() if no parser state */
     if (!chunk->parser_state) {
-        nmo_result_t start_result = nmo_chunk_start_write(chunk);
+        nmo_status_t start_result = nmo_chunk_start_write(chunk);
         NMO_RETURN_IF_ERROR(start_result);
     }
 
-    nmo_result_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
@@ -44,16 +44,16 @@ nmo_result_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
         chunk->data.count = state->current_pos;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
+nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state || state->current_pos >= chunk->data.count) {
         *out_id = 0;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -62,10 +62,10 @@ nmo_result_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     state->prev_identifier_pos = state->current_pos;
     state->current_pos += 2;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
+nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Empty chunk cannot have identifiers
@@ -108,7 +108,7 @@ nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
         if (current_pos != 0 && current_pos < chunk->data.count) {
             state->prev_identifier_pos = current_pos;
             state->current_pos = current_pos + 2;
-            return nmo_result_ok();
+            NMO_RETURN_OK();
         }
     }
 
@@ -128,5 +128,5 @@ nmo_result_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
 
     state->prev_identifier_pos = current_pos;
     state->current_pos = current_pos + 2;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }

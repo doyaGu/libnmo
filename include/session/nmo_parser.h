@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_parser.h
  * @brief Parser pipeline for loading NMO files
  */
@@ -61,21 +61,21 @@ NMO_API nmo_parse_stage_t nmo_parser_get_current_stage(const nmo_parser_t *parse
  * @param parser Parser
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_parser_parse_file_header(nmo_parser_t *parser);
+NMO_API nmo_status_t nmo_parser_parse_file_header(nmo_parser_t *parser);
 
 /**
  * Parse Header1
  * @param parser Parser
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_parser_parse_header1(nmo_parser_t *parser);
+NMO_API nmo_status_t nmo_parser_parse_header1(nmo_parser_t *parser);
 
 /**
  * Parse all objects
  * @param parser Parser
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_parser_parse_objects(nmo_parser_t *parser);
+NMO_API nmo_status_t nmo_parser_parse_objects(nmo_parser_t *parser);
 
 /**
  * Get parsed object repository

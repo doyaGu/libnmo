@@ -39,8 +39,8 @@ TEST(chunk_16bit, dword_as_words_basic) {
 
     for (size_t i = 0; i < test_count; i++) {
         uint32_t value;
-        nmo_result_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &value);
-        ASSERT_EQ(parse_result.code, NMO_OK);
+        nmo_status_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &value);
+        ASSERT_EQ(parse_result, NMO_OK);
         ASSERT_EQ(test_values[i], value);
     }
 
@@ -77,8 +77,8 @@ TEST(chunk_16bit, dword_as_words_boundary) {
 
     for (size_t i = 0; i < test_count; i++) {
         uint32_t value;
-        nmo_result_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &value);
-        ASSERT_EQ(parse_result.code, NMO_OK);
+        nmo_status_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &value);
+        ASSERT_EQ(parse_result, NMO_OK);
         ASSERT_EQ(boundary_values[i], value);
     }
 
@@ -123,12 +123,12 @@ TEST(chunk_16bit, dword_as_words_array_helper) {
                                                      sizeof(uint32_t));
     ASSERT_NOT_NULL(decoded);
 
-    nmo_result_t parse_result = nmo_chunk_parser_read_dword_array_as_words(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_dword_array_as_words(parser,
                                                                            decoded,
                                                                            value_count);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     parse_result = nmo_chunk_parser_read_dword_array_as_words(parser, NULL, 0);
-    ASSERT_EQ(parse_result.code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(parse_result, NMO_ERR_INVALID_ARGUMENT);
 
     for (size_t i = 0; i < value_count; ++i) {
         ASSERT_EQ(values[i], decoded[i]);
@@ -166,10 +166,10 @@ TEST(chunk_16bit, buffer_nosize_lendian16_basic) {
     ASSERT_NOT_NULL(parser);
 
     uint16_t read_data[12];
-    nmo_result_t parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
                                                                               value_count,
                                                                               read_data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     for (size_t i = 0; i < value_count; i++) {
         ASSERT_EQ(test_data[i], read_data[i]);
@@ -200,10 +200,10 @@ TEST(chunk_16bit, buffer_nosize_lendian16_single) {
     ASSERT_NOT_NULL(parser);
 
     uint16_t read_value;
-    nmo_result_t parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
                                                                               1,
                                                                               &read_value);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(single_value, read_value);
 
     nmo_arena_destroy(arena);
@@ -240,10 +240,10 @@ TEST(chunk_16bit, buffer_nosize_lendian16_large) {
     uint16_t *read_data = (uint16_t *)nmo_arena_alloc(arena, value_count * sizeof(uint16_t), sizeof(uint16_t));
     ASSERT_NOT_NULL(read_data);
 
-    nmo_result_t parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
+    nmo_status_t parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser,
                                                                               value_count,
                                                                               read_data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     for (size_t i = 0; i < value_count; i++) {
         ASSERT_EQ(test_data[i], read_data[i]);
@@ -280,29 +280,29 @@ TEST(chunk_16bit, mixed_operations) {
     ASSERT_NOT_NULL(parser);
 
     uint32_t dword_val;
-    nmo_result_t parse_result = nmo_chunk_parser_read_dword(parser, &dword_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_dword(parser, &dword_val);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x11111111, dword_val);
 
     uint32_t dword_as_words_val;
     parse_result = nmo_chunk_parser_read_dword_as_words(parser, &dword_as_words_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x22223333, dword_as_words_val);
 
     uint16_t read_buffer[3];
     parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser, 3, read_buffer);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     for (int i = 0; i < 3; i++) {
         ASSERT_EQ(buffer[i], read_buffer[i]);
     }
 
     int32_t int_val;
     parse_result = nmo_chunk_parser_read_int(parser, &int_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(-42, int_val);
 
     parse_result = nmo_chunk_parser_read_dword_as_words(parser, &dword_as_words_val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x44445555, dword_as_words_val);
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
@@ -329,19 +329,19 @@ TEST(chunk_16bit, error_handling) {
     ASSERT_NOT_NULL(parser);
 
     uint32_t val;
-    nmo_result_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &val);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &val);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(0x12345678, val);
 
     // Try to read beyond end
     parse_result = nmo_chunk_parser_read_dword_as_words(parser, &val);
-    ASSERT_EQ(parse_result.code, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_EOF);
 
     // Test NULL pointer checks
     parse_result = nmo_chunk_parser_read_dword_as_words(NULL, &val);
-    ASSERT_EQ(parse_result.code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(parse_result, NMO_ERR_INVALID_ARGUMENT);
     parse_result = nmo_chunk_parser_read_dword_as_words(parser, NULL);
-    ASSERT_EQ(parse_result.code, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(parse_result, NMO_ERR_INVALID_ARGUMENT);
 
     nmo_arena_destroy(arena);
 }
@@ -374,17 +374,17 @@ TEST(chunk_16bit, virtools_compatibility) {
     ASSERT_NOT_NULL(parser);
 
     uint32_t read_count;
-    nmo_result_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &read_count);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_dword_as_words(parser, &read_count);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(keyframe_count, read_count);
 
     uint16_t read_times[5];
     parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser, keyframe_count, read_times);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     
     uint16_t read_values[5];
     parse_result = nmo_chunk_parser_read_buffer_nosize_lendian16(parser, keyframe_count, read_values);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
 
     for (size_t i = 0; i < keyframe_count; i++) {
         ASSERT_EQ(times[i], read_times[i]);

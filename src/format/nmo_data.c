@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_data.c
  * @brief NMO Data section parsing implementation
  */
@@ -15,7 +15,7 @@
 #define CHECK_BUFFER_SIZE(arena, pos, needed, total) \
     do { \
         if (!nmo_check_buffer_bounds((pos), (needed), (total))) { \
-            return nmo_result_errorf((arena), NMO_ERR_EOF, NMO_SEVERITY_ERROR, \
+            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, \
                 "Data section buffer overrun: pos=%zu needed=%zu total=%zu", \
                 (size_t)(pos), (size_t)(needed), (size_t)(total)); \
         } \
@@ -40,7 +40,7 @@ static nmo_chunk_t *allocate_chunk(nmo_chunk_pool_t *chunk_pool, nmo_arena_t *ar
     return nmo_chunk_create(arena);
 }
 
-static nmo_result_t parse_manager_data(
+static nmo_status_t parse_manager_data(
     const uint8_t *data,
     size_t size,
     size_t *pos,
@@ -49,7 +49,7 @@ static nmo_result_t parse_manager_data(
     nmo_arena_t *arena) {
     if (section->manager_count == 0) {
         section->managers = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Allocate manager data array */
@@ -58,8 +58,7 @@ static nmo_result_t parse_manager_data(
         sizeof(nmo_manager_data_t) * section->manager_count,
         alignof(nmo_manager_data_t));
     if (section->managers == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate manager data array"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager data array");
     }
 
     /* Parse each manager */
@@ -85,14 +84,13 @@ static nmo_result_t parse_manager_data(
             /* Create chunk */
             mgr->chunk = allocate_chunk(chunk_pool, arena);
             if (mgr->chunk == NULL) {
-                return nmo_result_errorf(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                         "Failed to create manager chunk (index=%u, size=%u)",
-                                         (unsigned)i, (unsigned)mgr->data_size);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                        "Failed to create manager chunk (index=%u, size=%u)",
+                                        (unsigned)i, (unsigned)mgr->data_size);
             }
 
             /* Parse chunk from buffer */
-            NMO_RETURN_IF_ERROR_CTX(arena,
-                                    nmo_chunk_parse(mgr->chunk, data + *pos, mgr->data_size),
+            NMO_RETURN_IF_ERROR_CTX(nmo_chunk_parse(mgr->chunk, data + *pos, mgr->data_size),
                                     "Failed to parse manager chunk (index=%u, size=%u)",
                                     (unsigned)i,
                                     (unsigned)mgr->data_size);
@@ -107,7 +105,7 @@ static nmo_result_t parse_manager_data(
         mgr->flags = 0;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /**
@@ -119,7 +117,7 @@ static nmo_result_t parse_manager_data(
  *     - data_size (4 bytes int32)
  *     - chunk_data (data_size bytes)
  */
-static nmo_result_t parse_object_data(
+static nmo_status_t parse_object_data(
     const uint8_t *data,
     size_t size,
     size_t *pos,
@@ -129,7 +127,7 @@ static nmo_result_t parse_object_data(
     nmo_arena_t *arena) {
     if (section->object_count == 0) {
         section->objects = NULL;
-        return nmo_result_ok();
+        NMO_RETURN_OK();
     }
 
     /* Allocate object data array */
@@ -138,8 +136,7 @@ static nmo_result_t parse_object_data(
         sizeof(nmo_object_data_t) * section->object_count,
         alignof(nmo_object_data_t));
     if (section->objects == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                          NMO_SEVERITY_ERROR, "Failed to allocate object data array"));
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object data array");
     }
 
     /* Parse each object */
@@ -170,14 +167,13 @@ static nmo_result_t parse_object_data(
             /* Create chunk */
             obj->chunk = allocate_chunk(chunk_pool, arena);
             if (obj->chunk == NULL) {
-                return nmo_result_errorf(arena, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                         "Failed to create object chunk (index=%u, size=%u)",
-                                         (unsigned)i, (unsigned)obj->data_size);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                        "Failed to create object chunk (index=%u, size=%u)",
+                                        (unsigned)i, (unsigned)obj->data_size);
             }
 
             /* Parse chunk from buffer */
-            NMO_RETURN_IF_ERROR_CTX(arena,
-                                    nmo_chunk_parse(obj->chunk, data + *pos, obj->data_size),
+            NMO_RETURN_IF_ERROR_CTX(nmo_chunk_parse(obj->chunk, data + *pos, obj->data_size),
                                     "Failed to parse object chunk (index=%u, size=%u)",
                                     (unsigned)i,
                                     (unsigned)obj->data_size);
@@ -190,10 +186,10 @@ static nmo_result_t parse_object_data(
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_data_section_parse(
+nmo_status_t nmo_data_section_parse(
     const void *data,
     size_t size,
     uint32_t file_version,
@@ -201,13 +197,13 @@ nmo_result_t nmo_data_section_parse(
     nmo_chunk_pool_t *chunk_pool,
     nmo_arena_t *arena) {
     if (arena == NULL) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "NULL arena passed to nmo_data_section_parse");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL arena passed to nmo_data_section_parse");
     }
 
     if (data == NULL || data_section == NULL) {
-        return nmo_result_errorf(arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "NULL pointer passed to nmo_data_section_parse");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL pointer passed to nmo_data_section_parse");
     }
 
     /* Save counts which must be set by caller (from file header) */
@@ -226,16 +222,14 @@ nmo_result_t nmo_data_section_parse(
 
     /* Parse manager data (file_version >= 6) */
     if (file_version >= 6 && manager_count > 0) {
-        NMO_RETURN_IF_ERROR_CTX(arena,
-                                parse_manager_data(buffer, size, &pos, data_section, chunk_pool, arena),
+        NMO_RETURN_IF_ERROR_CTX(parse_manager_data(buffer, size, &pos, data_section, chunk_pool, arena),
                                 "Failed to parse manager data (count=%u)",
                                 (unsigned)manager_count);
     }
 
     /* Parse object data (file_version >= 4) */
     if (file_version >= 4 && object_count > 0) {
-        NMO_RETURN_IF_ERROR_CTX(arena,
-                                parse_object_data(
+        NMO_RETURN_IF_ERROR_CTX(parse_object_data(
                                     buffer,
                                     size,
                                     &pos,
@@ -248,10 +242,10 @@ nmo_result_t nmo_data_section_parse(
                                 (unsigned)file_version);
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-nmo_result_t nmo_data_section_serialize(
+nmo_status_t nmo_data_section_serialize(
     const nmo_data_section_t *data_section,
     uint32_t file_version,
     void *buffer,
@@ -259,12 +253,12 @@ nmo_result_t nmo_data_section_serialize(
     size_t *bytes_written,
     nmo_arena_t *arena) {
     if (arena == NULL) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "NULL arena passed to nmo_data_section_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL arena passed to nmo_data_section_serialize");
     }
     if (data_section == NULL || buffer == NULL || bytes_written == NULL) {
-        return nmo_result_errorf(arena, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid arguments to nmo_data_section_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid arguments to nmo_data_section_serialize");
     }
 
     uint8_t *buf = (uint8_t *) buffer;
@@ -276,7 +270,7 @@ nmo_result_t nmo_data_section_serialize(
             const nmo_manager_data_t *mgr = &data_section->managers[i];
 
             /* Write GUID (8 bytes: d1, d2) */
-            NMO_ENSURE(arena, pos + 8 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+            NMO_ENSURE(pos + 8 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                        "Buffer too small for manager GUID (index=%u)", (unsigned)i);
             nmo_write_u32_le(buf + pos, mgr->guid.d1);
             pos += 4;
@@ -293,8 +287,7 @@ nmo_result_t nmo_data_section_serialize(
                     chunk_data = mgr->chunk->raw_data;
                     chunk_size = mgr->chunk->raw_size;
                 } else {
-                    NMO_RETURN_IF_ERROR_CTX(arena,
-                                            nmo_chunk_serialize(mgr->chunk, &serialized_data, &chunk_size, arena),
+                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize(mgr->chunk, &serialized_data, &chunk_size, arena),
                                             "Failed to serialize manager chunk (index=%u)",
                                             (unsigned)i);
                     chunk_data = serialized_data;
@@ -302,14 +295,14 @@ nmo_result_t nmo_data_section_serialize(
             }
 
             /* Write actual data size */
-            NMO_ENSURE(arena, pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+            NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                        "Buffer too small for manager data size (index=%u)", (unsigned)i);
             nmo_write_u32_le(buf + pos, (uint32_t)chunk_size);
             pos += 4;
 
             /* Write chunk data */
             if (chunk_size > 0) {
-                NMO_ENSURE(arena, pos + chunk_size <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+                NMO_ENSURE(pos + chunk_size <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                            "Buffer too small for manager chunk data (index=%u, size=%zu)",
                            (unsigned)i, chunk_size);
                 memcpy(buf + pos, chunk_data, chunk_size);
@@ -325,9 +318,9 @@ nmo_result_t nmo_data_section_serialize(
 
             /* For file_version < 7, write object ID */
             if (file_version < 7) {
-                NMO_ENSURE(arena, pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+                NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                            "Buffer too small for object ID (index=%u)", (unsigned)i);
-                NMO_ENSURE(arena, obj->object_id != 0, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                NMO_ENSURE(obj->object_id != 0, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                            "Missing object ID for legacy data section (index=%u)", (unsigned)i);
                 nmo_write_u32_le(buf + pos, obj->object_id);
                 pos += 4;
@@ -343,8 +336,7 @@ nmo_result_t nmo_data_section_serialize(
                     chunk_data = obj->chunk->raw_data;
                     chunk_size = obj->chunk->raw_size;
                 } else {
-                    NMO_RETURN_IF_ERROR_CTX(arena,
-                                            nmo_chunk_serialize(obj->chunk, &serialized_data, &chunk_size, arena),
+                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize(obj->chunk, &serialized_data, &chunk_size, arena),
                                             "Failed to serialize object chunk (index=%u)",
                                             (unsigned)i);
                     chunk_data = serialized_data;
@@ -352,14 +344,14 @@ nmo_result_t nmo_data_section_serialize(
             }
 
             /* Write actual data size */
-            NMO_ENSURE(arena, pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+            NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                        "Buffer too small for object data size (index=%u)", (unsigned)i);
             nmo_write_u32_le(buf + pos, (uint32_t)chunk_size);
             pos += 4;
 
             /* Write chunk data */
             if (chunk_size > 0) {
-                NMO_ENSURE(arena, pos + chunk_size <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
+                NMO_ENSURE(pos + chunk_size <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                            "Buffer too small for object chunk data (index=%u, size=%zu)",
                            (unsigned)i, chunk_size);
                 memcpy(buf + pos, chunk_data, chunk_size);
@@ -369,7 +361,7 @@ nmo_result_t nmo_data_section_serialize(
     }
 
     *bytes_written = pos;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 size_t nmo_data_section_calculate_size(

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file type_parser.c
  * @brief Type name string parser (Phase 6.2, Task 6.2.2)
  *
@@ -177,14 +177,14 @@ static bool lookup_builtin_type(const char *name, size_t name_len, nmo_guid_t *o
     return false;
 }
 
-nmo_result_t nmo_type_registry_parse_type_name(
+nmo_status_t nmo_type_registry_parse_type_name(
     const nmo_type_registry_t *type_registry,
     const char *type_name,
     nmo_type_parse_result_t *result
 ) {
     if (!type_registry || !type_name || !result) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "NULL type_registry, type_name, or result");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry, type_name, or result");
     }
     
     /* Initialize result */
@@ -197,8 +197,8 @@ nmo_result_t nmo_type_registry_parse_type_name(
     trim_whitespace(&str, &len);
     
     if (len == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Empty type name");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Empty type name");
     }
     
     /* Parse pointer suffix */
@@ -212,8 +212,8 @@ nmo_result_t nmo_type_registry_parse_type_name(
     /* Parse array suffix */
     uint32_t array_count = 0;
     if (!parse_array_suffix(str, base_len, &base_len, &array_count)) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Malformed array syntax in type name");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Malformed array syntax in type name");
     }
     
     result->is_array = (array_count > 0);
@@ -232,8 +232,8 @@ nmo_result_t nmo_type_registry_parse_type_name(
     /* Lookup registered type by name */
     char name_buf[256];
     if (base_name_len >= sizeof(name_buf)) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Type name too long");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Type name too long");
     }
     
     memcpy(name_buf, base_name, base_name_len);
@@ -248,8 +248,8 @@ nmo_result_t nmo_type_registry_parse_type_name(
     }
     
     /* Type not found */
-    return nmo_result_errorf(NULL, NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                             "Type '%s' not found in registry", name_buf);
+    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                            "Type '%s' not found in registry", name_buf);
 }
 
 /* ============================================================================
@@ -399,15 +399,15 @@ static bool is_valid_identifier(const char *str, size_t len) {
 /**
  * @brief Parse enum/flags string: "NAME1=VALUE1,NAME2=VALUE2,..."
  */
-nmo_result_t nmo_parse_enum_flags_string(
+nmo_status_t nmo_parse_enum_flags_string(
     const char *input_str,
     nmo_enum_value_def_t **out_values,
     size_t *out_count,
     nmo_arena_t *arena
 ) {
     if (!input_str || !out_values || !out_count || !arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid arguments to enum/flags parser");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid arguments to enum/flags parser");
     }
     
     /* Trim input */
@@ -416,8 +416,8 @@ nmo_result_t nmo_parse_enum_flags_string(
     trim_whitespace(&str, &len);
     
     if (len == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Empty enum/flags definition string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                "Empty enum/flags definition string");
     }
     
     /* First pass: count entries */
@@ -433,8 +433,8 @@ nmo_result_t nmo_parse_enum_flags_string(
         arena, entry_count * sizeof(nmo_enum_value_def_t), 8);
     
     if (!values) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate enum value array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate enum value array");
     }
     
     /* Initialize entries */
@@ -453,8 +453,8 @@ nmo_result_t nmo_parse_enum_flags_string(
             trim_whitespace(&entry, &entry_len);
             
             if (entry_len == 0) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "Empty entry in enum/flags definition");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "Empty entry in enum/flags definition");
             }
             
             /* Find '=' separator */
@@ -467,8 +467,8 @@ nmo_result_t nmo_parse_enum_flags_string(
             }
             
             if (!eq_pos) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "Missing '=' in enum/flags entry");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "Missing '=' in enum/flags entry");
             }
             
             /* Parse name */
@@ -477,8 +477,8 @@ nmo_result_t nmo_parse_enum_flags_string(
             trim_whitespace(&name, &name_len);
             
             if (!is_valid_identifier(name, name_len)) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "Invalid identifier in enum/flags entry");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "Invalid identifier in enum/flags entry");
             }
             
             /* Parse value */
@@ -488,24 +488,24 @@ nmo_result_t nmo_parse_enum_flags_string(
             
             int64_t value;
             if (!parse_integer_value(value_str, value_len, &value)) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "Invalid integer value in enum/flags entry");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "Invalid integer value in enum/flags entry");
             }
             
             /* Check for duplicate names */
             for (size_t j = 0; j < current_entry; j++) {
                 if (strncmp(values[j].name, name, name_len) == 0 && 
                     strlen(values[j].name) == name_len) {
-                    return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                             "Duplicate name in enum/flags definition");
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                            "Duplicate name in enum/flags definition");
                 }
             }
             
             /* Allocate and copy name */
             char *name_copy = (char*)nmo_arena_alloc(arena, name_len + 1, 1);
             if (!name_copy) {
-                return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                         "Failed to allocate name string");
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                        "Failed to allocate name string");
             }
             memcpy(name_copy, name, name_len);
             name_copy[name_len] = '\0';
@@ -531,17 +531,17 @@ nmo_result_t nmo_parse_enum_flags_string(
 /**
  * @brief Parse flags string: "FLAG1=1,FLAG2=2,FLAG4=4"
  */
-nmo_result_t nmo_parse_flags_string(
+nmo_status_t nmo_parse_flags_string(
     const char *flags_str,
     nmo_enum_value_def_t **out_values,
     size_t *out_count,
     nmo_arena_t *arena
 ) {
     /* Use common parser */
-    nmo_result_t result = nmo_parse_enum_flags_string(
+    nmo_status_t result = nmo_parse_enum_flags_string(
         flags_str, out_values, out_count, arena);
     
-    if (nmo_result_is_error(result)) {
+    if (result != NMO_OK) {
         return result;
     }
     
@@ -567,7 +567,7 @@ nmo_result_t nmo_parse_flags_string(
 /**
  * @brief Parse enum string: "RED=1,GREEN=2,BLUE=3"
  */
-nmo_result_t nmo_parse_enum_string(
+nmo_status_t nmo_parse_enum_string(
     const char *enum_str,
     nmo_enum_value_def_t **out_values,
     size_t *out_count,
@@ -580,15 +580,15 @@ nmo_result_t nmo_parse_enum_string(
 /**
  * @brief Parse struct field names: "Field1,Field2,Field3"
  */
-nmo_result_t nmo_parse_struct_fields(
+nmo_status_t nmo_parse_struct_fields(
     const char *field_names,
     char ***out_names,
     size_t *out_count,
     nmo_arena_t *arena
 ) {
     if (!field_names || !out_names || !out_count || !arena) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "Invalid arguments to struct field parser");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid arguments to struct field parser");
     }
     
     /* Trim input */
@@ -597,8 +597,8 @@ nmo_result_t nmo_parse_struct_fields(
     trim_whitespace(&str, &len);
     
     if (len == 0) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Empty struct field names string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                "Empty struct field names string");
     }
     
     /* First pass: count fields */
@@ -612,8 +612,8 @@ nmo_result_t nmo_parse_struct_fields(
     /* Allocate output array */
     char **names = (char**)nmo_arena_alloc(arena, field_count * sizeof(char*), 8);
     if (!names) {
-        return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to allocate field name array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate field name array");
     }
     
     /* Second pass: parse field names */
@@ -629,30 +629,30 @@ nmo_result_t nmo_parse_struct_fields(
             trim_whitespace(&name, &name_len);
             
             if (name_len == 0) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "Empty field name in struct definition");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "Empty field name in struct definition");
             }
             
             /* Validate identifier */
             if (!is_valid_identifier(name, name_len)) {
-                return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                         "Invalid field name identifier");
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                        "Invalid field name identifier");
             }
             
             /* Check for duplicate names */
             for (size_t j = 0; j < current_field; j++) {
                 if (strncmp(names[j], name, name_len) == 0 && 
                     strlen(names[j]) == name_len) {
-                    return nmo_result_errorf(NULL, NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                             "Duplicate field name in struct definition");
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                            "Duplicate field name in struct definition");
                 }
             }
             
             /* Allocate and copy name */
             char *name_copy = (char*)nmo_arena_alloc(arena, name_len + 1, 1);
             if (!name_copy) {
-                return nmo_result_errorf(NULL, NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                         "Failed to allocate field name string");
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                        "Failed to allocate field name string");
             }
             memcpy(name_copy, name, name_len);
             name_copy[name_len] = '\0';

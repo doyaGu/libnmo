@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_header.h
  * @brief NMO file header parsing
  */
@@ -74,7 +74,7 @@ NMO_API void nmo_header_destroy(nmo_header_t *header);
  * @param io IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_header_parse(nmo_header_t *header, void *io);
+NMO_API nmo_status_t nmo_header_parse(nmo_header_t *header, void *io);
 
 /**
  * Write header to IO
@@ -82,7 +82,7 @@ NMO_API nmo_result_t nmo_header_parse(nmo_header_t *header, void *io);
  * @param io IO context
  * @return NMO_OK on success
  */
-NMO_API nmo_result_t nmo_header_write(const nmo_header_t *header, void *io);
+NMO_API nmo_status_t nmo_header_write(const nmo_header_t *header, void *io);
 
 /**
  * Get header size
@@ -96,7 +96,7 @@ NMO_API uint32_t nmo_header_get_size(const nmo_header_t *header);
  * @param header Header context
  * @return NMO_OK if valid
  */
-NMO_API nmo_result_t nmo_header_validate(const nmo_header_t *header);
+NMO_API nmo_status_t nmo_header_validate(const nmo_header_t *header);
 
 /**
  * @brief Parse Virtools file header from IO
@@ -112,7 +112,7 @@ NMO_API nmo_result_t nmo_header_validate(const nmo_header_t *header);
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
  *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9
  */
-NMO_API nmo_result_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *header);
+NMO_API nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *header);
 
 /**
  * @brief Validate Virtools file header
@@ -125,7 +125,7 @@ NMO_API nmo_result_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_head
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
  *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9
  */
-NMO_API nmo_result_t nmo_file_header_validate(const nmo_file_header_t *header);
+NMO_API nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header);
 
 /**
  * @brief Serialize Virtools file header to IO
@@ -138,7 +138,7 @@ NMO_API nmo_result_t nmo_file_header_validate(const nmo_file_header_t *header);
  * @return NMO_OK on success, error code otherwise
  *         NMO_ERR_INVALID_ARGUMENT if header or io is NULL
  */
-NMO_API nmo_result_t nmo_file_header_serialize(const nmo_file_header_t *header, nmo_io_interface_t *io);
+NMO_API nmo_status_t nmo_file_header_serialize(const nmo_file_header_t *header, nmo_io_interface_t *io);
 
 #ifdef __cplusplus
 }

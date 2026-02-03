@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file builtin_bitwise.c
  * @brief Builtin bitwise operations implementation
  *
@@ -14,7 +14,7 @@
  * Integer Bitwise Operations
  * ============================================================================ */
 
-static nmo_result_t op_bit_and_int(
+static nmo_status_t op_bit_and_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -23,10 +23,10 @@ static nmo_result_t op_bit_and_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = a & b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_bit_or_int(
+static nmo_status_t op_bit_or_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -35,10 +35,10 @@ static nmo_result_t op_bit_or_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = a | b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_bit_xor_int(
+static nmo_status_t op_bit_xor_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -47,10 +47,10 @@ static nmo_result_t op_bit_xor_int(
     const int32_t b = *(const int32_t *)p2_data;
     *(int32_t *)result_data = a ^ b;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_bit_not_int(
+static nmo_status_t op_bit_not_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_data; (void)p2_type; (void)result_type; (void)user_data;
@@ -58,10 +58,10 @@ static nmo_result_t op_bit_not_int(
     const int32_t a = *(const int32_t *)p1_data;
     *(int32_t *)result_data = ~a;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_shift_left_int(
+static nmo_status_t op_shift_left_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -70,14 +70,15 @@ static nmo_result_t op_shift_left_int(
     const int32_t b = *(const int32_t *)p2_data;
 
     if (b < 0 || b >= 32) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Shift count out of range");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Shift count out of range");
     }
 
     *(int32_t *)result_data = a << b;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_shift_right_int(
+static nmo_status_t op_shift_right_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -86,14 +87,15 @@ static nmo_result_t op_shift_right_int(
     const int32_t b = *(const int32_t *)p2_data;
 
     if (b < 0 || b >= 32) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Shift count out of range");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Shift count out of range");
     }
 
     *(int32_t *)result_data = a >> b;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t op_rotate_left_int(
+static nmo_status_t op_rotate_left_int(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
@@ -102,25 +104,27 @@ static nmo_result_t op_rotate_left_int(
     const int32_t b = *(const int32_t *)p2_data;
 
     if (b < 0 || b >= 32) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Rotate count out of range");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Rotate count out of range");
     }
 
     const uint32_t result = (a << b) | (a >> (32 - b));
     *(int32_t *)result_data = (int32_t)result;
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
  * Registration
  * ============================================================================ */
 
-nmo_result_t nmo_register_bitwise_operations(
+nmo_status_t nmo_register_bitwise_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
-        return nmo_result_errorf(NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL operation_registry or type_registry");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL operation_registry or type_registry");
     }
 
     nmo_operation_desc_t operations[] = {

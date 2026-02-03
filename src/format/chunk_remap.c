@@ -1,4 +1,4 @@
-// chunk_remap.c - Object ID remapping
+﻿// chunk_remap.c - Object ID remapping
 // Implements: remap_object_ids
 
 #include "format/nmo_chunk_api.h"
@@ -20,8 +20,8 @@ static int remap_single_id(nmo_object_id_t *id_ref, const nmo_id_remap_t *remap)
     nmo_object_id_t old_id = *id_ref;
     nmo_object_id_t new_id;
 
-    nmo_result_t result = nmo_id_remap_lookup_id(remap, old_id, &new_id);
-    if (result.code == NMO_OK) {
+    nmo_status_t result = nmo_id_remap_lookup_id(remap, old_id, &new_id);
+    if (result == NMO_OK) {
         if (new_id != 0 && new_id != old_id) {
             *id_ref = new_id;
             return 1;
@@ -31,15 +31,14 @@ static int remap_single_id(nmo_object_id_t *id_ref, const nmo_id_remap_t *remap)
     return 0;
 }
 
-static nmo_result_t remap_chunk_data_recursive(uint32_t *chunk_data,
+static nmo_status_t remap_chunk_data_recursive(uint32_t *chunk_data,
                                                size_t data_size,
                                                uint32_t *ids,
                                                size_t id_count,
                                                const nmo_id_remap_t *remap,
                                                int *remapped_count) {
     if (!chunk_data || !remap || !remapped_count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     int local_count = 0;
@@ -84,18 +83,17 @@ static nmo_result_t remap_chunk_data_recursive(uint32_t *chunk_data,
     }
 
     *remapped_count += local_count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
+static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                        size_t parent_dwords,
                                                        size_t header_pos,
                                                        uint32_t parent_chunk_version,
                                                        const nmo_id_remap_t *remap,
                                                        int *remapped_count) {
     if (!parent_data || !remap || !remapped_count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     size_t header_bytes =
@@ -115,15 +113,13 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
      * followed by: data[data_size], ids[id_count], chunk_refs[chunk_count], managers[manager_count]
      */
     if (header_pos + header_dwords > parent_dwords) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Sub-chunk header out of bounds"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk header out of bounds");
     }
 
     uint32_t payload_dwords = parent_data[header_pos];
     size_t total_dwords = 1u + (size_t)payload_dwords;
     if (header_pos + total_dwords > parent_dwords) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                          NMO_SEVERITY_ERROR, "Sub-chunk payload out of bounds"));
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk payload out of bounds");
     }
 
     uint32_t version_info = parent_data[header_pos + 2];
@@ -143,12 +139,11 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
     size_t managers_start = refs_start + (size_t)chunk_ref_count;
 
     if (managers_start + (size_t)manager_count > header_pos + total_dwords) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
-                                          NMO_SEVERITY_ERROR, "Sub-chunk layout mismatch"));
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Sub-chunk layout mismatch");
     }
 
     if (data_size > 0 && id_count > 0) {
-        nmo_result_t result = remap_chunk_data_recursive(&parent_data[data_start],
+        nmo_status_t result = remap_chunk_data_recursive(&parent_data[data_start],
                                                          (size_t)data_size,
                                                          &parent_data[ids_start],
                                                          (size_t)id_count,
@@ -160,8 +155,7 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
     if (chunk_ref_count > 0) {
         size_t data_end = data_start + (size_t)data_size;
         if (data_end > parent_dwords) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_CORRUPT,
-                                              NMO_SEVERITY_ERROR, "Sub-chunk data bounds invalid"));
+            NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Sub-chunk data bounds invalid");
         }
 
         for (size_t i = 0; i < (size_t)chunk_ref_count; ++i) {
@@ -169,20 +163,17 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
 
             if (entry == LIST_SEQUENCE_MARKER) {
                 if (i + 1 >= (size_t)chunk_ref_count) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                                      NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence marker"));
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence marker");
                 }
 
                 uint32_t seq_pos = parent_data[refs_start + (++i)];
                 if (seq_pos >= data_size) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence offset out of bounds"));
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Sub-chunk sequence offset out of bounds");
                 }
 
                 size_t seq_abs = data_start + (size_t)seq_pos;
                 if (seq_abs + 1 > data_end) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds"));
+                    NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds");
                 }
 
                 uint32_t seq_count = parent_data[seq_abs];
@@ -190,18 +181,16 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
 
                 for (uint32_t s = 0; s < seq_count; ++s) {
                     if (cursor >= data_end) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated"));
+                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
                     }
 
                     uint32_t payload_dwords = parent_data[cursor];
                     size_t total_dwords = 1u + (size_t)payload_dwords;
                     if (cursor + total_dwords > data_end) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds"));
+                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
                     }
 
-                    nmo_result_t result = remap_embedded_subchunk_recursive(parent_data,
+                    nmo_status_t result = remap_embedded_subchunk_recursive(parent_data,
                                                                             parent_dwords,
                                                                             cursor,
                                                                             child_chunk_version,
@@ -215,12 +204,11 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
             }
 
             if (entry >= data_size) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                                  NMO_SEVERITY_ERROR, "Sub-chunk reference out of bounds"));
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Sub-chunk reference out of bounds");
             }
 
             size_t child_header_pos = data_start + (size_t)entry;
-            nmo_result_t result = remap_embedded_subchunk_recursive(parent_data,
+            nmo_status_t result = remap_embedded_subchunk_recursive(parent_data,
                                                                     parent_dwords,
                                                                     child_header_pos,
                                                                     child_chunk_version,
@@ -230,19 +218,18 @@ static nmo_result_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
         }
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
-static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
+static nmo_status_t remap_object_ids_recursive(nmo_chunk_t *chunk,
                                                const nmo_id_remap_t *remap,
                                                int *remapped_count) {
     if (!chunk || !remap || !remapped_count) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     int local_count = 0;
-    nmo_result_t result = nmo_result_ok();
+    nmo_status_t result = NMO_OK;
 
     if (chunk->chunk_version < NMO_CHUNK_VERSION1) {
         if (chunk->data.count > 0) {
@@ -309,20 +296,17 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
 
             if (entry == LIST_SEQUENCE_MARKER) {
                 if (i + 1 >= chunk->chunk_refs.count) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                                      NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence marker"));
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence marker");
                 }
 
                 uint32_t seq_pos = chunk_refs[++i];
                 if (seq_pos >= data_size) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence offset out of bounds"));
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Sub-chunk sequence offset out of bounds");
                 }
 
                 size_t seq_abs = (size_t)seq_pos;
                 if (seq_abs + 1 > data_size) {
-                    return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                                      NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds"));
+                    NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds");
                 }
 
                 uint32_t seq_count = chunk_data[seq_abs];
@@ -330,15 +314,13 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
 
                 for (uint32_t s = 0; s < seq_count; ++s) {
                     if (cursor >= data_size) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated"));
+                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
                     }
 
                     uint32_t payload_dwords = chunk_data[cursor];
                     size_t total_dwords = 1u + (size_t)payload_dwords;
                     if (cursor + total_dwords > data_size) {
-                        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_EOF,
-                                                          NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds"));
+                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
                     }
 
                     result = remap_embedded_subchunk_recursive(chunk_data,
@@ -355,8 +337,7 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
             }
 
             if (entry >= data_size) {
-                return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                                  NMO_SEVERITY_ERROR, "Sub-chunk reference out of bounds"));
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Sub-chunk reference out of bounds");
             }
 
             result = remap_embedded_subchunk_recursive(chunk_data,
@@ -370,24 +351,21 @@ static nmo_result_t remap_object_ids_recursive(nmo_chunk_t *chunk,
     }
 
     *remapped_count += local_count;
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 // =============================================================================
 // ID Remapping
 // =============================================================================
 
-nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
+nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
                                         const nmo_id_remap_t *remap) {
     if (!chunk || !remap) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_ARGUMENT,
-                                          NMO_SEVERITY_ERROR, "Invalid arguments"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     if (chunk->arena == NULL) {
-        return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_INVALID_STATE,
-                                          NMO_SEVERITY_ERROR,
-                                          "Chunk arena unavailable for remap backup"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Chunk arena unavailable for remap backup");
     }
 
     void *data_backup = NULL;
@@ -403,9 +381,7 @@ nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
         data_bytes = chunk->data.count * chunk->data.element_size;
         data_backup = nmo_arena_alloc(chunk->arena, data_bytes, 8);
         if (data_backup == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate chunk data backup"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk data backup");
         }
         memcpy(data_backup, chunk->data.data, data_bytes);
     }
@@ -414,9 +390,7 @@ nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
         ids_bytes = chunk->ids.count * chunk->ids.element_size;
         ids_backup = nmo_arena_alloc(chunk->arena, ids_bytes, 8);
         if (ids_backup == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate chunk ids backup"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk ids backup");
         }
         memcpy(ids_backup, chunk->ids.data, ids_bytes);
     }
@@ -425,9 +399,7 @@ nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
         refs_bytes = chunk->chunk_refs.count * chunk->chunk_refs.element_size;
         refs_backup = nmo_arena_alloc(chunk->arena, refs_bytes, 8);
         if (refs_backup == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate chunk refs backup"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk refs backup");
         }
         memcpy(refs_backup, chunk->chunk_refs.data, refs_bytes);
     }
@@ -436,16 +408,14 @@ nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
         mgrs_bytes = chunk->managers.count * chunk->managers.element_size;
         mgrs_backup = nmo_arena_alloc(chunk->arena, mgrs_bytes, 8);
         if (mgrs_backup == NULL) {
-            return nmo_result_error(NMO_ERROR(NULL, NMO_ERR_NOMEM,
-                                              NMO_SEVERITY_ERROR,
-                                              "Failed to allocate chunk managers backup"));
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk managers backup");
         }
         memcpy(mgrs_backup, chunk->managers.data, mgrs_bytes);
     }
 
     int remapped_count = 0;
-    nmo_result_t result = remap_object_ids_recursive(chunk, remap, &remapped_count);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = remap_object_ids_recursive(chunk, remap, &remapped_count);
+    if (result != NMO_OK) {
         if (data_backup != NULL && chunk->data.data != NULL) {
             memcpy(chunk->data.data, data_backup, data_bytes);
         }
@@ -458,7 +428,8 @@ nmo_result_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
         if (mgrs_backup != NULL && chunk->managers.data != NULL) {
             memcpy(chunk->managers.data, mgrs_backup, mgrs_bytes);
         }
-        result = nmo_result_ok();
+        nmo_last_error_clear();
+        result = NMO_OK;
     }
 
     return result;

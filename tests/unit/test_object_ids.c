@@ -76,39 +76,39 @@ TEST(object_ids, write_and_read_object_ids) {
 
     // Read object ID 1
     nmo_object_id_t read_id = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)1001);
 
     // Read separator 1
     uint32_t data = 0;
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0xABCDEF00);
 
     // Read object ID 2
     parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)2002);
 
     // Read separator 2
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0x12345678);
 
     // Read object ID 0
     parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)0);
 
     // Read separator 3
     parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(data, 0xDEADBEEF);
 
     // Read object ID 3
     parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)3003);
 
     // Cleanup
@@ -127,10 +127,10 @@ TEST(object_ids, file_context_roundtrip) {
     nmo_id_remap_t* runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
 
-    nmo_result_t add_result = nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001, (nmo_object_id_t)5);
-    ASSERT_EQ(add_result.code, NMO_OK);
+    nmo_status_t add_result = nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001, (nmo_object_id_t)5);
+    ASSERT_EQ(add_result, NMO_OK);
     add_result = nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)2002, (nmo_object_id_t)6);
-    ASSERT_EQ(add_result.code, NMO_OK);
+    ASSERT_EQ(add_result, NMO_OK);
 
     nmo_chunk_file_context_t ctx;
     ctx.runtime_to_file = runtime_to_file;
@@ -154,9 +154,9 @@ TEST(object_ids, file_context_roundtrip) {
     nmo_id_remap_t* file_to_runtime = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(file_to_runtime);
     add_result = nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)5, (nmo_object_id_t)1001);
-    ASSERT_EQ(add_result.code, NMO_OK);
+    ASSERT_EQ(add_result, NMO_OK);
     add_result = nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)6, (nmo_object_id_t)2002);
-    ASSERT_EQ(add_result.code, NMO_OK);
+    ASSERT_EQ(add_result, NMO_OK);
 
     ctx.file_to_runtime = file_to_runtime;
 
@@ -165,11 +165,11 @@ TEST(object_ids, file_context_roundtrip) {
     nmo_chunk_parser_set_file_context(parser, &ctx);
 
     nmo_object_id_t read_id = 0;
-    nmo_result_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)1001);
     parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result.code, NMO_OK);
+    ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(read_id, (nmo_object_id_t)2002);
 
     nmo_chunk_parser_destroy(parser);

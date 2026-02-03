@@ -44,8 +44,8 @@ static void setup(void) {
     base_type.valid = true;
     base_type.base_type = NMO_GUID_NULL;
     
-    nmo_result_t res = nmo_type_registry_register(registry, &base_type);
-    ASSERT_EQ(NMO_OK, res.code);
+    nmo_status_t res = nmo_type_registry_register(registry, &base_type);
+    ASSERT_EQ(NMO_OK, res);
     id_base = nmo_type_registry_guid_to_type_id(registry, guid_base);
     ASSERT_NE(NMO_TYPE_ID_INVALID, id_base);
     
@@ -60,7 +60,7 @@ static void setup(void) {
     derived1_type.base_type = guid_base;
     
     res = nmo_type_registry_register(registry, &derived1_type);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     id_derived1 = nmo_type_registry_guid_to_type_id(registry, guid_derived1);
     ASSERT_NE(NMO_TYPE_ID_INVALID, id_derived1);
     
@@ -75,7 +75,7 @@ static void setup(void) {
     derived2_type.base_type = guid_derived1;
     
     res = nmo_type_registry_register(registry, &derived2_type);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     id_derived2 = nmo_type_registry_guid_to_type_id(registry, guid_derived2);
     ASSERT_NE(NMO_TYPE_ID_INVALID, id_derived2);
     
@@ -90,7 +90,7 @@ static void setup(void) {
     unrelated_type.base_type = NMO_GUID_NULL;
     
     res = nmo_type_registry_register(registry, &unrelated_type);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     id_unrelated = nmo_type_registry_guid_to_type_id(registry, guid_unrelated);
     ASSERT_NE(NMO_TYPE_ID_INVALID, id_unrelated);
     
@@ -172,9 +172,9 @@ TEST(type_compatibility, get_inheritance_chain_base) {
     
     nmo_type_id_t *chain = NULL;
     size_t count = 0;
-    nmo_result_t res = nmo_type_get_inheritance_chain(registry, id_base, &chain, &count, arena);
+    nmo_status_t res = nmo_type_get_inheritance_chain(registry, id_base, &chain, &count, arena);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, chain);
     ASSERT_EQ(1, count); /* Base has no parent, chain = [Base] */
     ASSERT_EQ(id_base, chain[0]);
@@ -187,9 +187,9 @@ TEST(type_compatibility, get_inheritance_chain_derived1) {
     
     nmo_type_id_t *chain = NULL;
     size_t count = 0;
-    nmo_result_t res = nmo_type_get_inheritance_chain(registry, id_derived1, &chain, &count, arena);
+    nmo_status_t res = nmo_type_get_inheritance_chain(registry, id_derived1, &chain, &count, arena);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, chain);
     ASSERT_EQ(2, count); /* Chain = [Derived1, Base] */
     ASSERT_EQ(id_derived1, chain[0]); /* Most derived first */
@@ -203,9 +203,9 @@ TEST(type_compatibility, get_inheritance_chain_derived2) {
     
     nmo_type_id_t *chain = NULL;
     size_t count = 0;
-    nmo_result_t res = nmo_type_get_inheritance_chain(registry, id_derived2, &chain, &count, arena);
+    nmo_status_t res = nmo_type_get_inheritance_chain(registry, id_derived2, &chain, &count, arena);
     
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_NE(NULL, chain);
     ASSERT_EQ(3, count); /* Chain = [Derived2, Derived1, Base] */
     ASSERT_EQ(id_derived2, chain[0]);
@@ -317,20 +317,20 @@ TEST(type_conversion, type_id_to_guid) {
     setup();
     
     nmo_guid_t result_guid;
-    nmo_result_t res;
+    nmo_status_t res;
     
     /* Valid conversions */
     res = nmo_type_registry_type_id_to_guid(registry, id_base, &result_guid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_TRUE(nmo_guid_equals(guid_base, result_guid));
     
     res = nmo_type_registry_type_id_to_guid(registry, id_derived1, &result_guid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_TRUE(nmo_guid_equals(guid_derived1, result_guid));
     
     /* Invalid ID */
     res = nmo_type_registry_type_id_to_guid(registry, NMO_TYPE_ID_INVALID, &result_guid);
-    ASSERT_NE(NMO_OK, res.code);
+    ASSERT_NE(NMO_OK, res);
     
     teardown();
 }
@@ -358,19 +358,19 @@ TEST(type_conversion, name_to_guid) {
     setup();
     
     nmo_guid_t result_guid;
-    nmo_result_t res;
+    nmo_status_t res;
     
     res = nmo_type_registry_name_to_guid(registry, "BaseType", &result_guid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_TRUE(nmo_guid_equals(guid_base, result_guid));
     
     res = nmo_type_registry_name_to_guid(registry, "Derived1Type", &result_guid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_TRUE(nmo_guid_equals(guid_derived1, result_guid));
     
     /* Invalid name */
     res = nmo_type_registry_name_to_guid(registry, "NonExistentType", &result_guid);
-    ASSERT_NE(NMO_OK, res.code);
+    ASSERT_NE(NMO_OK, res);
     
     teardown();
 }
@@ -420,8 +420,8 @@ TEST(type_conversion, class_id_conversions) {
     type_with_classid.valid = true;
     type_with_classid.base_type = NMO_GUID_NULL;
     
-    nmo_result_t res = nmo_type_registry_register(registry, &type_with_classid);
-    ASSERT_EQ(NMO_OK, res.code);
+    nmo_status_t res = nmo_type_registry_register(registry, &type_with_classid);
+    ASSERT_EQ(NMO_OK, res);
     
     nmo_type_id_t id_with_classid = nmo_type_registry_guid_to_type_id(registry, guid_with_classid);
     ASSERT_NE(NMO_TYPE_ID_INVALID, id_with_classid);
@@ -429,18 +429,18 @@ TEST(type_conversion, class_id_conversions) {
     /* ClassID -> GUID */
     nmo_guid_t result_guid;
     res = nmo_type_registry_class_id_to_guid(registry, 12345, &result_guid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_TRUE(nmo_guid_equals(guid_with_classid, result_guid));
     
     /* GUID -> ClassID */
     uint32_t result_classid;
     res = nmo_type_registry_guid_to_class_id(registry, guid_with_classid, &result_classid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(12345, result_classid);
     
     /* Type ID -> ClassID */
     res = nmo_type_registry_type_id_to_class_id(registry, id_with_classid, &result_classid);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(12345, result_classid);
     
     /* ClassID -> Type ID */
@@ -448,7 +448,7 @@ TEST(type_conversion, class_id_conversions) {
     
     /* Type without ClassID should fail */
     res = nmo_type_registry_guid_to_class_id(registry, guid_base, &result_classid);
-    ASSERT_NE(NMO_OK, res.code);
+    ASSERT_NE(NMO_OK, res);
     
     teardown();
 }
@@ -500,8 +500,8 @@ TEST(type_compatibility, derivation_out_of_order_registration) {
     child_type.valid = true;
     child_type.base_type = guid_parent;
 
-    nmo_result_t res = nmo_type_registry_register(local_registry, &child_type);
-    ASSERT_EQ(NMO_OK, res.code);
+    nmo_status_t res = nmo_type_registry_register(local_registry, &child_type);
+    ASSERT_EQ(NMO_OK, res);
 
     nmo_type_descriptor_t parent_type = {0};
     parent_type.guid = guid_parent;
@@ -513,7 +513,7 @@ TEST(type_compatibility, derivation_out_of_order_registration) {
     parent_type.base_type = NMO_GUID_NULL;
 
     res = nmo_type_registry_register(local_registry, &parent_type);
-    ASSERT_EQ(NMO_OK, res.code);
+    ASSERT_EQ(NMO_OK, res);
 
     nmo_type_id_t parent_id = nmo_type_registry_guid_to_type_id(local_registry, guid_parent);
     nmo_type_id_t child_id = nmo_type_registry_guid_to_type_id(local_registry, guid_child);

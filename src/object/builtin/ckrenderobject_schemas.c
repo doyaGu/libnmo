@@ -11,7 +11,7 @@
  * - Runtime rendering data (callbacks, Z-order) is NOT persisted
  * 
  * This schema correctly delegates to CKBeObject deserializer, maintaining
- * the parent chain functionality as required by design.md §6.4.
+ * the parent chain functionality as required by design.md ��6.4.
  */
 
 #include "object/nmo_ckrenderobject_schemas.h"
@@ -48,7 +48,7 @@
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckrenderobject_deserialize(
+nmo_status_t nmo_ckrenderobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -56,22 +56,20 @@ nmo_result_t nmo_ckrenderobject_deserialize(
 {
     (void)type;
     nmo_ckrenderobject_state_t *out_state = (nmo_ckrenderobject_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_deserialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_deserialize");
     }
 
     /* Initialize state */
     memset(out_state, 0, sizeof(nmo_ckrenderobject_state_t));
 
-    nmo_result_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* =============================================================================
@@ -91,7 +89,7 @@ nmo_result_t nmo_ckrenderobject_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_result_t nmo_ckrenderobject_serialize(
+nmo_status_t nmo_ckrenderobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -99,19 +97,17 @@ nmo_result_t nmo_ckrenderobject_serialize(
 {
     (void)type;
     const nmo_ckrenderobject_state_t *in_state = (const nmo_ckrenderobject_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (in_state == NULL || out_chunk == NULL) {
-        return nmo_result_error(NMO_ERROR(arena, NMO_ERR_INVALID_ARGUMENT,
-            NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_serialize"));
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_serialize");
     }
 
-    nmo_result_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result.code != NMO_OK) {
+    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    if (result != NMO_OK) {
         return result;
     }
 
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

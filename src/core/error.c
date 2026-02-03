@@ -1,13 +1,9 @@
-#include "core/nmo_error.h"
+﻿#include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
-
-#ifdef nmo_result_errorf
-#undef nmo_result_errorf
-#endif
 
 // Error message table
 static const char *error_messages[] = {
@@ -40,239 +36,138 @@ static const char *error_messages[] = {
     [NMO_ERR_CANCELLED] = "Operation cancelled",
 };
 
-nmo_error_t *nmo_error_create(nmo_arena_t *arena,
-                              nmo_error_code_t code,
-                              nmo_severity_t severity,
-                              const char *message,
-                              const char *file,
-                              int line) {
-    nmo_error_t *error;
-
-    // Allocate from arena if provided, otherwise use malloc
-    if (arena != NULL) {
-        error = (nmo_error_t *) nmo_arena_alloc(arena, sizeof(nmo_error_t), sizeof(void *));
-    } else {
-        nmo_allocator_t alloc = nmo_allocator_default();
-        error = (nmo_error_t *) nmo_alloc(&alloc, sizeof(nmo_error_t), sizeof(void *));
+const char *nmo_error_string(nmo_status_t code) {
+    if (code < 0) {
+        return "Unknown error";
     }
 
-    if (error == NULL) {
-        return NULL;
+    const size_t index = (size_t)code;
+    const size_t count = sizeof(error_messages) / sizeof(error_messages[0]);
+    if (index >= count || error_messages[index] == NULL) {
+        return "Unknown error";
     }
 
-    error->code = code;
-    error->severity = severity;
-    error->message = message;
-    error->file = file;
-    error->line = line;
-    error->cause = NULL;
-    error->owns_message = 0;
-    error->from_arena = arena != NULL ? 1u : 0u;
-    error->_reserved = 0;
-
-    return error;
+    return error_messages[index];
 }
 
-void nmo_error_add_cause(nmo_error_t *error, nmo_error_t *cause) {
-    if (error == NULL) {
-        return;
-    }
+/* =============================================================================
+ * TLS Last-Error Implementation
+ * ============================================================================= */
 
-    // Find end of chain
-    while (error->cause != NULL) {
-        error = error->cause;
-    }
+#define NMO_LAST_ERROR_MESSAGE_SIZE 1024
+#define NMO_LAST_ERROR_CHAIN_SIZE 4096
 
-    error->cause = cause;
+typedef struct nmo_last_error_state {
+    nmo_error_code_t code;
+    nmo_severity_t severity;
+    const char *file;
+    int line;
+    char message[NMO_LAST_ERROR_MESSAGE_SIZE];
+    char chain[NMO_LAST_ERROR_CHAIN_SIZE];
+} nmo_last_error_state_t;
+
+#if defined(_MSC_VER)
+static __declspec(thread) nmo_last_error_state_t tls_last_error = {0};
+#else
+static _Thread_local nmo_last_error_state_t tls_last_error = {0};
+#endif
+
+void nmo_last_error_clear(void) {
+    tls_last_error.code = NMO_OK;
+    tls_last_error.severity = NMO_SEVERITY_DEBUG;
+    tls_last_error.file = NULL;
+    tls_last_error.line = 0;
+    tls_last_error.message[0] = '\0';
+    tls_last_error.chain[0] = '\0';
 }
 
-void nmo_error_free(nmo_error_t *error) {
-    nmo_allocator_t alloc = nmo_allocator_default();
-
-    while (error != NULL) {
-        nmo_error_t *next = error->cause;
-        if (!error->from_arena) {
-            if (error->owns_message && error->message != NULL) {
-                nmo_free(&alloc, (void *)error->message);
-            }
-            nmo_free(&alloc, error);
-        }
-        error = next;
-    }
+nmo_error_code_t nmo_last_error_code(void) {
+    return tls_last_error.code;
 }
 
-const char *nmo_error_string(nmo_error_code_t code) {
-    if (code < 0 || code >= (nmo_error_code_t) (sizeof(error_messages) / sizeof(error_messages[0]))) {
-        return "Invalid error code";
-    }
-
-    return error_messages[code];
+nmo_severity_t nmo_last_error_severity(void) {
+    return tls_last_error.severity;
 }
 
-nmo_result_t nmo_result_ok(void) {
-    nmo_result_t result = {
-        .code = NMO_OK,
-        .error = NULL
-    };
-    return result;
+const char *nmo_last_error_file(void) {
+    return tls_last_error.file;
 }
 
-nmo_result_t nmo_result_error(nmo_error_t *error) {
-    nmo_result_t result = {
-        .code = error ? error->code : NMO_ERR_UNKNOWN,
-        .error = error
-    };
-    return result;
+int nmo_last_error_line(void) {
+    return tls_last_error.line;
 }
 
-static char *nmo_error_alloc_message(nmo_arena_t *arena, size_t length) {
-    size_t bytes = length + 1;
-    if (arena != NULL) {
-        return (char *) nmo_arena_alloc(arena, bytes, 1);
-    }
-    nmo_allocator_t alloc = nmo_allocator_default();
-    return (char *) nmo_alloc(&alloc, bytes, 1);
+const char *nmo_last_error_message(void) {
+    return tls_last_error.message;
 }
 
-static char *nmo_error_format_message(nmo_arena_t *arena,
-                                      const char *fmt,
-                                      va_list args,
-                                      int *message_allocated) {
-    if (message_allocated != NULL) {
-        *message_allocated = 0;
+size_t nmo_last_error_message_copy(char *dst, size_t cap) {
+    size_t len = strlen(tls_last_error.message);
+    if (cap > 0 && dst != NULL) {
+        size_t copy_len = (len < cap - 1) ? len : cap - 1;
+        memcpy(dst, tls_last_error.message, copy_len);
+        dst[copy_len] = '\0';
     }
+    return len;
+}
 
-    if (fmt == NULL) {
-        return NULL;
+size_t nmo_last_error_chain_copy(char *dst, size_t cap) {
+    size_t len = strlen(tls_last_error.chain);
+    if (cap > 0 && dst != NULL) {
+        size_t copy_len = (len < cap - 1) ? len : cap - 1;
+        memcpy(dst, tls_last_error.chain, copy_len);
+        dst[copy_len] = '\0';
     }
+    return len;
+}
 
+static void nmo_last_error_set_v(nmo_error_code_t code,
+                                  nmo_severity_t severity,
+                                  const char *file,
+                                  int line,
+                                  const char *fmt,
+                                  va_list args) {
+    tls_last_error.code = code;
+    tls_last_error.severity = severity;
+    tls_last_error.file = file;
+    tls_last_error.line = line;
+
+    // Format message
     va_list args_copy;
     va_copy(args_copy, args);
-    int needed = vsnprintf(NULL, 0, fmt, args_copy);
+    int msg_len = vsnprintf(tls_last_error.message, NMO_LAST_ERROR_MESSAGE_SIZE, fmt, args_copy);
     va_end(args_copy);
-
-    if (needed < 0) {
-        return NULL;
+    if (msg_len < 0) {
+        tls_last_error.message[0] = '\0';
+        msg_len = 0;
+    } else if (msg_len >= NMO_LAST_ERROR_MESSAGE_SIZE) {
+        msg_len = NMO_LAST_ERROR_MESSAGE_SIZE - 1;
     }
 
-    char *message = nmo_error_alloc_message(arena, (size_t)needed);
-    if (message == NULL) {
-        return NULL;
+    // Format chain (message + file:line + error code name)
+    int chain_len = 0;
+    const char *code_str = nmo_error_string(code);
+    if (file != NULL) {
+        chain_len = snprintf(tls_last_error.chain, NMO_LAST_ERROR_CHAIN_SIZE,
+                             "[%s] %s (%s:%d)",
+                             code_str, tls_last_error.message, file, line);
+    } else {
+        chain_len = snprintf(tls_last_error.chain, NMO_LAST_ERROR_CHAIN_SIZE,
+                             "[%s] %s",
+                             code_str, tls_last_error.message);
     }
-
-    (void)vsnprintf(message, (size_t)needed + 1, fmt, args);
-    if (message_allocated != NULL) {
-        *message_allocated = 1;
+    if (chain_len < 0 || chain_len >= NMO_LAST_ERROR_CHAIN_SIZE) {
+        tls_last_error.chain[NMO_LAST_ERROR_CHAIN_SIZE - 1] = '\0';
     }
-    return message;
 }
 
-static nmo_error_t *nmo_error_createf_at_v(nmo_arena_t *arena,
-                                           nmo_error_code_t code,
-                                           nmo_severity_t severity,
-                                           const char *file,
-                                           int line,
-                                           const char *fmt,
-                                           va_list args) {
-    if (fmt == NULL) {
-        return nmo_error_create(arena, code, severity,
-                                "Invalid error format string",
-                                file, line);
-    }
-
-    int message_allocated = 0;
-    char *message = nmo_error_format_message(arena, fmt, args, &message_allocated);
-    if (message == NULL) {
-        message = "Failed to format error message";
-    }
-
-    nmo_error_t *error = nmo_error_create(arena, code, severity, message, file, line);
-    if (error == NULL) {
-        if (message_allocated && arena == NULL) {
-            nmo_allocator_t alloc = nmo_allocator_default();
-            nmo_free(&alloc, message);
-        }
-        return NULL;
-    }
-
-    error->owns_message = message_allocated ? 1u : 0u;
-    error->from_arena = arena != NULL ? 1u : 0u;
-
-    return error;
-}
-
-nmo_result_t nmo_result_add_contextf_at(nmo_arena_t *arena,
-                                       nmo_result_t result,
-                                       const char *file,
-                                       int line,
-                                       const char *fmt, ...) {
-    if (result.code == NMO_OK) {
-        return result;
-    }
-
+void nmo_last_error_setf(nmo_error_code_t code,
+                          nmo_severity_t severity,
+                          const char *file,
+                          int line,
+                          const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    nmo_severity_t severity = NMO_SEVERITY_ERROR;
-    if (result.error != NULL) {
-        severity = result.error->severity;
-    }
-
-    nmo_error_t *ctx = nmo_error_createf_at_v(arena, result.code, severity, file, line, fmt, args);
+    nmo_last_error_set_v(code, severity, file, line, fmt, args);
     va_end(args);
-
-    if (ctx == NULL) {
-        return result;
-    }
-
-    nmo_error_add_cause(ctx, result.error);
-    return nmo_result_error(ctx);
-}
-
-nmo_error_t *nmo_error_createf_at(nmo_arena_t *arena,
-                                 nmo_error_code_t code,
-                                 nmo_severity_t severity,
-                                 const char *file,
-                                 int line,
-                                 const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    nmo_error_t *error = nmo_error_createf_at_v(arena, code, severity, file, line, fmt, args);
-    va_end(args);
-    return error;
-}
-
-nmo_result_t nmo_result_errorf_at(nmo_arena_t *arena,
-                                 nmo_error_code_t code,
-                                 nmo_severity_t severity,
-                                 const char *file,
-                                 int line,
-                                 const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    nmo_error_t *error = nmo_error_createf_at_v(arena, code, severity, file, line, fmt, args);
-    va_end(args);
-
-    if (error == NULL) {
-        nmo_result_t result = { code, NULL };
-        return result;
-    }
-
-    return nmo_result_error(error);
-}
-
-nmo_result_t nmo_result_errorf(nmo_arena_t *arena,
-                               nmo_error_code_t code,
-                               nmo_severity_t severity,
-                               const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    nmo_error_t *error = nmo_error_createf_at_v(arena, code, severity, NULL, 0, fmt, args);
-    va_end(args);
-
-    if (error == NULL) {
-        nmo_result_t result = { code, NULL };
-        return result;
-    }
-
-    return nmo_result_error(error);
 }

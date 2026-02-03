@@ -32,15 +32,15 @@ TEST(hash_set, basic_operations) {
     ASSERT_NOT_NULL(set);
 
     uint32_t key = 42;
-    ASSERT_EQ(NMO_OK, nmo_hash_set_insert(set, &key).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_set_insert(set, &key));
     ASSERT_EQ(1u, nmo_hash_set_get_count(set));
     ASSERT_EQ(1, nmo_hash_set_contains(set, &key));
 
     // Duplicate insert should report already exists
-    ASSERT_EQ(NMO_ERR_ALREADY_EXISTS, nmo_hash_set_insert(set, &key).code);
+    ASSERT_EQ(NMO_ERR_ALREADY_EXISTS, nmo_hash_set_insert(set, &key));
     ASSERT_EQ(1u, nmo_hash_set_get_count(set));
 
-    ASSERT_EQ(NMO_OK, nmo_hash_set_remove(set, &key).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_set_remove(set, &key));
     ASSERT_EQ(0u, nmo_hash_set_get_count(set));
     ASSERT_EQ(0, nmo_hash_set_contains(set, &key));
 
@@ -56,11 +56,11 @@ TEST(hash_set, growth_and_reserve) {
         NULL);
     ASSERT_NOT_NULL(set);
 
-    ASSERT_EQ(NMO_OK, nmo_hash_set_reserve(set, 64).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_set_reserve(set, 64));
     ASSERT_GE(nmo_hash_set_get_capacity(set), 64u);
 
     for (uint32_t i = 0; i < 100; ++i) {
-        ASSERT_EQ(NMO_OK, nmo_hash_set_insert(set, &i).code);
+        ASSERT_EQ(NMO_OK, nmo_hash_set_insert(set, &i));
     }
     ASSERT_EQ(100u, nmo_hash_set_get_count(set));
 
@@ -91,7 +91,7 @@ TEST(hash_set, iterate_and_lifecycle) {
     nmo_hash_set_set_lifecycle(set, &lifecycle);
 
     for (uint32_t i = 1; i <= 5; ++i) {
-        ASSERT_EQ(NMO_OK, nmo_hash_set_insert(set, &i).code);
+        ASSERT_EQ(NMO_OK, nmo_hash_set_insert(set, &i));
     }
 
     int count = 0;
@@ -100,7 +100,7 @@ TEST(hash_set, iterate_and_lifecycle) {
 
     // Removing triggers dispose
     uint32_t key = 3;
-    ASSERT_EQ(NMO_OK, nmo_hash_set_remove(set, &key).code);
+    ASSERT_EQ(NMO_OK, nmo_hash_set_remove(set, &key));
     ASSERT_EQ(3u, dispose_sum);
 
     nmo_hash_set_clear(set);

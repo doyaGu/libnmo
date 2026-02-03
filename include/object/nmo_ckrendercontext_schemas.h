@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file nmo_ckrendercontext_schemas.h
  * @brief CKRenderContext schema definitions
  */
@@ -17,7 +17,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_result nmo_result_t;
+
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /**
@@ -27,13 +27,13 @@ typedef struct nmo_ckrendercontext_state {
     nmo_ckobject_state_t base;
 } nmo_ckrendercontext_state_t;
 
-NMO_API nmo_result_t nmo_ckrendercontext_deserialize(
+NMO_API nmo_status_t nmo_ckrendercontext_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_result_t nmo_ckrendercontext_serialize(
+NMO_API nmo_status_t nmo_ckrendercontext_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
