@@ -11,6 +11,7 @@
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_id_remap.h"
+#include "format/nmo_chunk_api.h"
 #include "core/nmo_arena.h"
 #include "test_framework.h"
 #include <stdio.h>
@@ -177,7 +178,56 @@ TEST(object_ids, file_context_roundtrip) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_ids, chunk_api_file_context_maps_ids) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_id_remap_t* runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_id_remap_t* file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+
+    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001, (nmo_object_id_t)5), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)2002, (nmo_object_id_t)6), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)5, (nmo_object_id_t)1001), NMO_OK);
+    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)6, (nmo_object_id_t)2002), NMO_OK);
+
+    nmo_chunk_file_context_t file_ctx;
+    file_ctx.runtime_to_file = runtime_to_file;
+    file_ctx.file_to_runtime = file_to_runtime;
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(chunk, &file_ctx);
+
+    ASSERT_EQ(nmo_chunk_start_write(chunk), NMO_OK);
+    ASSERT_EQ(nmo_chunk_write_object_id(chunk, (nmo_object_id_t)1001), NMO_OK);
+    ASSERT_EQ(nmo_chunk_write_object_id(chunk, (nmo_object_id_t)0), NMO_OK);
+    ASSERT_EQ(nmo_chunk_write_object_id(chunk, (nmo_object_id_t)2002), NMO_OK);
+    nmo_chunk_close(chunk);
+
+    ASSERT_EQ(chunk->ids.count, 0u);
+    ASSERT_EQ(chunk->data.count, 3u);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_EQ(data[0], 5u);
+    ASSERT_EQ(data[1], (uint32_t)NMO_OBJECT_ID_INVALID);
+    ASSERT_EQ(data[2], 6u);
+
+    ASSERT_EQ(nmo_chunk_start_read(chunk), NMO_OK);
+    nmo_object_id_t read_id = 0;
+    ASSERT_EQ(nmo_chunk_read_object_id(chunk, &read_id), NMO_OK);
+    ASSERT_EQ(read_id, (nmo_object_id_t)1001);
+    ASSERT_EQ(nmo_chunk_read_object_id(chunk, &read_id), NMO_OK);
+    ASSERT_EQ(read_id, (nmo_object_id_t)0);
+    ASSERT_EQ(nmo_chunk_read_object_id(chunk, &read_id), NMO_OK);
+    ASSERT_EQ(read_id, (nmo_object_id_t)2002);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_ids, write_and_read_object_ids);
     REGISTER_TEST(object_ids, file_context_roundtrip);
+    REGISTER_TEST(object_ids, chunk_api_file_context_maps_ids);
 TEST_MAIN_END()

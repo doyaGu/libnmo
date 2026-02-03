@@ -73,6 +73,9 @@ typedef struct nmo_chunk {
 
     /* Parser state for read/write operations */
     void *parser_state; /**< Opaque parser state */
+
+    /* Optional file-context mapping (CKStateChunk::m_File equivalent) */
+    const struct nmo_chunk_file_context *file_context;
 } nmo_chunk_t;
 
 /**
@@ -132,6 +135,21 @@ NMO_API void nmo_chunk_destroy(nmo_chunk_t *chunk);
  * @return New chunk or NULL on error
  */
 NMO_API nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena);
+
+/**
+ * @brief Set file context used for object ID remap during read/write.
+ *
+ * When set, object IDs written/read through the high-level chunk API are
+ * translated via the provided file-context remap tables to match CKFile
+ * SaveFindObjectIndex/LoadFindObject behavior.
+ */
+NMO_API void nmo_chunk_set_file_context(nmo_chunk_t *chunk,
+                                        const struct nmo_chunk_file_context *ctx);
+
+/**
+ * @brief Get file context associated with a chunk (may be NULL).
+ */
+NMO_API const struct nmo_chunk_file_context *nmo_chunk_get_file_context(const nmo_chunk_t *chunk);
 
 // =============================================================================
 // SERIALIZATION

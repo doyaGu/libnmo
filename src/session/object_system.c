@@ -16,6 +16,7 @@
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_context.h"
 
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
@@ -375,7 +376,8 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_type_registry_t *type_reg,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
-    const nmo_shadow_storage_t *shadow_storage)
+    const nmo_shadow_storage_t *shadow_storage,
+    const nmo_chunk_file_context_t *file_ctx)
 {
     if (obj == NULL || arena == NULL || type_reg == NULL) {
         return NULL;
@@ -422,6 +424,9 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
                 empty_chunk->chunk_version = 7;
                 empty_chunk->data_version = 7;
                 empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+                if (file_ctx != NULL) {
+                    nmo_chunk_set_file_context(empty_chunk, file_ctx);
+                }
                 nmo_chunk_start_write(empty_chunk);
                 nmo_chunk_close(empty_chunk);
                 return empty_chunk;
@@ -451,6 +456,9 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         new_chunk->chunk_version = 7;
         new_chunk->data_version = 7;
         new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    }
+    if (file_ctx != NULL) {
+        nmo_chunk_set_file_context(new_chunk, file_ctx);
     }
 
     nmo_status_t result = nmo_chunk_start_write(new_chunk);
@@ -582,13 +590,58 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
         nmo_log(logger, NMO_LOG_INFO, "Phase 12 (object_system): Building ID remap table");
     }
 
-    nmo_id_remap_table_t *remap_table = nmo_build_remap_table(load_session);
+    nmo_id_remap_table_t *remap_table = NULL;
+    if (created_objects != NULL) {
+        remap_table = nmo_id_remap_create(scratch_arena);
+        if (remap_table == NULL) {
+            if (logger) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "  Failed to allocate ID remap table");
+            }
+            return NMO_ERR_NOMEM;
+        }
+
+        for (size_t i = 0; i < desc_count; i++) {
+            if (created_objects[i] != NULL) {
+                (void)nmo_id_remap_add(remap_table, (nmo_object_id_t)i, created_objects[i]->id);
+            }
+        }
+    }
+
     if (remap_table == NULL) {
         if (logger) {
             nmo_log(logger, NMO_LOG_WARN,
                     "  Failed to build ID remap table (may be empty session)");
         }
         return NMO_OK;
+    }
+
+    nmo_chunk_file_context_t *file_ctx = (nmo_chunk_file_context_t *)nmo_arena_alloc(
+        scratch_arena, sizeof(nmo_chunk_file_context_t), alignof(nmo_chunk_file_context_t));
+    if (file_ctx == NULL) {
+        if (logger) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "  Failed to allocate chunk file context");
+        }
+        return NMO_ERR_NOMEM;
+    }
+    file_ctx->file_to_runtime = remap_table;
+    file_ctx->runtime_to_file = NULL;
+
+    if (created_objects != NULL) {
+        for (size_t i = 0; i < desc_count; i++) {
+            if (created_objects[i] != NULL && created_objects[i]->chunk != NULL) {
+                nmo_chunk_set_file_context(created_objects[i]->chunk, file_ctx);
+            }
+        }
+    }
+
+    if (manager_data != NULL) {
+        for (size_t i = 0; i < manager_data_count; i++) {
+            if (manager_data[i].chunk != NULL) {
+                nmo_chunk_set_file_context(manager_data[i].chunk, file_ctx);
+            }
+        }
     }
 
     if (logger) {
@@ -603,6 +656,9 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     if (created_objects != NULL) {
         for (size_t i = 0; i < desc_count; i++) {
             if (created_objects[i] != NULL && created_objects[i]->chunk != NULL) {
+                if (created_objects[i]->chunk->file_context != NULL) {
+                    continue;
+                }
                 nmo_status_t remap_result = nmo_chunk_remap_object_ids(created_objects[i]->chunk,
                                                                        remap_table);
                 if (remap_result != NMO_OK) {
@@ -621,6 +677,9 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     if (manager_data != NULL) {
         for (size_t i = 0; i < manager_data_count; i++) {
             if (manager_data[i].chunk != NULL) {
+                if (manager_data[i].chunk->file_context != NULL) {
+                    continue;
+                }
                 nmo_status_t remap_result = nmo_chunk_remap_object_ids(manager_data[i].chunk,
                                                                        remap_table);
                 if (remap_result != NMO_OK) {
@@ -635,8 +694,6 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
             }
         }
     }
-
-    nmo_id_remap_table_destroy(remap_table);
 
     if (out_remap_errors != NULL) {
         *out_remap_errors = remap_error_count;

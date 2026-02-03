@@ -3,6 +3,7 @@
 
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_context.h"
 #include <string.h>
 
 // =============================================================================
@@ -93,6 +94,11 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
         return nmo_chunk_write_dword(chunk, 0u);
     }
 
+    if (chunk->file_context != NULL && sub->file_context == NULL) {
+        sub->file_context = chunk->file_context;
+        sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    }
+
     /* Set CHN flag and track sub-chunk */
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
     nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
@@ -131,6 +137,11 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
 
     if (sub == NULL) {
         return nmo_chunk_write_dword(chunk, 0u);
+    }
+
+    if (chunk->file_context != NULL && sub->file_context == NULL) {
+        sub->file_context = chunk->file_context;
+        sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
     }
 
     /* In CK2, WriteSubChunkSequence does not add entries to the chunk refs list.
@@ -221,6 +232,9 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     sub->chunk_version = (uint16_t) ((version_info >> 16) & 0xFFFFu);
     sub->chunk_options = 0;
     if (file_flag) sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    if (file_flag && chunk->file_context != NULL) {
+        sub->file_context = chunk->file_context;
+    }
 
     // Read data
     if (data_size > 0) {

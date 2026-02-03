@@ -3,6 +3,8 @@
 
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_context.h"
+#include "format/nmo_id_remap.h"
 #include <string.h>
 
 // =============================================================================
@@ -19,7 +21,13 @@ nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
     }
 
     /* CK2 behavior: Only track when count > 0 AND not in file mode */
-    if (count > 0 && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {
+    const nmo_chunk_file_context_t *ctx = NULL;
+    if (chunk != NULL && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+        ctx = chunk->file_context;
+    }
+    const int in_file_context = (ctx != NULL && ctx->runtime_to_file != NULL);
+
+    if (count > 0 && !in_file_context) {
         /* CK2: AddEntries adds -1 marker followed by position */
         uint32_t sentinel = 0xFFFFFFFFu;
         nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
@@ -41,7 +49,26 @@ nmo_status_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     // Sequence items should not add entries to the IDs list (CK2 behavior)
-    return nmo_chunk_write_int(chunk, (int32_t) id);
+    const nmo_chunk_file_context_t *ctx = NULL;
+    if (chunk != NULL && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+        ctx = chunk->file_context;
+    }
+
+    uint32_t encoded_value = (uint32_t) id;
+    if (ctx != NULL && ctx->runtime_to_file != NULL) {
+        if (id == 0) {
+            encoded_value = NMO_OBJECT_ID_INVALID;
+        } else {
+            nmo_object_id_t file_id = 0;
+            if (nmo_id_remap_lookup_id(ctx->runtime_to_file, id, &file_id) == NMO_OK) {
+                encoded_value = (uint32_t) file_id;
+            } else {
+                encoded_value = NMO_OBJECT_ID_INVALID;
+            }
+        }
+    }
+
+    return nmo_chunk_write_int(chunk, (int32_t) encoded_value);
 }
 
 nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {

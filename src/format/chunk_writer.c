@@ -261,8 +261,13 @@ static int encode_object_id(const nmo_chunk_writer_t *w,
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (!writer_has_file_context(w) || id == 0) {
+    if (!writer_has_file_context(w)) {
         *out_value = (uint32_t) id;
+        return NMO_OK;
+    }
+
+    if (id == 0) {
+        *out_value = NMO_OBJECT_ID_INVALID;
         return NMO_OK;
     }
 
@@ -271,7 +276,8 @@ static int encode_object_id(const nmo_chunk_writer_t *w,
                                                 id,
                                                 &file_id);
     if (remap != NMO_OK) {
-        return remap;
+        *out_value = NMO_OBJECT_ID_INVALID;
+        return NMO_OK;
     }
 
     *out_value = (uint32_t) file_id;

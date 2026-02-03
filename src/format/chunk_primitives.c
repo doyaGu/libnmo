@@ -3,6 +3,8 @@
 
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_context.h"
+#include "format/nmo_id_remap.h"
 #include <string.h>
 
 // =============================================================================
@@ -15,6 +17,62 @@ static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
 
 static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
     return NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+}
+
+static inline const nmo_chunk_file_context_t *get_file_context(const nmo_chunk_t *chunk) {
+    if (chunk == NULL) {
+        return NULL;
+    }
+    if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) == 0) {
+        return NULL;
+    }
+    return chunk->file_context;
+}
+
+static nmo_status_t encode_object_id(const nmo_chunk_t *chunk,
+                                     nmo_object_id_t id,
+                                     uint32_t *out_value) {
+    if (out_value == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_chunk_file_context_t *ctx = get_file_context(chunk);
+    if (ctx == NULL || ctx->runtime_to_file == NULL) {
+        *out_value = (uint32_t) id;
+        return NMO_OK;
+    }
+
+    if (id == 0) {
+        *out_value = NMO_OBJECT_ID_INVALID;
+        return NMO_OK;
+    }
+
+    nmo_object_id_t file_id = 0;
+    if (nmo_id_remap_lookup_id(ctx->runtime_to_file, id, &file_id) != NMO_OK) {
+        *out_value = NMO_OBJECT_ID_INVALID;
+        return NMO_OK;
+    }
+
+    *out_value = (uint32_t) file_id;
+    return NMO_OK;
+}
+
+static nmo_object_id_t decode_object_id(const nmo_chunk_t *chunk, uint32_t raw_id) {
+    const nmo_chunk_file_context_t *ctx = get_file_context(chunk);
+    if (ctx == NULL || ctx->file_to_runtime == NULL) {
+        return (nmo_object_id_t) raw_id;
+    }
+
+    if (raw_id == NMO_OBJECT_ID_INVALID) {
+        return 0;
+    }
+
+    nmo_object_id_t runtime_id = 0;
+    if (nmo_id_remap_lookup_id(ctx->file_to_runtime, (nmo_object_id_t) raw_id, &runtime_id) == NMO_OK) {
+        return runtime_id;
+    }
+
+    return 0;
 }
 
 // =============================================================================
@@ -402,9 +460,11 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    const nmo_chunk_file_context_t *ctx = get_file_context(chunk);
+    const int in_file_context = (ctx != NULL && ctx->runtime_to_file != NULL);
 
     // Track position if ID is non-zero (internal remap list)
-    if (id != 0) {
+    if (id != 0 && !in_file_context) {
         uint32_t pos = (uint32_t) state->current_pos;
         nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
         NMO_RETURN_IF_ERROR(list_result);
@@ -415,7 +475,10 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     }
 
     uint32_t *data_dwords = get_data_u32(chunk);
-    data_dwords[state->current_pos++] = id;
+    uint32_t encoded_value = 0;
+    result = encode_object_id(chunk, id, &encoded_value);
+    NMO_RETURN_IF_ERROR(result);
+    data_dwords[state->current_pos++] = encoded_value;
 
     // Update data_size to track written data
     if (state->current_pos > chunk->data.count) {
@@ -432,7 +495,8 @@ nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_i
 
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
-    *out_id = data_dwords[state->current_pos++];
+    uint32_t raw_id = data_dwords[state->current_pos++];
+    *out_id = decode_object_id(chunk, raw_id);
 
     NMO_RETURN_OK();
 }

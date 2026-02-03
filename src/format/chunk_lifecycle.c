@@ -96,6 +96,7 @@ void nmo_chunk_clear(nmo_chunk_t *chunk) {
 
         chunk->raw_data = NULL;
         chunk->raw_size = 0;
+        chunk->file_context = NULL;
 
         if (chunk->parser_state) {
             nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;

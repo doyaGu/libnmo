@@ -472,6 +472,7 @@ nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena) {
     chunk->chunk_version = NMO_CHUNK_VERSION_4;
     chunk->owns_data = 1;
     chunk->arena = arena;
+    chunk->file_context = NULL;
 
     return chunk;
 }
@@ -819,6 +820,7 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
     clone->chunk_version = src->chunk_version;
     clone->chunk_class_id = src->chunk_class_id;
     clone->chunk_options = src->chunk_options;
+    clone->file_context = src->file_context;
 
     clone->raw_data = src->raw_data;
     clone->raw_size = src->raw_size;
@@ -867,6 +869,21 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
     }
 
     return clone;
+}
+
+void nmo_chunk_set_file_context(nmo_chunk_t *chunk,
+                                const struct nmo_chunk_file_context *ctx) {
+    if (chunk == NULL) {
+        return;
+    }
+    chunk->file_context = ctx;
+    if (ctx != NULL) {
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    }
+}
+
+const struct nmo_chunk_file_context *nmo_chunk_get_file_context(const nmo_chunk_t *chunk) {
+    return chunk ? chunk->file_context : NULL;
 }
 
 

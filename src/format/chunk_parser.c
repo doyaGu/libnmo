@@ -779,15 +779,16 @@ nmo_status_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
     // VERSION1+ format: single DWORD, possibly remapped via file context
     if ((p->chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0 &&
         p->file_context != NULL &&
-        p->file_context->file_to_runtime != NULL &&
-        raw_id != 0) {
-        nmo_object_id_t remapped = 0;
-        nmo_status_t remap = nmo_id_remap_lookup_id(
-            p->file_context->file_to_runtime,
-            (nmo_object_id_t) raw_id,
-            &remapped);
-        if (remap == NMO_OK) {
-            resolved_id = remapped;
+        p->file_context->file_to_runtime != NULL) {
+        if (raw_id == NMO_OBJECT_ID_INVALID) {
+            resolved_id = 0;
+        } else {
+            nmo_object_id_t remapped = 0;
+            nmo_status_t remap = nmo_id_remap_lookup_id(
+                p->file_context->file_to_runtime,
+                (nmo_object_id_t) raw_id,
+                &remapped);
+            resolved_id = (remap == NMO_OK) ? remapped : 0;
         }
     }
 

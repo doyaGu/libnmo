@@ -34,6 +34,7 @@ typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 
 typedef struct nmo_object_desc nmo_object_desc_t;
 typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_chunk_file_context nmo_chunk_file_context_t;
 
 typedef struct nmo_object_data nmo_object_data_t;
 typedef struct nmo_manager_data nmo_manager_data_t;
@@ -116,13 +117,16 @@ NMO_API nmo_status_t nmo_object_system_deserialize_repository(
  * - a reused existing chunk (if unmodified), or
  * - a newly generated chunk in the provided arena, or
  * - NULL on allocation/parameter errors.
+ *
+ * @param file_ctx Optional file context for CKFile-style ID remap during write
  */
 NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,
     nmo_type_registry_t *type_reg,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
-    const nmo_shadow_storage_t *shadow_storage);
+    const nmo_shadow_storage_t *shadow_storage,
+    const nmo_chunk_file_context_t *file_ctx);
 
 /**
  * @brief Prepare loaded objects for manager dispatch.

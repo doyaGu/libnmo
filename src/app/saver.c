@@ -41,6 +41,7 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_object_system.h"
 #include "session/nmo_shadow_storage.h"
+#include "format/nmo_chunk_context.h"
 #include "type/type_system.h"
 #include <stdlib.h>
 #include <string.h>
@@ -99,6 +100,7 @@ struct nmo_save_context {
     nmo_object_desc_t *obj_descs;
     nmo_id_remap_plan_t *remap_plan;
     nmo_id_remap_table_t *file_index_remap;
+    nmo_chunk_file_context_t *chunk_file_ctx;
 
     /* Phase 1 outputs: Manager info */
     nmo_manager_data_t *manager_entries;
@@ -151,7 +153,8 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_type_registry_t *type_reg,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
-    const nmo_shadow_storage_t *shadow_storage);
+    const nmo_shadow_storage_t *shadow_storage,
+    const nmo_chunk_file_context_t *file_ctx);
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
 
@@ -695,6 +698,14 @@ static nmo_status_t save_build_remap_plan(nmo_save_context_t *ctx) {
         }
     }
 
+    ctx->chunk_file_ctx = (nmo_chunk_file_context_t *)nmo_arena_alloc(
+        ctx->arena, sizeof(nmo_chunk_file_context_t), alignof(nmo_chunk_file_context_t));
+    if (ctx->chunk_file_ctx == NULL) {
+        return SAVE_ERR(NMO_ERR_NOMEM, "Chunk file context allocation failed");
+    }
+    ctx->chunk_file_ctx->runtime_to_file = ctx->file_index_remap;
+    ctx->chunk_file_ctx->file_to_runtime = NULL;
+
     NMO_RETURN_OK();
 }
 
@@ -808,7 +819,7 @@ static nmo_status_t save_serialize_objects(nmo_save_context_t *ctx) {
 
         nmo_chunk_t *old_chunk = obj->chunk;
         obj->chunk = serialize_object_with_schema(
-            obj, ctx->type_reg, ctx->arena, ctx->logger, shadow_storage);
+            obj, ctx->type_reg, ctx->arena, ctx->logger, shadow_storage, ctx->chunk_file_ctx);
 
         if (obj->chunk == NULL) {
             nmo_log(ctx->logger, NMO_LOG_ERROR,
@@ -1432,10 +1443,11 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_type_registry_t *type_reg,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
-    const nmo_shadow_storage_t *shadow_storage)
+    const nmo_shadow_storage_t *shadow_storage,
+    const nmo_chunk_file_context_t *file_ctx)
 {
     return nmo_object_system_serialize_object_chunk(
-        obj, type_reg, arena, logger, shadow_storage);
+        obj, type_reg, arena, logger, shadow_storage, file_ctx);
 
 #if 0
     if (!obj || !arena || !type_reg) {
