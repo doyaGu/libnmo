@@ -18,11 +18,10 @@
  *   - Executes manager post-save hooks
  */
 
-#include "app/nmo_save_pipeline.h"
+#include "app/nmo_saver.h"
 #include "app/nmo_save_buffer.h"
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
-#include "app/nmo_parser.h"
 #include "app/nmo_plugin.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
@@ -536,12 +535,42 @@ nmo_save_stats_t nmo_save_context_get_stats(const nmo_save_context_t *ctx) {
     return ctx->stats;
 }
 
-nmo_status_t nmo_save_file_ex(
+nmo_status_t nmo_save_file(
     nmo_session_t *session,
     const char *path,
     const nmo_save_options_t *options)
 {
-    nmo_save_context_t *ctx = nmo_save_context_create(session, options);
+    if (session == NULL || path == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Resolve compression settings before handing off to the two-phase
+     * pipeline.  Priority (high → low):
+     *   1. NMO_SAVE_COMPRESSED flag  – forces both sections compressed.
+     *   2. Caller-supplied bools     – when opts != NULL and the flag is
+     *                                  absent the compress_header /
+     *                                  compress_data fields are used as-is.
+     *   3. Session file_info         – when opts == NULL compression is
+     *                                  inherited from the original file
+     *                                  (round-trip safe).
+     */
+    nmo_save_options_t resolved;
+    if (options == NULL) {
+        resolved = nmo_save_options_default();
+
+        /* Inherit compression from the session's original file */
+        nmo_file_info_t fi = nmo_session_get_file_info(session);
+        resolved.compress_header = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
+        resolved.compress_data   = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_DATA)   != 0;
+    } else {
+        resolved = *options;
+        if (resolved.flags & NMO_SAVE_COMPRESSED) {
+            resolved.compress_header = true;
+            resolved.compress_data   = true;
+        }
+    }
+
+    nmo_save_context_t *ctx = nmo_save_context_create(session, &resolved);
     if (ctx == NULL) {
         return SAVE_ERR(NMO_ERR_NOMEM, "Failed to create save context");
     }
@@ -940,16 +969,56 @@ static nmo_status_t save_build_header1(nmo_save_context_t *ctx) {
     }
 
     /* Build plugin dependencies */
-    uint32_t stored_plugin_count = 0;
-    nmo_plugin_dep_t *stored_plugin_deps = nmo_session_get_plugin_dependencies(
-        ctx->session, &stored_plugin_count);
+    {
+        uint32_t stored_plugin_count = 0;
+        nmo_plugin_dep_t *stored_plugin_deps = nmo_session_get_plugin_dependencies(
+            ctx->session, &stored_plugin_count);
 
-    if (stored_plugin_deps != NULL && stored_plugin_count > 0) {
-        ctx->plugin_deps = stored_plugin_deps;
-        ctx->plugin_count = stored_plugin_count;
-    } else {
-        ctx->plugin_deps = NULL;
-        ctx->plugin_count = 0;
+        if (stored_plugin_deps != NULL && stored_plugin_count > 0) {
+            ctx->plugin_deps = stored_plugin_deps;
+            ctx->plugin_count = stored_plugin_count;
+        } else {
+            nmo_plugin_manager_t *plugin_manager = nmo_context_get_plugin_manager(ctx->context);
+            size_t plugin_count = 0;
+            const nmo_plugin_instance_info_t *instances =
+                (plugin_manager != NULL)
+                    ? nmo_plugin_manager_get_plugins(plugin_manager, &plugin_count)
+                    : NULL;
+
+            if (instances != NULL && plugin_count > 0) {
+                nmo_plugin_dep_t *deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
+                    ctx->arena,
+                    plugin_count * sizeof(nmo_plugin_dep_t),
+                    alignof(nmo_plugin_dep_t));
+                if (deps == NULL) {
+                    return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
+                }
+
+                size_t written = 0;
+                for (size_t i = 0; i < plugin_count; ++i) {
+                    const nmo_plugin_t *plugin = instances[i].plugin;
+                    if (plugin == NULL || nmo_guid_is_null(plugin->guid)) {
+                        continue;
+                    }
+
+                    deps[written].guid = plugin->guid;
+                    deps[written].version = plugin->version;
+                    deps[written].category = plugin->category;
+                    written++;
+                }
+
+                if (written > 0) {
+                    ctx->plugin_deps = deps;
+                    ctx->plugin_count = written;
+                } else {
+                    ctx->plugin_deps = NULL;
+                    ctx->plugin_count = 0;
+                }
+            } else {
+                ctx->plugin_deps = NULL;
+                ctx->plugin_count = 0;
+            }
+        }
     }
 
     /* Build Header1 structure */

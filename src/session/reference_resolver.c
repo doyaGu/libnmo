@@ -12,6 +12,7 @@
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_logger.h"
+#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdalign.h>
@@ -318,12 +319,17 @@ int nmo_reference_resolver_resolve_all(
         if (resolver->pending_count > SIZE_MAX / sizeof(nmo_object_ref_t *)) {
             return NMO_ERR_NOMEM;
         }
-        nmo_object_ref_t **new_unresolved = (nmo_object_ref_t **)realloc(
-            resolver->unresolved_refs,
-            sizeof(nmo_object_ref_t *) * resolver->pending_count);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_object_ref_t **new_unresolved = (nmo_object_ref_t **)nmo_alloc(
+            &alloc,
+            sizeof(nmo_object_ref_t *) * resolver->pending_count,
+            _Alignof(nmo_object_ref_t *));
         if (!new_unresolved) {
             return NMO_ERR_NOMEM;
         }
+        memcpy(new_unresolved, resolver->unresolved_refs,
+               resolver->unresolved_count * sizeof(nmo_object_ref_t *));
+        nmo_free(&alloc, resolver->unresolved_refs);
         resolver->unresolved_refs = new_unresolved;
         resolver->unresolved_capacity = resolver->pending_count;
     }
@@ -396,7 +402,8 @@ void nmo_reference_resolver_destroy(
     nmo_reference_resolver_t *resolver
 ) {
     if (resolver != NULL) {
-        free(resolver->unresolved_refs);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_free(&alloc, resolver->unresolved_refs);
         resolver->unresolved_refs = NULL;
         resolver->unresolved_count = 0;
         resolver->unresolved_capacity = 0;

@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
 
     // Load file
     printf("Loading file: %s\n\n", filename);
-    int result = nmo_load_file(session, filename, NMO_LOAD_DEFAULT);
+    int result = nmo_load_file(session, filename, NULL);
 
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to load file (%s)\n",

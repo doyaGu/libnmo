@@ -13,6 +13,7 @@
 #include "session/nmo_object_index.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
+#include "core/nmo_allocator.h"
 #include "format/nmo_object.h"
 #include <stdlib.h>
 #include <string.h>
@@ -62,8 +63,9 @@ static void object_array_dispose(void *element, void *user_data) {
     if (arr == NULL) {
         return;
     }
-    free(arr->objects);
-    free(arr);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, arr->objects);
+    nmo_free(&alloc, arr);
 }
 
 static void object_index_prepare_lifecycle(nmo_hash_table_t *table) {
@@ -78,15 +80,16 @@ static void object_index_prepare_lifecycle(nmo_hash_table_t *table) {
  * Create object array
  */
 static object_array_t *object_array_create(size_t initial_capacity) {
-    object_array_t *arr = (object_array_t *)malloc(sizeof(object_array_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    object_array_t *arr = (object_array_t *)nmo_alloc(&alloc, sizeof(object_array_t), _Alignof(object_array_t));
     if (arr == NULL) {
         return NULL;
     }
     
     arr->capacity = initial_capacity > 0 ? initial_capacity : 8;
-    arr->objects = (nmo_object_t **)malloc(arr->capacity * sizeof(nmo_object_t *));
+    arr->objects = (nmo_object_t **)nmo_alloc(&alloc, arr->capacity * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
     if (arr->objects == NULL) {
-        free(arr);
+        nmo_free(&alloc, arr);
         return NULL;
     }
     
@@ -100,13 +103,17 @@ static object_array_t *object_array_create(size_t initial_capacity) {
 static int object_array_add(object_array_t *arr, nmo_object_t *obj) {
     if (arr->count >= arr->capacity) {
         size_t new_capacity = arr->capacity * 2;
-        nmo_object_t **new_objects = (nmo_object_t **)realloc(
-            arr->objects, 
-            new_capacity * sizeof(nmo_object_t *)
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_object_t **new_objects = (nmo_object_t **)nmo_alloc(
+            &alloc,
+            new_capacity * sizeof(nmo_object_t *),
+            _Alignof(nmo_object_t *)
         );
         if (new_objects == NULL) {
             return NMO_ERR_NOMEM;
         }
+        memcpy(new_objects, arr->objects, arr->count * sizeof(nmo_object_t *));
+        nmo_free(&alloc, arr->objects);
         arr->objects = new_objects;
         arr->capacity = new_capacity;
     }
@@ -379,7 +386,8 @@ nmo_object_index_t *nmo_object_index_create(
         return NULL;
     }
     
-    nmo_object_index_t *index = (nmo_object_index_t *)malloc(sizeof(nmo_object_index_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_object_index_t *index = (nmo_object_index_t *)nmo_alloc(&alloc, sizeof(nmo_object_index_t), _Alignof(nmo_object_index_t));
     if (index == NULL) {
         return NULL;
     }
@@ -420,8 +428,9 @@ void nmo_object_index_destroy(nmo_object_index_t *index) {
         nmo_hash_table_destroy(index->guid_index);
     }
     
-    free(index->last_query_result);
-    free(index);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, index->last_query_result);
+    nmo_free(&alloc, index);
 }
 
 /**
@@ -786,12 +795,13 @@ nmo_object_t **nmo_object_index_get_by_name_all(
             
             /* Allocate result array (owned by index, freed on next filtered query or destroy) */
             nmo_object_index_t *mutable_index = (nmo_object_index_t *)index;
-            free(mutable_index->last_query_result);
+            nmo_allocator_t alloc = nmo_allocator_default();
+            nmo_free(&alloc, mutable_index->last_query_result);
             mutable_index->last_query_result = NULL;
             mutable_index->last_query_count = 0;
             mutable_index->last_query_class = class_id;
 
-            nmo_object_t **result = (nmo_object_t **)malloc(matching * sizeof(nmo_object_t *));
+            nmo_object_t **result = (nmo_object_t **)nmo_alloc(&alloc, matching * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
             if (result == NULL) {
                 return NULL;
             }

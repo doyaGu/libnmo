@@ -159,10 +159,10 @@ NMO_DECLARE_TYPE(Vector3, CKPGUID_VECTOR, nmo_vector_t) {
 };
 
 /* Registration function */
-nmo_result_t register_vector3_type(nmo_type_registry_t *registry) {
+nmo_status_t register_vector3_type(nmo_type_registry_t *registry) {
     NMO_REGISTER_TYPE(registry, Vector3, CKPGUID_VECTOR, nmo_vector_t,
                       NMO_TYPE_STRUCT | NMO_TYPE_SERIALIZABLE | NMO_TYPE_ANIMATABLE);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -189,9 +189,9 @@ NMO_DECLARE_ENUM(BlendMode) {
 
 #define CKPGUID_BLEND_MODE CKPGUID(0x00000100, 0x00000000)
 
-nmo_result_t register_blend_mode_type(nmo_type_registry_t *registry) {
+nmo_status_t register_blend_mode_type(nmo_type_registry_t *registry) {
     NMO_REGISTER_ENUM(registry, BlendMode, CKPGUID_BLEND_MODE, blend_mode_t);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -203,7 +203,7 @@ typedef struct nmo_entity_id {
 } nmo_entity_id_t;
 
 /* Manually create descriptor for derived type */
-nmo_result_t register_entity_id_type(nmo_type_registry_t *registry) {
+nmo_status_t register_entity_id_type(nmo_type_registry_t *registry) {
     static const nmo_type_field_t EntityID_fields[] = {
         TYPE_FIELD(id, CKPGUID_INT, nmo_entity_id_t)
     };
@@ -253,10 +253,10 @@ NMO_DECLARE_TYPE(Transform, CKPGUID(0x00000200, 0x00000000), nmo_transform_t) {
     TYPE_FIELD(scale, CKPGUID_VECTOR, nmo_transform_t)
 };
 
-nmo_result_t register_transform_type(nmo_type_registry_t *registry) {
+nmo_status_t register_transform_type(nmo_type_registry_t *registry) {
     NMO_REGISTER_TYPE(registry, Transform, CKPGUID(0x00000200, 0x00000000),
                       nmo_transform_t, NMO_TYPE_STRUCT | NMO_TYPE_SERIALIZABLE);
-    return nmo_result_ok();
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -283,7 +283,7 @@ NMO_DECLARE_TYPE(MyParticle, MY_PARTICLE_GUID, my_particle_t) {
     TYPE_FIELD(flags, CKPGUID_INT, my_particle_t)
 };
 
-nmo_result_t register_my_particle_type(nmo_type_registry_t *registry) {
+nmo_status_t register_my_particle_type(nmo_type_registry_t *registry) {
     nmo_type_descriptor_t desc = NMO_TYPE_DESCRIPTOR(
         MyParticle, MY_PARTICLE_GUID, my_particle_t,
         MY_PLUGIN_TYPE_PARTICLE | NMO_TYPE_SERIALIZABLE | NMO_TYPE_PLUGIN

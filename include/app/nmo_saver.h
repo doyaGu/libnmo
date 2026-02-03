@@ -1,6 +1,6 @@
 ﻿/**
- * @file nmo_save_pipeline.h
- * @brief Two-phase commit save pipeline (Phase 1.4)
+ * @file nmo_saver.h
+ * @brief Save pipeline API
  *
  * Implements the Two-Phase Commit architecture for file saving:
  *
@@ -23,8 +23,8 @@
  * - **Atomicity**: Partial writes don't corrupt files
  */
 
-#ifndef NMO_SAVE_PIPELINE_H
-#define NMO_SAVE_PIPELINE_H
+#ifndef NMO_SAVER_H
+#define NMO_SAVER_H
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
@@ -60,6 +60,19 @@ typedef bool (*nmo_save_progress_callback_t)(
     nmo_save_phase_t phase,
     float progress,
     const char *status_text);
+
+/**
+ * @brief Save flags
+ */
+typedef enum nmo_save_flags {
+    NMO_SAVE_DEFAULT          = 0,
+    NMO_SAVE_AS_OBJECTS       = 0x0001, /**< Save as referenced objects */
+    NMO_SAVE_COMPRESSED       = 0x0002, /**< Force compression on both sections */
+    NMO_SAVE_SEQUENTIAL_IDS   = 0x0004, /**< Use sequential file IDs */
+    NMO_SAVE_INCLUDE_MANAGERS = 0x0008, /**< Include manager state */
+    NMO_SAVE_VALIDATE_BEFORE  = 0x0010, /**< Validate before writing */
+    NMO_SAVE_STRIP_INCLUDED_FILES = 0x0020, /**< Drop included payloads during save */
+} nmo_save_flags_t;
 
 /**
  * @brief Save pipeline options
@@ -176,26 +189,23 @@ NMO_API nmo_status_t nmo_save_phase2_commit(nmo_save_context_t *ctx, const char 
 NMO_API nmo_save_stats_t nmo_save_context_get_stats(const nmo_save_context_t *ctx);
 
 /**
- * @brief Convenience function: two-phase save in one call
+ * @brief Save file
  *
- * Equivalent to:
- *   ctx = nmo_save_context_create(session, options);
- *   nmo_save_phase1_layout(ctx);
- *   nmo_save_phase2_commit(ctx, path);
- *   nmo_save_context_destroy(ctx);
+ * Two-phase commit: Layout & Serialize to memory, then Pack & Commit
+ * atomically to disk.  When @p opts is NULL compression settings are
+ * inherited from the session's original file (round-trip safe).
  *
- * @param session Session to save
- * @param path Output file path
- * @param options Save options (NULL for defaults)
+ * @param session Session to save from
+ * @param path    Output file path
+ * @param opts    Save options (NULL for round-trip-safe defaults)
  * @return NMO_OK on success
  */
-NMO_API nmo_status_t nmo_save_file_ex(
-    nmo_session_t *session,
-    const char *path,
-    const nmo_save_options_t *options);
+NMO_API int nmo_save_file(nmo_session_t *session,
+                          const char *path,
+                          const nmo_save_options_t *opts);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* NMO_SAVE_PIPELINE_H */
+#endif /* NMO_SAVER_H */

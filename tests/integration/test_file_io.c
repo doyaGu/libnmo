@@ -2,6 +2,7 @@
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
+#include "app/nmo_saver.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h" // Include for nmo_object_t definition
 #include "core/nmo_error.h"
@@ -61,7 +62,7 @@ static void test_file_io_roundtrip(void) {
     ASSERT_NOT_NULL(save_session);
 
     // 2. Save the session to a file
-    int save_result = nmo_save_file(save_session, test_filename, 0);
+    int save_result = nmo_save_file(save_session, test_filename, NULL);
     ASSERT_EQ(save_result, NMO_OK);
 
     nmo_session_destroy(save_session);
@@ -75,7 +76,7 @@ static void test_file_io_roundtrip(void) {
     ASSERT_NOT_NULL(load_session);
 
     // 4. Load the file
-    int load_result = nmo_load_file(load_session, test_filename, 0);
+    int load_result = nmo_load_file(load_session, test_filename, NULL);
     ASSERT_EQ(load_result, NMO_OK);
 
     // 5. Verify the loaded data

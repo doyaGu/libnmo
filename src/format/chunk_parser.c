@@ -1,6 +1,7 @@
 ﻿#include "format/nmo_chunk_parser.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
+#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -68,8 +69,9 @@ nmo_chunk_parser_t *nmo_chunk_parser_create(nmo_chunk_t *chunk) {
         return NULL;
     }
 
-    // Allocate parser (use malloc for now, could use arena later)
-    nmo_chunk_parser_t *p = (nmo_chunk_parser_t *) malloc(sizeof(nmo_chunk_parser_t));
+    // Allocate parser using default allocator
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_chunk_parser_t *p = (nmo_chunk_parser_t *) nmo_alloc(&alloc, sizeof(nmo_chunk_parser_t), _Alignof(nmo_chunk_parser_t));
     if (p == NULL) {
         return NULL;
     }
@@ -101,7 +103,8 @@ void nmo_chunk_parser_set_file_context(nmo_chunk_parser_t *p,
 
 void nmo_chunk_parser_destroy(nmo_chunk_parser_t *p) {
     if (p != NULL) {
-        free(p);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_free(&alloc, p);
     }
 }
 

@@ -5,6 +5,7 @@
 
 #include "format/nmo_header1.h"
 #include "core/nmo_utils.h"
+#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -458,7 +459,9 @@ static nmo_status_t serialize_plugin_deps(
     if (!nmo_safe_mul_size(header->plugin_dep_count, sizeof(uint32_t), &ordering_bytes)) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Plugin category allocation overflow");
     }
-    uint32_t *category_ordering = (uint32_t *) malloc(ordering_bytes);
+    
+    nmo_allocator_t alloc = nmo_allocator_default();
+    uint32_t *category_ordering = (uint32_t *) nmo_alloc(&alloc, ordering_bytes, _Alignof(uint32_t));
     if (category_ordering == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate plugin category order");
     }
@@ -530,7 +533,7 @@ static nmo_status_t serialize_plugin_deps(
         }
     }
 cleanup:
-    free(category_ordering);
+    nmo_free(&alloc, category_ordering);
     return result;
 }
 
@@ -569,7 +572,8 @@ static nmo_status_t calculate_serialize_size(const nmo_header1_t *header, size_t
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category ordering)");
         }
 
-        uint32_t *category_ordering = (uint32_t *) malloc(ordering_bytes);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        uint32_t *category_ordering = (uint32_t *) nmo_alloc(&alloc, ordering_bytes, _Alignof(uint32_t));
         if (category_ordering != NULL) {
             for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
                 uint32_t cat = header->plugin_deps[i].category;
@@ -594,18 +598,18 @@ static nmo_status_t calculate_serialize_size(const nmo_header1_t *header, size_t
                     }
                 }
                 if (!nmo_safe_add_size(size, sizeof(uint32_t) * 2u, &size)) {
-                    free(category_ordering);
+                    nmo_free(&alloc, category_ordering);
                     NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category header)");
                 }
                 size_t guid_bytes = 0;
                 if (!nmo_safe_mul_size(cat_count, sizeof(nmo_guid_t), &guid_bytes) ||
                     !nmo_safe_add_size(size, guid_bytes, &size)) {
-                    free(category_ordering);
+                    nmo_free(&alloc, category_ordering);
                     NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category GUIDs)");
                 }
             }
 
-            free(category_ordering);
+            nmo_free(&alloc, category_ordering);
         } else {
             /* Fallback: assume each dep is its own category (over-allocate) */
             size_t per_dep = sizeof(uint32_t) + sizeof(uint32_t) + sizeof(nmo_guid_t);

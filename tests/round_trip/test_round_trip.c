@@ -6,6 +6,7 @@
 #include "../test_framework.h"
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
+#include "app/nmo_saver.h"
 #include "app/nmo_session.h"
 #include "app/nmo_comparison.h"
 #include <stdio.h>
@@ -50,7 +51,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    int result = nmo_load_file(load1, input_path, NMO_LOAD_DEFAULT);
+    int result = nmo_load_file(load1, input_path, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Load failed for %s (error %d)\n", input_path, result);
         nmo_session_destroy(load1);
@@ -58,7 +59,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    result = nmo_save_file(load1, temp_file, NMO_SAVE_DEFAULT);
+    result = nmo_save_file(load1, temp_file, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Save failed for %s (error %d)\n", temp_file, result);
         nmo_session_destroy(load1);
@@ -76,7 +77,7 @@ static int run_round_trip(const char *input_path) {
         return 1;
     }
 
-    result = nmo_load_file(load2, temp_file, NMO_LOAD_DEFAULT);
+    result = nmo_load_file(load2, temp_file, NULL);
     if (result != NMO_OK) {
         printf("  FAILED: Reload failed for %s (error %d)\n", temp_file, result);
         nmo_session_destroy(load2);

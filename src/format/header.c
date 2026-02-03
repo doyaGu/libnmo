@@ -4,6 +4,7 @@
  */
 
 #include "format/nmo_header.h"
+#include "core/nmo_allocator.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,7 +19,9 @@ struct nmo_header {
  * Create header context
  */
 nmo_header_t *nmo_header_create(void) {
-    nmo_header_t *header = (nmo_header_t *)malloc(sizeof(nmo_header_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    
+    nmo_header_t *header = (nmo_header_t *)nmo_alloc(&alloc, sizeof(nmo_header_t), _Alignof(nmo_header_t));
     if (header == NULL) {
         return NULL;
     }
@@ -37,7 +40,8 @@ nmo_header_t *nmo_header_create(void) {
  */
 void nmo_header_destroy(nmo_header_t *header) {
     if (header != NULL) {
-        free(header);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_free(&alloc, header);
     }
 }
 

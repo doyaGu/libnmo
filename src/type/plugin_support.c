@@ -8,7 +8,7 @@
  */
 
 #include "type/type_system.h"
-#include "app/nmo_plugin.h"
+#include "type/nmo_plugin_types.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"

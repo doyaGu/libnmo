@@ -145,10 +145,12 @@ void nmo_inspect_collect_chunk_warnings(const inspect_state_t *state,
                 if (rc != 0) {
                     snprintf(message, sizeof(message), "Chunk validation failed: rc=%d", rc);
                 } else {
-                    snprintf(message,
-                             sizeof(message),
-                             "Chunk invalid: %s",
-                             result.error_message[0] ? result.error_message : "unknown");
+                    {
+                        const char *err = result.error_message[0] ? result.error_message : "unknown";
+                        const size_t prefix = sizeof("Chunk invalid: ") - 1;
+                        const size_t avail = sizeof(message) > prefix + 1 ? sizeof(message) - prefix - 1 : 0;
+                        snprintf(message, sizeof(message), "Chunk invalid: %.*s", (int)avail, err);
+                    }
                 }
                 if (!nmo_inspect_warning_list_add(warnings, "ChunkInvalid", message, nmo_object_get_id(object))) {
                     nmo_inspect_log(opts, LOG_ERROR, "Failed to record chunk warning");

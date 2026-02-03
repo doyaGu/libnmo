@@ -149,6 +149,7 @@ nmo_status_t nmo_ckbeobject_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
+    (void)type;
     nmo_ckbeobject_state_t *out_state = (nmo_ckbeobject_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 

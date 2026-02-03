@@ -139,7 +139,7 @@ static int test_basic_round_trip(void) {
     };
     nmo_session_set_file_info(save_session, &file_info);
 
-    if (nmo_save_file(save_session, test_file, NMO_SAVE_DEFAULT) != NMO_OK) {
+    if (nmo_save_file(save_session, test_file, NULL) != NMO_OK) {
         nmo_session_destroy(save_session);
         nmo_context_release(ctx);
         unlink(test_file);
@@ -156,7 +156,7 @@ static int test_basic_round_trip(void) {
         return 1;
     }
 
-    if (nmo_load_file(load_session, test_file, NMO_LOAD_DEFAULT) != NMO_OK) {
+    if (nmo_load_file(load_session, test_file, NULL) != NMO_OK) {
         nmo_session_destroy(load_session);
         nmo_context_release(ctx);
         unlink(test_file);
@@ -245,12 +245,12 @@ static int test_manager_hooks(void) {
     };
     nmo_session_set_file_info(save_session, &file_info);
 
-    nmo_save_file(save_session, test_file, NMO_SAVE_DEFAULT);
+    nmo_save_file(save_session, test_file, NULL);
     nmo_session_destroy(save_session);
 
     /* Load phase */
     nmo_session_t* load_session = nmo_session_create(ctx);
-    nmo_load_file(load_session, test_file, NMO_LOAD_DEFAULT);
+    nmo_load_file(load_session, test_file, NULL);
     nmo_session_destroy(load_session);
 
     nmo_context_release(ctx);

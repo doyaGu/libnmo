@@ -79,6 +79,8 @@ nmo_status_t nmo_ckobject_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
+    (void)type;
+    (void)context;
     nmo_ckobject_state_t *out_state = (nmo_ckobject_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {

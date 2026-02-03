@@ -106,12 +106,12 @@ static int test_mmap_load_files(void) {
         printf("  Loading (mmap): %s... ", filename);
         fflush(stdout);
 
-        int result = nmo_load_file_ex(session, filename, &opts);
+        int result = nmo_load_file(session, filename, &opts);
         if (result == NMO_OK) {
-            printf("âœ?SUCCESS\n");
+            printf("ï¿½?SUCCESS\n");
             files_loaded++;
         } else {
-            printf("âœ?FAILED (error %d)\n", result);
+            printf("ï¿½?FAILED (error %d)\n", result);
         }
 
         nmo_session_destroy(session);

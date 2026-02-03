@@ -9,6 +9,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
+#include "core/nmo_allocator.h"
 #include "yyjson.h"
 #include <string.h>
 #include <ctype.h>
@@ -280,8 +281,14 @@ int nmo_inspector_validate_chunk(
             result->sub_chunks_valid = false;
             result->error_count += sub_result.error_count;
             result->warning_count += sub_result.warning_count;
-            snprintf(result->error_message, sizeof(result->error_message),
-                    "Sub-chunk %u validation failed: %s", i, sub_result.error_message);
+            {
+                const int prefix_len = snprintf(NULL, 0, "Sub-chunk %u validation failed: ", i);
+                const size_t avail = (prefix_len >= 0 && (size_t)prefix_len < sizeof(result->error_message))
+                    ? sizeof(result->error_message) - (size_t)prefix_len - 1u : 0u;
+                snprintf(result->error_message, sizeof(result->error_message),
+                        "Sub-chunk %u validation failed: %.*s", i, (int)avail,
+                        sub_result.error_message);
+            }
             return 0;
         }
     }
@@ -451,14 +458,15 @@ static yyjson_mut_val* chunk_to_json(
         size_t temp_size = 0;
         const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(chunk, &temp_size);
         if (data != NULL) {
-            char *hex = (char*)malloc(data_size * 2 + 1);
+            nmo_allocator_t alloc = nmo_allocator_default();
+            char *hex = (char*)nmo_alloc(&alloc, data_size * 2 + 1, 1);
             if (hex) {
                 for (size_t i = 0; i < data_size; i++) {
                     sprintf(hex + i * 2, "%02x", data[i]);
                 }
                 hex[data_size * 2] = '\0';
                 yyjson_mut_obj_add_strcpy(doc, obj, "data_hex", hex);
-                free(hex);
+                nmo_free(&alloc, hex);
             }
         }
     }
@@ -499,10 +507,11 @@ int nmo_inspector_export_json(
     
     /* Write to stream */
     yyjson_write_flag flg = YYJSON_WRITE_PRETTY | YYJSON_WRITE_ESCAPE_UNICODE;
+    nmo_allocator_t alloc = nmo_allocator_default();
     char *json = yyjson_mut_write(doc, flg, NULL);
     if (json) {
         fputs(json, stream);
-        free(json);
+        nmo_free(&alloc, json);
     }
     
     yyjson_mut_doc_free(doc);

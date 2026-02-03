@@ -6,6 +6,7 @@
 #include "session/nmo_shadow_storage.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
+#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdalign.h>
 #include <stdlib.h>
@@ -32,7 +33,8 @@ struct nmo_shadow_storage {
 static void shadow_entry_dispose(void *value, void *user_data) {
     (void)user_data;
     shadow_entry_t *entry = (shadow_entry_t *)value;
-    free(entry->data);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, entry->data);
     entry->data = NULL;
     entry->size = 0;
 }
@@ -144,7 +146,8 @@ int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
     }
 
     /* Allocate and copy tail data (freed on update/remove) */
-    void *copy = malloc(tail_size);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    void *copy = nmo_alloc(&alloc, tail_size, 1);
     if (copy == NULL) {
         return NMO_ERR_NOMEM;
     }
@@ -158,7 +161,7 @@ int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
 
     nmo_status_t result = nmo_hash_table_insert(storage->chunk_tails, &chunk_id, &entry);
     if (result != NMO_OK) {
-        free(copy);
+        nmo_free(&alloc, copy);
         return result;
     }
 

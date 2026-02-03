@@ -50,10 +50,12 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         return NULL;
     }
     
-    nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)calloc(1, sizeof(nmo_io_mmap_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)nmo_alloc(&alloc, sizeof(nmo_io_mmap_t), _Alignof(nmo_io_mmap_t));
     if (mmap_ctx == NULL) {
         return NULL;
     }
+    memset(mmap_ctx, 0, sizeof(nmo_io_mmap_t));
     
     mmap_ctx->file_handle = INVALID_HANDLE_VALUE;
     mmap_ctx->mapping_handle = NULL;
@@ -71,7 +73,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     );
     
     if (mmap_ctx->file_handle == INVALID_HANDLE_VALUE) {
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -79,7 +81,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     LARGE_INTEGER file_size;
     if (!GetFileSizeEx(mmap_ctx->file_handle, &file_size)) {
         CloseHandle(mmap_ctx->file_handle);
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -104,7 +106,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     
     if (mmap_ctx->mapping_handle == NULL) {
         CloseHandle(mmap_ctx->file_handle);
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -120,7 +122,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     if (mmap_ctx->data == NULL) {
         CloseHandle(mmap_ctx->mapping_handle);
         CloseHandle(mmap_ctx->file_handle);
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -144,8 +146,9 @@ void nmo_io_mmap_close(nmo_io_mmap_t *mmap_ctx) {
     if (mmap_ctx->file_handle != INVALID_HANDLE_VALUE) {
         CloseHandle(mmap_ctx->file_handle);
     }
-    
-    free(mmap_ctx);
+
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, mmap_ctx);
 }
 
 int nmo_io_mmap_supported(void) {
@@ -159,10 +162,12 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
         return NULL;
     }
     
-    nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)calloc(1, sizeof(nmo_io_mmap_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_io_mmap_t *mmap_ctx = (nmo_io_mmap_t *)nmo_alloc(&alloc, sizeof(nmo_io_mmap_t), _Alignof(nmo_io_mmap_t));
     if (mmap_ctx == NULL) {
         return NULL;
     }
+    memset(mmap_ctx, 0, sizeof(nmo_io_mmap_t));
     
     mmap_ctx->fd = -1;
     mmap_ctx->data = MAP_FAILED;
@@ -170,7 +175,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     /* Open file for reading */
     mmap_ctx->fd = open(path, O_RDONLY);
     if (mmap_ctx->fd < 0) {
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -178,7 +183,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     struct stat st;
     if (fstat(mmap_ctx->fd, &st) != 0) {
         close(mmap_ctx->fd);
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -195,7 +200,7 @@ nmo_io_mmap_t *nmo_io_mmap_open(const char *path) {
     mmap_ctx->data = mmap(NULL, mmap_ctx->size, PROT_READ, MAP_PRIVATE, mmap_ctx->fd, 0);
     if (mmap_ctx->data == MAP_FAILED) {
         close(mmap_ctx->fd);
-        free(mmap_ctx);
+        nmo_free(&alloc, mmap_ctx);
         return NULL;
     }
     
@@ -215,8 +220,9 @@ void nmo_io_mmap_close(nmo_io_mmap_t *mmap_ctx) {
     if (mmap_ctx->fd >= 0) {
         close(mmap_ctx->fd);
     }
-    
-    free(mmap_ctx);
+
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, mmap_ctx);
 }
 
 int nmo_io_mmap_supported(void) {

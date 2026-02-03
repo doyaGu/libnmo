@@ -48,8 +48,7 @@ void nmo_comparison_add_diff(nmo_comparison_result_t *result,
     entry->object_id = object_id;
     
     if (context != NULL) {
-        strncpy(entry->context, context, NMO_DIFF_CONTEXT_MAX - 1);
-        entry->context[NMO_DIFF_CONTEXT_MAX - 1] = '\0';
+        snprintf(entry->context, NMO_DIFF_CONTEXT_MAX, "%s", context);
     } else {
         entry->context[0] = '\0';
     }

@@ -4,6 +4,7 @@
  */
 
 #include "format/nmo_stb_adapter.h"
+#include "core/nmo_allocator.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -47,7 +48,8 @@ static void *nmo_stb_alloc_block(size_t size) {
         }
         header->flags = 0;
     } else {
-        header = (nmo_stb_allocation_header_t *)malloc(total);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        header = (nmo_stb_allocation_header_t *)nmo_alloc(&alloc, total, alignment);
         if (!header) {
             return NULL;
         }
@@ -78,11 +80,15 @@ static void *nmo_stb_realloc(void *ptr, size_t new_size) {
 
     if (use_system && !g_stb_arena) {
         size_t total = sizeof(nmo_stb_allocation_header_t) + new_size;
+        nmo_allocator_t alloc = nmo_allocator_default();
         nmo_stb_allocation_header_t *new_header =
-            (nmo_stb_allocation_header_t *)realloc(header, total);
+            (nmo_stb_allocation_header_t *)nmo_alloc(&alloc, total, sizeof(void *));
         if (!new_header) {
+            nmo_free(&alloc, header);
             return NULL;
         }
+        memcpy(new_header, header, sizeof(nmo_stb_allocation_header_t) + old_size);
+        nmo_free(&alloc, header);
         new_header->size = new_size;
         return new_header + 1;
     }
@@ -96,7 +102,7 @@ static void *nmo_stb_realloc(void *ptr, size_t new_size) {
     memcpy(new_ptr, ptr, copy_size);
 
     if (use_system) {
-        free(header);
+        nmo_stb_free(header);
     }
 
     return new_ptr;
@@ -109,7 +115,8 @@ static void nmo_stb_free(void *ptr) {
 
     nmo_stb_allocation_header_t *header = ((nmo_stb_allocation_header_t *)ptr) - 1;
     if (header->flags & NMO_STB_FLAG_SYSTEM) {
-        free(header);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_free(&alloc, header);
     }
 }
 

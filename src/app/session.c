@@ -6,6 +6,7 @@
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
+#include "app/nmo_saver.h"
 #include "app/nmo_plugin.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -594,7 +595,7 @@ nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename) {
     }
 
     /* Load file using high-level API */
-    int result = nmo_load_file(session, filename, NMO_LOAD_DEFAULT);
+    int result = nmo_load_file(session, filename, NULL);
     if (result != NMO_OK) {
         nmo_session_destroy(session);
         return NULL;
@@ -612,7 +613,7 @@ int nmo_session_save(nmo_session_t *session, const char *filename) {
     }
 
     /* Use high-level save API */
-    return nmo_save_file(session, filename, NMO_SAVE_DEFAULT);
+    return nmo_save_file(session, filename, NULL);
 }
 
 /**

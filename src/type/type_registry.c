@@ -10,7 +10,7 @@
  */
 
 #include "type/type_system.h"
-#include "app/nmo_plugin.h"  /* Need full nmo_plugin_t definition */
+#include "type/nmo_plugin_types.h"  /* Need full nmo_plugin_t definition */
 #include "object/nmo_class_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
@@ -711,14 +711,6 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
  * Computes inheritance hierarchy and state offsets for each type.
  * Called lazily after type registration when state layout is needed.
  * ============================================================================ */
-
-/**
- * @brief Align offset up to the given alignment
- */
-static uint32_t align_up(uint32_t offset, uint32_t alignment) {
-    if (alignment == 0) alignment = 1;
-    return (offset + alignment - 1) & ~(alignment - 1);
-}
 
 /**
  * @brief Count inheritance depth (number of ancestors including self)

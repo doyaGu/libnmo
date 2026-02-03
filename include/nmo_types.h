@@ -83,15 +83,6 @@ typedef enum nmo_plugin_category {
     NMO_PLUGIN_CUSTOM_DLL         = 255
 } nmo_plugin_category_t;
 
-/* Backward-compatible aliases kept for existing code */
-#define NMO_PLUGIN_MANAGER_DLL       NMO_PLUGIN_MANAGER_DLL
-#define NMO_PLUGIN_BEHAVIOR_DLL      NMO_PLUGIN_BEHAVIOR_DLL
-#define NMO_PLUGIN_RENDER_DLL        NMO_PLUGIN_RENDER_DLL
-#define NMO_PLUGIN_SOUND_DLL         NMO_PLUGIN_SOUND_DLL
-#define NMO_PLUGIN_INPUT_DLL         NMO_PLUGIN_INPUT_DLL
-#define NMO_PLUGIN_OBJECT_READER_DLL NMO_PLUGIN_OBJECT_READER_DLL
-#define NMO_PLUGIN_CUSTOM_DLL        NMO_PLUGIN_CUSTOM_DLL
-
 // Visibility macros
 #ifdef _WIN32
 #ifdef NMO_BUILD_SHARED

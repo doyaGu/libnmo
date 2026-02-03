@@ -35,7 +35,7 @@ TEST(finish_loading, basic_execution) {
     ASSERT_NOT_NULL(session);
 
     /* Load a test file */
-    int result = nmo_load_file(session, TEST_FILE, NMO_LOAD_DEFAULT);
+    int result = nmo_load_file(session, TEST_FILE, NULL);
     if (result != NMO_OK) {
         printf("SKIP: Test file not found or failed to load: %s\n", TEST_FILE);
         nmo_session_destroy(session);
@@ -71,7 +71,7 @@ TEST(finish_loading, query_api) {
     ASSERT_NOT_NULL(session);
 
     /* Load test file */
-    int result = nmo_load_file(session, TEST_FILE, NMO_LOAD_DEFAULT);
+    int result = nmo_load_file(session, TEST_FILE, NULL);
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
@@ -129,7 +129,7 @@ TEST(finish_loading, index_rebuild) {
     ASSERT_NOT_NULL(session);
 
     /* Load test file */
-    int result = nmo_load_file(session, TEST_FILE, NMO_LOAD_DEFAULT);
+    int result = nmo_load_file(session, TEST_FILE, NULL);
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
@@ -175,7 +175,9 @@ TEST(finish_loading, selective_index_building) {
     ASSERT_NOT_NULL(session);
 
     /* Load test file with skip index build flag */
-    int result = nmo_load_file(session, TEST_FILE, NMO_LOAD_SKIP_INDEX_BUILD);
+    nmo_load_options_t skip_opts = nmo_load_options_default();
+    skip_opts.flags = NMO_LOAD_SKIP_INDEX_BUILD;
+    int result = nmo_load_file(session, TEST_FILE, &skip_opts);
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
@@ -215,7 +217,9 @@ TEST(finish_loading, query_without_index) {
     ASSERT_NOT_NULL(session);
 
     /* Load with indexes disabled */
-    int result = nmo_load_file(session, TEST_FILE, NMO_LOAD_SKIP_INDEX_BUILD);
+    nmo_load_options_t skip_opts = nmo_load_options_default();
+    skip_opts.flags = NMO_LOAD_SKIP_INDEX_BUILD;
+    int result = nmo_load_file(session, TEST_FILE, &skip_opts);
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);

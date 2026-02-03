@@ -5,6 +5,7 @@
 
 #include "core/nmo_list.h"
 #include "core/nmo_error.h"
+#include "core/nmo_allocator.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -147,7 +148,8 @@ nmo_list_t *nmo_list_create(nmo_arena_t *arena, size_t element_size) {
         return NULL;
     }
 
-    nmo_list_t *list = (nmo_list_t *)malloc(sizeof(nmo_list_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_list_t *list = (nmo_list_t *)nmo_alloc(&alloc, sizeof(nmo_list_t), _Alignof(nmo_list_t));
     if (!list) {
         return NULL;
     }
@@ -157,7 +159,7 @@ nmo_list_t *nmo_list_create(nmo_arena_t *arena, size_t element_size) {
     if (!arena_to_use) {
         arena_to_use = nmo_arena_create(NULL, 0);
         if (!arena_to_use) {
-            free(list);
+            nmo_free(&alloc, list);
             return NULL;
         }
         owns_arena = 1;
@@ -189,7 +191,8 @@ void nmo_list_destroy(nmo_list_t *list) {
         nmo_arena_destroy(list->arena);
     }
 
-    free(list);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_free(&alloc, list);
 }
 
 void nmo_list_set_lifecycle(nmo_list_t *list,

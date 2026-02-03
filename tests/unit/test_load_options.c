@@ -32,26 +32,26 @@ TEST(load_options, default_flags) {
 }
 
 /* ============================================================================
- * nmo_load_file_ex() Validation Tests
+ * nmo_load_file() Validation Tests
  * ============================================================================ */
 
-TEST(load_file_ex, null_session) {
+TEST(load_file, null_session) {
     nmo_load_options_t opts = nmo_load_options_default();
-    int result = nmo_load_file_ex(NULL, "test.nmo", &opts);
+    int result = nmo_load_file(NULL, "test.nmo", &opts);
     ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
 }
 
-TEST(load_file_ex, null_path) {
+TEST(load_file, null_path) {
     /* We can't test with a real session here, but can test NULL path */
     nmo_load_options_t opts = nmo_load_options_default();
-    int result = nmo_load_file_ex(NULL, NULL, &opts);
+    int result = nmo_load_file(NULL, NULL, &opts);
     ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
 }
 
-TEST(load_file_ex, null_opts_accepted) {
+TEST(load_file, null_opts_accepted) {
     /* NULL options should be accepted (uses defaults internally) */
     /* Can only test parameter validation here without full session */
-    int result = nmo_load_file_ex(NULL, "test.nmo", NULL);
+    int result = nmo_load_file(NULL, "test.nmo", NULL);
     ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);  /* Fails on NULL session, not opts */
 }
 
@@ -90,10 +90,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, default_allocator);
     REGISTER_TEST(load_options, default_flags);
     
-    /* nmo_load_file_ex() validation tests */
-    REGISTER_TEST(load_file_ex, null_session);
-    REGISTER_TEST(load_file_ex, null_path);
-    REGISTER_TEST(load_file_ex, null_opts_accepted);
+    /* nmo_load_file() validation tests */
+    REGISTER_TEST(load_file, null_session);
+    REGISTER_TEST(load_file, null_path);
+    REGISTER_TEST(load_file, null_opts_accepted);
     
     /* Custom configuration tests */
     REGISTER_TEST(load_options, custom_options);

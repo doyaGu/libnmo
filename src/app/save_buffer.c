@@ -4,6 +4,7 @@
  */
 
 #include "app/nmo_save_buffer.h"
+#include "core/nmo_allocator.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,7 +39,8 @@ nmo_save_buffer_t *nmo_save_buffer_create(nmo_arena_t *arena, size_t initial_cap
         initial_capacity = DEFAULT_INITIAL_CAPACITY;
     }
 
-    buffer->data = (uint8_t *)malloc(initial_capacity);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    buffer->data = (uint8_t *)nmo_alloc(&alloc, initial_capacity, 1);
     if (buffer->data == NULL) {
         return NULL;
     }
@@ -55,7 +57,8 @@ void nmo_save_buffer_destroy(nmo_save_buffer_t *buffer) {
     }
 
     if (buffer->data != NULL) {
-        free(buffer->data);
+        nmo_allocator_t alloc = nmo_allocator_default();
+        nmo_free(&alloc, buffer->data);
         buffer->data = NULL;
     }
 
@@ -101,11 +104,14 @@ int nmo_save_buffer_reserve(nmo_save_buffer_t *buffer, size_t capacity) {
         new_capacity = capacity;
     }
 
-    uint8_t *new_data = (uint8_t *)realloc(buffer->data, new_capacity);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    uint8_t *new_data = (uint8_t *)nmo_alloc(&alloc, new_capacity, 1);
     if (new_data == NULL) {
         return NMO_ERR_NOMEM;
     }
 
+    memcpy(new_data, buffer->data, buffer->size);
+    nmo_free(&alloc, buffer->data);
     buffer->data = new_data;
     buffer->capacity = new_capacity;
 

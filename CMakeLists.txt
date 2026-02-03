@@ -31,16 +31,13 @@ if(MSVC)
         add_compile_options(/O2)
     endif()
 else()
-    # Temporarily disable -Werror to see all compilation errors
-    add_compile_options(-Wall -Wextra -Wpedantic)
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         add_compile_options(-O3)
     endif()
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        add_compile_options(-g -O0)
-        # Temporarily disable sanitizers to simplify initial build
-        # add_compile_options(-fsanitize=address -fsanitize=undefined)
-        # add_link_options(-fsanitize=address -fsanitize=undefined)
+        add_compile_options(-g -O0 -fsanitize=address -fsanitize=undefined)
+        add_link_options(-fsanitize=address -fsanitize=undefined)
     endif()
 endif()
 
@@ -95,9 +92,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 if(ZLIB_INCLUDE_DIRS)
     include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
 endif()
-if(YYJSON_INCLUDE_DIRS)
-    include_directories(SYSTEM ${YYJSON_INCLUDE_DIRS})
-endif()
+# yyjson include dirs propagate automatically via target_link_libraries PUBLIC yyjson
 
 # Core library sources
 set(NMO_CORE_SOURCES
@@ -255,7 +250,7 @@ set(NMO_APP_SOURCES
     src/app/context.c
     src/app/session.c
     src/app/parser.c
-    src/app/save_pipeline.c
+    src/app/saver.c
     src/app/save_buffer.c
     src/app/finish_loading.c
     src/app/comparison.c

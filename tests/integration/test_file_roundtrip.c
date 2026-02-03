@@ -48,7 +48,7 @@ static int test_load_existing_file(void) {
     }
 
     printf("  Loading file: %s\n", data_file);
-    int result = nmo_load_file(session, data_file, 0);
+    int result = nmo_load_file(session, data_file, NULL);
 
     if (result == NMO_OK) {
         printf("  ✓ File loaded successfully\n");
@@ -90,7 +90,7 @@ static int test_empty_file_handling(void) {
     }
 
     // Try to load a non-existent file
-    int result = nmo_load_file(session, "nonexistent_file.nmo", 0);
+    int result = nmo_load_file(session, "nonexistent_file.nmo", NULL);
 
     if (result == NMO_ERR_FILE_NOT_FOUND) {
         printf("  ✓ Correctly detected missing file\n");
@@ -195,7 +195,7 @@ static int test_multiple_files(void) {
         printf("  Loading: %s... ", filename);
         fflush(stdout);
 
-        int result = nmo_load_file(session, filename, 0);
+        int result = nmo_load_file(session, filename, NULL);
 
         if (result == NMO_OK) {
             printf("✓ SUCCESS\n");

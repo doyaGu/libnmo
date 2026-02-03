@@ -116,7 +116,7 @@
 #include "app/nmo_comparison.h"
 #include "app/nmo_finish_loading.h"
 #include "app/nmo_inspector.h"
-#include "app/nmo_save_pipeline.h"
+#include "app/nmo_saver.h"
 #include "app/nmo_stats.h"
 
 #ifdef __cplusplus

@@ -7,7 +7,7 @@
  */
 
 #include "app/nmo_parser.h"
-#include "app/nmo_save_pipeline.h"
+#include "app/nmo_saver.h"
 #include "app/nmo_session.h"
 #include "app/nmo_plugin.h"
 #include "app/nmo_context.h"
@@ -38,7 +38,6 @@
 #include "object/nmo_deserialize_context.h"
 #include "type/type_system.h"
 #include "core/nmo_guid.h"
-#include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
 #include "miniz.h"  /* For compression/decompression */
@@ -94,7 +93,8 @@ static int nmo_register_included_metadata(
         &meta);
 }
 
-static int nmo_shadow_buffer_append(uint8_t **buffer,
+static int nmo_shadow_buffer_append(nmo_arena_t *arena,
+                                    uint8_t **buffer,
                                     size_t *size,
                                     size_t *capacity,
                                     const void *data,
@@ -109,12 +109,16 @@ static int nmo_shadow_buffer_append(uint8_t **buffer,
             new_capacity *= 2;
         }
 
-        void *new_buffer = realloc(*buffer, new_capacity);
+        uint8_t *new_buffer = (uint8_t *)nmo_arena_alloc(arena, new_capacity, 1);
         if (new_buffer == NULL) {
             return NMO_ERR_NOMEM;
         }
 
-        *buffer = (uint8_t *)new_buffer;
+        if (*buffer != NULL && *size > 0) {
+            memcpy(new_buffer, *buffer, *size);
+        }
+
+        *buffer = new_buffer;
         *capacity = new_capacity;
     }
 
@@ -123,7 +127,8 @@ static int nmo_shadow_buffer_append(uint8_t **buffer,
     return NMO_OK;
 }
 
-static int nmo_shadow_buffer_append_u32(uint8_t **buffer,
+static int nmo_shadow_buffer_append_u32(nmo_arena_t *arena,
+                                        uint8_t **buffer,
                                         size_t *size,
                                         size_t *capacity,
                                         uint32_t value) {
@@ -132,7 +137,7 @@ static int nmo_shadow_buffer_append_u32(uint8_t **buffer,
     bytes[1] = (uint8_t)((value >> 8) & 0xFFu);
     bytes[2] = (uint8_t)((value >> 16) & 0xFFu);
     bytes[3] = (uint8_t)((value >> 24) & 0xFFu);
-    return nmo_shadow_buffer_append(buffer, size, capacity, bytes, sizeof(bytes));
+    return nmo_shadow_buffer_append(arena, buffer, size, capacity, bytes, sizeof(bytes));
 }
 
 static int nmo_load_included_files(
@@ -198,7 +203,7 @@ static int nmo_load_included_files(
 
         if (shadow_storage != NULL) {
             int append_result = nmo_shadow_buffer_append_u32(
-                &shadow_blob, &shadow_size, &shadow_capacity, name_len);
+                arena, &shadow_blob, &shadow_size, &shadow_capacity, name_len);
             if (append_result != NMO_OK) {
                 result = append_result;
                 goto cleanup;
@@ -225,7 +230,7 @@ static int nmo_load_included_files(
 
         if (shadow_storage != NULL && name_len > 0) {
             int append_result = nmo_shadow_buffer_append(
-                &shadow_blob, &shadow_size, &shadow_capacity, name_buf, name_len);
+                arena, &shadow_blob, &shadow_size, &shadow_capacity, name_buf, name_len);
             if (append_result != NMO_OK) {
                 result = append_result;
                 goto cleanup;
@@ -252,7 +257,7 @@ static int nmo_load_included_files(
 
         if (shadow_storage != NULL) {
             int append_result = nmo_shadow_buffer_append_u32(
-                &shadow_blob, &shadow_size, &shadow_capacity, data_size);
+                arena, &shadow_blob, &shadow_size, &shadow_capacity, data_size);
             if (append_result != NMO_OK) {
                 result = append_result;
                 goto cleanup;
@@ -279,7 +284,7 @@ static int nmo_load_included_files(
 
         if (shadow_storage != NULL && data_size > 0) {
             int append_result = nmo_shadow_buffer_append(
-                &shadow_blob, &shadow_size, &shadow_capacity, payload, data_size);
+                arena, &shadow_blob, &shadow_size, &shadow_capacity, payload, data_size);
             if (append_result != NMO_OK) {
                 result = append_result;
                 goto cleanup;
@@ -366,9 +371,7 @@ cleanup:
         }
     }
 
-    if (shadow_blob != NULL) {
-        free(shadow_blob);
-    }
+    /* shadow_blob is arena-allocated; lifetime tied to session arena */
 
     return result;
 }
@@ -985,31 +988,7 @@ skip_object_processing:
 }
 
 /**
- * Load file - 15-phase load pipeline
- */
-int nmo_load_file(nmo_session_t *session, const char *path, nmo_load_flags_t flags) {
-    if (session == NULL || path == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_context_t *ctx = nmo_session_get_context(session);
-    nmo_logger_t *logger = nmo_context_get_logger(ctx);
-
-    /* Phase 1: Open IO */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
-    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
-    if (io == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to open file: %s", path);
-        return NMO_ERR_FILE_NOT_FOUND;
-    }
-
-    nmo_load_options_t opts = nmo_load_options_default();
-    opts.flags = flags;
-    return nmo_load_file_with_io(session, path, io, &opts);
-}
-
-/**
- * @brief Return default load options (Phase 2.1 Dual-Track IO)
+ * @brief Return default load options
  */
 nmo_load_options_t nmo_load_options_default(void) {
     nmo_load_options_t opts = {
@@ -1060,17 +1039,14 @@ static int nmo_detect_file_compression(const char *path) {
 }
 
 /**
- * @brief Load file with extended options (Phase 2.1 Dual-Track IO)
+ * @brief Load file with automatic IO selection
  *
- * Extended version of nmo_load_file() that accepts load options for
- * fine-grained control over the loading process. Currently supports:
- * - CRC validation
- * - Shadow preservation
- * - Flag passthrough to underlying loader
+ * Detects compression and uses mmap for uncompressed files when
+ * supported, falling back to standard file IO otherwise.
  */
-int nmo_load_file_ex(nmo_session_t *session,
-                     const char *path,
-                     const nmo_load_options_t *opts) {
+int nmo_load_file(nmo_session_t *session,
+                  const char *path,
+                  const nmo_load_options_t *opts) {
     if (session == NULL || path == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -1113,40 +1089,3 @@ int nmo_load_file_ex(nmo_session_t *session,
     return nmo_load_file_with_io(session, path, io, opts);
 }
 
-/**
- * Save file - Two-phase commit save pipeline (Phase 1.4)
- *
- * This function now delegates to the new two-phase commit architecture:
- *   Phase 1: Layout & Serialize (all data to memory)
- *   Phase 2: Pack & Commit (compress, CRC, write atomically)
- *
- * The old 14-phase inline implementation has been refactored into
- * save_pipeline.c for better separation of concerns and testability.
- */
-int nmo_save_file(nmo_session_t *session, const char *path, nmo_save_flags_t flags) {
-    if (session == NULL || path == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    /* Build save options from flags */
-    nmo_save_options_t options = nmo_save_options_default();
-    options.flags = flags;
-
-    /* Determine compression settings from flags and file info */
-    nmo_file_info_t file_info = nmo_session_get_file_info(session);
-    const uint32_t compression_mask = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
-    uint32_t compression_flags = file_info.write_mode & compression_mask;
-
-    if (flags & NMO_SAVE_COMPRESSED) {
-        compression_flags = NMO_FILE_WRITE_COMPRESS_BOTH;
-    }
-
-    options.compress_header = (compression_flags & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
-    options.compress_data = (compression_flags & NMO_FILE_WRITE_COMPRESS_DATA) != 0;
-    options.validate_before_write = (flags & NMO_SAVE_VALIDATE_BEFORE) != 0;
-
-    /* Delegate to two-phase commit implementation */
-    nmo_status_t result = nmo_save_file_ex(session, path, &options);
-
-    return result;
-}

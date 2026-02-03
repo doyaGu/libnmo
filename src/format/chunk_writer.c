@@ -1,6 +1,7 @@
 ﻿#include "format/nmo_chunk_writer.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
+#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -1083,7 +1084,8 @@ int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_co
     }
 
     size_t total_bytes = (size_t) element_count * (size_t) element_size;
-    void *temp = malloc(total_bytes);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    void *temp = nmo_alloc(&alloc, total_bytes, 1);
     if (temp == NULL) {
         return NMO_ERR_NOMEM;
     }
@@ -1094,7 +1096,7 @@ int nmo_chunk_writer_write_array_lendian16(nmo_chunk_writer_t *w, int element_co
     }
 
     int result = nmo_chunk_writer_write_array_lendian(w, element_count, element_size, temp);
-    free(temp);
+    nmo_free(&alloc, temp);
     return result;
 #else
     return nmo_chunk_writer_write_array_lendian(w, element_count, element_size, src_data);
@@ -1158,7 +1160,8 @@ int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes,
         return NMO_OK;
     }
 
-    void *temp = malloc(bytes);
+    nmo_allocator_t alloc = nmo_allocator_default();
+    void *temp = nmo_alloc(&alloc, bytes, 1);
     if (temp == NULL) {
         return NMO_ERR_NOMEM;
     }
@@ -1169,7 +1172,7 @@ int nmo_chunk_writer_write_buffer_lendian16(nmo_chunk_writer_t *w, size_t bytes,
     }
 
     int result = nmo_chunk_writer_write_buffer_nosize(w, bytes, temp);
-    free(temp);
+    nmo_free(&alloc, temp);
     return result;
 #else
     return nmo_chunk_writer_write_buffer_nosize(w, bytes, data);

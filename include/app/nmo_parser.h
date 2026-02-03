@@ -1,6 +1,6 @@
 /**
  * @file nmo_parser.h
- * @brief Load and Save pipeline API (Phase 9 & 10)
+ * @brief Load pipeline API
  */
 
 #ifndef NMO_APP_PARSER_H
@@ -73,90 +73,17 @@ NMO_API nmo_load_options_t nmo_load_options_default(void);
 /**
  * @brief Load file
  *
- * Implements the complete 15-phase load pipeline:
- * 1. Open IO
- * 2. Parse File Header
- * 3. Read and Decompress Header1
- * 4. Parse Header1
- * 5. Start Load Session
- * 6. Check Plugin Dependencies
- * 7. Manager Pre-Load Hooks
- * 8. Read and Decompress Data Section
- * 9. Parse Manager Chunks
- * 10. Create Objects
- * 11. Parse Object Chunks
- * 12. Build ID Remap Table
- * 13. Remap IDs in All Chunks
- * 14. Deserialize Objects
- * 15. Manager Post-Load Hooks
+ * Implements the complete load pipeline with automatic IO selection
+ * (mmap for uncompressed files, standard file IO otherwise).
  *
  * @param session Session to load into
- * @param path File path
- * @param flags Load flags
+ * @param path    File path
+ * @param opts    Load options (NULL for defaults)
  * @return NMO_OK on success
  */
 NMO_API int nmo_load_file(nmo_session_t *session,
                           const char *path,
-                          nmo_load_flags_t flags);
-
-/**
- * @brief Load file with extended options (Phase 2.1)
- *
- * Extended version of nmo_load_file() that accepts load options
- * for fine-grained control over the loading process, including:
- * - CRC validation
- * - Shadow storage preservation
- * - Custom allocator
- *
- * @param session Session to load into
- * @param path File path
- * @param opts Load options (NULL for defaults)
- * @return NMO_OK on success
- */
-NMO_API int nmo_load_file_ex(nmo_session_t *session,
-                             const char *path,
-                             const nmo_load_options_t *opts);
-
-/**
- * @brief Save flags
- */
-typedef enum nmo_save_flags {
-    NMO_SAVE_DEFAULT          = 0,
-    NMO_SAVE_AS_OBJECTS       = 0x0001, /**< Save as referenced objects */
-    NMO_SAVE_COMPRESSED       = 0x0002, /**< Enable compression */
-    NMO_SAVE_SEQUENTIAL_IDS   = 0x0004, /**< Use sequential file IDs */
-    NMO_SAVE_INCLUDE_MANAGERS = 0x0008, /**< Include manager state */
-    NMO_SAVE_VALIDATE_BEFORE  = 0x0010, /**< Validate before writing */
-    NMO_SAVE_STRIP_INCLUDED_FILES = 0x0020, /**< Drop included payloads during save */
-} nmo_save_flags_t;
-
-/**
- * @brief Save file
- *
- * Implements the complete 14-phase save pipeline:
- * 1. Validate Session State
- * 2. Manager Pre-Save Hooks
- * 3. Build ID Remap Plan (runtime -> file IDs)
- * 4. Serialize Manager Chunks
- * 5. Serialize Object Chunks with ID Remapping
- * 6. Compress Data Section
- * 7. Build Object Descriptors for Header1
- * 8. Build Plugin Dependencies List
- * 9. Compress Header1
- * 10. Calculate File Sizes
- * 11. Build File Header
- * 12. Open Output IO
- * 13. Write File Header, Header1, Data Section
- * 14. Manager Post-Save Hooks
- *
- * @param session Session to save from
- * @param path File path
- * @param flags Save flags
- * @return NMO_OK on success
- */
-NMO_API int nmo_save_file(nmo_session_t *session,
-                          const char *path,
-                          nmo_save_flags_t flags);
+                          const nmo_load_options_t *opts);
 
 #ifdef __cplusplus
 }

@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
 
     // Step 4: Save the file
     printf("Saving file: %s\n", output_file);
-    int result = nmo_save_file(session, output_file, NMO_SAVE_DEFAULT);
+    int result = nmo_save_file(session, output_file, NULL);
 
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to save file (%s)\n",

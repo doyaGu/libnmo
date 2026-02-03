@@ -78,12 +78,12 @@ int main(int argc, char *argv[]) {
 
     // Load input file
     printf("Loading input file...\n");
-    int load_flags = NMO_LOAD_DEFAULT;
+    nmo_load_options_t load_opts = nmo_load_options_default();
     if (opts.validate) {
-        load_flags |= NMO_LOAD_CHECK_DEPENDENCIES;
+        load_opts.flags |= NMO_LOAD_CHECK_DEPENDENCIES;
     }
 
-    int load_result = nmo_load_file(session, input_file, load_flags);
+    int load_result = nmo_load_file(session, input_file, &load_opts);
 
     if (load_result != NMO_OK) {
         fprintf(stderr, "Error loading file (%s)\n",
@@ -101,15 +101,13 @@ int main(int argc, char *argv[]) {
 
     // Save output file
     printf("Saving output file...\n");
-    int save_flags = NMO_SAVE_DEFAULT;
+    nmo_save_options_t save_opts = nmo_save_options_default();
     if (opts.compress) {
-        save_flags |= NMO_SAVE_COMPRESSED;
+        save_opts.flags = NMO_SAVE_COMPRESSED;
     }
-    if (opts.validate) {
-        save_flags |= NMO_SAVE_VALIDATE_BEFORE;
-    }
+    save_opts.validate_before_write = opts.validate;
 
-    int save_result = nmo_save_file(session, output_file, save_flags);
+    int save_result = nmo_save_file(session, output_file, &save_opts);
 
     if (save_result != NMO_OK) {
         fprintf(stderr, "Error saving file (%s)\n",

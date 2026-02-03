@@ -14,6 +14,8 @@
 #include <string.h>
 
 int main(int argc, char *argv[]) {
+    (void)argc;
+    (void)argv;
     printf("=== Custom Manager Example ===\n\n");
 
     // Step 1: Create context
@@ -64,12 +66,12 @@ int main(int argc, char *argv[]) {
     // Step 4: Register the manager
     printf("Registering manager with registry...\n");
     nmo_manager_id_t manager_id = 1;
-    nmo_result_t reg_result =
+    nmo_status_t reg_result =
         nmo_manager_registry_register(manager_registry, manager_id, custom_manager);
 
-    if (reg_result.code != NMO_OK) {
+    if (reg_result != NMO_OK) {
         fprintf(stderr, "Warning: Failed to register manager (%s)\n",
-                nmo_error_string(reg_result.code));
+                nmo_error_string(reg_result));
     } else {
         printf("Manager registered successfully\n\n");
     }
@@ -89,17 +91,17 @@ int main(int argc, char *argv[]) {
     printf("Creating objects with custom manager...\n");
     nmo_object_id_t object_id = 1;
     nmo_class_id_t class_id = 1; /* CKObject */
-    nmo_object_t *obj = nmo_object_create(nmo_session_get_arena(session),
-                                          object_id,
-                                          class_id);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(nmo_session_get_context(session));
+    nmo_object_t *obj = nmo_object_create(allocator, object_id, class_id);
+    int obj_added_to_repo = 0;
 
     if (obj == NULL) {
         fprintf(stderr, "Error: Failed to create object\n");
     } else {
-        nmo_object_set_name(obj, "CustomObject", nmo_session_get_arena(session));
+        nmo_object_set_name(obj, "CustomObject");
         nmo_object_repository_t *repo = nmo_session_get_repository(session);
         if (repo != NULL) {
-            nmo_object_repository_add(repo, obj);
+            obj_added_to_repo = (nmo_object_repository_add(repo, obj) == NMO_OK);
         }
         printf("Object created successfully (ID: %u)\n\n",
                nmo_object_get_id(obj));
@@ -107,7 +109,7 @@ int main(int argc, char *argv[]) {
 
     // Clean up
     printf("Cleaning up...\n");
-    if (obj != NULL) {
+    if (obj != NULL && !obj_added_to_repo) {
         nmo_object_destroy(obj);
     }
     nmo_session_destroy(session);

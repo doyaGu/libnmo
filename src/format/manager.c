@@ -4,6 +4,7 @@
  */
 
 #include "format/nmo_manager.h"
+#include "core/nmo_allocator.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,7 +12,9 @@
  * Create manager
  */
 nmo_manager_t *nmo_manager_create(nmo_guid_t guid, const char *name, nmo_plugin_category_t category) {
-    nmo_manager_t *manager = (nmo_manager_t *) malloc(sizeof(nmo_manager_t));
+    nmo_allocator_t alloc = nmo_allocator_default();
+    
+    nmo_manager_t *manager = (nmo_manager_t *) nmo_alloc(&alloc, sizeof(nmo_manager_t), _Alignof(nmo_manager_t));
     if (manager == NULL) {
         return NULL;
     }
@@ -23,9 +26,9 @@ nmo_manager_t *nmo_manager_create(nmo_guid_t guid, const char *name, nmo_plugin_
     // Copy name if provided
     if (name != NULL) {
         size_t name_len = strlen(name);
-        char *name_copy = (char *) malloc(name_len + 1);
+        char *name_copy = (char *) nmo_alloc(&alloc, name_len + 1, 1);
         if (name_copy == NULL) {
-            free(manager);
+            nmo_free(&alloc, manager);
             return NULL;
         }
         memcpy(name_copy, name, name_len + 1);
@@ -40,10 +43,11 @@ nmo_manager_t *nmo_manager_create(nmo_guid_t guid, const char *name, nmo_plugin_
  */
 void nmo_manager_destroy(nmo_manager_t *manager) {
     if (manager != NULL) {
+        nmo_allocator_t alloc = nmo_allocator_default();
         if (manager->name != NULL) {
-            free((void *) manager->name);
+            nmo_free(&alloc, (void *) manager->name);
         }
-        free(manager);
+        nmo_free(&alloc, manager);
     }
 }
 

@@ -52,6 +52,7 @@ nmo_status_t nmo_cksceneobject_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
+    (void)type;
     nmo_cksceneobject_state_t *out_state = (nmo_cksceneobject_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
