@@ -226,7 +226,7 @@ static void json_add_plugins_section(yyjson_mut_doc *doc,
     }
 
     yyjson_mut_obj_add_bool(doc, plugins, "available", true);
-    yyjson_mut_obj_add_bool(doc, plugins, "plugin_manager_available", diag->plugin_manager_available != 0);
+    yyjson_mut_obj_add_bool(doc, plugins, "extension_registry_available", diag->extension_registry_available != 0);
     yyjson_mut_obj_add_uint(doc, plugins, "missing_count", (uint64_t)diag->missing_count);
     yyjson_mut_obj_add_uint(doc, plugins, "outdated_count", (uint64_t)diag->outdated_count);
     yyjson_mut_obj_add_uint(doc, plugins, "entry_count", (uint64_t)diag->entry_count);

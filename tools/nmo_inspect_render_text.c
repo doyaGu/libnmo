@@ -137,7 +137,7 @@ static void print_plugins_section(FILE *out, const inspect_state_t *state, const
         return;
     }
 
-    fprintf(out, "Plugin manager available: %s\n", diag->plugin_manager_available ? "yes" : "no");
+    fprintf(out, "Extension registry available: %s\n", diag->extension_registry_available ? "yes" : "no");
     fprintf(out,
             "Missing: %zu  Outdated: %zu  Total entries: %zu\n",
             diag->missing_count,
@@ -306,7 +306,13 @@ static void print_chunk_info(FILE *out, const inspect_state_t *state, const insp
         }
 
         size_t size_bytes = chunk->data.count * sizeof(uint32_t);
-        fprintf(out, "#%zu Object=%u ChunkClass=%u", chunk_index, nmo_object_get_id(object), chunk->class_id);
+        const char *chunk_class_name = nmo_inspect_class_name_from_id(state, (nmo_class_id_t)chunk->class_id);
+        fprintf(out,
+            "#%zu Object=%u ChunkClass=%u (%s)",
+            chunk_index,
+            nmo_object_get_id(object),
+            chunk->class_id,
+            chunk_class_name);
         if (opts->show_size) {
             fprintf(out, " Size=%zu bytes", size_bytes);
         }
@@ -326,6 +332,7 @@ static bool chunk_tree_limit_hit(const inspect_options_t *opts, size_t depth) {
 }
 
 static void print_chunk_tree_node(FILE *out,
+                                 const inspect_state_t *state,
                                  const inspect_options_t *opts,
                                  const nmo_chunk_t *chunk,
                                  size_t depth,
@@ -338,7 +345,12 @@ static void print_chunk_tree_node(FILE *out,
         fprintf(out, "  ");
     }
 
-    fprintf(out, "- ChunkClass=%u SubChunks=%zu", chunk->class_id, chunk->chunks.count);
+    const char *chunk_class_name = nmo_inspect_class_name_from_id(state, (nmo_class_id_t)chunk->class_id);
+    fprintf(out,
+            "- ChunkClass=%u (%s) SubChunks=%zu",
+            chunk->class_id,
+            chunk_class_name,
+            chunk->chunks.count);
     if (opts->show_size) {
         size_t size_bytes = chunk->data.count * sizeof(uint32_t);
         fprintf(out, " Size=%zu", size_bytes);
@@ -354,7 +366,7 @@ static void print_chunk_tree_node(FILE *out,
             continue;
         }
 
-        print_chunk_tree_node(out, opts, child, depth + 1, rows_written);
+        print_chunk_tree_node(out, state, opts, child, depth + 1, rows_written);
         if (opts->max_rows && *rows_written >= opts->max_rows) {
             return;
         }
@@ -387,7 +399,7 @@ static void print_chunk_tree(FILE *out, const inspect_state_t *state, const insp
         }
 
         fprintf(out, "Object %u (%s)\n", nmo_object_get_id(object), nmo_inspect_safe_object_name(object));
-        print_chunk_tree_node(out, opts, chunk, 1, &rows_written);
+        print_chunk_tree_node(out, state, opts, chunk, 1, &rows_written);
         chunk_index++;
 
         if (opts->max_rows && rows_written >= opts->max_rows) {

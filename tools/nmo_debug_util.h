@@ -16,8 +16,18 @@ int nmo_debug_parse_command(char *line, char **argv, int max_args);
 
 void nmo_debug_get_objects(nmo_debug_context_t *dbg, nmo_object_t ***objects, size_t *count);
 
-void nmo_debug_print_object_summary(size_t index, nmo_object_t *obj);
-void nmo_debug_print_object_summary_marked(size_t index, nmo_object_t *obj, bool selected);
+const char *nmo_debug_class_name_from_id(const nmo_debug_context_t *dbg,
+                                        nmo_class_id_t class_id,
+                                        char *buffer,
+                                        size_t buffer_size);
+
+bool nmo_debug_class_id_from_name(const nmo_debug_context_t *dbg, const char *name, nmo_class_id_t *out_class_id);
+
+void nmo_debug_print_object_summary(const nmo_debug_context_t *dbg, size_t index, nmo_object_t *obj);
+void nmo_debug_print_object_summary_marked(const nmo_debug_context_t *dbg,
+                                          size_t index,
+                                          nmo_object_t *obj,
+                                          bool selected);
 
 bool nmo_debug_paginate_if_needed(nmo_debug_context_t *dbg, size_t printed);
 

@@ -2,6 +2,9 @@
 
 #include "nmo_tool_common.h"
 
+#include "app/nmo_context.h"
+#include "type/type_system.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -91,24 +94,95 @@ void nmo_debug_get_objects(nmo_debug_context_t *dbg, nmo_object_t ***objects, si
     nmo_session_get_objects(dbg->session, objects, count);
 }
 
-void nmo_debug_print_object_summary(size_t index, nmo_object_t *obj) {
-    nmo_object_id_t obj_id = nmo_object_get_id(obj);
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    const char *name = nmo_object_get_name(obj);
+const char *nmo_debug_class_name_from_id(const nmo_debug_context_t *dbg,
+                                        nmo_class_id_t class_id,
+                                        char *buffer,
+                                        size_t buffer_size) {
+    const char *name = NULL;
+    if (dbg && dbg->ctx) {
+        nmo_type_registry_t *registry = nmo_context_get_type_registry(dbg->ctx);
+        if (registry) {
+            nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(registry, (uint32_t)class_id);
+            if (type_id != NMO_TYPE_ID_INVALID) {
+                name = nmo_type_registry_type_id_to_name(registry, type_id);
+            }
+        }
+    }
 
-    printf("  [%3zu] ID=%-5u Class=%-3d %s\n", index, obj_id, class_id, name ? name : "(unnamed)");
+    if (name) {
+        return name;
+    }
+
+    if (buffer && buffer_size) {
+        snprintf(buffer, buffer_size, "Class#%u", (unsigned int)class_id);
+        return buffer;
+    }
+    return "(unknown class)";
 }
 
-void nmo_debug_print_object_summary_marked(size_t index, nmo_object_t *obj, bool selected) {
+bool nmo_debug_class_id_from_name(const nmo_debug_context_t *dbg, const char *name, nmo_class_id_t *out_class_id) {
+    if (!out_class_id) {
+        return false;
+    }
+    *out_class_id = 0;
+
+    if (!dbg || !dbg->ctx || !name || !name[0]) {
+        return false;
+    }
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(dbg->ctx);
+    if (!registry) {
+        return false;
+    }
+
+    nmo_type_id_t type_id = nmo_type_registry_name_to_type_id(registry, name);
+    if (type_id == NMO_TYPE_ID_INVALID) {
+        return false;
+    }
+
+    uint32_t class_id_u32 = 0;
+    nmo_status_t rc = nmo_type_registry_type_id_to_class_id(registry, type_id, &class_id_u32);
+    if (rc != NMO_OK || class_id_u32 == 0) {
+        return false;
+    }
+
+    *out_class_id = (nmo_class_id_t)class_id_u32;
+    return true;
+}
+
+void nmo_debug_print_object_summary(const nmo_debug_context_t *dbg, size_t index, nmo_object_t *obj) {
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
     const char *name = nmo_object_get_name(obj);
 
-    printf("%c [%3zu] ID=%-5u Class=%-3d %s\n",
+    char class_buf[64];
+    const char *class_name = nmo_debug_class_name_from_id(dbg, class_id, class_buf, sizeof(class_buf));
+
+    printf("  [%3zu] ID=%-5u Class=%-3d %-24s %s\n",
+           index,
+           obj_id,
+           class_id,
+           class_name,
+           name ? name : "(unnamed)");
+}
+
+void nmo_debug_print_object_summary_marked(const nmo_debug_context_t *dbg,
+                                          size_t index,
+                                          nmo_object_t *obj,
+                                          bool selected) {
+    nmo_object_id_t obj_id = nmo_object_get_id(obj);
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    const char *name = nmo_object_get_name(obj);
+
+    char class_buf[64];
+    const char *class_name = nmo_debug_class_name_from_id(dbg, class_id, class_buf, sizeof(class_buf));
+
+    printf("%c [%3zu] ID=%-5u Class=%-3d %-24s %s\n",
            selected ? '>' : ' ',
            index,
            obj_id,
            class_id,
+           class_name,
            name ? name : "(unnamed)");
 }
 
@@ -426,7 +500,7 @@ int nmo_debug_resolve_object_index(nmo_debug_context_t *dbg,
             }
 
             if (matches) {
-                nmo_debug_print_object_summary(i, objects[i]);
+                nmo_debug_print_object_summary(dbg, i, objects[i]);
                 found++;
                 last = i;
                 if (!nmo_debug_paginate_if_needed(dbg, found)) {

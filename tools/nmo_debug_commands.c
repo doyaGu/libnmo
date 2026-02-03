@@ -33,11 +33,11 @@ static int cmd_quit(nmo_debug_context_t *dbg, int argc, char **argv);
 static const nmo_debug_command_t commands[] = {
     {"help", "h", "Show help for commands", "help [command]", cmd_help},
     {"info", "i", "Show loaded file summary", "info", cmd_info},
-    {"list", "ls", "List objects (optional class filter)", "list [class_id|class:<id>] [limit]", cmd_list},
+    {"list", "ls", "List objects (optional class filter)", "list [class_id|class:<id>|class:<name>|<name>] [limit]", cmd_list},
     {"select", "sel", "Select current object", "select <index|id:<id>|name:<substr>|name:/regex/>", cmd_select},
     {"show", "s", "Show object details", "show [selector]", cmd_show},
     {"dump", "d", "Dump chunk", "dump [selector] [level]", cmd_dump},
-    {"find", "f", "Find objects by name/class/id/regex", "find <substr>|/<regex>/ | class <id> | id <id>", cmd_find},
+    {"find", "f", "Find objects by name/class/id/regex", "find <substr>|/<regex>/ | class <id|name> | id <id>", cmd_find},
     {"trace", "t", "Trace references (placeholder)", "trace <index>", cmd_trace},
     {"verify", "v", "Verify chunks", "verify [all|selector]", cmd_verify},
     {"stats", "st", "Show file statistics", "stats", cmd_stats},
@@ -286,10 +286,23 @@ static int cmd_list(nmo_debug_context_t *dbg, int argc, char **argv) {
     size_t limit = 0;
 
     if (argc > 1) {
-        if (strncmp(argv[1], "class:", 6) == 0) {
-            filter = atoi(argv[1] + 6);
-        } else if (isdigit((unsigned char)argv[1][0]) || argv[1][0] == '-') {
-            filter = atoi(argv[1]);
+        const char *token = argv[1];
+        if (strncmp(token, "class:", 6) == 0) {
+            token = token + 6;
+        }
+
+        if (token && token[0] != '\0') {
+            if (isdigit((unsigned char)token[0]) || token[0] == '-') {
+                filter = atoi(token);
+            } else {
+                nmo_class_id_t class_id = 0;
+                if (!nmo_debug_class_id_from_name(dbg, token, &class_id)) {
+                    fprintf(stderr, "Unknown class: %s\n", token);
+                    fprintf(stderr, "Tip: use a numeric class_id or a known type name (e.g. CKCamera).\n");
+                    return -1;
+                }
+                filter = (int)class_id;
+            }
         }
     }
 
@@ -312,7 +325,7 @@ static int cmd_list(nmo_debug_context_t *dbg, int argc, char **argv) {
         }
 
         bool selected = dbg->has_selection && dbg->selected_index == i;
-        nmo_debug_print_object_summary_marked(i, objects[i], selected);
+        nmo_debug_print_object_summary_marked(dbg, i, objects[i], selected);
 
         displayed++;
         if (!nmo_debug_paginate_if_needed(dbg, displayed)) {
@@ -324,7 +337,9 @@ static int cmd_list(nmo_debug_context_t *dbg, int argc, char **argv) {
     }
 
     if (filter != -1) {
-        printf("\n%zu/%zu objects shown (class %d)\n", displayed, object_count, filter);
+        char class_buf[64];
+        const char *class_name = nmo_debug_class_name_from_id(dbg, (nmo_class_id_t)filter, class_buf, sizeof(class_buf));
+        printf("\n%zu/%zu objects shown (class %d, %s)\n", displayed, object_count, filter, class_name);
     } else {
         printf("\n%zu/%zu objects shown\n", displayed, object_count);
     }
@@ -354,7 +369,7 @@ static int cmd_select(nmo_debug_context_t *dbg, int argc, char **argv) {
     nmo_debug_get_objects(dbg, &objects, &object_count);
     if (index < object_count) {
         printf("Selected object:\n");
-        nmo_debug_print_object_summary(index, objects[index]);
+        nmo_debug_print_object_summary(dbg, index, objects[index]);
     }
 
     return 0;
@@ -381,9 +396,12 @@ static int cmd_show(nmo_debug_context_t *dbg, int argc, char **argv) {
     const char *name = nmo_object_get_name(obj);
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
 
+    char class_buf[64];
+    const char *class_name = nmo_debug_class_name_from_id(dbg, class_id, class_buf, sizeof(class_buf));
+
     printf("\nObject [%zu]:\n", index);
     printf("  ID: %u\n", obj_id);
-    printf("  Class: %d\n", class_id);
+    printf("  Class: %d (%s)\n", class_id, class_name);
     printf("  Name: %s\n", name ? name : "(unnamed)");
 
     if (chunk) {
@@ -449,7 +467,7 @@ static int cmd_dump(nmo_debug_context_t *dbg, int argc, char **argv) {
 
 static int cmd_find(nmo_debug_context_t *dbg, int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: find <substr>|/<regex>/ | class <id> | id <id>\n");
+        fprintf(stderr, "Usage: find <substr>|/<regex>/ | class <id|name> | id <id>\n");
         return -1;
     }
 
@@ -469,7 +487,7 @@ static int cmd_find(nmo_debug_context_t *dbg, int argc, char **argv) {
         for (size_t i = 0; i < object_count; i++) {
             const char *name = nmo_object_get_name(objects[i]);
             if (name && strstr(name, search)) {
-                nmo_debug_print_object_summary(i, objects[i]);
+                nmo_debug_print_object_summary(dbg, i, objects[i]);
                 found++;
                 if (!nmo_debug_paginate_if_needed(dbg, found)) {
                     break;
@@ -492,7 +510,7 @@ static int cmd_find(nmo_debug_context_t *dbg, int argc, char **argv) {
                 continue;
             }
             if (nmo_debug_regex_matches(name, pattern, dbg->regex_icase)) {
-                nmo_debug_print_object_summary(i, objects[i]);
+                nmo_debug_print_object_summary(dbg, i, objects[i]);
                 found++;
                 if (!nmo_debug_paginate_if_needed(dbg, found)) {
                     break;
@@ -503,7 +521,7 @@ static int cmd_find(nmo_debug_context_t *dbg, int argc, char **argv) {
 
     } else if (strcmp(argv[1], "by-class") == 0 || strcmp(argv[1], "class") == 0) {
         if (argc < 3) {
-            fprintf(stderr, "Usage: find class <class_id>\n");
+            fprintf(stderr, "Usage: find class <class_id|class_name>\n");
             return -1;
         }
         char *list_args[3] = {(char *)"list", argv[2], NULL};
@@ -520,7 +538,7 @@ static int cmd_find(nmo_debug_context_t *dbg, int argc, char **argv) {
             return -1;
         }
         printf("\nFound object:\n");
-        nmo_debug_print_object_summary(index, objects[index]);
+        nmo_debug_print_object_summary(dbg, index, objects[index]);
         return 0;
 
     } else {
@@ -766,11 +784,17 @@ static int cmd_export(nmo_debug_context_t *dbg, int argc, char **argv) {
                 fprintf(out, ",\n");
             }
 
-            fprintf(out,
-                    "    {\n      \"index\": %zu,\n      \"id\": %u,\n      \"class_id\": %u,\n      \"name\": ",
+                nmo_class_id_t class_id = nmo_object_get_class_id(objects[i]);
+                char class_buf[64];
+                const char *class_name = nmo_debug_class_name_from_id(dbg, class_id, class_buf, sizeof(class_buf));
+
+                fprintf(out,
+                    "    {\n      \"index\": %zu,\n      \"id\": %u,\n      \"class_id\": %u,\n      \"class\": ",
                     i,
                     nmo_object_get_id(objects[i]),
-                    nmo_object_get_class_id(objects[i]));
+                    (unsigned int)class_id);
+                nmo_debug_json_write_string(out, class_name);
+                fprintf(out, ",\n      \"name\": ");
             nmo_debug_json_write_string(out, nmo_object_get_name(objects[i]));
             fprintf(out, ",\n      \"chunk\": ");
             nmo_inspector_export_json(chunk, out, include_data);
@@ -798,11 +822,17 @@ static int cmd_export(nmo_debug_context_t *dbg, int argc, char **argv) {
             return -1;
         }
 
+        nmo_class_id_t class_id = nmo_object_get_class_id(objects[index]);
+        char class_buf[64];
+        const char *class_name = nmo_debug_class_name_from_id(dbg, class_id, class_buf, sizeof(class_buf));
+
         fprintf(out,
-                "{\n  \"index\": %zu,\n  \"id\": %u,\n  \"class_id\": %u,\n  \"name\": ",
+            "{\n  \"index\": %zu,\n  \"id\": %u,\n  \"class_id\": %u,\n  \"class\": ",
                 index,
                 nmo_object_get_id(objects[index]),
-                nmo_object_get_class_id(objects[index]));
+            (unsigned int)class_id);
+        nmo_debug_json_write_string(out, class_name);
+        fprintf(out, ",\n  \"name\": ");
         nmo_debug_json_write_string(out, nmo_object_get_name(objects[index]));
         fprintf(out, ",\n  \"chunk\": ");
         nmo_inspector_export_json(chunk, out, include_data);
