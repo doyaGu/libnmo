@@ -25,8 +25,11 @@
 
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_math.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_ckstatesave_ids.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -32,17 +32,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * CKBeObject IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From CKDefines2.h (CK_STATESAVEFLAGS_BEOBJECT) */
-#define CK_STATESAVE_ATTRIBUTES      0x00000010u
-#define CK_STATESAVE_NEWATTRIBUTES   0x00000011u
-#define CK_STATESAVE_DATAS           0x00000040u
-#define CK_STATESAVE_BEHAVIORS       0x00000100u
-#define CK_STATESAVE_SINGLEACTIVITY  0x00000400u
-#define CK_STATESAVE_SCRIPTS         0x00000800u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbeobject, nmo_ckbeobject_state_t)
 
 /* Attribute Manager GUID from CKEnums.h */
 #define ATTRIBUTE_MANAGER_GUID_D1    0x3d242466u
@@ -166,8 +156,7 @@ nmo_status_t nmo_ckbeobject_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbeobject_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckbeobject_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckbeobject_create(out_state, type, context));
     
     /* Deserialize base CKSceneObject state first */
     nmo_status_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
@@ -175,9 +164,6 @@ nmo_status_t nmo_ckbeobject_deserialize(
     
     const bool is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
-
-    /* Default priority is 0 */
-    out_state->priority = 0;
 
     /* Load scripts array - optional section (legacy + modern) */
     nmo_last_error_clear();

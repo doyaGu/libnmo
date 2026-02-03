@@ -75,6 +75,8 @@
 #include <string.h>
 #include <math.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmesh, nmo_ck_mesh_state_t)
+
 /* =============================================================================
  * HELPER FUNCTIONS
  * ============================================================================= */
@@ -97,16 +99,6 @@ static inline uint32_t nmo_pack_words_to_dword(uint16_t lo, uint16_t hi) {
 /* =============================================================================
  * CKSTATECHUNK IDENTIFIERS
  * ============================================================================= */
-
-#define CK_STATESAVE_MESHFLAGS        0x00002000u
-#define CK_STATESAVE_MESHCHANNELS     0x00004000u
-#define CK_STATESAVE_MESHFACECHANMASK 0x00008000u
-#define CK_STATESAVE_MESHFACES        0x00010000u
-#define CK_STATESAVE_MESHVERTICES     0x00020000u
-#define CK_STATESAVE_MESHLINES        0x00040000u
-#define CK_STATESAVE_MESHWEIGHTS      0x00080000u
-#define CK_STATESAVE_MESHMATERIALS    0x00100000u
-#define CK_STATESAVE_PROGRESSIVEMESH  0x00800000u
 
 /* =============================================================================
  * IDENTIFIER HELPERS
@@ -348,8 +340,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
 {
     nmo_status_t result;
     
-    // Initialize state
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckmesh_create(out_state, NULL, arena));
     
     // Load parent CKBeObject
     result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
@@ -648,7 +639,7 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 {
     nmo_status_t result;
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckmesh_create(out_state, NULL, arena));
 
     result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result != NMO_OK) {

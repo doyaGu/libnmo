@@ -16,6 +16,8 @@
 #include <stdalign.h>
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckinterfaceobjectmanager, nmo_ckinterfaceobjectmanager_state_t)
+
 /* Identifiers from CKInterfaceObjectManager.cpp */
 #define CK_STATESAVE_IOM_CHUNKS 0x01234567u
 #define CK_STATESAVE_IOM_GUID   0x87654321u
@@ -30,7 +32,7 @@ static nmo_status_t nmo_ckinterfaceobjectmanager_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckinterfaceobjectmanager_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

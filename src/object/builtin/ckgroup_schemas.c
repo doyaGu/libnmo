@@ -29,12 +29,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * CKGroup IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From reference/src/CKGroup.cpp */
-#define CK_STATESAVE_GROUPALL  0x00000001
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckgroup, nmo_ckgroup_state_t)
 
 /* =============================================================================
  * CKGroup DESERIALIZATION
@@ -67,8 +62,7 @@ nmo_status_t nmo_ckgroup_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckgroup_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckgroup_create(out_state, type, context));
     
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);

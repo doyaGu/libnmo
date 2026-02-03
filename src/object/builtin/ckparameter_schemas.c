@@ -28,6 +28,15 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    ckparameter,
+    nmo_ckparameter_state_t,
+    do { \
+        state->mode = NMO_CKPARAM_MODE_NONE; \
+        state->has_state = false; \
+    } while (0),
+    ((void)0))
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
@@ -70,10 +79,7 @@ nmo_status_t nmo_ckparameter_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckparameter_state_t));
-    out_state->mode = NMO_CKPARAM_MODE_NONE;
-    out_state->has_state = false;
+    NMO_RETURN_IF_ERROR(nmo_ckparameter_create(out_state, type, context));
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);

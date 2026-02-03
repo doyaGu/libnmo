@@ -29,6 +29,8 @@
 #include <stdalign.h>
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksprite, nmo_cksprite_state_t)
+
 /* =============================================================================
  * HELPER FUNCTIONS
  * ============================================================================= */
@@ -261,7 +263,7 @@ nmo_status_t nmo_cksprite_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_deserialize");
     }
     
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cksprite_create(out_state, NULL, context));
     
     /* First deserialize parent CK2dEntity data */
     nmo_status_t result = nmo_ck2dentity_deserialize(

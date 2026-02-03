@@ -14,19 +14,9 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_ANIMATIONDATA        0x00000010u
-#define CK_STATESAVE_ANIMATIONLENGTH      0x00000040u
-#define CK_STATESAVE_ANIMATIONBODYPARTS   0x00000080u
-#define CK_STATESAVE_ANIMATIONCHARACTER   0x00000100u
-#define CK_STATESAVE_ANIMATIONCURRENTSTEP 0x00000200u
-
-#define CK_STATESAVE_KEYEDANIMANIMLIST    0x00001000u
-#define CK_STATESAVE_KEYEDANIMMERGE       0x00100000u
-#define CK_STATESAVE_KEYEDANIMSUBANIMS    0x00200000u
-
-#define CK_STATESAVE_OBJANIMNEWDATA       0x00001000u
-#define CK_STATESAVE_OBJANIMSHARED        0x02000000u
-#define CK_STATESAVE_OBJANIMCONTROLLERS   0x04000000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckanimation, nmo_ckanimation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckkeyedanimation, nmo_ckkeyedanimation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckobjectanimation, nmo_ckobjectanimation_state_t)
 
 /* CKAnimation flag bits (subset used during legacy load) */
 #define CKANIMATION_LINKTOFRAMERATE       0x00000001u
@@ -159,7 +149,7 @@ static nmo_status_t nmo_ckanimation_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckanimation_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckanimation_create(out_state, NULL, context));
 
     {
         nmo_status_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
@@ -296,7 +286,7 @@ static nmo_status_t nmo_ckkeyedanimation_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkeyedanimation_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckkeyedanimation_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckanimation_deserialize_internal(chunk, context, &out_state->base);
     if (result != NMO_OK) return result;
@@ -396,7 +386,7 @@ static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobjectanimation_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckobjectanimation_create(out_state, NULL, context));
 
     {
         nmo_status_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);

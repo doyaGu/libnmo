@@ -25,6 +25,8 @@
 #include <stddef.h>
 #include <stdalign.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckspritetext, nmo_ck_spritetext_state_t)
+
 /* ========================================================================
  * Helper Functions
  * ======================================================================== */
@@ -371,7 +373,7 @@ nmo_status_t nmo_ckspritetext_deserialize(
             "Invalid arguments to nmo_ckspritetext_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckspritetext_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ck2dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

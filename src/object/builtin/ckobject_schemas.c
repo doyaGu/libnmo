@@ -21,12 +21,39 @@
 #include <stdalign.h>
 
 /* =============================================================================
- * CKObject IDENTIFIER CONSTANTS
+ * CKObject LIFECYCLE
  * ============================================================================= */
 
-/* Identifier constants from CKDefines.h */
-#define CK_STATESAVE_OBJECTHIDDEN          0x00000001
-#define CK_STATESAVE_OBJECTHIERAHIDDEN     0x00000002
+static nmo_status_t nmo_ckobject_create(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_ckobject_create");
+    }
+
+    nmo_ckobject_state_t *state = (nmo_ckobject_state_t *)instance;
+    memset(state, 0, sizeof(*state));
+    state->visibility_flags = NMO_CKOBJECT_VISIBLE;
+    NMO_RETURN_OK();
+}
+
+static void nmo_ckobject_destroy(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        return;
+    }
+    memset(instance, 0, sizeof(nmo_ckobject_state_t));
+}
 
 /* =============================================================================
  * CKObject DESERIALIZATION
@@ -59,8 +86,7 @@ nmo_status_t nmo_ckobject_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_deserialize");
     }
 
-    /* Initialize to default (visible) */
-    out_state->visibility_flags = NMO_CKOBJECT_VISIBLE;
+    NMO_RETURN_IF_ERROR(nmo_ckobject_create(out_state, type, context));
 
     /* Check for OBJECTHIDDEN identifier (highest priority) */
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJECTHIDDEN);

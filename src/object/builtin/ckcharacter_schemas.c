@@ -14,16 +14,8 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_BODYPARTROTJOINT   0x01000000u
-#define CK_STATESAVE_BODYPARTCHARACTER  0x04000000u
-
-#define CK_STATESAVE_CHARACTERBODYPARTS  0x00400000u
-#define CK_STATESAVE_CHARACTERANIMATIONS 0x01000000u
-#define CK_STATESAVE_CHARACTERROOT       0x02000000u
-#define CK_STATESAVE_CHARACTERSAVEANIMS  0x04000000u
-#define CK_STATESAVE_CHARACTERSAVEPARTS  0x10000000u
-#define CK_STATESAVE_CHARACTERFLOORREF   0x20000000u
-#define CK_STATESAVE_CHARACTERONLY       0xFFC00000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcharacter, nmo_ckcharacter_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbodypart, nmo_ckbodypart_state_t)
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
@@ -116,7 +108,7 @@ static nmo_status_t nmo_ckcharacter_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcharacter_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckcharacter_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
@@ -284,7 +276,7 @@ static nmo_status_t nmo_ckbodypart_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbodypart_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckbodypart_create(out_state, NULL, context));
 
     {
         nmo_status_t result = nmo_ck3dobject_deserialize(&out_state->base, chunk, NULL, context);

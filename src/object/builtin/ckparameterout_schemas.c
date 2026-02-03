@@ -19,11 +19,11 @@
 #include <stdalign.h>
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterout, nmo_ckparameterout_state_t)
+
 /* =============================================================================
  * CKParameterOut DESERIALIZATION/SERIALIZATION
  * ============================================================================= */
-
-#define CK_STATESAVE_PARAMETEROUT_DESTINATIONS 0x00000020
 
 /**
  * @brief Deserialize CKParameterOut state from chunk
@@ -44,7 +44,7 @@ nmo_status_t nmo_ckparameterout_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
-    memset(out_state, 0, sizeof(nmo_ckparameterout_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckparameterout_create(out_state, type, context));
 
     /* Read base CKParameter state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);

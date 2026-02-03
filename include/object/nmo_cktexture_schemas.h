@@ -24,6 +24,7 @@
 #include "nmo_types.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ckstatesave_ids.h"
 #include "core/nmo_guid.h"
 
 #ifdef __cplusplus
@@ -46,19 +47,19 @@ typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
  * ======================================================================== */
 
 /** Serialization identifiers (CK_STATESAVEFLAGS_TEXTURE) */
-#define NMO_CKTEXTURE_IDENTIFIER_AVIFILENAME   0x00001000  /**< Movie file name */
-#define NMO_CKTEXTURE_IDENTIFIER_CURRENTIMAGE  0x00002000  /**< Current slot */
-#define NMO_CKTEXTURE_IDENTIFIER_BITMAPS       0x00004000  /**< Legacy bitmap2 format */
-#define NMO_CKTEXTURE_IDENTIFIER_TRANSPARENT   0x00008000  /**< Transparency data */
-#define NMO_CKTEXTURE_IDENTIFIER_FILENAMES     0x00010000  /**< Slot filenames */
-#define NMO_CKTEXTURE_IDENTIFIER_COMPRESSED    0x00020000  /**< Raw bitmap data */
-#define NMO_CKTEXTURE_IDENTIFIER_VIDEOFORMAT   0x00040000  /**< Desired video format */
-#define NMO_CKTEXTURE_IDENTIFIER_SAVEFORMAT    0x00080000  /**< Save format (CKBitmapProperties) */
-#define NMO_CKTEXTURE_IDENTIFIER_READER        0x00100000  /**< Reader-compressed bitmap data */
-#define NMO_CKTEXTURE_IDENTIFIER_PICKTHRESHOLD 0x00200000  /**< Pick threshold */
-#define NMO_CKTEXTURE_IDENTIFIER_USERMIPMAP    0x00400000  /**< User mipmap levels */
-#define NMO_CKTEXTURE_IDENTIFIER_SYSTEMCACHING 0x00800000  /**< System caching */
-#define NMO_CKTEXTURE_IDENTIFIER_OLDTEXONLY    0x002FF000  /**< Packed texture flags */
+#define NMO_CKTEXTURE_IDENTIFIER_AVIFILENAME   CK_STATESAVE_TEXAVIFILENAME   /**< Movie file name */
+#define NMO_CKTEXTURE_IDENTIFIER_CURRENTIMAGE  CK_STATESAVE_TEXCURRENTIMAGE  /**< Current slot */
+#define NMO_CKTEXTURE_IDENTIFIER_BITMAPS       CK_STATESAVE_TEXBITMAPS       /**< Legacy bitmap2 format */
+#define NMO_CKTEXTURE_IDENTIFIER_TRANSPARENT   CK_STATESAVE_TEXTRANSPARENT   /**< Transparency data */
+#define NMO_CKTEXTURE_IDENTIFIER_FILENAMES     CK_STATESAVE_TEXFILENAMES     /**< Slot filenames */
+#define NMO_CKTEXTURE_IDENTIFIER_COMPRESSED    CK_STATESAVE_TEXCOMPRESSED    /**< Raw bitmap data */
+#define NMO_CKTEXTURE_IDENTIFIER_VIDEOFORMAT   CK_STATESAVE_TEXVIDEOFORMAT   /**< Desired video format */
+#define NMO_CKTEXTURE_IDENTIFIER_SAVEFORMAT    CK_STATESAVE_TEXSAVEFORMAT    /**< Save format (CKBitmapProperties) */
+#define NMO_CKTEXTURE_IDENTIFIER_READER        CK_STATESAVE_TEXREADER        /**< Reader-compressed bitmap data */
+#define NMO_CKTEXTURE_IDENTIFIER_PICKTHRESHOLD CK_STATESAVE_PICKTHRESHOLD    /**< Pick threshold */
+#define NMO_CKTEXTURE_IDENTIFIER_USERMIPMAP    CK_STATESAVE_USERMIPMAP       /**< User mipmap levels */
+#define NMO_CKTEXTURE_IDENTIFIER_SYSTEMCACHING CK_STATESAVE_TEXSYSTEMCACHING /**< System caching */
+#define NMO_CKTEXTURE_IDENTIFIER_OLDTEXONLY    CK_STATESAVE_OLDTEXONLY       /**< Packed texture flags */
 
 /** Bitmap save options (CK_BITMAP_SAVEOPTIONS) */
 #define NMO_CKTEXTURE_RAWDATA                  0x00000000  /**< Raw pixel data */

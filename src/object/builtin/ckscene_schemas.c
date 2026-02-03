@@ -27,14 +27,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * CKScene IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From reference/src/CKScene.cpp */
-#define CK_STATESAVE_SCENENEWDATA        0x00000001
-#define CK_STATESAVE_SCENELAUNCHED       0x00000002
-#define CK_STATESAVE_SCENERENDERSETTINGS 0x00000004
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckscene, nmo_ckscene_state_t)
 
 /* Scene object flags (CKEnums.h) */
 #define CK_SCENEOBJECT_START_ACTIVATE   0x0001
@@ -73,8 +66,7 @@ nmo_status_t nmo_ckscene_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckscene_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckscene_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckscene_create(out_state, type, context));
     
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);

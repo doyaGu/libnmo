@@ -9,6 +9,7 @@
 #include "type/type_system.h"
 #include "type/operation_system.h"
 #include "core/nmo_math.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
 #include <stdint.h>

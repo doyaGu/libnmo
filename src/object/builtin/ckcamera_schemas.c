@@ -35,13 +35,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* Identifier constants from CKDefines2.h */
-#define CK_STATESAVE_CAMERAFOV       0x00400000u
-#define CK_STATESAVE_CAMERAPROJTYPE  0x00800000u
-#define CK_STATESAVE_CAMERAOTHOZOOM  0x01000000u
-#define CK_STATESAVE_CAMERAASPECT    0x02000000u
-#define CK_STATESAVE_CAMERAPLANES    0x04000000u
-#define CK_STATESAVE_CAMERAONLY      0x0FC00000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcamera, nmo_ckcamera_state_t)
 
 /* =============================================================================
  * CKCamera DESERIALIZATION
@@ -80,7 +74,7 @@ nmo_status_t nmo_ckcamera_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKCamera deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckcamera_create(out_state, type, context));
 
     // First deserialize parent CK3dEntity data
     nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);

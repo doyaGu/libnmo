@@ -22,6 +22,8 @@
 #include <stdalign.h>
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dobject, nmo_ck3dobject_state_t)
+
 /* =============================================================================
  * CK3dObject DESERIALIZATION
  * ============================================================================= */
@@ -50,7 +52,7 @@ nmo_status_t nmo_ck3dobject_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dObject deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ck3dobject_create(out_state, type, context));
 
     return nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
 }

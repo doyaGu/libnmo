@@ -14,10 +14,9 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-/* CKDefines2.h identifiers */
-#define CK_STATESAVE_SYNCHRODATA 0x00000010u
-#define CK_STATESAVE_STATE_DATA  0x00000010u
-#define CK_STATESAVE_CRIT_DATA   0x00000010u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksynchro, nmo_cksynchro_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckstate, nmo_ckstate_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcriticalsection, nmo_ckcriticalsection_state_t)
 
 static nmo_status_t deserialize_ckobject_base(
     nmo_ckobject_state_t *out_base,
@@ -53,7 +52,7 @@ nmo_status_t nmo_cksynchro_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksynchro_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cksynchro_create(out_state, type, context));
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
@@ -182,12 +181,12 @@ nmo_status_t nmo_ckstate_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckstate_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckstate_create(out_state, type, context));
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_STATE_DATA) == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
         nmo_chunk_read_int(chunk, &out_state->event_flag);
     }
 
@@ -210,7 +209,7 @@ nmo_status_t nmo_ckstate_serialize(
     nmo_status_t result = serialize_ckobject_base(&in_state->base, out_chunk, context);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_STATE_DATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SYNCHRODATA);
     if (result != NMO_OK) return result;
 
     return nmo_chunk_write_int(out_chunk, in_state->event_flag);
@@ -233,12 +232,12 @@ nmo_status_t nmo_ckcriticalsection_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcriticalsection_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckcriticalsection_create(out_state, type, context));
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CRIT_DATA) == NMO_OK) {
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
         nmo_chunk_read_object_id(chunk, &out_state->object_in_section_id);
     }
 
@@ -261,7 +260,7 @@ nmo_status_t nmo_ckcriticalsection_serialize(
     nmo_status_t result = serialize_ckobject_base(&in_state->base, out_chunk, context);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CRIT_DATA);
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SYNCHRODATA);
     if (result != NMO_OK) return result;
 
     return nmo_chunk_write_object_id(out_chunk, in_state->object_in_section_id);

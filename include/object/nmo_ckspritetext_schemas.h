@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "object/nmo_ck2dentity_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ckstatesave_ids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,9 +22,9 @@ typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 
 /** Serialization identifiers */
-#define NMO_CKSPRITETEXT_IDENTIFIER_TEXT       0x01000000
-#define NMO_CKSPRITETEXT_IDENTIFIER_FONT       0x02000000
-#define NMO_CKSPRITETEXT_IDENTIFIER_COLOR      0x04000000
+#define NMO_CKSPRITETEXT_IDENTIFIER_TEXT       CK_STATESAVE_SPRITETEXT
+#define NMO_CKSPRITETEXT_IDENTIFIER_FONT       CK_STATESAVE_SPRITEFONT
+#define NMO_CKSPRITETEXT_IDENTIFIER_COLOR      CK_STATESAVE_SPRITETEXTCOLOR
 
 /** Font weight constants (Windows LOGFONT standard) */
 #define NMO_FONT_WEIGHT_DONTCARE    0

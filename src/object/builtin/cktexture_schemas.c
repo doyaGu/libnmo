@@ -26,20 +26,7 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-
-#define CK_STATESAVE_TEXAVIFILENAME   0x00001000u
-#define CK_STATESAVE_TEXCURRENTIMAGE  0x00002000u
-#define CK_STATESAVE_TEXBITMAPS       0x00004000u
-#define CK_STATESAVE_TEXTRANSPARENT   0x00008000u
-#define CK_STATESAVE_TEXFILENAMES     0x00010000u
-#define CK_STATESAVE_TEXCOMPRESSED    0x00020000u
-#define CK_STATESAVE_TEXVIDEOFORMAT   0x00040000u
-#define CK_STATESAVE_TEXSAVEFORMAT    0x00080000u
-#define CK_STATESAVE_TEXREADER        0x00100000u
-#define CK_STATESAVE_PICKTHRESHOLD    0x00200000u
-#define CK_STATESAVE_USERMIPMAP       0x00400000u
-#define CK_STATESAVE_TEXSYSTEMCACHING 0x00800000u
-#define CK_STATESAVE_OLDTEXONLY       0x002FF000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktexture, nmo_ck_texture_state_t)
 
 static size_t nmo_cktexture_identifier_payload_size(nmo_chunk_t *chunk) {
     if (!chunk || !chunk->parser_state || chunk->data.count == 0) {
@@ -336,7 +323,7 @@ nmo_status_t nmo_cktexture_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cktexture_create(out_state, type, context));
 
     {
         nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);

@@ -14,7 +14,7 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_GRIDDATA 0x00400000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckgrid, nmo_ckgrid_state_t)
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
@@ -34,7 +34,7 @@ nmo_status_t nmo_ckgrid_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgrid_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckgrid_create(out_state, type, context));
 
     nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

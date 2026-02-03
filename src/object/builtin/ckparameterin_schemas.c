@@ -18,15 +18,11 @@
 #include "nmo_types.h"
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterin, nmo_ckparameterin_state_t)
+
 /* =============================================================================
  * CKParameterIn DESERIALIZATION/SERIALIZATION
  * ============================================================================= */
-
-/* Identifier constants from reference */
-#define CK_STATESAVE_PARAMETERIN_DEFAULTDATA   0x00000400
-#define CK_STATESAVE_PARAMETERIN_DATASHARED    0x00000800
-#define CK_STATESAVE_PARAMETERIN_DATASOURCE    0x00001000
-#define CK_STATESAVE_PARAMETERIN_DISABLED      0x00002000
 
 /**
  * @brief Deserialize CKParameterIn state from chunk
@@ -46,7 +42,7 @@ nmo_status_t nmo_ckparameterin_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
-    memset(out_state, 0, sizeof(nmo_ckparameterin_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckparameterin_create(out_state, type, context));
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);

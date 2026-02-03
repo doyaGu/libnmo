@@ -34,32 +34,13 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * CKBehavior IDENTIFIER AND FLAG CONSTANTS
- * ============================================================================= */
-
-/* From CKDefines2.h (CK_STATESAVEFLAGS_BEHAVIOR) */
-#define CK_STATESAVE_BEHAVIORINTERFACE      0x00000010u
-#define CK_STATESAVE_BEHAVIORNEWDATA        0x00000020u
-#define CK_STATESAVE_BEHAVIORFLAGS          0x00000040u
-#define CK_STATESAVE_BEHAVIORCOMPATIBLECID  0x00000080u
-#define CK_STATESAVE_BEHAVIORSUBBEHAV       0x00000100u
-#define CK_STATESAVE_BEHAVIORINPARAMS       0x00000200u
-#define CK_STATESAVE_BEHAVIOROUTPARAMS      0x00000400u
-#define CK_STATESAVE_BEHAVIORINPUTS         0x00000800u
-#define CK_STATESAVE_BEHAVIOROUTPUTS        0x00001000u
-#define CK_STATESAVE_BEHAVIORINFO           0x00002000u
-#define CK_STATESAVE_BEHAVIOROPERATIONS     0x00004000u
-#define CK_STATESAVE_BEHAVIORTYPE           0x00008000u
-#define CK_STATESAVE_BEHAVIOROWNER          0x00010000u
-#define CK_STATESAVE_BEHAVIORLOCALPARAMS    0x00020000u
-#define CK_STATESAVE_BEHAVIORPROTOGUID      0x00040000u
-#define CK_STATESAVE_BEHAVIORSUBLINKS       0x00080000u
-#define CK_STATESAVE_BEHAVIORACTIVESUBLINKS 0x00100000u
-#define CK_STATESAVE_BEHAVIORSINGLEACTIVITY 0x00200000u
-#define CK_STATESAVE_BEHAVIORSCRIPTDATA     0x00400000u
-#define CK_STATESAVE_BEHAVIORPRIORITY       0x00800000u
-#define CK_STATESAVE_BEHAVIORTARGET         0x01000000u
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    ckbehavior,
+    nmo_ckbehavior_state_t,
+    do { \
+        state->compatible_class_id = NMO_CID_BEOBJECT; \
+    } while (0),
+    ((void)0))
 
 /* Legacy identifier values (older CK2 builds) */
 #define CK_STATESAVE_BEHAVIORINTERFACE_LEGACY      0x00000001u
@@ -213,8 +194,7 @@ nmo_status_t nmo_ckbehavior_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckbehavior_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckbehavior_create(out_state, type, context));
     
     /* Deserialize base CKObject state (merged into this chunk by AddChunkAndDelete) */
     {
@@ -232,7 +212,6 @@ nmo_status_t nmo_ckbehavior_deserialize(
     
     const bool is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
-    out_state->compatible_class_id = NMO_CID_BEOBJECT;
 
     uint32_t newdata_id = CK_STATESAVE_BEHAVIORNEWDATA;
     nmo_status_t newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);

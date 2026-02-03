@@ -29,6 +29,8 @@
 #include <stdalign.h>
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckrenderobject, nmo_ckrenderobject_state_t)
+
 /* =============================================================================
  * CKRenderObject DESERIALIZATION
  * ============================================================================= */
@@ -61,8 +63,7 @@ nmo_status_t nmo_ckrenderobject_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckrenderobject_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckrenderobject_create(out_state, type, context));
 
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

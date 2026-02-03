@@ -28,6 +28,8 @@
 #include <string.h>
 #include <stdalign.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksceneobject, nmo_cksceneobject_state_t)
+
 /* =============================================================================
  * CKSceneObject DESERIALIZATION
  * ============================================================================= */
@@ -56,8 +58,7 @@ nmo_status_t nmo_cksceneobject_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksceneobject_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cksceneobject_create(out_state, type, context));
 
     /* Deserialize base CKObject state */
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);

@@ -7,7 +7,7 @@
  * Serialization format (from CK2_3D.dll analysis):
  * 
  * Modern format (version ??):
- * - Identifier 0x400000: Core light data
+ * - Identifier CK_STATESAVE_LIGHTDATA (0x00400000): Core light data
  *   - DWORD: Type (low 8 bits) | Flags (high 24 bits)
  *   - DWORD: Diffuse color (packed ARGB)
  *   - float: Attenuation0
@@ -19,11 +19,11 @@
  *     - float: InnerSpotCone
  *     - float: Falloff
  * 
- * - Identifier 0x800000 (optional): Light power
+ * - Identifier CK_STATESAVE_LIGHTDATA2 (0x00800000) (optional): Light power
  *   - float: m_LightPower (only if != 1.0)
  * 
  * Legacy format (version <5):
- * - Identifier 0x400000: Full light data
+ * - Identifier CK_STATESAVE_LIGHTDATA (0x00400000): Full light data
  *   - DWORD: Type
  *   - float: Diffuse.r, Diffuse.g, Diffuse.b
  *   - float: (skip alpha)
@@ -50,35 +50,59 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * HELPER FUNCTIONS
- * ============================================================================= */
+static void nmo_cklight_set_defaults(nmo_cklight_state_t *state) {
+    if (state == NULL) {
+        return;
+    }
 
-/**
- * @brief Convert ARGB DWORD to VxColor (implementation)
- */
-void nmo_vx_color_from_argb(uint32_t argb, nmo_vx_color_t *out_color) {
-    if (!out_color) return;
-    
-    out_color->a = ((argb >> 24) & 0xFF) / 255.0f;
-    out_color->r = ((argb >> 16) & 0xFF) / 255.0f;
-    out_color->g = ((argb >> 8) & 0xFF) / 255.0f;
-    out_color->b = (argb & 0xFF) / 255.0f;
+    /* Mirrors RCKLight ctor defaults (see CKRenderEngine/src/CKLight.cpp). */
+    state->flags = 0x100u;
+    state->light_power = 1.0f;
+
+    state->light_data.type = NMO_LIGHT_POINT;
+
+    state->light_data.diffuse.r = 1.0f;
+    state->light_data.diffuse.g = 1.0f;
+    state->light_data.diffuse.b = 1.0f;
+    state->light_data.diffuse.a = 1.0f;
+
+    state->light_data.specular.r = 0.0f;
+    state->light_data.specular.g = 0.0f;
+    state->light_data.specular.b = 0.0f;
+    state->light_data.specular.a = 0.0f;
+
+    state->light_data.ambient.r = 0.0f;
+    state->light_data.ambient.g = 0.0f;
+    state->light_data.ambient.b = 0.0f;
+    state->light_data.ambient.a = 0.0f;
+
+    state->light_data.range = 5000.0f;
+    state->light_data.falloff = 1.0f;
+    state->light_data.attenuation0 = 1.0f;
+    state->light_data.attenuation1 = 0.0f;
+    state->light_data.attenuation2 = 0.0f;
+
+    state->light_data.inner_spot_cone = 0.69813174f;
+    state->light_data.outer_spot_cone = 0.78539819f;
 }
 
-/**
- * @brief Convert VxColor to ARGB DWORD (implementation)
- */
-uint32_t nmo_vx_color_to_argb(const nmo_vx_color_t *color) {
-    if (!color) return 0;
-    
-    uint8_t a = 0xFF;
-    uint8_t r = (uint8_t)(color->r * 255.0f);
-    uint8_t g = (uint8_t)(color->g * 255.0f);
-    uint8_t b = (uint8_t)(color->b * 255.0f);
-    
-    return ((uint32_t)a << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+static void nmo_cklight_apply_nonspot_defaults(nmo_cklight_state_t *state) {
+    if (state == NULL) {
+        return;
+    }
+    /* In the engine, non-spot lights keep ctor defaults for these fields. */
+    state->light_data.inner_spot_cone = 0.69813174f;
+    state->light_data.outer_spot_cone = 0.78539819f;
+    state->light_data.falloff = 1.0f;
 }
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    cklight,
+    nmo_cklight_state_t,
+    do { \
+        nmo_cklight_set_defaults(state); \
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * CKLight DESERIALIZATION
@@ -95,10 +119,10 @@ static nmo_status_t nmo_cklight_deserialize_modern(
     (void)arena;
     nmo_status_t result;
     
-    // Seek to light data identifier 0x400000
-    result = nmo_chunk_seek_identifier(chunk, 0x400000);
+    // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing light data identifier 0x400000");
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing light data identifier CK_STATESAVE_LIGHTDATA");
     }
     
     // Read Type|Flags packed DWORD
@@ -109,8 +133,8 @@ static nmo_status_t nmo_cklight_deserialize_modern(
     }
     
     // Unpack: Type in low 8 bits, Flags in high 24 bits
-    out_state->light_data.type = (nmo_vx_light_type_t)(packed_type_flags & 0xFF);
-    out_state->flags = packed_type_flags & 0xFFFFFF00;
+    out_state->light_data.type = (nmo_vx_light_type_t)(packed_type_flags & 0xFFu);
+    out_state->flags = packed_type_flags & ~0xFFu;
     
     // Validate type
     if (out_state->light_data.type < NMO_LIGHT_POINT ||
@@ -124,7 +148,7 @@ static nmo_status_t nmo_cklight_deserialize_modern(
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse color");
     }
-    nmo_vx_color_from_argb(diffuse_argb, &out_state->light_data.diffuse);
+    nmo_color_from_argb32(diffuse_argb, &out_state->light_data.diffuse);
     
     // Read attenuation parameters
     result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation0);
@@ -166,13 +190,11 @@ static nmo_status_t nmo_cklight_deserialize_modern(
         }
     } else {
         // Default spotlight parameters for non-spotlights
-        out_state->light_data.outer_spot_cone = 0.0f;
-        out_state->light_data.inner_spot_cone = 0.0f;
-        out_state->light_data.falloff = 0.0f;
+        nmo_cklight_apply_nonspot_defaults(out_state);
     }
     
-    // Optional: light power (identifier 0x800000)
-    result = nmo_chunk_seek_identifier(chunk, 0x800000);
+    // Optional: light power (CK_STATESAVE_LIGHTDATA2)
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
     if (result == NMO_OK) {
         result = nmo_chunk_read_float(chunk, &out_state->light_power);
         if (result != NMO_OK) {
@@ -197,10 +219,10 @@ static nmo_status_t nmo_cklight_deserialize_legacy(
     (void)arena;
     nmo_status_t result;
     
-    // Seek to light data identifier 0x400000
-    result = nmo_chunk_seek_identifier(chunk, 0x400000);
+    // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing light data identifier 0x400000");
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing light data identifier CK_STATESAVE_LIGHTDATA");
     }
     
     // Read Type
@@ -247,8 +269,12 @@ static nmo_status_t nmo_cklight_deserialize_legacy(
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read active state");
     }
-    // Store active in flags (implementation-specific bit mapping)
-    out_state->flags = active ? 0x100 : 0;
+    // Store active in flags (bit mapping matches engine: 0x100)
+    if (active) {
+        out_state->flags |= 0x100u;
+    } else {
+        out_state->flags &= ~0x100u;
+    }
     
     // Read Specular flag
     int32_t specular;
@@ -257,7 +283,9 @@ static nmo_status_t nmo_cklight_deserialize_legacy(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read specular flag");
     }
     if (specular) {
-        out_state->flags |= 0x200;
+        out_state->flags |= 0x200u;
+    } else {
+        out_state->flags &= ~0x200u;
     }
     
     // Read attenuation parameters
@@ -321,7 +349,7 @@ nmo_status_t nmo_cklight_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKLight deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cklight_create(out_state, type, context));
 
     // First deserialize parent CK3dEntity data
     nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
@@ -366,21 +394,21 @@ nmo_status_t nmo_cklight_serialize(
         return result;
     }
 
-    // Write identifier 0x400000
-    result = nmo_chunk_write_identifier(chunk, 0x400000);
+    // Write identifier (CK_STATESAVE_LIGHTDATA)
+    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LIGHTDATA);
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write light data identifier");
     }
 
-    // Pack Type|Flags
-    uint32_t packed_type_flags = (uint32_t)state->light_data.type | state->flags;
+    // Pack Type|Flags (engine stores flags in upper 24 bits)
+    uint32_t packed_type_flags = ((uint32_t)state->light_data.type & 0xFFu) | (state->flags & ~0xFFu);
     result = nmo_chunk_write_dword(chunk, packed_type_flags);
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write Type|Flags");
     }
 
-    // Pack and write Diffuse color as ARGB
-    uint32_t diffuse_argb = nmo_vx_color_to_argb(&state->light_data.diffuse);
+    // Pack and write Diffuse color as ARGB (engine forces alpha to 0xFF)
+    uint32_t diffuse_argb = nmo_color_to_argb32_opaque(&state->light_data.diffuse);
     result = nmo_chunk_write_dword(chunk, diffuse_argb);
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write diffuse color");
@@ -428,7 +456,7 @@ nmo_status_t nmo_cklight_serialize(
 
     // Optional: light power (only if != 1.0)
     if (state->light_power != 1.0f) {
-        result = nmo_chunk_write_identifier(chunk, 0x800000);
+        result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write power identifier");
         }

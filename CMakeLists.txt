@@ -57,6 +57,15 @@ if(EXISTS "${MINIZ_DIR}/miniz.h")
     if(NOT TARGET miniz)
         add_subdirectory("${MINIZ_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/miniz" EXCLUDE_FROM_ALL)
     endif()
+
+    # Silence warnings from third-party miniz sources
+    if(TARGET miniz)
+        if(MSVC)
+            target_compile_options(miniz PRIVATE /w)
+        else()
+            target_compile_options(miniz PRIVATE -w)
+        endif()
+    endif()
 else()
     # Fall back to system ZLIB if miniz not available
     find_package(ZLIB REQUIRED)
@@ -94,6 +103,7 @@ endif()
 set(NMO_CORE_SOURCES
     src/core/allocator.c
     src/core/arena.c
+    src/core/color.c
     src/core/error.c
     src/core/logger.c
     src/core/version.c

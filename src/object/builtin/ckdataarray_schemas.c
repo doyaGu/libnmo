@@ -26,14 +26,13 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From reference/src/CKDataArray.cpp */
-#define CK_STATESAVE_DATAARRAYFORMAT  0x00000001
-#define CK_STATESAVE_DATAARRAYDATA    0x00000002
-#define CK_STATESAVE_DATAARRAYMEMBERS 0x00000004
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    ckdataarray,
+    nmo_ckdataarray_state_t,
+    do { \
+        state->key_column = -1; \
+    } while (0),
+    ((void)0))
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
@@ -70,13 +69,11 @@ nmo_status_t nmo_ckdataarray_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckdataarray_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckdataarray_create(out_state, type, context));
     
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
-    out_state->key_column = -1; /* Default: no key column */
 
     nmo_last_error_clear();
     result = NMO_OK;

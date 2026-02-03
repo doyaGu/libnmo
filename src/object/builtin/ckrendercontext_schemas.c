@@ -16,6 +16,8 @@
 #include <stddef.h>
 #include <stdalign.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckrendercontext, nmo_ckrendercontext_state_t)
+
 static nmo_status_t nmo_ckrendercontext_deserialize_internal(
     nmo_ckrendercontext_state_t *out_state,
     nmo_chunk_t *chunk,
@@ -25,7 +27,7 @@ static nmo_status_t nmo_ckrendercontext_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrendercontext_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckrendercontext_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

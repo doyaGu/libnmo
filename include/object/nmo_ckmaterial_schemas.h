@@ -15,6 +15,7 @@
 #define NMO_CKMATERIAL_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_color.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk.h"
 #include "object/nmo_ckbeobject_schemas.h"
@@ -41,25 +42,10 @@ typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
  * - Emissive: Self-illumination color (default 0, 0, 0, 1.0)
  */
 typedef struct nmo_material_colors {
-    float ambient_r;       /**< Ambient red component (0.0-1.0) */
-    float ambient_g;       /**< Ambient green component (0.0-1.0) */
-    float ambient_b;       /**< Ambient blue component (0.0-1.0) */
-    float ambient_a;       /**< Ambient alpha component (0.0-1.0) */
-    
-    float diffuse_r;       /**< Diffuse red component (0.0-1.0) */
-    float diffuse_g;       /**< Diffuse green component (0.0-1.0) */
-    float diffuse_b;       /**< Diffuse blue component (0.0-1.0) */
-    float diffuse_a;       /**< Diffuse alpha component (0.0-1.0) */
-    
-    float specular_r;      /**< Specular red component (0.0-1.0) */
-    float specular_g;      /**< Specular green component (0.0-1.0) */
-    float specular_b;      /**< Specular blue component (0.0-1.0) */
-    float specular_a;      /**< Specular alpha component (0.0-1.0) */
-    
-    float emissive_r;      /**< Emissive red component (0.0-1.0) */
-    float emissive_g;      /**< Emissive green component (0.0-1.0) */
-    float emissive_b;      /**< Emissive blue component (0.0-1.0) */
-    float emissive_a;      /**< Emissive alpha component (0.0-1.0) */
+    nmo_color_t ambient;   /**< Ambient color (default 0.3, 0.3, 0.3, 1.0) */
+    nmo_color_t diffuse;   /**< Diffuse color (default 0.7, 0.7, 0.7, 1.0) */
+    nmo_color_t specular;  /**< Specular color (default 0.5, 0.5, 0.5, 1.0) */
+    nmo_color_t emissive;  /**< Emissive color (default 0, 0, 0, 1.0) */
 } nmo_material_colors_t;
 
 /**
@@ -189,16 +175,6 @@ typedef struct nmo_ck_material_state {
     uint8_t has_effect_param;
     uint8_t has_additional_textures;
 } nmo_ck_material_state_t;
-
-/* ========================================================================
- * Serialization Identifiers
- * ======================================================================== */
-
-/* Material identifiers (values TBD based on reverse engineering) */
-#define NMO_CKMATERIAL_IDENTIFIER_DATA          0x00001000
-#define NMO_CKMATERIAL_IDENTIFIER_TEXTURES      0x00002000
-#define NMO_CKMATERIAL_IDENTIFIER_EFFECT        0x00004000
-#define NMO_CKMATERIAL_IDENTIFIER_EFFECT_PARAM  0x00010000
 
 /* ========================================================================
  * Public API

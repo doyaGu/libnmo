@@ -14,12 +14,7 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-/* CKDefines2.h identifiers */
-#define CK_STATESAVE_OPERATIONINPUTS      0x00000040u
-#define CK_STATESAVE_OPERATIONOUTPUT      0x00000080u
-#define CK_STATESAVE_OPERATIONOP          0x00000100u
-#define CK_STATESAVE_OPERATIONDEFAULTDATA 0x00000200u
-#define CK_STATESAVE_OPERATIONNEWDATA     0x00000400u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameteroperation, nmo_ckparameteroperation_state_t)
 
 nmo_status_t nmo_ckparameteroperation_deserialize(
     void *instance,
@@ -34,7 +29,7 @@ nmo_status_t nmo_ckparameteroperation_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameteroperation_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckparameteroperation_create(out_state, type, context));
 
     {
         nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);

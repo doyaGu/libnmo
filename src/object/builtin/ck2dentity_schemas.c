@@ -27,6 +27,8 @@
 #include <stddef.h>
 #include <string.h>
 
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck2dentity, nmo_ck2dentity_state_t)
+
 /* =============================================================================
  * HELPER FUNCTIONS
  * ============================================================================= */
@@ -304,7 +306,7 @@ nmo_status_t nmo_ck2dentity_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_deserialize");
     }
     
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ck2dentity_create(out_state, type, context));
     
     /* First deserialize parent CKRenderObject data */
     nmo_status_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);

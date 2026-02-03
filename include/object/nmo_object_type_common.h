@@ -10,9 +10,11 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_hash.h"
+
 #include "format/nmo_chunk.h"
 #include "type/type_system.h"
 #include "type/type_string.h"
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -118,6 +120,42 @@ NMO_API nmo_status_t nmo_object_copy_chunk_array(
         } \
     } while (0)
 
+/* Per-type lifecycle helpers */
+#define NMO_DEFINE_OBJECT_LIFECYCLE(_prefix, _state_t, _init_block, _destroy_block) \
+    static nmo_status_t nmo_##_prefix##_create( \
+        void *instance, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        (void)type; \
+        (void)context; \
+        if (instance == NULL) { \
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
+                             "Invalid arguments to nmo_" #_prefix "_create"); \
+        } \
+        _state_t *state = (_state_t *)instance; \
+        memset(state, 0, sizeof(*state)); \
+        _init_block; \
+        NMO_RETURN_OK(); \
+    } \
+    static void nmo_##_prefix##_destroy( \
+        void *instance, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        (void)type; \
+        (void)context; \
+        if (instance == NULL) { \
+            return; \
+        } \
+        _state_t *state = (_state_t *)instance; \
+        _destroy_block; \
+        memset(state, 0, sizeof(*state)); \
+    }
+
+#define NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(_prefix, _state_t) \
+    NMO_DEFINE_OBJECT_LIFECYCLE(_prefix, _state_t, ((void)0), ((void)0))
+
 /* Per-type equals/hash macro */
 #define NMO_DEFINE_OBJECT_STATE_OPS(_name, _state_t) \
 static bool _name##_equals(const void *a, const void *b) { \
@@ -136,7 +174,17 @@ static uint32_t _name##_hash(const void *instance) { \
     return (uint32_t)nmo_hash_fnv1a(instance, sizeof(_state_t)); \
 }
 
-#define NMO_OBJECT_VTABLE(_serialize, _deserialize, _copy, _validate, _equals, _hash) .create = nmo_object_default_create, .destroy = nmo_object_default_destroy, .copy = (_copy), .serialize = (_serialize), .deserialize = (_deserialize), .validate = (_validate), .equals = (_equals), .hash = (_hash), .to_string = nmo_object_default_to_string, .from_string = nmo_object_default_from_string
+#define NMO_OBJECT_VTABLE(_create, _destroy, _serialize, _deserialize, _copy, _validate, _equals, _hash) \
+    .create = (_create), \
+    .destroy = (_destroy), \
+    .copy = (_copy), \
+    .serialize = (_serialize), \
+    .deserialize = (_deserialize), \
+    .validate = (_validate), \
+    .equals = (_equals), \
+    .hash = (_hash), \
+    .to_string = nmo_object_default_to_string, \
+    .from_string = nmo_object_default_from_string
 
 /* Registration helper for per-schema files */
 #define NMO_DEFINE_OBJECT_REGISTRATION(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable) \
@@ -171,8 +219,8 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
 #define NMO_DEFINE_OBJECT_SCHEMA(_prefix, _state_t, _serialize, _deserialize, _guid, _name, _class_id, _base_guid) \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
-        NMO_OBJECT_VTABLE(_serialize, _deserialize, nmo_object_copy, nmo_object_validate, \
-                          _prefix##_equals, _prefix##_hash) \
+        NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
+                          nmo_object_copy, nmo_object_validate, _prefix##_equals, _prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                    _base_guid, _state_t, &nmo_##_prefix##_vtable)

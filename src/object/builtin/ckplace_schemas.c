@@ -15,10 +15,7 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_PLACEPORTALS    0x00001000u
-#define CK_STATESAVE_PLACECAMERA     0x00002000u
-#define CK_STATESAVE_PLACEREFERENCES 0x00004000u
-#define CK_STATESAVE_PLACELEVEL      0x00008000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckplace, nmo_ckplace_state_t)
 
 static nmo_status_t nmo_ckplace_deserialize_internal(
     nmo_ckplace_state_t *out_state,
@@ -30,7 +27,7 @@ static nmo_status_t nmo_ckplace_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckplace_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckplace_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

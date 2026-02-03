@@ -13,7 +13,7 @@
 #include "core/nmo_error.h"
 #include <string.h>
 
-#define CK_STATESAVE_TLIGHTTARGET 0x80000000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktargetlight, nmo_cktargetlight_state_t)
 
 static nmo_status_t nmo_cktargetlight_deserialize_internal(
     nmo_cktargetlight_state_t *out_state,
@@ -24,7 +24,7 @@ static nmo_status_t nmo_cktargetlight_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktargetlight_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cktargetlight_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_cklight_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

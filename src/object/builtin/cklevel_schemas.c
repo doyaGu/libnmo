@@ -29,15 +29,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * CKLevel IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From reference/src/CKLevel.cpp */
-#define CK_STATESAVE_LEVELINACTIVEMAN  0x00002000
-#define CK_STATESAVE_LEVELDUPLICATEMAN 0x00004000
-#define CK_STATESAVE_LEVELDEFAULTDATA  0x20000000
-#define CK_STATESAVE_LEVELSCENE        0x80000000
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cklevel, nmo_cklevel_state_t)
 
 /* =============================================================================
  * CKLevel DESERIALIZATION
@@ -70,8 +62,7 @@ nmo_status_t nmo_cklevel_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklevel_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_cklevel_state_t));
+    NMO_RETURN_IF_ERROR(nmo_cklevel_create(out_state, type, context));
     
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);

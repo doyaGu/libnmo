@@ -23,15 +23,14 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From CKDefines2.h (CK_STATESAVEFLAGS_BEHAV_LINK) */
-#define CK_STATESAVE_BEHAV_LINK_CURDELAY  0x00000004u  /* Legacy format */
-#define CK_STATESAVE_BEHAV_LINK_IOS       0x00000008u  /* Legacy format */
-#define CK_STATESAVE_BEHAV_LINK_DELAY     0x00000010u  /* Legacy format */
-#define CK_STATESAVE_BEHAV_LINK_NEWDATA   0x00000020u
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    ckbehaviorlink,
+    nmo_ckbehaviorlink_state_t,
+    do { \
+        state->activation_delay = 1; \
+        state->initial_activation_delay = 1; \
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * CKBehaviorLink DESERIALIZATION
@@ -64,10 +63,7 @@ nmo_status_t nmo_ckbehaviorlink_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorlink_deserialize");
     }
 
-    /* Initialize state with defaults */
-    memset(out_state, 0, sizeof(nmo_ckbehaviorlink_state_t));
-    out_state->activation_delay = 1;
-    out_state->initial_activation_delay = 1;
+    NMO_RETURN_IF_ERROR(nmo_ckbehaviorlink_create(out_state, type, context));
 
     nmo_status_t result;
 

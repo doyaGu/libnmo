@@ -36,19 +36,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * CKSTATECHUNK IDENTIFIERS (CK3dEntity)
- * ============================================================================= */
-
-#define CK_STATESAVE_3DENTITYSKINDATANORMALS 0x00001000u
-#define CK_STATESAVE_ANIMATION              0x00002000u
-#define CK_STATESAVE_MESHS                  0x00004000u
-#define CK_STATESAVE_PARENT                 0x00008000u
-#define CK_STATESAVE_3DENTITYFLAGS          0x00010000u
-#define CK_STATESAVE_3DENTITYMATRIX         0x00020000u
-#define CK_STATESAVE_3DENTITYHIERARCHY      0x00040000u
-#define CK_STATESAVE_3DENTITYNDATA          0x00100000u
-#define CK_STATESAVE_3DENTITYSKINDATA       0x00200000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dentity, nmo_ck3dentity_state_t)
 
 /* =============================================================================
  * CK_3DENTITY FLAGS (subset)
@@ -122,21 +110,13 @@ nmo_status_t nmo_ck3dentity_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dEntity deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ck3dentity_create(out_state, type, context));
 
     // First deserialize parent CKRenderObject data
     nmo_status_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
-
-    // Initialize defaults
-    out_state->entity_flags = 0;
-    out_state->moveable_flags = 0;
-    out_state->parent_id = 0;
-    out_state->place_id = 0;
-    out_state->z_order = 0;
-    out_state->current_mesh_id = 0;
 
     // Load object animations (identifier CK_STATESAVE_ANIMATION)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATION) == NMO_OK) {

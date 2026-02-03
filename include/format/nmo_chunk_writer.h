@@ -4,10 +4,11 @@
 #include "nmo_types.h"
 #include "nmo_chunk.h"
 #include "format/nmo_chunk_context.h"
+#include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_math.h"
-#include "core/nmo_arena.h"
+#include "core/nmo_color.h"
 
 #ifdef __cplusplus
 extern "C" {

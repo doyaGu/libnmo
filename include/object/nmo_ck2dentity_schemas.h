@@ -20,6 +20,7 @@
 #include "core/nmo_math.h"
 #include "object/nmo_ckrenderobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ckstatesave_ids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -80,14 +81,14 @@ typedef struct nmo_ck2dentity_state {
  * ============================================================================= */
 
 /** Modern format (v5+) identifier - contains all fields */
-#define NMO_CK2DENTITY_CHUNK_MODERN      0x10F000
+#define NMO_CK2DENTITY_CHUNK_MODERN      CK_STATESAVE_2DENTITYONLY
 
 /** Legacy format (<v5) identifiers */
-#define NMO_CK2DENTITY_CHUNK_FLAGS       0x4000
-#define NMO_CK2DENTITY_CHUNK_ORIGIN      0x8000
-#define NMO_CK2DENTITY_CHUNK_SIZE        0x2000
-#define NMO_CK2DENTITY_CHUNK_SOURCE_RECT 0x1000
-#define NMO_CK2DENTITY_CHUNK_Z_ORDER     0x100000
+#define NMO_CK2DENTITY_CHUNK_FLAGS       CK_STATESAVE_2DENTITYFLAGS
+#define NMO_CK2DENTITY_CHUNK_ORIGIN      CK_STATESAVE_2DENTITYPOS
+#define NMO_CK2DENTITY_CHUNK_SIZE        CK_STATESAVE_2DENTITYSIZE
+#define NMO_CK2DENTITY_CHUNK_SOURCE_RECT CK_STATESAVE_2DENTITYSRCSIZE
+#define NMO_CK2DENTITY_CHUNK_Z_ORDER     CK_STATESAVE_2DENTITYZORDER
 
 /** Optional block flags (modern format) */
 #define NMO_CK2DENTITY_FLAG_SOURCE_RECT  0x10000

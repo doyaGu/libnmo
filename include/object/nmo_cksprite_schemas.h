@@ -21,6 +21,7 @@
 #include "nmo_types.h"
 #include "object/nmo_ck2dentity_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ckstatesave_ids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,16 +107,16 @@ typedef struct nmo_cksprite_state {
  * ============================================================================= */
 
 /** Sprite reference identifier (clone from another sprite) */
-#define NMO_CKSPRITE_CHUNK_SPRITE_REF    0x80000
+#define NMO_CKSPRITE_CHUNK_SPRITE_REF    CK_STATESAVE_SPRITESHARED
 
 /** Transparency identifier (color + boolean) */
-#define NMO_CKSPRITE_CHUNK_TRANSPARENCY  0x20000
+#define NMO_CKSPRITE_CHUNK_TRANSPARENCY  CK_STATESAVE_SPRITETRANSPARENT
 
 /** Current slot identifier (animation frame) */
-#define NMO_CKSPRITE_CHUNK_SLOT          0x10000
+#define NMO_CKSPRITE_CHUNK_SLOT          CK_STATESAVE_SPRITECURRENTIMAGE
 
 /** Save options identifier (bitmap flags + properties) */
-#define NMO_CKSPRITE_CHUNK_SAVE_OPTIONS  0x20000000
+#define NMO_CKSPRITE_CHUNK_SAVE_OPTIONS  CK_STATESAVE_SPRITEFORMAT
 
 /** Bitmap payload identifiers (passed to CKBitmapData::ReadFromChunk) */
 #define NMO_CKSPRITE_BITMAP_PALETTE      0x200000

@@ -16,6 +16,7 @@
 #include "object/nmo_schema_interface.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "nmo_types.h"
@@ -23,38 +24,10 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-/* ========================================================================
- * Helper Functions
- * ======================================================================== */
-/* ========================================================================
- * CKRenderEngine-aligned implementation
- * ======================================================================== */
-
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_class_ids.h"
 
-#define CK_STATESAVE_MATDATA 0x00001000u
-#define CK_STATESAVE_MATDATA2 0x00002000u
-#define CK_STATESAVE_MATDATA3 0x00004000u
-#define CK_STATESAVE_MATDATA5 0x00010000u
-
-static uint32_t nmo_pack_color(float r, float g, float b, float a) {
-    if (r < 0.0f) r = 0.0f;
-    if (g < 0.0f) g = 0.0f;
-    if (b < 0.0f) b = 0.0f;
-    if (a < 0.0f) a = 0.0f;
-    if (r > 1.0f) r = 1.0f;
-    if (g > 1.0f) g = 1.0f;
-    if (b > 1.0f) b = 1.0f;
-    if (a > 1.0f) a = 1.0f;
-
-    const uint32_t rr = (uint32_t)(r * 255.0f + 0.5f);
-    const uint32_t gg = (uint32_t)(g * 255.0f + 0.5f);
-    const uint32_t bb = (uint32_t)(b * 255.0f + 0.5f);
-    const uint32_t aa = (uint32_t)(a * 255.0f + 0.5f);
-
-    return (aa << 24) | (rr << 16) | (gg << 8) | bb;
-}
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmaterial, nmo_ck_material_state_t)
 
 nmo_status_t nmo_ckmaterial_deserialize(
     void *instance,
@@ -69,7 +42,7 @@ nmo_status_t nmo_ckmaterial_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckmaterial_create(out_state, type, context));
 
     {
         nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
@@ -81,30 +54,47 @@ nmo_status_t nmo_ckmaterial_deserialize(
 
         if (data_version < 5) {
             float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
+            nmo_color_t color;
 
             nmo_chunk_read_float(chunk, &r);
             nmo_chunk_read_float(chunk, &g);
             nmo_chunk_read_float(chunk, &b);
             nmo_chunk_read_float(chunk, &a);
-            out_state->diffuse_color = nmo_pack_color(r, g, b, a);
+            color.r = r;
+            color.g = g;
+            color.b = b;
+            color.a = a;
+            out_state->diffuse_color = nmo_color_to_argb32(&color);
 
             nmo_chunk_read_float(chunk, &r);
             nmo_chunk_read_float(chunk, &g);
             nmo_chunk_read_float(chunk, &b);
             nmo_chunk_read_float(chunk, &a);
-            out_state->ambient_color = nmo_pack_color(r, g, b, a);
+            color.r = r;
+            color.g = g;
+            color.b = b;
+            color.a = a;
+            out_state->ambient_color = nmo_color_to_argb32(&color);
 
             nmo_chunk_read_float(chunk, &r);
             nmo_chunk_read_float(chunk, &g);
             nmo_chunk_read_float(chunk, &b);
             nmo_chunk_read_float(chunk, &a);
-            out_state->specular_color = nmo_pack_color(r, g, b, a);
+            color.r = r;
+            color.g = g;
+            color.b = b;
+            color.a = a;
+            out_state->specular_color = nmo_color_to_argb32(&color);
 
             nmo_chunk_read_float(chunk, &r);
             nmo_chunk_read_float(chunk, &g);
             nmo_chunk_read_float(chunk, &b);
             nmo_chunk_read_float(chunk, &a);
-            out_state->emissive_color = nmo_pack_color(r, g, b, a);
+            color.r = r;
+            color.g = g;
+            color.b = b;
+            color.a = a;
+            out_state->emissive_color = nmo_color_to_argb32(&color);
 
             nmo_chunk_read_float(chunk, &out_state->specular_power);
 

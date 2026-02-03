@@ -13,10 +13,10 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include <string.h>
+
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckkinematicchain, nmo_ckkinematicchain_state_t)
 #include <stddef.h>
 #include <stdalign.h>
-
-#define CK_STATESAVE_KINEMATICCHAINALL 0x000000FFu
 
 static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
     nmo_ckkinematicchain_state_t *out_state,
@@ -27,7 +27,7 @@ static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkinematicchain_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckkinematicchain_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

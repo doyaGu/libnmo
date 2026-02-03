@@ -14,7 +14,7 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_LAYERDATA 0x00000010u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cklayer, nmo_cklayer_state_t)
 
 nmo_status_t nmo_cklayer_deserialize(
     void *instance,
@@ -29,7 +29,7 @@ nmo_status_t nmo_cklayer_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cklayer_create(out_state, type, context));
 
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

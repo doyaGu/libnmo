@@ -14,12 +14,9 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-/* CKDefines2.h identifiers */
-#define CK_STATESAVE_SOUNDFILENAME     0x00001000u
-#define CK_STATESAVE_WAVSOUNDFILE      0x00100000u
-#define CK_STATESAVE_WAVSOUNDDATA2     0x00400000u
-#define CK_STATESAVE_WAVSOUNDDURATION  0x00800000u
-#define CK_STATESAVE_MIDISOUNDFILE     0x00100000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksound, nmo_cksound_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckwavesound, nmo_ckwavesound_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmidisound, nmo_ckmidisound_state_t)
 
 /* =============================================================================
  * CKSound
@@ -38,7 +35,7 @@ nmo_status_t nmo_cksound_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksound_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cksound_create(out_state, type, context));
 
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
@@ -100,7 +97,7 @@ nmo_status_t nmo_ckwavesound_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckwavesound_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckwavesound_create(out_state, type, context));
 
     nmo_status_t result = nmo_cksound_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
@@ -283,7 +280,7 @@ nmo_status_t nmo_ckmidisound_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmidisound_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckmidisound_create(out_state, type, context));
 
     nmo_status_t result = nmo_cksound_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

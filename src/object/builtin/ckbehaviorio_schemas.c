@@ -23,12 +23,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-/* =============================================================================
- * IDENTIFIER CONSTANTS
- * ============================================================================= */
-
-/* From CKDefines2.h (CK_STATESAVEFLAGS_BEHAV_IO) */
-#define CK_STATESAVE_BEHAV_IOFLAGS 0x00000001u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbehaviorio, nmo_ckbehaviorio_state_t)
 
 /* =============================================================================
  * CKBehaviorIO DESERIALIZATION
@@ -60,8 +55,7 @@ nmo_status_t nmo_ckbehaviorio_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorio_deserialize");
     }
 
-    /* Initialize state */
-    memset(out_state, 0, sizeof(nmo_ckbehaviorio_state_t));
+    NMO_RETURN_IF_ERROR(nmo_ckbehaviorio_create(out_state, type, context));
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);

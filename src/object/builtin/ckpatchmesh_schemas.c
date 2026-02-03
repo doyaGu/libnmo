@@ -14,10 +14,7 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_PATCHMESHDATA2     0x01000000u
-#define CK_STATESAVE_PATCHMESHSMOOTH    0x02000000u
-#define CK_STATESAVE_PATCHMESHMATERIALS 0x04000000u
-#define CK_STATESAVE_PATCHMESHDATA3     0x08000000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckpatchmesh, nmo_ckpatchmesh_state_t)
 
 static nmo_status_t nmo_ckpatchmesh_deserialize_internal(
     nmo_chunk_t *chunk,
@@ -29,7 +26,7 @@ static nmo_status_t nmo_ckpatchmesh_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckpatchmesh_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckpatchmesh_create(out_state, NULL, context));
 
     {
         nmo_status_t result = nmo_ckmesh_deserialize(&out_state->base, chunk, NULL, context);

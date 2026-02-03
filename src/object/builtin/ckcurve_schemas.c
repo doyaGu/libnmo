@@ -14,16 +14,8 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_CURVEFITCOEFF         0x00400000u
-#define CK_STATESAVE_CURVECONTROLPOINT     0x00800000u
-#define CK_STATESAVE_CURVESTEPS            0x01000000u
-#define CK_STATESAVE_CURVEOPEN             0x02000000u
-#define CK_STATESAVE_CURVEPOINTDEFAULTDATA 0x10000000u
-#define CK_STATESAVE_CURVEPOINTTCB         0x20000000u
-#define CK_STATESAVE_CURVEPOINTTANGENTS    0x40000000u
-#define CK_STATESAVE_CURVEPOINTCURVEPOS    0x80000000u
-#define CK_STATESAVE_CURVESAVEPOINTS       0xFF000000u
-#define CK_STATESAVE_CURVEONLY             0xFFC00000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcurve, nmo_ckcurve_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcurvepoint, nmo_ckcurvepoint_state_t)
 
 static nmo_status_t read_object_sequence(
     nmo_chunk_t *chunk,
@@ -111,7 +103,7 @@ static nmo_status_t nmo_ckcurve_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckcurve_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
@@ -225,7 +217,7 @@ static nmo_status_t nmo_ckcurvepoint_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_ckcurvepoint_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

@@ -61,13 +61,6 @@ typedef struct nmo_quaternion {
 } nmo_quaternion_t;
 
 /**
- * @brief RGBA color (0.0-1.0 range)
- */
-typedef struct nmo_color {
-    float r, g, b, a;
-} nmo_color_t;
-
-/**
  * @brief 2x2 matrix
  */
 typedef struct nmo_matrix2 {

@@ -14,7 +14,7 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-#define CK_STATESAVE_TCAMERATARGET 0x10000000u
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktargetcamera, nmo_cktargetcamera_state_t)
 
 static nmo_status_t nmo_cktargetcamera_deserialize_internal(
     nmo_cktargetcamera_state_t *out_state,
@@ -25,7 +25,7 @@ static nmo_status_t nmo_cktargetcamera_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktargetcamera_deserialize");
     }
 
-    memset(out_state, 0, sizeof(*out_state));
+    NMO_RETURN_IF_ERROR(nmo_cktargetcamera_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckcamera_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

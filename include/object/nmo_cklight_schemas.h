@@ -13,6 +13,7 @@
 #ifndef NMO_CKLIGHT_SCHEMAS_H
 #define NMO_CKLIGHT_SCHEMAS_H
 
+#include "core/nmo_color.h"
 #include "object/nmo_ck3dentity_schemas.h"
 #include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
@@ -37,30 +38,18 @@ typedef enum nmo_vx_light_type {
 } nmo_vx_light_type_t;
 
 /**
- * @brief VxColor structure (RGBA float)
- * 
- * Each component is a float in range [0.0, 1.0]
- */
-typedef struct nmo_vx_color {
-    float r;  ///< Red component
-    float g;  ///< Green component
-    float b;  ///< Blue component
-    float a;  ///< Alpha component
-} nmo_vx_color_t;
-
-/**
  * @brief CKLightData structure (104 bytes at 0x1A8 in RCKLight)
  * 
- * Stores all lighting parameters. Serialized with identifier 0x400000.
+ * Stores all lighting parameters. Serialized with identifier CK_STATESAVE_LIGHTDATA (0x00400000).
  */
 typedef struct nmo_ck_light_data {
     // Light type (4 bytes at 0x00)
     nmo_vx_light_type_t type;
     
-    // Colors (48 bytes: 3 × VxColor at 0x04-0x33)
-    nmo_vx_color_t diffuse;     ///< Diffuse color (main light color)
-    nmo_vx_color_t specular;    ///< Specular highlight color
-    nmo_vx_color_t ambient;     ///< Ambient contribution
+    // Colors (48 bytes: 3 × RGBA float)
+    nmo_color_t diffuse;     ///< Diffuse color (main light color)
+    nmo_color_t specular;    ///< Specular highlight color
+    nmo_color_t ambient;     ///< Ambient contribution
     
     // Position and direction (24 bytes: 2 × VxVector at 0x34-0x4B)
     float position[3];          ///< Light position (x, y, z)
@@ -115,22 +104,6 @@ NMO_API nmo_status_t nmo_cklight_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository);
-
-/**
- * @brief Helper: Convert ARGB DWORD to VxColor
- * 
- * @param argb Packed ARGB color (0xAARRGGBB)
- * @param out_color Output VxColor structure
- */
-NMO_API void nmo_vx_color_from_argb(uint32_t argb, nmo_vx_color_t *out_color);
-
-/**
- * @brief Helper: Convert VxColor to ARGB DWORD
- * 
- * @param color Input VxColor structure
- * @return Packed ARGB color (0xAARRGGBB)
- */
-NMO_API uint32_t nmo_vx_color_to_argb(const nmo_vx_color_t *color);
 
 #ifdef __cplusplus
 }
