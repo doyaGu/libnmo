@@ -62,7 +62,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -339,9 +339,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
     nmo_ck_mesh_state_t *out_state)
 {
     nmo_status_t result;
-    
-    NMO_RETURN_IF_ERROR(nmo_ckmesh_create(out_state, NULL, arena));
-    
+
     // Load parent CKBeObject
     result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result != NMO_OK) {
@@ -638,8 +636,6 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
     nmo_ck_mesh_state_t *out_state)
 {
     nmo_status_t result;
-
-    NMO_RETURN_IF_ERROR(nmo_ckmesh_create(out_state, NULL, arena));
 
     result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result != NMO_OK) {
@@ -950,7 +946,7 @@ nmo_status_t nmo_ckmesh_deserialize(
 {
     (void)type;
     nmo_ck_mesh_state_t *out_state = (nmo_ck_mesh_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to deserialize");

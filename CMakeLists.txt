@@ -176,6 +176,7 @@ set(NMO_OBJECT_SOURCES
     src/object/class_hierarchy.c
     src/object/object_type_common.c
     src/object/object_types.c
+    src/object/deserialize_context.c
     src/object/builtin/object_vtables.c
     src/object/builtin/ckobject_schemas.c
     src/object/builtin/ckbeobject_schemas.c
@@ -242,6 +243,7 @@ set(NMO_TYPE_SOURCES
 set(NMO_SESSION_SOURCES
     src/session/object_repository.c
     src/session/object_index.c
+    src/session/object_system.c
     src/session/load_session.c
     src/session/id_remap.c
     src/session/id_sanitizer.c

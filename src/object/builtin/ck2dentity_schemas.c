@@ -14,10 +14,11 @@
  */
 
 #include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_ckrenderobject_schemas.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -179,7 +180,7 @@ static nmo_status_t deserialize_legacy(
     nmo_status_t result;
     
     /* Read flags (identifier 0x4000) */
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_FLAGS);
+    nmo_status_t seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYFLAGS);
     if (seek_result == NMO_OK) {
         uint32_t raw_flags;
         result = nmo_chunk_read_dword(chunk, &raw_flags);
@@ -190,7 +191,7 @@ static nmo_status_t deserialize_legacy(
     }
     
     /* Read origin (identifier 0x8000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_ORIGIN);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYPOS);
     if (seek_result == NMO_OK) {
         if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
             out_state->has_homogeneous_rect = true;
@@ -219,7 +220,7 @@ static nmo_status_t deserialize_legacy(
     }
     
     /* Read size (identifier 0x2000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_SIZE);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYSIZE);
     if (seek_result == NMO_OK) {
         if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
             float w, h;
@@ -250,7 +251,7 @@ static nmo_status_t deserialize_legacy(
     }
     
     /* Read source rect (identifier 0x1000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_SOURCE_RECT);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYSRCSIZE);
     if (seek_result == NMO_OK) {
         int32_t x, y, w, h;
         result = nmo_chunk_read_int(chunk, &x);
@@ -275,7 +276,7 @@ source_rect_done:;
     }
     
     /* Read z-order (identifier 0x100000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_Z_ORDER);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYZORDER);
     if (seek_result == NMO_OK) {
         out_state->has_z_order = true;
         result = nmo_chunk_read_int(chunk, (int32_t *)&out_state->z_order);
@@ -300,13 +301,11 @@ nmo_status_t nmo_ck2dentity_deserialize(
 {
     (void)type;
     nmo_ck2dentity_state_t *out_state = (nmo_ck2dentity_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_deserialize");
     }
-    
-    NMO_RETURN_IF_ERROR(nmo_ck2dentity_create(out_state, type, context));
     
     /* First deserialize parent CKRenderObject data */
     nmo_status_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);
@@ -319,7 +318,7 @@ nmo_status_t nmo_ck2dentity_deserialize(
     
     if (data_version >= 5) {
         /* Modern format: identifier 0x10F000 */
-        nmo_status_t seek_result = nmo_chunk_seek_identifier(chunk, NMO_CK2DENTITY_CHUNK_MODERN);
+        nmo_status_t seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYONLY);
         if (seek_result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing modern CK2dEntity chunk (0x10F000)");
         }
@@ -335,7 +334,7 @@ nmo_status_t nmo_ck2dentity_deserialize(
     
     /* Optional material (identifier 0x200000, CKCID_2DENTITY only) */
     if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY &&
-        nmo_chunk_seek_identifier(chunk, 0x200000) == NMO_OK) {
+        nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYMATERIAL) == NMO_OK) {
         out_state->has_material = true;
         result = nmo_chunk_read_object_id(chunk, &out_state->material_id);
         if (result != NMO_OK) {
@@ -362,7 +361,7 @@ static nmo_status_t serialize_modern(
     nmo_status_t result;
     
     /* Write modern chunk identifier */
-    result = nmo_chunk_write_identifier(chunk, NMO_CK2DENTITY_CHUNK_MODERN);
+    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_2DENTITYONLY);
     if (result != NMO_OK) return result;
     
     /* Build flags with optional block indicators */
@@ -443,7 +442,7 @@ nmo_status_t nmo_ck2dentity_serialize(
     
     /* Write material identifier if present */
     if (in_state->has_material && in_state->material_id) {
-        result = nmo_chunk_write_identifier(out_chunk, 0x200000);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_2DENTITYMATERIAL);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->material_id);
         if (result != NMO_OK) return result;

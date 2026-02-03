@@ -13,20 +13,23 @@ static nmo_object_t *create_session_object(
     nmo_class_id_t class_id,
     const char *name
 ) {
-    nmo_arena_t *arena = nmo_session_get_arena(session);
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
-    nmo_object_t *object = nmo_object_create(arena, id, class_id);
+    nmo_object_t *object = nmo_object_create(allocator, id, class_id);
     if (object == NULL) {
         return NULL;
     }
 
     if (name != NULL) {
-        if (nmo_object_set_name(object, name, arena) != NMO_OK) {
+        if (nmo_object_set_name(object, name) != NMO_OK) {
+            nmo_object_destroy(object);
             return NULL;
         }
     }
 
     if (nmo_object_repository_add(repo, object) != NMO_OK) {
+        nmo_object_destroy(object);
         return NULL;
     }
 

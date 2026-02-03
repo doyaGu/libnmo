@@ -44,6 +44,10 @@ typedef enum nmo_finish_load_flags {
     /* Manager processing */
     NMO_FINISH_LOAD_MANAGER_POSTLOAD    = 0x0040,  /* Invoke manager post-load hooks */
     NMO_FINISH_LOAD_STRICT_MANAGERS     = 0x0080,  /* Fail on manager errors */
+
+    /* Object post-load (schema/type hooks) */
+    NMO_FINISH_LOAD_OBJECT_POSTLOAD     = 0x0200,  /* Invoke per-object finish_loading hooks */
+    NMO_FINISH_LOAD_STRICT_OBJECTS      = 0x0400,  /* Fail on object post-load errors */
     
     /* Statistics */
     NMO_FINISH_LOAD_GATHER_STATS        = 0x0100,  /* Gather and log statistics */
@@ -51,6 +55,7 @@ typedef enum nmo_finish_load_flags {
     /* Preset combinations */
     NMO_FINISH_LOAD_DEFAULT = 
         NMO_FINISH_LOAD_RESOLVE_REFERENCES |
+        NMO_FINISH_LOAD_OBJECT_POSTLOAD |
         NMO_FINISH_LOAD_BUILD_INDEXES |
         NMO_FINISH_LOAD_MANAGER_POSTLOAD |
         NMO_FINISH_LOAD_GATHER_STATS,

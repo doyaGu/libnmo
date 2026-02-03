@@ -77,7 +77,7 @@ static nmo_status_t ensure_compat_mask_capacity(nmo_type_registry_t *registry, n
 }
 
 /* ============================================================================
- * Note: struct nmo_type_registry_t is already defined in type_system.h
+ * Note: nmo_type_registry_t is already defined in type_system.h
  * We just need to implement the functions that operate on it.
  * ============================================================================ */
 
@@ -703,6 +703,169 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
     }
 
     registry->derivation_masks_valid = true;
+}
+
+/* ============================================================================
+ * State Hierarchy Layout Computation
+ * 
+ * Computes inheritance hierarchy and state offsets for each type.
+ * Called lazily after type registration when state layout is needed.
+ * ============================================================================ */
+
+/**
+ * @brief Align offset up to the given alignment
+ */
+static uint32_t align_up(uint32_t offset, uint32_t alignment) {
+    if (alignment == 0) alignment = 1;
+    return (offset + alignment - 1) & ~(alignment - 1);
+}
+
+/**
+ * @brief Count inheritance depth (number of ancestors including self)
+ */
+static uint16_t count_hierarchy_depth(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *type)
+{
+    uint16_t depth = 0;
+    const nmo_type_descriptor_t *current = type;
+    while (current && current->valid) {
+        depth++;
+        if (nmo_guid_is_null(current->base_type)) {
+            break;
+        }
+        current = nmo_type_registry_find_by_guid(registry, current->base_type);
+    }
+    return depth;
+}
+
+/**
+ * @brief Compute state layout for a single type
+ * 
+ * Builds hierarchy array (root first, self last) and computes state offsets.
+ * Only computed for types with vtable (i.e., object types with state).
+ */
+static nmo_status_t compute_type_state_layout(
+    nmo_type_registry_t *registry,
+    nmo_type_descriptor_t *type)
+{
+    if (!type || !type->valid) {
+        NMO_RETURN_OK();
+    }
+    
+    /* Skip if already computed */
+    if (type->hierarchy != NULL) {
+        NMO_RETURN_OK();
+    }
+    
+    /* Skip types without vtable (non-object types) */
+    if (type->vtable == NULL) {
+        type->hierarchy_depth = 0;
+        type->total_state_size = 0;
+        NMO_RETURN_OK();
+    }
+    
+    /* Count hierarchy depth */
+    uint16_t depth = count_hierarchy_depth(registry, type);
+    if (depth == 0) {
+        NMO_RETURN_OK();
+    }
+    
+    /* Allocate hierarchy array and offsets */
+    const nmo_type_descriptor_t **hierarchy = nmo_arena_alloc(
+        registry->arena,
+        sizeof(nmo_type_descriptor_t *) * depth,
+        _Alignof(nmo_type_descriptor_t *));
+    if (!hierarchy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+            "Failed to allocate type hierarchy array");
+    }
+    
+    uint32_t *offsets = nmo_arena_alloc(
+        registry->arena,
+        sizeof(uint32_t) * depth,
+        _Alignof(uint32_t));
+    if (!offsets) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+            "Failed to allocate state offsets array");
+    }
+    
+    /* Build hierarchy array (root first, self last) by traversing to root */
+    size_t idx = depth;
+    const nmo_type_descriptor_t *current = type;
+    while (current && current->valid && idx > 0) {
+        idx--;
+        hierarchy[idx] = current;
+        if (nmo_guid_is_null(current->base_type)) {
+            break;
+        }
+        current = nmo_type_registry_find_by_guid(registry, current->base_type);
+    }
+    
+    /* Compute state offsets for nested 'base' pattern
+     * 
+     * In C, when using nested structures like:
+     *   struct Derived { struct Base base; int derived_field; };
+     * The 'base' member is always at offset 0.
+     * 
+     * So for our inheritance chain, ALL ancestor states start at offset 0.
+     * This allows safe casting between derived and base state pointers.
+     */
+    for (uint16_t i = 0; i < depth; i++) {
+        offsets[i] = 0;  /* All ancestors at offset 0 due to nested base pattern */
+    }
+    
+    /* Total size is the size of the most derived type (self)
+     * Since we use nested base pattern, the derived type already includes all base sizes */
+    uint32_t total_size = type->size;
+    
+    /* Store in type descriptor */
+    type->hierarchy = hierarchy;
+    type->state_offsets = offsets;
+    type->hierarchy_depth = depth;
+    type->total_state_size = total_size;
+    
+    NMO_RETURN_OK();
+}
+
+void nmo_type_registry_compute_state_layouts(nmo_type_registry_t *registry) {
+    if (!registry) return;
+    
+    /* Ensure derivation masks are valid first (establishes base_type links) */
+    nmo_type_registry_update_derivation_masks(registry);
+    
+    /* Compute state layout for each type */
+    for (size_t i = 0; i < registry->types.count; i++) {
+        nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, i);
+        if (type && type->valid) {
+            nmo_status_t status = compute_type_state_layout(registry, type);
+            if (status != NMO_OK) {
+                /* Log error but continue with other types */
+            }
+        }
+    }
+}
+
+uint32_t nmo_type_get_state_offset(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *derived_type,
+    const nmo_type_descriptor_t *ancestor_type)
+{
+    (void)registry; /* Currently unused, but may be needed for lookup */
+    
+    if (!derived_type || !ancestor_type || !derived_type->hierarchy) {
+        return (uint32_t)-1;
+    }
+    
+    /* Search hierarchy for the ancestor type */
+    for (uint16_t i = 0; i < derived_type->hierarchy_depth; i++) {
+        if (derived_type->hierarchy[i] == ancestor_type ||
+            nmo_guid_equals(derived_type->hierarchy[i]->guid, ancestor_type->guid)) {
+            return derived_type->state_offsets[i];
+        }
+    }
+    
+    return (uint32_t)-1;
 }
 
 void nmo_type_registry_get_stats(

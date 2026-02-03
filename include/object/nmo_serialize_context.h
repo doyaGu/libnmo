@@ -1,6 +1,6 @@
-﻿/**
- * @file nmo_schema_interface.h
- * @brief Unified serialization interface for CKObject class hierarchy
+/**
+ * @file nmo_serialize_context.h
+ * @brief Unified serialization context and object schema interface
  * 
  * Defines the standard function signatures for object serialization that
  * are compatible with the type system vtable. All CKObject-derived schemas
@@ -14,8 +14,8 @@
  * @see type/type_system.h for nmo_type_vtable_t definition
  */
 
-#ifndef NMO_SCHEMA_INTERFACE_H
-#define NMO_SCHEMA_INTERFACE_H
+#ifndef NMO_SERIALIZE_CONTEXT_H
+#define NMO_SERIALIZE_CONTEXT_H
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
@@ -27,7 +27,7 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /** Magic value for detecting nmo_serialize_context_t. */
 #define NMO_SERIALIZE_CONTEXT_MAGIC 0x4E4D4F53u /* "NMOS" */
@@ -175,4 +175,4 @@ static inline uint32_t nmo_serialize_context_get_flags(void *context)
 }
 #endif
 
-#endif /* NMO_SCHEMA_INTERFACE_H */
+#endif /* NMO_SERIALIZE_CONTEXT_H */

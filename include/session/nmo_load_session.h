@@ -64,6 +64,20 @@ NMO_API int nmo_load_session_register(nmo_load_session_t *session,
 NMO_API int nmo_load_session_end(nmo_load_session_t *session);
 
 /**
+ * @brief Lookup runtime ID for a file object table index.
+ *
+ * Queries the mapping created via nmo_load_session_register().
+ *
+ * @param session Load session
+ * @param file_index File object table index (0-based)
+ * @param out_runtime_id Output runtime ID
+ * @return NMO_OK if found, NMO_ERR_NOT_FOUND if no mapping exists
+ */
+NMO_API int nmo_load_session_get_runtime_id(const nmo_load_session_t *session,
+                                           nmo_object_id_t file_index,
+                                           nmo_object_id_t *out_runtime_id);
+
+/**
  * @brief Get object repository
  *
  * @param session Load session

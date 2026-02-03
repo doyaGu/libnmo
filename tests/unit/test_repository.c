@@ -6,36 +6,31 @@
 #include "nmo.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
-#include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
 #include "test_framework.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 TEST(repository, create_destroy) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
     
     ASSERT_EQ(nmo_object_repository_get_count(repo), 0);
     
     nmo_object_repository_destroy(repo);
-    nmo_arena_destroy(arena);
 }
 
 TEST(repository, add_find_by_id) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
     
-    nmo_object_t* obj1 = nmo_object_create(arena, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
+    nmo_object_t* obj1 = nmo_object_create(&allocator, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
     ASSERT_NOT_NULL(obj1);
     
-    nmo_object_t* obj2 = nmo_object_create(arena, (nmo_object_id_t)200, (nmo_class_id_t)0x00000002);
+    nmo_object_t* obj2 = nmo_object_create(&allocator, (nmo_object_id_t)200, (nmo_class_id_t)0x00000002);
     ASSERT_NOT_NULL(obj2);
     
     int result = nmo_object_repository_add(repo, obj1);
@@ -53,19 +48,16 @@ TEST(repository, add_find_by_id) {
     ASSERT_EQ(found2, obj2);
     
     nmo_object_repository_destroy(repo);
-    nmo_arena_destroy(arena);
 }
 
 TEST(repository, find_by_name) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
     
-    nmo_object_t* obj = nmo_object_create(arena, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
+    nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
     ASSERT_NOT_NULL(obj);
-    nmo_object_set_name(obj, "TestObject", arena);
+    nmo_object_set_name(obj, "TestObject");
     
     nmo_object_repository_add(repo, obj);
     
@@ -76,24 +68,21 @@ TEST(repository, find_by_name) {
     ASSERT_NULL(found);
     
     nmo_object_repository_destroy(repo);
-    nmo_arena_destroy(arena);
 }
 
 TEST(repository, find_by_class) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
     
     // Add objects of different classes
-    nmo_object_t* obj1 = nmo_object_create(arena, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);  // CKObject
+    nmo_object_t* obj1 = nmo_object_create(&allocator, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);  // CKObject
     ASSERT_NOT_NULL(obj1);
     
-    nmo_object_t* obj2 = nmo_object_create(arena, (nmo_object_id_t)200, (nmo_class_id_t)0x00000001);  // CKObject
+    nmo_object_t* obj2 = nmo_object_create(&allocator, (nmo_object_id_t)200, (nmo_class_id_t)0x00000001);  // CKObject
     ASSERT_NOT_NULL(obj2);
     
-    nmo_object_t* obj3 = nmo_object_create(arena, (nmo_object_id_t)300, (nmo_class_id_t)0x00000002);  // CKBeObject
+    nmo_object_t* obj3 = nmo_object_create(&allocator, (nmo_object_id_t)300, (nmo_class_id_t)0x00000002);  // CKBeObject
     ASSERT_NOT_NULL(obj3);
     
     nmo_object_repository_add(repo, obj1);
@@ -115,17 +104,14 @@ TEST(repository, find_by_class) {
     ASSERT_NULL(found);
     
     nmo_object_repository_destroy(repo);
-    nmo_arena_destroy(arena);
 }
 
 TEST(repository, remove) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
     
-    nmo_object_t* obj = nmo_object_create(arena, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
+    nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
     ASSERT_NOT_NULL(obj);
     
     nmo_object_repository_add(repo, obj);
@@ -141,19 +127,16 @@ TEST(repository, remove) {
     ASSERT_NULL(found);
     
     nmo_object_repository_destroy(repo);
-    nmo_arena_destroy(arena);
 }
 
 TEST(repository, growth) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 65536);
-    ASSERT_NOT_NULL(arena);
-    
-    nmo_object_repository_t* repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
     
     // Add 100 objects to trigger resize
     for (int i = 0; i < 100; i++) {
-        nmo_object_t* obj = nmo_object_create(arena, (nmo_object_id_t)(1000 + i), (nmo_class_id_t)0x00000001);
+        nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)(1000 + i), (nmo_class_id_t)0x00000001);
         ASSERT_NOT_NULL(obj);
         
         int result = nmo_object_repository_add(repo, obj);
@@ -169,7 +152,6 @@ TEST(repository, growth) {
     }
     
     nmo_object_repository_destroy(repo);
-    nmo_arena_destroy(arena);
 }
 
 TEST_MAIN_BEGIN()

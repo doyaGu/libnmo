@@ -8,9 +8,10 @@
  */
 
 #include "object/nmo_ckparameterin_schemas.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -41,8 +42,6 @@ nmo_status_t nmo_ckparameterin_deserialize(
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
-
-    NMO_RETURN_IF_ERROR(nmo_ckparameterin_create(out_state, type, context));
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);

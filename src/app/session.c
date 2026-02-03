@@ -118,7 +118,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     }
 
     /* Create object repository */
-    session->repository = nmo_object_repository_create(session->arena);
+    session->repository = nmo_object_repository_create(&session->allocator);
     if (session->repository == NULL) {
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
@@ -198,6 +198,9 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
 void nmo_session_destroy(nmo_session_t *session) {
     if (session != NULL) {
         if (session->object_index != NULL) {
+            if (session->repository != NULL) {
+                nmo_object_repository_set_index(session->repository, NULL);
+            }
             nmo_object_index_destroy(session->object_index);
             session->object_index = NULL;
         }

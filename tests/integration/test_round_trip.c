@@ -109,23 +109,24 @@ static int test_basic_round_trip(void) {
     }
 
     nmo_object_repository_t* save_repo = nmo_session_get_repository(save_session);
-    nmo_arena_t* save_arena = nmo_session_get_arena(save_session);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
 
     /* Create test objects */
     for (size_t i = 0; i < 5; i++) {
-        nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(save_arena, sizeof(nmo_object_t), sizeof(void*));
+        nmo_object_t *obj = nmo_object_create(allocator, (nmo_object_id_t) (i + 1), 0x10000000u + (uint32_t) i);
         if (obj == NULL) {
             nmo_session_destroy(save_session);
             nmo_context_release(ctx);
             return 1;
         }
 
-        memset(obj, 0, sizeof(nmo_object_t));
-        obj->class_id = 0x10000000 + (uint32_t)i;
-        obj->name = "TestObject";
-        obj->arena = save_arena;
-
-        nmo_object_repository_add(save_repo, obj);
+        if (nmo_object_set_name(obj, "TestObject") != NMO_OK ||
+            nmo_object_repository_add(save_repo, obj) != NMO_OK) {
+            nmo_object_destroy(obj);
+            nmo_session_destroy(save_session);
+            nmo_context_release(ctx);
+            return 1;
+        }
     }
 
     nmo_file_info_t file_info = {
@@ -216,14 +217,23 @@ static int test_manager_hooks(void) {
     /* Save phase */
     nmo_session_t* save_session = nmo_session_create(ctx);
     nmo_object_repository_t* save_repo = nmo_session_get_repository(save_session);
-    nmo_arena_t* save_arena = nmo_session_get_arena(save_session);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
 
-    nmo_object_t* obj = (nmo_object_t*)nmo_arena_alloc(save_arena, sizeof(nmo_object_t), sizeof(void*));
-    memset(obj, 0, sizeof(nmo_object_t));
-    obj->class_id = 0x99887766;
-    obj->name = "HookedObject";
-    obj->arena = save_arena;
-    nmo_object_repository_add(save_repo, obj);
+    nmo_object_t *obj = nmo_object_create(allocator, 1, 0x99887766u);
+    if (obj == NULL) {
+        nmo_session_destroy(save_session);
+        nmo_context_release(ctx);
+        unlink(test_file);
+        return 1;
+    }
+    if (nmo_object_set_name(obj, "HookedObject") != NMO_OK ||
+        nmo_object_repository_add(save_repo, obj) != NMO_OK) {
+        nmo_object_destroy(obj);
+        nmo_session_destroy(save_session);
+        nmo_context_release(ctx);
+        unlink(test_file);
+        return 1;
+    }
 
     nmo_file_info_t file_info = {
         .file_version = 8,

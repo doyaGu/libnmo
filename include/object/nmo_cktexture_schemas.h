@@ -35,7 +35,7 @@ extern "C" {
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /**
  * @defgroup CKTextureSchema CKTexture Schema API
@@ -45,21 +45,6 @@ typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
 /* ========================================================================
  * Constants and Enumerations
  * ======================================================================== */
-
-/** Serialization identifiers (CK_STATESAVEFLAGS_TEXTURE) */
-#define NMO_CKTEXTURE_IDENTIFIER_AVIFILENAME   CK_STATESAVE_TEXAVIFILENAME   /**< Movie file name */
-#define NMO_CKTEXTURE_IDENTIFIER_CURRENTIMAGE  CK_STATESAVE_TEXCURRENTIMAGE  /**< Current slot */
-#define NMO_CKTEXTURE_IDENTIFIER_BITMAPS       CK_STATESAVE_TEXBITMAPS       /**< Legacy bitmap2 format */
-#define NMO_CKTEXTURE_IDENTIFIER_TRANSPARENT   CK_STATESAVE_TEXTRANSPARENT   /**< Transparency data */
-#define NMO_CKTEXTURE_IDENTIFIER_FILENAMES     CK_STATESAVE_TEXFILENAMES     /**< Slot filenames */
-#define NMO_CKTEXTURE_IDENTIFIER_COMPRESSED    CK_STATESAVE_TEXCOMPRESSED    /**< Raw bitmap data */
-#define NMO_CKTEXTURE_IDENTIFIER_VIDEOFORMAT   CK_STATESAVE_TEXVIDEOFORMAT   /**< Desired video format */
-#define NMO_CKTEXTURE_IDENTIFIER_SAVEFORMAT    CK_STATESAVE_TEXSAVEFORMAT    /**< Save format (CKBitmapProperties) */
-#define NMO_CKTEXTURE_IDENTIFIER_READER        CK_STATESAVE_TEXREADER        /**< Reader-compressed bitmap data */
-#define NMO_CKTEXTURE_IDENTIFIER_PICKTHRESHOLD CK_STATESAVE_PICKTHRESHOLD    /**< Pick threshold */
-#define NMO_CKTEXTURE_IDENTIFIER_USERMIPMAP    CK_STATESAVE_USERMIPMAP       /**< User mipmap levels */
-#define NMO_CKTEXTURE_IDENTIFIER_SYSTEMCACHING CK_STATESAVE_TEXSYSTEMCACHING /**< System caching */
-#define NMO_CKTEXTURE_IDENTIFIER_OLDTEXONLY    CK_STATESAVE_OLDTEXONLY       /**< Packed texture flags */
 
 /** Bitmap save options (CK_BITMAP_SAVEOPTIONS) */
 #define NMO_CKTEXTURE_RAWDATA                  0x00000000  /**< Raw pixel data */

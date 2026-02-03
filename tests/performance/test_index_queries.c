@@ -6,7 +6,7 @@
 
 static void populate_repository(
     nmo_object_repository_t *repo,
-    nmo_arena_t *arena,
+    const nmo_allocator_t *allocator,
     size_t object_count,
     size_t class_bucket_count,
     size_t guid_bucket_count
@@ -14,12 +14,12 @@ static void populate_repository(
     for (size_t i = 0; i < object_count; i++) {
         nmo_object_id_t id = (nmo_object_id_t)(i + 1);
         nmo_class_id_t class_id = (nmo_class_id_t)((i % class_bucket_count) + 1);
-        nmo_object_t *obj = nmo_object_create(arena, id, class_id);
+        nmo_object_t *obj = nmo_object_create(allocator, id, class_id);
         ASSERT_NOT_NULL(obj);
 
         char name[64];
         snprintf(name, sizeof(name), "Object_%zu", i);
-        ASSERT_EQ(NMO_OK, nmo_object_set_name(obj, name, arena));
+        ASSERT_EQ(NMO_OK, nmo_object_set_name(obj, name));
 
         nmo_guid_t guid = {
             0xA0000000u + (uint32_t)(i % guid_bucket_count),
@@ -141,10 +141,12 @@ TEST(index_perf, class_lookup_performance) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     ASSERT_NOT_NULL(arena);
 
-    nmo_object_repository_t *repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
 
-    populate_repository(repo, arena, object_count, class_bucket_count, guid_bucket_count);
+    populate_repository(repo, &allocator, object_count, class_bucket_count, guid_bucket_count);
 
     nmo_object_index_t *index = nmo_object_index_create(repo, arena);
     ASSERT_NOT_NULL(index);

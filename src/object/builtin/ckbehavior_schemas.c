@@ -18,11 +18,12 @@
  */
 
 #include "object/nmo_ckbehavior_schemas.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_cksceneobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -188,14 +189,12 @@ nmo_status_t nmo_ckbehavior_deserialize(
 {
     (void)type;
     nmo_ckbehavior_state_t *out_state = (nmo_ckbehavior_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_deserialize");
     }
 
-    NMO_RETURN_IF_ERROR(nmo_ckbehavior_create(out_state, type, context));
-    
     /* Deserialize base CKObject state (merged into this chunk by AddChunkAndDelete) */
     {
         nmo_status_t result = nmo_chunk_start_read(chunk);

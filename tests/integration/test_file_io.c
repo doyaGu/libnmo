@@ -4,7 +4,6 @@
 #include "app/nmo_parser.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h" // Include for nmo_object_t definition
-#include "core/nmo_arena.h"   // Include for nmo_arena_alloc
 #include "core/nmo_error.h"
 #include <stdio.h>
 #include <string.h>
@@ -18,21 +17,31 @@ nmo_session_t* create_test_session(nmo_context_t* ctx) {
     }
 
     nmo_object_repository_t* repo = nmo_session_get_repository(session);
-    nmo_arena_t* arena = nmo_session_get_arena(session);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
 
     // Object 1
-    nmo_object_t* obj1 = nmo_arena_alloc(arena, sizeof(nmo_object_t), 1);
-    obj1->class_id = 101;
-    obj1->name = "TestObject1";
-    obj1->chunk = NULL;
-    nmo_object_repository_add(repo, obj1);
+    nmo_object_t *obj1 = nmo_object_create(allocator, 1, 101);
+    if (obj1 == NULL ||
+        nmo_object_set_name(obj1, "TestObject1") != NMO_OK ||
+        nmo_object_set_chunk(obj1, NULL) != NMO_OK ||
+        nmo_object_repository_add(repo, obj1) != NMO_OK) {
+        nmo_object_destroy(obj1);
+        nmo_session_destroy(session);
+        fprintf(stderr, "ERROR: Failed to add object 1\n");
+        return NULL;
+    }
 
     // Object 2
-    nmo_object_t* obj2 = nmo_arena_alloc(arena, sizeof(nmo_object_t), 1);
-    obj2->class_id = 102;
-    obj2->name = "TestObject2";
-    obj2->chunk = NULL;
-    nmo_object_repository_add(repo, obj2);
+    nmo_object_t *obj2 = nmo_object_create(allocator, 2, 102);
+    if (obj2 == NULL ||
+        nmo_object_set_name(obj2, "TestObject2") != NMO_OK ||
+        nmo_object_set_chunk(obj2, NULL) != NMO_OK ||
+        nmo_object_repository_add(repo, obj2) != NMO_OK) {
+        nmo_object_destroy(obj2);
+        nmo_session_destroy(session);
+        fprintf(stderr, "ERROR: Failed to add object 2\n");
+        return NULL;
+    }
 
     return session;
 }
@@ -83,14 +92,14 @@ static void test_file_io_roundtrip(void) {
     ASSERT_NOT_NULL(obj1);
     ASSERT_NOT_NULL(obj2);
 
-    ASSERT_EQ(obj1->class_id, 101);
-    ASSERT_EQ(obj2->class_id, 102);
+    ASSERT_EQ(nmo_object_get_class_id(obj1), 101);
+    ASSERT_EQ(nmo_object_get_class_id(obj2), 102);
 
     // The default serializer only saves the name, so let's check that.
     // We need to deserialize the chunk to verify the name.
     // For now, we'll trust the name from the Header1 object descriptor.
-    ASSERT_STR_EQ(obj1->name, "TestObject1");
-    ASSERT_STR_EQ(obj2->name, "TestObject2");
+    ASSERT_STR_EQ(nmo_object_get_name(obj1), "TestObject1");
+    ASSERT_STR_EQ(nmo_object_get_name(obj2), "TestObject2");
 
     // 6. Cleanup
     nmo_session_destroy(load_session);

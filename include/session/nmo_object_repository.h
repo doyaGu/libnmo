@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_allocator.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,10 +26,10 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 
 /**
  * @brief Create object repository
- * @param arena Arena for allocations
+ * @param allocator Allocator for repository-owned allocations (NULL for default)
  * @return Repository or NULL on error
  */
-NMO_API nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena);
+NMO_API nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *allocator);
 
 /**
  * @brief Destroy object repository
@@ -133,13 +134,6 @@ NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nm
  * @return NMO_OK on success
  */
 NMO_API int nmo_object_repository_clear(nmo_object_repository_t *repository);
-
-/**
- * @brief Get the arena backing this repository
- * @param repository Repository
- * @return Arena pointer or NULL
- */
-NMO_API nmo_arena_t *nmo_object_repository_get_arena(const nmo_object_repository_t *repository);
 
 #ifdef __cplusplus
 }

@@ -16,7 +16,7 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_allocator nmo_allocator_t;
-typedef struct nmo_type_registry_t nmo_type_registry_t;
+typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_plugin_manager nmo_plugin_manager_t;
 typedef struct nmo_arena nmo_arena_t;

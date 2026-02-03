@@ -11,6 +11,8 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_hash.h"
 
+#include "object/nmo_deserialize_context.h"
+
 #include "format/nmo_chunk.h"
 #include "type/type_system.h"
 #include "type/type_string.h"
@@ -210,6 +212,31 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     return nmo_type_registry_register(registry, &type_desc); \
 }
 
+/* Same as NMO_DEFINE_OBJECT_REGISTRATION, but attaches an optional finish_loading hook. */
+#define NMO_DEFINE_OBJECT_REGISTRATION_EX(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable, _finish_loading) \
+NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
+    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
+               "NULL type registry"); \
+    nmo_type_descriptor_t type_desc = { \
+        .guid = (_guid), \
+        .name = (_name), \
+        .size = (uint32_t)sizeof(_state_t), \
+        .alignment = (uint32_t)alignof(_state_t), \
+        .class_id = (_class_id), \
+        .base_type = (_base_guid), \
+        .category = NMO_TYPE_CATEGORY_OBJECT_REF, \
+        .flags = NMO_TYPE_FLAG_SERIALIZABLE, \
+        .id = NMO_TYPE_ID_INVALID, \
+        .description = NULL, \
+        .fields = NULL, \
+        .field_count = 0, \
+        .vtable = (_vtable), \
+        .finish_loading = (_finish_loading), \
+        .creator_plugin = NULL \
+    }; \
+    return nmo_type_registry_register(registry, &type_desc); \
+}
+
 /* Declarations for schema headers */
 #define NMO_DECLARE_OBJECT_SCHEMA(_vtable, _register_fn) \
     NMO_API extern nmo_type_vtable_t _vtable; \
@@ -224,6 +251,16 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                    _base_guid, _state_t, &nmo_##_prefix##_vtable)
+
+/* Extended schema definition with optional finish_loading hook. */
+#define NMO_DEFINE_OBJECT_SCHEMA_EX(_prefix, _state_t, _serialize, _deserialize, _finish_loading, _guid, _name, _class_id, _base_guid) \
+    NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
+    nmo_type_vtable_t nmo_##_prefix##_vtable = { \
+        NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
+                          nmo_object_copy, nmo_object_validate, _prefix##_equals, _prefix##_hash) \
+    }; \
+    NMO_DEFINE_OBJECT_REGISTRATION_EX(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
+                                      _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading)
 
 #ifdef __cplusplus
 }

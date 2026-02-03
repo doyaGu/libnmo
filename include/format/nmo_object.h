@@ -6,6 +6,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_allocator.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -19,8 +20,9 @@ extern "C" {
  * and associated chunk data.
  */
 
-/* Forward declaration */
+/* Forward declarations */
 typedef struct nmo_object nmo_object_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /**
  * @brief Object structure
@@ -44,7 +46,11 @@ typedef struct nmo_object {
 
     /* Data */
     nmo_chunk_t *chunk; /**< Associated chunk data (non-owning reference) */
-    void *data;         /**< Custom data pointer */
+    void *data;         /**< Custom user data pointer (legacy, prefer using state) */
+    
+    /* State (ECS-style) - computed offsets within contain all inherited states */
+    void *state;            /**< Combined state buffer holding all inherited states */
+    uint32_t state_size;    /**< Total size of combined state buffer */
 
     /* File context */
     nmo_object_id_t file_index; /**< FileIndex offset in uncompressed file buffer (Header1) */
@@ -53,24 +59,26 @@ typedef struct nmo_object {
     uint32_t save_flags;      /**< Flags for saving */
 
     /* Memory management */
-    nmo_arena_t *arena; /**< Arena for allocations */
+    nmo_allocator_t allocator; /**< Allocator snapshot for explicit frees */
+    nmo_arena_t *storage_arena; /**< Per-object arena for schema allocations */
 } nmo_object_t;
 
 /**
  * @brief Create object
  *
- * @param arena Arena for allocation (required)
+ * @param allocator Allocator for object-owned allocations (NULL for default)
  * @param id Runtime object ID
  * @param class_id Object class ID
  * @return Object or NULL on allocation failure
  */
-NMO_API nmo_object_t *nmo_object_create(nmo_arena_t *arena, nmo_object_id_t id, nmo_class_id_t class_id);
+NMO_API nmo_object_t *nmo_object_create(const nmo_allocator_t *allocator,
+                                        nmo_object_id_t id,
+                                        nmo_class_id_t class_id);
 
 /**
  * @brief Destroy object
  *
- * Since objects use arena allocation, this is mostly a no-op.
- * The arena itself handles cleanup.
+ * Releases any owned allocations and destroys the per-object arena.
  *
  * @param object Object to destroy
  */
@@ -81,10 +89,9 @@ NMO_API void nmo_object_destroy(nmo_object_t *object);
  *
  * @param object Object (required)
  * @param name Name string (will be copied, can be NULL)
- * @param arena Arena for name allocation
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_set_name(nmo_object_t *object, const char *name, nmo_arena_t *arena);
+NMO_API int nmo_object_set_name(nmo_object_t *object, const char *name);
 
 /**
  * @brief Get object name
@@ -119,10 +126,16 @@ NMO_API nmo_class_id_t nmo_object_get_class_id(const nmo_object_t *object);
  *
  * @param parent Parent object (required)
  * @param child Child object (required)
- * @param arena Arena for children array allocation
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t *arena);
+NMO_API int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child);
+
+/**
+ * @brief Get per-object storage arena
+ *
+ * The returned arena is owned by the object and destroyed in nmo_object_destroy().
+ */
+NMO_API nmo_arena_t *nmo_object_get_storage_arena(const nmo_object_t *object);
 
 /**
  * @brief Remove child object
@@ -229,6 +242,57 @@ NMO_API nmo_guid_t nmo_object_get_type_guid(const nmo_object_t *object);
  * @return NMO_OK on success
  */
 NMO_API int nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid);
+
+/* ============================================================================
+ * State Access (ECS-style combined state)
+ * ============================================================================ */
+
+/**
+ * @brief Allocate combined state buffer
+ *
+ * Allocates a combined state buffer to hold all inherited states.
+ * This should be called once after object creation, based on the
+ * type's total_state_size from the type registry.
+ *
+ * @param object Object (required)
+ * @param size Total size in bytes (from type descriptor's total_state_size)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_object_alloc_state(nmo_object_t *object, uint32_t size);
+
+/**
+ * @brief Get combined state buffer
+ *
+ * Returns pointer to the combined state buffer.
+ *
+ * @param object Object (required)
+ * @return State buffer or NULL if not allocated
+ */
+NMO_API void *nmo_object_get_state(const nmo_object_t *object);
+
+/**
+ * @brief Get state size
+ *
+ * @param object Object (required)
+ * @return Size of state buffer in bytes, or 0 if not allocated
+ */
+NMO_API uint32_t nmo_object_get_state_size(const nmo_object_t *object);
+
+/**
+ * @brief Get state for a specific ancestor type
+ *
+ * Returns pointer to a specific ancestor's state within the combined buffer.
+ * Uses the type descriptor's state_offsets to find the correct offset.
+ *
+ * @param object Object (required)
+ * @param type_desc Type descriptor of the ancestor type
+ * @param derived_type_desc Type descriptor of the object's actual type (for offset lookup)
+ * @return Pointer to ancestor's state, or NULL if not found
+ */
+NMO_API void *nmo_object_get_ancestor_state(
+    const nmo_object_t *object,
+    const nmo_type_descriptor_t *type_desc,
+    const nmo_type_descriptor_t *derived_type_desc);
 
 #ifdef __cplusplus
 }

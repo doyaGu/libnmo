@@ -6,7 +6,7 @@
 #include "object/nmo_ckkinematicchain_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -26,8 +26,6 @@ static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
     if (!chunk || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkinematicchain_deserialize");
     }
-
-    NMO_RETURN_IF_ERROR(nmo_ckkinematicchain_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

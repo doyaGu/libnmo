@@ -128,6 +128,24 @@ int nmo_load_session_end(nmo_load_session_t *session) {
     return NMO_OK;
 }
 
+int nmo_load_session_get_runtime_id(const nmo_load_session_t *session,
+                                    nmo_object_id_t file_index,
+                                    nmo_object_id_t *out_runtime_id)
+{
+    if (session == NULL || out_runtime_id == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_id_t runtime_id = 0;
+    nmo_status_t result = nmo_hash_table_get(session->id_mappings, &file_index, &runtime_id);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    *out_runtime_id = runtime_id;
+    return NMO_OK;
+}
+
 /**
  * Get object repository
  */

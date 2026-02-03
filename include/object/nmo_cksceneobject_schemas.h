@@ -18,7 +18,7 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /* =============================================================================
  * CKSceneObject STATE

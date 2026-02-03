@@ -168,6 +168,9 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         nmo_free(&effective_allocator, ctx);
         return NULL;
     }
+    
+    /* Compute state layouts for all types (ECS support) */
+    nmo_type_registry_compute_state_layouts(ctx->type_registry);
 
     ctx->manager_registry = nmo_manager_registry_create(ctx->arena);
     if (ctx->manager_registry == NULL) {

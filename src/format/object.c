@@ -1,52 +1,92 @@
 #include "format/nmo_object.h"
+#include "type/type_system.h"
+#include "core/nmo_guid.h"
+#include "core/nmo_allocator.h"
+#include "core/nmo_arena.h"
 #include <string.h>
 
 #define INITIAL_CHILD_CAPACITY 4
 
-nmo_object_t *nmo_object_create(nmo_arena_t *arena, nmo_object_id_t id, nmo_class_id_t class_id) {
-    if (arena == NULL) {
-        return NULL;
-    }
+nmo_object_t *nmo_object_create(const nmo_allocator_t *allocator,
+                               nmo_object_id_t id,
+                               nmo_class_id_t class_id)
+{
+    nmo_allocator_t effective = (allocator != NULL) ? *allocator : nmo_allocator_default();
 
-    nmo_object_t *object = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t), sizeof(void *));
+    nmo_object_t *object = (nmo_object_t *)nmo_alloc(&effective, sizeof(nmo_object_t), _Alignof(nmo_object_t));
     if (object == NULL) {
         return NULL;
     }
 
-    memset(object, 0, sizeof(nmo_object_t));
+    memset(object, 0, sizeof(*object));
+    object->allocator = effective;
+    object->storage_arena = nmo_arena_create(&object->allocator, 0);
+    if (object->storage_arena == NULL) {
+        nmo_free(&object->allocator, object);
+        return NULL;
+    }
+
     object->id = id;
     object->class_id = class_id;
-    object->arena = arena;
-    object->file_index = 0; // Unknown until computed/loaded
-    object->file_id = 0; // Unknown until loaded from file
+    object->file_index = 0;
+    object->file_id = 0;
 
     return object;
 }
 
 void nmo_object_destroy(nmo_object_t *object) {
-    // Arena allocation - no explicit cleanup needed
-    (void) object;
+    if (object == NULL) {
+        return;
+    }
+
+    /* Free allocator-managed metadata */
+    if (object->children != NULL) {
+        nmo_free(&object->allocator, object->children);
+        object->children = NULL;
+    }
+
+    if (object->name != NULL) {
+        nmo_free(&object->allocator, (void *)object->name);
+        object->name = NULL;
+    }
+
+    if (object->state != NULL) {
+        nmo_free(&object->allocator, object->state);
+        object->state = NULL;
+        object->state_size = 0;
+    }
+
+    /* Destroy per-object arena (schema-owned buffers) */
+    if (object->storage_arena != NULL) {
+        nmo_arena_destroy(object->storage_arena);
+        object->storage_arena = NULL;
+    }
+
+    nmo_free(&object->allocator, object);
 }
 
-int nmo_object_set_name(nmo_object_t *object, const char *name, nmo_arena_t *arena) {
-    if (object == NULL || arena == NULL) {
+int nmo_object_set_name(nmo_object_t *object, const char *name) {
+    if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (name == NULL) {
+    if (object->name != NULL) {
+        nmo_free(&object->allocator, (void *)object->name);
         object->name = NULL;
+    }
+
+    if (name == NULL) {
         return NMO_OK;
     }
 
     size_t name_len = strlen(name);
-    char *name_copy = (char *) nmo_arena_alloc(arena, name_len + 1, 1);
+    char *name_copy = (char *)nmo_alloc(&object->allocator, name_len + 1, 1);
     if (name_copy == NULL) {
         return NMO_ERR_NOMEM;
     }
 
     memcpy(name_copy, name, name_len + 1);
     object->name = name_copy;
-
     return NMO_OK;
 }
 
@@ -57,8 +97,8 @@ const char *nmo_object_get_name(const nmo_object_t *object) {
     return object->name;
 }
 
-int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t *arena) {
-    if (parent == NULL || child == NULL || arena == NULL) {
+int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child) {
+    if (parent == NULL || child == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -66,9 +106,9 @@ int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t 
     if (parent->child_count >= parent->child_capacity) {
         size_t new_capacity = parent->child_capacity == 0 ? INITIAL_CHILD_CAPACITY : parent->child_capacity * 2;
 
-        nmo_object_t **new_children = (nmo_object_t **) nmo_arena_alloc(arena,
-                                                                        new_capacity * sizeof(nmo_object_t *),
-                                                                        sizeof(void *));
+        nmo_object_t **new_children = (nmo_object_t **)nmo_alloc(&parent->allocator,
+                                                                 new_capacity * sizeof(nmo_object_t *),
+                                                                 _Alignof(nmo_object_t *));
         if (new_children == NULL) {
             return NMO_ERR_NOMEM;
         }
@@ -78,9 +118,9 @@ int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t 
             memcpy(new_children, parent->children, parent->child_count * sizeof(nmo_object_t *));
         }
 
-        // NOTE: Since we use arena allocation, the old parent->children array is not freed.
-        // This is acceptable because arena allocators free all memory at once when destroyed.
-        // If this becomes problematic, consider using malloc/free for children arrays.
+        if (parent->children != NULL) {
+            nmo_free(&parent->allocator, parent->children);
+        }
         parent->children = new_children;
         parent->child_capacity = new_capacity;
     }
@@ -90,6 +130,10 @@ int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child, nmo_arena_t 
     child->parent = parent;
 
     return NMO_OK;
+}
+
+nmo_arena_t *nmo_object_get_storage_arena(const nmo_object_t *object) {
+    return object ? object->storage_arena : NULL;
 }
 
 int nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child) {
@@ -198,4 +242,78 @@ int nmo_object_set_type_guid(nmo_object_t *object, nmo_guid_t guid) {
     
     object->type_guid = guid;
     return NMO_OK;
+}
+
+/* ============================================================================
+ * State Access (ECS-style combined state)
+ * ============================================================================ */
+
+nmo_status_t nmo_object_alloc_state(nmo_object_t *object, uint32_t size) {
+    if (object == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    
+    if (size == 0) {
+        if (object->state != NULL) {
+            nmo_free(&object->allocator, object->state);
+        }
+        object->state = NULL;
+        object->state_size = 0;
+        return NMO_OK;
+    }
+    
+    /* Allocate with 8-byte alignment for any state structure */
+    void *state = nmo_alloc(&object->allocator, size, 8);
+    if (state == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (object->state != NULL) {
+        nmo_free(&object->allocator, object->state);
+    }
+    
+    memset(state, 0, size);
+    object->state = state;
+    object->state_size = size;
+    
+    return NMO_OK;
+}
+
+void *nmo_object_get_state(const nmo_object_t *object) {
+    if (object == NULL) {
+        return NULL;
+    }
+    return object->state;
+}
+
+uint32_t nmo_object_get_state_size(const nmo_object_t *object) {
+    if (object == NULL) {
+        return 0;
+    }
+    return object->state_size;
+}
+
+void *nmo_object_get_ancestor_state(
+    const nmo_object_t *object,
+    const nmo_type_descriptor_t *type_desc,
+    const nmo_type_descriptor_t *derived_type_desc)
+{
+    if (object == NULL || type_desc == NULL || derived_type_desc == NULL) {
+        return NULL;
+    }
+    
+    if (object->state == NULL) {
+        return NULL;
+    }
+    
+    /* Find offset for the ancestor type */
+    for (uint16_t i = 0; i < derived_type_desc->hierarchy_depth; i++) {
+        if (derived_type_desc->hierarchy[i] == type_desc ||
+            nmo_guid_equals(derived_type_desc->hierarchy[i]->guid, type_desc->guid)) {
+            uint32_t offset = derived_type_desc->state_offsets[i];
+            return (uint8_t *)object->state + offset;
+        }
+    }
+    
+    return NULL;
 }

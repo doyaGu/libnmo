@@ -10,7 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include <string.h>
 
 /* Test: Serialize and deserialize CKObject state */

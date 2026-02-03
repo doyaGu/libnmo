@@ -37,9 +37,10 @@
 #include "format/nmo_object.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_object_repository.h"
+#include "session/nmo_object_system.h"
 #include "session/nmo_shadow_storage.h"
 #include "type/type_system.h"
 #include <stdlib.h>
@@ -1364,6 +1365,10 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage)
 {
+    return nmo_object_system_serialize_object_chunk(
+        obj, type_reg, arena, logger, shadow_storage);
+
+#if 0
     if (!obj || !arena || !type_reg) {
         return NULL;
     }
@@ -1476,4 +1481,5 @@ static nmo_chunk_t *serialize_object_with_schema(
             obj->id, schema_type->name, new_chunk->data.count * 4);
 
     return new_chunk;
+#endif
 }

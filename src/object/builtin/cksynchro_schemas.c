@@ -4,9 +4,10 @@
  */
 
 #include "object/nmo_cksynchro_schemas.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -46,13 +47,11 @@ nmo_status_t nmo_cksynchro_deserialize(
 {
     (void)type;
     nmo_cksynchro_state_t *out_state = (nmo_cksynchro_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksynchro_deserialize");
     }
-
-    NMO_RETURN_IF_ERROR(nmo_cksynchro_create(out_state, type, context));
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
@@ -181,8 +180,6 @@ nmo_status_t nmo_ckstate_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckstate_deserialize");
     }
 
-    NMO_RETURN_IF_ERROR(nmo_ckstate_create(out_state, type, context));
-
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
 
@@ -231,8 +228,6 @@ nmo_status_t nmo_ckcriticalsection_deserialize(
     if (!chunk || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcriticalsection_deserialize");
     }
-
-    NMO_RETURN_IF_ERROR(nmo_ckcriticalsection_create(out_state, type, context));
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;

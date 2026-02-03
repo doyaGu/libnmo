@@ -30,7 +30,7 @@ extern "C" {
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /* =============================================================================
  * CK2dEntity STATE STRUCTURES
@@ -79,16 +79,6 @@ typedef struct nmo_ck2dentity_state {
 /* =============================================================================
  * CHUNK IDENTIFIERS
  * ============================================================================= */
-
-/** Modern format (v5+) identifier - contains all fields */
-#define NMO_CK2DENTITY_CHUNK_MODERN      CK_STATESAVE_2DENTITYONLY
-
-/** Legacy format (<v5) identifiers */
-#define NMO_CK2DENTITY_CHUNK_FLAGS       CK_STATESAVE_2DENTITYFLAGS
-#define NMO_CK2DENTITY_CHUNK_ORIGIN      CK_STATESAVE_2DENTITYPOS
-#define NMO_CK2DENTITY_CHUNK_SIZE        CK_STATESAVE_2DENTITYSIZE
-#define NMO_CK2DENTITY_CHUNK_SOURCE_RECT CK_STATESAVE_2DENTITYSRCSIZE
-#define NMO_CK2DENTITY_CHUNK_Z_ORDER     CK_STATESAVE_2DENTITYZORDER
 
 /** Optional block flags (modern format) */
 #define NMO_CK2DENTITY_FLAG_SOURCE_RECT  0x10000

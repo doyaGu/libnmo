@@ -16,7 +16,7 @@
 #include "object/nmo_cksprite_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_ck2dentity_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -257,21 +257,19 @@ nmo_status_t nmo_cksprite_deserialize(
 {
     (void)type;
     nmo_cksprite_state_t *out_state = (nmo_cksprite_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_deserialize");
     }
-    
-    NMO_RETURN_IF_ERROR(nmo_cksprite_create(out_state, NULL, context));
-    
+
     /* First deserialize parent CK2dEntity data */
     nmo_status_t result = nmo_ck2dentity_deserialize(
         &out_state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
-    
+
     /* Use chunk option to select file-backed vs chunk-only path */
     if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
         result = deserialize_file_backed(chunk, arena, out_state);

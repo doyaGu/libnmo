@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /* ========================================================================
  * Material State Structure

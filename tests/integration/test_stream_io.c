@@ -20,11 +20,11 @@ static void create_test_object(nmo_arena_t *arena,
                                nmo_object_t **out_object) {
     ASSERT_NOT_NULL(out_object);
 
-    nmo_object_t *object = nmo_object_create(arena, id, class_id);
+    nmo_object_t *object = nmo_object_create(NULL, id, class_id);
     ASSERT_NOT_NULL(object);
 
     if (name != NULL) {
-        int name_result = nmo_object_set_name(object, name, arena);
+        int name_result = nmo_object_set_name(object, name);
         ASSERT_EQ(NMO_OK, name_result);
     }
 
@@ -92,6 +92,9 @@ static void run_stream_roundtrip(int compress_flag) {
 
     assert_result_ok(nmo_stream_writer_finalize(writer));
     nmo_stream_writer_destroy(writer);
+
+    nmo_object_destroy(obj_a);
+    nmo_object_destroy(obj_b);
 
     nmo_arena_destroy(arena);
 

@@ -7,6 +7,7 @@
 #include "session/nmo_object_index.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include <stdio.h>
@@ -17,6 +18,7 @@
 /* Test fixture */
 typedef struct test_fixture {
     nmo_arena_t *arena;
+    nmo_allocator_t allocator;
     nmo_object_repository_t *repo;
     nmo_object_index_t *index;
 } test_fixture_t;
@@ -30,8 +32,10 @@ static test_fixture_t *setup_fixture(void) {
         free(fixture);
         return NULL;
     }
+
+    fixture->allocator = nmo_allocator_default();
     
-    fixture->repo = nmo_object_repository_create(fixture->arena);
+    fixture->repo = nmo_object_repository_create(&fixture->allocator);
     if (!fixture->repo) {
         nmo_arena_destroy(fixture->arena);
         free(fixture);
@@ -65,14 +69,17 @@ static nmo_object_t *create_test_object(
     nmo_class_id_t class_id,
     const char *name
 ) {
-    nmo_object_t *obj = nmo_object_create(f->arena, id, class_id);
+    nmo_object_t *obj = nmo_object_create(&f->allocator, id, class_id);
     if (!obj) return NULL;
     
     if (name) {
-        nmo_object_set_name(obj, name, f->arena);
+        nmo_object_set_name(obj, name);
     }
-    
-    nmo_object_repository_add(f->repo, obj);
+
+    if (nmo_object_repository_add(f->repo, obj) != NMO_OK) {
+        nmo_object_destroy(obj);
+        return NULL;
+    }
     return obj;
 }
 

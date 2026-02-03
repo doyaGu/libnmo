@@ -6,12 +6,11 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_object_index.h"
 #include "format/nmo_object.h"
-#include "core/nmo_arena.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
+#include "core/nmo_container_lifecycle.h"
 #include "core/nmo_error.h"
-#include <stdlib.h>
 #include <string.h>
 
 #define INITIAL_CAPACITY 64
@@ -23,7 +22,7 @@ static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t
  * Object repository structure
  */
 typedef struct nmo_object_repository {
-    nmo_arena_t *arena;
+    nmo_allocator_t allocator;
 
     /* ID indexed map (provides both hash lookup and iteration) */
     nmo_indexed_map_t *id_map; /* nmo_object_id_t -> nmo_object_t* */
@@ -43,6 +42,57 @@ typedef struct nmo_object_repository {
     nmo_object_t **scratch_class;
     size_t scratch_class_capacity;
 } nmo_object_repository_t;
+
+static void nmo_object_repository_dispose_object_ptr(void *element, void *user_data) {
+    (void)user_data;
+    if (element == NULL) {
+        return;
+    }
+
+    nmo_object_t *obj = *(nmo_object_t **)element;
+    if (obj != NULL) {
+        nmo_object_destroy(obj);
+    }
+}
+
+static int nmo_object_repository_scratch_reserve(
+    nmo_object_repository_t *repo,
+    nmo_object_t ***scratch,
+    size_t *capacity,
+    size_t required
+) {
+    if (repo == NULL || scratch == NULL || capacity == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (required <= *capacity) {
+        return NMO_OK;
+    }
+
+    if (required > SIZE_MAX / sizeof(nmo_object_t *)) {
+        return NMO_ERR_NOMEM;
+    }
+
+    size_t new_capacity = required;
+    nmo_object_t **new_buf = (nmo_object_t **)nmo_alloc(
+        &repo->allocator,
+        new_capacity * sizeof(nmo_object_t *),
+        _Alignof(nmo_object_t *)
+    );
+    if (new_buf == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (*scratch != NULL && *capacity > 0) {
+        size_t copy_count = (*capacity < new_capacity) ? *capacity : new_capacity;
+        memcpy(new_buf, *scratch, copy_count * sizeof(nmo_object_t *));
+        nmo_free(&repo->allocator, *scratch);
+    }
+
+    *scratch = new_buf;
+    *capacity = new_capacity;
+    return NMO_OK;
+}
 
 static uint32_t nmo_object_repository_get_active_index_flags(
     const nmo_object_repository_t *repo
@@ -78,22 +128,25 @@ static int nmo_object_repository_notify_remove(
 /**
  * Create object repository
  */
-nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
-    if (arena == NULL) {
-        return NULL;
-    }
+nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *allocator) {
+    nmo_allocator_t snapshot = (allocator != NULL) ? *allocator : nmo_allocator_default();
 
-    nmo_object_repository_t *repo = (nmo_object_repository_t *) malloc(sizeof(nmo_object_repository_t));
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)nmo_alloc(
+        &snapshot,
+        sizeof(nmo_object_repository_t),
+        _Alignof(nmo_object_repository_t)
+    );
     if (repo == NULL) {
         return NULL;
     }
 
-    repo->arena = arena;
+    memset(repo, 0, sizeof(*repo));
+    repo->allocator = snapshot;
 
     /* Create ID indexed map */
     repo->id_map = nmo_indexed_map_create(
-        arena,
         NULL,
+        &repo->allocator,
         sizeof(nmo_object_id_t),
         sizeof(nmo_object_t *),
         INITIAL_CAPACITY,
@@ -102,13 +155,19 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
     );
 
     if (repo->id_map == NULL) {
-        free(repo);
+        nmo_free(&repo->allocator, repo);
         return NULL;
+    }
+
+    {
+        nmo_container_lifecycle_t value_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+        value_lifecycle.dispose = nmo_object_repository_dispose_object_ptr;
+        nmo_indexed_map_set_lifecycle(repo->id_map, NULL, &value_lifecycle);
     }
 
     /* Create name hash table */
     repo->name_table = nmo_hash_table_create(
-        NULL,
+        &repo->allocator,
         sizeof(const char *),
         sizeof(nmo_object_t *),
         INITIAL_CAPACITY,
@@ -118,17 +177,11 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
 
     if (repo->name_table == NULL) {
         nmo_indexed_map_destroy(repo->id_map);
-        free(repo);
+        nmo_free(&repo->allocator, repo);
         return NULL;
     }
 
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
-    repo->attached_index = NULL;
-    repo->scratch_all = NULL;
-    repo->scratch_all_capacity = 0;
-    repo->scratch_class = NULL;
-    repo->scratch_class_capacity = 0;
-
     return repo;
 }
 
@@ -137,12 +190,11 @@ nmo_object_repository_t *nmo_object_repository_create(nmo_arena_t *arena) {
  */
 void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
     if (repo != NULL) {
-        /* Note: Objects are owned by arena, don't free them here */
         nmo_indexed_map_destroy(repo->id_map);
         nmo_hash_table_destroy(repo->name_table);
-        free(repo->scratch_all);
-        free(repo->scratch_class);
-        free(repo);
+        nmo_free(&repo->allocator, repo->scratch_all);
+        nmo_free(&repo->allocator, repo->scratch_class);
+        nmo_free(&repo->allocator, repo);
     }
 }
 
@@ -343,21 +395,14 @@ nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repo, size
         return NULL;
     }
 
-    if (repo->scratch_all_capacity < obj_count) {
-        /* Check for multiplication overflow */
-        if (obj_count > SIZE_MAX / sizeof(nmo_object_t *)) {
-            *count = 0;
-            return NULL;
-        }
-        nmo_object_t **new_objects = (nmo_object_t **)realloc(
-            repo->scratch_all,
-            obj_count * sizeof(nmo_object_t *));
-        if (new_objects == NULL) {
-            *count = 0;
-            return NULL;
-        }
-        repo->scratch_all = new_objects;
-        repo->scratch_all_capacity = obj_count;
+    if (nmo_object_repository_scratch_reserve(
+            repo,
+            &repo->scratch_all,
+            &repo->scratch_all_capacity,
+            obj_count
+        ) != NMO_OK) {
+        *count = 0;
+        return NULL;
     }
 
     /* Fill array */
@@ -416,10 +461,6 @@ int nmo_object_repository_clear(nmo_object_repository_t *repo) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_indexed_map_clear(repo->id_map);
-    nmo_hash_table_clear(repo->name_table);
-    repo->next_runtime_id = 1;
-
     if (repo->attached_index != NULL) {
         int result = nmo_object_index_clear(repo->attached_index, NMO_INDEX_BUILD_ALL);
         if (result != NMO_OK) {
@@ -427,14 +468,11 @@ int nmo_object_repository_clear(nmo_object_repository_t *repo) {
         }
     }
 
-    return NMO_OK;
-}
+    nmo_indexed_map_clear(repo->id_map);
+    nmo_hash_table_clear(repo->name_table);
+    repo->next_runtime_id = 1;
 
-/**
- * Get arena
- */
-nmo_arena_t *nmo_object_repository_get_arena(const nmo_object_repository_t *repo) {
-    return repo ? repo->arena : NULL;
+    return NMO_OK;
 }
 
 /**
@@ -468,21 +506,14 @@ nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repo
         return NULL;
     }
 
-    if (repo->scratch_class_capacity < match_count) {
-        /* Check for multiplication overflow */
-        if (match_count > SIZE_MAX / sizeof(nmo_object_t *)) {
-            *out_count = 0;
-            return NULL;
-        }
-        nmo_object_t **new_objects = (nmo_object_t **)realloc(
-            repo->scratch_class,
-            match_count * sizeof(nmo_object_t *));
-        if (new_objects == NULL) {
-            *out_count = 0;
-            return NULL;
-        }
-        repo->scratch_class = new_objects;
-        repo->scratch_class_capacity = match_count;
+    if (nmo_object_repository_scratch_reserve(
+            repo,
+            &repo->scratch_class,
+            &repo->scratch_class_capacity,
+            match_count
+        ) != NMO_OK) {
+        *out_count = 0;
+        return NULL;
     }
 
     // Second pass: fill the array

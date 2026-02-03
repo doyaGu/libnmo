@@ -12,9 +12,10 @@
 
 #include "object/nmo_ckspritetext_schemas.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_ck2dentity_schemas.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -188,7 +189,7 @@ static nmo_status_t ckspritetext_deserialize_modern(
     ckspritetext_init_defaults(out_state, arena);
     
     /* Process identifier 0x01000000: Text string */
-    result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_TEXT);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETEXT);
     if (result == NMO_OK) {
         result = deserialize_text_content(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
@@ -198,7 +199,7 @@ static nmo_status_t ckspritetext_deserialize_modern(
     }
     
     /* Process identifier 0x02000000: Font properties */
-    result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_FONT);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFONT);
     if (result == NMO_OK) {
         result = deserialize_font_properties(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
@@ -212,7 +213,7 @@ static nmo_status_t ckspritetext_deserialize_modern(
     }
     
     /* Process identifier 0x04000000: Colors */
-    result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_COLOR);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETEXTCOLOR);
     if (result == NMO_OK) {
         result = deserialize_colors(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
@@ -252,7 +253,7 @@ static nmo_status_t ckspritetext_serialize_modern(
     }
     
     /* Write identifier 0x01000000: Text string */
-    result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_TEXT);
+    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITETEXT);
     NMO_RETURN_IF_ERROR(result);
     
     result = nmo_chunk_write_string(chunk, state->text_content ? state->text_content : "");
@@ -262,7 +263,7 @@ static nmo_status_t ckspritetext_serialize_modern(
     }
     
     /* Write identifier 0x02000000: Font properties */
-    result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_FONT);
+    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITEFONT);
     NMO_RETURN_IF_ERROR(result);
     
     result = nmo_chunk_write_string(chunk, state->font.font_name);
@@ -284,7 +285,7 @@ static nmo_status_t ckspritetext_serialize_modern(
     NMO_RETURN_IF_ERROR(result);
     
     /* Write identifier 0x04000000: Colors */
-    result = nmo_chunk_write_identifier(chunk, NMO_CKSPRITETEXT_IDENTIFIER_COLOR);
+    result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITETEXTCOLOR);
     NMO_RETURN_IF_ERROR(result);
     
     result = nmo_chunk_write_dword(chunk, state->font_color);
@@ -366,14 +367,12 @@ nmo_status_t nmo_ckspritetext_deserialize(
 {
     (void)type;
     nmo_ck_spritetext_state_t *out_state = (nmo_ck_spritetext_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
             "Invalid arguments to nmo_ckspritetext_deserialize");
     }
-
-    NMO_RETURN_IF_ERROR(nmo_ckspritetext_create(out_state, NULL, context));
 
     nmo_status_t result = nmo_ck2dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

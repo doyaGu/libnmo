@@ -514,13 +514,13 @@ nmo_status_t nmo_stream_reader_read_next_object(nmo_stream_reader_t *reader,
     nmo_object_id_t runtime_id = desc ? desc->file_id : stored_id;
     nmo_class_id_t class_id = desc ? desc->class_id : (chunk ? chunk->class_id : 0);
 
-    nmo_object_t *object = nmo_object_create(arena, runtime_id, class_id);
+    nmo_object_t *object = nmo_object_create(NULL, runtime_id, class_id);
     if (object == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object");
     }
 
     if (desc && desc->name) {
-        nmo_object_set_name(object, desc->name, arena);
+        nmo_object_set_name(object, desc->name);
     }
 
     if (desc) {

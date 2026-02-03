@@ -9,7 +9,6 @@
 #include "app/nmo_context.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
-#include "core/nmo_arena.h"
 #include <string.h>
 
 /* ============================================================================
@@ -25,17 +24,20 @@ static nmo_context_t* create_test_context(void) {
     return nmo_context_create(&desc);
 }
 
-static nmo_object_t* create_test_object(nmo_arena_t *arena, uint32_t id, 
-                                        uint32_t class_id, const char *name) {
-    nmo_object_t *obj = (nmo_object_t*)nmo_arena_alloc(arena, sizeof(nmo_object_t), 8);
+static nmo_object_t* create_test_object(const nmo_allocator_t *allocator,
+                                        uint32_t id,
+                                        uint32_t class_id,
+                                        const char *name) {
+    nmo_object_t *obj = nmo_object_create(allocator, (nmo_object_id_t)id, (nmo_class_id_t)class_id);
     if (obj == NULL) return NULL;
-    
-    memset(obj, 0, sizeof(nmo_object_t));
-    obj->id = id;
-    obj->class_id = class_id;
-    obj->name = name;
-    obj->arena = arena;
-    
+
+    if (name != NULL) {
+        if (nmo_object_set_name(obj, name) != NMO_OK) {
+            nmo_object_destroy(obj);
+            return NULL;
+        }
+    }
+
     return obj;
 }
 
@@ -192,18 +194,18 @@ TEST(comparison, sessions_with_objects) {
     nmo_session_t *session1 = nmo_session_create(ctx);
     nmo_session_t *session2 = nmo_session_create(ctx);
     
-    nmo_arena_t *arena1 = nmo_session_get_arena(session1);
-    nmo_arena_t *arena2 = nmo_session_get_arena(session2);
-    
     nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
     nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
     
     /* Add identical objects to both sessions */
-    nmo_object_t *obj1 = create_test_object(arena1, 1, 0x10000001, "TestObject");
-    nmo_object_t *obj2 = create_test_object(arena2, 1, 0x10000001, "TestObject");
-    
-    nmo_object_repository_add(repo1, obj1);
-    nmo_object_repository_add(repo2, obj2);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
+    nmo_object_t *obj1 = create_test_object(allocator, 1, 0x10000001, "TestObject");
+    nmo_object_t *obj2 = create_test_object(allocator, 1, 0x10000001, "TestObject");
+    ASSERT_NOT_NULL(obj1);
+    ASSERT_NOT_NULL(obj2);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, obj1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, obj2));
     
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
@@ -227,18 +229,18 @@ TEST(comparison, different_object_names) {
     nmo_session_t *session1 = nmo_session_create(ctx);
     nmo_session_t *session2 = nmo_session_create(ctx);
     
-    nmo_arena_t *arena1 = nmo_session_get_arena(session1);
-    nmo_arena_t *arena2 = nmo_session_get_arena(session2);
-    
     nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
     nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
     
     /* Add objects with different names */
-    nmo_object_t *obj1 = create_test_object(arena1, 1, 0x10000001, "Object_A");
-    nmo_object_t *obj2 = create_test_object(arena2, 1, 0x10000001, "Object_B");
-    
-    nmo_object_repository_add(repo1, obj1);
-    nmo_object_repository_add(repo2, obj2);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
+    nmo_object_t *obj1 = create_test_object(allocator, 1, 0x10000001, "Object_A");
+    nmo_object_t *obj2 = create_test_object(allocator, 1, 0x10000001, "Object_B");
+    ASSERT_NOT_NULL(obj1);
+    ASSERT_NOT_NULL(obj2);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, obj1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, obj2));
     
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);

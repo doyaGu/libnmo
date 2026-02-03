@@ -15,10 +15,11 @@
  */
 
 #include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -62,8 +63,6 @@ nmo_status_t nmo_ckrenderobject_deserialize(
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_deserialize");
     }
-
-    NMO_RETURN_IF_ERROR(nmo_ckrenderobject_create(out_state, type, context));
 
     nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {

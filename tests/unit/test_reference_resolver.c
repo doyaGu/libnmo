@@ -21,6 +21,7 @@
 
 /* Test fixture */
 typedef struct {
+    nmo_allocator_t allocator;
     nmo_arena_t *arena;
     nmo_object_repository_t *repo;
     nmo_reference_resolver_t *resolver;
@@ -30,6 +31,8 @@ typedef struct {
 static test_fixture_t *setup(void) {
     test_fixture_t *fix = (test_fixture_t *) malloc(sizeof(test_fixture_t));
     if (fix == NULL) return NULL;
+
+    fix->allocator = nmo_allocator_default();
     
     fix->arena = nmo_arena_create(NULL, 8192);
     if (fix->arena == NULL) {
@@ -37,7 +40,7 @@ static test_fixture_t *setup(void) {
         return NULL;
     }
     
-    fix->repo = nmo_object_repository_create(fix->arena);
+    fix->repo = nmo_object_repository_create(&fix->allocator);
     if (fix->repo == NULL) {
         nmo_arena_destroy(fix->arena);
         free(fix);
@@ -70,14 +73,20 @@ static nmo_object_t *create_test_object(test_fixture_t *fix,
                                        nmo_object_id_t id, 
                                        const char *name, 
                                        nmo_class_id_t class_id) {
-    nmo_object_t *obj = nmo_object_create(fix->arena, id, class_id);
+    nmo_object_t *obj = nmo_object_create(&fix->allocator, id, class_id);
     if (obj == NULL) return NULL;
     
     if (name != NULL) {
-        nmo_object_set_name(obj, name, fix->arena);
+        if (nmo_object_set_name(obj, name) != NMO_OK) {
+            nmo_object_destroy(obj);
+            return NULL;
+        }
     }
     
-    nmo_object_repository_add(fix->repo, obj);
+    if (nmo_object_repository_add(fix->repo, obj) != NMO_OK) {
+        nmo_object_destroy(obj);
+        return NULL;
+    }
     return obj;
 }
 

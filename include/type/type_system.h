@@ -19,10 +19,10 @@ extern "C" {
  * ============================================================================ */
 
 /* Forward declarations */
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
-typedef struct nmo_type_registry_t nmo_type_registry_t;
-typedef struct nmo_type_field_t nmo_type_field_t;
-typedef struct nmo_type_vtable_t nmo_type_vtable_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
+typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_type_field nmo_type_field_t;
+typedef struct nmo_type_vtable nmo_type_vtable_t;
 typedef struct nmo_plugin nmo_plugin_t;  /* Use existing plugin type */
 typedef struct nmo_hash_table nmo_hash_table_t;
 struct nmo_chunk;  /* Forward declare for function pointers */
@@ -42,7 +42,7 @@ typedef int32_t nmo_manager_index_t;
  * Reference: CKParameterManager.cpp, lines 460-475
  * ============================================================================ */
 
-typedef enum nmo_type_category_t {
+typedef enum nmo_type_category {
     /* Basic categories */
     NMO_TYPE_CATEGORY_SCALAR       = 0x0001,  /* Primitive types (int, float, etc) */
     NMO_TYPE_CATEGORY_STRUCT       = 0x0002,  /* Composite types with fields */
@@ -62,7 +62,7 @@ typedef enum nmo_type_category_t {
 } nmo_type_category_t;
 
 /* Type flags */
-typedef enum nmo_type_flags_t {
+typedef enum nmo_type_flags {
     NMO_TYPE_FLAG_NONE             = 0x0000,
     NMO_TYPE_FLAG_DEPRECATED       = 0x0001,  /* Type is deprecated */
     NMO_TYPE_FLAG_SERIALIZABLE     = 0x0002,  /* Type can be serialized */
@@ -80,7 +80,7 @@ typedef enum nmo_type_flags_t {
 /**
  * @brief Enum value descriptor
  */
-typedef struct nmo_enum_descriptor_t {
+typedef struct nmo_enum_descriptor {
     const char *name;                   /* Enum constant name */
     int64_t value;                      /* Enum constant value */
     const char *description;            /* Optional description */
@@ -90,7 +90,7 @@ typedef struct nmo_enum_descriptor_t {
 /**
  * @brief Struct field descriptor
  */
-typedef struct nmo_struct_descriptor_t {
+typedef struct nmo_struct_descriptor {
     const char *name;                   /* Field name */
     nmo_guid_t type_guid;              /* Field type GUID */
     uint32_t offset;                    /* Offset in bytes from struct start */
@@ -103,7 +103,7 @@ typedef struct nmo_struct_descriptor_t {
 /**
  * @brief Flags (bitmask) bit descriptor
  */
-typedef struct nmo_flags_descriptor_t {
+typedef struct nmo_flags_descriptor {
     const char *name;                   /* Flag bit name */
     uint64_t mask;                      /* Bit mask value */
     const char *description;            /* Optional description */
@@ -115,7 +115,7 @@ typedef struct nmo_flags_descriptor_t {
  * 
  * Stores enum values, struct fields, or flags bits for a specific type.
  */
-typedef struct nmo_specialized_metadata_t {
+typedef struct nmo_specialized_metadata {
     nmo_type_id_t type_id;              /* Owner type ID */
     uint16_t metadata_type;             /* ENUM, STRUCT, or FLAGS */
     uint16_t reserved;
@@ -150,7 +150,6 @@ typedef struct nmo_specialized_metadata_t {
  * Field Semantic Annotations
  * 
  * Semantic hints for tools and editors (not used in serialization).
- * Based on design.md Section 5.4 "字段注解系统"
  * ============================================================================ */
 
 typedef enum nmo_field_semantic {
@@ -217,7 +216,7 @@ typedef enum nmo_field_units {
  * Extended with annotation support per design.md Section 5.4
  * ============================================================================ */
 
-typedef struct nmo_type_field_t {
+typedef struct nmo_type_field {
     const char *name;                   /* Field name */
     const char *description;            /* Documentation (optional) */
     nmo_guid_t type_guid;              /* Field type GUID */
@@ -250,7 +249,7 @@ typedef struct nmo_type_field_t {
  */
 #define NMO_TYPE_COMPAT_MASK_SIZE 256
 
-typedef struct nmo_compatibility_mask_t {
+typedef struct nmo_compatibility_mask {
     nmo_bit_array_t bits;
 } nmo_compatibility_mask_t;
 
@@ -291,11 +290,15 @@ typedef nmo_status_t (*nmo_type_validate_fn)(const void *instance, const nmo_typ
 typedef bool (*nmo_type_equals_fn)(const void *a, const void *b);
 typedef uint32_t (*nmo_type_hash_fn)(const void *instance);
 
+/* Finish-loading hook (CKObject::PostLoad equivalent for object types).
+ * Kept in type layer so app/session can dispatch without depending on object layer. */
+typedef nmo_status_t (*nmo_type_finish_loading_fn)(void *instance, nmo_arena_t *arena, void *repository);
+
 /* Phase 6.4: String conversion function pointers */
 typedef nmo_status_t (*nmo_type_to_string_fn)(const void *value, const nmo_type_descriptor_t *type, char *buffer, size_t buffer_size, void *context);
 typedef nmo_status_t (*nmo_type_from_string_fn)(void *value, const nmo_type_descriptor_t *type, const char *string, void *context);
 
-typedef struct nmo_type_vtable_t {
+typedef struct nmo_type_vtable {
     /* Lifecycle hooks */
     nmo_type_create_fn create;          /* Create default instance */
     nmo_type_destroy_fn destroy;        /* Destroy instance */
@@ -362,7 +365,7 @@ typedef nmo_status_t (*nmo_manager_deserialize_fn)(
  * Represents a custom serialization manager for types that need
  * specialized save/load logic (e.g., Message, Attribute).
  */
-typedef struct nmo_saver_manager_t {
+typedef struct nmo_saver_manager {
     nmo_guid_t guid;                        /* Manager GUID */
     const char *name;                       /* Manager name */
     nmo_manager_serialize_fn serialize;     /* Serialize callback */
@@ -378,7 +381,7 @@ typedef struct nmo_saver_manager_t {
  * Extended with annotation support per design.md Section 5.4
  * ============================================================================ */
 
-typedef struct nmo_type_descriptor_t {
+typedef struct nmo_type_descriptor {
     /* === Core Identity (40 bytes) === */
     nmo_guid_t guid;                    /* Type GUID (primary key) */
     nmo_type_id_t id;                   /* Runtime type ID (array index) */
@@ -404,6 +407,7 @@ typedef struct nmo_type_descriptor_t {
     
     /* === Extension Points (8 bytes) === */
     const nmo_type_vtable_t *vtable;   /* Virtual function table */
+    nmo_type_finish_loading_fn finish_loading; /* Optional post-deserialize hook */
     
     /* === Plugin Tracking (16 bytes) === */
     const nmo_plugin_t *creator_plugin;  /* Plugin that registered this type */
@@ -411,7 +415,15 @@ typedef struct nmo_type_descriptor_t {
     uint32_t specialized_index;        /* 0-based index into metadata array (NMO_SPECIALIZED_INDEX_INVALID if none) */
     bool valid;                         /* FALSE after unregistration (soft invalidation) */
     uint8_t _padding[3];                /* Alignment padding */
-} nmo_type_descriptor_t;  /* Total: 160 bytes (was 148) */
+    
+    /* === State Layout for ECS (24 bytes) === */
+    /* Computed during registration based on inheritance chain */
+    const nmo_type_descriptor_t **hierarchy; /* Array of ancestor types (root first, self last) */
+    uint32_t *state_offsets;            /* Byte offset of each ancestor's state in combined state */
+    uint16_t hierarchy_depth;           /* Number of types in hierarchy (including self) */
+    uint16_t _padding2;                 /* Alignment padding */
+    uint32_t total_state_size;          /* Sum of all ancestor state sizes (aligned) */
+} nmo_type_descriptor_t;  /* Total: ~184 bytes */
 
 /* ============================================================================
  * Type Registry
@@ -420,7 +432,7 @@ typedef struct nmo_type_descriptor_t {
  * Reference: CKParameterManager structure
  * ============================================================================ */
 
-typedef struct nmo_type_registry_t {
+typedef struct nmo_type_registry {
     /* === Type Storage === */
     nmo_arena_array_t types;     /* Type array (index = type_id) */
     
@@ -799,6 +811,35 @@ nmo_type_id_t nmo_type_registry_class_id_to_type_id(
  * @param registry Registry
  */
 void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry);
+
+/**
+ * @brief Compute state layouts for all types
+ * 
+ * Computes inheritance hierarchy and state offsets for each type.
+ * This enables ECS-style combined state allocation where a single buffer
+ * holds all inherited state structures at computed offsets.
+ * 
+ * Should be called after all types are registered.
+ * 
+ * @param registry Registry
+ */
+void nmo_type_registry_compute_state_layouts(nmo_type_registry_t *registry);
+
+/**
+ * @brief Get state offset for an ancestor type within a derived type's combined state
+ * 
+ * Returns the byte offset where ancestor_type's state is located within
+ * derived_type's combined state buffer.
+ * 
+ * @param registry Registry
+ * @param derived_type The derived type whose state layout we're querying
+ * @param ancestor_type The ancestor type whose offset we want
+ * @return Byte offset, or (uint32_t)-1 if not found
+ */
+uint32_t nmo_type_get_state_offset(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *derived_type,
+    const nmo_type_descriptor_t *ancestor_type);
 
 /**
  * @brief Get registry statistics

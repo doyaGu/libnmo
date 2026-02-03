@@ -111,13 +111,14 @@ void test_index_lookup(void) {
     
     /* Create test data */
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    nmo_object_repository_t *repo = nmo_object_repository_create(arena);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
     
     for (size_t i = 0; i < num_objects; i++) {
-        nmo_object_t *obj = nmo_object_create(arena, (nmo_object_id_t)i, (nmo_class_id_t)(i % 10));
+        nmo_object_t *obj = nmo_object_create(&allocator, (nmo_object_id_t)i, (nmo_class_id_t)(i % 10));
         char name[32];
         sprintf(name, "Object_%zu", i);
-        nmo_object_set_name(obj, name, arena);
+        nmo_object_set_name(obj, name);
         nmo_object_repository_add(repo, obj);
     }
     

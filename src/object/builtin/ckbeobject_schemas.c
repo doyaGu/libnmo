@@ -19,7 +19,8 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_cksceneobject_schemas.h"
 #include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -148,16 +149,13 @@ nmo_status_t nmo_ckbeobject_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     nmo_ckbeobject_state_t *out_state = (nmo_ckbeobject_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbeobject_deserialize");
     }
 
-    NMO_RETURN_IF_ERROR(nmo_ckbeobject_create(out_state, type, context));
-    
     /* Deserialize base CKSceneObject state first */
     nmo_status_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;

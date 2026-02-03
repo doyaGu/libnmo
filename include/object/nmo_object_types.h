@@ -36,8 +36,8 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_type_registry_t nmo_type_registry_t;
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
+typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_arena nmo_arena_t;
 
 /* ============================================================================

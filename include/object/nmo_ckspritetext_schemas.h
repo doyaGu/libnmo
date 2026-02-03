@@ -19,12 +19,7 @@ extern "C" {
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
-typedef struct nmo_type_descriptor_t nmo_type_descriptor_t;
-
-/** Serialization identifiers */
-#define NMO_CKSPRITETEXT_IDENTIFIER_TEXT       CK_STATESAVE_SPRITETEXT
-#define NMO_CKSPRITETEXT_IDENTIFIER_FONT       CK_STATESAVE_SPRITEFONT
-#define NMO_CKSPRITETEXT_IDENTIFIER_COLOR      CK_STATESAVE_SPRITETEXTCOLOR
+typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /** Font weight constants (Windows LOGFONT standard) */
 #define NMO_FONT_WEIGHT_DONTCARE    0

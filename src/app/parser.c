@@ -14,6 +14,7 @@
 #include "app/nmo_finish_loading.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
+#include "session/nmo_object_system.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
 #include "io/nmo_io_mmap.h"
@@ -33,7 +34,8 @@
 #include "session/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "session/nmo_shadow_storage.h"
-#include "object/nmo_schema_interface.h"
+#include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include "type/type_system.h"
 #include "core/nmo_guid.h"
 #include <stdlib.h>
@@ -392,6 +394,7 @@ static int nmo_load_file_with_io(
     nmo_logger_t *logger = nmo_context_get_logger(ctx);
     nmo_id_sanitizer_t *id_sanitizer = nmo_session_get_id_sanitizer(session);
     nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(session);
+    size_t repo_count = 0;
 
     const nmo_load_flags_t flags = opts->flags;
     const int preserve_shadow = (flags & NMO_LOAD_PRESERVE_SHADOW) != 0;
@@ -789,10 +792,7 @@ static int nmo_load_file_with_io(
     /* Phase 10: Create Objects */
     nmo_log(logger, NMO_LOG_INFO, "Phase 10: Creating %u objects", hdr1.object_count);
 
-    nmo_id_remap_table_t *remap_table = NULL;
-
-    /* Temporary array to map file object index (SaveFindObjectIndex) to created objects (for Phase 11) */
-    nmo_object_t **created_objects = NULL;
+    size_t remap_error_count = 0;
 
     /* Skip object creation if no header1 data or no object descriptors */
     if (hdr1.objects == NULL || hdr1.object_count == 0) {
@@ -800,181 +800,34 @@ static int nmo_load_file_with_io(
         goto skip_object_processing;
     }
 
-    /* Allocate temporary mapping array */
-    created_objects = (nmo_object_t **) nmo_arena_alloc(arena,
-                                                        sizeof(nmo_object_t *) * hdr1.object_count,
-                                                        sizeof(void *));
-    if (created_objects == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate object mapping array");
-        nmo_load_session_destroy(load_session);
-        nmo_io_close(io);
-        return NMO_ERR_NOMEM;
-    }
-    memset(created_objects, 0, sizeof(nmo_object_t *) * hdr1.object_count);
+    {
+        const nmo_allocator_t *obj_allocator = nmo_context_get_allocator(ctx);
+        int prep_result = nmo_object_system_prepare_loaded_objects(
+            obj_allocator,
+            arena,
+            repo,
+            id_sanitizer,
+            load_session,
+            hdr1.objects,
+            hdr1.object_count,
+            data_sect.objects,
+            data_sect.object_count,
+            data_sect.managers,
+            data_sect.manager_count,
+            logger,
+            &remap_error_count);
 
-    for (size_t i = 0; i < hdr1.object_count; i++) {
-        nmo_object_desc_t *desc = &hdr1.objects[i];
-
-        uint32_t raw_id = desc->file_id;
-        if (desc->flags & NMO_OBJECT_REFERENCE_FLAG) {
-            raw_id |= NMO_ID_REF_MASK;
-        }
-
-        int32_t signed_raw_id = (int32_t) raw_id;
-        if (id_sanitizer != NULL && signed_raw_id < 0) {
-            int32_t runtime_ext = nmo_id_register_external(id_sanitizer, signed_raw_id);
-            if (runtime_ext != (int32_t)NMO_OBJECT_ID_INVALID) {
-                nmo_log(logger, NMO_LOG_INFO,
-                        "  Object %zu: external reference %d registered as runtime %d",
-                        i, signed_raw_id, runtime_ext);
-            } else {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Object %zu: failed to register external reference %d",
-                        i, signed_raw_id);
-            }
-        }
-
-        const int is_reference_only = (desc->flags & NMO_OBJECT_REFERENCE_FLAG) != 0;
-        const int is_external_ref = (signed_raw_id < 0);
-
-        nmo_object_id_t sanitized_id = nmo_id_sanitize(raw_id);
-
-        /* Create object */
-        nmo_object_t *obj = (nmo_object_t *) nmo_arena_alloc(arena, sizeof(nmo_object_t),
-                                                             sizeof(void *));
-        if (obj == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate object");
+        if (prep_result != NMO_OK) {
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "Failed to prepare loaded objects (code=%d)", prep_result);
             nmo_load_session_destroy(load_session);
             nmo_io_close(io);
-            return NMO_ERR_NOMEM;
+            return prep_result;
         }
 
-        memset(obj, 0, sizeof(nmo_object_t));
-        obj->class_id = desc->class_id;
-        obj->name = desc->name;
-        obj->flags = desc->flags;
-        if (is_external_ref && (obj->flags & NMO_OBJECT_REFERENCE_FLAG) == 0) {
-            obj->flags |= NMO_OBJECT_REFERENCE_FLAG;
-        }
-        obj->arena = arena;
-        obj->file_id = desc->file_id;
-
-        /* Add to repository (assigns runtime ID) */
-        int add_result = nmo_object_repository_add(repo, obj);
-        if (add_result != NMO_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to add object to repository");
-            nmo_load_session_destroy(load_session);
-            nmo_io_close(io);
-            return add_result;
-        }
-
-        /* Record original FileIndex offset (uncompressed file buffer) */
-        nmo_object_set_file_index(obj, desc->file_index);
-
-        uint32_t file_object_index = (uint32_t)i;
-        if (id_sanitizer != NULL && signed_raw_id >= 0 && sanitized_id != 0) {
-            int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, sanitized_id, obj->id);
-            if (sanitize_result != NMO_OK) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Failed to register ID sanitizer mapping (file_id=%u, runtime_id=%u)",
-                        sanitized_id, obj->id);
-            }
-        }
-
-        /* Register with load session (file object index -> runtime ID mapping) */
-        int reg_result = nmo_load_session_register(load_session, obj, file_object_index);
-        if (reg_result != NMO_OK) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to register object in load session");
-            nmo_load_session_destroy(load_session);
-            nmo_io_close(io);
-            return reg_result;
-        }
-
-        /* Store in temporary mapping */
-        created_objects[i] = obj;
-
-        if (is_reference_only) {
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Created reference-only object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                    i, sanitized_id, file_object_index, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
-        } else if (is_external_ref) {
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Created external reference object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                    i, raw_id, file_object_index, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
-        } else {
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Created object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                    i, sanitized_id, file_object_index, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
-        }
-    }
-
-    /* Phase 11: Attach Object Chunks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 11: Attaching object chunks");
-
-    /* Connect object chunks to objects created in Phase 10 */
-    if (data_sect.objects != NULL && created_objects != NULL) {
-        for (uint32_t i = 0; i < data_sect.object_count && i < hdr1.object_count; i++) {
-            nmo_object_data_t *obj_data = &data_sect.objects[i];
-            nmo_object_t *obj = created_objects[i];
-
-            /* Skip if object wasn't created (reference-only) */
-            if (obj == NULL) {
-                continue;
-            }
-
-            /* Attach chunk to object */
-            obj->chunk = obj_data->chunk;
-
-            if (obj_data->chunk != NULL) {
-                nmo_log(logger, NMO_LOG_INFO, "  Object %u: runtime_id=%u, chunk attached (size=%u, version=%u)",
-                        i, obj->id, obj_data->data_size, obj_data->chunk->chunk_version);
-            } else {
-                nmo_log(logger, NMO_LOG_INFO, "  Object %u: runtime_id=%u, no chunk data",
-                        i, obj->id);
-            }
-        }
-    } else {
-        nmo_log(logger, NMO_LOG_INFO, "  No object chunks to attach");
-    }
-
-    /* Phase 12: Build ID Remap Table */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 12: Building ID remap table");
-
-    remap_table = nmo_build_remap_table(load_session);
-    if (remap_table == NULL) {
-        nmo_log(logger, NMO_LOG_WARN, "Failed to build ID remap table (may be empty session)");
-    } else {
-        size_t remap_count = nmo_id_remap_table_get_count(remap_table);
-        nmo_log(logger, NMO_LOG_INFO, "  Built remap table with %zu entries", remap_count);
-    }
-
-    /* Phase 13: Remap IDs in All Chunks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 13: Remapping IDs in chunks");
-    if (remap_table != NULL) {
-        size_t remap_error_count = 0;
-        for (size_t i = 0; i < hdr1.object_count; i++) {
-            if (created_objects[i] != NULL && created_objects[i]->chunk != NULL) {
-                nmo_status_t remap_result = nmo_chunk_remap_object_ids(created_objects[i]->chunk, remap_table);
-                if (remap_result != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_ERROR, "  Failed to remap IDs in object %zu chunk", i);
-                    remap_error_count++;
-                }
-            }
-        }
-        // Also remap manager chunks
-        if (data_sect.managers != NULL) {
-            for (uint32_t i = 0; i < data_sect.manager_count; i++) {
-                if (data_sect.managers[i].chunk != NULL) {
-                    nmo_status_t remap_result = nmo_chunk_remap_object_ids(data_sect.managers[i].chunk, remap_table);
-                    if (remap_result != NMO_OK) {
-                        nmo_log(logger, NMO_LOG_ERROR, "  Failed to remap IDs in manager %u chunk", i);
-                        remap_error_count++;
-                    }
-                }
-            }
-        }
         if (remap_error_count > 0) {
-            nmo_log(logger, NMO_LOG_WARN, "  ID remapping completed with %zu errors", remap_error_count);
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  ID remapping completed with %zu errors", remap_error_count);
         }
     }
 
@@ -1040,152 +893,37 @@ static int nmo_load_file_with_io(
     /* Phase 14: Deserialize Objects */
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Deserializing objects");
 
-    size_t repo_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &repo_count);
-    
-    if (objects == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "  Failed to get objects from repository");
-        goto skip_object_processing;
+    {
+        nmo_type_registry_t *type_reg = nmo_context_get_type_registry(ctx);
+        if (type_reg == NULL) {
+            nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
+            return NMO_ERR_INVALID_STATE;
+        }
+
+        nmo_object_system_deserialize_stats_t stats = {0};
+        nmo_status_t deser_result = nmo_object_system_deserialize_loaded_objects(
+            repo,
+            type_reg,
+            arena,
+            logger,
+            shadow_storage,
+            NMO_DESER_FLAG_FILE_MODE | NMO_DESER_FLAG_PRESERVE_RAW,
+            load_session,
+            hdr1.object_count,
+            &stats);
+
+        if (deser_result != NMO_OK) {
+            nmo_log(logger, NMO_LOG_ERROR, "  Repository deserialization failed (code=%d)", deser_result);
+            return deser_result;
+        }
+
+        nmo_log(logger, NMO_LOG_INFO,
+                "  Deserialization summary: %zu deserialized, %zu no schema, %zu skipped (no chunk), %zu errors",
+                stats.deserialized,
+                stats.no_schema,
+                stats.skipped_no_chunk + stats.skipped_null + stats.skipped_empty_chunk,
+                stats.errors);
     }
-    
-    /* Get type registry for schema-based deserialization with vtable dispatch */
-    nmo_type_registry_t *type_reg = nmo_context_get_type_registry(ctx);
-    
-    if (type_reg == NULL) {
-        nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    size_t deserialized_count = 0;
-    size_t skipped_count = 0;
-    size_t error_count = 0;
-    size_t no_schema_count = 0;
-
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, repo, NMO_SERIALIZE_FLAG_FILE_MODE);
-
-    for (size_t i = 0; i < repo_count; i++) {
-        nmo_object_t *obj = objects[i];
-        
-        if (obj == NULL) {
-            nmo_log(logger, NMO_LOG_WARN, "  Object %zu is NULL, skipping", i);
-            skipped_count++;
-            continue;
-        }
-        
-        /* Skip objects without chunks (reference-only objects) */
-        if (obj->chunk == NULL) {
-            skipped_count++;
-            continue;
-        }
-
-        /* Defensive: verify chunk buffer looks sane before starting read */
-        size_t chunk_buffer_size = 0;
-        const void *chunk_buffer = nmo_chunk_get_data(obj->chunk, &chunk_buffer_size);
-        if (chunk_buffer == NULL || chunk_buffer_size == 0) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Object %zu (ID=%u): chunk has no data buffer, skipping",
-                    i, obj->id);
-            skipped_count++;
-            continue;
-        }
-
-        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
-        if (read_result != NMO_OK) {
-            error_count++;
-            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to start chunk read: %d",
-                    i, obj->id, read_result);
-            continue;
-        }
-
-        /* Class name lookup is optional; keep log output stable. */
-        const char *class_name = "<unknown>";
-        
-        /* Find schema type with inheritance-based fallback
-         * This searches up the class hierarchy until a schema is found */
-        const nmo_type_descriptor_t *schema_type = 
-            nmo_type_registry_find_by_class_id_inherited(type_reg, obj->class_id);
-        
-        if (schema_type == NULL) {
-            /* No schema found even after checking parent classes */
-            no_schema_count++;
-            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): no schema found in hierarchy",
-                    i, obj->id, obj->class_id, class_name);
-            nmo_chunk_close(obj->chunk);
-            continue;
-        }
-        
-        /* Check if schema has vtable with deserialize function */
-        if (schema_type->vtable == NULL || schema_type->vtable->deserialize == NULL) {
-            no_schema_count++;
-            nmo_log(logger, NMO_LOG_WARN, "  Object %zu (ID=%u, class=0x%08X, type=%s): schema '%s' has no vtable read function",
-                    i, obj->id, obj->class_id, class_name, schema_type->name);
-            nmo_chunk_close(obj->chunk);
-            continue;
-        }
-
-        /* Allocate state structure based on schema size */
-        void *state = nmo_arena_alloc(arena, schema_type->size, 8); /* 8-byte alignment for structs */
-        if (state == NULL) {
-            error_count++;
-            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u): failed to allocate %zu bytes for state",
-                    i, obj->id, schema_type->size);
-            nmo_chunk_close(obj->chunk);
-            continue;
-        }
-        memset(state, 0, schema_type->size);
-        
-        /* Call vtable read function (schema-driven deserialization) */
-        nmo_status_t result = schema_type->vtable->deserialize(
-            state, obj->chunk, schema_type, &ser_ctx);
-        
-        /* Check result */
-        if (result == NMO_OK) {
-            /* Store state in object for later access */
-            nmo_object_set_data(obj, state);
-            deserialized_count++;
-            nmo_log(logger, NMO_LOG_DEBUG, "  Object %zu (ID=%u, class=0x%08X, type=%s): deserialized",
-                    i, obj->id, obj->class_id, class_name);
-
-            if (shadow_storage != NULL) {
-                size_t data_size = nmo_chunk_get_data_size(obj->chunk);
-                size_t pos_dwords = nmo_chunk_get_position(obj->chunk);
-                size_t pos_bytes = pos_dwords * sizeof(uint32_t);
-
-                if (pos_bytes < data_size) {
-                    size_t tail_size = data_size - pos_bytes;
-                    size_t buffer_size = 0;
-                    const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(obj->chunk, &buffer_size);
-
-                    if (data != NULL && pos_bytes + tail_size <= buffer_size) {
-                        int tail_result = nmo_shadow_capture_chunk_tail(
-                            shadow_storage, obj->id, data + pos_bytes, tail_size);
-                        if (tail_result != NMO_OK) {
-                            nmo_log(logger, NMO_LOG_WARN,
-                                    "  Object %zu (ID=%u): failed to capture chunk tail (code=%d)",
-                                    i, obj->id, tail_result);
-                        }
-                    }
-                }
-            }
-
-            nmo_chunk_close(obj->chunk);
-        } else {
-            error_count++;
-            char error_msg[1024];
-            nmo_last_error_message_copy(error_msg, sizeof(error_msg));
-            nmo_log(logger, NMO_LOG_ERROR, "  Object %zu (ID=%u, class=0x%08X, type=%s): deserialization failed: %s",
-                    i, obj->id, obj->class_id, class_name, error_msg);
-            /* Chain the error for better debugging */
-            nmo_log(logger, NMO_LOG_ERROR, "    Error chain: code=%d",
-                    (int)nmo_last_error_code());
-
-            nmo_chunk_close(obj->chunk);
-        }
-    }
-
-    nmo_log(logger, NMO_LOG_INFO, "  Deserialization summary: %zu deserialized, %zu no schema, %zu skipped (no chunk), %zu errors",
-            deserialized_count, no_schema_count, skipped_count, error_count);
 
 skip_object_processing:
     /* Update repo_count after potential skip */
@@ -1214,9 +952,6 @@ skip_object_processing:
     }
 
     /* Cleanup */
-    if (remap_table != NULL) {
-        nmo_id_remap_table_destroy(remap_table);
-    }
     nmo_load_session_end(load_session);
     nmo_load_session_destroy(load_session);
     nmo_io_close(io);
