@@ -38,7 +38,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktexture, nmo_cktexture_state_t)
 static const nmo_type_field_t nmo_cktexture_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_cktexture_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     /* Movie filename */
     NMO_FIELD(nmo_cktexture_state_t, has_movie_filename, NMO_GUID_FIELD_BOOL),

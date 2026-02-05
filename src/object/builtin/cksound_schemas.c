@@ -27,7 +27,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmidisound, nmo_ckmidisound_state_t)
 
 static const nmo_type_field_t nmo_cksound_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cksound_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_cksound_state_t, save_options, NMO_GUID_FIELD_CK_SOUND_SAVEOPTIONS),
     NMO_FIELD_OPT(nmo_cksound_state_t, file_name, NMO_GUID_FIELD_STRING)
@@ -35,7 +35,7 @@ static const nmo_type_field_t nmo_cksound_fields[] = {
 
 static const nmo_type_field_t nmo_ckwavesound_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckwavesound_state_t, base),
-                    sizeof(nmo_cksound_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_cksound_state_t), NMO_GUID_CKSOUND_VAL,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_ckwavesound_state_t, has_wave_file_name, NMO_GUID_FIELD_BOOL),
     NMO_FIELD_OPT(nmo_ckwavesound_state_t, wave_file_name, NMO_GUID_FIELD_STRING),

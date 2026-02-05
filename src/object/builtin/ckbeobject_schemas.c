@@ -45,7 +45,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbeobject, nmo_ckbeobject_state_t)
 static const nmo_type_field_t nmo_ckbeobject_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_ckbeobject_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_CKSCENEOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     /* Scripts */
     NMO_FIELD_REF_ARRAY(nmo_ckbeobject_state_t, script_ids),

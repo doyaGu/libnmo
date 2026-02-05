@@ -38,7 +38,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmaterial, nmo_ck_material_state_t)
 static const nmo_type_field_t nmo_ckmaterial_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_ck_material_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     /* Colors (packed ARGB) */
     NMO_FIELD_NAMED("diffuse_color", offsetof(nmo_ck_material_state_t, diffuse_color),

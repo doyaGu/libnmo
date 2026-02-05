@@ -17,6 +17,10 @@
 #include "test_framework.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_builtin_operations.h"
+#include "type/nmo_reflection.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include <math.h>
@@ -834,6 +838,159 @@ TEST(type_string, object_id_roundtrip) {
     teardown();
 }
 
+TEST(type_string, type_value_to_string_object_id) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_OBJECT_ID);
+    ASSERT_NE(NULL, type);
+
+    nmo_object_id_t value = 42;
+    char buffer[64];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("#42", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_value_to_string_struct_with_object_id_field) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_material_group_t {
+        nmo_object_id_t material_id;
+    } test_material_group_t;
+
+    static const nmo_struct_field_def_t fields[] = {
+        {
+            .name = "material_id",
+            .type_name = NULL,
+            .type_guid = NMO_GUID_FIELD_OBJECT_ID,
+            .description = NULL,
+            .flags = NMO_FIELD_REFERENCE,
+            .default_value = NULL
+        }
+    };
+
+    const nmo_struct_type_def_t def = {
+        .name = "TestMaterialGroup",
+        .description = NULL,
+        .guid = NMO_NULL_GUID,
+        .fields = fields,
+        .field_count = 1,
+        .alignment = 0,
+        .packed = false
+    };
+
+    nmo_status_t reg_res = nmo_type_registry_register_struct(registry, &def, NULL);
+    ASSERT_EQ(NMO_OK, reg_res);
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_name(registry, "TestMaterialGroup");
+    ASSERT_NE(NULL, type);
+
+    test_material_group_t value = { .material_id = 7 };
+    char buffer[128];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("{material_id=#7}", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_value_to_string_object_ref_with_fields) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_objref_t {
+        nmo_object_id_t material_id;
+    } test_objref_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD(test_objref_t, material_id, NMO_GUID_FIELD_OBJECT_ID)
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000001u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_OBJECT_REF,
+        .flags = 0,
+        .name = "TestObjRef",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .size = (uint32_t)sizeof(test_objref_t),
+        .alignment = (uint32_t)alignof(test_objref_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .compat_mask = 0,
+        .vtable = NULL,
+        .finish_loading = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = 0,
+        .valid = true,
+        .hierarchy = NULL,
+        .state_offsets = NULL,
+        .hierarchy_depth = 0,
+        .total_state_size = 0
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NE(NULL, type);
+
+    test_objref_t value = { .material_id = 7 };
+    char buffer[128];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("{material_id=#7}", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_value_to_string_uint16) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT16);
+    ASSERT_NE(NULL, type);
+
+    uint16_t value = 65535u;
+    char buffer[64];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("65535", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_value_to_string_guid) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_GUID);
+    ASSERT_NE(NULL, type);
+
+    nmo_guid_t value = NMO_GUID(0x12345678u, 0x9ABCDEF0u);
+    char buffer[64];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("{12345678-9ABCDEF0}", buffer);
+
+    teardown();
+}
+
 typedef struct test_object_name_session {
     int unused;
 } test_object_name_session_t;
@@ -1036,6 +1193,11 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, object_id_to_string);
     REGISTER_TEST(type_string, object_id_from_string);
     REGISTER_TEST(type_string, object_id_roundtrip);
+    REGISTER_TEST(type_string, type_value_to_string_object_id);
+    REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
+    REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
+    REGISTER_TEST(type_string, type_value_to_string_uint16);
+    REGISTER_TEST(type_string, type_value_to_string_guid);
     REGISTER_TEST(type_string, object_id_to_string_uses_name_resolver);
     REGISTER_TEST(type_string, object_id_from_string_uses_name_resolver);
     REGISTER_TEST(type_string, object_id_to_string_falls_back_on_unsafe_name);

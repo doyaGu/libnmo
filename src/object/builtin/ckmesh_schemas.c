@@ -87,7 +87,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmesh, nmo_ck_mesh_state_t)
 static const nmo_type_field_t nmo_ckmesh_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("beobject", offsetof(nmo_ck_mesh_state_t, beobject),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     /* Mesh flags */
     NMO_FIELD(nmo_ck_mesh_state_t, flags, NMO_GUID_FIELD_VXMESH_FLAGS),

@@ -82,7 +82,7 @@ static nmo_status_t nmo_ckplace_deserialize_internal(
 
 static const nmo_type_field_t nmo_ckplace_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckplace_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_ckplace_state_t, has_camera, NMO_GUID_FIELD_UINT8),
     NMO_FIELD_REF(nmo_ckplace_state_t, camera_id),

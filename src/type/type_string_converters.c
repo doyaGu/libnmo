@@ -13,6 +13,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -979,18 +980,219 @@ nmo_status_t nmo_object_id_from_string(
  * General-Purpose Dispatcher
  * ============================================================================ */
 
-nmo_status_t nmo_type_value_to_string(
+typedef struct nmo_string_builder_t {
+    char *buf;
+    size_t cap;
+    size_t len;
+} nmo_string_builder_t;
+
+static nmo_status_t nmo_sb_append(nmo_string_builder_t *sb, const char *fmt, ...) {
+    if (!sb || !fmt) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid string builder args");
+    }
+    if (sb->cap == 0 || sb->len >= sb->cap) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
+    }
+
+    va_list args;
+    va_start(args, fmt);
+    int wrote = vsnprintf(sb->buf + sb->len, sb->cap - sb->len, fmt, args);
+    va_end(args);
+
+    if (wrote < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to format string");
+    }
+    if ((size_t)wrote >= sb->cap - sb->len) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
+    }
+
+    sb->len += (size_t)wrote;
+    NMO_RETURN_OK();
+}
+
+static const nmo_type_descriptor_t *nmo_to_string_resolve_type(
+    const nmo_type_registry_t *registry,
+    nmo_guid_t guid
+) {
+    if (!registry) {
+        return NULL;
+    }
+
+    const nmo_type_descriptor_t *t = nmo_type_registry_find_by_guid(registry, guid);
+    if (t) {
+        return t;
+    }
+
+    if (nmo_guid_is_field_type(guid)) {
+        nmo_guid_t mapped = nmo_guid_field_to_type(guid);
+        return nmo_type_registry_find_by_guid(registry, mapped);
+    }
+
+    return NULL;
+}
+
+static nmo_status_t nmo_type_value_to_string_impl(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer,
-    size_t buffer_size)
-{
+    size_t buffer_size,
+    int depth
+);
+
+static nmo_status_t nmo_struct_like_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth
+) {
+    enum { NMO_MAX_TO_STRING_DEPTH = 3 };
+
     if (!value || !type || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for type_value_to_string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for struct_to_string");
+    }
+    if (buffer_size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
     }
 
-    // Dispatch based on type category
+    if (depth >= NMO_MAX_TO_STRING_DEPTH) {
+        snprintf(buffer, buffer_size, "<%s %u bytes>",
+                 (type->category & NMO_TYPE_CATEGORY_UNION) ? "union" : "struct",
+                 type->size);
+        NMO_RETURN_OK();
+    }
+
+    nmo_string_builder_t sb = { .buf = buffer, .cap = buffer_size, .len = 0 };
+    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "{"));
+
+    for (size_t i = 0; i < type->field_count; i++) {
+        const nmo_type_field_t *field = &type->fields[i];
+        const nmo_type_descriptor_t *field_type = nmo_to_string_resolve_type(registry, field->type_guid);
+        const uint8_t *field_ptr = (const uint8_t *)value + field->offset;
+
+        if (i > 0) {
+            NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, ", "));
+        }
+        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s=", field->name ? field->name : "<unnamed>"));
+
+        if (!field_type) {
+            NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<unknown>"));
+            continue;
+        }
+
+        if (field->flags & NMO_FIELD_REPEATED) {
+            uint64_t count = 0;
+
+            if (field->name && type->fields && type->field_count > 0) {
+                char base_name[96];
+                char count_name[112];
+
+                (void)snprintf(base_name, sizeof(base_name), "%s", field->name);
+                size_t base_len = strlen(base_name);
+
+                struct {
+                    const char *suffix;
+                    size_t suffix_len;
+                } strip_suffixes[] = {
+                    {"_ids", 4},
+                    {"_types", 6},
+                    {"_indices", 8},
+                    {"_chunks", 7},
+                };
+
+                bool stripped = false;
+                for (size_t s = 0; s < sizeof(strip_suffixes) / sizeof(strip_suffixes[0]); s++) {
+                    if (base_len > strip_suffixes[s].suffix_len &&
+                        strcmp(base_name + base_len - strip_suffixes[s].suffix_len, strip_suffixes[s].suffix) == 0) {
+                        base_name[base_len - strip_suffixes[s].suffix_len] = '\0';
+                        stripped = true;
+                        break;
+                    }
+                }
+                if (!stripped) {
+                    base_len = strlen(base_name);
+                    if (base_len > 1 && base_name[base_len - 1] == 's') {
+                        base_name[base_len - 1] = '\0';
+                    }
+                }
+
+                (void)snprintf(count_name, sizeof(count_name), "%s_count", base_name);
+
+                for (size_t j = 0; j < type->field_count; j++) {
+                    const nmo_type_field_t *cf = &type->fields[j];
+                    if (!cf->name || strcmp(cf->name, count_name) != 0) {
+                        continue;
+                    }
+
+                    const nmo_type_descriptor_t *count_type = nmo_to_string_resolve_type(registry, cf->type_guid);
+                    if (!count_type) {
+                        break;
+                    }
+
+                    nmo_guid_t count_guid = count_type->guid;
+                    if (nmo_guid_is_field_type(count_guid)) {
+                        count_guid = nmo_guid_field_to_type(count_guid);
+                    }
+
+                    const uint8_t *count_ptr = (const uint8_t *)value + cf->offset;
+                    if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_UINT32)) {
+                        count = *(const uint32_t *)count_ptr;
+                    } else if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_INT)) {
+                        int32_t v = *(const int32_t *)count_ptr;
+                        if (v >= 0) {
+                            count = (uint64_t)v;
+                        }
+                    } else if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_UINT64)) {
+                        count = *(const uint64_t *)count_ptr;
+                    } else if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_INT64)) {
+                        int64_t v = *(const int64_t *)count_ptr;
+                        if (v >= 0) {
+                            count = (uint64_t)v;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if (count > 0) {
+                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[%llu]", (unsigned long long)count));
+            } else {
+                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
+            }
+            continue;
+        }
+
+        char tmp[256];
+        nmo_status_t r = nmo_type_value_to_string_impl(field_ptr, field_type, registry,
+                                                       tmp, sizeof(tmp), depth + 1);
+        if (r != NMO_OK) {
+            NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<error>"));
+            continue;
+        }
+
+        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s", tmp));
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "}"));
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_type_value_to_string_impl(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth
+) {
+    if (!value || !type || !buffer) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for type_value_to_string");
+    }
+
     if (type->category & NMO_TYPE_CATEGORY_ENUM) {
         return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
     }
@@ -998,18 +1200,94 @@ nmo_status_t nmo_type_value_to_string(
         return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
     }
 
-    // Dispatch by GUID for built-in types (using NMO_TYPE_GUID_* constants)
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_FLOAT)) {
-        return nmo_float_to_string(value, buffer, buffer_size);
+    /* Some call sites may hand us descriptors keyed by encoded reflection-field GUIDs.
+     * Normalize those to builtin NMO_TYPE_GUID_* forms for comparison. */
+    nmo_guid_t effective_guid = type->guid;
+    if (nmo_guid_is_field_type(effective_guid)) {
+        effective_guid = nmo_guid_field_to_type(effective_guid);
     }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT)) {
+
+    /* Prefer explicit built-in GUID formatting over generic struct formatting.
+     * Some builtin composites may be registered with STRUCT category. */
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_OBJECT_ID)) {
+        return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
+    }
+
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_GUID)) {
+        int wrote = nmo_guid_format(*(const nmo_guid_t *)value, buffer, buffer_size);
+        if (wrote < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
+        }
+        NMO_RETURN_OK();
+    }
+
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_STRING)) {
+        const char *str = *(const char *const *)value;
+        snprintf(buffer, buffer_size, "%s", str ? str : "(null)");
+        NMO_RETURN_OK();
+    }
+
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_POINTER)) {
+        const void *ptr = *(const void *const *)value;
+        if (!ptr) {
+            snprintf(buffer, buffer_size, "null");
+        } else {
+            snprintf(buffer, buffer_size, "%p", ptr);
+        }
+        NMO_RETURN_OK();
+    }
+
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT8)) {
+        snprintf(buffer, buffer_size, "%d", (int)*(const int8_t *)value);
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT8)) {
+        snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint8_t *)value);
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT16)) {
+        snprintf(buffer, buffer_size, "%d", (int)*(const int16_t *)value);
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT16)) {
+        snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint16_t *)value);
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT)) {
         return nmo_int_to_string(value, buffer, buffer_size, false);
     }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_BOOL)) {
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT32)) {
+        snprintf(buffer, buffer_size, "%u", *(const uint32_t *)value);
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT64)) {
+        snprintf(buffer, buffer_size, "%lld", (long long)*(const int64_t *)value);
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT64)) {
+        snprintf(buffer, buffer_size, "%llu", (unsigned long long)*(const uint64_t *)value);
+        NMO_RETURN_OK();
+    }
+
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_DOUBLE)) {
+        double d = *(const double *)value;
+        if (isnan(d)) {
+            snprintf(buffer, buffer_size, "NaN");
+        } else if (isinf(d)) {
+            snprintf(buffer, buffer_size, d > 0 ? "Infinity" : "-Infinity");
+        } else {
+            snprintf(buffer, buffer_size, "%.6g", d);
+        }
+        NMO_RETURN_OK();
+    }
+
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_FLOAT)) {
+        return nmo_float_to_string(value, buffer, buffer_size);
+    }
+    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_BOOL)) {
         return nmo_bool_to_string(value, buffer, buffer_size);
     }
-    
-    // Vector types (Vector2 = 2 floats, Vector3 = 3 floats, Vector4/Quaternion = 4 floats)
+
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2)) {
         return nmo_vector2_to_string(value, buffer, buffer_size);
     }
@@ -1029,7 +1307,20 @@ nmo_status_t nmo_type_value_to_string(
         return nmo_color_to_string(value, buffer, buffer_size);
     }
 
-    // Fallback: try by size/alignment for unnamed types
+    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
+        return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
+    }
+
+    /* Object types can also carry reflection fields; render those like structs. */
+    if (type->fields && type->field_count > 0) {
+        return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
+    }
+
+    /* If a type provides a custom to_string implementation, try it after reflection/builtins. */
+    if (type->vtable && type->vtable->to_string) {
+        return type->vtable->to_string(value, type, buffer, buffer_size, (void *)registry);
+    }
+
     if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
         return nmo_float_to_string(value, buffer, buffer_size);
     }
@@ -1040,9 +1331,22 @@ nmo_status_t nmo_type_value_to_string(
         return nmo_bool_to_string(value, buffer, buffer_size);
     }
 
-    // Default: hex dump
     snprintf(buffer, buffer_size, "<binary %u bytes>", type->size);
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_type_value_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (!value || !type || !buffer) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for type_value_to_string");
+    }
+
+    return nmo_type_value_to_string_impl(value, type, registry, buffer, buffer_size, 0);
 }
 
 nmo_status_t nmo_type_value_from_string(

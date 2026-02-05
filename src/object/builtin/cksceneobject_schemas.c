@@ -38,7 +38,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksceneobject, nmo_cksceneobject_state_t)
 
 static const nmo_type_field_t nmo_cksceneobject_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cksceneobject_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_CKOBJECT_VAL,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_cksceneobject_state_t, raw_tail),
                           sizeof(uint8_t *), NMO_GUID_FIELD_UINT8,
