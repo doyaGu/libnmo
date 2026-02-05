@@ -2,18 +2,20 @@
  * @file test_builtin_operations.c
  * @brief Unit tests for builtin operations (Phase 6.1.5)
  *
- * Tests all 49 builtin operations across 5 categories:
+ * Tests builtin operations across 6 categories:
  * - Arithmetic: 16 operations (8 INT + 8 FLOAT)
  * - Logic: 4 operations (BOOL)
  * - Comparison: 16 operations (8 INT + 8 FLOAT)
  * - Bitwise: 7 operations (INT)
  * - Trigonometry: 6 operations (FLOAT)
+ * - Vector: 16 operations (Vector2/3/4)
  */
 
 #include "test_framework.h"
-#include "type/builtin_operations.h"
-#include "type/type_system.h"
-#include "type/operation_system.h"
+#include "type/nmo_builtin_operations.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_operation_system.h"
+#include "core/nmo_math.h"
 #include "core/nmo_arena.h"
 #include <math.h>
 #include <stdalign.h>
@@ -620,6 +622,106 @@ TEST(builtin_operations, trigonometry_asin_domain_error) {
 }
 
 /* ============================================================================
+ * Vector Operations Tests
+ * ============================================================================ */
+
+TEST(builtin_operations, vector_add_vector3) {
+    setup_registries();
+
+    const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_ADD;
+    const nmo_type_descriptor_t *vec3_type = get_type(NMO_TYPE_GUID_VECTOR3);
+    ASSERT_NE(NULL, vec3_type);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    nmo_status_t res = nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        vec3_type,
+        vec3_type,
+        type_registry,
+        &cell
+    );
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_NE(NULL, cell);
+
+    nmo_vector_t a = {1.0f, 2.0f, 3.0f};
+    nmo_vector_t b = {4.0f, 5.0f, 6.0f};
+    nmo_vector_t result = {0};
+    res = cell->desc.function(&a, vec3_type, &b, vec3_type, &result, vec3_type, NULL);
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_FLOAT_EQ(5.0f, result.x, 0.001f);
+    ASSERT_FLOAT_EQ(7.0f, result.y, 0.001f);
+    ASSERT_FLOAT_EQ(9.0f, result.z, 0.001f);
+
+    teardown_registries();
+}
+
+TEST(builtin_operations, vector_dot_vector2) {
+    setup_registries();
+
+    const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_DOT;
+    const nmo_type_descriptor_t *vec2_type = get_type(NMO_TYPE_GUID_VECTOR2);
+    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    ASSERT_NE(NULL, vec2_type);
+    ASSERT_NE(NULL, float_type);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    nmo_status_t res = nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        vec2_type,
+        vec2_type,
+        type_registry,
+        &cell
+    );
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_NE(NULL, cell);
+
+    nmo_vector2_t a = {2.0f, 3.0f};
+    nmo_vector2_t b = {4.0f, 5.0f};
+    float result = 0.0f;
+    res = cell->desc.function(&a, vec2_type, &b, vec2_type, &result, float_type, NULL);
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_FLOAT_EQ(23.0f, result, 0.001f);
+
+    teardown_registries();
+}
+
+TEST(builtin_operations, vector_cross_vector3) {
+    setup_registries();
+
+    const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_CROSS;
+    const nmo_type_descriptor_t *vec3_type = get_type(NMO_TYPE_GUID_VECTOR3);
+    ASSERT_NE(NULL, vec3_type);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    nmo_status_t res = nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        vec3_type,
+        vec3_type,
+        type_registry,
+        &cell
+    );
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_NE(NULL, cell);
+
+    nmo_vector_t a = {1.0f, 0.0f, 0.0f};
+    nmo_vector_t b = {0.0f, 1.0f, 0.0f};
+    nmo_vector_t result = {0};
+    res = cell->desc.function(&a, vec3_type, &b, vec3_type, &result, vec3_type, NULL);
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_FLOAT_EQ(0.0f, result.x, 0.001f);
+    ASSERT_FLOAT_EQ(0.0f, result.y, 0.001f);
+    ASSERT_FLOAT_EQ(1.0f, result.z, 0.001f);
+
+    teardown_registries();
+}
+
+/* ============================================================================
  * Registration Statistics Tests
  * ============================================================================ */
 
@@ -629,8 +731,8 @@ TEST(builtin_operations, check_total_operations_count) {
     uint64_t total_ops = 0, total_lookups = 0, cache_hits = 0;
     nmo_operation_registry_get_stats(operation_registry, &total_ops, &total_lookups, &cache_hits);
 
-    /* Expected: 49 total (16 arithmetic + 4 logic + 16 comparison + 7 bitwise + 6 trigonometry) */
-    ASSERT_EQ(49, (int)total_ops);
+    /* Expected: 66 total (core 50 + 16 vector ops) */
+    ASSERT_EQ(66, (int)total_ops);
 
     teardown_registries();
 }
@@ -665,6 +767,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builtin_operations, trigonometry_sin_float);
     REGISTER_TEST(builtin_operations, trigonometry_cos_float);
     REGISTER_TEST(builtin_operations, trigonometry_asin_domain_error);
+
+    REGISTER_TEST(builtin_operations, vector_add_vector3);
+    REGISTER_TEST(builtin_operations, vector_dot_vector2);
+    REGISTER_TEST(builtin_operations, vector_cross_vector3);
 
     REGISTER_TEST(builtin_operations, check_total_operations_count);
 TEST_MAIN_END()

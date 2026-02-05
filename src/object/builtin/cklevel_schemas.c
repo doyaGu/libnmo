@@ -25,12 +25,32 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cklevel, nmo_cklevel_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cklevel_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_cklevel_state_t, base),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_REF_ARRAY(nmo_cklevel_state_t, scene_ids),
+    NMO_FIELD(nmo_cklevel_state_t, scene_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF(nmo_cklevel_state_t, current_scene_id),
+    NMO_FIELD_REF(nmo_cklevel_state_t, level_scene_id),
+    NMO_FIELD_OPT(nmo_cklevel_state_t, level_scene_chunk, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD_ARRAY(nmo_cklevel_state_t, inactive_manager_guids, NMO_GUID_FIELD_GUID),
+    NMO_FIELD(nmo_cklevel_state_t, inactive_manager_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_cklevel_state_t, duplicate_manager_names, NMO_GUID_FIELD_STRING),
+    NMO_FIELD(nmo_cklevel_state_t, duplicate_manager_count, NMO_GUID_FIELD_UINT32)
+};
 
 /* =============================================================================
  * CKLevel DESERIALIZATION
@@ -329,15 +349,63 @@ nmo_status_t nmo_cklevel_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t cklevel_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_cklevel_state_t *s = src;
+    nmo_cklevel_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
+                                              s->base.base.raw_tail, s->base.base.raw_tail_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.script_ids,
+                                              s->base.script_ids, sizeof(nmo_object_id_t), s->base.script_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_parameter_ids,
+                                              s->base.attribute_parameter_ids, sizeof(nmo_object_id_t), s->base.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_types,
+                                              s->base.attribute_types, sizeof(uint32_t), s->base.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->base.attribute_chunks,
+                                                    s->base.attribute_chunks, s->base.attribute_chunk_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
+                                              s->base.legacy_attributes_raw, s->base.legacy_attributes_size));
+
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->scene_ids,
+                                              s->scene_ids, sizeof(nmo_object_id_t), s->scene_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->level_scene_chunk, s->level_scene_chunk));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->inactive_manager_guids,
+                                              s->inactive_manager_guids, sizeof(nmo_guid_t), s->inactive_manager_count));
+    return nmo_object_copy_string_array(arena, &d->duplicate_manager_names,
+                                        s->duplicate_manager_names, s->duplicate_manager_count);
+}
+
+static nmo_status_t cklevel_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_cklevel_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->scene_ids, s->scene_count, "scene_ids");
+    NMO_VALIDATE_COUNT(s->inactive_manager_guids, s->inactive_manager_count,
+                       "inactive_manager_guids");
+    NMO_VALIDATE_COUNT(s->duplicate_manager_names, s->duplicate_manager_count,
+                       "duplicate_manager_names");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     cklevel,
     nmo_cklevel_state_t,
     nmo_cklevel_serialize,
     nmo_cklevel_deserialize,
+    nmo_cklevel_fields,
     NMO_GUID_CKLEVEL,
     "CKLevel",
     NMO_CID_LEVEL,

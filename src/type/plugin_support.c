@@ -7,7 +7,7 @@
  * Reference: CKParameterManager.cpp lines 38-47, 84-129, 140-145
  */
 
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
@@ -133,10 +133,67 @@ static nmo_status_t nmo_copy_struct_metadata(
         dst->size = src->size;
         dst->array_count = src->array_count;
         dst->flags = src->flags;
+        dst->pointee_guid = src->pointee_guid;
+        dst->pointer_depth = src->pointer_depth;
     }
 
     out_copy->struct_meta.fields = fields_copy;
     out_copy->struct_meta.field_count = metadata->struct_meta.field_count;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_copy_union_metadata(
+    nmo_type_registry_t *registry,
+    const nmo_specialized_metadata_t *metadata,
+    nmo_specialized_metadata_t *out_copy
+) {
+    if (!registry || !metadata || !out_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid union metadata copy arguments");
+    }
+
+    if (!metadata->union_meta.fields || metadata->union_meta.field_count == 0) {
+        out_copy->union_meta.fields = NULL;
+        out_copy->union_meta.field_count = 0;
+        NMO_RETURN_OK();
+    }
+
+    nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_arena_alloc(
+        registry->arena,
+        sizeof(nmo_struct_descriptor_t) * metadata->union_meta.field_count,
+        _Alignof(nmo_struct_descriptor_t));
+    if (!fields_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate union field copy");
+    }
+
+    for (size_t i = 0; i < metadata->union_meta.field_count; i++) {
+        const nmo_struct_descriptor_t *src = &metadata->union_meta.fields[i];
+        nmo_struct_descriptor_t *dst = &fields_copy[i];
+
+        memset(dst, 0, sizeof(*dst));
+        if (src->name) {
+            dst->name = nmo_arena_strdup(registry->arena, src->name);
+            if (!dst->name) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy union field name");
+            }
+        }
+        if (src->description) {
+            dst->description = nmo_arena_strdup(registry->arena, src->description);
+            if (!dst->description) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy union field description");
+            }
+        }
+
+        dst->type_guid = src->type_guid;
+        dst->offset = src->offset;
+        dst->size = src->size;
+        dst->array_count = src->array_count;
+        dst->flags = src->flags;
+        dst->pointee_guid = src->pointee_guid;
+        dst->pointer_depth = src->pointer_depth;
+    }
+
+    out_copy->union_meta.fields = fields_copy;
+    out_copy->union_meta.field_count = metadata->union_meta.field_count;
     NMO_RETURN_OK();
 }
 
@@ -151,7 +208,8 @@ static nmo_status_t nmo_deep_copy_metadata(
 
     if (metadata->metadata_type != NMO_METADATA_TYPE_ENUM &&
         metadata->metadata_type != NMO_METADATA_TYPE_STRUCT &&
-        metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
+        metadata->metadata_type != NMO_METADATA_TYPE_FLAGS &&
+        metadata->metadata_type != NMO_METADATA_TYPE_UNION) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Unknown metadata type");
     }
 
@@ -179,6 +237,9 @@ static nmo_status_t nmo_deep_copy_metadata(
             break;
         case NMO_METADATA_TYPE_FLAGS:
             result = nmo_copy_flags_metadata(registry, metadata, copy);
+            break;
+        case NMO_METADATA_TYPE_UNION:
+            result = nmo_copy_union_metadata(registry, metadata, copy);
             break;
     }
 
@@ -344,6 +405,21 @@ nmo_status_t nmo_type_registry_invalidate(
     nmo_type_descriptor_t *type = (nmo_type_descriptor_t*)nmo_type_registry_find_by_guid(registry, guid);
     if (!type) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found in registry");
+    }
+
+    if (!type->valid) {
+        NMO_RETURN_OK();
+    }
+
+    // Update stats
+    if (!nmo_guid_is_null(type->creator_plugin_guid)) {
+        if (registry->plugin_count > 0) {
+            registry->plugin_count--;
+        }
+    } else {
+        if (registry->builtin_count > 0) {
+            registry->builtin_count--;
+        }
     }
 
     // Mark as invalid (soft delete)

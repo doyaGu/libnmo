@@ -17,10 +17,23 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterlocal, nmo_ckparameterlocal_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckparameterlocal_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterlocal_state_t, base),
+                    sizeof(nmo_ckparameter_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckparameterlocal_state_t, is_myself, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckparameterlocal_state_t, is_setting, NMO_GUID_FIELD_UINT8)
+};
 
 /* =============================================================================
  * CKParameterLocal DESERIALIZATION/SERIALIZATION
@@ -107,11 +120,12 @@ nmo_status_t nmo_ckparameterlocal_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckparameterlocal,
     nmo_ckparameterlocal_state_t,
     nmo_ckparameterlocal_serialize,
     nmo_ckparameterlocal_deserialize,
+    nmo_ckparameterlocal_fields,
     NMO_GUID_CKPARAMETERLOCAL,
     "CKParameterLocal",
     NMO_CID_PARAMETERLOCAL,

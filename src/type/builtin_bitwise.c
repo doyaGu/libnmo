@@ -2,11 +2,12 @@
  * @file builtin_bitwise.c
  * @brief Builtin bitwise operations implementation
  *
- * Implements bitwise operations: BitAnd, BitOr, BitXor, BitNot, ShiftLeft, ShiftRight, RotateLeft
+ * Implements bitwise operations: BitAnd, BitOr, BitXor, BitNot, ShiftLeft, ShiftRight,
+ * RotateLeft, RotateRight
  * Supports INT type only.
  */
 
-#include "type/builtin_operations.h"
+#include "type/nmo_builtin_operations.h"
 #include "core/nmo_error.h"
 #include <stdint.h>
 
@@ -114,6 +115,25 @@ static nmo_status_t op_rotate_left_int(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t op_rotate_right_int(
+    const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type, void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
+) {
+    (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
+
+    const uint32_t a = *(const uint32_t *)p1_data;
+    const int32_t b = *(const int32_t *)p2_data;
+
+    if (b < 0 || b >= 32) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Rotate count out of range");
+    }
+
+    const uint32_t result = (a >> b) | (a << (32 - b));
+    *(int32_t *)result_data = (int32_t)result;
+
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Registration
  * ============================================================================ */
@@ -197,6 +217,17 @@ nmo_status_t nmo_register_bitwise_operations(
             .p1_type_guid = NMO_TYPE_GUID_INT,
             .p2_type_guid = NMO_TYPE_GUID_INT,
             .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY, .function = op_rotate_left_int,
+            .priority = 100,
+            .user_data = NULL
+        },
+        {
+            .operation_guid = NMO_OP_GUID_ROTATE_RIGHT,
+            .name = "RotateRight",
+            .description = "Bitwise rotate right: ror(a, b)",
+            .p1_type_guid = NMO_TYPE_GUID_INT,
+            .p2_type_guid = NMO_TYPE_GUID_INT,
+            .result_type_guid = NMO_TYPE_GUID_INT, .flags = NMO_OP_BINARY,
+            .function = op_rotate_right_int,
             .priority = 100,
             .user_data = NULL
         }

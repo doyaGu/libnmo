@@ -94,11 +94,11 @@
 #include "object/nmo_object_types.h"
 
 // Type layer
-#include "type/type_system.h"
-#include "type/dynamic_types.h"
-#include "type/operation_system.h"
-#include "type/builtin_operations.h"
-#include "type/type_string.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_builtin_operations.h"
+#include "type/nmo_type_string.h"
 
 // Extension layer
 #include "extension/nmo_extension_abi.h"
@@ -115,6 +115,7 @@
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
 #include "session/nmo_object_index.h"
+#include "session/nmo_ref_graph.h"
 
 // App layer
 #include "app/nmo_context.h"

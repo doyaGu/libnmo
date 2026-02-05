@@ -194,6 +194,8 @@ set(NMO_FORMAT_SOURCES
 set(NMO_OBJECT_SOURCES
     src/object/class_hierarchy.c
     src/object/object_type_common.c
+    src/object/object_enums.c
+    src/object/object_structs.c
     src/object/object_types.c
     src/object/deserialize_context.c
     src/object/builtin/object_vtables.c
@@ -247,6 +249,7 @@ set(NMO_TYPE_SOURCES
     src/type/type_registry.c
     src/type/plugin_support.c
     src/type/operation_registry.c
+    src/type/builtin_type_guids.c
     src/type/type_parser.c
     src/type/type_registry_enum.c
     src/type/type_registry_struct.c
@@ -256,6 +259,8 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_logic.c
     src/type/builtin_bitwise.c
     src/type/builtin_trigonometry.c
+    src/type/builtin_vector.c
+    src/type/nmo_reflection.c
 )
 
 # Extension layer sources
@@ -276,6 +281,8 @@ set(NMO_SESSION_SOURCES
     src/session/id_sanitizer.c
     src/session/shadow_storage.c
     src/session/reference_resolver.c
+    src/session/nmo_ref_graph.c
+    src/session/nmo_ref_enumerate.c
 )
 
 # App layer sources
@@ -289,6 +296,7 @@ set(NMO_APP_SOURCES
     src/app/comparison.c
     src/app/stats.c
     src/app/inspector.c
+    src/app/hexdump.c
 )
 
 # Combine all sources

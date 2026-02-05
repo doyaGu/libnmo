@@ -9,7 +9,7 @@
  * Phase 5.6 - Task T5.6.6
  */
 
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "test_framework.h"
 #include <string.h>
 

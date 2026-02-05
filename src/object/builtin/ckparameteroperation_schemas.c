@@ -13,9 +13,32 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameteroperation, nmo_ckparameteroperation_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckparameteroperation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameteroperation_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, operation_guid, NMO_GUID_FIELD_GUID),
+    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, owner_id),
+    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, in1_id),
+    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, in2_id),
+    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, out_id),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_owner, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in1, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in2, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_out, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in1_chunk, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in2_chunk, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, out_chunk, NMO_GUID_FIELD_CHUNK)
+};
 
 nmo_status_t nmo_ckparameteroperation_deserialize(
     void *instance,
@@ -115,6 +138,31 @@ nmo_status_t nmo_ckparameteroperation_deserialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckparameteroperation_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckparameteroperation_state_t *s = src;
+    nmo_ckparameteroperation_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->in1_chunk, s->in1_chunk));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->in2_chunk, s->in2_chunk));
+    return nmo_object_copy_chunk(arena, &d->out_chunk, s->out_chunk);
+}
+
+static nmo_status_t ckparameteroperation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_ckparameteroperation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -198,11 +246,12 @@ nmo_status_t nmo_ckparameteroperation_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckparameteroperation,
     nmo_ckparameteroperation_state_t,
     nmo_ckparameteroperation_serialize,
     nmo_ckparameteroperation_deserialize,
+    nmo_ckparameteroperation_fields,
     NMO_GUID_CKPARAMETEROPERATION,
     "CKParameterOperation",
     NMO_CID_PARAMETEROPERATION,

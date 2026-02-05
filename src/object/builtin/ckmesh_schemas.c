@@ -64,10 +64,13 @@
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -76,6 +79,49 @@
 #include <math.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmesh, nmo_ck_mesh_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckmesh_fields[] = {
+    /* Base class */
+    NMO_FIELD_NAMED("beobject", offsetof(nmo_ck_mesh_state_t, beobject),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    /* Mesh flags */
+    NMO_FIELD(nmo_ck_mesh_state_t, flags, NMO_GUID_FIELD_VXMESH_FLAGS),
+    /* Bounding info */
+    NMO_FIELD_NAMED("bary_center", offsetof(nmo_ck_mesh_state_t, bary_center),
+                    sizeof(nmo_vx_vector_t), NMO_GUID_FIELD_VECTOR3,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ck_mesh_state_t, radius, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD_NAMED("local_box_min", offsetof(nmo_ck_mesh_state_t, local_box_min),
+                    sizeof(nmo_vx_vector_t), NMO_GUID_FIELD_VECTOR3,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("local_box_max", offsetof(nmo_ck_mesh_state_t, local_box_max),
+                    sizeof(nmo_vx_vector_t), NMO_GUID_FIELD_VECTOR3,
+                    NMO_FIELD_REQUIRED, 0),
+    /* Faces */
+    NMO_FIELD(nmo_ck_mesh_state_t, face_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, faces, NMO_GUID_FIELD_CKFACE),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, face_vertex_indices, NMO_GUID_FIELD_UINT16),
+    /* Lines */
+    NMO_FIELD(nmo_ck_mesh_state_t, line_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, line_indices, NMO_GUID_FIELD_UINT16),
+    /* Vertices */
+    NMO_FIELD(nmo_ck_mesh_state_t, vertex_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertices, NMO_GUID_FIELD_VXVERTEX),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_colors, NMO_GUID_FIELD_COLOR),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_specular, NMO_GUID_FIELD_COLOR),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_weights, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ck_mesh_state_t, vertex_weight_count, NMO_GUID_FIELD_UINT32),
+    /* Materials */
+    NMO_FIELD(nmo_ck_mesh_state_t, material_group_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_groups, NMO_GUID_FIELD_CKMATERIALGROUP),
+    NMO_FIELD(nmo_ck_mesh_state_t, material_channel_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_channels, NMO_GUID_FIELD_CKMATERIALCHANNEL)
+};
 
 /* =============================================================================
  * HELPER FUNCTIONS
@@ -1372,15 +1418,106 @@ nmo_status_t nmo_ckmesh_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckmesh_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ck_mesh_state_t *s = src;
+    nmo_ck_mesh_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->beobject.base.raw_tail,
+                                              s->beobject.base.raw_tail, s->beobject.base.raw_tail_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->beobject.script_ids,
+                                              s->beobject.script_ids, sizeof(nmo_object_id_t), s->beobject.script_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->beobject.attribute_parameter_ids,
+                                              s->beobject.attribute_parameter_ids, sizeof(nmo_object_id_t), s->beobject.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->beobject.attribute_types,
+                                              s->beobject.attribute_types, sizeof(uint32_t), s->beobject.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->beobject.attribute_chunks,
+                                                    s->beobject.attribute_chunks, s->beobject.attribute_chunk_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->beobject.legacy_attributes_raw,
+                                              s->beobject.legacy_attributes_raw, s->beobject.legacy_attributes_size));
+
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
+                                              s->faces, sizeof(nmo_ck_face_t), s->face_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->face_vertex_indices,
+                                              s->face_vertex_indices, sizeof(uint16_t),
+                                              (uint32_t)(s->face_count * 3u)));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->line_indices,
+                                              s->line_indices, sizeof(uint16_t),
+                                              (uint32_t)(s->line_count * 2u)));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertices,
+                                              s->vertices, sizeof(nmo_vx_vertex_t), s->vertex_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_colors,
+                                              s->vertex_colors, sizeof(uint32_t), s->vertex_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_specular,
+                                              s->vertex_specular, sizeof(uint32_t), s->vertex_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_weights,
+                                              s->vertex_weights, sizeof(float), s->vertex_weight_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->material_groups,
+                                              s->material_groups, sizeof(nmo_ck_material_group_t),
+                                              s->material_group_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->material_channels,
+                                              s->material_channels, sizeof(nmo_ck_material_channel_t),
+                                              s->material_channel_count));
+    for (uint32_t i = 0; i < s->material_channel_count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena,
+                                                  (void **)&d->material_channels[i].uv_coords,
+                                                  s->material_channels[i].uv_coords,
+                                                  sizeof(nmo_vx_2d_vector_t),
+                                                  s->material_channels[i].uv_count));
+    }
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->pm_data, s->pm_data, s->pm_data_size));
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckmesh_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ck_mesh_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->faces, s->face_count, "faces");
+    if (s->face_count > 0) {
+        NMO_VALIDATE_COUNT(s->face_vertex_indices, (uint32_t)(s->face_count * 3u),
+                           "face_vertex_indices");
+    }
+    if (s->line_count > 0) {
+        NMO_VALIDATE_COUNT(s->line_indices, (uint32_t)(s->line_count * 2u), "line_indices");
+    }
+    NMO_VALIDATE_COUNT(s->vertices, s->vertex_count, "vertices");
+    NMO_VALIDATE_COUNT(s->vertex_colors, s->vertex_count, "vertex_colors");
+    NMO_VALIDATE_COUNT(s->vertex_specular, s->vertex_count, "vertex_specular");
+    NMO_VALIDATE_COUNT(s->vertex_weights, s->vertex_weight_count, "vertex_weights");
+    NMO_VALIDATE_COUNT(s->material_groups, s->material_group_count, "material_groups");
+    NMO_VALIDATE_COUNT(s->material_channels, s->material_channel_count, "material_channels");
+    if (s->material_channels) {
+        for (uint32_t i = 0; i < s->material_channel_count; ++i) {
+            if (s->material_channels[i].uv_count > 0) {
+                NMO_VALIDATE_COUNT(s->material_channels[i].uv_coords,
+                                   s->material_channels[i].uv_count,
+                                   "material_channels.uv_coords");
+            }
+        }
+    }
+    NMO_VALIDATE_BYTES(s->pm_data, s->pm_data_size, "pm_data");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckmesh,
     nmo_ck_mesh_state_t,
     nmo_ckmesh_serialize,
     nmo_ckmesh_deserialize,
+    nmo_ckmesh_fields,
     NMO_GUID_CKMESH,
     "CKMesh",
     NMO_CID_MESH,

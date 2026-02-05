@@ -10,8 +10,8 @@
  */
 
 #include "nmo.h"
-#include "type/builtin_operations.h"
-#include "type/dynamic_types.h"
+#include "type/nmo_builtin_operations.h"
+#include "type/nmo_dynamic_types.h"
 #include <stdio.h>
 
 static nmo_result_t register_example_types(nmo_type_registry_t *registry) {

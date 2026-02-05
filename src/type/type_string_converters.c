@@ -7,9 +7,9 @@
  * Reference: CKParameterManager.cpp:1345-1435
  */
 
-#include "type/type_string.h"
-#include "type/type_system.h"
-#include "type/builtin_operations.h"
+#include "type/nmo_type_string.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_builtin_operations.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include <stdio.h>

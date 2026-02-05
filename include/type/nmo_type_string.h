@@ -1,5 +1,5 @@
-﻿/**
- * @file type_string.h
+/**
+ * @file nmo_type_string.h
  * @brief Type-to-string and string-to-type conversion system (Phase 6.4)
  *
  * Provides human-readable string representation for all parameter types.
@@ -31,7 +31,7 @@
 #include "nmo_types.h"
 #include "core/nmo_math.h"
 #include "core/nmo_error.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -12,11 +12,25 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckinterfaceobjectmanager, nmo_ckinterfaceobjectmanager_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckinterfaceobjectmanager_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckinterfaceobjectmanager_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, chunk_count, NMO_GUID_FIELD_INT32),
+    NMO_FIELD_ARRAY(nmo_ckinterfaceobjectmanager_state_t, chunks, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, guid, NMO_GUID_FIELD_GUID)
+};
 
 /* Identifiers from CKInterfaceObjectManager.cpp */
 #define CK_STATESAVE_IOM_CHUNKS 0x01234567u
@@ -57,15 +71,40 @@ static nmo_status_t nmo_ckinterfaceobjectmanager_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckinterfaceobjectmanager_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckinterfaceobjectmanager_state_t *s = src;
+    nmo_ckinterfaceobjectmanager_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    return nmo_object_copy_chunk_array(arena, &d->chunks, s->chunks, (uint32_t)s->chunk_count);
+}
+
+static nmo_status_t ckinterfaceobjectmanager_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckinterfaceobjectmanager_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->chunks, (uint32_t)s->chunk_count, "chunks");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckinterfaceobjectmanager,
     nmo_ckinterfaceobjectmanager_state_t,
     nmo_ckinterfaceobjectmanager_serialize,
     nmo_ckinterfaceobjectmanager_deserialize,
+    nmo_ckinterfaceobjectmanager_fields,
     NMO_GUID_CKINTERFACEOBJECTMANAGER,
     "CKInterfaceObjectManager",
     NMO_CID_INTERFACEOBJECTMANAGER,

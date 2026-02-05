@@ -124,6 +124,7 @@ typedef struct nmo_arena nmo_arena_t;
 #define NMO_GUID_CKMIDISOUND           NMO_OBJECT_GUID(NMO_CID_MIDISOUND)
 #define NMO_GUID_CKINTERFACEOBJECTMANAGER NMO_OBJECT_GUID(NMO_CID_INTERFACEOBJECTMANAGER)
 
+
 /* Mesh variants */
 #define NMO_GUID_CKGRID                NMO_OBJECT_GUID(NMO_CID_GRID)
 #define NMO_GUID_CKLAYER               NMO_OBJECT_GUID(NMO_CID_LAYER)
@@ -154,6 +155,13 @@ typedef struct nmo_arena nmo_arena_t;
  * @note This replaces nmo_register_builtin_schemas() from legacy system
  */
 NMO_API nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry);
+
+/**
+ * @brief Register struct/union types used by object schemas
+ *
+ * Typically called by nmo_register_object_types().
+ */
+NMO_API nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry);
 
 /**
  * @brief Register base object types only

@@ -6,6 +6,8 @@
 #include "object/nmo_ckcurve_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -51,26 +53,116 @@ static nmo_status_t read_object_sequence(
     NMO_RETURN_OK();
 }
 
+static const nmo_type_field_t nmo_ckcurve_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckcurve_state_t, base),
+                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckcurve_state_t, has_curve_data, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckcurve_state_t, control_point_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckcurve_state_t, control_point_ids),
+    NMO_FIELD(nmo_ckcurve_state_t, fitting_coeff, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcurve_state_t, step_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckcurve_state_t, opened, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckcurve_state_t, sub_point_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckcurve_state_t, sub_points, NMO_GUID_FIELD_CKCURVEPOINTSUBCHUNK)
+};
+
+static const nmo_type_field_t nmo_ckcurvepoint_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckcurvepoint_state_t, base),
+                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, has_default_data, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckcurvepoint_state_t, curve_id),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, use_tcb, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, linear, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, tension, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, continuity, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, bias, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_in, NMO_GUID_FIELD_VECTOR3),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_out, NMO_GUID_FIELD_VECTOR3),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, has_reserved_vector, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, reserved_vector, NMO_GUID_FIELD_VECTOR3)
+};
+
+static nmo_status_t ckcurve_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckcurve_state_t *s = src;
+    nmo_ckcurve_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->control_point_ids,
+                                              s->control_point_ids, sizeof(nmo_object_id_t), s->control_point_count));
+    if (s->sub_point_count > 0) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_points,
+                                                  s->sub_points, sizeof(nmo_ckcurve_point_subchunk_t),
+                                                  s->sub_point_count));
+        for (uint32_t i = 0; i < s->sub_point_count; ++i) {
+            nmo_chunk_t *clone = NULL;
+            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &clone, s->sub_points[i].chunk));
+            d->sub_points[i].chunk = clone;
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckcurve_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckcurve_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->control_point_ids, s->control_point_count, "control_point_ids");
+    NMO_VALIDATE_COUNT(s->sub_points, s->sub_point_count, "sub_points");
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckcurvepoint_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    return nmo_object_default_copy(src, dst, type, arena);
+}
+
+static nmo_status_t ckcurvepoint_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckcurve,
     nmo_ckcurve_state_t,
     nmo_ckcurve_serialize,
     nmo_ckcurve_deserialize,
+    nmo_ckcurve_fields,
     NMO_GUID_CKCURVE,
     "CKCurve",
     NMO_CID_CURVE,
     NMO_GUID_CK3DENTITY
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckcurvepoint,
     nmo_ckcurvepoint_state_t,
     nmo_ckcurvepoint_serialize,
     nmo_ckcurvepoint_deserialize,
+    nmo_ckcurvepoint_fields,
     NMO_GUID_CKCURVEPOINT,
     "CKCurvePoint",
     NMO_CID_CURVEPOINT,

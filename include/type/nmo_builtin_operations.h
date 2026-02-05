@@ -1,14 +1,14 @@
-﻿/**
- * @file builtin_operations.h
+/**
+ * @file nmo_builtin_operations.h
  * @brief Builtin operation definitions (Phase 6.1.4)
  *
  * Defines 50+ builtin operations following CKParameter operation system:
  * - Arithmetic: Add, Subtract, Multiply, Divide, Modulo, Negate, Abs, Power
  * - Logic: And, Or, Not, Xor, Equal, NotEqual
  * - Comparison: Less, LessEqual, Greater, GreaterEqual, Min, Max
- * - Bitwise: BitAnd, BitOr, BitXor, BitNot, ShiftLeft, ShiftRight, RotateLeft
+ * - Bitwise: BitAnd, BitOr, BitXor, BitNot, ShiftLeft, ShiftRight, RotateLeft, RotateRight
  * - Trigonometry: Sin, Cos, Tan, Asin, Acos, Atan
- * - Vector: VectorAdd, VectorSub, VectorMul, VectorDiv, VectorDot, VectorCross, etc.
+ * - Vector: VectorAdd, VectorSub, VectorMul, VectorDiv, VectorDot, VectorCross
  */
 
 #ifndef NMO_BUILTIN_OPERATIONS_H
@@ -16,8 +16,9 @@
 
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
-#include "type/operation_system.h"
-#include "type/type_system.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_builtin_type_guids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,9 +59,10 @@ extern "C" {
 #define NMO_OP_GUID_BIT_OR     ((nmo_guid_t){0x6FED1C03, 0x00000002})
 #define NMO_OP_GUID_BIT_XOR    ((nmo_guid_t){0x6FED1C03, 0x00000003})
 #define NMO_OP_GUID_BIT_NOT    ((nmo_guid_t){0x6FED1C03, 0x00000004})
-#define NMO_OP_GUID_SHIFT_LEFT ((nmo_guid_t){0x6FED1C03, 0x00000005})
+#define NMO_OP_GUID_SHIFT_LEFT  ((nmo_guid_t){0x6FED1C03, 0x00000005})
 #define NMO_OP_GUID_SHIFT_RIGHT ((nmo_guid_t){0x6FED1C03, 0x00000006})
 #define NMO_OP_GUID_ROTATE_LEFT ((nmo_guid_t){0x6FED1C03, 0x00000007})
+#define NMO_OP_GUID_ROTATE_RIGHT ((nmo_guid_t){0x6FED1C03, 0x00000008})
 
 /* Trigonometry operations */
 #define NMO_OP_GUID_SIN        ((nmo_guid_t){0x6FED1C04, 0x00000001})
@@ -70,19 +72,13 @@ extern "C" {
 #define NMO_OP_GUID_ACOS       ((nmo_guid_t){0x6FED1C04, 0x00000005})
 #define NMO_OP_GUID_ATAN       ((nmo_guid_t){0x6FED1C04, 0x00000006})
 
-/* ============================================================================
- * Builtin Type GUIDs (common types)
- * ============================================================================ */
-
-#define NMO_TYPE_GUID_INT      ((nmo_guid_t){0x6FED1D00, 0x00000001})
-#define NMO_TYPE_GUID_FLOAT    ((nmo_guid_t){0x6FED1D00, 0x00000002})
-#define NMO_TYPE_GUID_BOOL     ((nmo_guid_t){0x6FED1D00, 0x00000003})
-#define NMO_TYPE_GUID_VECTOR2  ((nmo_guid_t){0x6FED1D00, 0x00000004})
-#define NMO_TYPE_GUID_VECTOR3  ((nmo_guid_t){0x6FED1D00, 0x00000005})
-#define NMO_TYPE_GUID_VECTOR4  ((nmo_guid_t){0x6FED1D00, 0x00000006})
-#define NMO_TYPE_GUID_QUATERNION ((nmo_guid_t){0x6FED1D00, 0x00000007})
-#define NMO_TYPE_GUID_MATRIX     ((nmo_guid_t){0x6FED1D00, 0x00000008})
-#define NMO_TYPE_GUID_COLOR      ((nmo_guid_t){0x6FED1D00, 0x00000009})
+/* Vector operations */
+#define NMO_OP_GUID_VECTOR_ADD   ((nmo_guid_t){0x6FED1C05, 0x00000001})
+#define NMO_OP_GUID_VECTOR_SUB   ((nmo_guid_t){0x6FED1C05, 0x00000002})
+#define NMO_OP_GUID_VECTOR_MUL   ((nmo_guid_t){0x6FED1C05, 0x00000003})
+#define NMO_OP_GUID_VECTOR_DIV   ((nmo_guid_t){0x6FED1C05, 0x00000004})
+#define NMO_OP_GUID_VECTOR_DOT   ((nmo_guid_t){0x6FED1C05, 0x00000005})
+#define NMO_OP_GUID_VECTOR_CROSS ((nmo_guid_t){0x6FED1C05, 0x00000006})
 
 /* ============================================================================
  * Registration Functions
@@ -152,6 +148,14 @@ NMO_API nmo_status_t nmo_register_bitwise_operations(
  * @brief Register trigonometry operations
  */
 NMO_API nmo_status_t nmo_register_trigonometry_operations(
+    nmo_operation_registry_t *operation_registry,
+    const nmo_type_registry_t *type_registry
+);
+
+/**
+ * @brief Register vector operations
+ */
+NMO_API nmo_status_t nmo_register_vector_operations(
     nmo_operation_registry_t *operation_registry,
     const nmo_type_registry_t *type_registry
 );

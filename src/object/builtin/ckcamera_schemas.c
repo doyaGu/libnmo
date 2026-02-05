@@ -31,12 +31,30 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcamera, nmo_ckcamera_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckcamera_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_ckcamera_state_t, entity),
+                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckcamera_state_t, projection_type, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckcamera_state_t, fov, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcamera_state_t, orthographic_zoom, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcamera_state_t, width, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckcamera_state_t, height, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckcamera_state_t, near_plane, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckcamera_state_t, far_plane, NMO_GUID_FIELD_FLOAT)
+};
 
 /* =============================================================================
  * CKCamera DESERIALIZATION
@@ -181,11 +199,13 @@ nmo_status_t nmo_ckcamera_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     ckcamera,
     nmo_ckcamera_state_t,
     nmo_ckcamera_serialize,
     nmo_ckcamera_deserialize,
+    nmo_ckcamera_finish_loading,
+    nmo_ckcamera_fields,
     NMO_GUID_CKCAMERA,
     "CKCamera",
     NMO_CID_CAMERA,

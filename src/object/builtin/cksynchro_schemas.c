@@ -13,11 +13,41 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksynchro, nmo_cksynchro_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckstate, nmo_ckstate_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcriticalsection, nmo_ckcriticalsection_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cksynchro_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_cksynchro_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cksynchro_state_t, max_waiters, NMO_GUID_FIELD_INT32),
+    NMO_FIELD_REF_ARRAY(nmo_cksynchro_state_t, arrived_ids),
+    NMO_FIELD(nmo_cksynchro_state_t, arrived_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_cksynchro_state_t, passed_ids),
+    NMO_FIELD(nmo_cksynchro_state_t, passed_count, NMO_GUID_FIELD_UINT32)
+};
+
+static const nmo_type_field_t nmo_ckstate_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckstate_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckstate_state_t, event_flag, NMO_GUID_FIELD_INT32)
+};
+
+static const nmo_type_field_t nmo_ckcriticalsection_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckcriticalsection_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_REF(nmo_ckcriticalsection_state_t, object_in_section_id)
+};
 
 static nmo_status_t deserialize_ckobject_base(
     nmo_ckobject_state_t *out_base,
@@ -93,33 +123,36 @@ nmo_status_t nmo_cksynchro_deserialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     cksynchro,
     nmo_cksynchro_state_t,
     nmo_cksynchro_serialize,
     nmo_cksynchro_deserialize,
+    nmo_cksynchro_fields,
     NMO_GUID_CKSYNCHRO,
     "CKSynchroObject",
     NMO_CID_SYNCHRO,
     NMO_GUID_CKOBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckstate,
     nmo_ckstate_state_t,
     nmo_ckstate_serialize,
     nmo_ckstate_deserialize,
+    nmo_ckstate_fields,
     NMO_GUID_CKSTATE,
     "CKStateObject",
     NMO_CID_STATE,
     NMO_GUID_CKOBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckcriticalsection,
     nmo_ckcriticalsection_state_t,
     nmo_ckcriticalsection_serialize,
     nmo_ckcriticalsection_deserialize,
+    nmo_ckcriticalsection_fields,
     NMO_GUID_CKCRITICALSECTION,
     "CKCriticalSectionObject",
     NMO_CID_CRITICALSECTION,

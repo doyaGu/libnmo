@@ -12,7 +12,10 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include <string.h>
+#include <stddef.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckanimation, nmo_ckanimation_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckkeyedanimation, nmo_ckkeyedanimation_state_t)
@@ -22,6 +25,65 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckobjectanimation, nmo_ckobjectanimation_stat
 #define CKANIMATION_LINKTOFRAMERATE       0x00000001u
 #define CKANIMATION_CANBEBREAK            0x00000004u
 #define CKANIMATION_ALIGNORIENTATION      0x00000010u
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckanimation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckanimation_state_t, base),
+                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckanimation_state_t, has_data, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckanimation_state_t, frame_rate, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckanimation_state_t, has_length, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, length, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckanimation_state_t, has_root_entity, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckanimation_state_t, root_entity_id),
+    NMO_FIELD(nmo_ckanimation_state_t, has_character, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckanimation_state_t, character_id),
+    NMO_FIELD(nmo_ckanimation_state_t, has_current_step, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, current_step, NMO_GUID_FIELD_FLOAT)
+};
+
+static const nmo_type_field_t nmo_ckkeyedanimation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckkeyedanimation_state_t, base),
+                    sizeof(nmo_ckanimation_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, animation_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckkeyedanimation_state_t, animation_ids),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, has_merge, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, merged, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, merge_factor, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, subanim_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckkeyedanimation_state_t, subanims, NMO_GUID_FIELD_CKKEYEDANIMATIONSUBANIM)
+};
+
+static const nmo_type_field_t nmo_ckobjectanimation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckobjectanimation_state_t, base),
+                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, format, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, root_pos, NMO_GUID_FIELD_VECTOR3),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_root_pos, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, entity_id),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_length, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, length, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_merge, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, merge_factor, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, anim1_id),
+    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, anim2_id),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_shared_anim, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, shared_anim_id),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_morph_counts, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_vertex_count, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_key_count, NMO_GUID_FIELD_INT32),
+    NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_ckobjectanimation_state_t, raw_tail),
+                          sizeof(void *), NMO_GUID_FIELD_UINT8, NMO_FIELD_OPTIONAL, 0),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, raw_tail_size, NMO_GUID_FIELD_UINT64)
+};
 
 /* =============================================================================
  * IDENTIFIER HELPERS
@@ -63,37 +125,122 @@ static nmo_status_t read_object_id_array(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckanimation_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    return nmo_object_default_copy(src, dst, type, arena);
+}
+
+static nmo_status_t ckanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckkeyedanimation_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckkeyedanimation_state_t *s = src;
+    nmo_ckkeyedanimation_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->animation_ids,
+                                              s->animation_ids, sizeof(nmo_object_id_t), s->animation_count));
+    if (s->subanim_count > 0) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->subanims,
+                                                  s->subanims, sizeof(nmo_ckkeyedanimation_subanim_t),
+                                                  s->subanim_count));
+        for (uint32_t i = 0; i < s->subanim_count; ++i) {
+            nmo_chunk_t *clone = NULL;
+            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &clone, s->subanims[i].chunk));
+            d->subanims[i].chunk = clone;
+        }
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckkeyedanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckkeyedanimation_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->animation_ids, s->animation_count, "animation_ids");
+    NMO_VALIDATE_COUNT(s->subanims, s->subanim_count, "subanims");
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckobjectanimation_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckobjectanimation_state_t *s = src;
+    nmo_ckobjectanimation_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    return nmo_object_copy_bytes(arena, (void **)&d->raw_tail,
+                                 s->raw_tail, s->raw_tail_size);
+}
+
+static nmo_status_t ckobjectanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckobjectanimation_state_t *s = instance;
+    NMO_VALIDATE_BYTES(s->raw_tail, s->raw_tail_size, "raw_tail");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckanimation,
     nmo_ckanimation_state_t,
     nmo_ckanimation_serialize,
     nmo_ckanimation_deserialize,
+    nmo_ckanimation_fields,
     NMO_GUID_CKANIMATION,
     "CKAnimation",
     NMO_CID_ANIMATION,
     NMO_GUID_CKSCENEOBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckkeyedanimation,
     nmo_ckkeyedanimation_state_t,
     nmo_ckkeyedanimation_serialize,
     nmo_ckkeyedanimation_deserialize,
+    nmo_ckkeyedanimation_fields,
     NMO_GUID_CKKEYEDANIMATION,
     "CKKeyedAnimation",
     NMO_CID_KEYEDANIMATION,
     NMO_GUID_CKANIMATION
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckobjectanimation,
     nmo_ckobjectanimation_state_t,
     nmo_ckobjectanimation_serialize,
     nmo_ckobjectanimation_deserialize,
+    nmo_ckobjectanimation_fields,
     NMO_GUID_CKOBJECTANIMATION,
     "CKObjectAnimation",
     NMO_CID_OBJECTANIMATION,

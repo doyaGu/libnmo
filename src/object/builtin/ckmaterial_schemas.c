@@ -20,6 +20,7 @@
 #include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <string.h>
 #include <stddef.h>
@@ -29,6 +30,41 @@
 #include "object/nmo_class_ids.h"
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmaterial, nmo_ck_material_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckmaterial_fields[] = {
+    /* Base class */
+    NMO_FIELD_NAMED("base", offsetof(nmo_ck_material_state_t, base),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    /* Colors (packed ARGB) */
+    NMO_FIELD_NAMED("diffuse_color", offsetof(nmo_ck_material_state_t, diffuse_color),
+                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("ambient_color", offsetof(nmo_ck_material_state_t, ambient_color),
+                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("specular_color", offsetof(nmo_ck_material_state_t, specular_color),
+                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("emissive_color", offsetof(nmo_ck_material_state_t, emissive_color),
+                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+    /* Specular power */
+    NMO_FIELD(nmo_ck_material_state_t, specular_power, NMO_GUID_FIELD_FLOAT),
+    /* Textures (4 slots) */
+    NMO_FIELD_FULL(nmo_ck_material_state_t, texture_ids, NMO_GUID_FIELD_OBJECT_ID,
+                   NMO_FIELD_REFERENCE | NMO_FIELD_REPEATED, 0),
+    /* Render settings */
+    NMO_FIELD(nmo_ck_material_state_t, texture_border_color, NMO_GUID_FIELD_COLOR),
+    NMO_FIELD(nmo_ck_material_state_t, packed_modes, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ck_material_state_t, packed_flags, NMO_GUID_FIELD_UINT32),
+    /* Effect */
+    NMO_FIELD(nmo_ck_material_state_t, effect, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF(nmo_ck_material_state_t, effect_parameter_id),
+    NMO_FIELD(nmo_ck_material_state_t, has_effect, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ck_material_state_t, has_effect_param, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ck_material_state_t, has_additional_textures, NMO_GUID_FIELD_UINT8)
+};
 
 nmo_status_t nmo_ckmaterial_deserialize(
     void *instance,
@@ -177,11 +213,13 @@ nmo_status_t nmo_ckmaterial_deserialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     ckmaterial,
     nmo_ck_material_state_t,
     nmo_ckmaterial_serialize,
     nmo_ckmaterial_deserialize,
+    nmo_ckmaterial_finish_loading,
+    nmo_ckmaterial_fields,
     NMO_GUID_CKMATERIAL,
     "CKMaterial",
     NMO_CID_MATERIAL,

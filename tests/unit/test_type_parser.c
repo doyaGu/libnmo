@@ -4,9 +4,11 @@
  */
 
 #include "test_framework.h"
-#include "type/dynamic_types.h"
-#include "type/type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_builtin_operations.h"
 #include "core/nmo_arena.h"
+#include <stdio.h>
 
 /* ============================================================================
  * Test Fixtures
@@ -21,6 +23,8 @@ static void setup(void) {
     
     registry = nmo_type_registry_create(arena);
     ASSERT_NE(NULL, registry);
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 }
 
 static void teardown(void) {
@@ -63,22 +67,17 @@ TEST(type_parser, parse_basic_float) {
     teardown();
 }
 
-TEST(type_parser, parse_case_insensitive) {
+TEST(type_parser, parse_case_sensitive) {
     setup();
     
     nmo_type_parse_result_t result1, result2, result3;
     nmo_status_t res1 = nmo_type_registry_parse_type_name(registry, "int", &result1);
     nmo_status_t res2 = nmo_type_registry_parse_type_name(registry, "INT", &result2);
     nmo_status_t res3 = nmo_type_registry_parse_type_name(registry, "InT", &result3);
-    
+
     ASSERT_EQ(NMO_OK, res1);
     ASSERT_EQ(NMO_OK, res2);
-    ASSERT_EQ(NMO_OK, res3);
-    
-    /* All should resolve to same GUID */
-    ASSERT_EQ(result1.base_type_guid.d1, result2.base_type_guid.d1);
-    ASSERT_EQ(result1.base_type_guid.d2, result2.base_type_guid.d2);
-    ASSERT_EQ(result1.base_type_guid.d1, result3.base_type_guid.d1);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, res3);
     
     teardown();
 }
@@ -132,9 +131,9 @@ TEST(type_parser, parse_array_with_spaces) {
     nmo_type_parse_result_t result;
     nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int [ 5 ]", &result);
     
-    /* Note: Current implementation doesn't handle spaces inside brackets */
-    /* This is acceptable as it's not common usage */
-    ASSERT_NE(NMO_OK, res);
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(true, result.is_array);
+    ASSERT_EQ(5, result.array_count);
     
     teardown();
 }
@@ -170,6 +169,80 @@ TEST(type_parser, parse_double_pointer) {
     teardown();
 }
 
+TEST(type_parser, parse_pointer_with_spaces) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int * *", &result);
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(true, result.is_pointer);
+    ASSERT_EQ(2, result.pointer_depth);
+    ASSERT_EQ(false, result.is_array);
+
+    teardown();
+}
+
+TEST(type_parser, parse_pointer_array_suffix) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int*[10]", &result);
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(true, result.is_pointer);
+    ASSERT_EQ(1, result.pointer_depth);
+    ASSERT_EQ(true, result.is_array);
+    ASSERT_EQ(10, result.array_count);
+
+    teardown();
+}
+
+TEST(type_parser, parse_array_pointer_suffix) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int[10]*", &result);
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(true, result.is_pointer);
+    ASSERT_EQ(1, result.pointer_depth);
+    ASSERT_EQ(true, result.is_array);
+    ASSERT_EQ(10, result.array_count);
+
+    teardown();
+}
+
+TEST(type_parser, parse_array_multi_pointer_suffix) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int[3]**", &result);
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(true, result.is_pointer);
+    ASSERT_EQ(2, result.pointer_depth);
+    ASSERT_EQ(true, result.is_array);
+    ASSERT_EQ(3, result.array_count);
+
+    teardown();
+}
+
+TEST(type_parser, parse_array_pointer_with_spaces) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int [ 10 ] * *", &result);
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(true, result.is_pointer);
+    ASSERT_EQ(2, result.pointer_depth);
+    ASSERT_EQ(true, result.is_array);
+    ASSERT_EQ(10, result.array_count);
+
+    teardown();
+}
+
 /* ============================================================================
  * Error Handling Tests
  * ============================================================================ */
@@ -194,6 +267,95 @@ TEST(type_parser, parse_unknown_type) {
     ASSERT_NE(NMO_OK, res);
     ASSERT_EQ(NMO_ERR_NOT_FOUND, res);
     
+    teardown();
+}
+
+TEST(type_parser, parse_malformed_array_missing_base) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "[10]", &result);
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, res);
+
+    teardown();
+}
+
+TEST(type_parser, parse_array_overflow) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "int[4294967296]", &result);
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, res);
+
+    teardown();
+}
+
+TEST(type_parser, parse_guid_literal_registered) {
+    setup();
+
+    const nmo_type_descriptor_t *int_type = nmo_type_registry_find_by_name(registry, "INT");
+    ASSERT_NE(NULL, int_type);
+
+    char guid_literal[64];
+    snprintf(guid_literal, sizeof(guid_literal), "{ %08X - %08X }", int_type->guid.d1, int_type->guid.d2);
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, guid_literal, &result);
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_EQ(int_type->guid.d1, result.base_type_guid.d1);
+    ASSERT_EQ(int_type->guid.d2, result.base_type_guid.d2);
+
+    teardown();
+}
+
+TEST(type_parser, parse_guid_literal_unknown) {
+    setup();
+
+    nmo_type_parse_result_t result;
+    nmo_status_t res = nmo_type_registry_parse_type_name(registry, "FFFFFFFF-FFFFFFFF", &result);
+
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, res);
+
+    teardown();
+}
+
+TEST(type_parser, parse_alias_uint32_t) {
+    setup();
+
+    nmo_type_parse_result_t result_alias;
+    nmo_type_parse_result_t result_builtin;
+    nmo_status_t res_alias = nmo_type_registry_parse_type_name(registry, "uint32_t", &result_alias);
+    nmo_status_t res_builtin = nmo_type_registry_parse_type_name(registry, "uint32", &result_builtin);
+
+    ASSERT_EQ(NMO_OK, res_alias);
+    ASSERT_EQ(NMO_OK, res_builtin);
+    ASSERT_EQ(result_alias.base_type_guid.d1, result_builtin.base_type_guid.d1);
+    ASSERT_EQ(result_alias.base_type_guid.d2, result_builtin.base_type_guid.d2);
+
+    teardown();
+}
+
+TEST(type_parser, parse_alias_size_t) {
+    setup();
+
+    nmo_type_parse_result_t result_alias;
+    nmo_status_t res_alias = nmo_type_registry_parse_type_name(registry, "size_t", &result_alias);
+
+    ASSERT_EQ(NMO_OK, res_alias);
+
+    nmo_type_parse_result_t expected;
+    if (sizeof(size_t) == 8) {
+        ASSERT_EQ(NMO_OK, nmo_type_registry_parse_type_name(registry, "uint64", &expected));
+    } else {
+        ASSERT_EQ(NMO_OK, nmo_type_registry_parse_type_name(registry, "uint32", &expected));
+    }
+
+    ASSERT_EQ(result_alias.base_type_guid.d1, expected.base_type_guid.d1);
+    ASSERT_EQ(result_alias.base_type_guid.d2, expected.base_type_guid.d2);
+
     teardown();
 }
 
@@ -831,7 +993,7 @@ TEST_MAIN_BEGIN()
     /* Basic types */
     REGISTER_TEST(type_parser, parse_basic_int);
     REGISTER_TEST(type_parser, parse_basic_float);
-    REGISTER_TEST(type_parser, parse_case_insensitive);
+    REGISTER_TEST(type_parser, parse_case_sensitive);
     REGISTER_TEST(type_parser, parse_with_whitespace);
     
     /* Arrays */
@@ -842,10 +1004,21 @@ TEST_MAIN_BEGIN()
     /* Pointers */
     REGISTER_TEST(type_parser, parse_pointer_int);
     REGISTER_TEST(type_parser, parse_double_pointer);
+    REGISTER_TEST(type_parser, parse_pointer_with_spaces);
+    REGISTER_TEST(type_parser, parse_pointer_array_suffix);
+    REGISTER_TEST(type_parser, parse_array_pointer_suffix);
+    REGISTER_TEST(type_parser, parse_array_multi_pointer_suffix);
+    REGISTER_TEST(type_parser, parse_array_pointer_with_spaces);
     
     /* Error handling */
     REGISTER_TEST(type_parser, parse_empty_string);
     REGISTER_TEST(type_parser, parse_unknown_type);
+    REGISTER_TEST(type_parser, parse_malformed_array_missing_base);
+    REGISTER_TEST(type_parser, parse_array_overflow);
+    REGISTER_TEST(type_parser, parse_guid_literal_registered);
+    REGISTER_TEST(type_parser, parse_guid_literal_unknown);
+    REGISTER_TEST(type_parser, parse_alias_uint32_t);
+    REGISTER_TEST(type_parser, parse_alias_size_t);
     REGISTER_TEST(type_parser, parse_null_params);
     
     /* GUID generation */

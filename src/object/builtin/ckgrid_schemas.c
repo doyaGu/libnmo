@@ -7,6 +7,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "type/nmo_reflection.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -136,15 +137,60 @@ nmo_status_t nmo_ckgrid_serialize(
     NMO_RETURN_OK();
 }
 
+static const nmo_type_field_t nmo_ckgrid_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckgrid_state_t, base),
+                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckgrid_state_t, width, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckgrid_state_t, length, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckgrid_state_t, priority, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckgrid_state_t, orientation_mode, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckgrid_state_t, has_file_flag, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckgrid_state_t, file_flag, NMO_GUID_FIELD_INT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckgrid_state_t, layer_ids),
+    NMO_FIELD(nmo_ckgrid_state_t, layer_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckgrid_state_t, layer_chunk_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckgrid_state_t, layer_chunks, NMO_GUID_FIELD_CHUNK)
+};
+
+static nmo_status_t ckgrid_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckgrid_state_t *s = src;
+    nmo_ckgrid_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->layer_ids,
+                                              s->layer_ids, sizeof(nmo_object_id_t), s->layer_count));
+    return nmo_object_copy_chunk_array(arena, &d->layer_chunks,
+                                       s->layer_chunks, s->layer_chunk_count);
+}
+
+static nmo_status_t ckgrid_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckgrid_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->layer_ids, s->layer_count, "layer_ids");
+    NMO_VALIDATE_COUNT(s->layer_chunks, s->layer_chunk_count, "layer_chunks");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckgrid,
     nmo_ckgrid_state_t,
     nmo_ckgrid_serialize,
     nmo_ckgrid_deserialize,
+    nmo_ckgrid_fields,
     NMO_GUID_CKGRID,
     "CKGrid",
     NMO_CID_GRID,

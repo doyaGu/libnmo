@@ -9,7 +9,7 @@
  * - Plugin tracking (CKParameterManager.cpp:38-47)
  */
 
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "object/nmo_class_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
@@ -20,6 +20,13 @@
 #include <string.h>
 #include <assert.h>
 #include <stddef.h>
+#include <ctype.h>
+
+typedef struct nmo_max_align_helper {
+    long double ld;
+    long long ll;
+    void *ptr;
+} nmo_max_align_helper_t;
 
 /* ============================================================================
  * Compatibility Mask Helpers (nmo_bit_array_t)
@@ -31,7 +38,7 @@ static void *arena_alloc_adapter(void *user_data, size_t size, size_t alignment)
         return NULL;
     }
     if (alignment == 0) {
-        alignment = _Alignof(max_align_t);
+        alignment = _Alignof(nmo_max_align_helper_t);
     }
     return nmo_arena_alloc(arena, size, alignment);
 }
@@ -364,7 +371,7 @@ nmo_status_t nmo_type_registry_register(
                 void *default_copy = nmo_arena_alloc(
                     registry->arena,
                     fields_copy[i].size,
-                    _Alignof(max_align_t));
+                    _Alignof(nmo_max_align_helper_t));
                 if (!default_copy) {
                     return NMO_ERR_NOMEM;
                 }
@@ -492,11 +499,15 @@ nmo_status_t nmo_type_registry_unregister(
     }
 
     /* Update stats */
-    if (!nmo_guid_is_null(type->creator_plugin_guid)) {
-        /* Note: Don't decrement plugin_count here, done in unregister_plugin_types */
-    } else {
-        if (registry->builtin_count > 0) {
-            registry->builtin_count--;
+    if (type->valid) {
+        if (!nmo_guid_is_null(type->creator_plugin_guid)) {
+            if (registry->plugin_count > 0) {
+                registry->plugin_count--;
+            }
+        } else {
+            if (registry->builtin_count > 0) {
+                registry->builtin_count--;
+            }
         }
     }
 
@@ -542,14 +553,14 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_name(
     if (!registry || !name) return NULL;
 
     nmo_type_id_t type_id;
-    if (nmo_hash_table_get(registry->name_map, &name, &type_id) != NMO_OK) {
-        return NULL;
+    if (nmo_hash_table_get(registry->name_map, &name, &type_id) == NMO_OK) {
+        if (type_id < 0 || (size_t)type_id >= registry->types.count) return NULL;
+        nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(
+            (nmo_arena_array_t*)&registry->types, type_id);
+        return (type && type->valid) ? type : NULL;
     }
 
-    if (type_id < 0 || (size_t)type_id >= registry->types.count) return NULL;
-    
-    nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
-    return (type && type->valid) ? type : NULL;
+    return NULL;
 }
 
 const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
@@ -1097,6 +1108,14 @@ nmo_type_id_t nmo_type_registry_guid_to_type_id(
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
     if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) == NMO_OK) {
+        if (type_id < 0 || (size_t)type_id >= registry->types.count) {
+            return NMO_TYPE_ID_INVALID;
+        }
+        const nmo_type_descriptor_t *type =
+            *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
+        if (!type || !type->valid) {
+            return NMO_TYPE_ID_INVALID;
+        }
         return type_id;
     }
     return NMO_TYPE_ID_INVALID;
@@ -1132,8 +1151,9 @@ const char* nmo_type_registry_guid_to_name(
     if (type_id == NMO_TYPE_ID_INVALID) {
         return NULL;
     }
-    
-    return (*(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id))->name;
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_get_by_id(registry, type_id);
+    return type ? type->name : NULL;
 }
 
 nmo_status_t nmo_type_registry_name_to_guid(
@@ -1187,6 +1207,14 @@ nmo_type_id_t nmo_type_registry_name_to_type_id(
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
     if (nmo_hash_table_get(registry->name_map, &name, &type_id) == NMO_OK) {
+        if (type_id < 0 || (size_t)type_id >= registry->types.count) {
+            return NMO_TYPE_ID_INVALID;
+        }
+        const nmo_type_descriptor_t *type =
+            *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
+        if (!type || !type->valid) {
+            return NMO_TYPE_ID_INVALID;
+        }
         return type_id;
     }
     return NMO_TYPE_ID_INVALID;
@@ -1654,22 +1682,25 @@ nmo_status_t nmo_type_registry_set_type_manager(
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Manager not found");
     }
     
-    // Update type descriptor
-    nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
-    if (type) {
-        type->saver_manager = manager_index;
-    }
-    
     // Update mapping
     if (!registry->type_to_manager) {
         registry->type_to_manager = nmo_hash_table_create(
             NULL, sizeof(nmo_type_id_t), sizeof(nmo_manager_index_t),
             16, NULL, NULL);
+        if (!registry->type_to_manager) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to create type manager map");
+        }
     }
     
     nmo_status_t map_result = nmo_hash_table_insert(registry->type_to_manager, &type_id, &manager_index);
     if (map_result != NMO_OK) {
         return map_result;
+    }
+
+    // Update type descriptor after mapping succeeds
+    nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, type_id);
+    if (type) {
+        type->saver_manager = manager_index;
     }
     
     NMO_RETURN_OK();

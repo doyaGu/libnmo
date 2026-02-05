@@ -19,6 +19,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -32,6 +33,25 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         state->initial_activation_delay = 1; \
     } while (0),
     ((void)0))
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckbehaviorlink_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckbehaviorlink_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, activation_delay, NMO_GUID_FIELD_INT16),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, initial_activation_delay, NMO_GUID_FIELD_INT16),
+    NMO_FIELD_REF(nmo_ckbehaviorlink_state_t, in_io_id),
+    NMO_FIELD_REF(nmo_ckbehaviorlink_state_t, out_io_id),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_format, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, use_new_format, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_curdelay, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_ios, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_delay, NMO_GUID_FIELD_BOOL)
+};
 
 /* =============================================================================
  * CKBehaviorLink DESERIALIZATION
@@ -214,11 +234,12 @@ nmo_status_t nmo_ckbehaviorlink_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckbehaviorlink,
     nmo_ckbehaviorlink_state_t,
     nmo_ckbehaviorlink_serialize,
     nmo_ckbehaviorlink_deserialize,
+    nmo_ckbehaviorlink_fields,
     NMO_GUID_CKBEHAVIORLINK,
     "CKBehaviorLink",
     NMO_CID_BEHAVIORLINK,

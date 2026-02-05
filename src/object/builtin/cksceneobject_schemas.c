@@ -24,12 +24,26 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <string.h>
 #include <stdalign.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksceneobject, nmo_cksceneobject_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cksceneobject_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_cksceneobject_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_cksceneobject_state_t, raw_tail),
+                          sizeof(uint8_t *), NMO_GUID_FIELD_UINT8,
+                          NMO_FIELD_OPTIONAL, 0)
+};
 
 /* =============================================================================
  * CKSceneObject DESERIALIZATION
@@ -116,15 +130,41 @@ nmo_status_t nmo_cksceneobject_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t cksceneobject_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_cksceneobject_state_t *s = src;
+    nmo_cksceneobject_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    return nmo_object_copy_bytes(arena, (void **)&d->raw_tail,
+                                 s->raw_tail, s->raw_tail_size);
+}
+
+static nmo_status_t cksceneobject_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_cksceneobject_state_t *s = instance;
+    NMO_VALIDATE_BYTES(s->raw_tail, s->raw_tail_size, "raw_tail");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     cksceneobject,
     nmo_cksceneobject_state_t,
     nmo_cksceneobject_serialize,
     nmo_cksceneobject_deserialize,
+    nmo_cksceneobject_fields,
     NMO_GUID_CKSCENEOBJECT,
     "CKSceneObject",
     NMO_CID_SCENEOBJECT,

@@ -3,7 +3,7 @@
  * @brief Operation registry implementation (Phase 6.1)
  */
 
-#include "type/operation_system.h"
+#include "type/nmo_operation_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_logger.h"

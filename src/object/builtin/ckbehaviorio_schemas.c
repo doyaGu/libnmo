@@ -19,12 +19,25 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbehaviorio, nmo_ckbehaviorio_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckbehaviorio_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckbehaviorio_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckbehaviorio_state_t, old_flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckbehaviorio_state_t, has_flags, NMO_GUID_FIELD_BOOL)
+};
 
 /* =============================================================================
  * CKBehaviorIO DESERIALIZATION
@@ -121,11 +134,12 @@ nmo_status_t nmo_ckbehaviorio_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckbehaviorio,
     nmo_ckbehaviorio_state_t,
     nmo_ckbehaviorio_serialize,
     nmo_ckbehaviorio_deserialize,
+    nmo_ckbehaviorio_fields,
     NMO_GUID_CKBEHAVIORIO,
     "CKBehaviorIO",
     NMO_CID_BEHAVIORIO,

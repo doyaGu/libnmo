@@ -25,11 +25,13 @@
 #include "object/nmo_ckobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -62,6 +64,51 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 #define CKBEHAVIOR_ACTIVATENEXTFRAME         0x10000000u
 #define CKBEHAVIOR_LOCKED                    0x20000000u
 #define CKBEHAVIOR_LAUNCHEDONCE              0x80000000u
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckbehavior_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckbehavior_state_t, base),
+                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckbehavior_state_t, flags, NMO_GUID_FIELD_CK_BEHAVIOR_FLAGS),
+    NMO_FIELD(nmo_ckbehavior_state_t, priority, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckbehavior_state_t, compatible_class_id, NMO_GUID_FIELD_INT32),
+    NMO_FIELD_REF(nmo_ckbehavior_state_t, owner_id),
+    NMO_FIELD(nmo_ckbehavior_state_t, behavior_type, NMO_GUID_FIELD_CK_BEHAVIOR_TYPE),
+    NMO_FIELD(nmo_ckbehavior_state_t, save_flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckbehavior_state_t, has_save_flags, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbehavior_state_t, use_legacy_identifiers, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbehavior_state_t, block_guid, NMO_GUID_FIELD_GUID),
+    NMO_FIELD(nmo_ckbehavior_state_t, block_version, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF(nmo_ckbehavior_state_t, target_parameter_id),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, sub_behaviors),
+    NMO_FIELD(nmo_ckbehavior_state_t, sub_behavior_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckbehavior_state_t, sub_behavior_chunks, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD(nmo_ckbehavior_state_t, sub_behavior_chunk_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, sub_behavior_links),
+    NMO_FIELD(nmo_ckbehavior_state_t, sub_behavior_link_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, operations),
+    NMO_FIELD(nmo_ckbehavior_state_t, operation_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, in_parameters),
+    NMO_FIELD(nmo_ckbehavior_state_t, in_parameter_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, out_parameters),
+    NMO_FIELD(nmo_ckbehavior_state_t, out_parameter_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, local_parameters),
+    NMO_FIELD(nmo_ckbehavior_state_t, local_parameter_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckbehavior_state_t, local_parameter_chunks, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD(nmo_ckbehavior_state_t, local_parameter_chunk_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, inputs),
+    NMO_FIELD(nmo_ckbehavior_state_t, input_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, outputs),
+    NMO_FIELD(nmo_ckbehavior_state_t, output_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckbehavior_state_t, single_activity_flags, NMO_GUID_FIELD_CK_SCENEOBJECTACTIVITY_FLAGS),
+    NMO_FIELD(nmo_ckbehavior_state_t, has_single_activity, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_OPT(nmo_ckbehavior_state_t, interface_chunk, NMO_GUID_FIELD_CHUNK),
+    NMO_FIELD(nmo_ckbehavior_state_t, has_interface, NMO_GUID_FIELD_BOOL)
+};
 
 /* =============================================================================
  * HELPER FUNCTIONS
@@ -747,15 +794,69 @@ nmo_status_t nmo_ckbehavior_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckbehavior_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckbehavior_state_t *s = src;
+    nmo_ckbehavior_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_behaviors,
+                                              s->sub_behaviors, sizeof(nmo_object_id_t), s->sub_behavior_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->sub_behavior_chunks,
+                                                    s->sub_behavior_chunks, s->sub_behavior_chunk_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_behavior_links,
+                                              s->sub_behavior_links, sizeof(nmo_object_id_t), s->sub_behavior_link_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->operations,
+                                              s->operations, sizeof(nmo_object_id_t), s->operation_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->in_parameters,
+                                              s->in_parameters, sizeof(nmo_object_id_t), s->in_parameter_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->out_parameters,
+                                              s->out_parameters, sizeof(nmo_object_id_t), s->out_parameter_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->local_parameters,
+                                              s->local_parameters, sizeof(nmo_object_id_t), s->local_parameter_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->local_parameter_chunks,
+                                                    s->local_parameter_chunks, s->local_parameter_chunk_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->inputs,
+                                              s->inputs, sizeof(nmo_object_id_t), s->input_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->outputs,
+                                              s->outputs, sizeof(nmo_object_id_t), s->output_count));
+    return nmo_object_copy_chunk(arena, &d->interface_chunk, s->interface_chunk);
+}
+
+static nmo_status_t ckbehavior_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckbehavior_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->sub_behaviors, s->sub_behavior_count, "sub_behaviors");
+    NMO_VALIDATE_COUNT(s->sub_behavior_chunks, s->sub_behavior_chunk_count, "sub_behavior_chunks");
+    NMO_VALIDATE_COUNT(s->sub_behavior_links, s->sub_behavior_link_count, "sub_behavior_links");
+    NMO_VALIDATE_COUNT(s->operations, s->operation_count, "operations");
+    NMO_VALIDATE_COUNT(s->in_parameters, s->in_parameter_count, "in_parameters");
+    NMO_VALIDATE_COUNT(s->out_parameters, s->out_parameter_count, "out_parameters");
+    NMO_VALIDATE_COUNT(s->local_parameters, s->local_parameter_count, "local_parameters");
+    NMO_VALIDATE_COUNT(s->local_parameter_chunks, s->local_parameter_chunk_count, "local_parameter_chunks");
+    NMO_VALIDATE_COUNT(s->inputs, s->input_count, "inputs");
+    NMO_VALIDATE_COUNT(s->outputs, s->output_count, "outputs");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckbehavior,
     nmo_ckbehavior_state_t,
     nmo_ckbehavior_serialize,
     nmo_ckbehavior_deserialize,
+    nmo_ckbehavior_fields,
     NMO_GUID_CKBEHAVIOR,
     "CKBehavior",
     NMO_CID_BEHAVIOR,

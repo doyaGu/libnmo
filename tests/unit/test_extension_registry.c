@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_extension_abi.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 

@@ -17,17 +17,61 @@
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <string.h>
 #include <stddef.h>
 #include <stdalign.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktexture, nmo_ck_texture_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktexture, nmo_cktexture_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cktexture_fields[] = {
+    /* Base class */
+    NMO_FIELD_NAMED("base", offsetof(nmo_cktexture_state_t, base),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    /* Movie filename */
+    NMO_FIELD(nmo_cktexture_state_t, has_movie_filename, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, movie_filename, NMO_GUID_FIELD_STRING),
+    /* Slot info */
+    NMO_FIELD(nmo_cktexture_state_t, has_slot_filenames, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, slot_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_cktexture_state_t, slot_filenames, NMO_GUID_FIELD_STRING),
+    /* Bitmap kind and data */
+    NMO_FIELD(nmo_cktexture_state_t, bitmap_kind, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, reader_slots, NMO_GUID_FIELD_POINTER),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, raw_slots, NMO_GUID_FIELD_POINTER),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, bitmap2_slots, NMO_GUID_FIELD_POINTER),
+    /* Pick threshold */
+    NMO_FIELD(nmo_cktexture_state_t, has_pick_threshold, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, pick_threshold, NMO_GUID_FIELD_INT32),
+    /* Packed flags */
+    NMO_FIELD(nmo_cktexture_state_t, has_oldtexonly, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, mipmap_level, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cktexture_state_t, save_options, NMO_GUID_FIELD_CK_TEXTURE_SAVEOPTIONS),
+    NMO_FIELD(nmo_cktexture_state_t, is_transparent, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, is_cubemap, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, has_desired_video_format, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, desired_video_format, NMO_GUID_FIELD_VX_PIXELFORMAT),
+    NMO_FIELD(nmo_cktexture_state_t, has_transparent_color, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_FULL(nmo_cktexture_state_t, transparent_color, NMO_GUID_FIELD_COLOR,
+                   NMO_FIELD_OPTIONAL, 0),
+    NMO_FIELD(nmo_cktexture_state_t, has_current_slot, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, current_slot, NMO_GUID_FIELD_INT32),
+    /* User mipmaps */
+    NMO_FIELD(nmo_cktexture_state_t, has_user_mipmaps, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, user_mipmap_count, NMO_GUID_FIELD_UINT32)
+};
 
 static size_t nmo_cktexture_identifier_payload_size(nmo_chunk_t *chunk) {
     if (!chunk || !chunk->parser_state || chunk->data.count == 0) {
@@ -281,7 +325,7 @@ static nmo_status_t nmo_cktexture_write_bitmap2_slot(
 static nmo_status_t nmo_cktexture_read_slot_filenames(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_texture_state_t *state)
+    nmo_cktexture_state_t *state)
 {
     int32_t count = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count);
@@ -317,7 +361,7 @@ nmo_status_t nmo_cktexture_deserialize(
     void *context)
 {
     (void)type;
-    nmo_ck_texture_state_t *out_state = (nmo_ck_texture_state_t *)instance;
+    nmo_cktexture_state_t *out_state = (nmo_cktexture_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
@@ -532,15 +576,136 @@ nmo_status_t nmo_cktexture_deserialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_cktexture_copy_reader_slots(
+    nmo_arena_t *arena,
+    nmo_cktexture_reader_slot_t **dst,
+    const nmo_cktexture_reader_slot_t *src,
+    uint32_t count)
+{
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
+                                              sizeof(nmo_cktexture_reader_slot_t), count));
+    for (uint32_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].data,
+                                                  src[i].data, src[i].data_size));
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].alpha_plane,
+                                                  src[i].alpha_plane, src[i].alpha_plane_size));
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_cktexture_copy_raw_slots(
+    nmo_arena_t *arena,
+    nmo_cktexture_raw_slot_t **dst,
+    const nmo_cktexture_raw_slot_t *src,
+    uint32_t count)
+{
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
+                                              sizeof(nmo_cktexture_raw_slot_t), count));
+    for (uint32_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].blue_data,
+                                                  src[i].blue_data, src[i].blue_size));
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].green_data,
+                                                  src[i].green_data, src[i].green_size));
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].red_data,
+                                                  src[i].red_data, src[i].red_size));
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].alpha_data,
+                                                  src[i].alpha_data, src[i].alpha_size));
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_cktexture_copy_bitmap2_slots(
+    nmo_arena_t *arena,
+    nmo_cktexture_bitmap2_slot_t **dst,
+    const nmo_cktexture_bitmap2_slot_t *src,
+    uint32_t count)
+{
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
+                                              sizeof(nmo_cktexture_bitmap2_slot_t), count));
+    for (uint32_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].buffer,
+                                                  src[i].buffer, src[i].buffer_size));
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t cktexture_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_cktexture_state_t *s = src;
+    nmo_cktexture_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
+                                              s->base.base.raw_tail, s->base.base.raw_tail_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.script_ids,
+                                              s->base.script_ids, sizeof(nmo_object_id_t), s->base.script_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_parameter_ids,
+                                              s->base.attribute_parameter_ids, sizeof(nmo_object_id_t), s->base.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_types,
+                                              s->base.attribute_types, sizeof(uint32_t), s->base.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->base.attribute_chunks,
+                                                    s->base.attribute_chunks, s->base.attribute_chunk_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
+                                              s->base.legacy_attributes_raw, s->base.legacy_attributes_size));
+
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string(arena, &d->movie_filename, s->movie_filename));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string_array(arena, &d->slot_filenames,
+                                                     s->slot_filenames, s->slot_count));
+
+    d->reader_slots = NULL;
+    d->raw_slots = NULL;
+    d->bitmap2_slots = NULL;
+    if (s->slot_count > 0) {
+        if (s->reader_slots) {
+            NMO_RETURN_IF_ERROR(nmo_cktexture_copy_reader_slots(arena, &d->reader_slots,
+                                                                s->reader_slots, s->slot_count));
+        }
+        if (s->raw_slots) {
+            NMO_RETURN_IF_ERROR(nmo_cktexture_copy_raw_slots(arena, &d->raw_slots,
+                                                             s->raw_slots, s->slot_count));
+        }
+        if (s->bitmap2_slots) {
+            NMO_RETURN_IF_ERROR(nmo_cktexture_copy_bitmap2_slots(arena, &d->bitmap2_slots,
+                                                                 s->bitmap2_slots, s->slot_count));
+        }
+    }
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->save_format_data,
+                                              s->save_format_data, s->save_format_size));
+    d->user_mipmaps = NULL;
+    if (s->user_mipmap_count > 0) {
+        NMO_RETURN_IF_ERROR(nmo_cktexture_copy_raw_slots(arena, &d->user_mipmaps,
+                                                         s->user_mipmaps, s->user_mipmap_count));
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t cktexture_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_cktexture_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->slot_filenames, s->slot_count, "slot_filenames");
+    NMO_VALIDATE_BYTES(s->save_format_data, s->save_format_size, "save_format_data");
+    NMO_VALIDATE_COUNT(s->user_mipmaps, s->user_mipmap_count, "user_mipmaps");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     cktexture,
-    nmo_ck_texture_state_t,
+    nmo_cktexture_state_t,
     nmo_cktexture_serialize,
     nmo_cktexture_deserialize,
+    nmo_cktexture_fields,
     NMO_GUID_CKTEXTURE,
     "CKTexture",
     NMO_CID_TEXTURE,
@@ -554,7 +719,7 @@ nmo_status_t nmo_cktexture_serialize(
     void *context)
 {
     (void)type;
-    const nmo_ck_texture_state_t *state = (const nmo_ck_texture_state_t *)instance;
+    const nmo_cktexture_state_t *state = (const nmo_cktexture_state_t *)instance;
 
     if (!state || !chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktexture_serialize");

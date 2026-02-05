@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include <stdio.h>

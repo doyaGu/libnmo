@@ -12,15 +12,22 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_manager_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
 #include <stdalign.h>
 #include <stddef.h>
 #include <string.h>
+
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckattributemanager, nmo_ckattributemanager_state_t)
 
 /* =============================================================================
  * IDENTIFIER CONSTANTS
@@ -28,6 +35,17 @@
 
 /* From reference/src/CKAttributeManager.cpp */
 #define CK_STATESAVE_ATTRIBUTEMANAGER 0x52
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckattributemanager_fields[] = {
+    NMO_FIELD(nmo_ckattributemanager_state_t, category_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, categories, NMO_GUID_FIELD_CKATTRIBUTECATEGORY),
+    NMO_FIELD(nmo_ckattributemanager_state_t, attribute_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, attributes, NMO_GUID_FIELD_CKATTRIBUTEDESCRIPTOR)
+};
 
 /* =============================================================================
  * CKAttributeManager DESERIALIZATION
@@ -252,4 +270,20 @@ nmo_status_t nmo_ckattributemanager_serialize(
 
     NMO_RETURN_OK();
 }
+
+/* =============================================================================
+ * Vtable + registration
+ * ============================================================================= */
+
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+    ckattributemanager,
+    nmo_ckattributemanager_state_t,
+    nmo_ckattributemanager_serialize,
+    nmo_ckattributemanager_deserialize,
+    nmo_ckattributemanager_fields,
+    NMO_MANAGER_GUID_ATTRIBUTE,
+    "CKAttributeManager",
+    0,
+    NMO_GUID_NULL
+)
 

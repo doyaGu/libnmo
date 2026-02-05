@@ -11,9 +11,9 @@
  */
 
 #include "../test_framework.h"
-#include "type/type_system.h"
-#include "type/operation_system.h"
-#include "type/type_string.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_type_string.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include <string.h>

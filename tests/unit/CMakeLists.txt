@@ -89,6 +89,7 @@ add_unit_test(test_enum_flags)
 add_unit_test(test_struct)
 add_unit_test(test_dynamic_types_integration)
 add_unit_test(test_advanced_struct)
+add_unit_test(test_union_reflection)
 
 # Phase 6.3: Type compatibility and conversion tests
 add_unit_test(test_type_compatibility)

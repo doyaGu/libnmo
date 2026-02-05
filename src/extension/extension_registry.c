@@ -12,7 +12,7 @@
 #include "core/nmo_hash_table.h"
 #include "core/nmo_shared_library.h"
 #include "core/nmo_string.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "format/nmo_manager_registry.h"
 #include <string.h>
 

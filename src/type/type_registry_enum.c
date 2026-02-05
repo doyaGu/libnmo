@@ -11,14 +11,16 @@
  * Reference: CKParameterManager::RegisterNewEnum/RegisterNewFlags
  */
 
-#include "type/dynamic_types.h"
-#include "type/type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hash_table.h"
 #include <string.h>
 #include <stdalign.h>
+#include <stdint.h>
+#include <limits.h>
 
 /* ============================================================================
  * Helper Functions
@@ -42,6 +44,12 @@ static nmo_status_t validate_enum_values(
         if (!values[i].name || values[i].name[0] == '\0') {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                     "Enum value name cannot be empty");
+        }
+
+        if (values[i].value < INT32_MIN || values[i].value > INT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Enum value '%s' out of 32-bit range",
+                                    values[i].name);
         }
         
         /* Check for duplicate names */
@@ -75,6 +83,12 @@ static nmo_status_t validate_flags_bits(
         if (!bits[i].name || bits[i].name[0] == '\0') {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                     "Flags bit name cannot be empty");
+        }
+
+        if (bits[i].mask > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Flags bit mask out of 32-bit range (got 0x%llx for '%s')",
+                                    (unsigned long long)bits[i].mask, bits[i].name);
         }
         
         /* Validate mask is a power of 2 (single bit) */

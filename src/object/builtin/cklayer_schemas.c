@@ -7,6 +7,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "type/nmo_reflection.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -131,15 +132,62 @@ nmo_status_t nmo_cklayer_serialize(
     NMO_RETURN_OK();
 }
 
+static const nmo_type_field_t nmo_cklayer_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_cklayer_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_REF(nmo_cklayer_state_t, grid_id),
+    NMO_FIELD(nmo_cklayer_state_t, type, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_cklayer_state_t, format, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_cklayer_state_t, version, NMO_GUID_FIELD_INT32),
+    NMO_FIELD_NAMED("color_rgba", offsetof(nmo_cklayer_state_t, color_rgba),
+                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("param_guid", offsetof(nmo_cklayer_state_t, param_guid),
+                    sizeof(nmo_guid_t), NMO_GUID_FIELD_GUID, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cklayer_state_t, flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_cklayer_state_t, has_type, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cklayer_state_t, has_version, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cklayer_state_t, has_color, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cklayer_state_t, has_param_guid, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_OPT(nmo_cklayer_state_t, square_data, NMO_GUID_FIELD_POINTER),
+    NMO_FIELD(nmo_cklayer_state_t, square_data_size, NMO_GUID_FIELD_UINT64)
+};
+
+static nmo_status_t cklayer_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_cklayer_state_t *s = src;
+    nmo_cklayer_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    return nmo_object_copy_bytes(arena, (void **)&d->square_data,
+                                 s->square_data, s->square_data_size);
+}
+
+static nmo_status_t cklayer_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_cklayer_state_t *s = instance;
+    NMO_VALIDATE_BYTES(s->square_data, s->square_data_size, "square_data");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     cklayer,
     nmo_cklayer_state_t,
     nmo_cklayer_serialize,
     nmo_cklayer_deserialize,
+    nmo_cklayer_fields,
     NMO_GUID_CKLAYER,
     "CKLayer",
     NMO_CID_LAYER,

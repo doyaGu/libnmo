@@ -19,11 +19,22 @@
 #include "format/nmo_chunk.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dobject, nmo_ck3dobject_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ck3dobject_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_ck3dobject_state_t, entity),
+                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0)
+};
 
 /* =============================================================================
  * CK3dObject DESERIALIZATION
@@ -112,11 +123,13 @@ nmo_status_t nmo_ck3dobject_finish_loading(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     ck3dobject,
     nmo_ck3dobject_state_t,
     nmo_ck3dobject_serialize,
     nmo_ck3dobject_deserialize,
+    nmo_ck3dobject_finish_loading,
+    nmo_ck3dobject_fields,
     NMO_GUID_CK3DOBJECT,
     "CK3dObject",
     NMO_CID_3DOBJECT,

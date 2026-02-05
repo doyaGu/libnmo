@@ -10,7 +10,7 @@
 #include "object/nmo_object_types.h"
 
 #include "object/nmo_class_ids.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include <stddef.h>
 
 /* =============================================================================

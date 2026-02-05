@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 

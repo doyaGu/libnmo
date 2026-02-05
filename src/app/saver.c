@@ -42,7 +42,7 @@
 #include "session/nmo_object_system.h"
 #include "session/nmo_shadow_storage.h"
 #include "format/nmo_chunk_context.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>

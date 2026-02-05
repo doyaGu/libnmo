@@ -36,7 +36,7 @@
 #include "session/nmo_shadow_storage.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 #include <stdalign.h>

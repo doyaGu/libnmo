@@ -6,13 +6,15 @@
  * structured type descriptors.
  */
 
-#include "type/dynamic_types.h"
-#include "type/type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_builtin_type_guids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 /* ============================================================================
  * Builtin Type Name Mapping
@@ -25,25 +27,34 @@ typedef struct builtin_type_name_t {
 
 static const builtin_type_name_t BUILTIN_TYPES[] = {
     /* Basic types */
-    {"int", {0x6FED1D00, 0x00000001}},
-    {"INT", {0x6FED1D00, 0x00000001}},
-    {"float", {0x6FED1D00, 0x00000002}},
-    {"FLOAT", {0x6FED1D00, 0x00000002}},
-    {"bool", {0x6FED1D00, 0x00000003}},
-    {"BOOL", {0x6FED1D00, 0x00000003}},
-    {"string", {0x6FED1D00, 0x00000010}},
-    {"STRING", {0x6FED1D00, 0x00000010}},
+    {"int", NMO_TYPE_GUID_INT_INIT},
+    {"float", NMO_TYPE_GUID_FLOAT_INIT},
+    {"bool", NMO_TYPE_GUID_BOOL_INIT},
+    {"string", NMO_TYPE_GUID_STRING_INIT},
+    {"double", NMO_TYPE_GUID_DOUBLE_INIT},
+    {"int8", NMO_TYPE_GUID_INT8_INIT},
+    {"uint8", NMO_TYPE_GUID_UINT8_INIT},
+    {"int16", NMO_TYPE_GUID_INT16_INIT},
+    {"uint16", NMO_TYPE_GUID_UINT16_INIT},
+    {"uint32", NMO_TYPE_GUID_UINT32_INIT},
+    {"int64", NMO_TYPE_GUID_INT64_INIT},
+    {"uint64", NMO_TYPE_GUID_UINT64_INIT},
+    {"pointer", NMO_TYPE_GUID_POINTER_INIT},
+    {"guid", NMO_TYPE_GUID_GUID_INIT},
+    {"object_id", NMO_TYPE_GUID_OBJECT_ID_INIT},
     
     /* Virtools common types */
-    {"VxVector2", {0x6FED1D00, 0x00000004}},
-    {"VxVector3", {0x6FED1D00, 0x00000005}},
-    {"VxVector4", {0x6FED1D00, 0x00000006}},
-    {"VxQuaternion", {0x6FED1D00, 0x00000007}},
-    {"VxMatrix", {0x6FED1D00, 0x00000008}},
-    {"VxColor", {0x6FED1D00, 0x00000009}},
-    
-    /* Null terminator */
-    {NULL, {0, 0}}
+    {"VxVector2", NMO_TYPE_GUID_VECTOR2_INIT},
+    {"VxVector3", NMO_TYPE_GUID_VECTOR3_INIT},
+    {"VxVector4", NMO_TYPE_GUID_VECTOR4_INIT},
+    {"VxQuaternion", NMO_TYPE_GUID_QUATERNION_INIT},
+    {"VxMatrix", NMO_TYPE_GUID_MATRIX_INIT},
+    {"VxColor", NMO_TYPE_GUID_COLOR_INIT},
+    {"VxRect", NMO_TYPE_GUID_RECT_INIT},
+    {"VxVector", NMO_TYPE_GUID_VECTOR3_INIT},
+    {"VxVector3D", NMO_TYPE_GUID_VECTOR3_INIT},
+    {"chunk", NMO_TYPE_GUID_CHUNK_INIT},
+    {NULL, {0, 0}},
 };
 
 /* ============================================================================
@@ -72,21 +83,86 @@ static void trim_whitespace(const char **str, size_t *len) {
 }
 
 /**
- * @brief Check if string matches (case-insensitive)
+ * @brief Check if string matches (case-sensitive)
  */
-static bool str_equals_ci(const char *a, size_t a_len, const char *b) {
+static bool str_equals_cs(const char *a, size_t a_len, const char *b) {
     size_t b_len = strlen(b);
     if (a_len != b_len) {
         return false;
     }
-    
-    for (size_t i = 0; i < a_len; i++) {
-        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) {
-            return false;
+    return (memcmp(a, b, a_len) == 0);
+}
+
+/**
+ * @brief Skip whitespace starting at position
+ */
+static size_t skip_whitespace(const char *str, size_t pos, size_t len) {
+    while (pos < len && isspace((unsigned char)str[pos])) {
+        pos++;
+    }
+    return pos;
+}
+
+/**
+ * @brief Check if span contains any whitespace
+ */
+static bool span_has_whitespace(const char *str, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (isspace((unsigned char)str[i])) {
+            return true;
         }
     }
-    
-    return true;
+    return false;
+}
+
+/**
+ * @brief Check if normalized string looks like a GUID literal
+ */
+static bool is_guid_literal_candidate(const char *str, size_t len) {
+    if (len != 16 && len != 17 && len != 19) {
+        return false;
+    }
+
+    if (len == 16) {
+        for (size_t i = 0; i < len; i++) {
+            if (!isxdigit((unsigned char)str[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (len == 17) {
+        if (str[8] != '-') {
+            return false;
+        }
+        for (size_t i = 0; i < len; i++) {
+            if (i == 8) {
+                continue;
+            }
+            if (!isxdigit((unsigned char)str[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (len == 19) {
+        if (str[0] != '{' || str[18] != '}' || str[9] != '-') {
+            return false;
+        }
+        for (size_t i = 1; i < 18; i++) {
+            if (i == 9) {
+                continue;
+            }
+            if (!isxdigit((unsigned char)str[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    return false;
 }
 
 /* ============================================================================
@@ -94,82 +170,25 @@ static bool str_equals_ci(const char *a, size_t a_len, const char *b) {
  * ============================================================================ */
 
 /**
- * @brief Parse array suffix "[N]"
- */
-static bool parse_array_suffix(const char *str, size_t len, size_t *base_len, uint32_t *array_count) {
-    /* Find '[' */
-    size_t bracket_pos = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (str[i] == '[') {
-            bracket_pos = i;
-            break;
-        }
-    }
-    
-    if (bracket_pos == 0) {
-        *base_len = len;
-        *array_count = 0;
-        return true;  /* No array */
-    }
-    
-    /* Find ']' */
-    size_t close_bracket = 0;
-    for (size_t i = bracket_pos + 1; i < len; i++) {
-        if (str[i] == ']') {
-            close_bracket = i;
-            break;
-        }
-    }
-    
-    if (close_bracket == 0 || close_bracket != len - 1) {
-        return false;  /* Malformed array syntax */
-    }
-    
-    /* Parse number between brackets */
-    const char *count_str = str + bracket_pos + 1;
-    size_t count_len = close_bracket - bracket_pos - 1;
-    
-    char count_buf[32];
-    if (count_len >= sizeof(count_buf)) {
-        return false;  /* Number too long */
-    }
-    
-    memcpy(count_buf, count_str, count_len);
-    count_buf[count_len] = '\0';
-    
-    char *endptr;
-    long count = strtol(count_buf, &endptr, 10);
-    if (endptr != count_buf + count_len || count <= 0) {
-        return false;  /* Invalid number */
-    }
-    
-    *base_len = bracket_pos;
-    *array_count = (uint32_t)count;
-    return true;
-}
-
-/**
- * @brief Parse pointer suffix "*"
- */
-static void parse_pointer_suffix(const char *str, size_t len, size_t *base_len, uint32_t *pointer_depth) {
-    size_t depth = 0;
-    size_t pos = len;
-    
-    while (pos > 0 && str[pos - 1] == '*') {
-        depth++;
-        pos--;
-    }
-    
-    *base_len = pos;
-    *pointer_depth = (uint32_t)depth;
-}
-
-/**
- * @brief Lookup builtin type by name
+ * @brief Lookup builtin type by name (case-sensitive)
  */
 static bool lookup_builtin_type(const char *name, size_t name_len, nmo_guid_t *out_guid) {
+    if (str_equals_cs(name, name_len, "uint32_t")) {
+        *out_guid = (nmo_guid_t)NMO_TYPE_GUID_UINT32_INIT;
+        return true;
+    }
+
+    if (str_equals_cs(name, name_len, "size_t")) {
+        if (sizeof(size_t) == 8) {
+            *out_guid = (nmo_guid_t)NMO_TYPE_GUID_UINT64_INIT;
+        } else {
+            *out_guid = (nmo_guid_t)NMO_TYPE_GUID_UINT32_INIT;
+        }
+        return true;
+    }
+
     for (size_t i = 0; BUILTIN_TYPES[i].name != NULL; i++) {
-        if (str_equals_ci(name, name_len, BUILTIN_TYPES[i].name)) {
+        if (str_equals_cs(name, name_len, BUILTIN_TYPES[i].name)) {
             *out_guid = BUILTIN_TYPES[i].guid;
             return true;
         }
@@ -200,56 +219,160 @@ nmo_status_t nmo_type_registry_parse_type_name(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Empty type name");
     }
-    
-    /* Parse pointer suffix */
-    size_t base_len = len;
+
+    size_t start = skip_whitespace(str, 0, len);
+    if (start >= len) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Empty type name");
+    }
+
+    size_t suffix_start = len;
+    for (size_t i = start; i < len; i++) {
+        if (str[i] == '*' || str[i] == '[') {
+            suffix_start = i;
+            break;
+        }
+    }
+
+    const char *base_name = str + start;
+    size_t base_name_len = suffix_start - start;
+    trim_whitespace(&base_name, &base_name_len);
+
+    if (base_name_len == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Missing base type name");
+    }
+
+    /* Try GUID literal first (whitespace-tolerant) */
+    char guid_buf[64];
+    size_t guid_len = 0;
+    for (size_t i = 0; i < base_name_len; i++) {
+        char c = base_name[i];
+        if (!isspace((unsigned char)c)) {
+            if (guid_len + 1 >= sizeof(guid_buf)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "GUID literal too long");
+            }
+            guid_buf[guid_len++] = c;
+        }
+    }
+    guid_buf[guid_len] = '\0';
+
+    if (is_guid_literal_candidate(guid_buf, guid_len)) {
+        nmo_guid_t parsed_guid = nmo_guid_parse(guid_buf);
+        if (nmo_guid_is_null(parsed_guid)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Invalid GUID literal");
+        }
+
+        const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(
+            type_registry, parsed_guid);
+        if (!type_desc) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Type GUID not found in registry");
+        }
+        result->base_type_guid = parsed_guid;
+    } else {
+        if (span_has_whitespace(base_name, base_name_len)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Whitespace not allowed inside type name");
+        }
+
+        /* Lookup builtin type */
+        if (lookup_builtin_type(base_name, base_name_len, &result->base_type_guid)) {
+            /* Continue to parse suffixes */
+        } else {
+            /* Lookup registered type by name */
+            char name_buf[256];
+            if (base_name_len >= sizeof(name_buf)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Type name too long");
+            }
+
+            memcpy(name_buf, base_name, base_name_len);
+            name_buf[base_name_len] = '\0';
+
+            const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_name(
+                type_registry, name_buf);
+
+            if (type_desc) {
+                result->base_type_guid = type_desc->guid;
+            } else {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                        "Type '%s' not found in registry", name_buf);
+            }
+        }
+    }
+
+    /* Parse suffixes (whitespace-tolerant) */
     uint32_t pointer_depth = 0;
-    parse_pointer_suffix(str, len, &base_len, &pointer_depth);
-    
+    uint32_t array_count = 0;
+    bool has_array = false;
+    size_t pos = suffix_start;
+
+    while (true) {
+        pos = skip_whitespace(str, pos, len);
+        if (pos >= len) {
+            break;
+        }
+
+        if (str[pos] == '*') {
+            pointer_depth++;
+            pos++;
+            continue;
+        }
+
+        if (str[pos] == '[') {
+            if (has_array) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Multiple array suffixes not supported");
+            }
+
+            pos++;
+            pos = skip_whitespace(str, pos, len);
+
+            if (pos >= len || !isdigit((unsigned char)str[pos])) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Malformed array syntax in type name");
+            }
+
+            uint64_t count_value = 0;
+            while (pos < len && isdigit((unsigned char)str[pos])) {
+                uint64_t digit = (uint64_t)(str[pos] - '0');
+                if (count_value > (UINT32_MAX - digit) / 10) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                            "Array count overflow");
+                }
+                count_value = (count_value * 10) + digit;
+                pos++;
+            }
+
+            pos = skip_whitespace(str, pos, len);
+            if (pos >= len || str[pos] != ']') {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Malformed array syntax in type name");
+            }
+            pos++;
+
+            if (count_value == 0) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                        "Array count must be greater than zero");
+            }
+
+            array_count = (uint32_t)count_value;
+            has_array = true;
+            continue;
+        }
+
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Unexpected token in type suffix");
+    }
+
+    result->is_array = has_array;
+    result->array_count = array_count;
     result->is_pointer = (pointer_depth > 0);
     result->pointer_depth = pointer_depth;
-    
-    /* Parse array suffix */
-    uint32_t array_count = 0;
-    if (!parse_array_suffix(str, base_len, &base_len, &array_count)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Malformed array syntax in type name");
-    }
-    
-    result->is_array = (array_count > 0);
-    result->array_count = array_count;
-    
-    /* Trim base type name */
-    const char *base_name = str;
-    size_t base_name_len = base_len;
-    trim_whitespace(&base_name, &base_name_len);
-    
-    /* Lookup builtin type */
-    if (lookup_builtin_type(base_name, base_name_len, &result->base_type_guid)) {
-        NMO_RETURN_OK();
-    }
-    
-    /* Lookup registered type by name */
-    char name_buf[256];
-    if (base_name_len >= sizeof(name_buf)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Type name too long");
-    }
-    
-    memcpy(name_buf, base_name, base_name_len);
-    name_buf[base_name_len] = '\0';
-    
-    const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_name(
-        type_registry, name_buf);
-    
-    if (type_desc) {
-        result->base_type_guid = type_desc->guid;
-        NMO_RETURN_OK();
-    }
-    
-    /* Type not found */
-    NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                            "Type '%s' not found in registry", name_buf);
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================

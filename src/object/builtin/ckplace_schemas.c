@@ -6,6 +6,8 @@
 #include "object/nmo_ckplace_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -78,15 +80,58 @@ static nmo_status_t nmo_ckplace_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+static const nmo_type_field_t nmo_ckplace_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckplace_state_t, base),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckplace_state_t, has_camera, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckplace_state_t, camera_id),
+    NMO_FIELD(nmo_ckplace_state_t, has_level, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckplace_state_t, level_id),
+    NMO_FIELD(nmo_ckplace_state_t, portal_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckplace_state_t, portals, NMO_GUID_FIELD_CKPLACEPORTALENTRY),
+    NMO_FIELD(nmo_ckplace_state_t, reference_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_ckplace_state_t, reference_ids)
+};
+
+static nmo_status_t ckplace_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckplace_state_t *s = src;
+    nmo_ckplace_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->portals,
+                                              s->portals, sizeof(nmo_ckplace_portal_entry_t), s->portal_count));
+    return nmo_object_copy_array(arena, (void **)&d->reference_ids,
+                                 s->reference_ids, sizeof(nmo_object_id_t), s->reference_count);
+}
+
+static nmo_status_t ckplace_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckplace_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->portals, s->portal_count, "portals");
+    NMO_VALIDATE_COUNT(s->reference_ids, s->reference_count, "reference_ids");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckplace,
     nmo_ckplace_state_t,
     nmo_ckplace_serialize,
     nmo_ckplace_deserialize,
+    nmo_ckplace_fields,
     NMO_GUID_CKPLACE,
     "CKPlace",
     NMO_CID_PLACE,

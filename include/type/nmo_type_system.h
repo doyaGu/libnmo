@@ -1,4 +1,4 @@
-﻿#ifndef NMO_TYPE_TYPE_SYSTEM_H
+#ifndef NMO_TYPE_TYPE_SYSTEM_H
 #define NMO_TYPE_TYPE_SYSTEM_H
 
 #include "nmo_types.h"
@@ -45,13 +45,14 @@ typedef enum nmo_type_category {
     /* Basic categories */
     NMO_TYPE_CATEGORY_SCALAR       = 0x0001,  /* Primitive types (int, float, etc) */
     NMO_TYPE_CATEGORY_STRUCT       = 0x0002,  /* Composite types with fields */
-    NMO_TYPE_CATEGORY_ENUM         = 0x0004,  /* Enumeration with named values */
-    NMO_TYPE_CATEGORY_FLAGS        = 0x0008,  /* Bit flags */
+    NMO_TYPE_CATEGORY_UNION        = 0x0004,  /* Union types (overlapping fields) */
+    NMO_TYPE_CATEGORY_ENUM         = 0x0008,  /* Enumeration with named values */
+    NMO_TYPE_CATEGORY_FLAGS        = 0x0010,  /* Bit flags */
     
     /* Special categories */
-    NMO_TYPE_CATEGORY_OBJECT_REF   = 0x0010,  /* Reference to CKObject */
-    NMO_TYPE_CATEGORY_ARRAY        = 0x0020,  /* Array type */
-    NMO_TYPE_CATEGORY_POINTER      = 0x0040,  /* Pointer type */
+    NMO_TYPE_CATEGORY_OBJECT_REF   = 0x0020,  /* Reference to CKObject */
+    NMO_TYPE_CATEGORY_ARRAY        = 0x0040,  /* Array type */
+    NMO_TYPE_CATEGORY_POINTER      = 0x0080,  /* Pointer type */
     
     /* Plugin extensibility */
     NMO_TYPE_CATEGORY_PLUGIN_BASE  = 0x1000,  /* Plugin-defined types start here */
@@ -97,6 +98,8 @@ typedef struct nmo_struct_descriptor {
     uint32_t array_count;               /* 0 = scalar, >0 = array */
     uint32_t flags;                     /* Field flags */
     const char *description;            /* Optional description */
+    nmo_guid_t pointee_guid;           /* Base type GUID for pointer fields (NULL_GUID if not pointer) */
+    uint32_t pointer_depth;             /* Pointer indirection depth (0 if not pointer) */
 } nmo_struct_descriptor_t;
 
 /**
@@ -129,6 +132,11 @@ typedef struct nmo_specialized_metadata {
             const nmo_struct_descriptor_t *fields;
             size_t field_count;
         } struct_meta;
+
+        struct {
+            const nmo_struct_descriptor_t *fields;
+            size_t field_count;
+        } union_meta;
         
         struct {
             const nmo_flags_descriptor_t *bits;
@@ -141,6 +149,7 @@ typedef struct nmo_specialized_metadata {
 #define NMO_METADATA_TYPE_ENUM   1
 #define NMO_METADATA_TYPE_STRUCT 2
 #define NMO_METADATA_TYPE_FLAGS  3
+#define NMO_METADATA_TYPE_UNION  4
 
 /* Specialized metadata index constants */
 #define NMO_SPECIALIZED_INDEX_INVALID ((uint32_t)UINT32_MAX)
@@ -297,6 +306,60 @@ typedef nmo_status_t (*nmo_type_finish_loading_fn)(void *instance, nmo_arena_t *
 typedef nmo_status_t (*nmo_type_to_string_fn)(const void *value, const nmo_type_descriptor_t *type, char *buffer, size_t buffer_size, void *context);
 typedef nmo_status_t (*nmo_type_from_string_fn)(void *value, const nmo_type_descriptor_t *type, const char *string, void *context);
 
+/* ============================================================================
+ * Reference Enumeration (Reflection)
+ * 
+ * Visitor pattern for enumerating object references. Used by reference graph,
+ * validation, and garbage collection. Types can provide custom implementations
+ * or use the default field-based enumerator.
+ * 
+ * DESIGN NOTE: The type layer provides the enumeration MECHANISM only.
+ * Semantic interpretation of ref_kind values is defined by higher layers
+ * (Object/Session). The type layer treats ref_kind as an opaque uint32_t.
+ * ============================================================================ */
+
+/**
+ * @brief Reference visitor callback (generic)
+ *
+ * Called for each reference found by an enumerator.
+ * The ref_kind is an opaque value - concrete semantics are defined by
+ * higher layers (Session/Object layer defines nmo_ref_kind_t enum).
+ *
+ * @param user_data User-provided context
+ * @param target_id Referenced object ID (non-zero)
+ * @param ref_kind Opaque reference kind (semantics defined by higher layers)
+ * @param field_name Field name containing the reference (may be NULL)
+ * @param index Array index (0 for non-array fields)
+ * @return true to continue enumeration, false to stop
+ */
+typedef bool (*nmo_type_ref_visitor_fn)(
+    void *user_data,
+    uint32_t target_id,
+    uint32_t ref_kind,
+    const char *field_name,
+    uint32_t index
+);
+
+/**
+ * @brief Reference enumerator function pointer
+ *
+ * Enumerates all references from a type instance.
+ * The visitor receives opaque ref_kind values - semantic interpretation
+ * is the responsibility of the caller (Session/Object layer).
+ *
+ * @param instance Object state pointer
+ * @param type Type descriptor
+ * @param visitor Callback for each reference
+ * @param user_data User context
+ * @return NMO_OK on success
+ */
+typedef nmo_status_t (*nmo_type_enumerate_refs_fn)(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data
+);
+
 typedef struct nmo_type_vtable {
     /* Lifecycle hooks */
     nmo_type_create_fn create;          /* Create default instance */
@@ -315,6 +378,9 @@ typedef struct nmo_type_vtable {
     /* String conversion (Phase 6.4) */
     nmo_type_to_string_fn to_string;    /* Convert value to string */
     nmo_type_from_string_fn from_string;/* Parse value from string */
+    
+    /* Reference enumeration (Reflection) */
+    nmo_type_enumerate_refs_fn enumerate_refs; /* Enumerate object references */
 } nmo_type_vtable_t;
 
 /* ============================================================================

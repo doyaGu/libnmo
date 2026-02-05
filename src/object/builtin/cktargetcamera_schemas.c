@@ -12,9 +12,22 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktargetcamera, nmo_cktargetcamera_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cktargetcamera_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_cktargetcamera_state_t, base),
+                    sizeof(nmo_ckcamera_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cktargetcamera_state_t, has_target, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_cktargetcamera_state_t, target_id)
+};
 
 static nmo_status_t nmo_cktargetcamera_deserialize_internal(
     nmo_cktargetcamera_state_t *out_state,
@@ -42,17 +55,17 @@ static nmo_status_t nmo_cktargetcamera_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     cktargetcamera,
     nmo_cktargetcamera_state_t,
     nmo_cktargetcamera_serialize,
     nmo_cktargetcamera_deserialize,
+    nmo_cktargetcamera_fields,
     NMO_GUID_CKTARGETCAMERA,
     "CKTargetCamera",
     NMO_CID_TARGETCAMERA,
     NMO_GUID_CKCAMERA
 )
-
 static nmo_status_t nmo_cktargetcamera_serialize_internal(
     const nmo_cktargetcamera_state_t *in_state,
     nmo_chunk_t *out_chunk,

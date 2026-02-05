@@ -1,5 +1,5 @@
-﻿/**
- * @file dynamic_types.h
+/**
+ * @file nmo_dynamic_types.h
  * @brief Dynamic type registration API (Phase 6.2)
  *
  * Provides runtime type registration for enums, flags, and structs.
@@ -21,7 +21,7 @@
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,7 +40,7 @@ typedef struct nmo_type_parse_result_t {
     bool is_array;                      /**< True if array type (e.g., "int[10]") */
     uint32_t array_count;               /**< Array element count (0 if not array) */
     bool is_pointer;                    /**< True if pointer type (e.g., "int*") */
-    uint32_t pointer_depth;             /**< Pointer indirection depth */
+    uint32_t pointer_depth;             /**< Pointer indirection depth (all '*' suffixes) */
 } nmo_type_parse_result_t;
 
 /**
@@ -51,7 +51,10 @@ typedef struct nmo_type_parse_result_t {
  * - Structs: "MyStruct", "VxVector3"
  * - Arrays: "int[10]", "float[256]"
  * - Pointers: "int*", "CKObject**"
- * - Case-insensitive, whitespace-tolerant
+ * - Array-of-pointers: "int*[10]" (also accepts "int[10]*")
+ * - GUID literals: "{D1D1D1D1-D2D2D2D2}", "D1D1D1D1-D2D2D2D2", "D1D1D1D1D2D2D2D2"
+ * - Standard C aliases: "uint32_t", "size_t"
+ * - Case-sensitive, whitespace-tolerant (C-like whitespace allowed around tokens)
  *
  * @param type_registry Type registry
  * @param type_name Type name string
@@ -229,6 +232,21 @@ typedef struct nmo_struct_type_def_t {
 } nmo_struct_type_def_t;
 
 /**
+ * @brief Union type definition
+ *
+ * Uses the same field definition as structs, but all fields overlap at offset 0.
+ */
+typedef struct nmo_union_type_def_t {
+    const char *name;                   /**< Type name */
+    const char *description;            /**< Type description */
+    nmo_guid_t guid;                   /**< Type GUID (can be NULL_GUID for auto-generation) */
+    const nmo_struct_field_def_t *fields; /**< Array of fields */
+    size_t field_count;                 /**< Number of fields */
+    uint32_t alignment;                 /**< Union alignment (0 = auto-calculate) */
+    bool packed;                        /**< Use packed layout (no padding) */
+} nmo_union_type_def_t;
+
+/**
  * @brief Register new struct type
  *
  * Registers a structure type with fields. Automatically calculates
@@ -263,6 +281,18 @@ typedef struct nmo_struct_type_def_t {
 NMO_API nmo_status_t nmo_type_registry_register_struct(
     nmo_type_registry_t *type_registry,
     const nmo_struct_type_def_t *struct_def,
+    nmo_guid_t *out_guid
+);
+
+/**
+ * @brief Register new union type
+ *
+ * Registers a union type with overlapping fields (offset = 0 for all fields).
+ * Alignment defaults to the maximum field alignment unless overridden.
+ */
+NMO_API nmo_status_t nmo_type_registry_register_union(
+    nmo_type_registry_t *type_registry,
+    const nmo_union_type_def_t *union_def,
     nmo_guid_t *out_guid
 );
 

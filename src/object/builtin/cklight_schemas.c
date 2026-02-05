@@ -46,6 +46,8 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -104,6 +106,21 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_cklight_set_defaults(state); \
     } while (0),
     ((void)0))
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cklight_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_cklight_state_t, entity),
+                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("light_data", offsetof(nmo_cklight_state_t, light_data),
+                    sizeof(nmo_ck_light_data_t), NMO_GUID_FIELD_CKLIGHTDATA,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cklight_state_t, flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_cklight_state_t, light_power, NMO_GUID_FIELD_FLOAT)
+};
 
 /* =============================================================================
  * CKLight DESERIALIZATION
@@ -473,11 +490,13 @@ nmo_status_t nmo_cklight_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     cklight,
     nmo_cklight_state_t,
     nmo_cklight_serialize,
     nmo_cklight_deserialize,
+    nmo_cklight_finish_loading,
+    nmo_cklight_fields,
     NMO_GUID_CKLIGHT,
     "CKLight",
     NMO_CID_LIGHT,

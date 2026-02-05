@@ -12,8 +12,9 @@
  * Reference: CKParameterManager::RegisterNewStructure
  */
 
-#include "type/dynamic_types.h"
-#include "type/type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_builtin_type_guids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_hash_table.h"
@@ -34,11 +35,40 @@ static uint32_t align_up(uint32_t offset, uint32_t alignment) {
     return (offset + alignment - 1) & ~(alignment - 1);
 }
 
+static bool is_power_of_two_u32(uint32_t value) {
+    return value != 0 && (value & (value - 1u)) == 0;
+}
+
 /**
  * @brief Get maximum alignment requirement
  */
 static uint32_t max_alignment(uint32_t a, uint32_t b) {
     return (a > b) ? a : b;
+}
+
+static const nmo_type_descriptor_t* resolve_field_type(
+    const nmo_type_registry_t *type_registry,
+    nmo_guid_t *io_guid
+) {
+    if (!type_registry || !io_guid) {
+        return NULL;
+    }
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(type_registry, *io_guid);
+    if (type) {
+        return type;
+    }
+
+    if (nmo_guid_is_field_type(*io_guid)) {
+        nmo_guid_t mapped = nmo_guid_field_to_type(*io_guid);
+        type = nmo_type_registry_find_by_guid(type_registry, mapped);
+        if (type) {
+            *io_guid = mapped;
+            return type;
+        }
+    }
+
+    return NULL;
 }
 
 /* ============================================================================
@@ -50,8 +80,12 @@ uint32_t nmo_type_get_alignment(
     nmo_guid_t type_guid
 ) {
     if (!type_registry) return 1;
-    
+
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!type_desc && nmo_guid_is_field_type(type_guid)) {
+        nmo_guid_t mapped = nmo_guid_field_to_type(type_guid);
+        type_desc = nmo_type_registry_find_by_guid(type_registry, mapped);
+    }
     if (!type_desc) return 1;
     
     return type_desc->alignment;
@@ -62,8 +96,12 @@ uint32_t nmo_type_get_size(
     nmo_guid_t type_guid
 ) {
     if (!type_registry) return 0;
-    
+
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!type_desc && nmo_guid_is_field_type(type_guid)) {
+        nmo_guid_t mapped = nmo_guid_field_to_type(type_guid);
+        type_desc = nmo_type_registry_find_by_guid(type_registry, mapped);
+    }
     if (!type_desc) return 0;
     
     return type_desc->size;
@@ -82,6 +120,11 @@ nmo_status_t nmo_type_calculate_layout(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid parameters for layout calculation");
     }
+
+    if (desired_alignment > 0 && !is_power_of_two_u32(desired_alignment)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Struct alignment must be a power of two");
+    }
     
     uint32_t offset = 0;
     uint32_t max_align = 1;
@@ -94,14 +137,8 @@ nmo_status_t nmo_type_calculate_layout(
         nmo_guid_t field_type_guid;
         uint32_t array_count = 0;
         
-        if (nmo_guid_is_null(field->type_guid)) {
-            /* Parse type name to get GUID and array info */
-            if (!field->type_name) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                        "Field '%s' has no type specified",
-                                        field->name ? field->name : "(unnamed)");
-            }
-            
+        if (field->type_name) {
+            /* Parse type name to get GUID and array info (supports pointers/arrays). */
             nmo_type_parse_result_t parse_result;
             nmo_status_t result = nmo_type_registry_parse_type_name(
                 type_registry, field->type_name, &parse_result);
@@ -110,17 +147,21 @@ nmo_status_t nmo_type_calculate_layout(
             }
             field_type_guid = parse_result.base_type_guid;
             array_count = parse_result.array_count;
-            
-            /* Store parsed array count in field for later use */
-            /* Note: We'll need to store this in struct_descriptor during registration */
-        } else {
+
+            if (parse_result.is_pointer) {
+                field_type_guid = NMO_TYPE_GUID_POINTER;
+            }
+        } else if (!nmo_guid_is_null(field->type_guid)) {
             field_type_guid = field->type_guid;
             /* Array count would need to be specified separately if using GUID */
+        } else {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Field '%s' has no type specified",
+                                    field->name ? field->name : "(unnamed)");
         }
         
         /* Get field type info */
-        const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(
-            type_registry, field_type_guid);
+        const nmo_type_descriptor_t *field_type = resolve_field_type(type_registry, &field_type_guid);
         if (!field_type) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                     "Field type not found for field '%s'",
@@ -242,6 +283,15 @@ nmo_status_t nmo_type_registry_register_struct(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to allocate struct descriptors");
     }
+
+    /* Allocate field descriptors for generic reflection (includes defaults). */
+    nmo_type_field_t *type_fields = (nmo_type_field_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_type_field_t) * struct_def->field_count,
+                        alignof(nmo_type_field_t));
+    if (!type_fields) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate type field descriptors");
+    }
     
     /* Build struct descriptors with calculated offsets */
     uint32_t offset = 0;
@@ -260,6 +310,9 @@ nmo_status_t nmo_type_registry_register_struct(
         uint32_t array_count = 0;
         nmo_guid_t field_type_guid = field_def->type_guid;
         
+        nmo_guid_t pointee_guid = NMO_NULL_GUID;
+        uint32_t pointer_depth = 0;
+
         if (field_def->type_name) {
             nmo_type_parse_result_t parse_result;
             nmo_status_t parse_res = nmo_type_registry_parse_type_name(
@@ -267,12 +320,16 @@ nmo_status_t nmo_type_registry_register_struct(
             if (parse_res == NMO_OK) {
                 field_type_guid = parse_result.base_type_guid;
                 array_count = parse_result.array_count;
+                if (parse_result.is_pointer) {
+                    pointee_guid = parse_result.base_type_guid;
+                    pointer_depth = parse_result.pointer_depth;
+                    field_type_guid = NMO_TYPE_GUID_POINTER;
+                }
             }
         }
         
         /* Get field type info */
-        const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(
-            type_registry, field_type_guid);
+        const nmo_type_descriptor_t *field_type = resolve_field_type(type_registry, &field_type_guid);
         if (!field_type) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                     "Field type not found");
@@ -295,7 +352,26 @@ nmo_status_t nmo_type_registry_register_struct(
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description ?
             nmo_arena_strdup(arena, field_def->description) : NULL;
-        
+        field_desc->pointee_guid = pointee_guid;
+        field_desc->pointer_depth = pointer_depth;
+
+        /* Populate generic field descriptor */
+        memset(&type_fields[i], 0, sizeof(type_fields[i]));
+        type_fields[i].name = field_desc->name;
+        type_fields[i].description = field_desc->description;
+        type_fields[i].type_guid = field_type_guid;
+        type_fields[i].offset = offset;
+        type_fields[i].size = total_field_size;
+        type_fields[i].flags = field_def->flags;
+        if (array_count > 0) {
+            type_fields[i].flags |= NMO_FIELD_REPEATED;
+        }
+        type_fields[i].added_version = 0;
+        type_fields[i].removed_version = 0;
+        type_fields[i].semantic = NMO_SEMANTIC_NONE;
+        type_fields[i].units = NMO_UNITS_NONE;
+        type_fields[i].default_value = field_def->default_value;
+
         offset += total_field_size;
     }
     
@@ -342,8 +418,8 @@ nmo_status_t nmo_type_registry_register_struct(
         /* Packed structs are POD if all fields are POD */
         type_desc->flags |= NMO_TYPE_FLAG_POD;
     }
-    type_desc->fields = NULL;
-    type_desc->field_count = 0;
+    type_desc->fields = type_fields;
+    type_desc->field_count = struct_def->field_count;
     type_desc->vtable = NULL;
     type_desc->description = struct_def->description ? 
         nmo_arena_strdup(arena, struct_def->description) : NULL;
@@ -626,6 +702,9 @@ nmo_status_t nmo_type_registry_finalize_struct(
                 return parse_res;
             }
             field->type_guid = parse_result.base_type_guid;
+            if (parse_result.is_pointer) {
+                field->type_guid = NMO_TYPE_GUID_POINTER;
+            }
         }
     }
     
@@ -646,6 +725,14 @@ nmo_status_t nmo_type_registry_finalize_struct(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to allocate struct descriptors");
     }
+
+    nmo_type_field_t *type_fields = (nmo_type_field_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_type_field_t) * incomplete->field_count,
+                        alignof(nmo_type_field_t));
+    if (!type_fields) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate type field descriptors");
+    }
     
     /* Build field descriptors with calculated offsets */
     uint32_t offset = 0;
@@ -653,8 +740,28 @@ nmo_status_t nmo_type_registry_finalize_struct(
         const nmo_struct_field_def_t *field_def = &incomplete->fields[i];
         nmo_struct_descriptor_t *field_desc = &struct_fields[i];
         
-        const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(
-            type_registry, field_def->type_guid);
+        uint32_t array_count = 0;
+        nmo_guid_t field_type_guid = field_def->type_guid;
+        nmo_guid_t pointee_guid = NMO_NULL_GUID;
+        uint32_t pointer_depth = 0;
+
+        if (field_def->type_name) {
+            nmo_type_parse_result_t parse_result;
+            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
+                type_registry, field_def->type_name, &parse_result);
+            if (parse_res == NMO_OK) {
+                field_type_guid = parse_result.base_type_guid;
+                array_count = parse_result.array_count;
+                if (parse_result.is_pointer) {
+                    pointee_guid = parse_result.base_type_guid;
+                    pointer_depth = parse_result.pointer_depth;
+                    field_type_guid = NMO_TYPE_GUID_POINTER;
+                }
+            }
+        }
+
+        const nmo_type_descriptor_t *field_type = resolve_field_type(
+            type_registry, &field_type_guid);
         if (!field_type) {
             char guid_str[64];
             nmo_guid_format(field_def->type_guid, guid_str, sizeof(guid_str));
@@ -667,14 +774,37 @@ nmo_status_t nmo_type_registry_finalize_struct(
         offset = align_up(offset, field_align);
         
         field_desc->name = field_def->name;
-        field_desc->type_guid = field_def->type_guid;
+        field_desc->type_guid = field_type_guid;
         field_desc->offset = offset;
-        field_desc->size = field_type->size;
-        field_desc->array_count = 0;
+        uint32_t element_size = field_type->size;
+        uint32_t total_field_size = element_size;
+        if (array_count > 0) {
+            total_field_size = element_size * array_count;
+        }
+        field_desc->size = total_field_size;
+        field_desc->array_count = array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description;
-        
-        offset += field_type->size;
+        field_desc->pointee_guid = pointee_guid;
+        field_desc->pointer_depth = pointer_depth;
+
+        memset(&type_fields[i], 0, sizeof(type_fields[i]));
+        type_fields[i].name = field_def->name;
+        type_fields[i].description = field_def->description;
+        type_fields[i].type_guid = field_type_guid;
+        type_fields[i].offset = offset;
+        type_fields[i].size = total_field_size;
+        type_fields[i].flags = field_def->flags;
+        if (array_count > 0) {
+            type_fields[i].flags |= NMO_FIELD_REPEATED;
+        }
+        type_fields[i].added_version = 0;
+        type_fields[i].removed_version = 0;
+        type_fields[i].semantic = NMO_SEMANTIC_NONE;
+        type_fields[i].units = NMO_UNITS_NONE;
+        type_fields[i].default_value = field_def->default_value;
+
+        offset += total_field_size;
     }
     
     /* Create specialized metadata */
@@ -711,6 +841,8 @@ nmo_status_t nmo_type_registry_finalize_struct(
     type_desc->alignment = struct_alignment;
     type_desc->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE;
     type_desc->specialized_index = (uint32_t)metadata_index;
+    type_desc->fields = type_fields;
+    type_desc->field_count = incomplete->field_count;
     type_desc->description = NULL;  /* Clear incomplete state pointer */
     type_desc->valid = true;  /* Mark as complete */
     
@@ -820,4 +952,282 @@ nmo_status_t nmo_type_registry_register_struct_string(
     nmo_arena_destroy(temp_arena);
     
     return result;
+}
+
+/* ============================================================================
+ * Union Type Registration
+ * ============================================================================ */
+
+nmo_status_t nmo_type_registry_register_union(
+    nmo_type_registry_t *type_registry,
+    const nmo_union_type_def_t *union_def,
+    nmo_guid_t *out_guid
+) {
+    if (!type_registry || !union_def) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "NULL type_registry or union_def");
+    }
+
+    if (!union_def->name || union_def->name[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Union type name cannot be empty");
+    }
+
+    if (!union_def->fields || union_def->field_count == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Union must have at least one field");
+    }
+
+    if (union_def->alignment > 0 && !is_power_of_two_u32(union_def->alignment)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Union alignment must be a power of two");
+    }
+
+    /* Generate GUID for the union type */
+    nmo_guid_t type_guid = nmo_guid_is_null(union_def->guid) ?
+        nmo_type_generate_guid(union_def->name) : union_def->guid;
+
+    /* Check if type already exists */
+    const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (existing) {
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                                "Union type '%s' already registered",
+                                union_def->name);
+    }
+
+    nmo_arena_t *arena = type_registry->arena;
+
+    /* Allocate field definitions array (mutable copy) */
+    nmo_struct_field_def_t *fields = (nmo_struct_field_def_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_struct_field_def_t) * union_def->field_count,
+                        alignof(nmo_struct_field_def_t));
+    if (!fields) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate fields array");
+    }
+
+    memcpy(fields, union_def->fields, sizeof(nmo_struct_field_def_t) * union_def->field_count);
+
+    /* Calculate union size/alignment */
+    uint32_t max_size = 0;
+    uint32_t max_align = 1;
+
+    for (size_t i = 0; i < union_def->field_count; i++) {
+        nmo_struct_field_def_t *field_def = &fields[i];
+        nmo_guid_t field_type_guid = field_def->type_guid;
+        uint32_t array_count = 0;
+
+        if (field_def->type_name) {
+            nmo_type_parse_result_t parse_result;
+            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
+                type_registry, field_def->type_name, &parse_result);
+            if (parse_res != NMO_OK) {
+                return parse_res;
+            }
+            field_type_guid = parse_result.base_type_guid;
+            array_count = parse_result.array_count;
+            if (parse_result.is_pointer) {
+                field_type_guid = NMO_TYPE_GUID_POINTER;
+            }
+        }
+
+        const nmo_type_descriptor_t *field_type = resolve_field_type(type_registry, &field_type_guid);
+        if (!field_type) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Field type not found for union field '%s'",
+                                    field_def->name ? field_def->name : "(unnamed)");
+        }
+
+        uint32_t element_size = field_type->size;
+        uint32_t total_field_size = element_size;
+        if (array_count > 0) {
+            total_field_size = element_size * array_count;
+        }
+
+        uint32_t field_align = union_def->packed ? 1 : field_type->alignment;
+        max_align = max_alignment(max_align, field_align);
+        if (total_field_size > max_size) {
+            max_size = total_field_size;
+        }
+
+        field_def->type_guid = field_type_guid;
+    }
+
+    if (union_def->alignment > 0) {
+        max_align = union_def->alignment;
+    }
+
+    uint32_t total_size = align_up(max_size, max_align);
+
+    /* Allocate union descriptors array */
+    nmo_struct_descriptor_t *union_fields = (nmo_struct_descriptor_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_struct_descriptor_t) * union_def->field_count,
+                        alignof(nmo_struct_descriptor_t));
+    if (!union_fields) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate union descriptors");
+    }
+
+    nmo_type_field_t *type_fields = (nmo_type_field_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_type_field_t) * union_def->field_count,
+                        alignof(nmo_type_field_t));
+    if (!type_fields) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate union type field descriptors");
+    }
+
+    /* Build union descriptors (offset = 0 for all fields) */
+    for (size_t i = 0; i < union_def->field_count; i++) {
+        const nmo_struct_field_def_t *field_def = &fields[i];
+        nmo_struct_descriptor_t *field_desc = &union_fields[i];
+
+        field_desc->name = nmo_arena_strdup(arena, field_def->name);
+        if (!field_desc->name) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                    "Failed to copy union field name");
+        }
+
+        /* Determine array count again for size calc */
+        uint32_t array_count = 0;
+        nmo_guid_t field_type_guid = field_def->type_guid;
+        nmo_guid_t pointee_guid = NMO_NULL_GUID;
+        uint32_t pointer_depth = 0;
+        if (field_def->type_name) {
+            nmo_type_parse_result_t parse_result;
+            nmo_status_t parse_res = nmo_type_registry_parse_type_name(
+                type_registry, field_def->type_name, &parse_result);
+            if (parse_res == NMO_OK) {
+                field_type_guid = parse_result.base_type_guid;
+                array_count = parse_result.array_count;
+                if (parse_result.is_pointer) {
+                    pointee_guid = parse_result.base_type_guid;
+                    pointer_depth = parse_result.pointer_depth;
+                    field_type_guid = NMO_TYPE_GUID_POINTER;
+                }
+            }
+        }
+
+        const nmo_type_descriptor_t *field_type = resolve_field_type(type_registry, &field_type_guid);
+        if (!field_type) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Field type not found for union field '%s'",
+                                    field_def->name ? field_def->name : "(unnamed)");
+        }
+
+        uint32_t element_size = field_type->size;
+        uint32_t total_field_size = element_size;
+        if (array_count > 0) {
+            total_field_size = element_size * array_count;
+        }
+
+        field_desc->type_guid = field_type_guid;
+        field_desc->offset = 0;
+        field_desc->size = total_field_size;
+        field_desc->array_count = array_count;
+        field_desc->flags = field_def->flags;
+        field_desc->description = field_def->description ?
+            nmo_arena_strdup(arena, field_def->description) : NULL;
+        field_desc->pointee_guid = pointee_guid;
+        field_desc->pointer_depth = pointer_depth;
+
+        memset(&type_fields[i], 0, sizeof(type_fields[i]));
+        type_fields[i].name = field_desc->name;
+        type_fields[i].description = field_desc->description;
+        type_fields[i].type_guid = field_type_guid;
+        type_fields[i].offset = 0;
+        type_fields[i].size = total_field_size;
+        type_fields[i].flags = field_def->flags;
+        if (array_count > 0) {
+            type_fields[i].flags |= NMO_FIELD_REPEATED;
+        }
+        type_fields[i].added_version = 0;
+        type_fields[i].removed_version = 0;
+        type_fields[i].semantic = NMO_SEMANTIC_NONE;
+        type_fields[i].units = NMO_UNITS_NONE;
+        type_fields[i].default_value = field_def->default_value;
+    }
+
+    /* Allocate specialized metadata */
+    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
+    if (!spec_meta) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate specialized metadata");
+    }
+
+    spec_meta->type_id = NMO_TYPE_ID_INVALID;
+    spec_meta->metadata_type = NMO_METADATA_TYPE_UNION;
+    spec_meta->reserved = 0;
+    spec_meta->union_meta.fields = union_fields;
+    spec_meta->union_meta.field_count = union_def->field_count;
+
+    /* Allocate type descriptor */
+    nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
+        nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
+    if (!type_desc) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to allocate union type descriptor");
+    }
+
+    memset(type_desc, 0, sizeof(nmo_type_descriptor_t));
+
+    const char *type_name = nmo_arena_strdup(arena, union_def->name);
+    if (!type_name) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to copy union type name");
+    }
+
+    type_desc->guid = type_guid;
+    type_desc->name = type_name;
+    type_desc->size = total_size;
+    type_desc->alignment = max_align;
+    type_desc->category = NMO_TYPE_CATEGORY_UNION;
+    type_desc->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE;
+    if (union_def->packed) {
+        type_desc->flags |= NMO_TYPE_FLAG_POD;
+    }
+    type_desc->fields = type_fields;
+    type_desc->field_count = union_def->field_count;
+    type_desc->vtable = NULL;
+    type_desc->description = union_def->description ?
+        nmo_arena_strdup(arena, union_def->description) : NULL;
+    type_desc->valid = true;
+
+    nmo_status_t result = nmo_type_registry_register(type_registry, type_desc);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    nmo_type_descriptor_t *registered =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
+    if (!registered) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                                "Failed to find registered union type");
+    }
+
+    spec_meta->type_id = registered->id;
+
+    size_t metadata_index = type_registry->metadata.count;
+    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
+    if (append_res != NMO_OK) {
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
+        return append_res;
+    }
+
+    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
+                                                    &registered->id,
+                                                    &metadata_index);
+    if (map_result != NMO_OK) {
+        nmo_arena_array_pop(&type_registry->metadata, NULL);
+        (void)nmo_type_registry_unregister(type_registry, type_guid);
+        return map_result;
+    }
+
+    registered->specialized_index = (uint32_t)metadata_index;
+
+    if (out_guid) {
+        *out_guid = type_guid;
+    }
+
+    return NMO_OK;
 }

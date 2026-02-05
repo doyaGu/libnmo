@@ -16,10 +16,25 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterin, nmo_ckparameterin_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckparameterin_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterin_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckparameterin_state_t, type_guid, NMO_GUID_FIELD_GUID),
+    NMO_FIELD_REF(nmo_ckparameterin_state_t, source_id),
+    NMO_FIELD(nmo_ckparameterin_state_t, is_shared, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckparameterin_state_t, is_disabled, NMO_GUID_FIELD_UINT8)
+};
 
 /* =============================================================================
  * CKParameterIn DESERIALIZATION/SERIALIZATION
@@ -163,11 +178,12 @@ nmo_status_t nmo_ckparameterin_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckparameterin,
     nmo_ckparameterin_state_t,
     nmo_ckparameterin_serialize,
     nmo_ckparameterin_deserialize,
+    nmo_ckparameterin_fields,
     NMO_GUID_CKPARAMETERIN,
     "CKParameterIn",
     NMO_CID_PARAMETERIN,

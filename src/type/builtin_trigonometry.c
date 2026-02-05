@@ -6,7 +6,7 @@
  * Supports FLOAT type only.
  */
 
-#include "type/builtin_operations.h"
+#include "type/nmo_builtin_operations.h"
 #include "core/nmo_error.h"
 #include <math.h>
 

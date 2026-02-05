@@ -9,8 +9,12 @@
  */
 
 #include "object/nmo_object_types.h"
-#include "type/type_system.h"
-#include "type/type_string.h"
+#include "object/nmo_object_enums.h"
+#include "object/nmo_object_structs.h"
+#include "type/nmo_builtin_operations.h"
+#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_type_string.h"
 #include "object/nmo_class_ids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -267,6 +271,13 @@ nmo_status_t nmo_register_mesh_types(nmo_type_registry_t *registry) {
 nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
+
+    if (nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_INT) == NULL) {
+        NMO_RETURN_IF_ERROR(nmo_register_builtin_types(registry));
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_register_object_enums(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_object_structs(registry));
 
     /* Register in hierarchy order (base types first) */
     NMO_RETURN_IF_ERROR(nmo_register_base_object_types(registry));

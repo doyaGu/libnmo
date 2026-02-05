@@ -19,17 +19,46 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_ck2dentity_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_struct_guids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksprite, nmo_cksprite_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cksprite_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_cksprite_state_t, entity),
+                    sizeof(nmo_ck2dentity_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cksprite_state_t, has_sprite_ref, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_REF(nmo_cksprite_state_t, sprite_ref_id),
+    NMO_FIELD(nmo_cksprite_state_t, has_bitmap_data, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_cksprite_state_t, bitmap_data),
+                    sizeof(nmo_ckbitmapdata_t), NMO_GUID_FIELD_CKBITMAPDATA,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cksprite_state_t, has_transparency, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, is_transparent, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_NAMED("transparent_color", offsetof(nmo_cksprite_state_t, transparent_color),
+                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cksprite_state_t, has_slot, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, current_slot, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_cksprite_state_t, has_save_options, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, save_options, NMO_GUID_FIELD_CK_TEXTURE_SAVEOPTIONS),
+    NMO_FIELD_ARRAY(nmo_cksprite_state_t, bitmap_properties, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cksprite_state_t, bitmap_properties_size, NMO_GUID_FIELD_UINT64)
+};
 
 /* =============================================================================
  * HELPER FUNCTIONS
@@ -400,15 +429,108 @@ nmo_status_t nmo_cksprite_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_cksprite_copy_bitmapdata(
+    nmo_arena_t *arena,
+    nmo_ckbitmapdata_t *dst,
+    const nmo_ckbitmapdata_t *src)
+{
+    if (src->pixel_data_size > 0) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->pixel_data,
+                                                  src->pixel_data, src->pixel_data_size));
+    }
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->palette_data,
+                                              src->palette_data, src->palette_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->system_copy_data,
+                                              src->system_copy_data, src->system_copy_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->video_backup_data,
+                                              src->video_backup_data, src->video_backup_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->pixels_data,
+                                              src->pixels_data, src->pixels_size));
+    return nmo_object_copy_bytes(arena, (void **)&dst->raw_chunk_data,
+                                 src->raw_chunk_data, src->raw_chunk_size);
+}
+
+static nmo_status_t cksprite_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_cksprite_state_t *s = src;
+    nmo_cksprite_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->entity.base.base.base.raw_tail,
+                                              s->entity.base.base.base.raw_tail,
+                                              s->entity.base.base.base.raw_tail_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->entity.base.base.script_ids,
+                                              s->entity.base.base.script_ids, sizeof(nmo_object_id_t),
+                                              s->entity.base.base.script_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->entity.base.base.attribute_parameter_ids,
+                                              s->entity.base.base.attribute_parameter_ids, sizeof(nmo_object_id_t),
+                                              s->entity.base.base.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->entity.base.base.attribute_types,
+                                              s->entity.base.base.attribute_types, sizeof(uint32_t),
+                                              s->entity.base.base.attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->entity.base.base.attribute_chunks,
+                                                    s->entity.base.base.attribute_chunks,
+                                                    s->entity.base.base.attribute_chunk_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->entity.base.base.legacy_attributes_raw,
+                                              s->entity.base.base.legacy_attributes_raw,
+                                              s->entity.base.base.legacy_attributes_size));
+
+    if (s->has_bitmap_data) {
+        NMO_RETURN_IF_ERROR(nmo_cksprite_copy_bitmapdata(arena, &d->bitmap_data, &s->bitmap_data));
+    } else {
+        d->bitmap_data.pixel_data = NULL;
+        d->bitmap_data.palette_data = NULL;
+        d->bitmap_data.system_copy_data = NULL;
+        d->bitmap_data.video_backup_data = NULL;
+        d->bitmap_data.pixels_data = NULL;
+        d->bitmap_data.raw_chunk_data = NULL;
+    }
+    if (s->has_save_options) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->bitmap_properties,
+                                                  s->bitmap_properties, s->bitmap_properties_size));
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t cksprite_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_cksprite_state_t *s = instance;
+    if (s->has_bitmap_data) {
+        NMO_VALIDATE_BYTES(s->bitmap_data.pixel_data, s->bitmap_data.pixel_data_size,
+                           "bitmap_data.pixel_data");
+        NMO_VALIDATE_BYTES(s->bitmap_data.palette_data, s->bitmap_data.palette_size,
+                           "bitmap_data.palette_data");
+        NMO_VALIDATE_BYTES(s->bitmap_data.system_copy_data, s->bitmap_data.system_copy_size,
+                           "bitmap_data.system_copy_data");
+        NMO_VALIDATE_BYTES(s->bitmap_data.video_backup_data, s->bitmap_data.video_backup_size,
+                           "bitmap_data.video_backup_data");
+        NMO_VALIDATE_BYTES(s->bitmap_data.pixels_data, s->bitmap_data.pixels_size,
+                           "bitmap_data.pixels_data");
+        NMO_VALIDATE_BYTES(s->bitmap_data.raw_chunk_data, s->bitmap_data.raw_chunk_size,
+                           "bitmap_data.raw_chunk_data");
+    }
+    NMO_VALIDATE_BYTES(s->bitmap_properties, s->bitmap_properties_size, "bitmap_properties");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     cksprite,
     nmo_cksprite_state_t,
     nmo_cksprite_serialize,
     nmo_cksprite_deserialize,
+    nmo_cksprite_fields,
     NMO_GUID_CKSPRITE,
     "CKSprite",
     NMO_CID_SPRITE,

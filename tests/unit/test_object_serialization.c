@@ -5,7 +5,7 @@
 
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_arena.h"

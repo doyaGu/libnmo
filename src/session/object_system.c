@@ -21,7 +21,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"

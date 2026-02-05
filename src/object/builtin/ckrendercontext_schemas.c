@@ -12,11 +12,22 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <string.h>
 #include <stddef.h>
 #include <stdalign.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckrendercontext, nmo_ckrendercontext_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckrendercontext_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckrendercontext_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0)
+};
 
 static nmo_status_t nmo_ckrendercontext_deserialize_internal(
     nmo_ckrendercontext_state_t *out_state,
@@ -37,11 +48,12 @@ static nmo_status_t nmo_ckrendercontext_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckrendercontext,
     nmo_ckrendercontext_state_t,
     nmo_ckrendercontext_serialize,
     nmo_ckrendercontext_deserialize,
+    nmo_ckrendercontext_fields,
     NMO_GUID_CKRENDERCONTEXT,
     "CKRenderContext",
     NMO_CID_RENDERCONTEXT,

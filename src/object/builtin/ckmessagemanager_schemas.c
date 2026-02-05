@@ -12,14 +12,20 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
+#include "object/nmo_manager_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stdalign.h>
 #include <stddef.h>
 #include <string.h>
+
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmessagemanager, nmo_ckmessagemanager_state_t)
 
 /* =============================================================================
  * IDENTIFIER CONSTANTS
@@ -27,6 +33,15 @@
 
 /* From reference/src/CKMessageManager.cpp */
 #define CK_STATESAVE_MESSAGEMANAGER 0x53
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckmessagemanager_fields[] = {
+    NMO_FIELD(nmo_ckmessagemanager_state_t, message_type_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckmessagemanager_state_t, message_type_names, NMO_GUID_FIELD_STRING)
+};
 
 /* =============================================================================
  * CKMessageManager DESERIALIZATION
@@ -169,4 +184,20 @@ nmo_status_t nmo_ckmessagemanager_serialize(
 
     NMO_RETURN_OK();
 }
+
+/* =============================================================================
+ * Vtable + registration
+ * ============================================================================= */
+
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+    ckmessagemanager,
+    nmo_ckmessagemanager_state_t,
+    nmo_ckmessagemanager_serialize,
+    nmo_ckmessagemanager_deserialize,
+    nmo_ckmessagemanager_fields,
+    NMO_MANAGER_GUID_MESSAGE,
+    "CKMessageManager",
+    0,
+    NMO_GUID_NULL
+)
 

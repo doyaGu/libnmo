@@ -6,6 +6,7 @@
 #include "object/nmo_ckkinematicchain_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "type/nmo_reflection.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -41,15 +42,25 @@ static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+static const nmo_type_field_t nmo_ckkinematicchain_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckkinematicchain_state_t, base),
+                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckkinematicchain_state_t, has_chain_data, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD_REF(nmo_ckkinematicchain_state_t, start_effector_id),
+    NMO_FIELD_REF(nmo_ckkinematicchain_state_t, end_effector_id)
+};
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckkinematicchain,
     nmo_ckkinematicchain_state_t,
     nmo_ckkinematicchain_serialize,
     nmo_ckkinematicchain_deserialize,
+    nmo_ckkinematicchain_fields,
     NMO_GUID_CKKINEMATICCHAIN,
     "CKKinematicChain",
     NMO_CID_KINEMATICCHAIN,

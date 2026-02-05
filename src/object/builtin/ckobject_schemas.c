@@ -12,14 +12,24 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <string.h>
 #include <stdalign.h>
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckobject_fields[] = {
+    NMO_FIELD(nmo_ckobject_state_t, visibility_flags, NMO_GUID_FIELD_CK_OBJECT_FLAGS)
+};
 
 /* =============================================================================
  * CKObject LIFECYCLE
@@ -182,11 +192,12 @@ nmo_status_t nmo_ckobject_finish_loading(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     ckobject,
     nmo_ckobject_state_t,
     nmo_ckobject_serialize,
     nmo_ckobject_deserialize,
+    nmo_ckobject_fields,
     NMO_GUID_CKOBJECT,
     "CKObject",
     NMO_CID_OBJECT,

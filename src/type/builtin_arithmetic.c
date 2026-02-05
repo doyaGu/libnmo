@@ -6,8 +6,8 @@
  * Supports INT and FLOAT types.
  */
 
-#include "type/builtin_operations.h"
-#include "type/operation_system.h"
+#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operation_system.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
 #include <math.h>

@@ -9,15 +9,66 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksound, nmo_cksound_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckwavesound, nmo_ckwavesound_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmidisound, nmo_ckmidisound_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_cksound_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_cksound_state_t, base),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cksound_state_t, save_options, NMO_GUID_FIELD_CK_SOUND_SAVEOPTIONS),
+    NMO_FIELD_OPT(nmo_cksound_state_t, file_name, NMO_GUID_FIELD_STRING)
+};
+
+static const nmo_type_field_t nmo_ckwavesound_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckwavesound_state_t, base),
+                    sizeof(nmo_cksound_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckwavesound_state_t, has_wave_file_name, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_OPT(nmo_ckwavesound_state_t, wave_file_name, NMO_GUID_FIELD_STRING),
+    NMO_FIELD(nmo_ckwavesound_state_t, has_duration, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckwavesound_state_t, duration, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckwavesound_state_t, has_data2, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckwavesound_state_t, state_flags, NMO_GUID_FIELD_CK_WAVESOUND_STATE),
+    NMO_FIELD(nmo_ckwavesound_state_t, priority, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, gain, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, pan, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, pitch, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, cone_in_angle, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_angle, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_gain, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, min_distance, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, max_distance, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, distance_behavior, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_REF(nmo_ckwavesound_state_t, attached_object_id),
+    NMO_FIELD_NAMED("position", offsetof(nmo_ckwavesound_state_t, position),
+                    sizeof(nmo_vx_vector3_t), NMO_GUID_FIELD_VECTOR3,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("direction", offsetof(nmo_ckwavesound_state_t, direction),
+                    sizeof(nmo_vx_vector3_t), NMO_GUID_FIELD_VECTOR3,
+                    NMO_FIELD_REQUIRED, 0)
+};
+
+static const nmo_type_field_t nmo_ckmidisound_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckmidisound_state_t, base),
+                    sizeof(nmo_cksound_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckmidisound_state_t, has_midi_file_name, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD_OPT(nmo_ckmidisound_state_t, midi_file_name, NMO_GUID_FIELD_STRING)
+};
 
 /* =============================================================================
  * CKSound
@@ -312,37 +363,111 @@ nmo_status_t nmo_ckmidisound_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t cksound_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_cksound_state_t *s = src;
+    nmo_cksound_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    return nmo_object_copy_string(arena, &d->file_name, s->file_name);
+}
+
+static nmo_status_t cksound_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckwavesound_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckwavesound_state_t *s = src;
+    nmo_ckwavesound_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string(arena, &d->base.file_name, s->base.file_name));
+    return nmo_object_copy_string(arena, &d->wave_file_name, s->wave_file_name);
+}
+
+static nmo_status_t ckwavesound_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckmidisound_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckmidisound_state_t *s = src;
+    nmo_ckmidisound_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string(arena, &d->base.file_name, s->base.file_name));
+    return nmo_object_copy_string(arena, &d->midi_file_name, s->midi_file_name);
+}
+
+static nmo_status_t ckmidisound_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     cksound,
     nmo_cksound_state_t,
     nmo_cksound_serialize,
     nmo_cksound_deserialize,
+    nmo_cksound_fields,
     NMO_GUID_CKSOUND,
     "CKSound",
     NMO_CID_SOUND,
     NMO_GUID_CKBEOBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckwavesound,
     nmo_ckwavesound_state_t,
     nmo_ckwavesound_serialize,
     nmo_ckwavesound_deserialize,
+    nmo_ckwavesound_fields,
     NMO_GUID_CKWAVESOUND,
     "CKWaveSound",
     NMO_CID_WAVESOUND,
     NMO_GUID_CKSOUND
 )
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckmidisound,
     nmo_ckmidisound_state_t,
     nmo_ckmidisound_serialize,
     nmo_ckmidisound_deserialize,
+    nmo_ckmidisound_fields,
     NMO_GUID_CKMIDISOUND,
     "CKMidiSound",
     NMO_CID_MIDISOUND,

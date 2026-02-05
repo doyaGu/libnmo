@@ -166,7 +166,7 @@ typedef struct nmo_cktexture_bitmap2_slot {
  * - Identifier 0x00080000: Save format (optional)
  * - Identifier 0x00400000: User mipmaps (optional)
  */
-typedef struct nmo_ck_texture_state {
+typedef struct nmo_cktexture_state {
     nmo_ckbeobject_state_t base;
 
     /* Movie / filenames */
@@ -206,7 +206,7 @@ typedef struct nmo_ck_texture_state {
     uint8_t has_user_mipmaps;
     uint32_t user_mipmap_count;
     nmo_cktexture_raw_slot_t *user_mipmaps;
-} nmo_ck_texture_state_t;
+} nmo_cktexture_state_t;
 
 /* ========================================================================
  * Public API Functions

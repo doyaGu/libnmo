@@ -6,8 +6,8 @@
  */
 
 #include "test_framework.h"
-#include "type/dynamic_types.h"
-#include "type/type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 #include <string.h>

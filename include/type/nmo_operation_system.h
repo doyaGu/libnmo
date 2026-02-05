@@ -1,5 +1,5 @@
-﻿/**
- * @file operation_system.h
+/**
+ * @file nmo_operation_system.h
  * @brief Parameter operation system (Phase 6.1)
  *
  * Implements CKParameter-compatible operation system with 4D lookup tree.
@@ -21,7 +21,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 
 #ifdef __cplusplus
 extern "C" {

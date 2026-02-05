@@ -16,11 +16,24 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stdalign.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterout, nmo_ckparameterout_state_t)
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckparameterout_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterout_state_t, base),
+                    sizeof(nmo_ckparameter_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_REF_ARRAY(nmo_ckparameterout_state_t, destination_ids),
+    NMO_FIELD(nmo_ckparameterout_state_t, destination_count, NMO_GUID_FIELD_UINT32)
+};
 
 /* =============================================================================
  * CKParameterOut DESERIALIZATION/SERIALIZATION
@@ -109,15 +122,45 @@ nmo_status_t nmo_ckparameterout_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckparameterout_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckparameterout_state_t *s = src;
+    nmo_ckparameterout_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.buffer_data,
+                                              s->base.buffer_data, s->base.buffer_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->base.subchunk, s->base.subchunk));
+    return nmo_object_copy_array(arena, (void **)&d->destination_ids,
+                                 s->destination_ids, sizeof(nmo_object_id_t), s->destination_count);
+}
+
+static nmo_status_t ckparameterout_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckparameterout_state_t *s = instance;
+    NMO_VALIDATE_BYTES(s->base.buffer_data, s->base.buffer_size, "buffer_data");
+    NMO_VALIDATE_COUNT(s->destination_ids, s->destination_count, "destination_ids");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckparameterout,
     nmo_ckparameterout_state_t,
     nmo_ckparameterout_serialize,
     nmo_ckparameterout_deserialize,
+    nmo_ckparameterout_fields,
     NMO_GUID_CKPARAMETEROUT,
     "CKParameterOut",
     NMO_CID_PARAMETEROUT,

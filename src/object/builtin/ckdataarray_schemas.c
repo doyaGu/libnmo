@@ -22,6 +22,8 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "type/nmo_reflection.h"
+#include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -34,6 +36,23 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         state->key_column = -1; \
     } while (0),
     ((void)0))
+
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckdataarray_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckdataarray_state_t, base),
+                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckdataarray_state_t, column_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, column_formats, NMO_GUID_FIELD_CKDATAARRAYCOLUMNFORMAT),
+    NMO_FIELD(nmo_ckdataarray_state_t, row_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, rows, NMO_GUID_FIELD_CKDATAARRAYROW),
+    NMO_FIELD(nmo_ckdataarray_state_t, order, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckdataarray_state_t, column_index, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckdataarray_state_t, key_column, NMO_GUID_FIELD_INT32)
+};
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
@@ -356,15 +375,78 @@ nmo_status_t nmo_ckdataarray_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckdataarray_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckdataarray_state_t *s = src;
+    nmo_ckdataarray_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+
+    if (s->column_count > 0) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->column_formats,
+                                                  s->column_formats, sizeof(nmo_ckdataarray_column_format_t),
+                                                  s->column_count));
+        for (uint32_t i = 0; i < s->column_count; ++i) {
+            if (s->column_formats[i].name) {
+                d->column_formats[i].name = nmo_arena_strdup(arena, s->column_formats[i].name);
+            }
+        }
+    }
+
+    if (s->row_count > 0) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->rows,
+                                                  s->rows, sizeof(nmo_ckdataarray_row_t), s->row_count));
+        for (uint32_t r = 0; r < s->row_count; ++r) {
+            const nmo_ckdataarray_row_t *sr = &s->rows[r];
+            nmo_ckdataarray_row_t *dr = &d->rows[r];
+            if (sr->column_count > 0) {
+                NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&dr->cells,
+                                                          sr->cells, sizeof(nmo_ckdataarray_cell_t),
+                                                          sr->column_count));
+                for (uint32_t c = 0; c < sr->column_count; ++c) {
+                    nmo_ckdataarray_cell_t *cell = &dr->cells[c];
+                    if (d->column_formats && c < d->column_count) {
+                        nmo_ck_arraytype_t type_id = d->column_formats[c].type;
+                        if (type_id == NMO_ARRAYTYPE_STRING && sr->cells[c].string_value) {
+                            cell->string_value = nmo_arena_strdup(arena, sr->cells[c].string_value);
+                        } else if (type_id == NMO_ARRAYTYPE_PARAMETER && sr->cells[c].parameter_chunk) {
+                            cell->parameter_chunk = nmo_chunk_clone(sr->cells[c].parameter_chunk, arena);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t ckdataarray_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckdataarray_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->column_formats, s->column_count, "column_formats");
+    NMO_VALIDATE_COUNT(s->rows, s->row_count, "rows");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckdataarray,
     nmo_ckdataarray_state_t,
     nmo_ckdataarray_serialize,
     nmo_ckdataarray_deserialize,
+    nmo_ckdataarray_fields,
     NMO_GUID_CKDATAARRAY,
     "CKDataArray",
     NMO_CID_DATAARRAY,

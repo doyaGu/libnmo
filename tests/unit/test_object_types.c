@@ -5,7 +5,7 @@
 
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
-#include "type/type_system.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include <string.h>
@@ -158,7 +158,7 @@ TEST(object_types, 3d_entity_hierarchy) {
     ASSERT_NE(NULL, entity3d);
     ASSERT_NE(NULL, camera);
 
-    /* Verify hierarchy: CKCamera â†?CK3dEntity â†?CKRenderObject â†?CKBeObject â†?CKSceneObject â†?CKObject */
+    /* Verify hierarchy: CKCamera ï¿½?CK3dEntity ï¿½?CKRenderObject ï¿½?CKBeObject ï¿½?CKSceneObject ï¿½?CKObject */
     ASSERT_TRUE(nmo_type_is_derived_from(registry, camera->id, entity3d->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, entity3d->id, renderobject->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, renderobject->id, beobject->id));

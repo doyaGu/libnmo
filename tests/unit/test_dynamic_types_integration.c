@@ -11,8 +11,9 @@
  */
 
 #include "test_framework.h"
-#include "type/dynamic_types.h"
-#include "type/type_system.h"
+#include "type/nmo_dynamic_types.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_builtin_type_guids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -38,7 +39,7 @@ static void setup(void) {
     nmo_type_descriptor_t *int_type = (nmo_type_descriptor_t*)
         nmo_arena_alloc(test_arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     memset(int_type, 0, sizeof(nmo_type_descriptor_t));
-    int_type->guid = (nmo_guid_t){0x6FED1D00, 0x00000001};
+    int_type->guid = NMO_TYPE_GUID_INT;
     int_type->name = "int";
     int_type->size = 4;
     int_type->alignment = 4;
@@ -50,7 +51,7 @@ static void setup(void) {
     nmo_type_descriptor_t *float_type = (nmo_type_descriptor_t*)
         nmo_arena_alloc(test_arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     memset(float_type, 0, sizeof(nmo_type_descriptor_t));
-    float_type->guid = (nmo_guid_t){0x6FED1D00, 0x00000002};
+    float_type->guid = NMO_TYPE_GUID_FLOAT;
     float_type->name = "float";
     float_type->size = 4;
     float_type->alignment = 4;
@@ -62,7 +63,7 @@ static void setup(void) {
     nmo_type_descriptor_t *bool_type = (nmo_type_descriptor_t*)
         nmo_arena_alloc(test_arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
     memset(bool_type, 0, sizeof(nmo_type_descriptor_t));
-    bool_type->guid = (nmo_guid_t){0x6FED1D00, 0x00000003};
+    bool_type->guid = NMO_TYPE_GUID_BOOL;
     bool_type->name = "bool";
     bool_type->size = 1;
     bool_type->alignment = 1;

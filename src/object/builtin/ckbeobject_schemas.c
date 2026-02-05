@@ -22,10 +22,13 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
+#include "object/nmo_manager_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -35,9 +38,29 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbeobject, nmo_ckbeobject_state_t)
 
-/* Attribute Manager GUID from CKEnums.h */
-#define ATTRIBUTE_MANAGER_GUID_D1    0x3d242466u
-#define ATTRIBUTE_MANAGER_GUID_D2    0x00000000u
+/* =============================================================================
+ * REFLECTION FIELDS
+ * ============================================================================= */
+
+static const nmo_type_field_t nmo_ckbeobject_fields[] = {
+    /* Base class */
+    NMO_FIELD_NAMED("base", offsetof(nmo_ckbeobject_state_t, base),
+                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    NMO_FIELD_REQUIRED, 0),
+    /* Scripts */
+    NMO_FIELD_REF_ARRAY(nmo_ckbeobject_state_t, script_ids),
+    NMO_FIELD(nmo_ckbeobject_state_t, script_count, NMO_GUID_FIELD_UINT32),
+    /* Priority */
+    NMO_FIELD(nmo_ckbeobject_state_t, priority, NMO_GUID_FIELD_INT32),
+    /* Attributes */
+    NMO_FIELD_REF_ARRAY(nmo_ckbeobject_state_t, attribute_parameter_ids),
+    NMO_FIELD_ARRAY(nmo_ckbeobject_state_t, attribute_types, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckbeobject_state_t, attribute_count, NMO_GUID_FIELD_UINT32),
+    /* Single activity */
+    NMO_FIELD(nmo_ckbeobject_state_t, has_single_activity, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ckbeobject_state_t, single_activity_flags, NMO_GUID_FIELD_CK_SCENEOBJECTACTIVITY_FLAGS)
+};
+
 
 /* DATAS version flag */
 #define CK_DATAS_VERSION_FLAG        0x10000000
@@ -281,8 +304,7 @@ load_attributes:
             if (result == NMO_OK && seq_count == attr_count) {
                 /* Verify it's the attribute manager GUID 
                  * Reference: CKBeObject.cpp line 556 checks managerGuid == ATTRIBUTE_MANAGER_GUID */
-                if (manager_guid.d1 == ATTRIBUTE_MANAGER_GUID_D1 && 
-                    manager_guid.d2 == ATTRIBUTE_MANAGER_GUID_D2) {
+                if (nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
                     /* Read attribute types from manager sequence */
                     for (size_t i = 0; i < attr_count; i++) {
                         uint32_t attr_type;
@@ -437,7 +459,7 @@ nmo_status_t nmo_ckbeobject_serialize(
         }
 
         /* Write manager sequence for attribute types */
-        nmo_guid_t attr_mgr_guid = {ATTRIBUTE_MANAGER_GUID_D1, ATTRIBUTE_MANAGER_GUID_D2};
+        nmo_guid_t attr_mgr_guid = NMO_MANAGER_GUID_ATTRIBUTE;
         result = nmo_chunk_start_manager_sequence(out_chunk, attr_mgr_guid, in_state->attribute_count);
         if (result != NMO_OK) return result;
 
@@ -459,15 +481,55 @@ nmo_status_t nmo_ckbeobject_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t ckbeobject_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_ckbeobject_state_t *s = src;
+    nmo_ckbeobject_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.raw_tail,
+                                              s->base.raw_tail, s->base.raw_tail_size));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->script_ids,
+                                              s->script_ids, sizeof(nmo_object_id_t), s->script_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->attribute_parameter_ids,
+                                              s->attribute_parameter_ids, sizeof(nmo_object_id_t), s->attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->attribute_types,
+                                              s->attribute_types, sizeof(uint32_t), s->attribute_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->attribute_chunks,
+                                                    s->attribute_chunks, s->attribute_chunk_count));
+    return nmo_object_copy_bytes(arena, (void **)&d->legacy_attributes_raw,
+                                 s->legacy_attributes_raw, s->legacy_attributes_size);
+}
+
+static nmo_status_t ckbeobject_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    const nmo_ckbeobject_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->script_ids, s->script_count, "script_ids");
+    NMO_VALIDATE_COUNT(s->attribute_parameter_ids, s->attribute_count, "attribute_parameter_ids");
+    NMO_VALIDATE_COUNT(s->attribute_types, s->attribute_count, "attribute_types");
+    NMO_VALIDATE_COUNT(s->attribute_chunks, s->attribute_chunk_count, "attribute_chunks");
+    NMO_VALIDATE_BYTES(s->legacy_attributes_raw, s->legacy_attributes_size, "legacy_attributes_raw");
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA(
+NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     ckbeobject,
     nmo_ckbeobject_state_t,
     nmo_ckbeobject_serialize,
     nmo_ckbeobject_deserialize,
+    nmo_ckbeobject_fields,
     NMO_GUID_CKBEOBJECT,
     "CKBeObject",
     NMO_CID_BEOBJECT,

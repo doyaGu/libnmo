@@ -6,6 +6,8 @@
  */
 
 #include "app/nmo_inspector.h"
+#include "app/nmo_ansi.h"
+#include "app/nmo_hexdump.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
@@ -14,16 +16,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
-
-/* ANSI color codes */
-#define ANSI_RESET   "\x1b[0m"
-#define ANSI_BOLD    "\x1b[1m"
-#define ANSI_RED     "\x1b[31m"
-#define ANSI_GREEN   "\x1b[32m"
-#define ANSI_YELLOW  "\x1b[33m"
-#define ANSI_BLUE    "\x1b[34m"
-#define ANSI_MAGENTA "\x1b[35m"
-#define ANSI_CYAN    "\x1b[36m"
 
 void nmo_inspector_init_options(nmo_inspector_options_t *options) {
     if (options == NULL) return;
@@ -56,7 +48,7 @@ static void print_colored(
     }
     vfprintf(stream, format, args);
     if (colorize) {
-        fprintf(stream, "%s", ANSI_RESET);
+        fprintf(stream, "%s", NMO_ANSI_RESET);
     }
     
     va_end(args);
@@ -71,46 +63,6 @@ static void print_indent(FILE *stream, size_t depth) {
     }
 }
 
-/**
- * @brief Dump chunk data as hex
- */
-static void dump_hex_data(
-    FILE *stream,
-    const uint8_t *data,
-    size_t size,
-    size_t bytes_per_line,
-    bool colorize
-) {
-    for (size_t offset = 0; offset < size; offset += bytes_per_line) {
-        /* Offset */
-        print_colored(stream, colorize, ANSI_CYAN, "    %08zx: ", offset);
-        
-        /* Hex bytes */
-        size_t line_bytes = (offset + bytes_per_line <= size) 
-                           ? bytes_per_line 
-                           : (size - offset);
-        
-        for (size_t i = 0; i < bytes_per_line; i++) {
-            if (i < line_bytes) {
-                fprintf(stream, "%02x ", data[offset + i]);
-            } else {
-                fprintf(stream, "   ");
-            }
-            
-            if (i == bytes_per_line / 2 - 1) {
-                fprintf(stream, " ");
-            }
-        }
-        
-        /* ASCII representation */
-        fprintf(stream, " |");
-        for (size_t i = 0; i < line_bytes; i++) {
-            uint8_t c = data[offset + i];
-            fprintf(stream, "%c", isprint(c) ? c : '.');
-        }
-        fprintf(stream, "|\n");
-    }
-}
 
 /**
  * @brief Dump chunk recursively
@@ -135,26 +87,26 @@ static int dump_chunk_recursive(
     bool colorize = options->colorize;
     
     print_indent(stream, depth);
-    print_colored(stream, colorize, ANSI_BOLD, "Chunk");
+    print_colored(stream, colorize, NMO_ANSI_BOLD, "Chunk");
     fprintf(stream, " {\n");
     
     /* Chunk ID */
     uint32_t chunk_id = nmo_chunk_get_class_id(chunk);
     print_indent(stream, depth + 1);
-    print_colored(stream, colorize, ANSI_YELLOW, "ID: ");
+    print_colored(stream, colorize, NMO_ANSI_YELLOW, "ID: ");
     fprintf(stream, "%u (0x%08x)\n", chunk_id, chunk_id);
     
     /* Data size */
     size_t data_size = 0;
     const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
     print_indent(stream, depth + 1);
-    print_colored(stream, colorize, ANSI_YELLOW, "Data Size: ");
+    print_colored(stream, colorize, NMO_ANSI_YELLOW, "Data Size: ");
     fprintf(stream, "%zu bytes\n", data_size);
     
     /* Data preview */
     if (options->level >= NMO_DUMP_DETAILED && data_size > 0) {
         print_indent(stream, depth + 1);
-        print_colored(stream, colorize, ANSI_YELLOW, "Data Preview:\n");
+        print_colored(stream, colorize, NMO_ANSI_YELLOW, "Data Preview:\n");
         
         if (data != NULL) {
             size_t preview_size = (options->level >= NMO_DUMP_FULL) 
@@ -162,7 +114,21 @@ static int dump_chunk_recursive(
                                  : (data_size > 64 ? 64 : data_size);
             
             if (options->show_hex) {
-                dump_hex_data(stream, data, preview_size, options->hex_bytes, colorize);
+                nmo_hexdump_options_t hd;
+                nmo_hexdump_init_options(&hd);
+                hd.colorize = colorize;
+                hd.bytes_per_line = options->hex_bytes ? options->hex_bytes : 16;
+                hd.group_size = hd.bytes_per_line / 2;
+                hd.indent_spaces = (depth + 2) * 2;
+                hd.ansi.offset = NMO_ANSI_CYAN;
+                hd.ansi.hex = "";
+                hd.ansi.ascii = "";
+                hd.ansi.delim = "";
+                hd.ansi.reset = NMO_ANSI_RESET;
+
+                print_indent(stream, depth + 2);
+                fprintf(stream, "(hexdump -C, first %zu bytes)\n", preview_size);
+                nmo_hexdump_canonical(stream, data, preview_size, &hd);
             } else {
                 /* Simple preview */
                 print_indent(stream, depth + 2);
@@ -189,14 +155,14 @@ static int dump_chunk_recursive(
         uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
         if (sub_count > 0) {
             print_indent(stream, depth + 1);
-            print_colored(stream, colorize, ANSI_YELLOW, "Sub-chunks: ");
+            print_colored(stream, colorize, NMO_ANSI_YELLOW, "Sub-chunks: ");
             fprintf(stream, "%u\n", sub_count);
             
             for (uint32_t i = 0; i < sub_count; i++) {
                 nmo_chunk_t *sub = nmo_chunk_get_sub_chunk(chunk, i);
                 if (sub != NULL) {
                     print_indent(stream, depth + 1);
-                    print_colored(stream, colorize, ANSI_CYAN, "[%u]\n", i);
+                    print_colored(stream, colorize, NMO_ANSI_CYAN, "[%u]\n", i);
                     dump_chunk_recursive(sub, stream, options, depth + 2);
                 }
             }
@@ -321,8 +287,14 @@ int nmo_inspector_hex_dump(
     size_t dump_size = (max_bytes > 0 && max_bytes < data_size) 
                       ? max_bytes 
                       : data_size;
-    
-    dump_hex_data(stream, data, dump_size, bytes_per_line, false);
+
+    nmo_hexdump_options_t hd;
+    nmo_hexdump_init_options(&hd);
+    hd.colorize = false;
+    hd.bytes_per_line = bytes_per_line;
+    hd.group_size = bytes_per_line / 2;
+    hd.indent_spaces = 0;
+    nmo_hexdump_canonical(stream, data, dump_size, &hd);
     
     return (int)dump_size;
 }
