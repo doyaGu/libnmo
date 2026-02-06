@@ -25,10 +25,13 @@
 #include "session/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 
+#include "dsl/nmo_dsl.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 /* ============================================================================
  * Configuration Constants
@@ -778,6 +781,603 @@ static uint64_t nmo_summary_guess_array_count(
     return 0;
 }
 
+/* ============================================================================
+ * Field Path Selection (dot navigation + [index])
+ * ============================================================================ */
+
+typedef enum {
+    NMO_SELECT_STATUS_OK = 0,
+    NMO_SELECT_STATUS_INVALID_ARG,
+    NMO_SELECT_STATUS_PARSE_ERROR,
+    NMO_SELECT_STATUS_NO_REFLECTION,
+    NMO_SELECT_STATUS_FIELD_NOT_FOUND,
+    NMO_SELECT_STATUS_INDEX_REQUIRED,
+    NMO_SELECT_STATUS_INDEX_OOB,
+    NMO_SELECT_STATUS_CANNOT_TRAVERSE,
+} nmo_select_status_t;
+
+static const nmo_type_descriptor_t *nmo_summary_lookup_field_type(
+    const nmo_type_registry_t *registry,
+    nmo_guid_t field_guid)
+{
+    if (!registry) {
+        return NULL;
+    }
+
+    const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(registry, field_guid);
+    if (!field_type && nmo_guid_is_field_type(field_guid)) {
+        nmo_guid_t mapped = nmo_guid_field_to_type(field_guid);
+        field_type = nmo_type_registry_find_by_guid(registry, mapped);
+    }
+    return field_type;
+}
+
+static bool nmo_summary_parse_ident(const char **p, char *out, size_t out_cap) {
+    if (!p || !*p || !out || out_cap == 0) {
+        return false;
+    }
+
+    const char *s = *p;
+    if (*s == '\0' || *s == '.' || *s == '[' || *s == ']') {
+        return false;
+    }
+
+    size_t len = 0;
+    while (*s && *s != '.' && *s != '[' && *s != ']') {
+        if (len + 1 >= out_cap) {
+            return false;
+        }
+        out[len++] = *s++;
+    }
+    out[len] = '\0';
+    *p = s;
+    return len > 0;
+}
+
+static bool nmo_summary_parse_index(const char **p, uint64_t *out_index) {
+    if (!p || !*p || !out_index) {
+        return false;
+    }
+
+    const char *s = *p;
+    if (*s != '[') {
+        return false;
+    }
+    s++;
+
+    if (!isdigit((unsigned char)*s)) {
+        return false;
+    }
+
+    uint64_t idx = 0;
+    while (isdigit((unsigned char)*s)) {
+        uint64_t d = (uint64_t)(*s - '0');
+        if (idx > (UINT64_MAX - d) / 10u) {
+            return false;
+        }
+        idx = (idx * 10u) + d;
+        s++;
+    }
+
+    if (*s != ']') {
+        return false;
+    }
+    s++;
+
+    *out_index = idx;
+    *p = s;
+    return true;
+}
+
+static void nmo_summary_emit_select_error(
+    nmo_summary_output_t *out,
+    yyjson_mut_val *json_select_arr,
+    const char *path,
+    nmo_select_status_t status,
+    const char *detail)
+{
+    const char *msg = "error";
+    switch (status) {
+        case NMO_SELECT_STATUS_INVALID_ARG: msg = "invalid argument"; break;
+        case NMO_SELECT_STATUS_PARSE_ERROR: msg = "parse error"; break;
+        case NMO_SELECT_STATUS_NO_REFLECTION: msg = "no reflection"; break;
+        case NMO_SELECT_STATUS_FIELD_NOT_FOUND: msg = "field not found"; break;
+        case NMO_SELECT_STATUS_INDEX_REQUIRED: msg = "index required"; break;
+        case NMO_SELECT_STATUS_INDEX_OOB: msg = "index out of bounds"; break;
+        case NMO_SELECT_STATUS_CANNOT_TRAVERSE: msg = "cannot traverse"; break;
+        default: msg = "error"; break;
+    }
+
+    if (out->is_json) {
+        yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+        nmo_cli_json_add_str_safe(out->json_doc, item, "path", path ? path : "-");
+        yyjson_mut_obj_add_bool(out->json_doc, item, "ok", false);
+        nmo_cli_json_add_str_safe(out->json_doc, item, "error", msg);
+        if (detail && detail[0]) {
+            nmo_cli_json_add_str_safe(out->json_doc, item, "detail", detail);
+        }
+        yyjson_mut_arr_add_val(json_select_arr, item);
+    } else {
+        char buf[256];
+        if (detail && detail[0]) {
+            snprintf(buf, sizeof(buf), "<%s: %s>", msg, detail);
+        } else {
+            snprintf(buf, sizeof(buf), "<%s>", msg);
+        }
+        nmo_cli_print_kv(out->stream, path ? path : "-", buf, 30, out->colorize);
+    }
+}
+
+static bool nmo_summary_emit_select_path(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    yyjson_mut_val *json_select_arr,
+    const nmo_summary_config_t *config,
+    const char *path)
+{
+    if (!obj || !out || !config || !path || !path[0]) {
+        nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INVALID_ARG, NULL);
+        return false;
+    }
+
+    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
+    if (!registry) {
+        nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INVALID_ARG, "no registry");
+        return false;
+    }
+
+    const nmo_type_descriptor_t *root_type = nmo_summary_get_type_for_object(registry, obj);
+    if (!root_type || !nmo_type_has_reflection(root_type)) {
+        nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_NO_REFLECTION, NULL);
+        return false;
+    }
+
+    const void *root_state = nmo_object_get_state(obj);
+    if (!root_state) {
+        nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INVALID_ARG, "no state");
+        return false;
+    }
+
+    const nmo_type_descriptor_t *cur_type = root_type;
+    const void *cur_instance = root_state;
+
+    const char *p = path;
+    bool emitted = false;
+
+    while (*p) {
+        char field_name[128];
+        if (!nmo_summary_parse_ident(&p, field_name, sizeof(field_name))) {
+            nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_PARSE_ERROR, "bad identifier");
+            return false;
+        }
+
+        bool has_index = false;
+        uint64_t index = 0;
+        if (*p == '[') {
+            has_index = nmo_summary_parse_index(&p, &index);
+            if (!has_index) {
+                nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_PARSE_ERROR, "bad index" );
+                return false;
+            }
+        }
+
+        const nmo_type_field_t *field = nmo_type_get_field_by_name(cur_type, field_name);
+        if (!field) {
+            nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_FIELD_NOT_FOUND, field_name);
+            return false;
+        }
+
+        const void *field_ptr = nmo_field_get_ptr_const(cur_instance, field);
+        const nmo_type_descriptor_t *field_type = nmo_summary_lookup_field_type(registry, field->type_guid);
+
+        const bool is_last = (*p == '\0');
+        const bool has_more = (*p == '.');
+        if (has_more) {
+            p++; /* consume '.' */
+        } else if (!is_last) {
+            nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_PARSE_ERROR, "unexpected character");
+            return false;
+        }
+
+        if (field->flags & NMO_FIELD_REPEATED) {
+            const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
+            uint64_t count = nmo_summary_guess_array_count(cur_type, cur_instance, field);
+
+            if (!has_index) {
+                if (!is_last) {
+                    nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INDEX_REQUIRED, field_name);
+                    return false;
+                }
+
+                /* Selecting the array itself: emit a preview like the Fields section. */
+                if (out->is_json) {
+                    yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+                    nmo_cli_json_add_str_safe(out->json_doc, item, "path", path);
+                    yyjson_mut_obj_add_bool(out->json_doc, item, "ok", true);
+                    yyjson_mut_obj_add_bool(out->json_doc, item, "is_array", true);
+                    yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
+
+                    if (array_ptr && count > 0) {
+                        yyjson_mut_val *preview = yyjson_mut_arr(out->json_doc);
+                        size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+                        uint64_t emit_n = count < config->array_preview_max ? count : config->array_preview_max;
+                        for (uint64_t i = 0; i < emit_n; ++i) {
+                            const uint8_t *elem_ptr = (const uint8_t *)array_ptr + i * elem_size;
+                            yyjson_mut_val *elem_val = NULL;
+                            nmo_summary_format_value_to_json(out, registry, field_type,
+                                                            field->type_guid, elem_ptr, elem_size, &elem_val);
+                            yyjson_mut_arr_add_val(preview, elem_val ? elem_val : yyjson_mut_null(out->json_doc));
+                        }
+                        yyjson_mut_obj_add_val(out->json_doc, item, "preview", preview);
+                    }
+
+                    yyjson_mut_arr_add_val(json_select_arr, item);
+                } else {
+                    char label[256];
+                    snprintf(label, sizeof(label), "%s[%llu]", path, (unsigned long long)count);
+
+                    if (!array_ptr || count == 0) {
+                        nmo_cli_print_kv(out->stream, label, "(empty)", 30, out->colorize);
+                    } else {
+                        size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+                        uint64_t emit_n = count < config->text_preview_max ? count : config->text_preview_max;
+
+                        char preview[512] = "";
+                        size_t pos = 0;
+                        for (uint64_t i = 0; i < emit_n && pos < sizeof(preview) - 32; ++i) {
+                            const uint8_t *elem_ptr = (const uint8_t *)array_ptr + i * elem_size;
+                            char elem_buf[256];
+                            nmo_summary_format_value(registry, field_type, field->type_guid,
+                                                    elem_ptr, elem_size, elem_buf, sizeof(elem_buf));
+                            if (i > 0) {
+                                pos += snprintf(preview + pos, sizeof(preview) - pos, ", ");
+                            }
+                            pos += snprintf(preview + pos, sizeof(preview) - pos, "%s", elem_buf);
+                        }
+                        if (count > emit_n) {
+                            snprintf(preview + pos, sizeof(preview) - pos, " ... (+%llu)",
+                                     (unsigned long long)(count - emit_n));
+                        }
+                        nmo_cli_print_kv(out->stream, label, preview, 30, out->colorize);
+                    }
+                }
+                emitted = true;
+                return true;
+            }
+
+            /* Selecting an array element: validate and continue traversal or emit at end. */
+            if (!array_ptr) {
+                nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INDEX_OOB, "null array");
+                return false;
+            }
+            if (index >= count) {
+                char detail[128];
+                snprintf(detail, sizeof(detail), "%s[%llu] (count=%llu)", field_name,
+                         (unsigned long long)index, (unsigned long long)count);
+                nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INDEX_OOB, detail);
+                return false;
+            }
+
+            size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+            const uint8_t *elem_ptr = (const uint8_t *)array_ptr + (size_t)index * elem_size;
+
+            if (is_last) {
+                /* Emit element value */
+                char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+                nmo_summary_format_value(registry, field_type, field->type_guid, elem_ptr, elem_size,
+                                        value_buf, sizeof(value_buf));
+
+                if (out->is_json) {
+                    yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+                    nmo_cli_json_add_str_safe(out->json_doc, item, "path", path);
+                    yyjson_mut_obj_add_bool(out->json_doc, item, "ok", true);
+
+                    yyjson_mut_val *json_val = NULL;
+                    nmo_summary_format_value_to_json(out, registry, field_type,
+                                                    field->type_guid, elem_ptr, elem_size, &json_val);
+                    yyjson_mut_obj_add_val(out->json_doc, item, "value", json_val);
+                    nmo_cli_json_add_str_safe(out->json_doc, item, "value_str", value_buf);
+
+                    if (nmo_summary_is_object_ref_field(field) && config->resolve_object_refs) {
+                        nmo_object_id_t id = (elem_size >= 4) ? *(const nmo_object_id_t *)elem_ptr : 0;
+                        const char *ref_name = nmo_summary_resolve_object_name(out, id);
+                        if (ref_name) {
+                            nmo_cli_json_add_str_safe(out->json_doc, item, "ref_name", ref_name);
+                        }
+                    }
+
+                    yyjson_mut_arr_add_val(json_select_arr, item);
+                } else {
+                    if (nmo_summary_is_object_ref_field(field) && config->resolve_object_refs) {
+                        nmo_object_id_t id = (elem_size >= 4) ? *(const nmo_object_id_t *)elem_ptr : 0;
+                        const char *ref_name = nmo_summary_resolve_object_name(out, id);
+                        if (ref_name) {
+                            char ref_buf[256];
+                            snprintf(ref_buf, sizeof(ref_buf), "#%u (%s)", id, ref_name);
+                            nmo_cli_print_kv(out->stream, path, ref_buf, 30, out->colorize);
+                        } else {
+                            nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
+                        }
+                    } else {
+                        nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
+                    }
+                }
+                emitted = true;
+                return true;
+            }
+
+            /* Continue traversal into element (requires reflection type) */
+            if (!field_type || !nmo_type_has_reflection(field_type)) {
+                nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_CANNOT_TRAVERSE, field_name);
+                return false;
+            }
+            cur_type = field_type;
+            cur_instance = elem_ptr;
+            continue;
+        }
+
+        /* Scalar field */
+        if (has_index) {
+            nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_PARSE_ERROR, "index on scalar");
+            return false;
+        }
+
+        if (is_last) {
+            char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+            nmo_summary_format_value(registry, field_type, field->type_guid,
+                                    field_ptr, field->size, value_buf, sizeof(value_buf));
+
+            if (out->is_json) {
+                yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+                nmo_cli_json_add_str_safe(out->json_doc, item, "path", path);
+                yyjson_mut_obj_add_bool(out->json_doc, item, "ok", true);
+
+                yyjson_mut_val *json_val = NULL;
+                nmo_summary_format_value_to_json(out, registry, field_type,
+                                                field->type_guid, field_ptr, field->size, &json_val);
+                yyjson_mut_obj_add_val(out->json_doc, item, "value", json_val);
+                nmo_cli_json_add_str_safe(out->json_doc, item, "value_str", value_buf);
+
+                if (nmo_summary_is_object_ref_field(field) && field_ptr && config->resolve_object_refs) {
+                    nmo_object_id_t id = *(const nmo_object_id_t *)field_ptr;
+                    const char *ref_name = nmo_summary_resolve_object_name(out, id);
+                    if (ref_name) {
+                        nmo_cli_json_add_str_safe(out->json_doc, item, "ref_name", ref_name);
+                    }
+                }
+
+                yyjson_mut_arr_add_val(json_select_arr, item);
+            } else {
+                if (nmo_summary_is_object_ref_field(field) && field_ptr && config->resolve_object_refs) {
+                    nmo_object_id_t id = *(const nmo_object_id_t *)field_ptr;
+                    const char *ref_name = nmo_summary_resolve_object_name(out, id);
+                    if (ref_name) {
+                        char ref_buf[256];
+                        snprintf(ref_buf, sizeof(ref_buf), "#%u (%s)", id, ref_name);
+                        nmo_cli_print_kv(out->stream, path, ref_buf, 30, out->colorize);
+                    } else {
+                        nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
+                    }
+                } else {
+                    nmo_cli_print_kv(out->stream, path, value_buf, 30, out->colorize);
+                }
+            }
+
+            emitted = true;
+            return true;
+        }
+
+        /* Continue traversal into scalar composite (requires reflection type) */
+        if (!field_type || !nmo_type_has_reflection(field_type)) {
+            nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_CANNOT_TRAVERSE, field_name);
+            return false;
+        }
+        cur_type = field_type;
+        cur_instance = field_ptr;
+    }
+
+    (void)emitted;
+    return emitted;
+}
+
+/* ============================================================================
+ * Query Expressions (C-like)
+ * ============================================================================ */
+
+static uint64_t nmo_summary_guess_array_count_cb(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_type_field_t *field,
+    void *user)
+{
+    (void)user;
+    return nmo_summary_guess_array_count(owner_type, owner_instance, field);
+}
+
+static const char *nmo_summary_resolve_object_name_cb(uint32_t id, void *user) {
+    const nmo_summary_output_t *out = (const nmo_summary_output_t *)user;
+    return nmo_summary_resolve_object_name(out, (nmo_object_id_t)id);
+}
+
+static bool nmo_summary_query_value_to_text(
+    const nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_summary_config_t *config,
+    const nmo_dsl_value_t *value,
+    char *buffer,
+    size_t buffer_size,
+    uint64_t *out_seq_count)
+{
+    if (!buffer || buffer_size == 0) {
+        return false;
+    }
+    buffer[0] = '\0';
+    if (out_seq_count) {
+        *out_seq_count = 0;
+    }
+
+    if (!value) {
+        snprintf(buffer, buffer_size, "-");
+        return true;
+    }
+
+    switch (value->kind) {
+        case NMO_DSL_VALUE_NULL:
+            snprintf(buffer, buffer_size, "null");
+            return true;
+        case NMO_DSL_VALUE_BOOL:
+            snprintf(buffer, buffer_size, "%s", value->as.b ? "true" : "false");
+            return true;
+        case NMO_DSL_VALUE_INT:
+            snprintf(buffer, buffer_size, "%lld", (long long)value->as.i);
+            return true;
+        case NMO_DSL_VALUE_UINT:
+            snprintf(buffer, buffer_size, "%llu", (unsigned long long)value->as.u);
+            return true;
+        case NMO_DSL_VALUE_REAL:
+            snprintf(buffer, buffer_size, "%.10g", value->as.r);
+            return true;
+        case NMO_DSL_VALUE_STRING:
+            snprintf(buffer, buffer_size, "%s", value->as.s ? value->as.s : "");
+            return true;
+
+        case NMO_DSL_VALUE_BYREF:
+            return nmo_summary_format_value(registry, value->as.byref.type, value->as.byref.guid,
+                                            value->as.byref.ptr, value->as.byref.size,
+                                            buffer, buffer_size);
+
+        case NMO_DSL_VALUE_OBJECT: {
+            if (!value->as.object.type || !value->as.object.instance) {
+                snprintf(buffer, buffer_size, "-");
+                return true;
+            }
+            nmo_status_t st = nmo_type_value_to_string(
+                value->as.object.instance,
+                value->as.object.type,
+                registry,
+                buffer,
+                buffer_size);
+            if (st == NMO_OK) {
+                return true;
+            }
+            snprintf(buffer, buffer_size, "<object>");
+            return true;
+        }
+
+        case NMO_DSL_VALUE_SEQ: {
+            if (!value->as.seq) {
+                snprintf(buffer, buffer_size, "(empty)");
+                return true;
+            }
+            uint64_t count = nmo_dsl_seq_count(value->as.seq);
+            if (out_seq_count) {
+                *out_seq_count = count;
+            }
+            if (count == 0) {
+                snprintf(buffer, buffer_size, "(empty)");
+                return true;
+            }
+
+            uint64_t emit = count < config->text_preview_max ? count : config->text_preview_max;
+            size_t pos = 0;
+            for (uint64_t i = 0; i < emit && pos < buffer_size - 32; ++i) {
+                nmo_dsl_value_t elem = {0};
+                if (!nmo_dsl_seq_get(value->as.seq, i, &elem)) {
+                    continue;
+                }
+                char elem_buf[256];
+                uint64_t ignored = 0;
+                nmo_summary_query_value_to_text(out, registry, config, &elem, elem_buf, sizeof(elem_buf), &ignored);
+                if (i > 0) {
+                    pos += snprintf(buffer + pos, buffer_size - pos, ", ");
+                }
+                pos += snprintf(buffer + pos, buffer_size - pos, "%s", elem_buf);
+            }
+            if (count > emit && pos < buffer_size - 1) {
+                snprintf(buffer + pos, buffer_size - pos, " ... (+%llu)", (unsigned long long)(count - emit));
+            }
+            return true;
+        }
+
+        default:
+            snprintf(buffer, buffer_size, "-");
+            return true;
+    }
+}
+
+static yyjson_mut_val *nmo_summary_query_value_to_json(
+    const nmo_summary_output_t *out,
+    const nmo_type_registry_t *registry,
+    const nmo_summary_config_t *config,
+    const nmo_dsl_value_t *value,
+    uint64_t *out_seq_count)
+{
+    if (out_seq_count) {
+        *out_seq_count = 0;
+    }
+    if (!out || !out->json_doc || !value) {
+        return yyjson_mut_null(out->json_doc);
+    }
+
+    switch (value->kind) {
+        case NMO_DSL_VALUE_NULL: return yyjson_mut_null(out->json_doc);
+        case NMO_DSL_VALUE_BOOL: return yyjson_mut_bool(out->json_doc, value->as.b);
+        case NMO_DSL_VALUE_INT: return yyjson_mut_sint(out->json_doc, value->as.i);
+        case NMO_DSL_VALUE_UINT: return yyjson_mut_uint(out->json_doc, value->as.u);
+        case NMO_DSL_VALUE_REAL:
+            if (isnan(value->as.r) || isinf(value->as.r)) return yyjson_mut_null(out->json_doc);
+            return yyjson_mut_real(out->json_doc, value->as.r);
+        case NMO_DSL_VALUE_STRING:
+            return nmo_summary_json_strcpy_safe(out->json_doc, value->as.s ? value->as.s : "");
+
+        case NMO_DSL_VALUE_BYREF: {
+            yyjson_mut_val *v = NULL;
+            (void)nmo_summary_format_value_to_json(out, registry, value->as.byref.type,
+                                                  value->as.byref.guid,
+                                                  value->as.byref.ptr,
+                                                  value->as.byref.size,
+                                                  &v);
+            return v ? v : yyjson_mut_null(out->json_doc);
+        }
+
+        case NMO_DSL_VALUE_OBJECT: {
+            char buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+            buf[0] = '\0';
+            if (value->as.object.type && value->as.object.instance) {
+                (void)nmo_type_value_to_string(value->as.object.instance, value->as.object.type, registry,
+                                               buf, sizeof(buf));
+            }
+            return nmo_summary_json_strcpy_safe(out->json_doc, buf[0] ? buf : "<object>");
+        }
+
+        case NMO_DSL_VALUE_SEQ: {
+            yyjson_mut_val *arr = yyjson_mut_arr(out->json_doc);
+            if (!value->as.seq) {
+                return arr;
+            }
+            uint64_t count = nmo_dsl_seq_count(value->as.seq);
+            if (out_seq_count) {
+                *out_seq_count = count;
+            }
+            uint64_t emit = count < config->array_preview_max ? count : config->array_preview_max;
+            for (uint64_t i = 0; i < emit; ++i) {
+                nmo_dsl_value_t elem = {0};
+                if (!nmo_dsl_seq_get(value->as.seq, i, &elem)) {
+                    yyjson_mut_arr_add_val(arr, yyjson_mut_null(out->json_doc));
+                    continue;
+                }
+                uint64_t ignored = 0;
+                yyjson_mut_val *ev = nmo_summary_query_value_to_json(out, registry, config, &elem, &ignored);
+                yyjson_mut_arr_add_val(arr, ev ? ev : yyjson_mut_null(out->json_doc));
+            }
+            return arr;
+        }
+
+        default:
+            return yyjson_mut_null(out->json_doc);
+    }
+}
+
 static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *field, const void *field_ptr) {
     nmo_field_render_ctx_t *ctx = (nmo_field_render_ctx_t*)user_data;
     if (!ctx || !ctx->out || !field || !field->name) {
@@ -1158,6 +1758,194 @@ bool nmo_object_summary_with_config(
     return emitted;
 }
 
+bool nmo_object_summary_select(nmo_object_t *obj, nmo_summary_output_t *out,
+                               const char *const *paths, size_t path_count)
+{
+    nmo_summary_config_t config = nmo_summary_config_default();
+    return nmo_object_summary_select_with_config(obj, out, &config, paths, path_count);
+}
+
+bool nmo_object_summary_select_with_config(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const nmo_summary_config_t *config,
+    const char *const *paths,
+    size_t path_count)
+{
+    if (!obj || !out || !config || !paths || path_count == 0) {
+        return false;
+    }
+
+    /* Lazy auto-init enrichers on first use (keep consistent with other entrypoints) */
+    if (!g_enrichers_initialized) {
+        nmo_summary_init_builtin_enrichers();
+    }
+
+    if (!out->is_json) {
+        nmo_summary_add_section(out, "Select");
+    }
+
+    yyjson_mut_val *json_select = NULL;
+    if (out->is_json) {
+        json_select = yyjson_mut_arr(out->json_doc);
+        yyjson_mut_obj_add_val(out->json_doc, out->json_data, "select", json_select);
+    }
+
+    bool any = false;
+    for (size_t i = 0; i < path_count; ++i) {
+        const char *path = paths[i];
+        any |= nmo_summary_emit_select_path(obj, out, json_select, config, path);
+    }
+
+    return any;
+}
+
+static const char *nmo_summary_query_kind_to_string(nmo_dsl_value_kind_t kind) {
+    switch (kind) {
+        case NMO_DSL_VALUE_NULL: return "null";
+        case NMO_DSL_VALUE_BOOL: return "bool";
+        case NMO_DSL_VALUE_INT: return "int";
+        case NMO_DSL_VALUE_UINT: return "uint";
+        case NMO_DSL_VALUE_REAL: return "real";
+        case NMO_DSL_VALUE_STRING: return "string";
+        case NMO_DSL_VALUE_BYREF: return "byref";
+        case NMO_DSL_VALUE_OBJECT: return "object";
+        case NMO_DSL_VALUE_SEQ: return "seq";
+        default: return "unknown";
+    }
+}
+
+bool nmo_object_summary_expr(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const char *const *exprs,
+    size_t expr_count)
+{
+    nmo_summary_config_t config = nmo_summary_config_default();
+    return nmo_object_summary_expr_with_config(obj, out, &config, exprs, expr_count);
+}
+
+bool nmo_object_summary_expr_with_config(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const nmo_summary_config_t *config,
+    const char *const *exprs,
+    size_t expr_count)
+{
+    if (!obj || !out || !config || !exprs || expr_count == 0) {
+        return false;
+    }
+
+    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
+    if (!registry) {
+        return false;
+    }
+
+    const nmo_type_descriptor_t *type = nmo_summary_get_type_for_object(registry, obj);
+    const void *state = nmo_object_get_state(obj);
+    if (!type || !state || !nmo_type_has_reflection(type)) {
+        if (!out->is_json) {
+            nmo_summary_add_section(out, "Expr");
+            fprintf(out->stream, "  (no reflection data available)\n");
+        }
+        return false;
+    }
+
+    if (!out->is_json) {
+        nmo_summary_add_section(out, "Expr");
+    }
+
+    yyjson_mut_val *json_expr = NULL;
+    if (out->is_json) {
+        json_expr = yyjson_mut_arr(out->json_doc);
+        yyjson_mut_obj_add_val(out->json_doc, out->json_data, "expr", json_expr);
+    }
+
+    nmo_dsl_eval_context_t qctx = {
+        .registry = registry,
+        .root_type = type,
+        .root_instance = (void *)state,  /* const_cast: summary is read-only */
+        .current_type = NULL,
+        .current_instance = NULL,
+        .guess_array_count = nmo_summary_guess_array_count_cb,
+        .guess_array_count_user = NULL,
+        .resolve_object_name = nmo_summary_resolve_object_name_cb,
+        .resolve_object_name_user = (void *)out,
+    };
+
+    bool any = false;
+    for (size_t i = 0; i < expr_count; ++i) {
+        const char *expr = exprs[i];
+        if (!expr || !expr[0]) {
+            continue;
+        }
+
+        nmo_dsl_value_t v = {0};
+        char errbuf[128] = {0};
+        nmo_status_t st = nmo_dsl_eval_one(registry, &qctx, expr, &v);
+        bool ok = (st == NMO_OK);
+        if (!ok) {
+            (void)nmo_last_error_message_copy(errbuf, sizeof(errbuf));
+        }
+
+        if (out->is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
+            nmo_cli_json_add_str_safe(out->json_doc, item, "expr", expr);
+            yyjson_mut_obj_add_bool(out->json_doc, item, "ok", ok);
+
+            if (!ok) {
+                nmo_cli_json_add_str_safe(out->json_doc, item, "error", errbuf[0] ? errbuf : "error");
+            } else {
+                nmo_cli_json_add_str_safe(out->json_doc, item, "kind", nmo_summary_query_kind_to_string(v.kind));
+
+                uint64_t seq_count = 0;
+                if (v.kind == NMO_DSL_VALUE_SEQ) {
+                    yyjson_mut_val *preview = nmo_summary_query_value_to_json(out, registry, config, &v, &seq_count);
+                    yyjson_mut_obj_add_uint(out->json_doc, item, "count", seq_count);
+                    yyjson_mut_obj_add_val(out->json_doc, item, "preview", preview);
+
+                    char preview_str[512];
+                    uint64_t ignored = 0;
+                    (void)nmo_summary_query_value_to_text(out, registry, config, &v, preview_str, sizeof(preview_str), &ignored);
+                    nmo_cli_json_add_str_safe(out->json_doc, item, "preview_str", preview_str);
+                } else {
+                    yyjson_mut_val *json_val = nmo_summary_query_value_to_json(out, registry, config, &v, &seq_count);
+                    yyjson_mut_obj_add_val(out->json_doc, item, "value", json_val);
+
+                    char value_str[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+                    uint64_t ignored = 0;
+                    (void)nmo_summary_query_value_to_text(out, registry, config, &v, value_str, sizeof(value_str), &ignored);
+                    nmo_cli_json_add_str_safe(out->json_doc, item, "value_str", value_str);
+                }
+            }
+
+            yyjson_mut_arr_add_val(json_expr, item);
+        } else {
+            if (!ok) {
+                char msg[256];
+                snprintf(msg, sizeof(msg), "<error: %s>", errbuf[0] ? errbuf : "error");
+                nmo_cli_print_kv(out->stream, expr, msg, 30, out->colorize);
+            } else {
+                char value_str[512];
+                uint64_t seq_count = 0;
+                (void)nmo_summary_query_value_to_text(out, registry, config, &v, value_str, sizeof(value_str), &seq_count);
+                if (v.kind == NMO_DSL_VALUE_SEQ) {
+                    char label[512];
+                    snprintf(label, sizeof(label), "%s[%llu]", expr, (unsigned long long)seq_count);
+                    nmo_cli_print_kv(out->stream, label, value_str, 30, out->colorize);
+                } else {
+                    nmo_cli_print_kv(out->stream, expr, value_str, 30, out->colorize);
+                }
+            }
+        }
+
+        nmo_dsl_value_destroy(&v);
+        any = true;
+    }
+
+    return any;
+}
+
 /* ============================================================================
  * Output Helper Functions
  * ============================================================================ */
@@ -1331,57 +2119,4 @@ void nmo_summary_add_guid(nmo_summary_output_t *out, const char *key,
     } else {
         nmo_cli_print_kv(out->stream, key, buf, label_width, out->colorize);
     }
-}
-
-/* ============================================================================
- * Backward Compatibility Functions
- * These delegate to the generic reflection-based summary system.
- * ============================================================================ */
-
-bool nmo_summary_has_handler(nmo_class_id_t class_id) {
-    /* In the new system, all types with reflection have "handlers" */
-    /* This is a simplified check - ideally we'd check the context */
-    return nmo_summary_has_enricher(class_id) ||
-           (class_id >= NMO_CID_OBJECT && class_id < NMO_CID_MAXCLASSID);
-}
-
-/* Type-specific summary functions - all delegate to generic */
-bool nmo_summary_ck3dentity(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_ckmesh(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_ckmaterial(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_cktexture(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_ckcamera(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_cklight(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_ckbehavior(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_ckscene(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_cklevel(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
-}
-
-bool nmo_summary_ckparameter(nmo_object_t *obj, nmo_summary_output_t *out) {
-    return nmo_object_summary(obj, out);
 }

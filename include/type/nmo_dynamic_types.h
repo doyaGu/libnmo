@@ -225,6 +225,7 @@ typedef struct nmo_struct_type_def_t {
     const char *name;                   /**< Type name */
     const char *description;            /**< Type description */
     nmo_guid_t guid;                   /**< Type GUID (can be NULL_GUID for auto-generation) */
+    nmo_guid_t base_type_guid;         /**< Optional base struct GUID (NULL_GUID if none) */
     const nmo_struct_field_def_t *fields; /**< Array of fields */
     size_t field_count;                 /**< Number of fields */
     uint32_t alignment;                 /**< Struct alignment (0 = auto-calculate) */

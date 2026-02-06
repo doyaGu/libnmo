@@ -185,7 +185,9 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
         return test_framework_run(); \
     }
 
-/* Basic assertion macros - enhanced with better error messages */
+/* Basic assertion macros - enhanced with better error messages
+ * Convention: ASSERT_* takes (expected, actual) where applicable.
+ */
 #define ASSERT_EQ(a, b)                                                        \
     do {                                                                       \
         if (!((a) == (b))) {                                                  \
@@ -193,7 +195,7 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #a " == " #b "\n"          \
                              "  Expected: %lld\n  Actual: %lld",              \
-                             (long long)(b), (long long)(a));               \
+                             (long long)(a), (long long)(b));               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -216,8 +218,8 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #a " != " #b "\n"          \
-                             "  Both values: %lld",                            \
-                             (long long)(a));                                 \
+                             "  Left: %lld\n  Right: %lld",                  \
+                             (long long)(a), (long long)(b));                 \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -288,7 +290,7 @@ static inline const char *test_safe_cstr(const char *str) {
                              "Float assertion failed: %s ≈ %s (±%g)\n"       \
                              "  Expected: %g\n  Actual: %g\n  Diff: %g",      \
                              #a, #b, (double)(epsilon),                      \
-                             (double)(b), (double)(a), _diff);               \
+                             (double)(a), (double)(b), _diff);               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -304,7 +306,7 @@ static inline const char *test_safe_cstr(const char *str) {
                              "String assertion failed: %s == %s\n"            \
                              "  Expected: \"%s\"\n  Actual: \"%s\"",         \
                              #s1, #s2,                                        \
-                             test_safe_cstr(_s2), test_safe_cstr(_s1));       \
+                             test_safe_cstr(_s1), test_safe_cstr(_s2));       \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \

@@ -28,10 +28,12 @@ typedef struct builtin_type_name_t {
 static const builtin_type_name_t BUILTIN_TYPES[] = {
     /* Basic types */
     {"int", NMO_TYPE_GUID_INT_INIT},
+    {"int32", NMO_TYPE_GUID_INT_INIT},
     {"float", NMO_TYPE_GUID_FLOAT_INIT},
     {"bool", NMO_TYPE_GUID_BOOL_INIT},
     {"string", NMO_TYPE_GUID_STRING_INIT},
     {"double", NMO_TYPE_GUID_DOUBLE_INIT},
+    {"uint", NMO_TYPE_GUID_UINT32_INIT},
     {"int8", NMO_TYPE_GUID_INT8_INIT},
     {"uint8", NMO_TYPE_GUID_UINT8_INIT},
     {"int16", NMO_TYPE_GUID_INT16_INIT},

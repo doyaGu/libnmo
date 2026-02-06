@@ -242,6 +242,24 @@ nmo_status_t nmo_type_registry_register_struct(
     /* Generate GUID for the struct type */
     nmo_guid_t type_guid = nmo_guid_is_null(struct_def->guid) ?
         nmo_type_generate_guid(struct_def->name) : struct_def->guid;
+
+    /* Resolve optional base struct type */
+    const nmo_type_descriptor_t *base_type = NULL;
+    if (!nmo_guid_is_null(struct_def->base_type_guid)) {
+        base_type = nmo_type_registry_find_by_guid(type_registry, struct_def->base_type_guid);
+        if (!base_type) {
+            NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                    "Base struct type not found");
+        }
+        if (base_type->category != NMO_TYPE_CATEGORY_STRUCT) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Base type must be a struct");
+        }
+        if (nmo_guid_equals(base_type->guid, type_guid)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                    "Struct cannot inherit from itself");
+        }
+    }
     
     /* Check if type already exists */
     const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
@@ -410,6 +428,7 @@ nmo_status_t nmo_type_registry_register_struct(
     /* Initialize type descriptor */
     type_desc->guid = type_guid;
     type_desc->name = type_name;
+    type_desc->base_type = base_type ? base_type->guid : NMO_GUID_NULL;
     type_desc->size = total_size;
     type_desc->alignment = struct_alignment;
     type_desc->category = NMO_TYPE_CATEGORY_STRUCT;

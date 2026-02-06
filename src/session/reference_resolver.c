@@ -14,6 +14,9 @@
 #include "core/nmo_logger.h"
 #include "core/nmo_allocator.h"
 #include <string.h>
+#ifndef _WIN32
+#include <strings.h>
+#endif
 #include <stdlib.h>
 #include <stdalign.h>
 

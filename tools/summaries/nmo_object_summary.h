@@ -158,6 +158,67 @@ bool nmo_object_summary_with_config(
     const nmo_summary_config_t *config);
 
 /**
+ * @brief Generate a summary for a set of selected field paths.
+ *
+ * Paths are reflection field paths using dot navigation and optional array
+ * indexing, e.g.:
+ *   - "vertices[0]"
+ *   - "faces[3].material_group_idx"
+ *   - "beobject.base.base.name"
+ *
+ * If a selected path refers to a repeated field without an index, the output
+ * includes an array preview (consistent with the normal Fields section).
+ *
+ * @param obj Object to summarize
+ * @param out Output context
+ * @param paths Array of path strings
+ * @param path_count Number of path strings
+ * @return true if any selection item was emitted
+ */
+bool nmo_object_summary_select(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const char *const *paths,
+    size_t path_count);
+
+/**
+ * @brief Generate selected-path summary with custom configuration.
+ */
+bool nmo_object_summary_select_with_config(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const nmo_summary_config_t *config,
+    const char *const *paths,
+    size_t path_count);
+
+/**
+ * @brief Evaluate one or more query expressions and emit results.
+ *
+ * Expressions are C-like and reflection-driven. See `include/dsl/nmo_dsl.h`.
+ *
+ * @param obj Object to query
+ * @param out Output context
+ * @param exprs Array of expression strings
+ * @param expr_count Number of expressions
+ * @return true if any result was emitted
+ */
+bool nmo_object_summary_expr(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const char *const *exprs,
+    size_t expr_count);
+
+/**
+ * @brief Evaluate expressions with custom configuration.
+ */
+bool nmo_object_summary_expr_with_config(
+    nmo_object_t *obj,
+    nmo_summary_output_t *out,
+    const nmo_summary_config_t *config,
+    const char *const *exprs,
+    size_t expr_count);
+
+/**
  * @brief Check if a class has reflection available
  *
  * @param ctx Context with type registry
@@ -220,32 +281,6 @@ void nmo_summary_add_color(nmo_summary_output_t *out, const char *key,
 /** @brief Add a GUID field */
 void nmo_summary_add_guid(nmo_summary_output_t *out, const char *key,
                           nmo_guid_t guid, int label_width);
-
-/* ============================================================================
- * Backward Compatibility (Deprecated - use reflection-based API)
- * ============================================================================ */
-
-/**
- * @brief Check if a class has summary support (reflection OR enricher)
- * @deprecated Use nmo_summary_has_reflection() or nmo_summary_has_enricher()
- */
-bool nmo_summary_has_handler(nmo_class_id_t class_id);
-
-/**
- * @brief Type-specific summary functions
- * @deprecated These now delegate to the generic reflection-based summary.
- *             Keep for backward compatibility only.
- */
-bool nmo_summary_ck3dentity(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_ckmesh(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_ckmaterial(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_cktexture(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_ckcamera(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_cklight(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_ckbehavior(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_ckscene(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_cklevel(nmo_object_t *obj, nmo_summary_output_t *out);
-bool nmo_summary_ckparameter(nmo_object_t *obj, nmo_summary_output_t *out);
 
 #ifdef __cplusplus
 }

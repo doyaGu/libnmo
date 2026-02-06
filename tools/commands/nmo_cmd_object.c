@@ -393,12 +393,46 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Parse: nmo object show <id> <file> */
+    /* Parse: nmo object show [--select <path>]... [--expr <expr>]... <id> <file> */
     const char *id_str = NULL;
     const char *file_path = NULL;
 
+    const char *select_paths[64];
+    size_t select_path_count = 0;
+
+    const char *exprs[64];
+    size_t expr_count = 0;
+
     int non_opt_count = 0;
     for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--select") == 0 || strcmp(argv[i], "-s") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
+                fprintf(stderr,
+                        "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            if (select_path_count < (sizeof(select_paths) / sizeof(select_paths[0]))) {
+                select_paths[select_path_count++] = argv[i + 1];
+            }
+            i++;
+            continue;
+        }
+
+        if (strcmp(argv[i], "--expr") == 0 || strcmp(argv[i], "-e") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
+                fprintf(stderr,
+                        "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            if (expr_count < (sizeof(exprs) / sizeof(exprs[0]))) {
+                exprs[expr_count++] = argv[i + 1];
+            }
+            i++;
+            continue;
+        }
+
         if (argv[i][0] != '-') {
             non_opt_count++;
             if (non_opt_count == 1) {
@@ -411,7 +445,7 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     if (!id_str || !file_path) {
         fprintf(stderr, "Error: Missing arguments\n");
-        fprintf(stderr, "Usage: nmo object show <id> <file>\n");
+        fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -504,7 +538,17 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 .ctx = ctx,
                 .session = session,
             };
-            if (nmo_object_summary(target, &sum_out)) {
+            bool ok = false;
+            if (select_path_count > 0) {
+                ok |= nmo_object_summary_select(target, &sum_out, select_paths, select_path_count);
+            }
+            if (expr_count > 0) {
+                ok |= nmo_object_summary_expr(target, &sum_out, exprs, expr_count);
+            }
+            if (select_path_count == 0 && expr_count == 0) {
+                ok |= nmo_object_summary(target, &sum_out);
+            }
+            if (ok) {
                 yyjson_mut_obj_add_val(doc, data, "summary", summary);
             }
         }
@@ -549,7 +593,15 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 .ctx = ctx,
                 .session = session,
             };
-            (void)nmo_object_summary(target, &sum_out);
+            if (select_path_count > 0) {
+                (void)nmo_object_summary_select(target, &sum_out, select_paths, select_path_count);
+            }
+            if (expr_count > 0) {
+                (void)nmo_object_summary_expr(target, &sum_out, exprs, expr_count);
+            }
+            if (select_path_count == 0 && expr_count == 0) {
+                (void)nmo_object_summary(target, &sum_out);
+            }
         }
     }
 

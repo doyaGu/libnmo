@@ -261,6 +261,12 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
     src/type/nmo_reflection.c
+    src/dsl/nmo_dsl.c
+    src/dsl/nmo_dsl_lex.c
+    src/dsl/nmo_dsl_ast.c
+    src/dsl/nmo_dsl_parse.c
+    src/dsl/nmo_dsl_eval.c
+    src/dsl/nmo_dsl_seq.c
 )
 
 # Extension layer sources
