@@ -991,6 +991,91 @@ TEST(type_string, type_value_to_string_guid) {
     teardown();
 }
 
+TEST(type_string, type_value_from_string_uint32) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT32);
+    ASSERT_NE(NULL, type);
+
+    uint32_t value = 0;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "42");
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_EQ(42u, value);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_uint64) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT64);
+    ASSERT_NE(NULL, type);
+
+    uint64_t value = 0;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "18446744073709551615");
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_EQ(UINT64_MAX, value);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_double) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_DOUBLE);
+    ASSERT_NE(NULL, type);
+
+    double value = 0.0;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "3.5");
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_TRUE(fabs(value - 3.5) < 0.000001);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_string) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_STRING);
+    ASSERT_NE(NULL, type);
+
+    const char *value = NULL;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "\"hello\"");
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_NE(NULL, value);
+    ASSERT_STR_EQ("hello", value);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_uint8_overflow) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT8);
+    ASSERT_NE(NULL, type);
+
+    uint8_t value = 0;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "300");
+
+    ASSERT_NE(NMO_OK, result);
+
+    teardown();
+}
+
 typedef struct test_object_name_session {
     int unused;
 } test_object_name_session_t;
@@ -1198,6 +1283,11 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
     REGISTER_TEST(type_string, type_value_to_string_uint16);
     REGISTER_TEST(type_string, type_value_to_string_guid);
+    REGISTER_TEST(type_string, type_value_from_string_uint32);
+    REGISTER_TEST(type_string, type_value_from_string_uint64);
+    REGISTER_TEST(type_string, type_value_from_string_double);
+    REGISTER_TEST(type_string, type_value_from_string_string);
+    REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
     REGISTER_TEST(type_string, object_id_to_string_uses_name_resolver);
     REGISTER_TEST(type_string, object_id_from_string_uses_name_resolver);
     REGISTER_TEST(type_string, object_id_to_string_falls_back_on_unsafe_name);

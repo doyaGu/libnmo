@@ -286,6 +286,33 @@ TEST(dsl_schema, struct_inheritance) {
     teardown();
 }
 
+TEST(dsl_schema, struct_repeated_field_pointer_backed) {
+    setup();
+
+    const char *src =
+        "schema { struct Bag { int nums[]; } }";
+    assert_ok(apply_schema(registry, src), "repeated field pointer-backed");
+
+    const nmo_type_descriptor_t *t = nmo_type_registry_find_by_name(registry, "Bag");
+    ASSERT_NE(NULL, t);
+    ASSERT_EQ(1u, t->field_count);
+
+    const nmo_type_field_t *f = nmo_type_get_field_by_name(t, "nums");
+    ASSERT_NE(NULL, f);
+    ASSERT_TRUE((f->flags & NMO_FIELD_REPEATED) != 0);
+    ASSERT_TRUE(nmo_guid_equals(f->type_guid, NMO_TYPE_GUID_POINTER));
+    ASSERT_EQ((uint32_t)sizeof(void *), f->size);
+
+    const nmo_struct_descriptor_t *sf = nmo_type_get_struct_field_by_name(registry, t, "nums");
+    ASSERT_NE(NULL, sf);
+    ASSERT_TRUE(nmo_guid_equals(sf->type_guid, NMO_TYPE_GUID_POINTER));
+    ASSERT_TRUE(nmo_guid_equals(sf->pointee_guid, NMO_TYPE_GUID_INT));
+    ASSERT_EQ(1u, sf->pointer_depth);
+    ASSERT_EQ(0u, sf->array_count);
+
+    teardown();
+}
+
 /* ============================================================================
  * Alias declaration tests
  * ============================================================================ */
@@ -298,6 +325,56 @@ TEST(dsl_schema, alias_basic) {
 
     const nmo_type_descriptor_t *t = nmo_type_registry_find_by_name(registry, "MyInt");
     ASSERT_NE(NULL, t);
+
+    teardown();
+}
+
+TEST(dsl_schema, alias_enum_preserves_metadata) {
+    setup();
+
+    const char *src =
+        "schema {\n"
+        "enum Color : int { Red = 1, Blue = 2 }\n"
+        "alias ColorAlias = Color\n"
+        "}";
+    assert_ok(apply_schema(registry, src), "alias enum metadata");
+
+    const nmo_type_descriptor_t *alias = nmo_type_registry_find_by_name(registry, "ColorAlias");
+    ASSERT_NE(NULL, alias);
+    ASSERT_EQ(NMO_TYPE_CATEGORY_ENUM, alias->category);
+    ASSERT_NE(NMO_SPECIALIZED_INDEX_INVALID, alias->specialized_index);
+
+    const nmo_enum_descriptor_t *red = nmo_type_get_enum_value_by_name(registry, alias, "Red");
+    const nmo_enum_descriptor_t *blue = nmo_type_get_enum_value_by_name(registry, alias, "Blue");
+    ASSERT_NE(NULL, red);
+    ASSERT_NE(NULL, blue);
+    ASSERT_EQ(1, red->value);
+    ASSERT_EQ(2, blue->value);
+
+    teardown();
+}
+
+TEST(dsl_schema, alias_struct_preserves_metadata) {
+    setup();
+
+    const char *src =
+        "schema {\n"
+        "struct Pair { int x; float y; }\n"
+        "alias PairAlias = Pair\n"
+        "}";
+    assert_ok(apply_schema(registry, src), "alias struct metadata");
+
+    const nmo_type_descriptor_t *alias = nmo_type_registry_find_by_name(registry, "PairAlias");
+    ASSERT_NE(NULL, alias);
+    ASSERT_EQ(NMO_TYPE_CATEGORY_STRUCT, alias->category);
+    ASSERT_NE(NMO_SPECIALIZED_INDEX_INVALID, alias->specialized_index);
+
+    const nmo_struct_descriptor_t *x =
+        nmo_type_get_struct_field_by_name(registry, alias, "x");
+    const nmo_struct_descriptor_t *y =
+        nmo_type_get_struct_field_by_name(registry, alias, "y");
+    ASSERT_NE(NULL, x);
+    ASSERT_NE(NULL, y);
 
     teardown();
 }
@@ -624,6 +701,39 @@ TEST(dsl_schema, module_trailing_junk_rejected) {
     teardown();
 }
 
+TEST(dsl_schema, module_registry_mismatch_rejected) {
+    setup();
+
+    nmo_arena_t *other_arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, other_arena);
+    nmo_type_registry_t *other_registry = nmo_type_registry_create(other_arena);
+    ASSERT_NE(NULL, other_registry);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(other_registry));
+
+    const char *src =
+        "schema { enum E : int { A = 0 } }\n"
+        "1";
+
+    nmo_dsl_compile_options_t opts = { .mode = NMO_DSL_MODE_MODULE };
+    nmo_dsl_program_t *prog = NULL;
+    nmo_status_t st = nmo_dsl_compile(registry, NULL, src, &opts, &prog);
+    assert_ok(st, "compile module");
+
+    nmo_dsl_eval_context_t ctx = {0};
+    ctx.registry = other_registry; /* intentionally mismatched */
+
+    nmo_dsl_value_t out = {0};
+    st = nmo_dsl_run_module(registry, prog, &ctx, NULL, &out);
+    ASSERT_NE(NMO_OK, st);
+
+    nmo_dsl_value_destroy(&out);
+    nmo_dsl_program_destroy(prog);
+    nmo_type_registry_destroy(other_registry);
+    nmo_arena_destroy(other_arena);
+
+    teardown();
+}
+
 /* ============================================================================
  * Test Runner
  * ============================================================================ */
@@ -638,7 +748,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_schema, struct_basic);
     REGISTER_TEST(dsl_schema, struct_packed);
     REGISTER_TEST(dsl_schema, struct_inheritance);
+    REGISTER_TEST(dsl_schema, struct_repeated_field_pointer_backed);
     REGISTER_TEST(dsl_schema, alias_basic);
+    REGISTER_TEST(dsl_schema, alias_enum_preserves_metadata);
+    REGISTER_TEST(dsl_schema, alias_struct_preserves_metadata);
     REGISTER_TEST(dsl_schema, redeclare_rejected);
     REGISTER_TEST(dsl_schema, redeclare_allowed);
     REGISTER_TEST(dsl_schema, redeclare_allowed_skips_enum_underlying_validation);
@@ -660,4 +773,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_schema, enum_underlying_non_int32_rejected);
     REGISTER_TEST(dsl_schema, flags_underlying_non_uint32_rejected);
     REGISTER_TEST(dsl_schema, module_trailing_junk_rejected);
+    REGISTER_TEST(dsl_schema, module_registry_mismatch_rejected);
 TEST_MAIN_END()

@@ -104,8 +104,8 @@ static void fixture_init(query_fixture_t *fx) {
     };
 }
 
-#define QUERY_ELEM_GUID {0x51555259u, 0x00000001u}
-#define QUERY_ROOT_GUID {0x51555259u, 0x00000002u}
+#define QUERY_ELEM_GUID NMO_GUID(0x51555259u, 0x00000001u)
+#define QUERY_ROOT_GUID NMO_GUID(0x51555259u, 0x00000002u)
 
 static nmo_arena_t *arena = NULL;
 static nmo_type_registry_t *registry = NULL;
@@ -147,12 +147,12 @@ static void setup(void) {
     };
 
     nmo_type_descriptor_t elem_desc = {
-        .guid = (nmo_guid_t)QUERY_ELEM_GUID,
+        .guid = QUERY_ELEM_GUID,
         .name = "QueryElem",
         .size = sizeof(query_elem_t),
         .alignment = (uint32_t)alignof(query_elem_t),
         .class_id = 0,
-        .base_type = (nmo_guid_t){0, 0},
+        .base_type = NMO_GUID_NULL,
         .category = NMO_TYPE_CATEGORY_STRUCT,
         .flags = NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD,
         .id = 0,
@@ -177,12 +177,12 @@ static void setup(void) {
     };
 
     nmo_type_descriptor_t root_desc = {
-        .guid = (nmo_guid_t)QUERY_ROOT_GUID,
+        .guid = QUERY_ROOT_GUID,
         .name = "QueryRoot",
         .size = sizeof(query_root_t),
         .alignment = (uint32_t)alignof(query_root_t),
         .class_id = 0,
-        .base_type = (nmo_guid_t){0, 0},
+        .base_type = NMO_GUID_NULL,
         .category = NMO_TYPE_CATEGORY_STRUCT,
         .flags = NMO_TYPE_FLAG_COPYABLE,
         .id = 0,
@@ -209,7 +209,7 @@ static void make_ctx(const query_root_t *root, nmo_dsl_eval_context_t *out_ctx) 
     ASSERT_NE(NULL, root);
     ASSERT_NE(NULL, out_ctx);
 
-    const nmo_type_descriptor_t *root_type = nmo_type_registry_find_by_guid(registry, (nmo_guid_t)QUERY_ROOT_GUID);
+    const nmo_type_descriptor_t *root_type = nmo_type_registry_find_by_guid(registry, QUERY_ROOT_GUID);
     ASSERT_NE(NULL, root_type);
 
     memset(out_ctx, 0, sizeof(*out_ctx));

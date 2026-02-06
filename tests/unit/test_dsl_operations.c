@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <stdint.h>
 
 /* ============================================================================
  * Helpers
@@ -61,7 +62,7 @@ typedef struct {
     float y;
 } ops_root_t;
 
-#define OPS_ROOT_GUID {0x4F505254u, 0x00000001u}
+#define OPS_ROOT_GUID NMO_GUID(0x4F505254u, 0x00000001u)
 
 static nmo_arena_t *arena = NULL;
 static nmo_type_registry_t *registry = NULL;
@@ -85,12 +86,12 @@ static void setup(void) {
     };
 
     nmo_type_descriptor_t root_desc = {
-        .guid = (nmo_guid_t)OPS_ROOT_GUID,
+        .guid = OPS_ROOT_GUID,
         .name = "OpsRoot",
         .size = sizeof(ops_root_t),
         .alignment = (uint32_t)alignof(ops_root_t),
         .class_id = 0,
-        .base_type = (nmo_guid_t){0, 0},
+        .base_type = NMO_GUID_NULL,
         .category = NMO_TYPE_CATEGORY_STRUCT,
         .flags = NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD,
         .id = 0,
@@ -110,7 +111,7 @@ static void teardown(void) {
 
 static void make_ctx(const ops_root_t *root, nmo_dsl_eval_context_t *out_ctx) {
     const nmo_type_descriptor_t *root_type =
-        nmo_type_registry_find_by_guid(registry, (nmo_guid_t)OPS_ROOT_GUID);
+        nmo_type_registry_find_by_guid(registry, OPS_ROOT_GUID);
     ASSERT_NE(NULL, root_type);
 
     memset(out_ctx, 0, sizeof(*out_ctx));
@@ -172,6 +173,62 @@ TEST(dsl_ops, to_string_int) {
     teardown();
 }
 
+TEST(dsl_ops, from_string_uint32_returns_uint) {
+    setup();
+    ops_root_t root = { .x = 42, .y = 1.5f };
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&root, &ctx);
+
+    nmo_dsl_value_t v;
+    eval_ok(&ctx, "from_string(\"UINT32\", \"42\")", &v);
+    ASSERT_EQ(NMO_DSL_VALUE_UINT, v.kind);
+    ASSERT_EQ(42u, v.as.u);
+    nmo_dsl_value_destroy(&v);
+
+    teardown();
+}
+
+TEST(dsl_ops, from_string_uint64_returns_uint) {
+    setup();
+    ops_root_t root = { .x = 42, .y = 1.5f };
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&root, &ctx);
+
+    nmo_dsl_value_t v;
+    eval_ok(&ctx, "from_string(\"UINT64\", \"18446744073709551615\")", &v);
+    ASSERT_EQ(NMO_DSL_VALUE_UINT, v.kind);
+    ASSERT_EQ(UINT64_MAX, v.as.u);
+    nmo_dsl_value_destroy(&v);
+
+    teardown();
+}
+
+TEST(dsl_ops, from_string_string_returns_string) {
+    setup();
+    ops_root_t root = { .x = 42, .y = 1.5f };
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&root, &ctx);
+
+    nmo_dsl_value_t v;
+    eval_ok(&ctx, "from_string(\"STRING\", \"hello\")", &v);
+    ASSERT_EQ(NMO_DSL_VALUE_STRING, v.kind);
+    ASSERT_STR_EQ("hello", v.as.s);
+    nmo_dsl_value_destroy(&v);
+
+    teardown();
+}
+
+TEST(dsl_ops, from_string_uint8_overflow_fails) {
+    setup();
+    ops_root_t root = { .x = 42, .y = 1.5f };
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&root, &ctx);
+
+    eval_fail(&ctx, "from_string(\"UINT8\", \"300\")");
+
+    teardown();
+}
+
 /* ============================================================================
  * Phase E: op() builtin
  * ============================================================================ */
@@ -184,6 +241,41 @@ TEST(dsl_ops, op_unknown_fails) {
 
     /* Calling op with a non-existent operation should fail */
     eval_fail(&ctx, "op(\"NonExistentOp\", x)");
+
+    teardown();
+}
+
+TEST(dsl_ops, op_add_int_success) {
+    setup();
+    ops_root_t root = { .x = 42, .y = 1.5f };
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&root, &ctx);
+
+    nmo_dsl_value_t v;
+    eval_ok(&ctx, "op(\"Add\", 2, 3)", &v);
+    ASSERT_EQ(NMO_DSL_VALUE_INT, v.kind);
+    ASSERT_EQ(5, v.as.i);
+    nmo_dsl_value_destroy(&v);
+
+    teardown();
+}
+
+TEST(dsl_ops, op_bool_logic_success) {
+    setup();
+    ops_root_t root = { .x = 42, .y = 1.5f };
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&root, &ctx);
+
+    nmo_dsl_value_t v;
+    eval_ok(&ctx, "op(\"And\", true, false)", &v);
+    ASSERT_EQ(NMO_DSL_VALUE_BOOL, v.kind);
+    ASSERT_EQ(false, v.as.b);
+    nmo_dsl_value_destroy(&v);
+
+    eval_ok(&ctx, "op(\"Not\", true)", &v);
+    ASSERT_EQ(NMO_DSL_VALUE_BOOL, v.kind);
+    ASSERT_EQ(false, v.as.b);
+    nmo_dsl_value_destroy(&v);
 
     teardown();
 }
@@ -210,6 +302,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_ops, type_of_field);
     REGISTER_TEST(dsl_ops, type_name_of_field);
     REGISTER_TEST(dsl_ops, to_string_int);
+    REGISTER_TEST(dsl_ops, from_string_uint32_returns_uint);
+    REGISTER_TEST(dsl_ops, from_string_uint64_returns_uint);
+    REGISTER_TEST(dsl_ops, from_string_string_returns_string);
+    REGISTER_TEST(dsl_ops, from_string_uint8_overflow_fails);
     REGISTER_TEST(dsl_ops, op_unknown_fails);
+    REGISTER_TEST(dsl_ops, op_add_int_success);
+    REGISTER_TEST(dsl_ops, op_bool_logic_success);
     REGISTER_TEST(dsl_ops, type_builtins_no_args_fail);
 TEST_MAIN_END()

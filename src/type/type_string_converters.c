@@ -10,6 +10,7 @@
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_builtin_operations.h"
+#include "type/nmo_builtin_type_guids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include <stdio.h>
@@ -1349,6 +1350,76 @@ nmo_status_t nmo_type_value_to_string(
     return nmo_type_value_to_string_impl(value, type, registry, buffer, buffer_size, 0);
 }
 
+static nmo_status_t parse_i64(const char *string, int64_t *out_value)
+{
+    if (!string || !out_value) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid integer parse args");
+    }
+
+    char *endptr = NULL;
+    errno = 0;
+    long long parsed = strtoll(string, &endptr, 0);
+    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid integer format");
+    }
+
+    *out_value = (int64_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t parse_u64(const char *string, uint64_t *out_value)
+{
+    if (!string || !out_value) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid unsigned parse args");
+    }
+
+    const char *p = string;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p == '-') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unsigned value cannot be negative");
+    }
+
+    char *endptr = NULL;
+    errno = 0;
+    unsigned long long parsed = strtoull(string, &endptr, 0);
+    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid unsigned integer format");
+    }
+
+    *out_value = (uint64_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t parse_f64(const char *string, double *out_value)
+{
+    if (!string || !out_value) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid floating parse args");
+    }
+
+    if (strcmp(string, "NaN") == 0) {
+        *out_value = NAN;
+        NMO_RETURN_OK();
+    }
+    if (strcmp(string, "Infinity") == 0 || strcmp(string, "+Infinity") == 0) {
+        *out_value = INFINITY;
+        NMO_RETURN_OK();
+    }
+    if (strcmp(string, "-Infinity") == 0) {
+        *out_value = -INFINITY;
+        NMO_RETURN_OK();
+    }
+
+    char *endptr = NULL;
+    errno = 0;
+    double parsed = strtod(string, &endptr);
+    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid floating-point format");
+    }
+
+    *out_value = parsed;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_type_value_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
@@ -1367,15 +1438,94 @@ nmo_status_t nmo_type_value_from_string(
         return nmo_flags_from_string(value, type, registry, string);
     }
 
-    // Dispatch by GUID for built-in types (using NMO_TYPE_GUID_* constants)
+    // Dispatch by GUID for built-in scalar/string types.
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT8)) {
+        int64_t parsed = 0;
+        nmo_status_t st = parse_i64(string, &parsed);
+        if (st != NMO_OK) return st;
+        if (parsed < INT8_MIN || parsed > INT8_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT8 out of range");
+        }
+        *(int8_t *)value = (int8_t)parsed;
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT16)) {
+        int64_t parsed = 0;
+        nmo_status_t st = parse_i64(string, &parsed);
+        if (st != NMO_OK) return st;
+        if (parsed < INT16_MIN || parsed > INT16_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT16 out of range");
+        }
+        *(int16_t *)value = (int16_t)parsed;
+        NMO_RETURN_OK();
+    }
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_FLOAT)) {
         return nmo_float_from_string(value, string);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_DOUBLE)) {
+        double parsed = 0.0;
+        nmo_status_t st = parse_f64(string, &parsed);
+        if (st != NMO_OK) return st;
+        *(double *)value = parsed;
+        NMO_RETURN_OK();
     }
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT)) {
         return nmo_int_from_string(value, string);
     }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT64)) {
+        int64_t parsed = 0;
+        nmo_status_t st = parse_i64(string, &parsed);
+        if (st != NMO_OK) return st;
+        *(int64_t *)value = parsed;
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT8)) {
+        uint64_t parsed = 0;
+        nmo_status_t st = parse_u64(string, &parsed);
+        if (st != NMO_OK) return st;
+        if (parsed > UINT8_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT8 out of range");
+        }
+        *(uint8_t *)value = (uint8_t)parsed;
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT16)) {
+        uint64_t parsed = 0;
+        nmo_status_t st = parse_u64(string, &parsed);
+        if (st != NMO_OK) return st;
+        if (parsed > UINT16_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT16 out of range");
+        }
+        *(uint16_t *)value = (uint16_t)parsed;
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT32) ||
+        nmo_guid_equals(type->guid, NMO_TYPE_GUID_OBJECT_ID)) {
+        uint64_t parsed = 0;
+        nmo_status_t st = parse_u64(string, &parsed);
+        if (st != NMO_OK) return st;
+        if (parsed > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT32 out of range");
+        }
+        *(uint32_t *)value = (uint32_t)parsed;
+        NMO_RETURN_OK();
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT64)) {
+        uint64_t parsed = 0;
+        nmo_status_t st = parse_u64(string, &parsed);
+        if (st != NMO_OK) return st;
+        *(uint64_t *)value = parsed;
+        NMO_RETURN_OK();
+    }
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_BOOL)) {
         return nmo_bool_from_string(value, string);
+    }
+    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_STRING)) {
+        if (!registry || !registry->arena) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Registry with arena required for string parsing");
+        }
+        return nmo_string_from_string(value, string, (nmo_arena_t *)registry->arena);
     }
     
     // Vector types (Vector2 = 2 floats, Vector3 = 3 floats, Vector4/Quaternion = 4 floats)
@@ -1396,17 +1546,6 @@ nmo_status_t nmo_type_value_from_string(
     }
     if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_COLOR)) {
         return nmo_color_from_string(value, string);
-    }
-
-    // Fallback: try by size for unnamed types
-    if (type->size == sizeof(float)) {
-        return nmo_float_from_string(value, string);
-    }
-    if (type->size == sizeof(int32_t)) {
-        return nmo_int_from_string(value, string);
-    }
-    if (type->size == sizeof(bool)) {
-        return nmo_bool_from_string(value, string);
     }
 
     NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR, "Type-from-string not implemented for this type");

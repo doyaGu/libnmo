@@ -7,7 +7,7 @@
 #define NMO_OBJECT_ENUMS_H
 
 #include "nmo_types.h"
-#include "object/nmo_object_enums_defs.h"
+#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {

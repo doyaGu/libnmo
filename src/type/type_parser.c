@@ -56,7 +56,7 @@ static const builtin_type_name_t BUILTIN_TYPES[] = {
     {"VxVector", NMO_TYPE_GUID_VECTOR3_INIT},
     {"VxVector3D", NMO_TYPE_GUID_VECTOR3_INIT},
     {"chunk", NMO_TYPE_GUID_CHUNK_INIT},
-    {NULL, {0, 0}},
+    {NULL, NMO_NULL_GUID},
 };
 
 /* ============================================================================
@@ -176,15 +176,15 @@ static bool is_guid_literal_candidate(const char *str, size_t len) {
  */
 static bool lookup_builtin_type(const char *name, size_t name_len, nmo_guid_t *out_guid) {
     if (str_equals_cs(name, name_len, "uint32_t")) {
-        *out_guid = (nmo_guid_t)NMO_TYPE_GUID_UINT32_INIT;
+        *out_guid = NMO_TYPE_GUID_UINT32;
         return true;
     }
 
     if (str_equals_cs(name, name_len, "size_t")) {
         if (sizeof(size_t) == 8) {
-            *out_guid = (nmo_guid_t)NMO_TYPE_GUID_UINT64_INIT;
+            *out_guid = NMO_TYPE_GUID_UINT64;
         } else {
-            *out_guid = (nmo_guid_t)NMO_TYPE_GUID_UINT32_INIT;
+            *out_guid = NMO_TYPE_GUID_UINT32;
         }
         return true;
     }
@@ -383,7 +383,7 @@ nmo_status_t nmo_type_registry_parse_type_name(
 
 nmo_guid_t nmo_type_generate_guid(const char *type_name) {
     if (!type_name) {
-        return (nmo_guid_t){0, 0};
+        return NMO_GUID_NULL;
     }
     
     /* Simple hash-based GUID generation */

@@ -1,5 +1,5 @@
 /**
- * @file nmo_object_enums_defs.h
+ * @file nmo_object_enum_defs.h
  * @brief CK2/VxMath enum/flags definitions for public use
  */
 

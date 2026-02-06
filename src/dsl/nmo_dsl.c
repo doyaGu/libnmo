@@ -143,6 +143,10 @@ nmo_status_t nmo_dsl_compile(
     prog->arena = arena;
     prog->mode = options->mode;
     prog->source = nmo_arena_strdup(arena, source);
+    if (!prog->source) {
+        nmo_arena_destroy(arena);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "oom");
+    }
 
     nmo_dsl_parser_t ps;
     nmo_dsl_parser_init(&ps, prog->source, arena);
@@ -444,8 +448,30 @@ static nmo_status_t schema_build_struct_fields(
     }
 
     for (size_t i = 0; i < decl->field_count; i++) {
+        const char *type_name = decl->fields[i].type_name;
+        if (decl->fields[i].is_repeated) {
+            /* DSL "T field[]" maps to pointer-backed repeated storage. */
+            size_t base_len = strlen(type_name);
+            char *repeated_type = (char *)malloc(base_len + 2); /* '*' + '\0' */
+            if (!repeated_type) {
+                for (size_t j = 0; j < i; j++) {
+                    if (fields[j].type_name &&
+                        fields[j].type_name != decl->fields[j].type_name) {
+                        free((void *)fields[j].type_name);
+                        fields[j].type_name = NULL;
+                    }
+                }
+                free(fields);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "oom");
+            }
+            memcpy(repeated_type, type_name, base_len);
+            repeated_type[base_len] = '*';
+            repeated_type[base_len + 1] = '\0';
+            type_name = repeated_type;
+        }
+
         fields[i].name = decl->fields[i].field_name;
-        fields[i].type_name = decl->fields[i].type_name;
+        fields[i].type_name = type_name;
         fields[i].type_guid = (nmo_guid_t){0, 0};
         fields[i].description = NULL;
         fields[i].flags = decl->fields[i].is_repeated ? NMO_FIELD_REPEATED : 0;
@@ -454,6 +480,21 @@ static nmo_status_t schema_build_struct_fields(
 
     *out_fields = fields;
     NMO_RETURN_OK();
+}
+
+static void schema_free_struct_fields(
+    const nmo_dsl_struct_decl_t *decl,
+    nmo_struct_field_def_t *fields)
+{
+    if (!decl || !fields) return;
+    for (size_t i = 0; i < decl->field_count; i++) {
+        if (fields[i].type_name &&
+            fields[i].type_name != decl->fields[i].type_name) {
+            free((void *)fields[i].type_name);
+            fields[i].type_name = NULL;
+        }
+    }
+    free(fields);
 }
 
 static nmo_status_t schema_resolve_struct_base(
@@ -561,7 +602,7 @@ static nmo_status_t schema_apply_struct_decl(
     nmo_guid_t base_type_guid = NMO_GUID_NULL;
     st = schema_resolve_struct_base(ctx->registry, decl->base_name, &base_type_guid);
     if (st != NMO_OK) {
-        free(fields);
+        schema_free_struct_fields(decl, fields);
         return st;
     }
 
@@ -578,7 +619,7 @@ static nmo_status_t schema_apply_struct_decl(
 
     nmo_guid_t out_guid;
     st = nmo_type_registry_register_struct(ctx->registry, &def, &out_guid);
-    free(fields);
+    schema_free_struct_fields(decl, fields);
     return st;
 }
 
@@ -607,7 +648,37 @@ static nmo_status_t schema_apply_alias_decl(
     nmo_type_descriptor_t alias_desc = *target;
     alias_desc.name = decl->name;
     alias_desc.guid = schema_generate_guid(ctx, decl->name);
-    return nmo_type_registry_register(ctx->registry, &alias_desc);
+    nmo_status_t st = nmo_type_registry_register(ctx->registry, &alias_desc);
+    if (st != NMO_OK) return st;
+
+    /* Preserve specialized metadata for enum/flags/struct aliases. */
+    if (target->specialized_index != NMO_SPECIALIZED_INDEX_INVALID) {
+        const nmo_type_descriptor_t *alias =
+            nmo_type_registry_find_by_guid(ctx->registry, alias_desc.guid);
+        if (!alias) {
+            (void)nmo_type_registry_unregister(ctx->registry, alias_desc.guid);
+            NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                             "alias registration succeeded but alias lookup failed");
+        }
+
+        const nmo_specialized_metadata_t *target_meta =
+            nmo_type_registry_get_metadata(ctx->registry, target->id);
+        if (!target_meta) {
+            (void)nmo_type_registry_unregister(ctx->registry, alias_desc.guid);
+            NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                             "target type metadata missing for alias");
+        }
+
+        nmo_specialized_metadata_t alias_meta = *target_meta;
+        alias_meta.type_id = alias->id;
+        st = nmo_type_registry_register_metadata(ctx->registry, &alias_meta);
+        if (st != NMO_OK) {
+            (void)nmo_type_registry_unregister(ctx->registry, alias_desc.guid);
+            return st;
+        }
+    }
+
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t schema_apply_decl(
@@ -693,12 +764,20 @@ nmo_status_t nmo_dsl_run_module(
     nmo_status_t st = nmo_dsl_apply_schema_ex(registry, program, schema_options);
     if (st != NMO_OK) return st;
 
+    nmo_dsl_eval_context_t exec_ctx = *ctx;
+    if (!exec_ctx.registry) {
+        exec_ctx.registry = registry;
+    } else if (exec_ctx.registry != registry) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "ctx registry must match module registry");
+    }
+
     if (!program->stmts) {
         if (out_last_value) memset(out_last_value, 0, sizeof(*out_last_value));
         NMO_RETURN_OK();
     }
 
-    return nmo_dsl_exec(program, ctx, out_last_value);
+    return nmo_dsl_exec(program, &exec_ctx, out_last_value);
 }
 
 /* ============================================================================

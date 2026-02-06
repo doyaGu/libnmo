@@ -3,7 +3,7 @@
 
 Usage examples:
   python tools/scripts/gen_object_enums.py \
-    --input include/object/nmo_object_enums_defs.h \
+    --input include/object/nmo_object_enum_defs.h \
     --output src/object/object_enums.generated.h \
     --overrides tools/scripts/enum_overrides.json \
     --emit-register

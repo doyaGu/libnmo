@@ -4,7 +4,7 @@
  */
 
 #include "object/nmo_object_enums.h"
-#include "object/nmo_object_enums_defs.h"
+#include "object/nmo_object_enum_defs.h"
 #include "type/nmo_dynamic_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"

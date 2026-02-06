@@ -62,6 +62,8 @@ typedef struct {
     int32_t x;
     int64_t big;
     float y;
+    const char *name;
+    int32_t inline_arr[3];
 
     int32_t *arr;
     uint32_t arr_count;
@@ -84,6 +86,8 @@ static void fixture_init(script_fixture_t *fx) {
         .x = 5,
         .big = 0x1111111100000000LL,
         .y = 1.5f,
+        .name = "root",
+        .inline_arr = {7, 8, 9},
         .arr = fx->arr_storage,
         .arr_count = 4,
         .child = {
@@ -93,8 +97,8 @@ static void fixture_init(script_fixture_t *fx) {
     };
 }
 
-#define SCRIPT_CHILD_GUID {0x53435250u, 0x00000010u}
-#define SCRIPT_ROOT_GUID  {0x53435250u, 0x00000001u}
+#define SCRIPT_CHILD_GUID NMO_GUID(0x53435250u, 0x00000010u)
+#define SCRIPT_ROOT_GUID  NMO_GUID(0x53435250u, 0x00000001u)
 
 static nmo_arena_t *arena = NULL;
 static nmo_type_registry_t *registry = NULL;
@@ -109,7 +113,7 @@ static uint64_t guess_array_count_cb(
     if (!owner_instance || !field || !field->name) return 0;
     if (strcmp(field->name, "arr") != 0) return 0;
 
-    if (owner_type && nmo_guid_equals(owner_type->guid, (nmo_guid_t)SCRIPT_CHILD_GUID)) {
+    if (owner_type && nmo_guid_equals(owner_type->guid, SCRIPT_CHILD_GUID)) {
         const script_child_t *c = (const script_child_t *)owner_instance;
         return (uint64_t)c->arr_count;
     }
@@ -133,12 +137,12 @@ static void setup(void) {
     };
 
     nmo_type_descriptor_t child_desc = {
-        .guid = (nmo_guid_t)SCRIPT_CHILD_GUID,
+        .guid = SCRIPT_CHILD_GUID,
         .name = "ScriptChild",
         .size = sizeof(script_child_t),
         .alignment = (uint32_t)alignof(script_child_t),
         .class_id = 0,
-        .base_type = (nmo_guid_t){0, 0},
+        .base_type = NMO_GUID_NULL,
         .category = NMO_TYPE_CATEGORY_STRUCT,
         .flags = NMO_TYPE_FLAG_COPYABLE,
         .id = 0,
@@ -153,18 +157,20 @@ static void setup(void) {
         NMO_FIELD(script_root_t, x, NMO_GUID_FIELD_INT32),
         NMO_FIELD(script_root_t, big, NMO_GUID_FIELD_INT64),
         NMO_FIELD(script_root_t, y, NMO_GUID_FIELD_FLOAT),
+        NMO_FIELD(script_root_t, name, NMO_GUID_FIELD_STRING),
+        NMO_FIELD_FULL(script_root_t, inline_arr, NMO_GUID_FIELD_INT32, NMO_FIELD_REPEATED, NMO_SEMANTIC_NONE),
         NMO_FIELD_ARRAY(script_root_t, arr, NMO_GUID_FIELD_INT32),
         NMO_FIELD(script_root_t, arr_count, NMO_GUID_FIELD_UINT32),
         NMO_FIELD(script_root_t, child, SCRIPT_CHILD_GUID),
     };
 
     nmo_type_descriptor_t root_desc = {
-        .guid = (nmo_guid_t)SCRIPT_ROOT_GUID,
+        .guid = SCRIPT_ROOT_GUID,
         .name = "ScriptRoot",
         .size = sizeof(script_root_t),
         .alignment = (uint32_t)alignof(script_root_t),
         .class_id = 0,
-        .base_type = (nmo_guid_t){0, 0},
+        .base_type = NMO_GUID_NULL,
         .category = NMO_TYPE_CATEGORY_STRUCT,
         .flags = NMO_TYPE_FLAG_COPYABLE,
         .id = 0,
@@ -192,7 +198,7 @@ static void make_ctx(script_root_t *root, nmo_dsl_eval_context_t *out_ctx) {
     ASSERT_NE(NULL, out_ctx);
 
     const nmo_type_descriptor_t *root_type =
-        nmo_type_registry_find_by_guid(registry, (nmo_guid_t)SCRIPT_ROOT_GUID);
+        nmo_type_registry_find_by_guid(registry, SCRIPT_ROOT_GUID);
     ASSERT_NE(NULL, root_type);
 
     memset(out_ctx, 0, sizeof(*out_ctx));
@@ -362,6 +368,20 @@ TEST(dsl_script, byref_to_wider_int_field_is_numeric) {
     teardown();
 }
 
+TEST(dsl_script, non_numeric_assignment_rejected) {
+    setup();
+    script_fixture_t fx;
+    fixture_init(&fx);
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&fx.root, &ctx);
+
+    nmo_status_t st = run_script(registry, &ctx, "name = 1", NULL);
+    ASSERT_NE(NMO_OK, st);
+    ASSERT_STR_EQ("root", fx.root.name);
+
+    teardown();
+}
+
 TEST(dsl_script, member_array_index_assignment) {
     setup();
     script_fixture_t fx;
@@ -371,6 +391,36 @@ TEST(dsl_script, member_array_index_assignment) {
 
     assert_ok(run_script(registry, &ctx, "child.arr[2] = 123", NULL), "child.arr[2] = 123");
     ASSERT_EQ(123, fx.arr_storage[2]);
+
+    teardown();
+}
+
+TEST(dsl_script, inline_repeated_index_read) {
+    setup();
+    script_fixture_t fx;
+    fixture_init(&fx);
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&fx.root, &ctx);
+
+    nmo_dsl_value_t last = {0};
+    assert_ok(run_script(registry, &ctx, "inline_arr[1]", &last), "inline_arr[1]");
+    ASSERT_EQ(NMO_DSL_VALUE_BYREF, last.kind);
+    ASSERT_NE(NULL, last.as.byref.ptr);
+    ASSERT_EQ(8, *(const int32_t *)last.as.byref.ptr);
+    nmo_dsl_value_destroy(&last);
+
+    teardown();
+}
+
+TEST(dsl_script, inline_repeated_index_assignment) {
+    setup();
+    script_fixture_t fx;
+    fixture_init(&fx);
+    nmo_dsl_eval_context_t ctx;
+    make_ctx(&fx.root, &ctx);
+
+    assert_ok(run_script(registry, &ctx, "inline_arr[2] = 99", NULL), "inline_arr[2] = 99");
+    ASSERT_EQ(99, fx.root.inline_arr[2]);
 
     teardown();
 }
@@ -426,7 +476,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_script, assign_does_not_produce_value);
     REGISTER_TEST(dsl_script, read_after_write);
     REGISTER_TEST(dsl_script, byref_to_wider_int_field_is_numeric);
+    REGISTER_TEST(dsl_script, non_numeric_assignment_rejected);
     REGISTER_TEST(dsl_script, member_array_index_assignment);
+    REGISTER_TEST(dsl_script, inline_repeated_index_read);
+    REGISTER_TEST(dsl_script, inline_repeated_index_assignment);
     REGISTER_TEST(dsl_script, trailing_junk_rejected);
     REGISTER_TEST(dsl_script, invalid_index_lvalue_rejected);
     REGISTER_TEST(dsl_script, nested_index_lvalue_rejected);

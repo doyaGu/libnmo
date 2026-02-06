@@ -136,6 +136,96 @@ extern nmo_dsl_seq_t *nmo_dsl_seq_slice_create(
     nmo_dsl_seq_t *src, uint64_t start, uint64_t end);
 
 /* ============================================================================
+ * Repeated field helpers
+ * ============================================================================ */
+
+static bool resolve_repeated_field_view(
+    const nmo_dsl_eval_context_t *ctx,
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_type_field_t *field,
+    const void *field_ptr,
+    const void **out_array_ptr,
+    uint64_t *out_count,
+    size_t *out_elem_size,
+    nmo_guid_t *out_elem_guid,
+    const nmo_type_descriptor_t **out_elem_type,
+    nmo_dsl_eval_state_t *ev)
+{
+    if (!ctx || !field || !field_ptr || !out_array_ptr || !out_count ||
+        !out_elem_size || !out_elem_guid || !out_elem_type) {
+        return false;
+    }
+
+    const nmo_struct_descriptor_t *struct_field = NULL;
+    if (ctx->registry && owner_type && field->name) {
+        struct_field = nmo_type_get_struct_field_by_name(ctx->registry, owner_type, field->name);
+    }
+
+    nmo_guid_t elem_guid = field->type_guid;
+    if (struct_field &&
+        nmo_guid_equals(struct_field->type_guid, NMO_TYPE_GUID_POINTER) &&
+        !nmo_guid_is_null(struct_field->pointee_guid)) {
+        elem_guid = struct_field->pointee_guid;
+    }
+
+    const nmo_type_descriptor_t *elem_type = lookup_field_type(ctx->registry, elem_guid);
+    size_t elem_size = 0;
+    if (elem_type && elem_type->size > 0) {
+        elem_size = (size_t)elem_type->size;
+    } else if (nmo_guid_is_field_type(elem_guid)) {
+        uint32_t size_bits = (uint32_t)(elem_guid.d2 >> 16);
+        if (size_bits > 0) {
+            elem_size = (size_t)((size_bits + 7u) / 8u);
+        }
+    }
+    if (elem_size == 0) {
+        set_err(ev, "array element size unknown");
+        return false;
+    }
+
+    uint64_t callback_count = 0;
+    if (ctx->guess_array_count) {
+        callback_count = ctx->guess_array_count(
+            owner_type, owner_instance, field, ctx->guess_array_count_user);
+    }
+
+    bool pointer_storage = true;
+    uint64_t fixed_count = 0;
+    if (struct_field && struct_field->array_count > 0) {
+        pointer_storage = false;
+        fixed_count = (uint64_t)struct_field->array_count;
+    } else if (field->size != sizeof(void *)) {
+        pointer_storage = false;
+        if (field->size >= elem_size) {
+            fixed_count = (uint64_t)(field->size / elem_size);
+        }
+    }
+
+    const void *array_ptr = NULL;
+    uint64_t count = 0;
+    if (pointer_storage) {
+        array_ptr = *(const void *const *)field_ptr;
+        count = callback_count;
+    } else {
+        array_ptr = field_ptr;
+        count = (callback_count > 0) ? callback_count : fixed_count;
+    }
+
+    if (!pointer_storage && !array_ptr) {
+        set_err(ev, "inline array pointer is null");
+        return false;
+    }
+
+    *out_array_ptr = array_ptr;
+    *out_count = count;
+    *out_elem_size = elem_size;
+    *out_elem_guid = elem_guid;
+    *out_elem_type = elem_type;
+    return true;
+}
+
+/* ============================================================================
  * Create array sequence from field
  * ============================================================================ */
 
@@ -148,20 +238,19 @@ static bool create_array_seq(
     nmo_dsl_value_t *out,
     nmo_dsl_eval_state_t *ev)
 {
-    const void *array_ptr = *(const void *const *)ptr;
-    uint64_t count = ctx->guess_array_count
-        ? ctx->guess_array_count(owner_type, owner_instance, f, ctx->guess_array_count_user) : 0;
+    const void *array_ptr = NULL;
+    uint64_t count = 0;
     size_t elem_size = 0;
-    const nmo_type_descriptor_t *elem_type = lookup_field_type(ctx->registry, f->type_guid);
-    if (elem_type && elem_type->size > 0) {
-        elem_size = (size_t)elem_type->size;
-    } else {
-        uint32_t size_bits = (uint32_t)(f->type_guid.d2 & 0xFFFFu);
-        elem_size = (size_bits > 0) ? (size_t)((size_bits + 7u) / 8u) : sizeof(uint32_t);
+    nmo_guid_t elem_guid = NMO_GUID_NULL;
+    const nmo_type_descriptor_t *elem_type = NULL;
+    if (!resolve_repeated_field_view(
+            ctx, owner_type, owner_instance, f, ptr,
+            &array_ptr, &count, &elem_size, &elem_guid, &elem_type, ev)) {
+        return false;
     }
 
     nmo_dsl_seq_t *seq = nmo_dsl_seq_array_create(
-        owner_type, owner_instance, array_ptr, count, elem_size, f->type_guid, elem_type);
+        owner_type, owner_instance, array_ptr, count, elem_size, elem_guid, elem_type);
     if (!seq) { set_err(ev, "oom"); return false; }
     out->kind = NMO_DSL_VALUE_SEQ;
     out->as.seq = seq;
@@ -333,6 +422,144 @@ static bool eval_logic(nmo_dsl_tok_kind_t op, const nmo_dsl_value_t *a,
     else if (op == NMO_DSL_TOK_OROR) out->as.b = x || y;
     else return false;
     return true;
+}
+
+/* ============================================================================
+ * Operation invocation helpers
+ * ============================================================================ */
+
+static bool op_arg_to_native(
+    nmo_dsl_eval_state_t *ev,
+    const nmo_dsl_value_t *arg,
+    uint8_t *buf,
+    size_t buf_size,
+    const void **out_ptr,
+    const nmo_type_descriptor_t **out_type)
+{
+    if (!ev || !arg || !buf || !out_ptr || !out_type) return false;
+    if (!ev->ctx || !ev->ctx->registry) {
+        set_err(ev, "op: no type registry");
+        return false;
+    }
+
+    *out_ptr = NULL;
+    *out_type = NULL;
+
+    if (arg->kind == NMO_DSL_VALUE_INT) {
+        if (buf_size < sizeof(int32_t)) return false;
+        int32_t iv = (int32_t)arg->as.i;
+        memcpy(buf, &iv, sizeof(iv));
+        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_INT);
+        *out_ptr = buf;
+    } else if (arg->kind == NMO_DSL_VALUE_REAL) {
+        if (buf_size < sizeof(float)) return false;
+        float fv = (float)arg->as.r;
+        memcpy(buf, &fv, sizeof(fv));
+        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_FLOAT);
+        *out_ptr = buf;
+    } else if (arg->kind == NMO_DSL_VALUE_BOOL) {
+        if (buf_size < sizeof(bool)) return false;
+        bool bv = arg->as.b;
+        memcpy(buf, &bv, sizeof(bv));
+        *out_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_BOOL);
+        *out_ptr = buf;
+    } else if (arg->kind == NMO_DSL_VALUE_BYREF && arg->as.byref.type && arg->as.byref.ptr) {
+        *out_type = arg->as.byref.type;
+        *out_ptr = arg->as.byref.ptr;
+    } else {
+        return false;
+    }
+
+    if (!*out_type || !*out_ptr) {
+        set_err(ev, "op: failed to resolve argument type");
+        return false;
+    }
+
+    return true;
+}
+
+static bool op_result_to_dsl_value(
+    nmo_dsl_eval_state_t *ev,
+    const nmo_type_descriptor_t *result_type,
+    const void *result_data,
+    nmo_dsl_value_t *out)
+{
+    if (!ev || !result_type || !result_data || !out) return false;
+    nmo_guid_t guid = result_type->guid;
+
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_BOOL)) {
+        out->kind = NMO_DSL_VALUE_BOOL;
+        out->as.b = *(const bool *)result_data;
+        return true;
+    }
+
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT8)) {
+        out->kind = NMO_DSL_VALUE_INT;
+        out->as.i = *(const int8_t *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT16)) {
+        out->kind = NMO_DSL_VALUE_INT;
+        out->as.i = *(const int16_t *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT)) {
+        out->kind = NMO_DSL_VALUE_INT;
+        out->as.i = *(const int32_t *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_INT64)) {
+        out->kind = NMO_DSL_VALUE_INT;
+        out->as.i = *(const int64_t *)result_data;
+        return true;
+    }
+
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT8)) {
+        out->kind = NMO_DSL_VALUE_UINT;
+        out->as.u = *(const uint8_t *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT16)) {
+        out->kind = NMO_DSL_VALUE_UINT;
+        out->as.u = *(const uint16_t *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT32) ||
+        nmo_guid_equals(guid, NMO_TYPE_GUID_OBJECT_ID)) {
+        out->kind = NMO_DSL_VALUE_UINT;
+        out->as.u = *(const uint32_t *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_UINT64)) {
+        out->kind = NMO_DSL_VALUE_UINT;
+        out->as.u = *(const uint64_t *)result_data;
+        return true;
+    }
+
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_FLOAT)) {
+        out->kind = NMO_DSL_VALUE_REAL;
+        out->as.r = (double)*(const float *)result_data;
+        return true;
+    }
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_DOUBLE)) {
+        out->kind = NMO_DSL_VALUE_REAL;
+        out->as.r = *(const double *)result_data;
+        return true;
+    }
+
+    if (nmo_guid_equals(guid, NMO_TYPE_GUID_STRING)) {
+        const char *src = *(const char *const *)result_data;
+        out->kind = NMO_DSL_VALUE_STRING;
+        out->as.s = eval_strdup(src ? src : "");
+        if (!out->as.s) {
+            set_err(ev, "oom");
+            return false;
+        }
+        return true;
+    }
+
+    set_err(ev, "op: unsupported result type");
+    return false;
 }
 
 /* ============================================================================
@@ -628,31 +855,16 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
             nmo_type_registry_find_by_name(ev->ctx->registry, args[0].as.s);
         if (!type) { set_err(ev, "from_string: unknown type"); goto fail; }
 
-        /* For small types, parse into stack buffer and return as primitive */
-        if (type->size <= 8 && type->size > 0) {
-            uint8_t tmp[8] = {0};
-            nmo_status_t st = nmo_type_value_from_string(tmp, type,
+        /* Parse scalar-like values through the type conversion layer. */
+        if (type->size <= sizeof(uint64_t) && type->size > 0) {
+            uint64_t tmp = 0;
+            nmo_status_t st = nmo_type_value_from_string(&tmp, type,
                 ev->ctx->registry, args[1].as.s);
             if (st != NMO_OK) { set_err(ev, "from_string: parse failed"); goto fail; }
 
-            nmo_guid_t g = type->guid;
-            if (nmo_guid_equals(g, NMO_TYPE_GUID_INT)) {
-                out->kind = NMO_DSL_VALUE_INT;
-                out->as.i = *(int32_t *)tmp;
-            } else if (nmo_guid_equals(g, NMO_TYPE_GUID_FLOAT)) {
-                out->kind = NMO_DSL_VALUE_REAL;
-                out->as.r = *(float *)tmp;
-            } else if (nmo_guid_equals(g, NMO_TYPE_GUID_DOUBLE)) {
-                out->kind = NMO_DSL_VALUE_REAL;
-                out->as.r = *(double *)tmp;
-            } else if (nmo_guid_equals(g, NMO_TYPE_GUID_BOOL)) {
-                out->kind = NMO_DSL_VALUE_BOOL;
-                out->as.b = *(bool *)tmp;
-            } else {
-                /* Return as BYREF for other types */
-                out->kind = NMO_DSL_VALUE_INT;
-                out->as.i = 0;
-                memcpy(&out->as.i, tmp, type->size < 8 ? type->size : 8);
+            if (!op_result_to_dsl_value(ev, type, &tmp, out)) {
+                set_err(ev, "from_string: unsupported type");
+                goto fail;
             }
         } else {
             set_err(ev, "from_string: complex types not supported"); goto fail;
@@ -741,94 +953,66 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
         if (!fam) { set_err(ev, "op: unknown operation"); goto fail; }
 
         /* Convert DSL values to typed buffers for the operation system */
-        uint8_t p1_buf[16] = {0}, p2_buf[16] = {0}, result_buf[16] = {0};
+        uint8_t p1_buf[16] = {0}, p2_buf[16] = {0};
         const nmo_type_descriptor_t *p1_type = NULL;
         const nmo_type_descriptor_t *p2_type = NULL;
-        void *p1_ptr = NULL, *p2_ptr = NULL;
+        const void *p1_ptr = NULL, *p2_ptr = NULL;
 
-        /* P1 */
-        if (args[1].kind == NMO_DSL_VALUE_INT) {
-            int32_t iv = (int32_t)args[1].as.i;
-            memcpy(p1_buf, &iv, sizeof(iv));
-            p1_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_INT);
-            p1_ptr = p1_buf;
-        } else if (args[1].kind == NMO_DSL_VALUE_REAL) {
-            float fv = (float)args[1].as.r;
-            memcpy(p1_buf, &fv, sizeof(fv));
-            p1_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_FLOAT);
-            p1_ptr = p1_buf;
-        } else if (args[1].kind == NMO_DSL_VALUE_BOOL) {
-            int32_t bv = args[1].as.b ? 1 : 0;
-            memcpy(p1_buf, &bv, sizeof(bv));
-            p1_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_BOOL);
-            p1_ptr = p1_buf;
-        } else if (args[1].kind == NMO_DSL_VALUE_BYREF &&
-                   args[1].as.byref.type && args[1].as.byref.ptr) {
-            p1_type = args[1].as.byref.type;
-            p1_ptr = (void *)args[1].as.byref.ptr;
-        } else {
-            set_err(ev, "op: unsupported p1 type"); goto fail;
+        if (!op_arg_to_native(ev, &args[1], p1_buf, sizeof(p1_buf), &p1_ptr, &p1_type)) {
+            set_err(ev, "op: unsupported p1 type");
+            goto fail;
         }
 
         /* P2 (optional) */
         if (call->arg_count == 3) {
-            if (args[2].kind == NMO_DSL_VALUE_INT) {
-                int32_t iv = (int32_t)args[2].as.i;
-                memcpy(p2_buf, &iv, sizeof(iv));
-                p2_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_INT);
-                p2_ptr = p2_buf;
-            } else if (args[2].kind == NMO_DSL_VALUE_REAL) {
-                float fv = (float)args[2].as.r;
-                memcpy(p2_buf, &fv, sizeof(fv));
-                p2_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_FLOAT);
-                p2_ptr = p2_buf;
-            } else if (args[2].kind == NMO_DSL_VALUE_BOOL) {
-                int32_t bv = args[2].as.b ? 1 : 0;
-                memcpy(p2_buf, &bv, sizeof(bv));
-                p2_type = nmo_type_registry_find_by_guid(ev->ctx->registry, NMO_TYPE_GUID_BOOL);
-                p2_ptr = p2_buf;
-            } else if (args[2].kind == NMO_DSL_VALUE_BYREF &&
-                       args[2].as.byref.type && args[2].as.byref.ptr) {
-                p2_type = args[2].as.byref.type;
-                p2_ptr = (void *)args[2].as.byref.ptr;
-            } else {
-                set_err(ev, "op: unsupported p2 type"); goto fail;
+            if (!op_arg_to_native(ev, &args[2], p2_buf, sizeof(p2_buf), &p2_ptr, &p2_type)) {
+                set_err(ev, "op: unsupported p2 type");
+                goto fail;
             }
         }
 
-        nmo_status_t st = nmo_operation_registry_execute(
+        const nmo_operation_tree_cell_t *cell = NULL;
+        nmo_status_t st = nmo_operation_registry_find(
             (nmo_operation_registry_t *)ops,
             &fam->operation_guid,
+            p1_type,
+            p2_type,
+            ev->ctx->registry,
+            &cell);
+        if (st != NMO_OK || !cell || !cell->desc.function || !cell->result_type) {
+            set_err(ev, "op: operation not found");
+            goto fail;
+        }
+
+        size_t result_size = (cell->result_type->size > 0) ? (size_t)cell->result_type->size : sizeof(uint64_t);
+        uint8_t result_stack[32] = {0};
+        void *result_ptr = result_stack;
+        if (result_size > sizeof(result_stack)) {
+            result_ptr = malloc(result_size);
+            if (!result_ptr) {
+                set_err(ev, "oom");
+                goto fail;
+            }
+            memset(result_ptr, 0, result_size);
+        }
+
+        st = cell->desc.function(
             p1_ptr, p1_type,
             p2_ptr, p2_type,
-            result_buf, NULL,
-            ev->ctx->registry);
-        if (st != NMO_OK) { set_err(ev, "op: execution failed"); goto fail; }
-
-        /* Convert result to DSL value. Best effort: check result type. */
-        /* The operation result type is the same as p1 for most arith ops */
-        if (p1_type && nmo_guid_equals(p1_type->guid, NMO_TYPE_GUID_INT)) {
-            out->kind = NMO_DSL_VALUE_INT;
-            int32_t rv;
-            memcpy(&rv, result_buf, sizeof(rv));
-            out->as.i = rv;
-        } else if (p1_type && nmo_guid_equals(p1_type->guid, NMO_TYPE_GUID_FLOAT)) {
-            out->kind = NMO_DSL_VALUE_REAL;
-            float rv;
-            memcpy(&rv, result_buf, sizeof(rv));
-            out->as.r = rv;
-        } else if (p1_type && nmo_guid_equals(p1_type->guid, NMO_TYPE_GUID_BOOL)) {
-            out->kind = NMO_DSL_VALUE_BOOL;
-            int32_t rv;
-            memcpy(&rv, result_buf, sizeof(rv));
-            out->as.b = (rv != 0);
-        } else {
-            /* Fallback: return as int */
-            out->kind = NMO_DSL_VALUE_INT;
-            int32_t rv;
-            memcpy(&rv, result_buf, sizeof(rv));
-            out->as.i = rv;
+            result_ptr, cell->result_type,
+            cell->desc.user_data);
+        if (st != NMO_OK) {
+            if (result_ptr != result_stack) free(result_ptr);
+            set_err(ev, "op: execution failed");
+            goto fail;
         }
+
+        if (!op_result_to_dsl_value(ev, cell->result_type, result_ptr, out)) {
+            if (result_ptr != result_stack) free(result_ptr);
+            goto fail;
+        }
+        if (result_ptr != result_stack) free(result_ptr);
+
         for (size_t j = 0; j < call->arg_count; ++j)
             nmo_dsl_value_destroy(&args[j]);
         return true;
@@ -1128,6 +1312,7 @@ static bool resolve_mutable_repeated_field(
     nmo_dsl_eval_state_t *ev,
     const nmo_dsl_expr_t *base_expr,
     void **out_array_ptr,
+    uint64_t *out_count,
     size_t *out_elem_size,
     nmo_guid_t *out_elem_guid,
     const nmo_type_descriptor_t **out_owner_type,
@@ -1135,8 +1320,7 @@ static bool resolve_mutable_repeated_field(
     const nmo_type_field_t **out_field)
 {
     const nmo_dsl_eval_context_t *ctx = ev->ctx;
-    if (!ctx || !base_expr || !out_array_ptr || !out_elem_size || !out_elem_guid ||
-        !out_owner_type || !out_owner_instance || !out_field) {
+    if (!ctx || !base_expr || !out_array_ptr || !out_count || !out_elem_size || !out_elem_guid) {
         return false;
     }
 
@@ -1195,27 +1379,31 @@ static bool resolve_mutable_repeated_field(
         return false;
     }
 
-    void *array_ptr = *(void **)field_ptr;
+    const void *array_ptr = NULL;
+    uint64_t count = 0;
+    size_t elem_size = 0;
+    nmo_guid_t elem_guid = NMO_GUID_NULL;
+    const nmo_type_descriptor_t *elem_type = NULL;
+    if (!resolve_repeated_field_view(
+            ctx, owner_type, owner_instance, f, field_ptr,
+            &array_ptr, &count, &elem_size, &elem_guid, &elem_type, ev)) {
+        return false;
+    }
+
     if (!array_ptr) {
         set_err(ev, "null array pointer");
         return false;
     }
 
-    const nmo_type_descriptor_t *elem_type = lookup_field_type(ctx->registry, f->type_guid);
-    size_t elem_size = 0;
-    if (elem_type && elem_type->size > 0) {
-        elem_size = (size_t)elem_type->size;
-    } else {
-        uint32_t size_bits = (uint32_t)(f->type_guid.d2 & 0xFFFFu);
-        elem_size = (size_bits > 0) ? (size_t)((size_bits + 7u) / 8u) : sizeof(uint32_t);
-    }
+    (void)elem_type;
 
-    *out_array_ptr = array_ptr;
+    *out_array_ptr = (void *)array_ptr;
+    *out_count = count;
     *out_elem_size = elem_size;
-    *out_elem_guid = f->type_guid;
-    *out_owner_type = owner_type;
-    *out_owner_instance = owner_instance;
-    *out_field = f;
+    *out_elem_guid = elem_guid;
+    if (out_owner_type) *out_owner_type = owner_type;
+    if (out_owner_instance) *out_owner_instance = owner_instance;
+    if (out_field) *out_field = f;
     return true;
 }
 
@@ -1223,8 +1411,6 @@ static bool resolve_mutable_target(nmo_dsl_eval_state_t *ev,
                                     const nmo_dsl_expr_t *target,
                                     void **out_ptr, size_t *out_size,
                                     nmo_guid_t *out_guid) {
-    const nmo_dsl_eval_context_t *ctx = ev->ctx;
-
     if (target->kind == NMO_DSL_EXPR_IDENT) {
         void *ptr = NULL;
         const nmo_type_field_t *f = NULL;
@@ -1277,15 +1463,13 @@ static bool resolve_mutable_target(nmo_dsl_eval_state_t *ev,
 
     if (target->kind == NMO_DSL_EXPR_INDEX) {
         void *array_ptr = NULL;
+        uint64_t count = 0;
         size_t elem_size = 0;
         nmo_guid_t elem_guid = NMO_GUID_NULL;
-        const nmo_type_descriptor_t *owner_type = NULL;
-        const void *owner_instance = NULL;
-        const nmo_type_field_t *field = NULL;
 
         if (!resolve_mutable_repeated_field(ev, target->as.index.base,
-                                            &array_ptr, &elem_size, &elem_guid,
-                                            &owner_type, &owner_instance, &field)) {
+                                            &array_ptr, &count, &elem_size, &elem_guid,
+                                            NULL, NULL, NULL)) {
             return false;
         }
 
@@ -1308,8 +1492,6 @@ static bool resolve_mutable_target(nmo_dsl_eval_state_t *ev,
         }
         uint64_t idx = (uint64_t)d;
 
-        uint64_t count = ctx->guess_array_count
-            ? ctx->guess_array_count(owner_type, owner_instance, field, ctx->guess_array_count_user) : 0;
         if (idx >= count) {
             set_err(ev, "index out of bounds");
             return false;
@@ -1343,25 +1525,31 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
 
     /* Convert RHS to a numeric value for type-aware writing */
     uint8_t target_class = (uint8_t)(guid.d1 & 0xFFu);
+    bool target_is_numeric =
+        target_class == NMO_GUID_FIELD_CLASS_INT ||
+        target_class == NMO_GUID_FIELD_CLASS_UINT ||
+        target_class == NMO_GUID_FIELD_CLASS_OBJECT_ID ||
+        target_class == NMO_GUID_FIELD_CLASS_FLOAT ||
+        target_class == NMO_GUID_FIELD_CLASS_BOOL;
 
     /* First, get a numeric representation of the RHS */
     double d_val = 0.0;
     int64_t i_val = 0;
     bool have_number = false;
 
-    if (rhs.kind == NMO_DSL_VALUE_INT) {
+    if (rhs.kind == NMO_DSL_VALUE_INT && target_is_numeric) {
         i_val = rhs.as.i;
         d_val = (double)rhs.as.i;
         have_number = true;
-    } else if (rhs.kind == NMO_DSL_VALUE_UINT) {
+    } else if (rhs.kind == NMO_DSL_VALUE_UINT && target_is_numeric) {
         i_val = (int64_t)rhs.as.u;
         d_val = (double)rhs.as.u;
         have_number = true;
-    } else if (rhs.kind == NMO_DSL_VALUE_REAL) {
+    } else if (rhs.kind == NMO_DSL_VALUE_REAL && target_is_numeric) {
         i_val = (int64_t)rhs.as.r;
         d_val = rhs.as.r;
         have_number = true;
-    } else if (rhs.kind == NMO_DSL_VALUE_BOOL) {
+    } else if (rhs.kind == NMO_DSL_VALUE_BOOL && target_is_numeric) {
         i_val = rhs.as.b ? 1 : 0;
         d_val = rhs.as.b ? 1.0 : 0.0;
         have_number = true;
@@ -1383,7 +1571,7 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
             nmo_dsl_value_destroy(&rhs);
             return true;
         }
-        if (value_to_number(&rhs, &d_val)) {
+        if (target_is_numeric && value_to_number(&rhs, &d_val)) {
             i_val = (int64_t)d_val;
             have_number = true;
         }
@@ -1391,7 +1579,11 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
 
     if (!have_number) {
         nmo_dsl_value_destroy(&rhs);
-        set_err(ev, "cannot assign this value type");
+        if (!target_is_numeric) {
+            set_err(ev, "cannot assign non-numeric field from incompatible value");
+        } else {
+            set_err(ev, "cannot assign this value type");
+        }
         return false;
     }
 
@@ -1423,14 +1615,9 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
         uint8_t v = (i_val != 0) ? 1 : 0;
         memcpy(ptr, &v, 1);
     } else {
-        /* Unknown type class — try raw size-based write */
-        if (size <= 8) {
-            memcpy(ptr, &i_val, size < 8 ? size : 8);
-        } else {
-            nmo_dsl_value_destroy(&rhs);
-            set_err(ev, "cannot assign to this field type");
-            return false;
-        }
+        nmo_dsl_value_destroy(&rhs);
+        set_err(ev, "cannot assign to non-numeric field type");
+        return false;
     }
 
     nmo_dsl_value_destroy(&rhs);
