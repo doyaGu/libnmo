@@ -18,7 +18,7 @@
  * ============================================================================= */
 
 int nmo_class_is_derived_from(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t child_id,
     nmo_class_id_t parent_id)
 {
@@ -51,7 +51,7 @@ int nmo_class_is_derived_from(
 }
 
 nmo_class_id_t nmo_class_get_parent(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     if (!registry || class_id == 0) {
@@ -80,7 +80,7 @@ nmo_class_id_t nmo_class_get_parent(
 }
 
 int nmo_class_get_ancestors(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id,
     nmo_class_id_t *ancestors,
     size_t max_count)
@@ -106,7 +106,7 @@ int nmo_class_get_ancestors(
 }
 
 nmo_class_id_t nmo_class_get_common_ancestor(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id1,
     nmo_class_id_t class_id2)
 {
@@ -145,7 +145,7 @@ nmo_class_id_t nmo_class_get_common_ancestor(
 }
 
 int nmo_class_get_derivation_level(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     if (!registry || class_id == 0) {
@@ -177,7 +177,7 @@ int nmo_class_get_derivation_level(
  * ============================================================================= */
 
 int nmo_class_uses_beobject_deserializer(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     if (!registry) {
@@ -189,21 +189,21 @@ int nmo_class_uses_beobject_deserializer(
 }
 
 int nmo_class_is_render_object(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     return nmo_class_is_derived_from(registry, class_id, NMO_CID_RENDEROBJECT);
 }
 
 int nmo_class_is_3d_entity(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     return nmo_class_is_derived_from(registry, class_id, NMO_CID_3DENTITY);
 }
 
 int nmo_class_is_2d_entity(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     return nmo_class_is_derived_from(registry, class_id, NMO_CID_2DENTITY);

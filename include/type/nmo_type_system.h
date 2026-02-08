@@ -6,6 +6,7 @@
 #include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -446,6 +447,15 @@ typedef struct nmo_saver_manager {
  * Extended with annotation support per design.md Section 5.4
  * ============================================================================ */
 
+typedef struct nmo_type_descriptor_ext {
+    nmo_compatibility_mask_t compat_mask;      /* Cached derivation mask */
+    const struct nmo_type_descriptor **hierarchy; /* Array of ancestor types (root first, self last) */
+    uint32_t *state_offsets;                   /* Byte offset of each ancestor's state */
+    uint16_t hierarchy_depth;                  /* Number of types in hierarchy (including self) */
+    uint16_t _padding;                         /* Alignment padding */
+    uint32_t total_state_size;                 /* Sum of all ancestor state sizes */
+} nmo_type_descriptor_ext_t;
+
 typedef struct nmo_type_descriptor {
     /* === Core Identity (40 bytes) === */
     nmo_guid_t guid;                    /* Type GUID (primary key) */
@@ -453,42 +463,57 @@ typedef struct nmo_type_descriptor {
     uint32_t class_id;                  /* Virtools CK_CLASSID (for objects) */
     uint16_t category;                  /* Type category bit flags */
     uint16_t flags;                     /* Type flags */
-    
+
     /* === Naming & Documentation (24 bytes) === */
     const char *name;                   /* Type name */
     const char *description;            /* Type documentation (optional) */
-    nmo_guid_t base_type;              /* Parent type GUID (for inheritance) */
-    
+    nmo_guid_t base_type;               /* Parent type GUID (for inheritance) */
+    nmo_type_id_t base_type_id;         /* Cached parent type ID */
+
     /* === Size & Alignment (8 bytes) === */
     uint32_t size;                      /* Size in bytes */
     uint32_t alignment;                 /* Alignment requirement */
-    
+
     /* === Fields (16 bytes) === */
-    const nmo_type_field_t *fields;    /* Field descriptors (for structs) */
+    const nmo_type_field_t *fields;     /* Field descriptors (for structs) */
     size_t field_count;                 /* Number of fields */
-    
-    /* === Compatibility (32 bytes) === */
-    nmo_compatibility_mask_t compat_mask;  /* Cached derivation mask */
-    
+
     /* === Extension Points (8 bytes) === */
-    const nmo_type_vtable_t *vtable;   /* Virtual function table */
+    const nmo_type_vtable_t *vtable;    /* Virtual function table */
     nmo_type_finish_loading_fn finish_loading; /* Optional post-deserialize hook */
-    
+
     /* === Plugin Tracking (16 bytes) === */
-    nmo_guid_t creator_plugin_guid;      /* Extension plugin GUID that registered this type */
-    nmo_manager_index_t saver_manager; /* Manager for custom serialization */
-    uint32_t specialized_index;        /* 0-based index into metadata array (NMO_SPECIALIZED_INDEX_INVALID if none) */
-    bool valid;                         /* FALSE after unregistration (soft invalidation) */
-    uint8_t _padding[3];                /* Alignment padding */
-    
-    /* === State Layout for ECS (24 bytes) === */
-    /* Computed during registration based on inheritance chain */
-    const nmo_type_descriptor_t **hierarchy; /* Array of ancestor types (root first, self last) */
-    uint32_t *state_offsets;            /* Byte offset of each ancestor's state in combined state */
-    uint16_t hierarchy_depth;           /* Number of types in hierarchy (including self) */
-    uint16_t _padding2;                 /* Alignment padding */
-    uint32_t total_state_size;          /* Sum of all ancestor state sizes (aligned) */
-} nmo_type_descriptor_t;  /* Total: ~184 bytes */
+    nmo_guid_t creator_plugin_guid;     /* Extension plugin GUID that registered this type */
+    nmo_manager_index_t saver_manager;  /* Manager for custom serialization */
+    uint32_t specialized_index;         /* 0-based index into metadata array (NMO_SPECIALIZED_INDEX_INVALID if none) */
+    bool valid;                          /* FALSE after unregistration (soft invalidation) */
+    uint8_t _padding0[3];               /* Alignment padding */
+
+    /* === Versioning (8 bytes) === */
+    uint32_t version;                   /* Type version (0 = unspecified) */
+    uint32_t min_compatible_version;    /* Minimum compatible version */
+
+    /* === Cold/Derived Data === */
+    nmo_type_descriptor_ext_t *ext;     /* Optional cold data storage */
+} nmo_type_descriptor_t;
+
+/**
+ * @brief Per-type alias list tracking (registry-owned).
+ */
+typedef struct nmo_type_alias_list {
+    const char **aliases;  /* Pointer array of alias strings */
+    size_t count;          /* Number of aliases */
+    size_t capacity;       /* Allocated alias slots */
+} nmo_type_alias_list_t;
+
+/**
+ * @brief Per-type derived list tracking (registry-owned).
+ */
+typedef struct nmo_type_child_list {
+    nmo_type_id_t *children; /* Pointer array of child type IDs */
+    size_t count;            /* Number of children */
+    size_t capacity;         /* Allocated child slots */
+} nmo_type_child_list_t;
 
 /* ============================================================================
  * Type Registry
@@ -505,6 +530,11 @@ typedef struct nmo_type_registry {
     nmo_hash_table_t *guid_map;  /* GUID -> type_id (O(1) primary lookup) */
     nmo_hash_table_t *name_map;  /* name -> type_id (O(1) auxiliary lookup) */
     nmo_hash_table_t *class_id_map;  /* class_id -> type_id (O(1) for Virtools objects) */
+    nmo_arena_array_t alias_lists; /* Array of nmo_type_alias_list_t (index = type_id) */
+    nmo_arena_array_t child_lists; /* Array of nmo_type_child_list_t (index = type_id) */
+    nmo_arena_array_t free_slots;  /* Stack of freed type slots */
+    nmo_hash_table_t *class_id_inherited_map; /* class_id -> inherited type_id cache */
+    uint32_t class_id_inherited_version;      /* Cache version (matches registry_version) */
     
     /* === Derivation Cache === */
     bool derivation_masks_valid;        /* FALSE when types change (lazy update) */
@@ -523,6 +553,7 @@ typedef struct nmo_type_registry {
     
     /* === Memory Management === */
     nmo_arena_t *arena;                 /* Arena allocator */
+    nmo_allocator_t type_allocator;     /* Allocator for type-owned data */
     
     /* === Statistics === */
     size_t builtin_count;               /* Built-in types */
@@ -540,6 +571,14 @@ typedef struct nmo_type_registry {
  * @return New registry instance, or NULL on failure
  */
 nmo_type_registry_t* nmo_type_registry_create(nmo_arena_t *arena);
+
+/**
+ * @brief Create type registry with custom allocator for type-owned data
+ * @param arena Arena allocator for registry memory
+ * @param type_allocator Allocator for type-owned data (descriptors, strings, fields)
+ * @return New registry instance, or NULL on failure
+ */
+nmo_type_registry_t* nmo_type_registry_create_ex(nmo_arena_t *arena, nmo_allocator_t type_allocator);
 
 /**
  * @brief Destroy type registry
@@ -653,7 +692,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
  * @return Type descriptor (possibly parent class), or NULL if not found
  */
 const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     uint32_t class_id);
 
 /**
@@ -684,7 +723,7 @@ const nmo_type_descriptor_t* nmo_type_registry_get_by_id(
  * @return true if child_id derives from parent_id (or is same type)
  */
 bool nmo_type_is_derived_from(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_type_id_t child_id,
     nmo_type_id_t parent_id);
 
@@ -724,7 +763,7 @@ nmo_status_t nmo_type_get_inheritance_chain(
  * @return true if compatible (type1 can be used as type2 or vice versa)
  */
 bool nmo_type_is_compatible(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_type_id_t type1,
     nmo_type_id_t type2);
 
@@ -737,9 +776,19 @@ bool nmo_type_is_compatible(
  * @return Depth (1=direct parent, 2=grandparent, etc), or -1 if not derived
  */
 int32_t nmo_type_get_derivation_depth(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_type_id_t child_id,
     nmo_type_id_t parent_id);
+
+/**
+ * @brief Finalize registry caches (derivation masks, derived caches)
+ *
+ * Must be called after registration/unregistration before concurrent read usage.
+ *
+ * @param registry Registry
+ * @return nmo_ok() on success
+ */
+nmo_status_t nmo_type_registry_finalize(nmo_type_registry_t *registry);
 
 /* --- Type Conversion API (Phase 6.3.3) ---
  *

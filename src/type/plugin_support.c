@@ -12,6 +12,8 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
+#include "core/nmo_arena_array.h"
 #include <string.h>
 #include <assert.h>
 
@@ -19,11 +21,17 @@
  * Metadata Deep Copy Helpers
  * ============================================================================ */
 
-static const char *nmo_arena_strdup_optional(nmo_arena_t *arena, const char *src) {
+static const char *nmo_alloc_strdup_optional(nmo_allocator_t *allocator, const char *src) {
     if (!src) {
         return NULL;
     }
-    return nmo_arena_strdup(arena, src);
+    size_t len = strlen(src) + 1u;
+    char *dst = (char *)nmo_alloc(allocator, len, _Alignof(char));
+    if (!dst) {
+        return NULL;
+    }
+    memcpy(dst, src, len);
+    return dst;
 }
 
 static nmo_status_t nmo_copy_enum_metadata(
@@ -35,8 +43,8 @@ static nmo_status_t nmo_copy_enum_metadata(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Enum metadata must include values");
     }
 
-    nmo_enum_descriptor_t *values_copy = (nmo_enum_descriptor_t *)nmo_arena_alloc(
-        registry->arena,
+    nmo_enum_descriptor_t *values_copy = (nmo_enum_descriptor_t *)nmo_alloc(
+        &registry->type_allocator,
         metadata->enum_meta.value_count * sizeof(nmo_enum_descriptor_t),
         _Alignof(nmo_enum_descriptor_t));
     if (!values_copy) {
@@ -46,11 +54,11 @@ static nmo_status_t nmo_copy_enum_metadata(
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
         const nmo_enum_descriptor_t *src = &metadata->enum_meta.values[i];
         nmo_enum_descriptor_t *dst = &values_copy[i];
-        dst->name = nmo_arena_strdup_optional(registry->arena, src->name);
+        dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
         if (src->name && !dst->name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy enum value name");
         }
-        dst->description = nmo_arena_strdup_optional(registry->arena, src->description);
+        dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
         if (src->description && !dst->description) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy enum value description");
         }
@@ -72,8 +80,8 @@ static nmo_status_t nmo_copy_flags_metadata(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Flags metadata must include bits");
     }
 
-    nmo_flags_descriptor_t *bits_copy = (nmo_flags_descriptor_t *)nmo_arena_alloc(
-        registry->arena,
+    nmo_flags_descriptor_t *bits_copy = (nmo_flags_descriptor_t *)nmo_alloc(
+        &registry->type_allocator,
         metadata->flags_meta.bit_count * sizeof(nmo_flags_descriptor_t),
         _Alignof(nmo_flags_descriptor_t));
     if (!bits_copy) {
@@ -83,11 +91,11 @@ static nmo_status_t nmo_copy_flags_metadata(
     for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
         const nmo_flags_descriptor_t *src = &metadata->flags_meta.bits[i];
         nmo_flags_descriptor_t *dst = &bits_copy[i];
-        dst->name = nmo_arena_strdup_optional(registry->arena, src->name);
+        dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
         if (src->name && !dst->name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy flags bit name");
         }
-        dst->description = nmo_arena_strdup_optional(registry->arena, src->description);
+        dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
         if (src->description && !dst->description) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy flags bit description");
         }
@@ -109,8 +117,8 @@ static nmo_status_t nmo_copy_struct_metadata(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Struct metadata must include fields");
     }
 
-    nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_arena_alloc(
-        registry->arena,
+    nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_alloc(
+        &registry->type_allocator,
         metadata->struct_meta.field_count * sizeof(nmo_struct_descriptor_t),
         _Alignof(nmo_struct_descriptor_t));
     if (!fields_copy) {
@@ -120,11 +128,11 @@ static nmo_status_t nmo_copy_struct_metadata(
     for (size_t i = 0; i < metadata->struct_meta.field_count; i++) {
         const nmo_struct_descriptor_t *src = &metadata->struct_meta.fields[i];
         nmo_struct_descriptor_t *dst = &fields_copy[i];
-        dst->name = nmo_arena_strdup_optional(registry->arena, src->name);
+        dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
         if (src->name && !dst->name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy struct field name");
         }
-        dst->description = nmo_arena_strdup_optional(registry->arena, src->description);
+        dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
         if (src->description && !dst->description) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy struct field description");
         }
@@ -157,8 +165,8 @@ static nmo_status_t nmo_copy_union_metadata(
         NMO_RETURN_OK();
     }
 
-    nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_arena_alloc(
-        registry->arena,
+    nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_alloc(
+        &registry->type_allocator,
         sizeof(nmo_struct_descriptor_t) * metadata->union_meta.field_count,
         _Alignof(nmo_struct_descriptor_t));
     if (!fields_copy) {
@@ -171,13 +179,13 @@ static nmo_status_t nmo_copy_union_metadata(
 
         memset(dst, 0, sizeof(*dst));
         if (src->name) {
-            dst->name = nmo_arena_strdup(registry->arena, src->name);
+            dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
             if (!dst->name) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy union field name");
             }
         }
         if (src->description) {
-            dst->description = nmo_arena_strdup(registry->arena, src->description);
+            dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
             if (!dst->description) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy union field description");
             }
@@ -213,8 +221,8 @@ static nmo_status_t nmo_deep_copy_metadata(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Unknown metadata type");
     }
 
-    nmo_specialized_metadata_t *copy = (nmo_specialized_metadata_t *)nmo_arena_alloc(
-        registry->arena,
+    nmo_specialized_metadata_t *copy = (nmo_specialized_metadata_t *)nmo_alloc(
+        &registry->type_allocator,
         sizeof(nmo_specialized_metadata_t),
         _Alignof(nmo_specialized_metadata_t));
     if (!copy) {
@@ -249,6 +257,78 @@ static nmo_status_t nmo_deep_copy_metadata(
 
     *out_copy = copy;
     NMO_RETURN_OK();
+}
+
+static void nmo_free_metadata(
+    nmo_type_registry_t *registry,
+    nmo_specialized_metadata_t *metadata)
+{
+    if (!registry || !metadata) {
+        return;
+    }
+
+    switch (metadata->metadata_type) {
+        case NMO_METADATA_TYPE_ENUM:
+            if (metadata->enum_meta.values) {
+                for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
+                    nmo_enum_descriptor_t *value = &metadata->enum_meta.values[i];
+                    if (value->name) {
+                        nmo_free(&registry->type_allocator, (void *)value->name);
+                    }
+                    if (value->description) {
+                        nmo_free(&registry->type_allocator, (void *)value->description);
+                    }
+                }
+                nmo_free(&registry->type_allocator, metadata->enum_meta.values);
+            }
+            break;
+        case NMO_METADATA_TYPE_FLAGS:
+            if (metadata->flags_meta.bits) {
+                for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
+                    nmo_flags_descriptor_t *bit = &metadata->flags_meta.bits[i];
+                    if (bit->name) {
+                        nmo_free(&registry->type_allocator, (void *)bit->name);
+                    }
+                    if (bit->description) {
+                        nmo_free(&registry->type_allocator, (void *)bit->description);
+                    }
+                }
+                nmo_free(&registry->type_allocator, metadata->flags_meta.bits);
+            }
+            break;
+        case NMO_METADATA_TYPE_STRUCT:
+            if (metadata->struct_meta.fields) {
+                for (size_t i = 0; i < metadata->struct_meta.field_count; i++) {
+                    nmo_struct_descriptor_t *field = &metadata->struct_meta.fields[i];
+                    if (field->name) {
+                        nmo_free(&registry->type_allocator, (void *)field->name);
+                    }
+                    if (field->description) {
+                        nmo_free(&registry->type_allocator, (void *)field->description);
+                    }
+                }
+                nmo_free(&registry->type_allocator, metadata->struct_meta.fields);
+            }
+            break;
+        case NMO_METADATA_TYPE_UNION:
+            if (metadata->union_meta.fields) {
+                for (size_t i = 0; i < metadata->union_meta.field_count; i++) {
+                    nmo_struct_descriptor_t *field = &metadata->union_meta.fields[i];
+                    if (field->name) {
+                        nmo_free(&registry->type_allocator, (void *)field->name);
+                    }
+                    if (field->description) {
+                        nmo_free(&registry->type_allocator, (void *)field->description);
+                    }
+                }
+                nmo_free(&registry->type_allocator, metadata->union_meta.fields);
+            }
+            break;
+        default:
+            break;
+    }
+
+    nmo_free(&registry->type_allocator, metadata);
 }
 
 /* ============================================================================
@@ -298,26 +378,74 @@ nmo_status_t nmo_type_registry_unregister_derived(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
     }
 
-    // Find all types derived from base_guid
-    for (size_t i = 0; i < registry->types.count; i++) {
-        nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
-        if (!type || !type->valid) continue;
+    const nmo_type_descriptor_t *base_type = nmo_type_registry_find_by_guid(registry, base_guid);
+    if (!base_type) {
+        /* Fallback: if the base type is not registered, scan for direct children. */
+        for (size_t i = 0; i < registry->types.count; i++) {
+            nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
+            if (!type || !type->valid) continue;
 
-        // Check if this type derives from base_guid
-        if (nmo_guid_equals(type->base_type, base_guid)) {
-            // Recursively unregister all types derived from this one
-            nmo_status_t result = nmo_type_registry_unregister_derived(registry, type->guid);
-            if (result != NMO_OK) {
-                return result;
-            }
+            if (nmo_guid_equals(type->base_type, base_guid)) {
+                nmo_status_t result = nmo_type_registry_unregister_derived(registry, type->guid);
+                if (result != NMO_OK) {
+                    return result;
+                }
 
-            // Then unregister this type
-            result = nmo_type_registry_unregister(registry, type->guid);
-            if (result != NMO_OK) {
-                return result;
+                result = nmo_type_registry_unregister(registry, type->guid);
+                if (result != NMO_OK) {
+                    return result;
+                }
             }
         }
+
+        NMO_RETURN_OK();
     }
+
+    nmo_type_id_t base_id = base_type->id;
+    if (base_id < 0 || (size_t)base_id >= registry->child_lists.count) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_type_child_list_t *child_list =
+        (nmo_type_child_list_t *)nmo_arena_array_get(&registry->child_lists, (size_t)base_id);
+    if (!child_list || child_list->count == 0 || !child_list->children) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_type_id_t *children = (nmo_type_id_t *)nmo_alloc(
+        &alloc,
+        child_list->count * sizeof(nmo_type_id_t),
+        _Alignof(nmo_type_id_t));
+    if (!children) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate child list snapshot");
+    }
+
+    memcpy(children, child_list->children, child_list->count * sizeof(nmo_type_id_t));
+    size_t child_count = child_list->count;
+
+    for (size_t i = 0; i < child_count; i++) {
+        nmo_type_descriptor_t *child = (nmo_type_descriptor_t *)nmo_type_registry_get_by_id(registry, children[i]);
+        if (!child || !child->valid) {
+            continue;
+        }
+
+        nmo_guid_t child_guid = child->guid;
+        nmo_status_t result = nmo_type_registry_unregister_derived(registry, child_guid);
+        if (result != NMO_OK) {
+            nmo_free(&alloc, children);
+            return result;
+        }
+
+        result = nmo_type_registry_unregister(registry, child_guid);
+        if (result != NMO_OK) {
+            nmo_free(&alloc, children);
+            return result;
+        }
+    }
+
+    nmo_free(&alloc, children);
 
     NMO_RETURN_OK();
 }
@@ -427,6 +555,7 @@ nmo_status_t nmo_type_registry_invalidate(
 
     // Invalidate derivation masks (will be rebuilt on next compatibility check)
     registry->derivation_masks_valid = false;
+    registry->class_id_inherited_version = 0;
 
     // Note: We keep the slot for potential recycling
     // The actual slot cleanup happens in nmo_type_registry_unregister()
@@ -464,7 +593,10 @@ nmo_status_t nmo_type_registry_register_metadata(
     // Store in array and create index mapping
     size_t index = registry->metadata.count;
     nmo_status_t res = nmo_arena_array_append(&registry->metadata, &meta_copy);
-    if (res != NMO_OK) return res;
+    if (res != NMO_OK) {
+        nmo_free_metadata(registry, meta_copy);
+        return res;
+    }
 
     // Create fast lookup mapping (type_id -> metadata_index)
     nmo_status_t insert_result = nmo_hash_table_insert(registry->type_to_metadata,
@@ -472,6 +604,7 @@ nmo_status_t nmo_type_registry_register_metadata(
                                                        &index);
     if (insert_result != NMO_OK) {
         nmo_arena_array_pop(&registry->metadata, NULL);
+        nmo_free_metadata(registry, meta_copy);
         return insert_result;
     }
 
@@ -503,6 +636,18 @@ void nmo_type_registry_unregister_metadata(
 {
     if (!registry) return;
 
+    size_t index = 0;
+    if (nmo_hash_table_get(registry->type_to_metadata, &type_id, &index) == NMO_OK) {
+        if (index < registry->metadata.count) {
+            nmo_specialized_metadata_t **entry =
+                (nmo_specialized_metadata_t **)nmo_arena_array_get(&registry->metadata, index);
+            if (entry && *entry) {
+                nmo_free_metadata(registry, *entry);
+                *entry = NULL;
+            }
+        }
+    }
+
     // Remove from hash table
     nmo_hash_table_remove(registry->type_to_metadata, &type_id);
 
@@ -513,7 +658,4 @@ void nmo_type_registry_unregister_metadata(
             type->specialized_index = NMO_SPECIALIZED_INDEX_INVALID;
         }
     }
-
-    // Note: We keep the metadata in the array for now (it's arena-allocated anyway)
-    // A full cleanup would require compacting the array and updating all indices
 }

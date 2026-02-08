@@ -96,7 +96,7 @@ extern "C" {
  */
 NMO_API nmo_status_t nmo_register_builtin_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -117,7 +117,7 @@ NMO_API nmo_status_t nmo_register_builtin_types(
  */
 NMO_API nmo_status_t nmo_register_arithmetic_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -125,7 +125,7 @@ NMO_API nmo_status_t nmo_register_arithmetic_operations(
  */
 NMO_API nmo_status_t nmo_register_logic_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -133,7 +133,7 @@ NMO_API nmo_status_t nmo_register_logic_operations(
  */
 NMO_API nmo_status_t nmo_register_comparison_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -141,7 +141,7 @@ NMO_API nmo_status_t nmo_register_comparison_operations(
  */
 NMO_API nmo_status_t nmo_register_bitwise_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -149,7 +149,7 @@ NMO_API nmo_status_t nmo_register_bitwise_operations(
  */
 NMO_API nmo_status_t nmo_register_trigonometry_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -157,7 +157,7 @@ NMO_API nmo_status_t nmo_register_trigonometry_operations(
  */
 NMO_API nmo_status_t nmo_register_vector_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 #ifdef __cplusplus

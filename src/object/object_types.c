@@ -309,7 +309,7 @@ nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry) {
  * ============================================================================ */
 
 const nmo_type_descriptor_t* nmo_get_object_type_by_class_id(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id)
 {
     if (!registry) {
@@ -320,7 +320,7 @@ const nmo_type_descriptor_t* nmo_get_object_type_by_class_id(
 }
 
 int nmo_is_object_type(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_guid_t type_guid)
 {
     if (!registry) {

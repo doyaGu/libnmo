@@ -192,7 +192,7 @@ NMO_API nmo_status_t nmo_register_mesh_types(nmo_type_registry_t *registry);
  * @return Type descriptor, or NULL if not found
  */
 NMO_API const nmo_type_descriptor_t* nmo_get_object_type_by_class_id(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 /**
@@ -203,7 +203,7 @@ NMO_API const nmo_type_descriptor_t* nmo_get_object_type_by_class_id(
  * @return 1 if derived from CKObject, 0 otherwise
  */
 NMO_API int nmo_is_object_type(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_guid_t type_guid);
 
 #ifdef __cplusplus

@@ -199,6 +199,12 @@ typedef struct nmo_operation_registry {
     
     /* GUID-based hash map for O(1) family lookup */
     nmo_hash_table_t *family_map;        /**< GUID -> family index */
+
+    /* Lookup cache for resolved operations */
+    nmo_hash_table_t *lookup_cache;      /**< cache key -> cell pointer */
+    uint32_t registry_version;           /**< Incremented on operation changes */
+    uint32_t cache_version;              /**< Version used by lookup_cache */
+    uint32_t cached_type_registry_version; /**< Type registry version for cache */
     
     /* Statistics */
     uint64_t total_operations;           /**< Total operations across all families */
@@ -227,6 +233,19 @@ NMO_API nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *are
  */
 NMO_API void nmo_operation_registry_destroy(nmo_operation_registry_t *registry);
 
+/**
+ * @brief Finalize operation registry caches
+ *
+ * Clears and primes caches after bulk registration.
+ *
+ * @param registry Operation registry
+ * @param type_registry Type registry (used for cache versioning)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_operation_registry_finalize(
+    nmo_operation_registry_t *registry,
+    const nmo_type_registry_t *type_registry);
+
 /* ============================================================================
  * Operation Registration
  * ============================================================================ */
@@ -250,7 +269,7 @@ NMO_API void nmo_operation_registry_destroy(nmo_operation_registry_t *registry);
 NMO_API nmo_status_t nmo_operation_registry_register(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *desc,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /**
@@ -274,7 +293,7 @@ NMO_API nmo_status_t nmo_operation_registry_register_bulk(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *descs,
     uint32_t count,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     nmo_logger_t *logger
 );
 
@@ -306,7 +325,7 @@ NMO_API nmo_status_t nmo_operation_registry_find(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 );
 
@@ -332,7 +351,7 @@ NMO_API nmo_status_t nmo_operation_registry_find_typed(
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
     const nmo_type_descriptor_t *result_type,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 );
 
@@ -361,7 +380,7 @@ NMO_API nmo_status_t nmo_operation_registry_execute(
     const nmo_type_descriptor_t *p2_type,
     void *result_data,
     const nmo_type_descriptor_t *result_type,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 );
 
 /* ============================================================================

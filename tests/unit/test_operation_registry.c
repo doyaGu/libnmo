@@ -412,6 +412,61 @@ TEST(operation_registry, find_operation_success) {
     teardown_context(ctx);
 }
 
+TEST(operation_registry, lookup_cache_hits) {
+    test_context_t *ctx = setup_context();
+    ASSERT_NE(NULL, ctx);
+
+    nmo_type_descriptor_t int_type = {0};
+    int_type.guid = GUID_TYPE_INT;
+    int_type.name = "INT";
+    int_type.size = sizeof(int32_t);
+    int_type.alignment = alignof(int32_t);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type));
+
+    nmo_operation_desc_t desc = {0};
+    desc.operation_guid = GUID_OP_ADD;
+    desc.p1_type_guid = GUID_TYPE_INT;
+    desc.p2_type_guid = GUID_TYPE_INT;
+    desc.result_type_guid = GUID_TYPE_INT;
+    desc.function = mock_add_int;
+    desc.flags = NMO_OP_BINARY | NMO_OP_COMMUTATIVE;
+    desc.priority = 100;
+    desc.name = "Add";
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &desc, ctx->type_registry));
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        ctx->operation_registry,
+        &GUID_OP_ADD,
+        &int_type,
+        &int_type,
+        ctx->type_registry,
+        &cell));
+
+    uint64_t total_ops = 0;
+    uint64_t total_lookups = 0;
+    uint64_t cache_hits = 0;
+    nmo_operation_registry_get_stats(ctx->operation_registry, &total_ops, &total_lookups, &cache_hits);
+    ASSERT_EQ(1, total_ops);
+    ASSERT_EQ(1, total_lookups);
+    ASSERT_EQ(0, cache_hits);
+
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        ctx->operation_registry,
+        &GUID_OP_ADD,
+        &int_type,
+        &int_type,
+        ctx->type_registry,
+        &cell));
+
+    nmo_operation_registry_get_stats(ctx->operation_registry, &total_ops, &total_lookups, &cache_hits);
+    ASSERT_EQ(1, total_ops);
+    ASSERT_EQ(2, total_lookups);
+    ASSERT_EQ(1, cache_hits);
+
+    teardown_context(ctx);
+}
+
 TEST(operation_registry, find_operation_not_implemented) {
     test_context_t *ctx = setup_context();
     ASSERT_NE(NULL, ctx);

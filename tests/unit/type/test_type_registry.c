@@ -380,6 +380,55 @@ TEST(type_registry, unregister_removes_lookups) {
     nmo_arena_destroy(arena);
 }
 
+TEST(type_registry, unregister_removes_aliases) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_descriptor_t test_type = {0};
+    test_type.guid = GUID_CHARACTER;
+    test_type.name = "AliasType";
+    test_type.category = NMO_TYPE_CATEGORY_STRUCT;
+    test_type.size = 8;
+    test_type.alignment = 4;
+
+    nmo_status_t result = nmo_type_registry_register(registry, &test_type);
+    ASSERT_EQ(NMO_OK, result);
+
+    const nmo_type_descriptor_t *registered = nmo_type_registry_find_by_guid(registry, GUID_CHARACTER);
+    ASSERT_NE(NULL, registered);
+
+    result = nmo_type_registry_add_name_alias(registry, registered->id, "ALIAS");
+    ASSERT_EQ(NMO_OK, result);
+
+    ASSERT_NE(NULL, nmo_type_registry_find_by_name(registry, "ALIAS"));
+
+    result = nmo_type_registry_unregister(registry, GUID_CHARACTER);
+    ASSERT_EQ(NMO_OK, result);
+
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "ALIAS"));
+
+    nmo_type_descriptor_t new_type = {0};
+    new_type.guid = GUID_INT;
+    new_type.name = "NewType";
+    new_type.category = NMO_TYPE_CATEGORY_STRUCT;
+    new_type.size = 4;
+    new_type.alignment = 4;
+
+    result = nmo_type_registry_register(registry, &new_type);
+    ASSERT_EQ(NMO_OK, result);
+
+    const nmo_type_descriptor_t *registered_new = nmo_type_registry_find_by_guid(registry, GUID_INT);
+    ASSERT_NE(NULL, registered_new);
+
+    result = nmo_type_registry_add_name_alias(registry, registered_new->id, "ALIAS");
+    ASSERT_EQ(NMO_OK, result);
+
+    ASSERT_NE(NULL, nmo_type_registry_find_by_name(registry, "ALIAS"));
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Test: Slot Recycling
  * ============================================================================ */

@@ -31,6 +31,63 @@ static int guid_compare_wrapper(const void *key1, const void *key2, size_t key_s
     return nmo_guid_equals(*g1, *g2) ? 0 : -1;
 }
 
+typedef struct nmo_operation_cache_key {
+    nmo_guid_t operation_guid;
+    nmo_type_id_t p1_type_id;
+    nmo_type_id_t p2_type_id;
+    nmo_guid_t result_type_guid;
+} nmo_operation_cache_key_t;
+
+static size_t operation_cache_hash(const void *key, size_t key_size) {
+    (void)key_size;
+    const nmo_operation_cache_key_t *k = (const nmo_operation_cache_key_t *)key;
+    size_t h = (size_t)nmo_guid_hash(k->operation_guid);
+    h ^= (size_t)k->p1_type_id * 0x9e3779b1u;
+    h ^= (size_t)k->p2_type_id * 0x85ebca6bu;
+    h ^= (size_t)nmo_guid_hash(k->result_type_guid) << 1u;
+    return h;
+}
+
+static int operation_cache_compare(const void *key1, const void *key2, size_t key_size) {
+    (void)key_size;
+    const nmo_operation_cache_key_t *a = (const nmo_operation_cache_key_t *)key1;
+    const nmo_operation_cache_key_t *b = (const nmo_operation_cache_key_t *)key2;
+    if (!nmo_guid_equals(a->operation_guid, b->operation_guid)) {
+        return -1;
+    }
+    if (a->p1_type_id != b->p1_type_id || a->p2_type_id != b->p2_type_id) {
+        return -1;
+    }
+    return nmo_guid_equals(a->result_type_guid, b->result_type_guid) ? 0 : -1;
+}
+
+static void ensure_lookup_cache(
+    nmo_operation_registry_t *registry,
+    const nmo_type_registry_t *type_registry)
+{
+    if (!registry) {
+        return;
+    }
+
+    uint32_t type_version = type_registry ? type_registry->registry_version : 0u;
+    if (!registry->lookup_cache ||
+        registry->cache_version != registry->registry_version ||
+        registry->cached_type_registry_version != type_version) {
+        if (registry->lookup_cache) {
+            nmo_hash_table_destroy(registry->lookup_cache);
+        }
+        registry->lookup_cache = nmo_hash_table_create(
+            NULL,
+            sizeof(nmo_operation_cache_key_t),
+            sizeof(const nmo_operation_tree_cell_t *),
+            128,
+            operation_cache_hash,
+            operation_cache_compare);
+        registry->cache_version = registry->registry_version;
+        registry->cached_type_registry_version = type_version;
+    }
+}
+
 /* ============================================================================
  * Internal Helpers
  * ============================================================================ */
@@ -295,6 +352,9 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
     
     memset(registry, 0, sizeof(*registry));
     registry->arena = arena;
+    registry->registry_version = 0;
+    registry->cache_version = 0;
+    registry->cached_type_registry_version = 0;
     
     /* Create hash map for O(1) family lookup: GUID -> family index */
     registry->family_map = nmo_hash_table_create(
@@ -321,6 +381,20 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
         registry->family_map = NULL;
         return NULL;
     }
+
+    registry->lookup_cache = nmo_hash_table_create(
+        NULL,
+        sizeof(nmo_operation_cache_key_t),
+        sizeof(const nmo_operation_tree_cell_t *),
+        128,
+        operation_cache_hash,
+        operation_cache_compare
+    );
+    if (!registry->lookup_cache) {
+        nmo_hash_table_destroy(registry->family_map);
+        registry->family_map = NULL;
+        return NULL;
+    }
     
     return registry;
 }
@@ -334,6 +408,25 @@ void nmo_operation_registry_destroy(nmo_operation_registry_t *registry) {
         nmo_hash_table_destroy(registry->family_map);
         registry->family_map = NULL;
     }
+
+    if (registry->lookup_cache) {
+        nmo_hash_table_destroy(registry->lookup_cache);
+        registry->lookup_cache = NULL;
+    }
+}
+
+nmo_status_t nmo_operation_registry_finalize(
+    nmo_operation_registry_t *registry,
+    const nmo_type_registry_t *type_registry)
+{
+    if (!registry) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid operation registry");
+    }
+
+    ensure_lookup_cache(registry, type_registry);
+
+    NMO_RETURN_OK();
 }
 
 /* ============================================================================
@@ -343,7 +436,7 @@ void nmo_operation_registry_destroy(nmo_operation_registry_t *registry) {
 nmo_status_t nmo_operation_registry_register(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *desc,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 ) {
     if (!registry || !desc || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -362,7 +455,8 @@ nmo_status_t nmo_operation_registry_register(
     );
     if (!p1_type) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                "P1 type not found in type registry");
+                                "P1 type not found in type registry (op='%s')",
+                                desc->name ? desc->name : "<unnamed>");
     }
     
     const nmo_type_descriptor_t *p2_type = NULL;
@@ -370,7 +464,8 @@ nmo_status_t nmo_operation_registry_register(
         p2_type = nmo_type_registry_find_by_guid(type_registry, desc->p2_type_guid);
         if (!p2_type) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                    "P2 type not found in type registry");
+                                    "P2 type not found in type registry (op='%s')",
+                                    desc->name ? desc->name : "<unnamed>");
         }
     }
     
@@ -379,7 +474,8 @@ nmo_status_t nmo_operation_registry_register(
     );
     if (!result_type) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
-                                "Result type not found in type registry");
+                                "Result type not found in type registry (op='%s')",
+                                desc->name ? desc->name : "<unnamed>");
     }
     
     /* Navigate 4D tree: Operation -> P1 -> P2 -> Cell */
@@ -421,6 +517,7 @@ nmo_status_t nmo_operation_registry_register(
             family->description = desc->description;
         }
         family->total_operations++;
+        registry->registry_version++;
     }
     
     return result;
@@ -430,7 +527,7 @@ nmo_status_t nmo_operation_registry_register_bulk(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *descs,
     uint32_t count,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     nmo_logger_t *logger
 ) {
     if (!registry || !descs || count == 0 || !type_registry) {
@@ -523,7 +620,7 @@ static nmo_status_t find_p2_layer(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     const nmo_operation_p2_layer_t **out_p2_layer
 ) {
     if (!registry || !operation_guid || !p1_type || !out_p2_layer) {
@@ -649,7 +746,7 @@ nmo_status_t nmo_operation_registry_find_typed(
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
     const nmo_type_descriptor_t *result_type,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 ) {
     if (!registry || !operation_guid || !p1_type || !result_type || !out_cell) {
@@ -659,6 +756,64 @@ nmo_status_t nmo_operation_registry_find_typed(
 
     *out_cell = NULL;
     registry->total_lookups++;
+
+    if (type_registry) {
+        ensure_lookup_cache(registry, type_registry);
+
+        nmo_type_id_t p1_id = nmo_type_registry_guid_to_type_id(type_registry, p1_type->guid);
+        nmo_type_id_t p2_id = NMO_TYPE_ID_INVALID;
+        if (p2_type) {
+            p2_id = nmo_type_registry_guid_to_type_id(type_registry, p2_type->guid);
+        }
+
+        if (p1_id != NMO_TYPE_ID_INVALID &&
+            (p2_type == NULL || p2_id != NMO_TYPE_ID_INVALID)) {
+            nmo_operation_cache_key_t key = {
+                .operation_guid = *operation_guid,
+                .p1_type_id = p1_id,
+                .p2_type_id = p2_id,
+                .result_type_guid = (nmo_guid_t){0, 0}
+            };
+            const nmo_operation_tree_cell_t *cached_cell = NULL;
+            if (registry->lookup_cache &&
+                nmo_hash_table_get(registry->lookup_cache, &key, &cached_cell) == NMO_OK) {
+                nmo_operation_tree_cell_t *mutable_cell = (nmo_operation_tree_cell_t *)cached_cell;
+                mutable_cell->call_count++;
+                registry->cache_hits++;
+                *out_cell = cached_cell;
+                return NMO_OK;
+            }
+        }
+    }
+
+    if (type_registry) {
+        ensure_lookup_cache(registry, type_registry);
+
+        nmo_type_id_t p1_id = nmo_type_registry_guid_to_type_id(type_registry, p1_type->guid);
+        nmo_type_id_t p2_id = NMO_TYPE_ID_INVALID;
+        if (p2_type) {
+            p2_id = nmo_type_registry_guid_to_type_id(type_registry, p2_type->guid);
+        }
+
+        if (p1_id != NMO_TYPE_ID_INVALID &&
+            (p2_type == NULL || p2_id != NMO_TYPE_ID_INVALID)) {
+            nmo_operation_cache_key_t key = {
+                .operation_guid = *operation_guid,
+                .p1_type_id = p1_id,
+                .p2_type_id = p2_id,
+                .result_type_guid = result_type->guid
+            };
+            const nmo_operation_tree_cell_t *cached_cell = NULL;
+            if (registry->lookup_cache &&
+                nmo_hash_table_get(registry->lookup_cache, &key, &cached_cell) == NMO_OK) {
+                nmo_operation_tree_cell_t *mutable_cell = (nmo_operation_tree_cell_t *)cached_cell;
+                mutable_cell->call_count++;
+                registry->cache_hits++;
+                *out_cell = cached_cell;
+                return NMO_OK;
+            }
+        }
+    }
 
     const nmo_operation_p2_layer_t *p2_layer = NULL;
     nmo_status_t layer_result = find_p2_layer(
@@ -678,7 +833,27 @@ nmo_status_t nmo_operation_registry_find_typed(
     mutable_cell->call_count++;
 
     *out_cell = cell;
-    registry->cache_hits++;  /* Placeholder - no real cache yet */
+    if (type_registry) {
+        nmo_type_id_t p1_id = nmo_type_registry_guid_to_type_id(type_registry, p1_type->guid);
+        nmo_type_id_t p2_id = NMO_TYPE_ID_INVALID;
+        if (p2_type) {
+            p2_id = nmo_type_registry_guid_to_type_id(type_registry, p2_type->guid);
+        }
+
+        if (p1_id != NMO_TYPE_ID_INVALID &&
+            (p2_type == NULL || p2_id != NMO_TYPE_ID_INVALID)) {
+            nmo_operation_cache_key_t key = {
+                .operation_guid = *operation_guid,
+                .p1_type_id = p1_id,
+                .p2_type_id = p2_id,
+                .result_type_guid = result_type->guid
+            };
+            if (registry->lookup_cache) {
+                nmo_hash_table_insert(registry->lookup_cache, &key, &cell);
+            }
+        }
+    }
+
     NMO_RETURN_OK();
 }
 
@@ -687,7 +862,7 @@ nmo_status_t nmo_operation_registry_find(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 ) {
     if (!registry || !operation_guid || !p1_type || !out_cell) {
@@ -816,7 +991,26 @@ nmo_status_t nmo_operation_registry_find(
     mutable_cell->call_count++;
     
     *out_cell = cell;
-    registry->cache_hits++;  /* Placeholder - no real cache yet */
+    if (type_registry) {
+        nmo_type_id_t p1_id = nmo_type_registry_guid_to_type_id(type_registry, p1_type->guid);
+        nmo_type_id_t p2_id = NMO_TYPE_ID_INVALID;
+        if (p2_type) {
+            p2_id = nmo_type_registry_guid_to_type_id(type_registry, p2_type->guid);
+        }
+
+        if (p1_id != NMO_TYPE_ID_INVALID &&
+            (p2_type == NULL || p2_id != NMO_TYPE_ID_INVALID)) {
+            nmo_operation_cache_key_t key = {
+                .operation_guid = *operation_guid,
+                .p1_type_id = p1_id,
+                .p2_type_id = p2_id,
+                .result_type_guid = (nmo_guid_t){0, 0}
+            };
+            if (registry->lookup_cache) {
+                nmo_hash_table_insert(registry->lookup_cache, &key, &cell);
+            }
+        }
+    }
     
     NMO_RETURN_OK();
 }
@@ -830,7 +1024,7 @@ nmo_status_t nmo_operation_registry_execute(
     const nmo_type_descriptor_t *p2_type,
     void *result_data,
     const nmo_type_descriptor_t *result_type,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 ) {
     if (!registry || !operation_guid || !p1_data || !p1_type || !result_data || !result_type) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,

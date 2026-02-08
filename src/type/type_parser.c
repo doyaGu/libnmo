@@ -210,7 +210,7 @@ nmo_status_t nmo_type_registry_parse_type_name(
 ) {
     if (!type_registry || !type_name || !result) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "NULL type_registry, type_name, or result");
+                                "Invalid arguments to parse type name");
     }
     
     /* Initialize result */
@@ -224,13 +224,13 @@ nmo_status_t nmo_type_registry_parse_type_name(
     
     if (len == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Empty type name");
+                                "Empty type name: '%s'", type_name);
     }
 
     size_t start = skip_whitespace(str, 0, len);
     if (start >= len) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Empty type name");
+                                "Empty type name: '%s'", type_name);
     }
 
     size_t suffix_start = len;
@@ -247,7 +247,7 @@ nmo_status_t nmo_type_registry_parse_type_name(
 
     if (base_name_len == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Missing base type name");
+                                "Missing base type name in '%s'", type_name);
     }
 
     /* Try GUID literal first (whitespace-tolerant) */
@@ -311,32 +311,35 @@ nmo_status_t nmo_type_registry_parse_type_name(
         }
     }
 
-    /* Parse suffixes (whitespace-tolerant) */
+    /* Parse suffixes (single-pass, whitespace-tolerant) */
     uint32_t pointer_depth = 0;
     uint32_t array_count = 0;
     bool has_array = false;
     size_t pos = suffix_start;
 
-    while (true) {
-        pos = skip_whitespace(str, pos, len);
-        if (pos >= len) {
-            break;
+    while (pos < len) {
+        char c = str[pos];
+        if (isspace((unsigned char)c)) {
+            pos++;
+            continue;
         }
 
-        if (str[pos] == '*') {
+        if (c == '*') {
             pointer_depth++;
             pos++;
             continue;
         }
 
-        if (str[pos] == '[') {
+        if (c == '[') {
             if (has_array) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                         "Multiple array suffixes not supported");
             }
 
             pos++;
-            pos = skip_whitespace(str, pos, len);
+            while (pos < len && isspace((unsigned char)str[pos])) {
+                pos++;
+            }
 
             if (pos >= len || !isdigit((unsigned char)str[pos])) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -354,7 +357,9 @@ nmo_status_t nmo_type_registry_parse_type_name(
                 pos++;
             }
 
-            pos = skip_whitespace(str, pos, len);
+            while (pos < len && isspace((unsigned char)str[pos])) {
+                pos++;
+            }
             if (pos >= len || str[pos] != ']') {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                         "Malformed array syntax in type name");

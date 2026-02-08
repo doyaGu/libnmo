@@ -37,7 +37,7 @@ typedef struct nmo_type_registry nmo_type_registry_t;
  * @return 1 if child is derived from parent (or is parent), 0 otherwise
  */
 NMO_API int nmo_class_is_derived_from(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t child_id,
     nmo_class_id_t parent_id);
 
@@ -49,7 +49,7 @@ NMO_API int nmo_class_is_derived_from(
  * @return Parent class ID, or 0 if root class or not found
  */
 NMO_API nmo_class_id_t nmo_class_get_parent(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 /**
@@ -65,7 +65,7 @@ NMO_API nmo_class_id_t nmo_class_get_parent(
  * ancestors[0] = parent, ancestors[1] = grandparent, etc.
  */
 NMO_API int nmo_class_get_ancestors(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id,
     nmo_class_id_t *ancestors,
     size_t max_count);
@@ -79,7 +79,7 @@ NMO_API int nmo_class_get_ancestors(
  * @return Common ancestor class ID, or 0 if no common ancestor
  */
 NMO_API nmo_class_id_t nmo_class_get_common_ancestor(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id1,
     nmo_class_id_t class_id2);
 
@@ -92,7 +92,7 @@ NMO_API nmo_class_id_t nmo_class_get_common_ancestor(
  *         or -1 if not found
  */
 NMO_API int nmo_class_get_derivation_level(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 /* =============================================================================
@@ -111,7 +111,7 @@ NMO_API int nmo_class_get_derivation_level(
  * @return 1 if uses CKBeObject deserializer, 0 otherwise
  */
 NMO_API int nmo_class_uses_beobject_deserializer(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 /**
@@ -122,7 +122,7 @@ NMO_API int nmo_class_uses_beobject_deserializer(
  * @return 1 if derived from CKRenderObject, 0 otherwise
  */
 NMO_API int nmo_class_is_render_object(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 /**
@@ -133,7 +133,7 @@ NMO_API int nmo_class_is_render_object(
  * @return 1 if derived from CK3dEntity, 0 otherwise
  */
 NMO_API int nmo_class_is_3d_entity(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 /**
@@ -144,7 +144,7 @@ NMO_API int nmo_class_is_3d_entity(
  * @return 1 if derived from CK2dEntity, 0 otherwise
  */
 NMO_API int nmo_class_is_2d_entity(
-    const nmo_type_registry_t *registry,
+    nmo_type_registry_t *registry,
     nmo_class_id_t class_id);
 
 #ifdef __cplusplus

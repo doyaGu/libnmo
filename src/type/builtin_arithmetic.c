@@ -22,7 +22,7 @@
 
 static nmo_status_t register_op(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry,
+    nmo_type_registry_t *type_registry,
     nmo_guid_t op_guid,
     const char *name,
     const char *description,
@@ -483,7 +483,7 @@ static nmo_status_t op_power_double(
 
 nmo_status_t nmo_register_arithmetic_operations(
     nmo_operation_registry_t *operation_registry,
-    const nmo_type_registry_t *type_registry
+    nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
