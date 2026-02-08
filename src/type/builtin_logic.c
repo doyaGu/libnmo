@@ -9,6 +9,7 @@
 #include "type/nmo_operations.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_array.h"
 #include "core/nmo_string.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -251,6 +252,45 @@ static nmo_status_t op_not_equal_pointer(
     const void *a = *(void * const *)p1_data;
     const void *b = *(void * const *)p2_data;
     *(bool *)result_data = (a != b);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t op_equal_array(
+    const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type,
+    void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
+) {
+    (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
+
+    const nmo_array_t *a = (const nmo_array_t *)p1_data;
+    const nmo_array_t *b = (const nmo_array_t *)p2_data;
+
+    if (a->element_size != b->element_size || a->count != b->count) {
+        *(bool *)result_data = false;
+        NMO_RETURN_OK();
+    }
+    if (a->count == 0) {
+        *(bool *)result_data = true;
+        NMO_RETURN_OK();
+    }
+    if (a->data == NULL || b->data == NULL) {
+        *(bool *)result_data = false;
+        NMO_RETURN_OK();
+    }
+
+    size_t byte_len = a->count * a->element_size;
+    *(bool *)result_data = (memcmp(a->data, b->data, byte_len) == 0);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t op_not_equal_array(
+    const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type,
+    void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
+) {
+    nmo_status_t s = op_equal_array(p1_data, p1_type, p2_data, p2_type, result_data, result_type, user_data);
+    if (s != NMO_OK) {
+        return s;
+    }
+    *(bool *)result_data = !*(bool *)result_data;
     NMO_RETURN_OK();
 }
 
@@ -620,6 +660,14 @@ nmo_status_t nmo_register_comparison_operations(
     NMO_RETURN_IF_ERROR(s);
     s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Bool inequality: a != b",
                     NMO_TYPE_GUID_BOOL, NMO_TYPE_GUID_BOOL, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_bool);
+    NMO_RETURN_IF_ERROR(s);
+
+    /* ARRAY equality (bytewise; no allocation) */
+    s = register_op(operation_registry, type_registry, NMO_OP_GUID_EQUAL, "Equal", "Array equality: a == b",
+                    CKPGUID_ARRAY, CKPGUID_ARRAY, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_equal_array);
+    NMO_RETURN_IF_ERROR(s);
+    s = register_op(operation_registry, type_registry, NMO_OP_GUID_NOT_EQUAL, "NotEqual", "Array inequality: a != b",
+                    CKPGUID_ARRAY, CKPGUID_ARRAY, NMO_TYPE_GUID_BOOL, NMO_OP_BINARY, 100, op_not_equal_array);
     NMO_RETURN_IF_ERROR(s);
 
     /* Signed/unsigned integers + float (existing) */

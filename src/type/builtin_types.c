@@ -8,12 +8,16 @@
 #include "type/nmo_type_system.h"
 #include "core/nmo_math.h"
 #include "core/nmo_color.h"
+#include "core/nmo_array.h"
+#include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include "type/nmo_type_guids.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdalign.h>
+#include <string.h>
+#include <stdio.h>
 
 /* ============================================================================
  * Builtin Type VTables
@@ -652,6 +656,161 @@ const nmo_type_vtable_t nmo_builtin_vtable_box = {
     .hash = nmo_hash_bytes_box,
     .to_string = nmo_vt_to_string_box,
     .from_string = nmo_vt_from_string_box,
+};
+
+static nmo_status_t nmo_builtin_create_array(void *instance, const nmo_type_descriptor_t *type, void *context) {
+    (void)type;
+    (void)context;
+
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "array create: NULL instance");
+    }
+
+    nmo_array_t *arr = (nmo_array_t *)instance;
+    return nmo_array_init(arr, 1, 0, NULL);
+}
+
+static void nmo_builtin_destroy_array(void *instance, const nmo_type_descriptor_t *type, void *context) {
+    (void)type;
+    (void)context;
+
+    if (instance == NULL) {
+        return;
+    }
+
+    nmo_array_dispose((nmo_array_t *)instance);
+}
+
+static nmo_status_t nmo_builtin_copy_array(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena
+) {
+    (void)type;
+    (void)arena;
+
+    if (src == NULL || dst == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "array copy: NULL argument");
+    }
+
+    const nmo_array_t *src_arr = (const nmo_array_t *)src;
+    nmo_array_t *dst_arr = (nmo_array_t *)dst;
+
+    /* Ensure destination starts empty to avoid leaking pre-existing backing store. */
+    memset(dst_arr, 0, sizeof(*dst_arr));
+
+    if (src_arr->element_size == 0) {
+        /* Treat as empty byte array for resilience. */
+        return nmo_array_init(dst_arr, 1, 0, NULL);
+    }
+
+    return nmo_array_clone(src_arr, dst_arr, &src_arr->allocator);
+}
+
+static bool nmo_builtin_equals_array(const void *a, const void *b) {
+    if (a == b) {
+        return true;
+    }
+    if (a == NULL || b == NULL) {
+        return false;
+    }
+
+    const nmo_array_t *aa = (const nmo_array_t *)a;
+    const nmo_array_t *bb = (const nmo_array_t *)b;
+
+    if (aa->element_size != bb->element_size || aa->count != bb->count) {
+        return false;
+    }
+    if (aa->count == 0) {
+        return true;
+    }
+    if (aa->data == NULL || bb->data == NULL) {
+        return false;
+    }
+
+    size_t byte_len = aa->count * aa->element_size;
+    return memcmp(aa->data, bb->data, byte_len) == 0;
+}
+
+static uint32_t nmo_builtin_hash_array(const void *instance) {
+    if (instance == NULL) {
+        return 0;
+    }
+
+    const nmo_array_t *arr = (const nmo_array_t *)instance;
+    const uint32_t seed = nmo_hash_int32((uint32_t)arr->element_size) ^ nmo_hash_int32((uint32_t)arr->count);
+
+    if (arr->count == 0 || arr->data == NULL || arr->element_size == 0) {
+        return seed;
+    }
+
+    size_t byte_len = arr->count * arr->element_size;
+    return nmo_murmur3_32(arr->data, byte_len, seed);
+}
+
+static nmo_status_t nmo_builtin_to_string_array(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    char *buffer,
+    size_t buffer_size,
+    void *context
+) {
+    (void)type;
+    (void)context;
+
+    if (buffer == NULL || buffer_size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "array to_string: invalid buffer");
+    }
+
+    if (value == NULL) {
+        int written = snprintf(buffer, buffer_size, "null");
+        if (written < 0 || (size_t)written >= buffer_size) {
+            NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "array to_string: buffer too small");
+        }
+        NMO_RETURN_OK();
+    }
+
+    const nmo_array_t *arr = (const nmo_array_t *)value;
+    int written = snprintf(buffer, buffer_size, "array(count=%zu, element_size=%zu)", arr->count, arr->element_size);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "array to_string: buffer too small");
+    }
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_builtin_from_string_array(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const char *string,
+    void *context
+) {
+    (void)type;
+    (void)context;
+
+    if (value == NULL || string == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "array from_string: NULL argument");
+    }
+
+    /* Minimal parser: accept "[]" as an empty byte array. */
+    if (strcmp(string, "[]") != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "array from_string: expected []");
+    }
+
+    nmo_array_t *arr = (nmo_array_t *)value;
+    nmo_array_dispose(arr);
+    return nmo_array_init(arr, 1, 0, NULL);
+}
+
+const nmo_type_vtable_t nmo_builtin_vtable_array = {
+    .create = nmo_builtin_create_array,
+    .destroy = nmo_builtin_destroy_array,
+    .copy = nmo_builtin_copy_array,
+    .equals = nmo_builtin_equals_array,
+    .hash = nmo_builtin_hash_array,
+    .to_string = nmo_builtin_to_string_array,
+    .from_string = nmo_builtin_from_string_array,
 };
 
 /* ============================================================================
@@ -1340,17 +1499,17 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     nmo_type_descriptor_t array_type = {
         .guid = CKPGUID_ARRAY,
         .name = "array",
-        .size = 0,
-        .alignment = 1,
+        .size = sizeof(nmo_array_t),
+        .alignment = alignof(nmo_array_t),
         .class_id = 0,
         .base_type = {0, 0},
         .category = NMO_TYPE_CATEGORY_ARRAY | NMO_TYPE_CATEGORY_HIDDEN,
-        .flags = NMO_TYPE_FLAG_SERIALIZABLE,
+        .flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE,
         .id = NMO_TYPE_ID_INVALID,
         .description = "Array meta-type",
         .fields = NULL,
         .field_count = 0,
-        .vtable = NULL,
+        .vtable = &nmo_builtin_vtable_array,
     };
 
     result = nmo_type_registry_register(type_registry, &array_type);

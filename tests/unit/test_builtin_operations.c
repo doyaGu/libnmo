@@ -16,6 +16,7 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_math.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include <math.h>
 #include <stdalign.h>
@@ -233,6 +234,57 @@ TEST(builtin_operations, arithmetic_abs_int) {
     ASSERT_EQ(NMO_OK, res);
     ASSERT_EQ(42, result);
 
+    teardown_registries();
+}
+
+TEST(builtin_operations, comparison_equal_array) {
+    setup_registries();
+
+    const nmo_guid_t op_guid = NMO_OP_GUID_EQUAL;
+    const nmo_type_descriptor_t *array_type = get_type(CKPGUID_ARRAY);
+    const nmo_type_descriptor_t *bool_type = get_type(CKPGUID_BOOL);
+    ASSERT_NE(NULL, array_type);
+    ASSERT_NE(NULL, bool_type);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    nmo_status_t res = nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        array_type,
+        array_type,
+        type_registry,
+        &cell
+    );
+
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_NE(NULL, cell);
+    ASSERT_NE(NULL, cell->desc.function);
+
+    nmo_array_t a;
+    nmo_array_t b;
+    ASSERT_EQ(NMO_OK, nmo_array_init(&a, 1, 0, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_init(&b, 1, 0, NULL));
+
+    const uint8_t bytes1[] = { 1, 2, 3, 4 };
+    const uint8_t bytes2[] = { 1, 2, 3, 4 };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&a, bytes1, sizeof(bytes1)));
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&b, bytes2, sizeof(bytes2)));
+
+    bool eq = false;
+    res = cell->desc.function(&a, array_type, &b, array_type, &eq, bool_type, NULL);
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_TRUE(eq);
+
+    const uint8_t extra = 5;
+    ASSERT_EQ(NMO_OK, nmo_array_append(&b, &extra));
+
+    eq = true;
+    res = cell->desc.function(&a, array_type, &b, array_type, &eq, bool_type, NULL);
+    ASSERT_EQ(NMO_OK, res);
+    ASSERT_TRUE(!eq);
+
+    nmo_array_dispose(&a);
+    nmo_array_dispose(&b);
     teardown_registries();
 }
 
@@ -759,6 +811,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builtin_operations, logic_not_bool);
 
     REGISTER_TEST(builtin_operations, comparison_equal_int);
+    REGISTER_TEST(builtin_operations, comparison_equal_array);
     REGISTER_TEST(builtin_operations, comparison_less_float);
     REGISTER_TEST(builtin_operations, comparison_min_int);
     REGISTER_TEST(builtin_operations, comparison_max_float);
