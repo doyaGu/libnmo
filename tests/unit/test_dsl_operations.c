@@ -1,6 +1,6 @@
 /**
  * @file test_dsl_operations.c
- * @brief Tests for DSL operation invocation (Phase E) — the op() builtin
+ * @brief Tests for DSL operation invocation (Phase E) �?the op() builtin
  *        and Phase D type builtins (type(), type_name(), to_string(), etc.).
  */
 
@@ -11,8 +11,8 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_operation_system.h"
-#include "type/nmo_builtin_operations.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -81,8 +81,8 @@ static void setup(void) {
     ASSERT_EQ(NMO_OK, nmo_register_builtin_operations(ops, registry));
 
     static const nmo_type_field_t root_fields[] = {
-        NMO_FIELD(ops_root_t, x, NMO_GUID_FIELD_INT32),
-        NMO_FIELD(ops_root_t, y, NMO_GUID_FIELD_FLOAT),
+        NMO_FIELD(ops_root_t, x, CKPGUID_INT),
+        NMO_FIELD(ops_root_t, y, CKPGUID_FLOAT),
     };
 
     nmo_type_descriptor_t root_desc = {
@@ -134,7 +134,7 @@ TEST(dsl_ops, type_of_field) {
     /* type(x) should return the GUID of int32 */
     nmo_dsl_value_t v;
     eval_ok(&ctx, "type(x)", &v);
-    /* Should return a GUID-like value or string — just ensure no error */
+    /* Should return a GUID-like value or string �?just ensure no error */
     nmo_dsl_value_destroy(&v);
 
     teardown();
@@ -311,3 +311,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_ops, op_bool_logic_success);
     REGISTER_TEST(dsl_ops, type_builtins_no_args_fail);
 TEST_MAIN_END()
+

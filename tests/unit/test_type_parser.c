@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operations.h"
 #include "core/nmo_arena.h"
 #include <stdio.h>
 

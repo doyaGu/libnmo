@@ -295,8 +295,19 @@ nmo_status_t nmo_type_registry_register(
     // Check for GUID collision
     nmo_type_id_t existing_id;
     if (nmo_hash_table_get(registry->guid_map, &descriptor->guid, &existing_id) == NMO_OK) {
+        char guid_str[32] = {0};
+        (void)nmo_guid_format(descriptor->guid, guid_str, sizeof(guid_str));
+
+        const nmo_type_descriptor_t *existing_type = nmo_type_registry_get_by_id(registry, existing_id);
+        const char *existing_name = (existing_type && existing_type->name) ? existing_type->name : "<unnamed>";
+        const char *new_name = descriptor->name ? descriptor->name : "<unnamed>";
+
         NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
-                                "Type GUID already registered");
+                         "Type GUID already registered: %s (new='%s', existing='%s', existing_id=%d)",
+                         guid_str,
+                         new_name,
+                         existing_name,
+                         (int)existing_id);
     }
 
     // Find slot (reuse NULL slots before expanding)
@@ -561,6 +572,54 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_name(
     }
 
     return NULL;
+}
+
+nmo_status_t nmo_type_registry_add_name_alias(
+    nmo_type_registry_t *registry,
+    nmo_type_id_t type_id,
+    const char *alias)
+{
+    if (!registry || !alias || !registry->name_map) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
+    }
+
+    if (type_id < 0 || (size_t)type_id >= registry->types.count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
+    }
+
+    if (alias[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Empty alias");
+    }
+
+    nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get(&registry->types, (size_t)type_id);
+    if (!type || !type->valid) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR, "Type not found or invalid");
+    }
+
+    /* If alias is already mapped to a different valid type, reject. */
+    nmo_type_id_t existing_id = NMO_TYPE_ID_INVALID;
+    const char *alias_key = alias;
+    if (nmo_hash_table_get(registry->name_map, &alias_key, &existing_id) == NMO_OK) {
+        if (existing_id != type_id) {
+            const nmo_type_descriptor_t *existing_type = nmo_type_registry_get_by_id(registry, existing_id);
+            if (existing_type && existing_type->valid) {
+                NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR, "Alias already mapped to another type");
+            }
+        }
+    }
+
+    const char *alias_copy = nmo_arena_strdup(registry->arena, alias);
+    if (!alias_copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Out of memory");
+    }
+
+    /* name_map key is (const char*), so we store pointer to the copied string. */
+    nmo_status_t res = nmo_hash_table_insert(registry->name_map, &alias_copy, &type_id);
+    if (res != NMO_OK) {
+        return res;
+    }
+
+    NMO_RETURN_OK();
 }
 
 const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(

@@ -28,7 +28,7 @@
  * ============================================================================= */
 
 static const nmo_type_field_t nmo_ckobject_fields[] = {
-    NMO_FIELD(nmo_ckobject_state_t, visibility_flags, NMO_GUID_FIELD_CK_OBJECT_FLAGS)
+    NMO_FIELD(nmo_ckobject_state_t, visibility_flags, NMO_GUID_ENUM_CK_OBJECT_FLAGS)
 };
 
 /* =============================================================================
@@ -198,7 +198,7 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckobject_serialize,
     nmo_ckobject_deserialize,
     nmo_ckobject_fields,
-    NMO_GUID_CKOBJECT,
+    CKPGUID_OBJECT,
     "CKObject",
     NMO_CID_OBJECT,
     (nmo_guid_t){0}

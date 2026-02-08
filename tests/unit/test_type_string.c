@@ -18,8 +18,8 @@
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_dynamic_types.h"
-#include "type/nmo_builtin_type_guids.h"
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_type_guids.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_reflection.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -843,7 +843,7 @@ TEST(type_string, type_value_to_string_object_id) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_OBJECT_ID);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_ID);
     ASSERT_NE(NULL, type);
 
     nmo_object_id_t value = 42;
@@ -869,7 +869,7 @@ TEST(type_string, type_value_to_string_struct_with_object_id_field) {
         {
             .name = "material_id",
             .type_name = NULL,
-            .type_guid = NMO_GUID_FIELD_OBJECT_ID,
+            .type_guid = CKPGUID_ID_INIT,
             .description = NULL,
             .flags = NMO_FIELD_REFERENCE,
             .default_value = NULL
@@ -912,7 +912,7 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
     } test_objref_t;
 
     static const nmo_type_field_t fields[] = {
-        NMO_FIELD(test_objref_t, material_id, NMO_GUID_FIELD_OBJECT_ID)
+        NMO_FIELD(test_objref_t, material_id, CKPGUID_ID)
     };
 
     nmo_type_descriptor_t desc = {
@@ -960,7 +960,7 @@ TEST(type_string, type_value_to_string_uint16) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT16);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_UINT16);
     ASSERT_NE(NULL, type);
 
     uint16_t value = 65535u;
@@ -978,7 +978,7 @@ TEST(type_string, type_value_to_string_guid) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_GUID);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_GUID);
     ASSERT_NE(NULL, type);
 
     nmo_guid_t value = NMO_GUID(0x12345678u, 0x9ABCDEF0u);
@@ -991,12 +991,135 @@ TEST(type_string, type_value_to_string_guid) {
     teardown();
 }
 
+TEST(type_string, type_value_to_string_string_quotes) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_STRING);
+    ASSERT_NE(NULL, type);
+
+    const char *value = "hello\nworld";
+    char buffer[128];
+    nmo_status_t result = nmo_type_value_to_string(&value, type, registry, buffer, sizeof(buffer));
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_STR_EQ("\"hello\\nworld\"", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_guid) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_GUID);
+    ASSERT_NE(NULL, type);
+
+    nmo_guid_t value = NMO_NULL_GUID;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "{12345678-9ABCDEF0}");
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_EQ(0x12345678u, value.d1);
+    ASSERT_EQ(0x9ABCDEF0u, value.d2);
+
+    teardown();
+}
+
+TEST(type_string, type_value_from_string_angle_fallback) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_ANGLE);
+    ASSERT_NE(NULL, type);
+
+    float value = 0.0f;
+    nmo_status_t result = nmo_type_value_from_string(&value, type, registry, "90.0");
+
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_TRUE(fabs(value - 90.0f) < 0.00001f);
+
+    teardown();
+}
+
+TEST(type_string, type_value_roundtrip_rect) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_RECT);
+    ASSERT_NE(NULL, type);
+
+    nmo_rect_t r = { .left = 1.0f, .top = 2.0f, .right = 3.0f, .bottom = 4.0f };
+    char buffer[128];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(&r, type, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("(1, 2, 3, 4)", buffer);
+
+    nmo_rect_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&parsed, type, registry, buffer));
+    ASSERT_TRUE(fabs(parsed.left - 1.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.top - 2.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.right - 3.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.bottom - 4.0f) < 0.00001f);
+
+    teardown();
+}
+
+TEST(type_string, type_value_roundtrip_box) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_BOX);
+    ASSERT_NE(NULL, type);
+
+    nmo_box_t b = { .min = {1.0f, 2.0f, 3.0f}, .max = {4.0f, 5.0f, 6.0f} };
+    char buffer[128];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(&b, type, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("((1, 2, 3), (4, 5, 6))", buffer);
+
+    nmo_box_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&parsed, type, registry, buffer));
+    ASSERT_TRUE(fabs(parsed.min.x - 1.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.min.y - 2.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.min.z - 3.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.max.x - 4.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.max.y - 5.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.max.z - 6.0f) < 0.00001f);
+
+    teardown();
+}
+
+TEST(type_string, type_value_roundtrip_eulerangles) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_EULERANGLES);
+    ASSERT_NE(NULL, type);
+
+    nmo_eulerangles_t e = { .x = 10.0f, .y = 20.0f, .z = 30.0f };
+    char buffer[128];
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(&e, type, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("(10, 20, 30)", buffer);
+
+    nmo_eulerangles_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&parsed, type, registry, buffer));
+    ASSERT_TRUE(fabs(parsed.x - 10.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.y - 20.0f) < 0.00001f);
+    ASSERT_TRUE(fabs(parsed.z - 30.0f) < 0.00001f);
+
+    teardown();
+}
+
 TEST(type_string, type_value_from_string_uint32) {
     setup();
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT32);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_UINT32);
     ASSERT_NE(NULL, type);
 
     uint32_t value = 0;
@@ -1013,7 +1136,7 @@ TEST(type_string, type_value_from_string_uint64) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT64);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_UINT64);
     ASSERT_NE(NULL, type);
 
     uint64_t value = 0;
@@ -1030,7 +1153,7 @@ TEST(type_string, type_value_from_string_double) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_DOUBLE);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_DOUBLE);
     ASSERT_NE(NULL, type);
 
     double value = 0.0;
@@ -1047,7 +1170,7 @@ TEST(type_string, type_value_from_string_string) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_STRING);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_STRING);
     ASSERT_NE(NULL, type);
 
     const char *value = NULL;
@@ -1065,7 +1188,7 @@ TEST(type_string, type_value_from_string_uint8_overflow) {
 
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, NMO_TYPE_GUID_UINT8);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_UINT8);
     ASSERT_NE(NULL, type);
 
     uint8_t value = 0;
@@ -1283,13 +1406,20 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
     REGISTER_TEST(type_string, type_value_to_string_uint16);
     REGISTER_TEST(type_string, type_value_to_string_guid);
+    REGISTER_TEST(type_string, type_value_to_string_string_quotes);
     REGISTER_TEST(type_string, type_value_from_string_uint32);
     REGISTER_TEST(type_string, type_value_from_string_uint64);
     REGISTER_TEST(type_string, type_value_from_string_double);
     REGISTER_TEST(type_string, type_value_from_string_string);
     REGISTER_TEST(type_string, type_value_from_string_uint8_overflow);
+    REGISTER_TEST(type_string, type_value_from_string_guid);
+    REGISTER_TEST(type_string, type_value_from_string_angle_fallback);
+    REGISTER_TEST(type_string, type_value_roundtrip_rect);
+    REGISTER_TEST(type_string, type_value_roundtrip_box);
+    REGISTER_TEST(type_string, type_value_roundtrip_eulerangles);
     REGISTER_TEST(type_string, object_id_to_string_uses_name_resolver);
     REGISTER_TEST(type_string, object_id_from_string_uses_name_resolver);
     REGISTER_TEST(type_string, object_id_to_string_falls_back_on_unsafe_name);
     REGISTER_TEST(type_string, object_id_from_string_name_not_found);
 TEST_MAIN_END()
+

@@ -28,12 +28,12 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterin, nmo_ckparameterin_state_t)
 
 static const nmo_type_field_t nmo_ckparameterin_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterin_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameterin_state_t, type_guid, NMO_GUID_FIELD_GUID),
+    NMO_FIELD(nmo_ckparameterin_state_t, type_guid, CKPGUID_GUID),
     NMO_FIELD_REF(nmo_ckparameterin_state_t, source_id),
-    NMO_FIELD(nmo_ckparameterin_state_t, is_shared, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckparameterin_state_t, is_disabled, NMO_GUID_FIELD_UINT8)
+    NMO_FIELD(nmo_ckparameterin_state_t, is_shared, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckparameterin_state_t, is_disabled, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -184,9 +184,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckparameterin_serialize,
     nmo_ckparameterin_deserialize,
     nmo_ckparameterin_fields,
-    NMO_GUID_CKPARAMETERIN,
+    CKPGUID_PARAMETERIN,
     "CKParameterIn",
     NMO_CID_PARAMETERIN,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 

@@ -24,38 +24,38 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckpatchmesh, nmo_ckpatchmesh_state_t)
 
 static const nmo_type_field_t nmo_ckpatchmesh_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckpatchmesh_state_t, base),
-                    sizeof(nmo_ck_mesh_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck_mesh_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, format, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, patch_flags, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, iteration_count, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, vec_count, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, total_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, vectors, NMO_GUID_FIELD_VECTOR3),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, patch_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, format, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, patch_flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, iteration_count, CKPGUID_INT),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, vec_count, CKPGUID_INT),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, total_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, vectors, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, patch_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckpatchmesh_state_t, patch_material_ids),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, patches, NMO_GUID_FIELD_CKPATCHMESHPATCH),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, edge_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, edge_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, edge_data_size, NMO_GUID_FIELD_UINT64),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, channel_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, channels, NMO_GUID_FIELD_CKPATCHMESHCHANNEL),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, patches, NMO_GUID_STRUCT_CKPATCHMESHPATCH),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, edge_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, edge_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, edge_data_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, channel_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, channels, NMO_GUID_STRUCT_CKPATCHMESHCHANNEL),
     NMO_FIELD_REF(nmo_ckpatchmesh_state_t, legacy_default_material_id),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_patch_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_patch_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_patch_data_size, NMO_GUID_FIELD_UINT64),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_edge_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_edge_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_edge_data_size, NMO_GUID_FIELD_UINT64),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_tvpatch_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_tvpatch_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_tvpatch_data_size, NMO_GUID_FIELD_UINT64),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_uv_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_uv_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_uv_data_size, NMO_GUID_FIELD_UINT64),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_smoothing_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_smoothing_groups, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_material_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_patch_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_patch_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_patch_data_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_edge_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_edge_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_edge_data_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_tvpatch_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_tvpatch_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_tvpatch_data_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_uv_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_uv_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_uv_data_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_smoothing_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckpatchmesh_state_t, legacy_smoothing_groups, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, legacy_material_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckpatchmesh_state_t, legacy_material_ids)
 };
 
@@ -450,10 +450,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckpatchmesh_serialize,
     nmo_ckpatchmesh_deserialize,
     nmo_ckpatchmesh_fields,
-    NMO_GUID_CKPATCHMESH,
+    CKPGUID_PATCHMESH,
     "CKPatchMesh",
     NMO_CID_PATCHMESH,
-    NMO_GUID_CKMESH
+    CKPGUID_MESH
 )
 
 static nmo_status_t nmo_ckpatchmesh_serialize_internal(
@@ -681,3 +681,4 @@ nmo_status_t nmo_ckpatchmesh_serialize(
     const nmo_ckpatchmesh_state_t *in_state = (const nmo_ckpatchmesh_state_t *)instance;
     return nmo_ckpatchmesh_serialize_internal(in_state, out_chunk, context);
 }
+

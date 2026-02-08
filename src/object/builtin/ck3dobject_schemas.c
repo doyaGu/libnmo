@@ -32,7 +32,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dobject, nmo_ck3dobject_state_t)
 
 static const nmo_type_field_t nmo_ck3dobject_fields[] = {
     NMO_FIELD_NAMED("entity", offsetof(nmo_ck3dobject_state_t, entity),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -130,9 +130,10 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     nmo_ck3dobject_deserialize,
     nmo_ck3dobject_finish_loading,
     nmo_ck3dobject_fields,
-    NMO_GUID_CK3DOBJECT,
+    CKPGUID_OBJECT3D,
     "CK3dObject",
     NMO_CID_3DOBJECT,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
+
 

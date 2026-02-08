@@ -23,9 +23,9 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktargetcamera, nmo_cktargetcamera_state_t)
 
 static const nmo_type_field_t nmo_cktargetcamera_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cktargetcamera_state_t, base),
-                    sizeof(nmo_ckcamera_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckcamera_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cktargetcamera_state_t, has_target, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cktargetcamera_state_t, has_target, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_cktargetcamera_state_t, target_id)
 };
 
@@ -61,10 +61,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_cktargetcamera_serialize,
     nmo_cktargetcamera_deserialize,
     nmo_cktargetcamera_fields,
-    NMO_GUID_CKTARGETCAMERA,
+    CKPGUID_TARGETCAMERA,
     "CKTargetCamera",
     NMO_CID_TARGETCAMERA,
-    NMO_GUID_CKCAMERA
+    CKPGUID_CAMERA
 )
 static nmo_status_t nmo_cktargetcamera_serialize_internal(
     const nmo_cktargetcamera_state_t *in_state,
@@ -111,3 +111,4 @@ nmo_status_t nmo_cktargetcamera_serialize(
     const nmo_cktargetcamera_state_t *in_state = (const nmo_cktargetcamera_state_t *)instance;
     return nmo_cktargetcamera_serialize_internal(in_state, out_chunk, context);
 }
+

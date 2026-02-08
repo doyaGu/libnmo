@@ -614,6 +614,22 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_name(
     const char *name);
 
 /**
+ * @brief Add an additional name alias for an existing type.
+ *
+ * This is primarily used for backward-compatible spellings (e.g. legacy
+ * uppercase names) while keeping canonical type names normalized.
+ *
+ * @param registry Registry
+ * @param type_id Type ID to alias
+ * @param alias Alias string (will be copied into the registry arena)
+ * @return nmo_ok() on success, error on failure
+ */
+nmo_status_t nmo_type_registry_add_name_alias(
+    nmo_type_registry_t *registry,
+    nmo_type_id_t type_id,
+    const char *alias);
+
+/**
  * @brief Find type by Virtools class ID (O(1) lookup)
  * 
  * Used for loading Virtools files - maps CK_CLASSID to type descriptor.

@@ -8,7 +8,7 @@
 
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
 #include <string.h>
@@ -27,36 +27,41 @@ typedef struct builtin_type_name_t {
 
 static const builtin_type_name_t BUILTIN_TYPES[] = {
     /* Basic types */
-    {"int", NMO_TYPE_GUID_INT_INIT},
-    {"int32", NMO_TYPE_GUID_INT_INIT},
-    {"float", NMO_TYPE_GUID_FLOAT_INIT},
-    {"bool", NMO_TYPE_GUID_BOOL_INIT},
-    {"string", NMO_TYPE_GUID_STRING_INIT},
-    {"double", NMO_TYPE_GUID_DOUBLE_INIT},
-    {"uint", NMO_TYPE_GUID_UINT32_INIT},
-    {"int8", NMO_TYPE_GUID_INT8_INIT},
-    {"uint8", NMO_TYPE_GUID_UINT8_INIT},
-    {"int16", NMO_TYPE_GUID_INT16_INIT},
-    {"uint16", NMO_TYPE_GUID_UINT16_INIT},
-    {"uint32", NMO_TYPE_GUID_UINT32_INIT},
-    {"int64", NMO_TYPE_GUID_INT64_INIT},
-    {"uint64", NMO_TYPE_GUID_UINT64_INIT},
-    {"pointer", NMO_TYPE_GUID_POINTER_INIT},
-    {"guid", NMO_TYPE_GUID_GUID_INIT},
-    {"object_id", NMO_TYPE_GUID_OBJECT_ID_INIT},
+    {"none", CKPGUID_NONE_INIT},
+    {"voidbuf", CKPGUID_VOIDBUF_INIT},
+    {"int", CKPGUID_INT_INIT},
+    {"int32", CKPGUID_INT_INIT},
+    {"float", CKPGUID_FLOAT_INIT},
+    {"angle", CKPGUID_ANGLE_INIT},
+    {"percentage", CKPGUID_PERCENTAGE_INIT},
+    {"bool", CKPGUID_BOOL_INIT},
+    {"string", CKPGUID_STRING_INIT},
+    {"double", CKPGUID_DOUBLE_INIT},
+    {"uint", CKPGUID_UINT32_INIT},
+    {"classid", CKPGUID_CLASSID_INIT},
+    {"int8", CKPGUID_INT8_INIT},
+    {"uint8", CKPGUID_UINT8_INIT},
+    {"int16", CKPGUID_INT16_INIT},
+    {"uint16", CKPGUID_UINT16_INIT},
+    {"uint32", CKPGUID_UINT32_INIT},
+    {"int64", CKPGUID_INT64_INIT},
+    {"uint64", CKPGUID_UINT64_INIT},
+    {"pointer", CKPGUID_POINTER_INIT},
+    {"guid", CKPGUID_GUID_INIT},
+    {"object_id", CKPGUID_ID_INIT},
     
     /* Virtools common types */
-    {"VxVector2", NMO_TYPE_GUID_VECTOR2_INIT},
-    {"VxVector3", NMO_TYPE_GUID_VECTOR3_INIT},
-    {"VxVector4", NMO_TYPE_GUID_VECTOR4_INIT},
-    {"VxQuaternion", NMO_TYPE_GUID_QUATERNION_INIT},
-    {"VxMatrix", NMO_TYPE_GUID_MATRIX_INIT},
-    {"VxColor", NMO_TYPE_GUID_COLOR_INIT},
-    {"VxRect", NMO_TYPE_GUID_RECT_INIT},
-    {"VxVector", NMO_TYPE_GUID_VECTOR3_INIT},
-    {"VxVector3D", NMO_TYPE_GUID_VECTOR3_INIT},
-    {"chunk", NMO_TYPE_GUID_CHUNK_INIT},
-    {NULL, NMO_NULL_GUID},
+    {"vector2", CKPGUID_2DVECTOR_INIT},
+    {"vector3", CKPGUID_VECTOR_INIT},
+    {"vector4", CKPGUID_VECTOR4_INIT},
+    {"quaternion", CKPGUID_QUATERNION_INIT},
+    {"euler_angles", CKPGUID_EULERANGLES_INIT},
+    {"matrix", CKPGUID_MATRIX_INIT},
+    {"color", CKPGUID_COLOR_INIT},
+    {"rect", CKPGUID_RECT_INIT},
+    {"box", CKPGUID_BOX_INIT},
+    {"chunk", CKPGUID_STATECHUNK_INIT},
+    {NULL, NMO_GUID_INIT(0, 0)},
 };
 
 /* ============================================================================
@@ -176,15 +181,15 @@ static bool is_guid_literal_candidate(const char *str, size_t len) {
  */
 static bool lookup_builtin_type(const char *name, size_t name_len, nmo_guid_t *out_guid) {
     if (str_equals_cs(name, name_len, "uint32_t")) {
-        *out_guid = NMO_TYPE_GUID_UINT32;
+        *out_guid = CKPGUID_UINT32;
         return true;
     }
 
     if (str_equals_cs(name, name_len, "size_t")) {
         if (sizeof(size_t) == 8) {
-            *out_guid = NMO_TYPE_GUID_UINT64;
+            *out_guid = CKPGUID_UINT64;
         } else {
-            *out_guid = NMO_TYPE_GUID_UINT32;
+            *out_guid = CKPGUID_UINT32;
         }
         return true;
     }

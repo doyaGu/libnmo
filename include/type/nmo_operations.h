@@ -1,5 +1,5 @@
 /**
- * @file nmo_builtin_operations.h
+ * @file nmo_operations.h
  * @brief Builtin operation definitions (Phase 6.1.4)
  *
  * Defines 50+ builtin operations following CKParameter operation system:
@@ -11,14 +11,14 @@
  * - Vector: VectorAdd, VectorSub, VectorMul, VectorDiv, VectorDot, VectorCross
  */
 
-#ifndef NMO_BUILTIN_OPERATIONS_H
-#define NMO_BUILTIN_OPERATIONS_H
+#ifndef NMO_OPERATIONS_H
+#define NMO_OPERATIONS_H
 
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,10 +55,10 @@ extern "C" {
 #define NMO_OP_GUID_MAX        NMO_GUID(0x6FED1C02, 0x00000006)
 
 /* Bitwise operations */
-#define NMO_OP_GUID_BIT_AND    NMO_GUID(0x6FED1C03, 0x00000001)
-#define NMO_OP_GUID_BIT_OR     NMO_GUID(0x6FED1C03, 0x00000002)
-#define NMO_OP_GUID_BIT_XOR    NMO_GUID(0x6FED1C03, 0x00000003)
-#define NMO_OP_GUID_BIT_NOT    NMO_GUID(0x6FED1C03, 0x00000004)
+#define NMO_OP_GUID_BIT_AND     NMO_GUID(0x6FED1C03, 0x00000001)
+#define NMO_OP_GUID_BIT_OR      NMO_GUID(0x6FED1C03, 0x00000002)
+#define NMO_OP_GUID_BIT_XOR     NMO_GUID(0x6FED1C03, 0x00000003)
+#define NMO_OP_GUID_BIT_NOT     NMO_GUID(0x6FED1C03, 0x00000004)
 #define NMO_OP_GUID_SHIFT_LEFT  NMO_GUID(0x6FED1C03, 0x00000005)
 #define NMO_OP_GUID_SHIFT_RIGHT NMO_GUID(0x6FED1C03, 0x00000006)
 #define NMO_OP_GUID_ROTATE_LEFT NMO_GUID(0x6FED1C03, 0x00000007)
@@ -164,4 +164,4 @@ NMO_API nmo_status_t nmo_register_vector_operations(
 }
 #endif
 
-#endif /* NMO_BUILTIN_OPERATIONS_H */
+#endif /* NMO_OPERATIONS_H */

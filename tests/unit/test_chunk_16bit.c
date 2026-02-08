@@ -17,7 +17,7 @@ TEST(chunk_16bit, dword_as_words_basic) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     // Test various 32-bit values
     uint32_t test_values[] = {
@@ -57,7 +57,7 @@ TEST(chunk_16bit, dword_as_words_boundary) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     uint32_t boundary_values[] = {
         0x00000001, 0x7FFFFFFF, 0x80000000,
@@ -94,7 +94,7 @@ TEST(chunk_16bit, dword_as_words_array_helper) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     uint32_t values[] = {
         0x00010002, 0x7FFF8000, 0xDEADBEEF, 0xCAFEBABE,
@@ -147,7 +147,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_basic) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     uint16_t test_data[] = {
         0x0001, 0x0002, 0x0003, 0x0004,
@@ -187,7 +187,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_single) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     uint16_t single_value = 0xABCD;
     ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_buffer_nosize_lendian16(writer, 1, &single_value));
@@ -218,7 +218,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_large) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     size_t value_count = 1000;
     uint16_t *test_data = (uint16_t *)nmo_arena_alloc(arena, value_count * sizeof(uint16_t), sizeof(uint16_t));
@@ -261,7 +261,7 @@ TEST(chunk_16bit, mixed_operations) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(writer, 0x11111111));
     ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword_as_words(writer, 0x22223333));
@@ -318,7 +318,7 @@ TEST(chunk_16bit, error_handling) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword_as_words(writer, 0x12345678));
 
@@ -355,7 +355,7 @@ TEST(chunk_16bit, virtools_compatibility) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
 
     // Simulate compressed animation data format
     uint32_t keyframe_count = 5;

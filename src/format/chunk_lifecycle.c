@@ -64,7 +64,7 @@ nmo_status_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
     chunk->data.count = 0;
 
     /* CK2 behavior: StartWrite() sets m_ChunkVersion = CHUNK_VERSION4 (7) */
-    chunk->chunk_version = NMO_CHUNK_VERSION_4;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
 
     NMO_RETURN_OK();
 }
@@ -80,7 +80,7 @@ void nmo_chunk_clear(nmo_chunk_t *chunk) {
         chunk->class_id = 0;
         chunk->chunk_class_id = 0;
         chunk->data_version = 0;
-        chunk->chunk_version = NMO_CHUNK_VERSION_4;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
         chunk->chunk_options = 0;
 
         chunk->data.count = 0;

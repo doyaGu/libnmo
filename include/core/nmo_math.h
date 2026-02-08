@@ -61,6 +61,15 @@ typedef struct nmo_quaternion {
 } nmo_quaternion_t;
 
 /**
+ * @brief Euler angles (x, y, z)
+ *
+ * Matches CK2 parameter type CKPGUID_EULERANGLES memory layout (3 floats).
+ */
+typedef struct nmo_eulerangles {
+    float x, y, z;
+} nmo_eulerangles_t;
+
+/**
  * @brief 2x2 matrix
  */
 typedef struct nmo_matrix2 {

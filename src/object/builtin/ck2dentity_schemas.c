@@ -21,6 +21,7 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -38,20 +39,20 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck2dentity, nmo_ck2dentity_state_t)
 
 static const nmo_type_field_t nmo_ck2dentity_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ck2dentity_state_t, base),
-                    sizeof(nmo_ckrenderobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckrenderobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck2dentity_state_t, rect, NMO_GUID_FIELD_RECT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_homogeneous_rect, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ck2dentity_state_t, homogeneous_rect, NMO_GUID_FIELD_RECT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_source_rect, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ck2dentity_state_t, source_rect, NMO_GUID_FIELD_RECT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_z_order, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ck2dentity_state_t, z_order, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_parent, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ck2dentity_state_t, rect, CKPGUID_RECT),
+    NMO_FIELD(nmo_ck2dentity_state_t, has_homogeneous_rect, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ck2dentity_state_t, homogeneous_rect, CKPGUID_RECT),
+    NMO_FIELD(nmo_ck2dentity_state_t, has_source_rect, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ck2dentity_state_t, source_rect, CKPGUID_RECT),
+    NMO_FIELD(nmo_ck2dentity_state_t, has_z_order, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ck2dentity_state_t, z_order, CKPGUID_INT),
+    NMO_FIELD(nmo_ck2dentity_state_t, has_parent, CKPGUID_BOOL),
     NMO_FIELD_REF(nmo_ck2dentity_state_t, parent_id),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_material, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_ck2dentity_state_t, has_material, CKPGUID_BOOL),
     NMO_FIELD_REF(nmo_ck2dentity_state_t, material_id),
-    NMO_FIELD(nmo_ck2dentity_state_t, flags, NMO_GUID_FIELD_CK_2DENTITY_FLAGS)
+    NMO_FIELD(nmo_ck2dentity_state_t, flags, NMO_GUID_ENUM_CK_2DENTITY_FLAGS)
 };
 
 /* =============================================================================
@@ -485,9 +486,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ck2dentity_serialize,
     nmo_ck2dentity_deserialize,
     nmo_ck2dentity_fields,
-    NMO_GUID_CK2DENTITY,
+    CKPGUID_2DENTITY,
     "CK2dEntity",
     NMO_CID_2DENTITY,
-    NMO_GUID_CKRENDEROBJECT
+    CKPGUID_RENDEROBJECT
 )
+
 

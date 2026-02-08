@@ -29,10 +29,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterout, nmo_ckparameterout_state_t)
 
 static const nmo_type_field_t nmo_ckparameterout_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterout_state_t, base),
-                    sizeof(nmo_ckparameter_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckparameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF_ARRAY(nmo_ckparameterout_state_t, destination_ids),
-    NMO_FIELD(nmo_ckparameterout_state_t, destination_count, NMO_GUID_FIELD_UINT32)
+    NMO_FIELD(nmo_ckparameterout_state_t, destination_count, CKPGUID_UINT32)
 };
 
 /* =============================================================================
@@ -161,9 +161,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckparameterout_serialize,
     nmo_ckparameterout_deserialize,
     nmo_ckparameterout_fields,
-    NMO_GUID_CKPARAMETEROUT,
+    CKPGUID_PARAMETEROUT,
     "CKParameterOut",
     NMO_CID_PARAMETEROUT,
-    NMO_GUID_CKPARAMETER
+    CKPGUID_PARAMETER
 )
+
 

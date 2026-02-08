@@ -58,12 +58,6 @@ typedef enum nmo_file_write_mode {
 #define NMO_CHUNK_VERSION3 6  // New ConvertToBuffer / ReadFromBuffer
 #define NMO_CHUNK_VERSION4 7  // New WriteObjectID when saving to a file (Current version)
 
-// Legacy aliases for compatibility
-#define NMO_CHUNK_VERSION_1 NMO_CHUNK_VERSION1
-#define NMO_CHUNK_VERSION_2 NMO_CHUNK_VERSION2
-#define NMO_CHUNK_VERSION_3 NMO_CHUNK_VERSION3
-#define NMO_CHUNK_VERSION_4 NMO_CHUNK_VERSION4
-
 // Compression levels
 typedef enum nmo_compression_level {
     NMO_COMPRESS_NONE    = 0,

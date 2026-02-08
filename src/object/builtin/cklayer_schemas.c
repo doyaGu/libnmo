@@ -134,23 +134,23 @@ nmo_status_t nmo_cklayer_serialize(
 
 static const nmo_type_field_t nmo_cklayer_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cklayer_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF(nmo_cklayer_state_t, grid_id),
-    NMO_FIELD(nmo_cklayer_state_t, type, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_cklayer_state_t, format, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_cklayer_state_t, version, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_cklayer_state_t, type, CKPGUID_INT),
+    NMO_FIELD(nmo_cklayer_state_t, format, CKPGUID_INT),
+    NMO_FIELD(nmo_cklayer_state_t, version, CKPGUID_INT),
     NMO_FIELD_NAMED("color_rgba", offsetof(nmo_cklayer_state_t, color_rgba),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("param_guid", offsetof(nmo_cklayer_state_t, param_guid),
-                    sizeof(nmo_guid_t), NMO_GUID_FIELD_GUID, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cklayer_state_t, flags, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_cklayer_state_t, has_type, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_cklayer_state_t, has_version, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_cklayer_state_t, has_color, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_cklayer_state_t, has_param_guid, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD_OPT(nmo_cklayer_state_t, square_data, NMO_GUID_FIELD_POINTER),
-    NMO_FIELD(nmo_cklayer_state_t, square_data_size, NMO_GUID_FIELD_UINT64)
+                    sizeof(nmo_guid_t), CKPGUID_GUID, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cklayer_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_cklayer_state_t, has_type, CKPGUID_UINT8),
+    NMO_FIELD(nmo_cklayer_state_t, has_version, CKPGUID_UINT8),
+    NMO_FIELD(nmo_cklayer_state_t, has_color, CKPGUID_UINT8),
+    NMO_FIELD(nmo_cklayer_state_t, has_param_guid, CKPGUID_UINT8),
+    NMO_FIELD_OPT(nmo_cklayer_state_t, square_data, CKPGUID_POINTER),
+    NMO_FIELD(nmo_cklayer_state_t, square_data_size, CKPGUID_UINT64)
 };
 
 static nmo_status_t cklayer_copy(
@@ -188,9 +188,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_cklayer_serialize,
     nmo_cklayer_deserialize,
     nmo_cklayer_fields,
-    NMO_GUID_CKLAYER,
+    CKPGUID_LAYER,
     "CKLayer",
     NMO_CID_LAYER,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 

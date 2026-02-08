@@ -38,32 +38,32 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmaterial, nmo_ck_material_state_t)
 static const nmo_type_field_t nmo_ckmaterial_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_ck_material_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Colors (packed ARGB) */
     NMO_FIELD_NAMED("diffuse_color", offsetof(nmo_ck_material_state_t, diffuse_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("ambient_color", offsetof(nmo_ck_material_state_t, ambient_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("specular_color", offsetof(nmo_ck_material_state_t, specular_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("emissive_color", offsetof(nmo_ck_material_state_t, emissive_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     /* Specular power */
-    NMO_FIELD(nmo_ck_material_state_t, specular_power, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ck_material_state_t, specular_power, CKPGUID_FLOAT),
     /* Textures (4 slots) */
-    NMO_FIELD_FULL(nmo_ck_material_state_t, texture_ids, NMO_GUID_FIELD_OBJECT_ID,
+    NMO_FIELD_FULL(nmo_ck_material_state_t, texture_ids, CKPGUID_ID,
                    NMO_FIELD_REFERENCE | NMO_FIELD_REPEATED, 0),
     /* Render settings */
-    NMO_FIELD(nmo_ck_material_state_t, texture_border_color, NMO_GUID_FIELD_COLOR),
-    NMO_FIELD(nmo_ck_material_state_t, packed_modes, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ck_material_state_t, packed_flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ck_material_state_t, texture_border_color, CKPGUID_COLOR),
+    NMO_FIELD(nmo_ck_material_state_t, packed_modes, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ck_material_state_t, packed_flags, CKPGUID_UINT32),
     /* Effect */
-    NMO_FIELD(nmo_ck_material_state_t, effect, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ck_material_state_t, effect, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_ck_material_state_t, effect_parameter_id),
-    NMO_FIELD(nmo_ck_material_state_t, has_effect, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ck_material_state_t, has_effect_param, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ck_material_state_t, has_additional_textures, NMO_GUID_FIELD_UINT8)
+    NMO_FIELD(nmo_ck_material_state_t, has_effect, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ck_material_state_t, has_effect_param, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ck_material_state_t, has_additional_textures, CKPGUID_UINT8)
 };
 
 nmo_status_t nmo_ckmaterial_deserialize(
@@ -220,10 +220,10 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     nmo_ckmaterial_deserialize,
     nmo_ckmaterial_finish_loading,
     nmo_ckmaterial_fields,
-    NMO_GUID_CKMATERIAL,
+    CKPGUID_MATERIAL,
     "CKMaterial",
     NMO_CID_MATERIAL,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
 
 nmo_status_t nmo_ckmaterial_finish_loading(
@@ -290,4 +290,5 @@ nmo_status_t nmo_ckmaterial_serialize(
 
     NMO_RETURN_OK();
 }
+
 

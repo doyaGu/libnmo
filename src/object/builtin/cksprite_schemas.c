@@ -40,24 +40,24 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksprite, nmo_cksprite_state_t)
 
 static const nmo_type_field_t nmo_cksprite_fields[] = {
     NMO_FIELD_NAMED("entity", offsetof(nmo_cksprite_state_t, entity),
-                    sizeof(nmo_ck2dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck2dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite_state_t, has_sprite_ref, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, has_sprite_ref, CKPGUID_BOOL),
     NMO_FIELD_REF(nmo_cksprite_state_t, sprite_ref_id),
-    NMO_FIELD(nmo_cksprite_state_t, has_bitmap_data, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, has_bitmap_data, CKPGUID_BOOL),
     NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_cksprite_state_t, bitmap_data),
-                    sizeof(nmo_ckbitmapdata_t), NMO_GUID_FIELD_CKBITMAPDATA,
+                    sizeof(nmo_ckbitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite_state_t, has_transparency, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cksprite_state_t, is_transparent, NMO_GUID_FIELD_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, has_transparency, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, is_transparent, CKPGUID_BOOL),
     NMO_FIELD_NAMED("transparent_color", offsetof(nmo_cksprite_state_t, transparent_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite_state_t, has_slot, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cksprite_state_t, current_slot, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_cksprite_state_t, has_save_options, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cksprite_state_t, save_options, NMO_GUID_FIELD_CK_TEXTURE_SAVEOPTIONS),
-    NMO_FIELD_ARRAY(nmo_cksprite_state_t, bitmap_properties, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_cksprite_state_t, bitmap_properties_size, NMO_GUID_FIELD_UINT64)
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_cksprite_state_t, has_slot, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, current_slot, CKPGUID_UINT32),
+    NMO_FIELD(nmo_cksprite_state_t, has_save_options, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cksprite_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
+    NMO_FIELD_ARRAY(nmo_cksprite_state_t, bitmap_properties, CKPGUID_UINT8),
+    NMO_FIELD(nmo_cksprite_state_t, bitmap_properties_size, CKPGUID_UINT64)
 };
 
 /* =============================================================================
@@ -531,9 +531,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_cksprite_serialize,
     nmo_cksprite_deserialize,
     nmo_cksprite_fields,
-    NMO_GUID_CKSPRITE,
+    CKPGUID_SPRITE,
     "CKSprite",
     NMO_CID_SPRITE,
-    NMO_GUID_CK2DENTITY
+    CKPGUID_2DENTITY
 )
+
 

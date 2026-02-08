@@ -27,47 +27,47 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmidisound, nmo_ckmidisound_state_t)
 
 static const nmo_type_field_t nmo_cksound_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cksound_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksound_state_t, save_options, NMO_GUID_FIELD_CK_SOUND_SAVEOPTIONS),
-    NMO_FIELD_OPT(nmo_cksound_state_t, file_name, NMO_GUID_FIELD_STRING)
+    NMO_FIELD(nmo_cksound_state_t, save_options, NMO_GUID_ENUM_CK_SOUND_SAVEOPTIONS),
+    NMO_FIELD_OPT(nmo_cksound_state_t, file_name, CKPGUID_STRING)
 };
 
 static const nmo_type_field_t nmo_ckwavesound_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckwavesound_state_t, base),
-                    sizeof(nmo_cksound_state_t), NMO_GUID_CKSOUND_VAL,
+                    sizeof(nmo_cksound_state_t), CKPGUID_SOUND,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckwavesound_state_t, has_wave_file_name, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD_OPT(nmo_ckwavesound_state_t, wave_file_name, NMO_GUID_FIELD_STRING),
-    NMO_FIELD(nmo_ckwavesound_state_t, has_duration, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckwavesound_state_t, duration, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckwavesound_state_t, has_data2, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckwavesound_state_t, state_flags, NMO_GUID_FIELD_CK_WAVESOUND_STATE),
-    NMO_FIELD(nmo_ckwavesound_state_t, priority, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, gain, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, pan, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, pitch, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, cone_in_angle, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_angle, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_gain, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, min_distance, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, max_distance, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, distance_behavior, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckwavesound_state_t, has_wave_file_name, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_ckwavesound_state_t, wave_file_name, CKPGUID_STRING),
+    NMO_FIELD(nmo_ckwavesound_state_t, has_duration, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckwavesound_state_t, duration, CKPGUID_INT),
+    NMO_FIELD(nmo_ckwavesound_state_t, has_data2, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckwavesound_state_t, state_flags, NMO_GUID_ENUM_CK_WAVESOUND_STATE),
+    NMO_FIELD(nmo_ckwavesound_state_t, priority, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, gain, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, pan, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, pitch, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, cone_in_angle, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_angle, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_gain, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, min_distance, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, max_distance, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckwavesound_state_t, distance_behavior, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_ckwavesound_state_t, attached_object_id),
     NMO_FIELD_NAMED("position", offsetof(nmo_ckwavesound_state_t, position),
-                    sizeof(nmo_vx_vector3_t), NMO_GUID_FIELD_VECTOR3,
+                    sizeof(nmo_vx_vector3_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("direction", offsetof(nmo_ckwavesound_state_t, direction),
-                    sizeof(nmo_vx_vector3_t), NMO_GUID_FIELD_VECTOR3,
+                    sizeof(nmo_vx_vector3_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0)
 };
 
 static const nmo_type_field_t nmo_ckmidisound_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckmidisound_state_t, base),
-                    sizeof(nmo_cksound_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_cksound_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckmidisound_state_t, has_midi_file_name, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD_OPT(nmo_ckmidisound_state_t, midi_file_name, NMO_GUID_FIELD_STRING)
+    NMO_FIELD(nmo_ckmidisound_state_t, has_midi_file_name, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_ckmidisound_state_t, midi_file_name, CKPGUID_STRING)
 };
 
 /* =============================================================================
@@ -444,10 +444,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_cksound_serialize,
     nmo_cksound_deserialize,
     nmo_cksound_fields,
-    NMO_GUID_CKSOUND,
+    CKPGUID_SOUND,
     "CKSound",
     NMO_CID_SOUND,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
@@ -456,10 +456,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckwavesound_serialize,
     nmo_ckwavesound_deserialize,
     nmo_ckwavesound_fields,
-    NMO_GUID_CKWAVESOUND,
+    CKPGUID_WAVESOUND,
     "CKWaveSound",
     NMO_CID_WAVESOUND,
-    NMO_GUID_CKSOUND
+    CKPGUID_SOUND
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
@@ -468,9 +468,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckmidisound_serialize,
     nmo_ckmidisound_deserialize,
     nmo_ckmidisound_fields,
-    NMO_GUID_CKMIDISOUND,
+    CKPGUID_MIDISOUND,
     "CKMidiSound",
     NMO_CID_MIDISOUND,
-    NMO_GUID_CKSOUND
+    CKPGUID_SOUND
 )
+
 

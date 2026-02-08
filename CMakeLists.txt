@@ -249,11 +249,11 @@ set(NMO_TYPE_SOURCES
     src/type/type_registry.c
     src/type/plugin_support.c
     src/type/operation_registry.c
-    src/type/builtin_type_guids.c
     src/type/type_parser.c
     src/type/type_registry_enum.c
     src/type/type_registry_struct.c
     src/type/type_string_converters.c
+    src/type/builtin_types.c
     src/type/builtin_operations.c
     src/type/builtin_arithmetic.c
     src/type/builtin_logic.c
@@ -261,6 +261,10 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
     src/type/nmo_reflection.c
+)
+
+# DSL System sources
+set(NMO_DSL_SOURCES
     src/dsl/nmo_dsl.c
     src/dsl/nmo_dsl_lex.c
     src/dsl/nmo_dsl_ast.c
@@ -312,6 +316,7 @@ set(NMO_SOURCES
     ${NMO_FORMAT_SOURCES}
     ${NMO_OBJECT_SOURCES}
     ${NMO_TYPE_SOURCES}
+    ${NMO_DSL_SOURCES}
     ${NMO_EXTENSION_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_APP_SOURCES}

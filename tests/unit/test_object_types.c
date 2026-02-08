@@ -5,8 +5,10 @@
 
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_object_guids.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 
@@ -23,7 +25,7 @@ TEST(object_types, register_base_types) {
 
     /* Verify CKObject was registered */
     const nmo_type_descriptor_t *ckobject = nmo_type_registry_find_by_guid(
-        registry, NMO_GUID_CKOBJECT);
+        registry, CKPGUID_OBJECT);
     ASSERT_NE(NULL, ckobject);
     ASSERT_EQ(0, strcmp(ckobject->name, "CKObject"));
     ASSERT_EQ(1, ckobject->class_id);  /* NMO_CID_OBJECT */
@@ -39,15 +41,26 @@ TEST(object_types, register_all_types) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     ASSERT_NE(NULL, registry);
 
+    nmo_last_error_clear();
     nmo_status_t result = nmo_register_object_types(registry);
-    ASSERT_EQ(NMO_OK, result);
+    if (result != NMO_OK) {
+        char chain[1024];
+        nmo_last_error_chain_copy(chain, sizeof(chain));
+
+        char msg[512];
+        test_format_error(msg, sizeof(msg),
+                          "nmo_register_object_types failed: %d (%s)\n  %s",
+                          (int)result, nmo_error_string(result), chain);
+        test_add_result(__func__, __func__, 0, msg, __FILE__, __LINE__);
+        return;
+    }
 
     /* Verify key types were registered */
-    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, NMO_GUID_CKOBJECT));
-    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, NMO_GUID_CKMESH));
-    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, NMO_GUID_CKMATERIAL));
-    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, NMO_GUID_CK3DENTITY));
-    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, NMO_GUID_CKBEHAVIOR));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_OBJECT));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_MESH));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_MATERIAL));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_BEHAVIOR));
 
     nmo_arena_destroy(arena);
 }
@@ -64,9 +77,8 @@ TEST(object_types, lookup_by_class_id) {
     ASSERT_EQ(0, strcmp(mesh->name, "CKMesh"));
     ASSERT_EQ(32, mesh->class_id);
 
-    /* Verify GUID encoding */
-    ASSERT_EQ(0x564B4F42, mesh->guid.d1);
-    ASSERT_EQ(32, mesh->guid.d2);
+    /* Verify GUID matches canonical CKPGUID_* constant */
+    ASSERT_TRUE(nmo_guid_equals(mesh->guid, CKPGUID_MESH));
 
     nmo_arena_destroy(arena);
 }
@@ -103,20 +115,6 @@ TEST(object_types, inheritance_check) {
     nmo_arena_destroy(arena);
 }
 
-/* Test: GUID to class ID conversion */
-TEST(object_types, guid_to_class_id) {
-    nmo_class_id_t class_id = nmo_object_guid_to_class_id(NMO_GUID_CKMESH);
-    ASSERT_EQ(32, class_id);
-
-    class_id = nmo_object_guid_to_class_id(NMO_GUID_CKOBJECT);
-    ASSERT_EQ(1, class_id);
-
-    /* Non-object GUID should return 0 */
-    nmo_guid_t non_object_guid = {0x12345678, 0xABCDEF00};
-    class_id = nmo_object_guid_to_class_id(non_object_guid);
-    ASSERT_EQ(0, class_id);
-}
-
 /* Test: Object type check */
 TEST(object_types, is_object_type) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
@@ -124,11 +122,11 @@ TEST(object_types, is_object_type) {
     nmo_register_object_types(registry);
 
     /* CKMesh is an object type */
-    int result = nmo_is_object_type(registry, NMO_GUID_CKMESH);
+    int result = nmo_is_object_type(registry, CKPGUID_MESH);
     ASSERT_EQ(1, result);
 
     /* CKObject itself is an object type */
-    result = nmo_is_object_type(registry, NMO_GUID_CKOBJECT);
+    result = nmo_is_object_type(registry, CKPGUID_OBJECT);
     ASSERT_EQ(1, result);
 
     /* Non-existent type */
@@ -197,7 +195,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_types, register_all_types);
     REGISTER_TEST(object_types, lookup_by_class_id);
     REGISTER_TEST(object_types, inheritance_check);
-    REGISTER_TEST(object_types, guid_to_class_id);
     REGISTER_TEST(object_types, is_object_type);
     REGISTER_TEST(object_types, 3d_entity_hierarchy);
     REGISTER_TEST(object_types, resource_types);

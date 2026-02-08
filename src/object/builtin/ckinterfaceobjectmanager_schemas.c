@@ -8,6 +8,7 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -25,11 +26,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckinterfaceobjectmanager, nmo_ckinterfaceobje
 
 static const nmo_type_field_t nmo_ckinterfaceobjectmanager_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckinterfaceobjectmanager_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, chunk_count, NMO_GUID_FIELD_INT32),
-    NMO_FIELD_ARRAY(nmo_ckinterfaceobjectmanager_state_t, chunks, NMO_GUID_FIELD_CHUNK),
-    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, guid, NMO_GUID_FIELD_GUID)
+    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, chunk_count, CKPGUID_INT),
+    NMO_FIELD_ARRAY(nmo_ckinterfaceobjectmanager_state_t, chunks, CKPGUID_STATECHUNK),
+    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, guid, CKPGUID_GUID)
 };
 
 /* Identifiers from CKInterfaceObjectManager.cpp */
@@ -105,10 +106,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckinterfaceobjectmanager_serialize,
     nmo_ckinterfaceobjectmanager_deserialize,
     nmo_ckinterfaceobjectmanager_fields,
-    NMO_GUID_CKINTERFACEOBJECTMANAGER,
+    CKPGUID_INTERFACEOBJECTMANAGER,
     "CKInterfaceObjectManager",
     NMO_CID_INTERFACEOBJECTMANAGER,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
 
 static nmo_status_t nmo_ckinterfaceobjectmanager_serialize_internal(
@@ -170,3 +171,4 @@ nmo_status_t nmo_ckinterfaceobjectmanager_serialize(
         (const nmo_ckinterfaceobjectmanager_state_t *)instance;
     return nmo_ckinterfaceobjectmanager_serialize_internal(in_state, out_chunk, context);
 }
+

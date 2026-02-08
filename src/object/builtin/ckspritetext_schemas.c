@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file ckspritetext_schemas.c
  * @brief CKSpriteText schema implementation
  * @author libnmo
@@ -36,17 +36,17 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckspritetext, nmo_ck_spritetext_state_t)
 
 static const nmo_type_field_t nmo_ckspritetext_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ck_spritetext_state_t, base),
-                    sizeof(nmo_ck2dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck2dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_OPT(nmo_ck_spritetext_state_t, text_content, NMO_GUID_FIELD_STRING),
+    NMO_FIELD_OPT(nmo_ck_spritetext_state_t, text_content, CKPGUID_STRING),
     NMO_FIELD_NAMED("font", offsetof(nmo_ck_spritetext_state_t, font),
-                    sizeof(nmo_font_info_t), NMO_GUID_FIELD_FONTINFO,
+                    sizeof(nmo_font_info_t), NMO_GUID_STRUCT_FONTINFO,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("font_color", offsetof(nmo_ck_spritetext_state_t, font_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("background_color", offsetof(nmo_ck_spritetext_state_t, background_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck_spritetext_state_t, needs_redraw, NMO_GUID_FIELD_BOOL)
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ck_spritetext_state_t, needs_redraw, CKPGUID_BOOL)
 };
 
 /* ========================================================================
@@ -108,10 +108,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckspritetext_serialize,
     nmo_ckspritetext_deserialize,
     nmo_ckspritetext_fields,
-    NMO_GUID_CKSPRITETEXT,
+    CKPGUID_SPRITETEXT,
     "CKSpriteText",
     NMO_CID_SPRITETEXT,
-    NMO_GUID_CKSPRITE
+    CKPGUID_SPRITE
 )
 
 /**
@@ -431,4 +431,5 @@ nmo_status_t nmo_ckspritetext_serialize(
 
     return ckspritetext_serialize_modern(in_state, out_chunk, arena);
 }
+
 

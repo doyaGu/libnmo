@@ -24,14 +24,14 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksprite3d, nmo_cksprite3d_state_t)
 
 static const nmo_type_field_t nmo_cksprite3d_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cksprite3d_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite3d_state_t, has_data, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cksprite3d_state_t, mode, NMO_GUID_FIELD_VXSPRITE3D_TYPE),
-    NMO_FIELD(nmo_cksprite3d_state_t, half_width, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_cksprite3d_state_t, half_height, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_cksprite3d_state_t, offset, NMO_GUID_FIELD_VECTOR2),
-    NMO_FIELD(nmo_cksprite3d_state_t, uv_rect, NMO_GUID_FIELD_RECT),
+    NMO_FIELD(nmo_cksprite3d_state_t, has_data, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cksprite3d_state_t, mode, NMO_GUID_ENUM_VXSPRITE3D_TYPE),
+    NMO_FIELD(nmo_cksprite3d_state_t, half_width, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_cksprite3d_state_t, half_height, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_cksprite3d_state_t, offset, CKPGUID_2DVECTOR),
+    NMO_FIELD(nmo_cksprite3d_state_t, uv_rect, CKPGUID_RECT),
     NMO_FIELD_REF(nmo_cksprite3d_state_t, material_id)
 };
 
@@ -76,10 +76,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_cksprite3d_serialize,
     nmo_cksprite3d_deserialize,
     nmo_cksprite3d_fields,
-    NMO_GUID_CKSPRITE3D,
+    CKPGUID_SPRITE3D,
     "CKSprite3D",
     NMO_CID_SPRITE3D,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 static nmo_status_t nmo_cksprite3d_serialize_internal(
@@ -145,3 +145,4 @@ nmo_status_t nmo_cksprite3d_serialize(
     const nmo_cksprite3d_state_t *in_state = (const nmo_cksprite3d_state_t *)instance;
     return nmo_cksprite3d_serialize_internal(in_state, out_chunk, context);
 }
+

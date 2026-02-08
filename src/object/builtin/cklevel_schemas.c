@@ -39,17 +39,17 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cklevel, nmo_cklevel_state_t)
 
 static const nmo_type_field_t nmo_cklevel_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cklevel_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                       sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF_ARRAY(nmo_cklevel_state_t, scene_ids),
-    NMO_FIELD(nmo_cklevel_state_t, scene_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_cklevel_state_t, scene_count, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_cklevel_state_t, current_scene_id),
     NMO_FIELD_REF(nmo_cklevel_state_t, level_scene_id),
-    NMO_FIELD_OPT(nmo_cklevel_state_t, level_scene_chunk, NMO_GUID_FIELD_CHUNK),
-    NMO_FIELD_ARRAY(nmo_cklevel_state_t, inactive_manager_guids, NMO_GUID_FIELD_GUID),
-    NMO_FIELD(nmo_cklevel_state_t, inactive_manager_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_cklevel_state_t, duplicate_manager_names, NMO_GUID_FIELD_STRING),
-    NMO_FIELD(nmo_cklevel_state_t, duplicate_manager_count, NMO_GUID_FIELD_UINT32)
+    NMO_FIELD_OPT(nmo_cklevel_state_t, level_scene_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD_ARRAY(nmo_cklevel_state_t, inactive_manager_guids, CKPGUID_GUID),
+    NMO_FIELD(nmo_cklevel_state_t, inactive_manager_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_cklevel_state_t, duplicate_manager_names, CKPGUID_STRING),
+    NMO_FIELD(nmo_cklevel_state_t, duplicate_manager_count, CKPGUID_UINT32)
 };
 
 /* =============================================================================
@@ -406,9 +406,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_cklevel_serialize,
     nmo_cklevel_deserialize,
     nmo_cklevel_fields,
-    NMO_GUID_CKLEVEL,
+    CKPGUID_LEVEL,
     "CKLevel",
     NMO_CID_LEVEL,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
+
 

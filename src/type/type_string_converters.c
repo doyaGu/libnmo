@@ -9,10 +9,12 @@
 
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_operations.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_hash.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -1020,16 +1022,188 @@ static const nmo_type_descriptor_t *nmo_to_string_resolve_type(
     }
 
     const nmo_type_descriptor_t *t = nmo_type_registry_find_by_guid(registry, guid);
-    if (t) {
-        return t;
-    }
+    return t;
+}
 
-    if (nmo_guid_is_field_type(guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(guid);
-        return nmo_type_registry_find_by_guid(registry, mapped);
-    }
+typedef nmo_status_t (*nmo_value_to_string_fn)(const void *value, char *buffer, size_t buffer_size);
 
-    return NULL;
+static nmo_status_t nmo_object_id_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
+}
+
+static nmo_status_t nmo_guid_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    int wrote = nmo_guid_format(*(const nmo_guid_t *)value, buffer, buffer_size);
+    if (wrote < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_string_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_string_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_pointer_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    const void *ptr = *(const void *const *)value;
+    if (!ptr) {
+        snprintf(buffer, buffer_size, "null");
+    } else {
+        uintptr_t v = (uintptr_t)ptr;
+        snprintf(buffer, buffer_size, "0x%llX", (unsigned long long)v);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_rect_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    const nmo_rect_t *r = (const nmo_rect_t *)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", r->left, r->top, r->right, r->bottom);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_box_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    const nmo_box_t *b = (const nmo_box_t *)value;
+    snprintf(buffer, buffer_size,
+             "((%.6g, %.6g, %.6g), (%.6g, %.6g, %.6g))",
+             b->min.x, b->min.y, b->min.z,
+             b->max.x, b->max.y, b->max.z);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_eulerangles_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    const nmo_eulerangles_t *e = (const nmo_eulerangles_t *)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)", e->x, e->y, e->z);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_int_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_int_to_string(value, buffer, buffer_size, false);
+}
+
+static nmo_status_t nmo_uint32_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%u", *(const uint32_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_int8_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%d", (int)*(const int8_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_uint8_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint8_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_int16_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%d", (int)*(const int16_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_uint16_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint16_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_int64_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%lld", (long long)*(const int64_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_uint64_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    snprintf(buffer, buffer_size, "%llu", (unsigned long long)*(const uint64_t *)value);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_double_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    double d = *(const double *)value;
+    if (isnan(d)) {
+        snprintf(buffer, buffer_size, "NaN");
+    } else if (isinf(d)) {
+        snprintf(buffer, buffer_size, d > 0 ? "Infinity" : "-Infinity");
+    } else {
+        snprintf(buffer, buffer_size, "%.6g", d);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_float_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_float_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_bool_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_bool_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_vector2_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_vector2_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_vector3_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_vector_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_vector4_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_vector4_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_quaternion_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_quaternion_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_matrix_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_matrix_to_string(value, buffer, buffer_size);
+}
+
+static nmo_status_t nmo_color_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    return nmo_color_to_string(value, buffer, buffer_size);
+}
+
+typedef struct nmo_guid_to_string_entry {
+    nmo_guid_t guid;
+    nmo_value_to_string_fn fn;
+} nmo_guid_to_string_entry_t;
+
+static const nmo_guid_to_string_entry_t nmo_guid_to_string_table[] = {
+    {NMO_GUID_INIT(CKPGUID_ID_D1, CKPGUID_ID_D2), nmo_object_id_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_GUID_D1, CKPGUID_GUID_D2), nmo_guid_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_STRING_D1, CKPGUID_STRING_D2), nmo_string_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_POINTER_D1, CKPGUID_POINTER_D2), nmo_pointer_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_INT8_D1, CKPGUID_INT8_D2), nmo_int8_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_UINT8_D1, CKPGUID_UINT8_D2), nmo_uint8_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_INT16_D1, CKPGUID_INT16_D2), nmo_int16_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_UINT16_D1, CKPGUID_UINT16_D2), nmo_uint16_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_INT_D1, CKPGUID_INT_D2), nmo_int_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_UINT32_D1, CKPGUID_UINT32_D2), nmo_uint32_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_INT64_D1, CKPGUID_INT64_D2), nmo_int64_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_UINT64_D1, CKPGUID_UINT64_D2), nmo_uint64_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_DOUBLE_D1, CKPGUID_DOUBLE_D2), nmo_double_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2), nmo_float_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_BOOL_D1, CKPGUID_BOOL_D2), nmo_bool_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_2DVECTOR_D1, CKPGUID_2DVECTOR_D2), nmo_vector2_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_VECTOR_D1, CKPGUID_VECTOR_D2), nmo_vector3_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_VECTOR4_D1, CKPGUID_VECTOR4_D2), nmo_vector4_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_QUATERNION_D1, CKPGUID_QUATERNION_D2), nmo_quaternion_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_MATRIX_D1, CKPGUID_MATRIX_D2), nmo_matrix_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2), nmo_color_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_RECT_D1, CKPGUID_RECT_D2), nmo_rect_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_BOX_D1, CKPGUID_BOX_D2), nmo_box_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2), nmo_eulerangles_value_to_string}
+};
+
+static bool nmo_value_to_string_by_guid(
+    nmo_guid_t guid,
+    const void *value,
+    char *buffer,
+    size_t buffer_size,
+    nmo_status_t *out_status)
+{
+    for (size_t i = 0; i < sizeof(nmo_guid_to_string_table) / sizeof(nmo_guid_to_string_table[0]); i++) {
+        if (nmo_guid_equals(guid, nmo_guid_to_string_table[i].guid)) {
+            *out_status = nmo_guid_to_string_table[i].fn(value, buffer, buffer_size);
+            return true;
+        }
+    }
+    return false;
 }
 
 static nmo_status_t nmo_type_value_to_string_impl(
@@ -1134,21 +1308,18 @@ static nmo_status_t nmo_struct_like_to_string(
                     }
 
                     nmo_guid_t count_guid = count_type->guid;
-                    if (nmo_guid_is_field_type(count_guid)) {
-                        count_guid = nmo_guid_field_to_type(count_guid);
-                    }
 
                     const uint8_t *count_ptr = (const uint8_t *)value + cf->offset;
-                    if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_UINT32)) {
+                    if (nmo_guid_equals(count_guid, CKPGUID_UINT32)) {
                         count = *(const uint32_t *)count_ptr;
-                    } else if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_INT)) {
+                    } else if (nmo_guid_equals(count_guid, CKPGUID_INT)) {
                         int32_t v = *(const int32_t *)count_ptr;
                         if (v >= 0) {
                             count = (uint64_t)v;
                         }
-                    } else if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_UINT64)) {
+                    } else if (nmo_guid_equals(count_guid, CKPGUID_UINT64)) {
                         count = *(const uint64_t *)count_ptr;
-                    } else if (nmo_guid_equals(count_guid, NMO_TYPE_GUID_INT64)) {
+                    } else if (nmo_guid_equals(count_guid, CKPGUID_INT64)) {
                         int64_t v = *(const int64_t *)count_ptr;
                         if (v >= 0) {
                             count = (uint64_t)v;
@@ -1201,111 +1372,19 @@ static nmo_status_t nmo_type_value_to_string_impl(
         return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
     }
 
-    /* Some call sites may hand us descriptors keyed by encoded reflection-field GUIDs.
-     * Normalize those to builtin NMO_TYPE_GUID_* forms for comparison. */
     nmo_guid_t effective_guid = type->guid;
-    if (nmo_guid_is_field_type(effective_guid)) {
-        effective_guid = nmo_guid_field_to_type(effective_guid);
+    nmo_status_t result = NMO_OK;
+
+    /* If a type provides a custom to_string implementation, prefer it.
+     * This makes vtables authoritative for parameter value types. */
+    if (type->vtable && type->vtable->to_string) {
+        return type->vtable->to_string(value, type, buffer, buffer_size, (void *)registry);
     }
 
     /* Prefer explicit built-in GUID formatting over generic struct formatting.
      * Some builtin composites may be registered with STRUCT category. */
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_OBJECT_ID)) {
-        return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
-    }
-
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_GUID)) {
-        int wrote = nmo_guid_format(*(const nmo_guid_t *)value, buffer, buffer_size);
-        if (wrote < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
-        }
-        NMO_RETURN_OK();
-    }
-
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_STRING)) {
-        const char *str = *(const char *const *)value;
-        snprintf(buffer, buffer_size, "%s", str ? str : "(null)");
-        NMO_RETURN_OK();
-    }
-
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_POINTER)) {
-        const void *ptr = *(const void *const *)value;
-        if (!ptr) {
-            snprintf(buffer, buffer_size, "null");
-        } else {
-            snprintf(buffer, buffer_size, "%p", ptr);
-        }
-        NMO_RETURN_OK();
-    }
-
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT8)) {
-        snprintf(buffer, buffer_size, "%d", (int)*(const int8_t *)value);
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT8)) {
-        snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint8_t *)value);
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT16)) {
-        snprintf(buffer, buffer_size, "%d", (int)*(const int16_t *)value);
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT16)) {
-        snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint16_t *)value);
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT)) {
-        return nmo_int_to_string(value, buffer, buffer_size, false);
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT32)) {
-        snprintf(buffer, buffer_size, "%u", *(const uint32_t *)value);
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_INT64)) {
-        snprintf(buffer, buffer_size, "%lld", (long long)*(const int64_t *)value);
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_UINT64)) {
-        snprintf(buffer, buffer_size, "%llu", (unsigned long long)*(const uint64_t *)value);
-        NMO_RETURN_OK();
-    }
-
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_DOUBLE)) {
-        double d = *(const double *)value;
-        if (isnan(d)) {
-            snprintf(buffer, buffer_size, "NaN");
-        } else if (isinf(d)) {
-            snprintf(buffer, buffer_size, d > 0 ? "Infinity" : "-Infinity");
-        } else {
-            snprintf(buffer, buffer_size, "%.6g", d);
-        }
-        NMO_RETURN_OK();
-    }
-
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_FLOAT)) {
-        return nmo_float_to_string(value, buffer, buffer_size);
-    }
-    if (nmo_guid_equals(effective_guid, NMO_TYPE_GUID_BOOL)) {
-        return nmo_bool_to_string(value, buffer, buffer_size);
-    }
-
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2)) {
-        return nmo_vector2_to_string(value, buffer, buffer_size);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR3)) {
-        return nmo_vector_to_string(value, buffer, buffer_size);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR4)) {
-        return nmo_vector4_to_string(value, buffer, buffer_size);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_QUATERNION)) {
-        return nmo_quaternion_to_string(value, buffer, buffer_size);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_MATRIX)) {
-        return nmo_matrix_to_string(value, buffer, buffer_size);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_COLOR)) {
-        return nmo_color_to_string(value, buffer, buffer_size);
+    if (nmo_value_to_string_by_guid(effective_guid, value, buffer, buffer_size, &result)) {
+        return result;
     }
 
     if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
@@ -1315,11 +1394,6 @@ static nmo_status_t nmo_type_value_to_string_impl(
     /* Object types can also carry reflection fields; render those like structs. */
     if (type->fields && type->field_count > 0) {
         return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
-    }
-
-    /* If a type provides a custom to_string implementation, try it after reflection/builtins. */
-    if (type->vtable && type->vtable->to_string) {
-        return type->vtable->to_string(value, type, buffer, buffer_size, (void *)registry);
     }
 
     if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
@@ -1420,6 +1494,473 @@ static nmo_status_t parse_f64(const char *string, double *out_value)
     NMO_RETURN_OK();
 }
 
+typedef nmo_status_t (*nmo_value_from_string_fn)(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string);
+
+static nmo_status_t nmo_parse_int8(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    int64_t parsed = 0;
+    nmo_status_t st = parse_i64(string, &parsed);
+    if (st != NMO_OK) return st;
+    if (parsed < INT8_MIN || parsed > INT8_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT8 out of range");
+    }
+    *(int8_t *)value = (int8_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_int16(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    int64_t parsed = 0;
+    nmo_status_t st = parse_i64(string, &parsed);
+    if (st != NMO_OK) return st;
+    if (parsed < INT16_MIN || parsed > INT16_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT16 out of range");
+    }
+    *(int16_t *)value = (int16_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_int32(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_int_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_int64(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    int64_t parsed = 0;
+    nmo_status_t st = parse_i64(string, &parsed);
+    if (st != NMO_OK) return st;
+    *(int64_t *)value = parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_uint8(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    uint64_t parsed = 0;
+    nmo_status_t st = parse_u64(string, &parsed);
+    if (st != NMO_OK) return st;
+    if (parsed > UINT8_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT8 out of range");
+    }
+    *(uint8_t *)value = (uint8_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_uint16(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    uint64_t parsed = 0;
+    nmo_status_t st = parse_u64(string, &parsed);
+    if (st != NMO_OK) return st;
+    if (parsed > UINT16_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT16 out of range");
+    }
+    *(uint16_t *)value = (uint16_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_uint32(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    uint64_t parsed = 0;
+    nmo_status_t st = parse_u64(string, &parsed);
+    if (st != NMO_OK) return st;
+    if (parsed > UINT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT32 out of range");
+    }
+    *(uint32_t *)value = (uint32_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_uint64(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    uint64_t parsed = 0;
+    nmo_status_t st = parse_u64(string, &parsed);
+    if (st != NMO_OK) return st;
+    *(uint64_t *)value = parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_bool(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_bool_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_float(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_float_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_double(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    double parsed = 0.0;
+    nmo_status_t st = parse_f64(string, &parsed);
+    if (st != NMO_OK) return st;
+    *(double *)value = parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_string(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    if (!registry || !registry->arena) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Registry with arena required for string parsing");
+    }
+    return nmo_string_from_string(value, string, (nmo_arena_t *)registry->arena);
+}
+
+static nmo_status_t nmo_parse_vector2(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_vector2_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_vector3(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_vector_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_vector4(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_vector4_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_quaternion(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_quaternion_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_matrix(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_matrix_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_color(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    return nmo_color_from_string(value, string);
+}
+
+static nmo_status_t nmo_parse_guid(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for guid parse");
+    }
+
+    while (*string && isspace((unsigned char)*string)) string++;
+    nmo_guid_t g = nmo_guid_parse(string);
+    if (nmo_guid_is_null(g) && !(string[0] == '0' && string[1] == '\0')) {
+        /* Accept {00000000-00000000} as valid null GUID, but reject parse failures */
+        if (strcmp(string, "{00000000-00000000}") != 0 &&
+            strcmp(string, "00000000-00000000") != 0 &&
+            strcmp(string, "0000000000000000") != 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid GUID format");
+        }
+    }
+
+    *(nmo_guid_t *)value = g;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_pointer(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for pointer parse");
+    }
+
+    while (*string && isspace((unsigned char)*string)) string++;
+    if (strcmp(string, "null") == 0 || strcmp(string, "NULL") == 0) {
+        *(void **)value = NULL;
+        NMO_RETURN_OK();
+    }
+
+    char *endptr = NULL;
+    errno = 0;
+    unsigned long long parsed = strtoull(string, &endptr, 0);
+    if (errno != 0 || endptr == string) {
+        /* Try hex without 0x (common %p style) */
+        errno = 0;
+        parsed = strtoull(string, &endptr, 16);
+    }
+    if (errno != 0 || endptr == string || (*endptr != '\0' && !isspace((unsigned char)*endptr))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid pointer format");
+    }
+
+    *(void **)value = (void *)(uintptr_t)parsed;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_object_id(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object id parse");
+    }
+
+    /* Prefer #id format (and optional name lookup if resolver installed elsewhere) */
+    nmo_status_t st = nmo_object_id_from_string(value, string, NULL);
+    if (st == NMO_OK) {
+        return st;
+    }
+
+    /* Back-compat: accept raw integer without '#' */
+    return nmo_parse_uint32(value, registry, string);
+}
+
+static nmo_status_t nmo_parse_rect(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for rect parse");
+    }
+
+    float out[4] = {0};
+    nmo_status_t st = parse_float_tuple("Rect", string, out, 4);
+    if (st != NMO_OK) return st;
+
+    nmo_rect_t *r = (nmo_rect_t *)value;
+    r->left = out[0];
+    r->top = out[1];
+    r->right = out[2];
+    r->bottom = out[3];
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_box(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for box parse");
+    }
+
+    /* Format: ((x,y,z), (x,y,z)) with optional whitespace */
+    while (*string && isspace((unsigned char)*string)) string++;
+    if (*string != '(') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Box must start with '('");
+    }
+    string++;
+    while (*string && isspace((unsigned char)*string)) string++;
+    if (*string != '(') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Box must contain '(min, max)'");
+    }
+
+    /* Parse first vector3 */
+    nmo_vector_t minv = {0};
+    NMO_RETURN_IF_ERROR(nmo_vector_from_string(&minv, string));
+
+    /* Advance past the first '(...)' */
+    int paren = 0;
+    const char *p = string;
+    for (; *p; ++p) {
+        if (*p == '(') paren++;
+        else if (*p == ')') {
+            paren--;
+            if (paren == 0) {
+                p++;
+                break;
+            }
+        }
+    }
+    if (paren != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unclosed min vector");
+    }
+
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p != ',') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Box vectors must be separated by ','");
+    }
+    p++;
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (*p != '(') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Box max vector must start with '('");
+    }
+
+    nmo_vector_t maxv = {0};
+    NMO_RETURN_IF_ERROR(nmo_vector_from_string(&maxv, p));
+
+    /* Advance past second '(...)' */
+    paren = 0;
+    const char *q = p;
+    for (; *q; ++q) {
+        if (*q == '(') paren++;
+        else if (*q == ')') {
+            paren--;
+            if (paren == 0) {
+                q++;
+                break;
+            }
+        }
+    }
+    if (paren != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Unclosed max vector");
+    }
+    while (*q && isspace((unsigned char)*q)) q++;
+    if (*q != ')') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Box must end with ')'");
+    }
+
+    nmo_box_t *b = (nmo_box_t *)value;
+    b->min = minv;
+    b->max = maxv;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parse_eulerangles(
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string)
+{
+    (void)registry;
+    if (!value || !string) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for euler parse");
+    }
+
+    float out[3] = {0};
+    nmo_status_t st = parse_float_tuple("EulerAngles", string, out, 3);
+    if (st != NMO_OK) return st;
+
+    nmo_eulerangles_t *e = (nmo_eulerangles_t *)value;
+    e->x = out[0];
+    e->y = out[1];
+    e->z = out[2];
+    NMO_RETURN_OK();
+}
+
+typedef struct nmo_guid_from_string_entry {
+    nmo_guid_t guid;
+    nmo_value_from_string_fn fn;
+} nmo_guid_from_string_entry_t;
+
+static const nmo_guid_from_string_entry_t nmo_guid_from_string_table[] = {
+    {NMO_GUID_INIT(CKPGUID_INT8_D1, CKPGUID_INT8_D2), nmo_parse_int8},
+    {NMO_GUID_INIT(CKPGUID_INT16_D1, CKPGUID_INT16_D2), nmo_parse_int16},
+    {NMO_GUID_INIT(CKPGUID_INT_D1, CKPGUID_INT_D2), nmo_parse_int32},
+    {NMO_GUID_INIT(CKPGUID_INT64_D1, CKPGUID_INT64_D2), nmo_parse_int64},
+    {NMO_GUID_INIT(CKPGUID_UINT8_D1, CKPGUID_UINT8_D2), nmo_parse_uint8},
+    {NMO_GUID_INIT(CKPGUID_UINT16_D1, CKPGUID_UINT16_D2), nmo_parse_uint16},
+    {NMO_GUID_INIT(CKPGUID_UINT32_D1, CKPGUID_UINT32_D2), nmo_parse_uint32},
+    {NMO_GUID_INIT(CKPGUID_UINT64_D1, CKPGUID_UINT64_D2), nmo_parse_uint64},
+    {NMO_GUID_INIT(CKPGUID_ID_D1, CKPGUID_ID_D2), nmo_parse_object_id},
+    {NMO_GUID_INIT(CKPGUID_GUID_D1, CKPGUID_GUID_D2), nmo_parse_guid},
+    {NMO_GUID_INIT(CKPGUID_POINTER_D1, CKPGUID_POINTER_D2), nmo_parse_pointer},
+    {NMO_GUID_INIT(CKPGUID_BOOL_D1, CKPGUID_BOOL_D2), nmo_parse_bool},
+    {NMO_GUID_INIT(CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2), nmo_parse_float},
+    {NMO_GUID_INIT(CKPGUID_DOUBLE_D1, CKPGUID_DOUBLE_D2), nmo_parse_double},
+    {NMO_GUID_INIT(CKPGUID_STRING_D1, CKPGUID_STRING_D2), nmo_parse_string},
+    {NMO_GUID_INIT(CKPGUID_2DVECTOR_D1, CKPGUID_2DVECTOR_D2), nmo_parse_vector2},
+    {NMO_GUID_INIT(CKPGUID_VECTOR_D1, CKPGUID_VECTOR_D2), nmo_parse_vector3},
+    {NMO_GUID_INIT(CKPGUID_VECTOR4_D1, CKPGUID_VECTOR4_D2), nmo_parse_vector4},
+    {NMO_GUID_INIT(CKPGUID_QUATERNION_D1, CKPGUID_QUATERNION_D2), nmo_parse_quaternion},
+    {NMO_GUID_INIT(CKPGUID_MATRIX_D1, CKPGUID_MATRIX_D2), nmo_parse_matrix},
+    {NMO_GUID_INIT(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2), nmo_parse_color},
+    {NMO_GUID_INIT(CKPGUID_RECT_D1, CKPGUID_RECT_D2), nmo_parse_rect},
+    {NMO_GUID_INIT(CKPGUID_BOX_D1, CKPGUID_BOX_D2), nmo_parse_box},
+    {NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2), nmo_parse_eulerangles}
+};
+
+static bool nmo_value_from_string_by_guid(
+    nmo_guid_t guid,
+    void *value,
+    const nmo_type_registry_t *registry,
+    const char *string,
+    nmo_status_t *out_status)
+{
+    for (size_t i = 0; i < sizeof(nmo_guid_from_string_table) / sizeof(nmo_guid_from_string_table[0]); i++) {
+        if (nmo_guid_equals(guid, nmo_guid_from_string_table[i].guid)) {
+            *out_status = nmo_guid_from_string_table[i].fn(value, registry, string);
+            return true;
+        }
+    }
+    return false;
+}
+
 nmo_status_t nmo_type_value_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
@@ -1438,115 +1979,422 @@ nmo_status_t nmo_type_value_from_string(
         return nmo_flags_from_string(value, type, registry, string);
     }
 
-    // Dispatch by GUID for built-in scalar/string types.
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT8)) {
-        int64_t parsed = 0;
-        nmo_status_t st = parse_i64(string, &parsed);
-        if (st != NMO_OK) return st;
-        if (parsed < INT8_MIN || parsed > INT8_MAX) {
-            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT8 out of range");
+    /* Custom converter hook (if a type registers one) */
+    if (type->vtable && type->vtable->from_string) {
+        return type->vtable->from_string(value, type, string, (void *)registry);
+    }
+
+    nmo_status_t result = NMO_OK;
+    if (nmo_value_from_string_by_guid(type->guid, value, registry, string, &result)) {
+        return result;
+    }
+
+    /* Scalar fallback for derived types (e.g., ANGLE, PERCENTAGE, KEY, CLASSID) */
+    if (type->category & (NMO_TYPE_CATEGORY_SCALAR | NMO_TYPE_CATEGORY_POINTER | NMO_TYPE_CATEGORY_OBJECT_REF)) {
+        if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
+            return nmo_float_from_string(value, string);
         }
-        *(int8_t *)value = (int8_t)parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT16)) {
-        int64_t parsed = 0;
-        nmo_status_t st = parse_i64(string, &parsed);
-        if (st != NMO_OK) return st;
-        if (parsed < INT16_MIN || parsed > INT16_MAX) {
-            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "INT16 out of range");
+        if (type->size == sizeof(double) && type->alignment == _Alignof(double)) {
+            double parsed = 0.0;
+            NMO_RETURN_IF_ERROR(parse_f64(string, &parsed));
+            *(double *)value = parsed;
+            NMO_RETURN_OK();
         }
-        *(int16_t *)value = (int16_t)parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_FLOAT)) {
-        return nmo_float_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_DOUBLE)) {
-        double parsed = 0.0;
-        nmo_status_t st = parse_f64(string, &parsed);
-        if (st != NMO_OK) return st;
-        *(double *)value = parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT)) {
-        return nmo_int_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_INT64)) {
-        int64_t parsed = 0;
-        nmo_status_t st = parse_i64(string, &parsed);
-        if (st != NMO_OK) return st;
-        *(int64_t *)value = parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT8)) {
-        uint64_t parsed = 0;
-        nmo_status_t st = parse_u64(string, &parsed);
-        if (st != NMO_OK) return st;
-        if (parsed > UINT8_MAX) {
-            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT8 out of range");
+        if (type->size == sizeof(int32_t) && type->alignment == _Alignof(int32_t)) {
+            return nmo_int_from_string(value, string);
         }
-        *(uint8_t *)value = (uint8_t)parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT16)) {
-        uint64_t parsed = 0;
-        nmo_status_t st = parse_u64(string, &parsed);
-        if (st != NMO_OK) return st;
-        if (parsed > UINT16_MAX) {
-            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT16 out of range");
+        if (type->size == sizeof(uint32_t) && type->alignment == _Alignof(uint32_t)) {
+            return nmo_parse_uint32(value, registry, string);
         }
-        *(uint16_t *)value = (uint16_t)parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT32) ||
-        nmo_guid_equals(type->guid, NMO_TYPE_GUID_OBJECT_ID)) {
-        uint64_t parsed = 0;
-        nmo_status_t st = parse_u64(string, &parsed);
-        if (st != NMO_OK) return st;
-        if (parsed > UINT32_MAX) {
-            NMO_RETURN_ERROR(NMO_ERR_OUT_OF_BOUNDS, NMO_SEVERITY_ERROR, "UINT32 out of range");
+        if (type->size == sizeof(bool) && type->alignment == _Alignof(bool)) {
+            return nmo_bool_from_string(value, string);
         }
-        *(uint32_t *)value = (uint32_t)parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_UINT64)) {
-        uint64_t parsed = 0;
-        nmo_status_t st = parse_u64(string, &parsed);
-        if (st != NMO_OK) return st;
-        *(uint64_t *)value = parsed;
-        NMO_RETURN_OK();
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_BOOL)) {
-        return nmo_bool_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_STRING)) {
-        if (!registry || !registry->arena) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "Registry with arena required for string parsing");
+        if (type->size == sizeof(nmo_guid_t) && type->alignment == _Alignof(nmo_guid_t)) {
+            return nmo_parse_guid(value, registry, string);
         }
-        return nmo_string_from_string(value, string, (nmo_arena_t *)registry->arena);
-    }
-    
-    // Vector types (Vector2 = 2 floats, Vector3 = 3 floats, Vector4/Quaternion = 4 floats)
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR2)) {
-        return nmo_vector2_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR3)) {
-        return nmo_vector_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_VECTOR4)) {
-        return nmo_vector4_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_QUATERNION)) {
-        return nmo_quaternion_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_MATRIX)) {
-        return nmo_matrix_from_string(value, string);
-    }
-    if (nmo_guid_equals(type->guid, NMO_TYPE_GUID_COLOR)) {
-        return nmo_color_from_string(value, string);
+        if (type->size == sizeof(void *) && type->alignment == _Alignof(void *)) {
+            return nmo_parse_pointer(value, registry, string);
+        }
     }
 
     NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR, "Type-from-string not implemented for this type");
 }
+
+/* ============================================================================
+ * Builtin Type VTable Helpers
+ *
+ * These functions are referenced by builtin vtables.
+ * The vtable objects themselves are defined in builtin_operations.c.
+ * ============================================================================ */
+
+nmo_status_t nmo_builtin_create_zero(void *instance, const nmo_type_descriptor_t *type, void *context)
+{
+    (void)context;
+    if (!instance || !type) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid args for create");
+    }
+    if (type->size > 0) {
+        memset(instance, 0, type->size);
+    }
+    NMO_RETURN_OK();
+}
+
+void nmo_builtin_destroy_noop(void *instance, const nmo_type_descriptor_t *type, void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+nmo_status_t nmo_builtin_copy_memcpy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)arena;
+    if (!src || !dst || !type) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid args for copy");
+    }
+    if (type->size > 0) {
+        memcpy(dst, src, type->size);
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_builtin_copy_string(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (!src || !dst) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid args for string copy");
+    }
+
+    const char *s = *(const char *const *)src;
+    if (!s) {
+        *(char **)dst = NULL;
+        NMO_RETURN_OK();
+    }
+
+    if (!arena) {
+        *(char **)dst = (char *)s;
+        NMO_RETURN_OK();
+    }
+
+    const char *copy = nmo_arena_strdup(arena, s);
+    if (!copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy string");
+    }
+    *(const char **)dst = copy;
+    NMO_RETURN_OK();
+}
+
+static uint32_t nmo_hash_u64_fold(uint64_t v)
+{
+    uint64_t h = nmo_hash_int64(v);
+    return (uint32_t)(h ^ (h >> 32));
+}
+
+bool nmo_equals_float_bits(const void *a, const void *b)
+{
+    uint32_t av = 0;
+    uint32_t bv = 0;
+    memcpy(&av, a, sizeof(av));
+    memcpy(&bv, b, sizeof(bv));
+    return av == bv;
+}
+
+uint32_t nmo_hash_float_bits(const void *instance)
+{
+    uint32_t bits = 0;
+    memcpy(&bits, instance, sizeof(bits));
+    return nmo_hash_int32(bits);
+}
+
+bool nmo_equals_double_bits(const void *a, const void *b)
+{
+    uint64_t av = 0;
+    uint64_t bv = 0;
+    memcpy(&av, a, sizeof(av));
+    memcpy(&bv, b, sizeof(bv));
+    return av == bv;
+}
+
+uint32_t nmo_hash_double_bits(const void *instance)
+{
+    uint64_t bits = 0;
+    memcpy(&bits, instance, sizeof(bits));
+    return nmo_hash_u64_fold(bits);
+}
+
+bool nmo_equals_string_value(const void *a, const void *b)
+{
+    const char *sa = *(const char *const *)a;
+    const char *sb = *(const char *const *)b;
+    if (sa == sb) {
+        return true;
+    }
+    if (!sa || !sb) {
+        return false;
+    }
+    return strcmp(sa, sb) == 0;
+}
+
+uint32_t nmo_hash_string_value(const void *instance)
+{
+    const char *s = *(const char *const *)instance;
+    if (!s) {
+        return 0;
+    }
+    return nmo_murmur3_32(s, strlen(s), 0);
+}
+
+#define NMO_DEFINE_EQ_HASH_U32(tag, c_type) \
+    bool nmo_vt_equals_##tag(const void *a, const void *b) { \
+        return *(const c_type *)a == *(const c_type *)b; \
+    } \
+    uint32_t nmo_vt_hash_##tag(const void *instance) { \
+        return (uint32_t)nmo_hash_int32((uint32_t)(*(const c_type *)instance)); \
+    }
+
+#define NMO_DEFINE_EQ_HASH_U64(tag, c_type) \
+    bool nmo_vt_equals_##tag(const void *a, const void *b) { \
+        return *(const c_type *)a == *(const c_type *)b; \
+    } \
+    uint32_t nmo_vt_hash_##tag(const void *instance) { \
+        return nmo_hash_u64_fold((uint64_t)(*(const c_type *)instance)); \
+    }
+
+NMO_DEFINE_EQ_HASH_U32(int32, int32_t)
+NMO_DEFINE_EQ_HASH_U32(uint32, uint32_t)
+NMO_DEFINE_EQ_HASH_U32(int8, int8_t)
+NMO_DEFINE_EQ_HASH_U32(uint8, uint8_t)
+NMO_DEFINE_EQ_HASH_U32(int16, int16_t)
+NMO_DEFINE_EQ_HASH_U32(uint16, uint16_t)
+NMO_DEFINE_EQ_HASH_U64(int64, int64_t)
+NMO_DEFINE_EQ_HASH_U64(uint64, uint64_t)
+
+bool nmo_equals_bool(const void *a, const void *b)
+{
+    return *(const bool *)a == *(const bool *)b;
+}
+
+uint32_t nmo_hash_bool(const void *instance)
+{
+    return nmo_hash_int32(*(const bool *)instance ? 1u : 0u);
+}
+
+bool nmo_equals_pointer(const void *a, const void *b)
+{
+    return *(const void *const *)a == *(const void *const *)b;
+}
+
+uint32_t nmo_hash_pointer(const void *instance)
+{
+    uintptr_t v = (uintptr_t)(*(const void *const *)instance);
+    return nmo_hash_u64_fold((uint64_t)v);
+}
+
+bool nmo_equals_guid(const void *a, const void *b)
+{
+    return nmo_guid_equals(*(const nmo_guid_t *)a, *(const nmo_guid_t *)b);
+}
+
+uint32_t nmo_hash_guid(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_guid_t), 0);
+}
+
+bool nmo_equals_object_id(const void *a, const void *b)
+{
+    return *(const nmo_object_id_t *)a == *(const nmo_object_id_t *)b;
+}
+
+uint32_t nmo_hash_object_id(const void *instance)
+{
+    return nmo_hash_int32((uint32_t)(*(const nmo_object_id_t *)instance));
+}
+
+bool nmo_equals_bytes_vector2(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_vector2_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_vector2(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_vector2_t), 0);
+}
+
+bool nmo_equals_bytes_vector3(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_vector_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_vector3(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_vector_t), 0);
+}
+
+bool nmo_equals_bytes_vector4(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_vector4_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_vector4(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_vector4_t), 0);
+}
+
+bool nmo_equals_bytes_quaternion(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_quaternion_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_quaternion(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_quaternion_t), 0);
+}
+
+bool nmo_equals_bytes_matrix(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_matrix_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_matrix(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_matrix_t), 0);
+}
+
+bool nmo_equals_bytes_color(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_color_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_color(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_color_t), 0);
+}
+
+bool nmo_equals_bytes_rect(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_rect_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_rect(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_rect_t), 0);
+}
+
+bool nmo_equals_bytes_eulerangles(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_eulerangles_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_eulerangles(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_eulerangles_t), 0);
+}
+
+bool nmo_equals_bytes_box(const void *a, const void *b)
+{
+    return memcmp(a, b, sizeof(nmo_box_t)) == 0;
+}
+
+uint32_t nmo_hash_bytes_box(const void *instance)
+{
+    return nmo_murmur3_32(instance, sizeof(nmo_box_t), 0);
+}
+
+#define NMO_DEFINE_VT_TO_STRING(name, value_to_string_fn) \
+    nmo_status_t nmo_vt_to_string_##name( \
+        const void *value, const nmo_type_descriptor_t *type, \
+        char *buffer, size_t buffer_size, void *context) \
+    { \
+        (void)type; \
+        (void)context; \
+        return (value_to_string_fn)(value, buffer, buffer_size); \
+    }
+
+#define NMO_DEFINE_VT_FROM_STRING(name, parse_fn) \
+    nmo_status_t nmo_vt_from_string_##name( \
+        void *value, const nmo_type_descriptor_t *type, \
+        const char *string, void *context) \
+    { \
+        (void)type; \
+        return (parse_fn)(value, (const nmo_type_registry_t *)context, string); \
+    }
+
+NMO_DEFINE_VT_TO_STRING(int32, nmo_int_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(int32, nmo_parse_int32)
+
+NMO_DEFINE_VT_TO_STRING(uint32, nmo_uint32_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(uint32, nmo_parse_uint32)
+
+NMO_DEFINE_VT_TO_STRING(int8, nmo_int8_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(int8, nmo_parse_int8)
+
+NMO_DEFINE_VT_TO_STRING(uint8, nmo_uint8_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(uint8, nmo_parse_uint8)
+
+NMO_DEFINE_VT_TO_STRING(int16, nmo_int16_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(int16, nmo_parse_int16)
+
+NMO_DEFINE_VT_TO_STRING(uint16, nmo_uint16_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(uint16, nmo_parse_uint16)
+
+NMO_DEFINE_VT_TO_STRING(int64, nmo_int64_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(int64, nmo_parse_int64)
+
+NMO_DEFINE_VT_TO_STRING(uint64, nmo_uint64_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(uint64, nmo_parse_uint64)
+
+NMO_DEFINE_VT_TO_STRING(float, nmo_float_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(float, nmo_parse_float)
+
+NMO_DEFINE_VT_TO_STRING(double, nmo_double_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(double, nmo_parse_double)
+
+NMO_DEFINE_VT_TO_STRING(bool, nmo_bool_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(bool, nmo_parse_bool)
+
+NMO_DEFINE_VT_TO_STRING(string, nmo_string_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(string, nmo_parse_string)
+
+NMO_DEFINE_VT_TO_STRING(pointer, nmo_pointer_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(pointer, nmo_parse_pointer)
+
+NMO_DEFINE_VT_TO_STRING(guid, nmo_guid_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(guid, nmo_parse_guid)
+
+NMO_DEFINE_VT_TO_STRING(object_id, nmo_object_id_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(object_id, nmo_parse_object_id)
+
+NMO_DEFINE_VT_TO_STRING(vector2, nmo_vector2_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(vector2, nmo_parse_vector2)
+
+NMO_DEFINE_VT_TO_STRING(vector3, nmo_vector3_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(vector3, nmo_parse_vector3)
+
+NMO_DEFINE_VT_TO_STRING(vector4, nmo_vector4_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(vector4, nmo_parse_vector4)
+
+NMO_DEFINE_VT_TO_STRING(quaternion, nmo_quaternion_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(quaternion, nmo_parse_quaternion)
+
+NMO_DEFINE_VT_TO_STRING(matrix, nmo_matrix_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(matrix, nmo_parse_matrix)
+
+NMO_DEFINE_VT_TO_STRING(color, nmo_color_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(color, nmo_parse_color)
+
+NMO_DEFINE_VT_TO_STRING(rect, nmo_rect_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(rect, nmo_parse_rect)
+
+NMO_DEFINE_VT_TO_STRING(eulerangles, nmo_eulerangles_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(eulerangles, nmo_parse_eulerangles)
+
+NMO_DEFINE_VT_TO_STRING(box, nmo_box_value_to_string)
+NMO_DEFINE_VT_FROM_STRING(box, nmo_parse_box)

@@ -87,40 +87,40 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmesh, nmo_ck_mesh_state_t)
 static const nmo_type_field_t nmo_ckmesh_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("beobject", offsetof(nmo_ck_mesh_state_t, beobject),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                        sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Mesh flags */
-    NMO_FIELD(nmo_ck_mesh_state_t, flags, NMO_GUID_FIELD_VXMESH_FLAGS),
+    NMO_FIELD(nmo_ck_mesh_state_t, flags, NMO_GUID_ENUM_VXMESH_FLAGS),
     /* Bounding info */
     NMO_FIELD_NAMED("bary_center", offsetof(nmo_ck_mesh_state_t, bary_center),
-                    sizeof(nmo_vx_vector_t), NMO_GUID_FIELD_VECTOR3,
+                    sizeof(nmo_vx_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck_mesh_state_t, radius, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ck_mesh_state_t, radius, CKPGUID_FLOAT),
     NMO_FIELD_NAMED("local_box_min", offsetof(nmo_ck_mesh_state_t, local_box_min),
-                    sizeof(nmo_vx_vector_t), NMO_GUID_FIELD_VECTOR3,
+                    sizeof(nmo_vx_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("local_box_max", offsetof(nmo_ck_mesh_state_t, local_box_max),
-                    sizeof(nmo_vx_vector_t), NMO_GUID_FIELD_VECTOR3,
+                    sizeof(nmo_vx_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     /* Faces */
-    NMO_FIELD(nmo_ck_mesh_state_t, face_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, faces, NMO_GUID_FIELD_CKFACE),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, face_vertex_indices, NMO_GUID_FIELD_UINT16),
+    NMO_FIELD(nmo_ck_mesh_state_t, face_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, faces, NMO_GUID_STRUCT_CKFACE),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, face_vertex_indices, CKPGUID_UINT16),
     /* Lines */
-    NMO_FIELD(nmo_ck_mesh_state_t, line_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, line_indices, NMO_GUID_FIELD_UINT16),
+    NMO_FIELD(nmo_ck_mesh_state_t, line_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, line_indices, CKPGUID_UINT16),
     /* Vertices */
-    NMO_FIELD(nmo_ck_mesh_state_t, vertex_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertices, NMO_GUID_FIELD_VXVERTEX),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_colors, NMO_GUID_FIELD_COLOR),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_specular, NMO_GUID_FIELD_COLOR),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_weights, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ck_mesh_state_t, vertex_weight_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ck_mesh_state_t, vertex_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertices, NMO_GUID_STRUCT_VXVERTEX),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_colors, CKPGUID_COLOR),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_specular, CKPGUID_COLOR),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_weights, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ck_mesh_state_t, vertex_weight_count, CKPGUID_UINT32),
     /* Materials */
-    NMO_FIELD(nmo_ck_mesh_state_t, material_group_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_groups, NMO_GUID_FIELD_CKMATERIALGROUP),
-    NMO_FIELD(nmo_ck_mesh_state_t, material_channel_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_channels, NMO_GUID_FIELD_CKMATERIALCHANNEL)
+    NMO_FIELD(nmo_ck_mesh_state_t, material_group_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_groups, NMO_GUID_STRUCT_CKMATERIALGROUP),
+    NMO_FIELD(nmo_ck_mesh_state_t, material_channel_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_channels, NMO_GUID_STRUCT_CKMATERIALCHANNEL)
 };
 
 /* =============================================================================
@@ -1518,10 +1518,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckmesh_serialize,
     nmo_ckmesh_deserialize,
     nmo_ckmesh_fields,
-    NMO_GUID_CKMESH,
+    CKPGUID_MESH,
     "CKMesh",
     NMO_CID_MESH,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
 
 /* =============================================================================
@@ -1561,4 +1561,5 @@ nmo_status_t nmo_ckmesh_finish_loading(
 /* =============================================================================
  * PUBLIC API
  * ============================================================================= */
+
 

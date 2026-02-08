@@ -18,7 +18,7 @@ TEST(chunk_special_cases, array_helpers_round_trip) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0x50000001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x50000001, NMO_CHUNK_VERSION4);
 
     const uint32_t dword_values[] = {
         0x01020304, 0x7FFF8000, 0xFACEBEEF, 0x11223344,
@@ -79,7 +79,7 @@ TEST(chunk_special_cases, identifier_navigation_with_clone) {
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
-    nmo_chunk_writer_start(writer, 0x50000002, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x50000002, NMO_CHUNK_VERSION4);
 
     const uint32_t section_a_id = 0x1000;
     const uint32_t section_b_id = 0x2000;

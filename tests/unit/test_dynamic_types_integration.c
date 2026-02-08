@@ -12,8 +12,9 @@
 
 #include "test_framework.h"
 #include "type/nmo_dynamic_types.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
@@ -34,43 +35,10 @@ static void setup(void) {
     
     test_registry = nmo_type_registry_create(test_arena);
     ASSERT_NE(NULL, test_registry);
-    
-    /* Register basic types needed for struct fields */
-    nmo_type_descriptor_t *int_type = (nmo_type_descriptor_t*)
-        nmo_arena_alloc(test_arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
-    memset(int_type, 0, sizeof(nmo_type_descriptor_t));
-    int_type->guid = NMO_TYPE_GUID_INT;
-    int_type->name = "int";
-    int_type->size = 4;
-    int_type->alignment = 4;
-    int_type->category = NMO_TYPE_CATEGORY_SCALAR;
-    int_type->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_POD;
-    int_type->valid = true;
-    nmo_type_registry_register(test_registry, int_type);
-    
-    nmo_type_descriptor_t *float_type = (nmo_type_descriptor_t*)
-        nmo_arena_alloc(test_arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
-    memset(float_type, 0, sizeof(nmo_type_descriptor_t));
-    float_type->guid = NMO_TYPE_GUID_FLOAT;
-    float_type->name = "float";
-    float_type->size = 4;
-    float_type->alignment = 4;
-    float_type->category = NMO_TYPE_CATEGORY_SCALAR;
-    float_type->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_POD;
-    float_type->valid = true;
-    nmo_type_registry_register(test_registry, float_type);
-    
-    nmo_type_descriptor_t *bool_type = (nmo_type_descriptor_t*)
-        nmo_arena_alloc(test_arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
-    memset(bool_type, 0, sizeof(nmo_type_descriptor_t));
-    bool_type->guid = NMO_TYPE_GUID_BOOL;
-    bool_type->name = "bool";
-    bool_type->size = 1;
-    bool_type->alignment = 1;
-    bool_type->category = NMO_TYPE_CATEGORY_SCALAR;
-    bool_type->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_POD;
-    bool_type->valid = true;
-    nmo_type_registry_register(test_registry, bool_type);
+
+    /* Register builtin types needed for parsing and struct field resolution */
+    nmo_status_t result = nmo_register_builtin_types(test_registry);
+    ASSERT_EQ(NMO_OK, result);
 }
 
 static void teardown(void) {
@@ -450,6 +418,12 @@ TEST(dynamic_types_integration, benchmark_type_lookup) {
 
 TEST(dynamic_types_integration, get_type_statistics) {
     setup();
+
+    size_t baseline_total = 0;
+    size_t baseline_builtin = 0;
+    size_t baseline_plugin = 0;
+    nmo_type_registry_get_stats(
+        test_registry, &baseline_total, &baseline_builtin, &baseline_plugin);
     
     /* Register various types */
     nmo_enum_value_def_t colors[] = { { "RED", 0, NULL }, { "BLUE", 1, NULL } };
@@ -487,9 +461,10 @@ TEST(dynamic_types_integration, get_type_statistics) {
     
     nmo_type_registry_get_stats(
         test_registry, &total_types, &builtin_types, &plugin_types);
-    
-    /* Should have: 3 builtins (int, float, bool) + 3 custom (enum, flags, struct) = 6 */
-    ASSERT_EQ(6, total_types);
+
+    ASSERT_EQ(baseline_total + 3, total_types);
+    ASSERT_EQ(baseline_builtin + 3, builtin_types);
+    ASSERT_EQ(baseline_plugin, plugin_types);
     
     teardown();
 }

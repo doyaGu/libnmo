@@ -10,8 +10,8 @@
 #include "dsl/nmo_dsl.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_operations.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -106,6 +106,8 @@ static void fixture_init(query_fixture_t *fx) {
 
 #define QUERY_ELEM_GUID NMO_GUID(0x51555259u, 0x00000001u)
 #define QUERY_ROOT_GUID NMO_GUID(0x51555259u, 0x00000002u)
+#define QUERY_ELEM_GUID_INIT NMO_GUID_INIT(0x51555259u, 0x00000001u)
+#define QUERY_ROOT_GUID_INIT NMO_GUID_INIT(0x51555259u, 0x00000002u)
 
 static nmo_arena_t *arena = NULL;
 static nmo_type_registry_t *registry = NULL;
@@ -143,7 +145,7 @@ static void setup(void) {
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
     static const nmo_type_field_t elem_fields[] = {
-        NMO_FIELD(query_elem_t, v, NMO_GUID_FIELD_INT32),
+        NMO_FIELD(query_elem_t, v, CKPGUID_INT),
     };
 
     nmo_type_descriptor_t elem_desc = {
@@ -164,16 +166,16 @@ static void setup(void) {
     ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &elem_desc));
 
     static const nmo_type_field_t root_fields[] = {
-        NMO_FIELD(query_root_t, x, NMO_GUID_FIELD_INT32),
-        NMO_FIELD(query_root_t, y, NMO_GUID_FIELD_FLOAT),
-        NMO_FIELD_ARRAY(query_root_t, arr, NMO_GUID_FIELD_INT32),
-        NMO_FIELD(query_root_t, arr_count, NMO_GUID_FIELD_UINT32),
+        NMO_FIELD(query_root_t, x, CKPGUID_INT),
+        NMO_FIELD(query_root_t, y, CKPGUID_FLOAT),
+        NMO_FIELD_ARRAY(query_root_t, arr, CKPGUID_INT),
+        NMO_FIELD(query_root_t, arr_count, CKPGUID_UINT32),
 
-        NMO_FIELD_ARRAY(query_root_t, bools, NMO_GUID_FIELD_BOOL),
-        NMO_FIELD(query_root_t, bools_count, NMO_GUID_FIELD_UINT32),
+        NMO_FIELD_ARRAY(query_root_t, bools, CKPGUID_BOOL),
+        NMO_FIELD(query_root_t, bools_count, CKPGUID_UINT32),
 
         NMO_FIELD_ARRAY(query_root_t, elems, QUERY_ELEM_GUID),
-        NMO_FIELD(query_root_t, elems_count, NMO_GUID_FIELD_UINT32),
+        NMO_FIELD(query_root_t, elems_count, CKPGUID_UINT32),
     };
 
     nmo_type_descriptor_t root_desc = {
@@ -1159,3 +1161,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl, comment_handling);
     REGISTER_TEST(dsl, hex_int_literal);
 TEST_MAIN_END()
+

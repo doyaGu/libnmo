@@ -39,22 +39,22 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckscene, nmo_ckscene_state_t)
 
 static const nmo_type_field_t nmo_ckscene_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckscene_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                         sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF(nmo_ckscene_state_t, level_id),
-    NMO_FIELD_ARRAY(nmo_ckscene_state_t, object_descs, NMO_GUID_FIELD_CKSCENEOBJECTDESC),
-    NMO_FIELD(nmo_ckscene_state_t, object_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckscene_state_t, environment_settings, NMO_GUID_FIELD_CK_SCENE_FLAGS),
+    NMO_FIELD_ARRAY(nmo_ckscene_state_t, object_descs, NMO_GUID_STRUCT_CKSCENEOBJECTDESC),
+    NMO_FIELD(nmo_ckscene_state_t, object_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckscene_state_t, environment_settings, NMO_GUID_ENUM_CK_SCENE_FLAGS),
     NMO_FIELD_NAMED("background_color", offsetof(nmo_ckscene_state_t, background_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("ambient_light_color", offsetof(nmo_ckscene_state_t, ambient_light_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckscene_state_t, fog_mode, NMO_GUID_FIELD_VXFOG_MODE),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckscene_state_t, fog_mode, NMO_GUID_ENUM_VXFOG_MODE),
     NMO_FIELD_NAMED("fog_color", offsetof(nmo_ckscene_state_t, fog_color),
-                    sizeof(uint32_t), NMO_GUID_FIELD_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckscene_state_t, fog_start, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckscene_state_t, fog_end, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckscene_state_t, fog_density, NMO_GUID_FIELD_FLOAT),
+                    sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_ckscene_state_t, fog_start, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckscene_state_t, fog_end, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckscene_state_t, fog_density, CKPGUID_FLOAT),
     NMO_FIELD_REF(nmo_ckscene_state_t, background_texture_id),
     NMO_FIELD_REF(nmo_ckscene_state_t, starting_camera_id)
 };
@@ -430,9 +430,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckscene_serialize,
     nmo_ckscene_deserialize,
     nmo_ckscene_fields,
-    NMO_GUID_CKSCENE,
+    CKPGUID_SCENE,
     "CKScene",
     NMO_CID_SCENE,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
+
 

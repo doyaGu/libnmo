@@ -113,13 +113,13 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_cklight_fields[] = {
     NMO_FIELD_NAMED("entity", offsetof(nmo_cklight_state_t, entity),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("light_data", offsetof(nmo_cklight_state_t, light_data),
-                    sizeof(nmo_ck_light_data_t), NMO_GUID_FIELD_CKLIGHTDATA,
+                    sizeof(nmo_ck_light_data_t), NMO_GUID_STRUCT_CKLIGHTDATA,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cklight_state_t, flags, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_cklight_state_t, light_power, NMO_GUID_FIELD_FLOAT)
+    NMO_FIELD(nmo_cklight_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_cklight_state_t, light_power, CKPGUID_FLOAT)
 };
 
 /* =============================================================================
@@ -497,10 +497,10 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     nmo_cklight_deserialize,
     nmo_cklight_finish_loading,
     nmo_cklight_fields,
-    NMO_GUID_CKLIGHT,
+    CKPGUID_LIGHT,
     "CKLight",
     NMO_CID_LIGHT,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 /* =============================================================================
@@ -547,5 +547,6 @@ nmo_status_t nmo_cklight_finish_loading(
 
     NMO_RETURN_OK();
 }
+
 
 

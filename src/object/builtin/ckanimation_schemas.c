@@ -8,6 +8,7 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -32,57 +33,57 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckobjectanimation, nmo_ckobjectanimation_stat
 
 static const nmo_type_field_t nmo_ckanimation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckanimation_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_cksceneobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckanimation_state_t, has_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckanimation_state_t, flags, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckanimation_state_t, frame_rate, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckanimation_state_t, has_length, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckanimation_state_t, length, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckanimation_state_t, has_root_entity, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, has_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckanimation_state_t, frame_rate, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckanimation_state_t, has_length, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, length, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckanimation_state_t, has_root_entity, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckanimation_state_t, root_entity_id),
-    NMO_FIELD(nmo_ckanimation_state_t, has_character, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, has_character, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckanimation_state_t, character_id),
-    NMO_FIELD(nmo_ckanimation_state_t, has_current_step, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckanimation_state_t, current_step, NMO_GUID_FIELD_FLOAT)
+    NMO_FIELD(nmo_ckanimation_state_t, has_current_step, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckanimation_state_t, current_step, CKPGUID_FLOAT)
 };
 
 static const nmo_type_field_t nmo_ckkeyedanimation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckkeyedanimation_state_t, base),
-                    sizeof(nmo_ckanimation_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckanimation_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, animation_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, animation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckkeyedanimation_state_t, animation_ids),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, has_merge, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, merged, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, merge_factor, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, subanim_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckkeyedanimation_state_t, subanims, NMO_GUID_FIELD_CKKEYEDANIMATIONSUBANIM)
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, has_merge, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, merged, CKPGUID_INT),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, merge_factor, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckkeyedanimation_state_t, subanim_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckkeyedanimation_state_t, subanims, NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM)
 };
 
 static const nmo_type_field_t nmo_ckobjectanimation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckobjectanimation_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_cksceneobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, format, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, root_pos, NMO_GUID_FIELD_VECTOR3),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_root_pos, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, flags, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, format, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, root_pos, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_root_pos, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, flags, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_ckobjectanimation_state_t, entity_id),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_length, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, length, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_merge, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, merge_factor, NMO_GUID_FIELD_FLOAT),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_length, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, length, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_merge, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, merge_factor, CKPGUID_FLOAT),
     NMO_FIELD_REF(nmo_ckobjectanimation_state_t, anim1_id),
     NMO_FIELD_REF(nmo_ckobjectanimation_state_t, anim2_id),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_shared_anim, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_shared_anim, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckobjectanimation_state_t, shared_anim_id),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_morph_counts, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_vertex_count, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_key_count, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, has_morph_counts, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_vertex_count, CKPGUID_INT),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_key_count, CKPGUID_INT),
     NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_ckobjectanimation_state_t, raw_tail),
-                          sizeof(void *), NMO_GUID_FIELD_UINT8, NMO_FIELD_OPTIONAL, 0),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, raw_tail_size, NMO_GUID_FIELD_UINT64)
+                          sizeof(void *), CKPGUID_UINT8, NMO_FIELD_OPTIONAL, 0),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, raw_tail_size, CKPGUID_UINT64)
 };
 
 /* =============================================================================
@@ -217,10 +218,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckanimation_serialize,
     nmo_ckanimation_deserialize,
     nmo_ckanimation_fields,
-    NMO_GUID_CKANIMATION,
+    CKPGUID_ANIMATION,
     "CKAnimation",
     NMO_CID_ANIMATION,
-    NMO_GUID_CKSCENEOBJECT
+    CKPGUID_SCENEOBJECT
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
@@ -229,10 +230,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckkeyedanimation_serialize,
     nmo_ckkeyedanimation_deserialize,
     nmo_ckkeyedanimation_fields,
-    NMO_GUID_CKKEYEDANIMATION,
+    CKPGUID_KEYEDANIMATION,
     "CKKeyedAnimation",
     NMO_CID_KEYEDANIMATION,
-    NMO_GUID_CKANIMATION
+    CKPGUID_ANIMATION
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
@@ -241,10 +242,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckobjectanimation_serialize,
     nmo_ckobjectanimation_deserialize,
     nmo_ckobjectanimation_fields,
-    NMO_GUID_CKOBJECTANIMATION,
+    CKPGUID_OBJECTANIMATION,
     "CKObjectAnimation",
     NMO_CID_OBJECTANIMATION,
-    NMO_GUID_CKANIMATION
+    CKPGUID_ANIMATION
 )
 
 static nmo_status_t write_object_id_array(
@@ -794,3 +795,4 @@ nmo_status_t nmo_ckobjectanimation_serialize(
         (const nmo_ckobjectanimation_state_t *)instance;
     return nmo_ckobjectanimation_serialize_internal(in_state, out_chunk, context);
 }
+

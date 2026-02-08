@@ -34,7 +34,7 @@ TEST(chunk_file_context, round_trip_runtime_ids) {
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
     nmo_chunk_writer_set_file_context(writer, &ctx);
-    nmo_chunk_writer_start(writer, 0x11112222, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x11112222, NMO_CHUNK_VERSION4);
 
     ASSERT_EQ(nmo_chunk_writer_write_object_id(writer, 1001), NMO_OK);
     ASSERT_EQ(nmo_chunk_writer_write_object_id(writer, 2002), NMO_OK);
@@ -68,7 +68,7 @@ TEST(chunk_file_context, disabled_context_uses_raw_ids) {
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
     /* No context set */
-    nmo_chunk_writer_start(writer, 0x3333, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x3333, NMO_CHUNK_VERSION4);
     ASSERT_EQ(nmo_chunk_writer_write_object_id(writer, 42), NMO_OK);
     nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);

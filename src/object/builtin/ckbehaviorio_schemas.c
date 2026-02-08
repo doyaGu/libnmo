@@ -15,6 +15,7 @@
 #include "object/nmo_ckobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -33,10 +34,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbehaviorio, nmo_ckbehaviorio_state_t)
 
 static const nmo_type_field_t nmo_ckbehaviorio_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckbehaviorio_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbehaviorio_state_t, old_flags, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckbehaviorio_state_t, has_flags, NMO_GUID_FIELD_BOOL)
+    NMO_FIELD(nmo_ckbehaviorio_state_t, old_flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckbehaviorio_state_t, has_flags, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -140,9 +141,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckbehaviorio_serialize,
     nmo_ckbehaviorio_deserialize,
     nmo_ckbehaviorio_fields,
-    NMO_GUID_CKBEHAVIORIO,
+    CKPGUID_BEHAVIORIO,
     "CKBehaviorIO",
     NMO_CID_BEHAVIORIO,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 

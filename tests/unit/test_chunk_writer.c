@@ -21,7 +21,7 @@ TEST(chunk_writer, primitives) {
     nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
 
-    nmo_chunk_writer_start(writer, 12345, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 12345, NMO_CHUNK_VERSION4);
 
     // Write primitives
     ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_byte(writer, 0x78));
@@ -55,7 +55,7 @@ TEST(chunk_writer, roundtrip) {
     nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
 
-    nmo_chunk_writer_start(writer, 100, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 100, NMO_CHUNK_VERSION4);
 
     uint32_t test_value = 0xDEADBEEF;
     nmo_chunk_writer_write_dword(writer, test_value);
@@ -104,7 +104,7 @@ TEST(chunk_writer, object_ids) {
     nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
 
-    nmo_chunk_writer_start(writer, 200, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 200, NMO_CHUNK_VERSION4);
     nmo_chunk_writer_start_object_sequence(writer, 3);
 
     // Write some object IDs
@@ -142,7 +142,7 @@ TEST(chunk_writer, growth) {
     nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
 
-    nmo_chunk_writer_start(writer, 300, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 300, NMO_CHUNK_VERSION4);
 
     // Write more than initial capacity (100 DWORDs)
     for (int i = 0; i < 200; i++) {

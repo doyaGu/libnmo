@@ -14,7 +14,7 @@
 
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_hash_table.h"
@@ -54,21 +54,7 @@ static const nmo_type_descriptor_t* resolve_field_type(
         return NULL;
     }
 
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(type_registry, *io_guid);
-    if (type) {
-        return type;
-    }
-
-    if (nmo_guid_is_field_type(*io_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(*io_guid);
-        type = nmo_type_registry_find_by_guid(type_registry, mapped);
-        if (type) {
-            *io_guid = mapped;
-            return type;
-        }
-    }
-
-    return NULL;
+    return nmo_type_registry_find_by_guid(type_registry, *io_guid);
 }
 
 /* ============================================================================
@@ -82,10 +68,6 @@ uint32_t nmo_type_get_alignment(
     if (!type_registry) return 1;
 
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (!type_desc && nmo_guid_is_field_type(type_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(type_guid);
-        type_desc = nmo_type_registry_find_by_guid(type_registry, mapped);
-    }
     if (!type_desc) return 1;
     
     return type_desc->alignment;
@@ -98,10 +80,6 @@ uint32_t nmo_type_get_size(
     if (!type_registry) return 0;
 
     const nmo_type_descriptor_t *type_desc = nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (!type_desc && nmo_guid_is_field_type(type_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(type_guid);
-        type_desc = nmo_type_registry_find_by_guid(type_registry, mapped);
-    }
     if (!type_desc) return 0;
     
     return type_desc->size;

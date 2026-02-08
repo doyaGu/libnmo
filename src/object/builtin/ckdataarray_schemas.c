@@ -43,15 +43,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_ckdataarray_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckdataarray_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                         sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckdataarray_state_t, column_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, column_formats, NMO_GUID_FIELD_CKDATAARRAYCOLUMNFORMAT),
-    NMO_FIELD(nmo_ckdataarray_state_t, row_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, rows, NMO_GUID_FIELD_CKDATAARRAYROW),
-    NMO_FIELD(nmo_ckdataarray_state_t, order, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckdataarray_state_t, column_index, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckdataarray_state_t, key_column, NMO_GUID_FIELD_INT32)
+    NMO_FIELD(nmo_ckdataarray_state_t, column_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, column_formats, NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT),
+    NMO_FIELD(nmo_ckdataarray_state_t, row_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, rows, NMO_GUID_STRUCT_CKDATAARRAYROW),
+    NMO_FIELD(nmo_ckdataarray_state_t, order, CKPGUID_INT),
+    NMO_FIELD(nmo_ckdataarray_state_t, column_index, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckdataarray_state_t, key_column, CKPGUID_INT)
 };
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
@@ -447,9 +447,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckdataarray_serialize,
     nmo_ckdataarray_deserialize,
     nmo_ckdataarray_fields,
-    NMO_GUID_CKDATAARRAY,
+    CKPGUID_DATAARRAY,
     "CKDataArray",
     NMO_CID_DATAARRAY,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
+
 

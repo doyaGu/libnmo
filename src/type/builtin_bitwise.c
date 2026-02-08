@@ -7,7 +7,7 @@
  * Supports INT type only.
  */
 
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operations.h"
 #include "core/nmo_error.h"
 #include <stdint.h>
 

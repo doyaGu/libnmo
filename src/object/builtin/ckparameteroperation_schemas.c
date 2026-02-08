@@ -24,20 +24,20 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameteroperation, nmo_ckparameteroperatio
 
 static const nmo_type_field_t nmo_ckparameteroperation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckparameteroperation_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, operation_guid, NMO_GUID_FIELD_GUID),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, operation_guid, CKPGUID_GUID),
     NMO_FIELD_REF(nmo_ckparameteroperation_state_t, owner_id),
     NMO_FIELD_REF(nmo_ckparameteroperation_state_t, in1_id),
     NMO_FIELD_REF(nmo_ckparameteroperation_state_t, in2_id),
     NMO_FIELD_REF(nmo_ckparameteroperation_state_t, out_id),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_owner, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in1, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in2, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_out, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in1_chunk, NMO_GUID_FIELD_CHUNK),
-    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in2_chunk, NMO_GUID_FIELD_CHUNK),
-    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, out_chunk, NMO_GUID_FIELD_CHUNK)
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_owner, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in1, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in2, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckparameteroperation_state_t, has_out, CKPGUID_UINT8),
+    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in1_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in2_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, out_chunk, CKPGUID_STATECHUNK)
 };
 
 nmo_status_t nmo_ckparameteroperation_deserialize(
@@ -252,9 +252,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckparameteroperation_serialize,
     nmo_ckparameteroperation_deserialize,
     nmo_ckparameteroperation_fields,
-    NMO_GUID_CKPARAMETEROPERATION,
+    CKPGUID_PARAMETEROPERATION,
     "CKParameterOperation",
     NMO_CID_PARAMETEROPERATION,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 

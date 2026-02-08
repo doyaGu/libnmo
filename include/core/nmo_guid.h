@@ -31,6 +31,15 @@ typedef struct nmo_guid {
 #define NMO_GUID_NULL ((nmo_guid_t){0, 0})
 
 /**
+ * @brief Helper macro for GUID creation in aggregate initializers
+ *
+ * This expands to a plain brace initializer (no compound literal), making it
+ * usable in file-scope aggregate initializers even under strict pedantic
+ * compilation.
+ */
+#define NMO_GUID_INIT(d1, d2) {(d1), (d2)}
+
+/**
  * @brief Helper macro for GUID creation
  * 
  * Creates a GUID from two 32-bit values using C99 compound literal syntax.

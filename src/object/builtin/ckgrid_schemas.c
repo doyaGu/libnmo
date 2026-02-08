@@ -8,6 +8,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -139,18 +140,18 @@ nmo_status_t nmo_ckgrid_serialize(
 
 static const nmo_type_field_t nmo_ckgrid_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckgrid_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckgrid_state_t, width, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckgrid_state_t, length, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckgrid_state_t, priority, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckgrid_state_t, orientation_mode, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckgrid_state_t, has_file_flag, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckgrid_state_t, file_flag, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckgrid_state_t, width, CKPGUID_INT),
+    NMO_FIELD(nmo_ckgrid_state_t, length, CKPGUID_INT),
+    NMO_FIELD(nmo_ckgrid_state_t, priority, CKPGUID_INT),
+    NMO_FIELD(nmo_ckgrid_state_t, orientation_mode, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckgrid_state_t, has_file_flag, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckgrid_state_t, file_flag, CKPGUID_INT),
     NMO_FIELD_REF_ARRAY(nmo_ckgrid_state_t, layer_ids),
-    NMO_FIELD(nmo_ckgrid_state_t, layer_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckgrid_state_t, layer_chunk_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckgrid_state_t, layer_chunks, NMO_GUID_FIELD_CHUNK)
+    NMO_FIELD(nmo_ckgrid_state_t, layer_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckgrid_state_t, layer_chunk_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckgrid_state_t, layer_chunks, CKPGUID_STATECHUNK)
 };
 
 static nmo_status_t ckgrid_copy(
@@ -191,9 +192,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckgrid_serialize,
     nmo_ckgrid_deserialize,
     nmo_ckgrid_fields,
-    NMO_GUID_CKGRID,
+    CKPGUID_GRID,
     "CKGrid",
     NMO_CID_GRID,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
+
 

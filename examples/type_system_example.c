@@ -10,7 +10,7 @@
  */
 
 #include "nmo.h"
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_dynamic_types.h"
 #include <stdio.h>
 

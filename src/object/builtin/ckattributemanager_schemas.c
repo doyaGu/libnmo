@@ -41,10 +41,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckattributemanager, nmo_ckattributemanager_st
  * ============================================================================= */
 
 static const nmo_type_field_t nmo_ckattributemanager_fields[] = {
-    NMO_FIELD(nmo_ckattributemanager_state_t, category_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, categories, NMO_GUID_FIELD_CKATTRIBUTECATEGORY),
-    NMO_FIELD(nmo_ckattributemanager_state_t, attribute_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, attributes, NMO_GUID_FIELD_CKATTRIBUTEDESCRIPTOR)
+    NMO_FIELD(nmo_ckattributemanager_state_t, category_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, categories, NMO_GUID_STRUCT_CKATTRIBUTECATEGORY),
+    NMO_FIELD(nmo_ckattributemanager_state_t, attribute_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, attributes, NMO_GUID_STRUCT_CKATTRIBUTEDESCRIPTOR)
 };
 
 /* =============================================================================
@@ -286,4 +286,5 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     0,
     NMO_GUID_NULL
 )
+
 

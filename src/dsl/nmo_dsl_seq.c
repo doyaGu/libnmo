@@ -2,7 +2,8 @@
 #include "nmo_dsl_eval.h"
 #include "dsl/nmo_dsl_ast.h"
 #include "type/nmo_reflection.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_type_guids.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,7 +42,9 @@ static bool seq_array_get(const nmo_dsl_seq_t *seq, uint64_t index, nmo_dsl_valu
 }
 
 static void seq_array_destroy(nmo_dsl_seq_t *seq) {
-    free(seq);
+    nmo_dsl_seq_array_t *s = (nmo_dsl_seq_array_t *)seq;
+    if (!s) return;
+    free(s);
 }
 
 static const nmo_dsl_seq_vtable_t g_seq_array_vt = {
@@ -51,13 +54,9 @@ static const nmo_dsl_seq_vtable_t g_seq_array_vt = {
 };
 
 nmo_dsl_seq_t *nmo_dsl_seq_array_create(
-    const nmo_type_descriptor_t *owner_type,
-    const void *owner_instance,
-    const void *array_ptr,
-    uint64_t count,
-    size_t elem_size,
-    nmo_guid_t elem_guid,
-    const nmo_type_descriptor_t *elem_type)
+    const nmo_type_descriptor_t *owner_type, const void *owner_instance,
+    const void *array_ptr, uint64_t count, size_t elem_size,
+    nmo_guid_t elem_guid, const nmo_type_descriptor_t *elem_type)
 {
     nmo_dsl_seq_array_t *s = (nmo_dsl_seq_array_t *)calloc(1, sizeof(*s));
     if (!s) return NULL;
@@ -80,12 +79,7 @@ static const nmo_type_descriptor_t *dsl_lookup_field_type(
     const nmo_type_registry_t *registry, nmo_guid_t field_guid)
 {
     if (!registry) return NULL;
-    const nmo_type_descriptor_t *t = nmo_type_registry_find_by_guid(registry, field_guid);
-    if (!t && nmo_guid_is_field_type(field_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(field_guid);
-        t = nmo_type_registry_find_by_guid(registry, mapped);
-    }
-    return t;
+    return nmo_type_registry_find_by_guid(registry, field_guid);
 }
 
 typedef struct {
@@ -227,43 +221,68 @@ static bool dsl_value_to_number(const nmo_dsl_value_t *v, double *out) {
         case NMO_DSL_VALUE_BOOL: *out = v->as.b ? 1.0 : 0.0; return true;
         case NMO_DSL_VALUE_BYREF: {
             if (!v->as.byref.ptr) return false;
-            if (!nmo_guid_is_field_type(v->as.byref.guid)) return false;
-            uint32_t field_class = (uint32_t)(v->as.byref.guid.d1 & 0xFFu);
-            uint32_t size_bits = (uint32_t)(v->as.byref.guid.d2 >> 16);
+            nmo_guid_t g = v->as.byref.type ? v->as.byref.type->guid : v->as.byref.guid;
             size_t size_bytes = v->as.byref.size;
-            if (size_bits != 0) size_bytes = (size_t)((size_bits + 7u) / 8u);
+            if (size_bytes == 0 && v->as.byref.type) {
+                size_bytes = v->as.byref.type->size;
+            }
 
-            if (field_class == NMO_GUID_FIELD_CLASS_BOOL) {
-                if (size_bytes != 1) return false;
-                *out = (*(const uint8_t *)v->as.byref.ptr) ? 1.0 : 0.0;
+            if (nmo_guid_equals(g, CKPGUID_BOOL)) {
+                if (size_bytes < sizeof(uint8_t)) return false;
+                *out = (*(const uint8_t *)v->as.byref.ptr != 0) ? 1.0 : 0.0;
                 return true;
             }
-            if (field_class == NMO_GUID_FIELD_CLASS_INT) {
-                int64_t x = 0;
-                if (size_bytes == 1) x = *(const int8_t *)v->as.byref.ptr;
-                else if (size_bytes == 2) x = *(const int16_t *)v->as.byref.ptr;
-                else if (size_bytes == 4) x = *(const int32_t *)v->as.byref.ptr;
-                else if (size_bytes == 8) x = *(const int64_t *)v->as.byref.ptr;
-                else return false;
-                *out = (double)x;
+            if (nmo_guid_equals(g, CKPGUID_INT8)) {
+                if (size_bytes < sizeof(int8_t)) return false;
+                *out = (double)*(const int8_t *)v->as.byref.ptr;
                 return true;
             }
-            if (field_class == NMO_GUID_FIELD_CLASS_UINT || field_class == NMO_GUID_FIELD_CLASS_OBJECT_ID) {
-                uint64_t x = 0;
-                if (size_bytes == 1) x = *(const uint8_t *)v->as.byref.ptr;
-                else if (size_bytes == 2) x = *(const uint16_t *)v->as.byref.ptr;
-                else if (size_bytes == 4) x = *(const uint32_t *)v->as.byref.ptr;
-                else if (size_bytes == 8) x = *(const uint64_t *)v->as.byref.ptr;
-                else return false;
-                *out = (double)x;
+            if (nmo_guid_equals(g, CKPGUID_UINT8)) {
+                if (size_bytes < sizeof(uint8_t)) return false;
+                *out = (double)*(const uint8_t *)v->as.byref.ptr;
                 return true;
             }
-            if (field_class == NMO_GUID_FIELD_CLASS_FLOAT) {
-                if (size_bytes == 4) *out = (double)*(const float *)v->as.byref.ptr;
-                else if (size_bytes == 8) *out = *(const double *)v->as.byref.ptr;
-                else return false;
+            if (nmo_guid_equals(g, CKPGUID_INT16)) {
+                if (size_bytes < sizeof(int16_t)) return false;
+                *out = (double)*(const int16_t *)v->as.byref.ptr;
                 return true;
             }
+            if (nmo_guid_equals(g, CKPGUID_UINT16)) {
+                if (size_bytes < sizeof(uint16_t)) return false;
+                *out = (double)*(const uint16_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT)) {
+                if (size_bytes < sizeof(int32_t)) return false;
+                *out = (double)*(const int32_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT32)) {
+                if (size_bytes < sizeof(uint32_t)) return false;
+                *out = (double)*(const uint32_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT64)) {
+                if (size_bytes < sizeof(int64_t)) return false;
+                *out = (double)*(const int64_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT64)) {
+                if (size_bytes < sizeof(uint64_t)) return false;
+                *out = (double)*(const uint64_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_FLOAT)) {
+                if (size_bytes < sizeof(float)) return false;
+                *out = (double)*(const float *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_DOUBLE)) {
+                if (size_bytes < sizeof(double)) return false;
+                *out = *(const double *)v->as.byref.ptr;
+                return true;
+            }
+
             return false;
         }
         default: return false;

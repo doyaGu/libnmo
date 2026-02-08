@@ -29,10 +29,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterlocal, nmo_ckparameterlocal_state_
 
 static const nmo_type_field_t nmo_ckparameterlocal_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterlocal_state_t, base),
-                    sizeof(nmo_ckparameter_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckparameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameterlocal_state_t, is_myself, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckparameterlocal_state_t, is_setting, NMO_GUID_FIELD_UINT8)
+    NMO_FIELD(nmo_ckparameterlocal_state_t, is_myself, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckparameterlocal_state_t, is_setting, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -126,9 +126,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckparameterlocal_serialize,
     nmo_ckparameterlocal_deserialize,
     nmo_ckparameterlocal_fields,
-    NMO_GUID_CKPARAMETERLOCAL,
+    CKPGUID_PARAMETERLOCAL,
     "CKParameterLocal",
     NMO_CID_PARAMETERLOCAL,
-    NMO_GUID_CKPARAMETER
+    CKPGUID_PARAMETER
 )
+
 

@@ -38,10 +38,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksceneobject, nmo_cksceneobject_state_t)
 
 static const nmo_type_field_t nmo_cksceneobject_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cksceneobject_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_CKOBJECT_VAL,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_cksceneobject_state_t, raw_tail),
-                          sizeof(uint8_t *), NMO_GUID_FIELD_UINT8,
+                          sizeof(uint8_t *), CKPGUID_UINT8,
                           NMO_FIELD_OPTIONAL, 0)
 };
 
@@ -165,10 +165,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_cksceneobject_serialize,
     nmo_cksceneobject_deserialize,
     nmo_cksceneobject_fields,
-    NMO_GUID_CKSCENEOBJECT,
+    CKPGUID_SCENEOBJECT,
     "CKSceneObject",
     NMO_CID_SCENEOBJECT,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 
 

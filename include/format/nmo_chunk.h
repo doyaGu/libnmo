@@ -99,7 +99,7 @@ typedef struct nmo_chunk_header {
  *
  * Creates a new chunk allocated from the given arena.
  * All fields are initialized to 0/NULL except:
- * - chunk_version is set to NMO_CHUNK_VERSION_4 (7)
+ * - chunk_version is set to NMO_CHUNK_VERSION4 (7)
  * - owns_data is set to 1
  *
  * @param arena Arena for allocations (required)

@@ -24,6 +24,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_manager_guids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -45,20 +46,20 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbeobject, nmo_ckbeobject_state_t)
 static const nmo_type_field_t nmo_ckbeobject_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_ckbeobject_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), NMO_GUID_CKSCENEOBJECT_VAL,
+                    sizeof(nmo_cksceneobject_state_t), CKPGUID_SCENEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Scripts */
     NMO_FIELD_REF_ARRAY(nmo_ckbeobject_state_t, script_ids),
-    NMO_FIELD(nmo_ckbeobject_state_t, script_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckbeobject_state_t, script_count, CKPGUID_UINT32),
     /* Priority */
-    NMO_FIELD(nmo_ckbeobject_state_t, priority, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ckbeobject_state_t, priority, CKPGUID_INT),
     /* Attributes */
     NMO_FIELD_REF_ARRAY(nmo_ckbeobject_state_t, attribute_parameter_ids),
-    NMO_FIELD_ARRAY(nmo_ckbeobject_state_t, attribute_types, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckbeobject_state_t, attribute_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckbeobject_state_t, attribute_types, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckbeobject_state_t, attribute_count, CKPGUID_UINT32),
     /* Single activity */
-    NMO_FIELD(nmo_ckbeobject_state_t, has_single_activity, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckbeobject_state_t, single_activity_flags, NMO_GUID_FIELD_CK_SCENEOBJECTACTIVITY_FLAGS)
+    NMO_FIELD(nmo_ckbeobject_state_t, has_single_activity, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckbeobject_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS)
 };
 
 
@@ -530,9 +531,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckbeobject_serialize,
     nmo_ckbeobject_deserialize,
     nmo_ckbeobject_fields,
-    NMO_GUID_CKBEOBJECT,
+    CKPGUID_BEOBJECT,
     "CKBeObject",
     NMO_CID_BEOBJECT,
-    NMO_GUID_CKSCENEOBJECT
+    CKPGUID_SCENEOBJECT
 )
+
 

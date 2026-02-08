@@ -6,7 +6,7 @@
  * VectorDot, VectorCross (Vector3 only for cross).
  */
 
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_error.h"
 #include "core/nmo_math.h"

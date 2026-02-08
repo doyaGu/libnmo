@@ -49,17 +49,17 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_ckparameter_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckparameter_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameter_state_t, type_guid, NMO_GUID_FIELD_GUID),
-    NMO_FIELD(nmo_ckparameter_state_t, mode, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckparameter_state_t, has_state, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD_ARRAY(nmo_ckparameter_state_t, buffer_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckparameter_state_t, buffer_size, NMO_GUID_FIELD_UINT64),
+    NMO_FIELD(nmo_ckparameter_state_t, type_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_ckparameter_state_t, mode, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckparameter_state_t, has_state, CKPGUID_BOOL),
+    NMO_FIELD_ARRAY(nmo_ckparameter_state_t, buffer_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckparameter_state_t, buffer_size, CKPGUID_UINT64),
     NMO_FIELD_REF(nmo_ckparameter_state_t, object_id),
-    NMO_FIELD(nmo_ckparameter_state_t, manager_guid, NMO_GUID_FIELD_GUID),
-    NMO_FIELD(nmo_ckparameter_state_t, manager_value, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_OPT(nmo_ckparameter_state_t, subchunk, NMO_GUID_FIELD_CHUNK)
+    NMO_FIELD(nmo_ckparameter_state_t, manager_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_ckparameter_state_t, manager_value, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_ckparameter_state_t, subchunk, CKPGUID_STATECHUNK)
 };
 
 /* =============================================================================
@@ -329,9 +329,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckparameter_serialize,
     nmo_ckparameter_deserialize,
     nmo_ckparameter_fields,
-    NMO_GUID_CKPARAMETER,
+    CKPGUID_PARAMETER,
     "CKParameter",
     NMO_CID_PARAMETER,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 

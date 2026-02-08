@@ -48,27 +48,27 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dentity, nmo_ck3dentity_state_t)
 static const nmo_type_field_t nmo_ck3dentity_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_ck3dentity_state_t, base),
-                    sizeof(nmo_ckrenderobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckrenderobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     /* Transform */
     NMO_FIELD_NAMED("world_matrix", offsetof(nmo_ck3dentity_state_t, world_matrix),
-                    sizeof(float) * 16, NMO_GUID_FIELD_MATRIX,
+                    sizeof(float) * 16, CKPGUID_MATRIX,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck3dentity_state_t, entity_flags, NMO_GUID_FIELD_CK_3DENTITY_FLAGS),
-    NMO_FIELD(nmo_ck3dentity_state_t, moveable_flags, NMO_GUID_FIELD_VX_MOVEABLE_FLAGS),
+    NMO_FIELD(nmo_ck3dentity_state_t, entity_flags, NMO_GUID_ENUM_CK_3DENTITY_FLAGS),
+    NMO_FIELD(nmo_ck3dentity_state_t, moveable_flags, NMO_GUID_ENUM_VX_MOVEABLE_FLAGS),
     /* Hierarchy */
     NMO_FIELD_REF(nmo_ck3dentity_state_t, parent_id),
     NMO_FIELD_REF(nmo_ck3dentity_state_t, place_id),
-    NMO_FIELD(nmo_ck3dentity_state_t, z_order, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_ck3dentity_state_t, z_order, CKPGUID_INT),
     /* Meshes */
     NMO_FIELD_REF(nmo_ck3dentity_state_t, current_mesh_id),
-    NMO_FIELD(nmo_ck3dentity_state_t, mesh_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ck3dentity_state_t, mesh_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ck3dentity_state_t, mesh_ids),
     /* Animations */
-    NMO_FIELD(nmo_ck3dentity_state_t, animation_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ck3dentity_state_t, animation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ck3dentity_state_t, animation_ids),
     /* Skin (optional) */
-    NMO_FIELD_OPT(nmo_ck3dentity_state_t, skin, NMO_GUID_FIELD_POINTER)
+    NMO_FIELD_OPT(nmo_ck3dentity_state_t, skin, CKPGUID_POINTER)
 };
 
 /* =============================================================================
@@ -592,10 +592,10 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     nmo_ck3dentity_deserialize,
     nmo_ck3dentity_finish_loading,
     nmo_ck3dentity_fields,
-    NMO_GUID_CK3DENTITY,
+    CKPGUID_3DENTITY,
     "CK3dEntity",
     NMO_CID_3DENTITY,
-    NMO_GUID_CKRENDEROBJECT
+    CKPGUID_RENDEROBJECT
 )
 
 
@@ -621,4 +621,5 @@ nmo_status_t nmo_ck3dentity_finish_loading(
     (void)repository;
     NMO_RETURN_OK();
 }
+
 

@@ -39,7 +39,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckrenderobject, nmo_ckrenderobject_state_t)
 
 static const nmo_type_field_t nmo_ckrenderobject_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckrenderobject_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -170,8 +170,8 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckrenderobject_serialize,
     nmo_ckrenderobject_deserialize,
     nmo_ckrenderobject_fields,
-    NMO_GUID_CKRENDEROBJECT,
+    CKPGUID_RENDEROBJECT,
     "CKRenderObject",
     NMO_CID_RENDEROBJECT,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )

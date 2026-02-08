@@ -44,9 +44,9 @@ static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
 
 static const nmo_type_field_t nmo_ckkinematicchain_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckkinematicchain_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckkinematicchain_state_t, has_chain_data, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckkinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckkinematicchain_state_t, start_effector_id),
     NMO_FIELD_REF(nmo_ckkinematicchain_state_t, end_effector_id)
 };
@@ -61,10 +61,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckkinematicchain_serialize,
     nmo_ckkinematicchain_deserialize,
     nmo_ckkinematicchain_fields,
-    NMO_GUID_CKKINEMATICCHAIN,
+    CKPGUID_KINEMATICCHAIN,
     "CKKinematicChain",
     NMO_CID_KINEMATICCHAIN,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
 
 static nmo_status_t nmo_ckkinematicchain_serialize_internal(
@@ -111,3 +111,4 @@ nmo_status_t nmo_ckkinematicchain_serialize(
     const nmo_ckkinematicchain_state_t *in_state = (const nmo_ckkinematicchain_state_t *)instance;
     return nmo_ckkinematicchain_serialize_internal(in_state, out_chunk, context);
 }
+

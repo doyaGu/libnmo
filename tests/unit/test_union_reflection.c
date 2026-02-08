@@ -7,7 +7,7 @@
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operations.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 
@@ -86,13 +86,12 @@ TEST(union_reflection, pointer_and_array_metadata) {
     ASSERT_NE(NULL, field1);
     ASSERT_NE(NULL, field2);
 
-    ASSERT_EQ(NMO_TYPE_GUID_POINTER.d1, field0->type_guid.d1);
-    ASSERT_EQ(NMO_TYPE_GUID_POINTER.d2, field0->type_guid.d2);
-    ASSERT_EQ(NMO_TYPE_GUID_POINTER.d1, field1->type_guid.d1);
-    ASSERT_EQ(NMO_TYPE_GUID_POINTER.d2, field1->type_guid.d2);
-
-    ASSERT_EQ(NMO_TYPE_GUID_FLOAT.d1, field2->type_guid.d1);
-    ASSERT_EQ(NMO_TYPE_GUID_FLOAT.d2, field2->type_guid.d2);
+    ASSERT_EQ(CKPGUID_POINTER.d1, field0->type_guid.d1);
+    ASSERT_EQ(CKPGUID_POINTER.d2, field0->type_guid.d2);
+    ASSERT_EQ(CKPGUID_POINTER.d1, field1->type_guid.d1);
+    ASSERT_EQ(CKPGUID_POINTER.d2, field1->type_guid.d2);
+    ASSERT_EQ(CKPGUID_FLOAT.d1, field2->type_guid.d1);
+    ASSERT_EQ(CKPGUID_FLOAT.d2, field2->type_guid.d2);
 
     const nmo_specialized_metadata_t *metadata = nmo_type_registry_get_metadata(registry, type->id);
     ASSERT_NE(NULL, metadata);
@@ -105,13 +104,13 @@ TEST(union_reflection, pointer_and_array_metadata) {
 
     ASSERT_EQ(0, m0->array_count);
     ASSERT_EQ(1, m0->pointer_depth);
-    ASSERT_EQ(NMO_TYPE_GUID_INT.d1, m0->pointee_guid.d1);
-    ASSERT_EQ(NMO_TYPE_GUID_INT.d2, m0->pointee_guid.d2);
+    ASSERT_EQ(CKPGUID_INT.d1, m0->pointee_guid.d1);
+    ASSERT_EQ(CKPGUID_INT.d2, m0->pointee_guid.d2);
 
     ASSERT_EQ(3, m1->array_count);
     ASSERT_EQ(1, m1->pointer_depth);
-    ASSERT_EQ(NMO_TYPE_GUID_INT.d1, m1->pointee_guid.d1);
-    ASSERT_EQ(NMO_TYPE_GUID_INT.d2, m1->pointee_guid.d2);
+    ASSERT_EQ(CKPGUID_INT.d1, m1->pointee_guid.d1);
+    ASSERT_EQ(CKPGUID_INT.d2, m1->pointee_guid.d2);
     ASSERT_EQ((uint32_t)(sizeof(void *) * 3), m1->size);
 
     ASSERT_EQ(0, m2->array_count);

@@ -29,7 +29,7 @@ TEST(chunk_advanced, lendian16_array) {
     ASSERT_NOT_NULL(writer);
 
     // Start chunk with class ID
-    nmo_chunk_writer_start(writer, 0x1001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x1001, NMO_CHUNK_VERSION4);
 
     // Test data: array of uint16_t values
     uint16_t test_data[] = {0x1234, 0x5678, 0xABCD, 0xEF00};
@@ -76,7 +76,7 @@ TEST(chunk_advanced, lendian16_buffer) {
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
     ASSERT_NOT_NULL(writer);
 
-    nmo_chunk_writer_start(writer, 0x1002, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x1002, NMO_CHUNK_VERSION4);
 
     // Test data: buffer of uint16_t values
     uint16_t test_buffer[] = {0xDEAD, 0xBEEF, 0xCAFE, 0xBABE};
@@ -113,7 +113,7 @@ TEST(chunk_advanced, math_vector) {
     ASSERT_NOT_NULL(arena);
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x2001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x2001, NMO_CHUNK_VERSION4);
 
     // Test Vector2
     nmo_vector2_t v2 = {1.5f, 2.5f};
@@ -161,7 +161,7 @@ TEST(chunk_advanced, math_matrix) {
     ASSERT_NOT_NULL(arena);
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x2002, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x2002, NMO_CHUNK_VERSION4);
 
     // Test matrix
     nmo_matrix_t mat;
@@ -199,7 +199,7 @@ TEST(chunk_advanced, math_quaternion) {
     ASSERT_NOT_NULL(arena);
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x2003, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x2003, NMO_CHUNK_VERSION4);
 
     nmo_quaternion_t quat = {0.707f, 0.0f, 0.707f, 0.0f};
     int result = nmo_chunk_writer_write_quaternion(writer, &quat);
@@ -226,7 +226,7 @@ TEST(chunk_advanced, chunk_clone) {
 
     // Create source chunk with data
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x3001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x3001, NMO_CHUNK_VERSION4);
 
     // Write some data
     uint32_t data[] = {100, 200, 300, 400};
@@ -240,7 +240,7 @@ TEST(chunk_advanced, chunk_clone) {
 
     // Create a sub-chunk
     nmo_chunk_writer_t *sub_writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(sub_writer, 0x3002, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(sub_writer, 0x3002, NMO_CHUNK_VERSION4);
     nmo_chunk_writer_write_dword(sub_writer, 999);
     nmo_chunk_t *sub_chunk = nmo_chunk_writer_finalize(sub_writer);
 
@@ -289,7 +289,7 @@ TEST(chunk_advanced, seek_identifier_with_size) {
     ASSERT_NOT_NULL(arena);
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x4001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x4001, NMO_CHUNK_VERSION4);
 
     // Write data with identifiers
     nmo_chunk_writer_write_identifier(writer, 0x1000);
@@ -337,7 +337,7 @@ TEST(chunk_advanced, edge_empty_array) {
     ASSERT_NOT_NULL(arena);
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x5001, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x5001, NMO_CHUNK_VERSION4);
 
     // Write empty array
     int result = nmo_chunk_writer_write_array_lendian16(writer, 0, 4, NULL);
@@ -364,7 +364,7 @@ TEST(chunk_advanced, edge_odd_buffer) {
     ASSERT_NOT_NULL(arena);
 
     nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    nmo_chunk_writer_start(writer, 0x5002, NMO_CHUNK_VERSION_4);
+    nmo_chunk_writer_start(writer, 0x5002, NMO_CHUNK_VERSION4);
 
     // Write buffer with odd size (7 bytes - not aligned to 16-bit)
     uint8_t test_data[] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77};

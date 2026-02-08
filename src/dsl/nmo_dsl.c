@@ -5,7 +5,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
 

@@ -15,6 +15,7 @@
 #include "object/nmo_ckobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -40,17 +41,17 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_ckbehaviorlink_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckbehaviorlink_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, activation_delay, NMO_GUID_FIELD_INT16),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, initial_activation_delay, NMO_GUID_FIELD_INT16),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, activation_delay, CKPGUID_INT16),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, initial_activation_delay, CKPGUID_INT16),
     NMO_FIELD_REF(nmo_ckbehaviorlink_state_t, in_io_id),
     NMO_FIELD_REF(nmo_ckbehaviorlink_state_t, out_io_id),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_format, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, use_new_format, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_curdelay, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_ios, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_delay, NMO_GUID_FIELD_BOOL)
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_format, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, use_new_format, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_curdelay, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_ios, CKPGUID_BOOL),
+    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_delay, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -240,9 +241,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckbehaviorlink_serialize,
     nmo_ckbehaviorlink_deserialize,
     nmo_ckbehaviorlink_fields,
-    NMO_GUID_CKBEHAVIORLINK,
+    CKPGUID_BEHAVIORLINK,
     "CKBehaviorLink",
     NMO_CID_BEHAVIORLINK,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
+
 

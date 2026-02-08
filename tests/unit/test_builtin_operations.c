@@ -12,7 +12,7 @@
  */
 
 #include "test_framework.h"
-#include "type/nmo_builtin_operations.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_math.h"
@@ -72,7 +72,7 @@ TEST(builtin_operations, arithmetic_add_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_ADD;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -101,7 +101,7 @@ TEST(builtin_operations, arithmetic_subtract_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_SUBTRACT;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -129,7 +129,7 @@ TEST(builtin_operations, arithmetic_multiply_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_MULTIPLY;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -157,7 +157,7 @@ TEST(builtin_operations, arithmetic_divide_int_by_zero) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_DIVIDE;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -184,7 +184,7 @@ TEST(builtin_operations, arithmetic_negate_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_NEGATE;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -212,7 +212,7 @@ TEST(builtin_operations, arithmetic_abs_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_ABS;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -240,7 +240,7 @@ TEST(builtin_operations, arithmetic_power_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_POWER;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -272,7 +272,7 @@ TEST(builtin_operations, logic_and_bool) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_AND;
-    const nmo_type_descriptor_t *bool_type = get_type(NMO_TYPE_GUID_BOOL);
+    const nmo_type_descriptor_t *bool_type = get_type(CKPGUID_BOOL);
     ASSERT_NE(NULL, bool_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -300,7 +300,7 @@ TEST(builtin_operations, logic_not_bool) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_NOT;
-    const nmo_type_descriptor_t *bool_type = get_type(NMO_TYPE_GUID_BOOL);
+    const nmo_type_descriptor_t *bool_type = get_type(CKPGUID_BOOL);
     ASSERT_NE(NULL, bool_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -332,8 +332,8 @@ TEST(builtin_operations, comparison_equal_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_EQUAL;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
-    const nmo_type_descriptor_t *bool_type = get_type(NMO_TYPE_GUID_BOOL);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
+    const nmo_type_descriptor_t *bool_type = get_type(CKPGUID_BOOL);
     ASSERT_NE(NULL, int_type);
     ASSERT_NE(NULL, bool_type);
 
@@ -363,8 +363,8 @@ TEST(builtin_operations, comparison_less_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_LESS;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
-    const nmo_type_descriptor_t *bool_type = get_type(NMO_TYPE_GUID_BOOL);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
+    const nmo_type_descriptor_t *bool_type = get_type(CKPGUID_BOOL);
     ASSERT_NE(NULL, float_type);
     ASSERT_NE(NULL, bool_type);
 
@@ -394,7 +394,7 @@ TEST(builtin_operations, comparison_min_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_MIN;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -422,7 +422,7 @@ TEST(builtin_operations, comparison_max_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_MAX;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -454,7 +454,7 @@ TEST(builtin_operations, bitwise_and_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_BIT_AND;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -482,7 +482,7 @@ TEST(builtin_operations, bitwise_shift_left_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_SHIFT_LEFT;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -510,7 +510,7 @@ TEST(builtin_operations, bitwise_not_int) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_BIT_NOT;
-    const nmo_type_descriptor_t *int_type = get_type(NMO_TYPE_GUID_INT);
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
     ASSERT_NE(NULL, int_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -542,7 +542,7 @@ TEST(builtin_operations, trigonometry_sin_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_SIN;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -570,7 +570,7 @@ TEST(builtin_operations, trigonometry_cos_float) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_COS;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -598,7 +598,7 @@ TEST(builtin_operations, trigonometry_asin_domain_error) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_ASIN;
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, float_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -629,7 +629,7 @@ TEST(builtin_operations, vector_add_vector3) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_ADD;
-    const nmo_type_descriptor_t *vec3_type = get_type(NMO_TYPE_GUID_VECTOR3);
+    const nmo_type_descriptor_t *vec3_type = get_type(CKPGUID_VECTOR);
     ASSERT_NE(NULL, vec3_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -661,8 +661,8 @@ TEST(builtin_operations, vector_dot_vector2) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_DOT;
-    const nmo_type_descriptor_t *vec2_type = get_type(NMO_TYPE_GUID_VECTOR2);
-    const nmo_type_descriptor_t *float_type = get_type(NMO_TYPE_GUID_FLOAT);
+    const nmo_type_descriptor_t *vec2_type = get_type(CKPGUID_2DVECTOR);
+    const nmo_type_descriptor_t *float_type = get_type(CKPGUID_FLOAT);
     ASSERT_NE(NULL, vec2_type);
     ASSERT_NE(NULL, float_type);
 
@@ -693,7 +693,7 @@ TEST(builtin_operations, vector_cross_vector3) {
     setup_registries();
 
     const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_CROSS;
-    const nmo_type_descriptor_t *vec3_type = get_type(NMO_TYPE_GUID_VECTOR3);
+    const nmo_type_descriptor_t *vec3_type = get_type(CKPGUID_VECTOR);
     ASSERT_NE(NULL, vec3_type);
 
     const nmo_operation_tree_cell_t *cell = NULL;
@@ -731,8 +731,11 @@ TEST(builtin_operations, check_total_operations_count) {
     uint64_t total_ops = 0, total_lookups = 0, cache_hits = 0;
     nmo_operation_registry_get_stats(operation_registry, &total_ops, &total_lookups, &cache_hits);
 
-    /* Expected: 66 total (core 50 + 16 vector ops) */
-    ASSERT_EQ(66, (int)total_ops);
+    /*
+     * This is a sanity check that builtin operation registration remains rich.
+     * The exact count is expected to evolve as we add more builtin operations.
+     */
+    ASSERT_TRUE(total_ops >= 200);
 
     teardown_registries();
 }

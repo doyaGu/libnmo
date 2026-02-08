@@ -7,6 +7,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -55,33 +56,33 @@ static nmo_status_t read_object_sequence(
 
 static const nmo_type_field_t nmo_ckcurve_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckcurve_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcurve_state_t, has_curve_data, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckcurve_state_t, control_point_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckcurve_state_t, has_curve_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckcurve_state_t, control_point_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckcurve_state_t, control_point_ids),
-    NMO_FIELD(nmo_ckcurve_state_t, fitting_coeff, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcurve_state_t, step_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckcurve_state_t, opened, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckcurve_state_t, sub_point_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckcurve_state_t, sub_points, NMO_GUID_FIELD_CKCURVEPOINTSUBCHUNK)
+    NMO_FIELD(nmo_ckcurve_state_t, fitting_coeff, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcurve_state_t, step_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckcurve_state_t, opened, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckcurve_state_t, sub_point_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckcurve_state_t, sub_points, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK)
 };
 
 static const nmo_type_field_t nmo_ckcurvepoint_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckcurvepoint_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, has_default_data, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, has_default_data, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckcurvepoint_state_t, curve_id),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, use_tcb, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, linear, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, tension, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, continuity, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, bias, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_in, NMO_GUID_FIELD_VECTOR3),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_out, NMO_GUID_FIELD_VECTOR3),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, has_reserved_vector, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, reserved_vector, NMO_GUID_FIELD_VECTOR3)
+    NMO_FIELD(nmo_ckcurvepoint_state_t, use_tcb, CKPGUID_INT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, linear, CKPGUID_INT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, tension, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, continuity, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, bias, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_in, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_out, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, has_reserved_vector, CKPGUID_UINT8),
+    NMO_FIELD(nmo_ckcurvepoint_state_t, reserved_vector, CKPGUID_VECTOR)
 };
 
 static nmo_status_t ckcurve_copy(
@@ -151,10 +152,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckcurve_serialize,
     nmo_ckcurve_deserialize,
     nmo_ckcurve_fields,
-    NMO_GUID_CKCURVE,
+    CKPGUID_CURVE,
     "CKCurve",
     NMO_CID_CURVE,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
@@ -163,10 +164,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckcurvepoint_serialize,
     nmo_ckcurvepoint_deserialize,
     nmo_ckcurvepoint_fields,
-    NMO_GUID_CKCURVEPOINT,
+    CKPGUID_CURVEPOINT,
     "CKCurvePoint",
     NMO_CID_CURVEPOINT,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 static nmo_status_t write_object_sequence(
@@ -444,3 +445,4 @@ nmo_status_t nmo_ckcurvepoint_serialize(
     const nmo_ckcurvepoint_state_t *in_state = (const nmo_ckcurvepoint_state_t *)instance;
     return nmo_ckcurvepoint_serialize_internal(in_state, out_chunk, context);
 }
+

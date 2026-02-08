@@ -70,8 +70,13 @@ nmo_class_id_t nmo_class_get_parent(
         return 0;  /* No parent (root class) */
     }
 
-    /* Extract class ID from GUID (DWORD2 of Virtools object GUIDs) */
-    return nmo_object_guid_to_class_id(type->base_type);
+    const nmo_type_descriptor_t *base_type =
+        nmo_type_registry_find_by_guid(registry, type->base_type);
+    if (!base_type) {
+        return 0;
+    }
+
+    return base_type->class_id;
 }
 
 int nmo_class_get_ancestors(

@@ -2,7 +2,7 @@
 #include "dsl/nmo_dsl.h"
 #include "dsl/nmo_dsl_ast.h"
 #include "type/nmo_reflection.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_guid.h"
@@ -29,12 +29,7 @@ static const nmo_type_descriptor_t *lookup_field_type(
     const nmo_type_registry_t *registry, nmo_guid_t field_guid)
 {
     if (!registry) return NULL;
-    const nmo_type_descriptor_t *t = nmo_type_registry_find_by_guid(registry, field_guid);
-    if (!t && nmo_guid_is_field_type(field_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(field_guid);
-        t = nmo_type_registry_find_by_guid(registry, mapped);
-    }
-    return t;
+    return nmo_type_registry_find_by_guid(registry, field_guid);
 }
 
 static void set_err(nmo_dsl_eval_state_t *ev, const char *msg) {
@@ -56,43 +51,68 @@ static bool value_to_number(const nmo_dsl_value_t *v, double *out) {
         case NMO_DSL_VALUE_BOOL: *out = v->as.b ? 1.0 : 0.0; return true;
         case NMO_DSL_VALUE_BYREF: {
             if (!v->as.byref.ptr) return false;
-            if (!nmo_guid_is_field_type(v->as.byref.guid)) return false;
-            uint32_t field_class = (uint32_t)(v->as.byref.guid.d1 & 0xFFu);
-            uint32_t size_bits = (uint32_t)(v->as.byref.guid.d2 >> 16);
+            nmo_guid_t g = v->as.byref.type ? v->as.byref.type->guid : v->as.byref.guid;
             size_t size_bytes = v->as.byref.size;
-            if (size_bits != 0) size_bytes = (size_t)((size_bits + 7u) / 8u);
+            if (size_bytes == 0 && v->as.byref.type) {
+                size_bytes = v->as.byref.type->size;
+            }
 
-            if (field_class == NMO_GUID_FIELD_CLASS_BOOL) {
-                if (size_bytes != 1) return false;
-                *out = (*(const uint8_t *)v->as.byref.ptr) ? 1.0 : 0.0;
+            if (nmo_guid_equals(g, CKPGUID_BOOL)) {
+                if (size_bytes < sizeof(uint8_t)) return false;
+                *out = (*(const uint8_t *)v->as.byref.ptr != 0) ? 1.0 : 0.0;
                 return true;
             }
-            if (field_class == NMO_GUID_FIELD_CLASS_INT) {
-                int64_t x = 0;
-                if (size_bytes == 1) x = *(const int8_t *)v->as.byref.ptr;
-                else if (size_bytes == 2) x = *(const int16_t *)v->as.byref.ptr;
-                else if (size_bytes == 4) x = *(const int32_t *)v->as.byref.ptr;
-                else if (size_bytes == 8) x = *(const int64_t *)v->as.byref.ptr;
-                else return false;
-                *out = (double)x;
+            if (nmo_guid_equals(g, CKPGUID_INT8)) {
+                if (size_bytes < sizeof(int8_t)) return false;
+                *out = (double)*(const int8_t *)v->as.byref.ptr;
                 return true;
             }
-            if (field_class == NMO_GUID_FIELD_CLASS_UINT || field_class == NMO_GUID_FIELD_CLASS_OBJECT_ID) {
-                uint64_t x = 0;
-                if (size_bytes == 1) x = *(const uint8_t *)v->as.byref.ptr;
-                else if (size_bytes == 2) x = *(const uint16_t *)v->as.byref.ptr;
-                else if (size_bytes == 4) x = *(const uint32_t *)v->as.byref.ptr;
-                else if (size_bytes == 8) x = *(const uint64_t *)v->as.byref.ptr;
-                else return false;
-                *out = (double)x;
+            if (nmo_guid_equals(g, CKPGUID_UINT8)) {
+                if (size_bytes < sizeof(uint8_t)) return false;
+                *out = (double)*(const uint8_t *)v->as.byref.ptr;
                 return true;
             }
-            if (field_class == NMO_GUID_FIELD_CLASS_FLOAT) {
-                if (size_bytes == 4) *out = (double)*(const float *)v->as.byref.ptr;
-                else if (size_bytes == 8) *out = *(const double *)v->as.byref.ptr;
-                else return false;
+            if (nmo_guid_equals(g, CKPGUID_INT16)) {
+                if (size_bytes < sizeof(int16_t)) return false;
+                *out = (double)*(const int16_t *)v->as.byref.ptr;
                 return true;
             }
+            if (nmo_guid_equals(g, CKPGUID_UINT16)) {
+                if (size_bytes < sizeof(uint16_t)) return false;
+                *out = (double)*(const uint16_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT)) {
+                if (size_bytes < sizeof(int32_t)) return false;
+                *out = (double)*(const int32_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT32)) {
+                if (size_bytes < sizeof(uint32_t)) return false;
+                *out = (double)*(const uint32_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT64)) {
+                if (size_bytes < sizeof(int64_t)) return false;
+                *out = (double)*(const int64_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT64)) {
+                if (size_bytes < sizeof(uint64_t)) return false;
+                *out = (double)*(const uint64_t *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_FLOAT)) {
+                if (size_bytes < sizeof(float)) return false;
+                *out = (double)*(const float *)v->as.byref.ptr;
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_DOUBLE)) {
+                if (size_bytes < sizeof(double)) return false;
+                *out = *(const double *)v->as.byref.ptr;
+                return true;
+            }
+
             return false;
         }
         default: return false;
@@ -173,11 +193,32 @@ static bool resolve_repeated_field_view(
     size_t elem_size = 0;
     if (elem_type && elem_type->size > 0) {
         elem_size = (size_t)elem_type->size;
-    } else if (nmo_guid_is_field_type(elem_guid)) {
-        uint32_t size_bits = (uint32_t)(elem_guid.d2 >> 16);
-        if (size_bits > 0) {
-            elem_size = (size_t)((size_bits + 7u) / 8u);
-        }
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_BOOL) ||
+               nmo_guid_equals(elem_guid, CKPGUID_INT8) ||
+               nmo_guid_equals(elem_guid, CKPGUID_UINT8)) {
+        elem_size = 1;
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_INT16) ||
+               nmo_guid_equals(elem_guid, CKPGUID_UINT16)) {
+        elem_size = 2;
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_INT) ||
+               nmo_guid_equals(elem_guid, CKPGUID_UINT32) ||
+               nmo_guid_equals(elem_guid, CKPGUID_FLOAT) ||
+               nmo_guid_equals(elem_guid, CKPGUID_ID)) {
+        elem_size = 4;
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_INT64) ||
+               nmo_guid_equals(elem_guid, CKPGUID_UINT64) ||
+               nmo_guid_equals(elem_guid, CKPGUID_DOUBLE) ||
+               nmo_guid_equals(elem_guid, CKPGUID_GUID)) {
+        elem_size = 8;
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_2DVECTOR)) {
+        elem_size = sizeof(float) * 2u;
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_VECTOR)) {
+        elem_size = sizeof(float) * 3u;
+    } else if (nmo_guid_equals(elem_guid, CKPGUID_VECTOR4) ||
+               nmo_guid_equals(elem_guid, CKPGUID_QUATERNION) ||
+               nmo_guid_equals(elem_guid, CKPGUID_COLOR) ||
+               nmo_guid_equals(elem_guid, CKPGUID_RECT)) {
+        elem_size = sizeof(float) * 4u;
     }
     if (elem_size == 0) {
         set_err(ev, "array element size unknown");
@@ -1523,14 +1564,35 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
         return false;
     }
 
-    /* Convert RHS to a numeric value for type-aware writing */
-    uint8_t target_class = (uint8_t)(guid.d1 & 0xFFu);
-    bool target_is_numeric =
-        target_class == NMO_GUID_FIELD_CLASS_INT ||
-        target_class == NMO_GUID_FIELD_CLASS_UINT ||
-        target_class == NMO_GUID_FIELD_CLASS_OBJECT_ID ||
-        target_class == NMO_GUID_FIELD_CLASS_FLOAT ||
-        target_class == NMO_GUID_FIELD_CLASS_BOOL;
+    const nmo_type_descriptor_t *target_type = lookup_field_type(ev->ctx->registry, guid);
+    nmo_guid_t target_guid = target_type ? target_type->guid : guid;
+    enum {
+        NMO_DSL_NUM_NONE = 0,
+        NMO_DSL_NUM_INT,
+        NMO_DSL_NUM_UINT,
+        NMO_DSL_NUM_FLOAT,
+        NMO_DSL_NUM_BOOL
+    } target_kind = NMO_DSL_NUM_NONE;
+
+    if (nmo_guid_equals(target_guid, CKPGUID_BOOL)) {
+        target_kind = NMO_DSL_NUM_BOOL;
+    } else if (nmo_guid_equals(target_guid, CKPGUID_INT8) ||
+               nmo_guid_equals(target_guid, CKPGUID_INT16) ||
+               nmo_guid_equals(target_guid, CKPGUID_INT) ||
+               nmo_guid_equals(target_guid, CKPGUID_INT64)) {
+        target_kind = NMO_DSL_NUM_INT;
+    } else if (nmo_guid_equals(target_guid, CKPGUID_UINT8) ||
+               nmo_guid_equals(target_guid, CKPGUID_UINT16) ||
+               nmo_guid_equals(target_guid, CKPGUID_UINT32) ||
+               nmo_guid_equals(target_guid, CKPGUID_UINT64) ||
+               nmo_guid_equals(target_guid, CKPGUID_ID)) {
+        target_kind = NMO_DSL_NUM_UINT;
+    } else if (nmo_guid_equals(target_guid, CKPGUID_FLOAT) ||
+               nmo_guid_equals(target_guid, CKPGUID_DOUBLE)) {
+        target_kind = NMO_DSL_NUM_FLOAT;
+    }
+
+    bool target_is_numeric = (target_kind != NMO_DSL_NUM_NONE);
 
     /* First, get a numeric representation of the RHS */
     double d_val = 0.0;
@@ -1558,8 +1620,6 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
         if (nmo_guid_equals(rhs.as.byref.guid, guid) && rhs.as.byref.size == size) {
             direct_copy_ok = true;
         } else {
-            const nmo_type_descriptor_t *target_type =
-                lookup_field_type(ev->ctx->registry, guid);
             if (target_type && rhs.as.byref.type &&
                 nmo_guid_equals(target_type->guid, rhs.as.byref.type->guid) &&
                 rhs.as.byref.size == size) {
@@ -1588,15 +1648,14 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
     }
 
     /* Write based on target type class */
-    if (target_class == NMO_GUID_FIELD_CLASS_INT) {
+    if (target_kind == NMO_DSL_NUM_INT) {
         /* Target is signed integer */
         if (size == 4)      { int32_t v = (int32_t)i_val; memcpy(ptr, &v, 4); }
         else if (size == 8) { memcpy(ptr, &i_val, 8); }
         else if (size == 2) { int16_t v = (int16_t)i_val; memcpy(ptr, &v, 2); }
         else if (size == 1) { int8_t v = (int8_t)i_val; memcpy(ptr, &v, 1); }
         else { nmo_dsl_value_destroy(&rhs); set_err(ev, "unsupported int field size"); return false; }
-    } else if (target_class == NMO_GUID_FIELD_CLASS_UINT ||
-               target_class == NMO_GUID_FIELD_CLASS_OBJECT_ID) {
+    } else if (target_kind == NMO_DSL_NUM_UINT) {
         /* Target is unsigned integer */
         uint64_t u_val = (uint64_t)i_val;
         if (rhs.kind == NMO_DSL_VALUE_UINT) u_val = rhs.as.u;
@@ -1606,12 +1665,12 @@ static bool eval_assign(nmo_dsl_eval_state_t *ev,
         else if (size == 2) { uint16_t v = (uint16_t)u_val; memcpy(ptr, &v, 2); }
         else if (size == 1) { uint8_t v = (uint8_t)u_val; memcpy(ptr, &v, 1); }
         else { nmo_dsl_value_destroy(&rhs); set_err(ev, "unsupported uint field size"); return false; }
-    } else if (target_class == NMO_GUID_FIELD_CLASS_FLOAT) {
+    } else if (target_kind == NMO_DSL_NUM_FLOAT) {
         /* Target is floating point */
         if (size == 4)      { float v = (float)d_val; memcpy(ptr, &v, 4); }
         else if (size == 8) { memcpy(ptr, &d_val, 8); }
         else { nmo_dsl_value_destroy(&rhs); set_err(ev, "unsupported float field size"); return false; }
-    } else if (target_class == NMO_GUID_FIELD_CLASS_BOOL) {
+    } else if (target_kind == NMO_DSL_NUM_BOOL) {
         uint8_t v = (i_val != 0) ? 1 : 0;
         memcpy(ptr, &v, 1);
     } else {

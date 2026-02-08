@@ -12,6 +12,7 @@
 #include "object/nmo_class_hierarchy.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 
@@ -47,10 +48,17 @@ static void conformance_setup(void) {
         return;
     }
 
-    nmo_status_t reg_result = nmo_register_object_types(g_registry);
-    if (reg_result != NMO_OK) {
-        fixture_failf("Failed to register object types: %s (code=%d)",
-                      nmo_error_string(reg_result), (int)reg_result);
+    nmo_last_error_clear();
+    nmo_status_t status = nmo_register_object_types(g_registry);
+    if (status != NMO_OK) {
+        char chain[1024];
+        nmo_last_error_chain_copy(chain, sizeof(chain));
+
+        char msg[512];
+        test_format_error(msg, sizeof(msg),
+                          "Fixture setup failed: nmo_register_object_types: %d (%s)\n  %s",
+                          (int)status, nmo_error_string(status), chain);
+        test_add_result(__func__, __func__, 0, msg, __FILE__, __LINE__);
         return;
     }
 
@@ -76,6 +84,26 @@ static void conformance_require_fixture(void) {
         test_add_result(__func__, __func__, 0,
                         "Fixture not initialized (setup failed)", __FILE__, __LINE__);
         return;
+    }
+}
+
+static bool is_synthetic_class(nmo_class_id_t cid) {
+    switch (cid) {
+        case NMO_CID_BEHAVIORLINK:
+        case NMO_CID_BEHAVIORIO:
+        case NMO_CID_PARAMETERIN:
+        case NMO_CID_PARAMETEROUT:
+        case NMO_CID_PARAMETEROPERATION:
+        case NMO_CID_PARAMETERLOCAL:
+        case NMO_CID_PARAMETER:
+        case NMO_CID_RENDERCONTEXT:
+        case NMO_CID_INTERFACEOBJECTMANAGER:
+        case NMO_CID_GRID:
+        case NMO_CID_LAYER:
+        case NMO_CID_KEYEDANIMATION:
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -226,6 +254,8 @@ TEST(conformance, guid_pattern) {
         return;
     }
 
+    /* Synthetic encoding: { 0x564B4F42, <class_id> } */
+
     static const nmo_class_id_t test_classes[] = {
         NMO_CID_OBJECT, NMO_CID_MESH, NMO_CID_MATERIAL, NMO_CID_TEXTURE,
         NMO_CID_3DENTITY, NMO_CID_CAMERA, NMO_CID_LIGHT, NMO_CID_BEHAVIOR,
@@ -243,15 +273,13 @@ TEST(conformance, guid_pattern) {
             nmo_type_registry_find_by_class_id(g_registry, test_classes[i]);
         ASSERT_NE(NULL, type);
 
-        /* GUID d1 should be magic constant */
-        ASSERT_EQ(NMO_CKOBJECT_GUID_DWORD1, type->guid.d1);
+        ASSERT_EQ((uint32_t)test_classes[i], type->class_id);
 
-        /* For object GUIDs, d2 should be the class ID */
-        ASSERT_EQ((uint32_t)test_classes[i], type->guid.d2);
-
-        /* GUID d2 should encode class ID (may use different encoding) */
-        nmo_class_id_t extracted_id = nmo_object_guid_to_class_id(type->guid);
-        ASSERT_EQ(test_classes[i], extracted_id);
+        if (is_synthetic_class(test_classes[i])) {
+            /* Synthetic GUIDs should follow VKOB encoding */
+            ASSERT_EQ(0x564B4F42u, type->guid.d1);
+            ASSERT_EQ((uint32_t)test_classes[i], type->guid.d2);
+        }
     }
 }
 

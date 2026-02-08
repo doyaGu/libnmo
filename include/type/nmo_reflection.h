@@ -14,7 +14,7 @@
 #define NMO_REFLECTION_H
 
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_guids.h"
 #include "core/nmo_error.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -29,13 +29,16 @@ extern "C" {
 
 /**
  * @brief Define a simple field (no flags, no semantic)
- * Note: _type_guid must NOT be wrapped in parentheses (it's a brace initializer)
+ * Note: _type_guid must be a bare GUID macro token (no parentheses).
+ * This macro uses the corresponding *_INIT form to keep file-scope initializers
+ * pedantic-clean.
  */
+
 #define NMO_FIELD(_struct, _field, _type_guid) \
     { \
         .name = #_field, \
         .description = NULL, \
-        .type_guid = _type_guid, \
+        .type_guid = _type_guid##_INIT, \
         .offset = (uint32_t)offsetof(_struct, _field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_field), \
         .flags = 0, \
@@ -53,7 +56,7 @@ extern "C" {
     { \
         .name = #_field, \
         .description = NULL, \
-        .type_guid = _type_guid, \
+        .type_guid = _type_guid##_INIT, \
         .offset = (uint32_t)offsetof(_struct, _field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_field), \
         .flags = NMO_FIELD_OPTIONAL, \
@@ -71,7 +74,7 @@ extern "C" {
     { \
         .name = #_ptr_field, \
         .description = NULL, \
-        .type_guid = _elem_type_guid, \
+        .type_guid = _elem_type_guid##_INIT, \
         .offset = (uint32_t)offsetof(_struct, _ptr_field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
         .flags = NMO_FIELD_REPEATED, \
@@ -89,7 +92,7 @@ extern "C" {
     { \
         .name = (_name), \
         .description = NULL, \
-        .type_guid = _elem_type_guid, \
+        .type_guid = _elem_type_guid##_INIT, \
         .offset = (uint32_t)(_offset), \
         .size = (uint32_t)(_size), \
         .flags = (_flags) | NMO_FIELD_REPEATED, \
@@ -107,7 +110,7 @@ extern "C" {
     { \
         .name = #_field, \
         .description = NULL, \
-        .type_guid = NMO_GUID_FIELD_OBJECT_ID, \
+        .type_guid = CKPGUID_ID_INIT, \
         .offset = (uint32_t)offsetof(_struct, _field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_field), \
         .flags = NMO_FIELD_REFERENCE, \
@@ -125,7 +128,7 @@ extern "C" {
     { \
         .name = #_ptr_field, \
         .description = NULL, \
-        .type_guid = NMO_GUID_FIELD_OBJECT_ID, \
+        .type_guid = CKPGUID_ID_INIT, \
         .offset = (uint32_t)offsetof(_struct, _ptr_field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
         .flags = NMO_FIELD_REPEATED | NMO_FIELD_REFERENCE, \
@@ -143,7 +146,7 @@ extern "C" {
     { \
         .name = #_field, \
         .description = NULL, \
-        .type_guid = _type_guid, \
+        .type_guid = _type_guid##_INIT, \
         .offset = (uint32_t)offsetof(_struct, _field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_field), \
         .flags = (_flags), \
@@ -161,7 +164,7 @@ extern "C" {
     { \
         .name = (_name), \
         .description = NULL, \
-        .type_guid = _type_guid, \
+        .type_guid = _type_guid##_INIT, \
         .offset = (uint32_t)(_offset), \
         .size = (uint32_t)(_size), \
         .flags = (_flags), \

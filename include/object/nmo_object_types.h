@@ -6,7 +6,6 @@
  * replacing the legacy schema system. All Virtools object classes (CKObject,
  * CK3dEntity, CKBehavior, etc.) are registered in nmo_type_registry_t with:
  * - Proper GUID identification
- * - Class ID mapping for backward compatibility
  * - Inheritance relationships via base_type
  * - Serialization/deserialization vtable functions (CKObject implemented)
  * 
@@ -30,6 +29,7 @@
 #include "core/nmo_error.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ckstatesave_ids.h"
+#include "object/nmo_object_guids.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,150 +39,6 @@ extern "C" {
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_arena nmo_arena_t;
-
-/* ============================================================================
- * Virtools Object Type GUIDs
- * 
- * GUID allocation strategy:
- * - Base DWORD1: 0x564B4F42 (ASCII "VKOB" = Virtools CKOBject)
- * - DWORD2: Class ID from nmo_class_ids.h
- * 
- * This ensures unique GUIDs while maintaining class ID mapping.
- * ============================================================================ */
-
-/** Base DWORD1 for all CKObject-derived types ("VKOB") */
-#define NMO_CKOBJECT_GUID_DWORD1 0x564B4F42u
-
-/** Helper macro to build object GUIDs from class IDs */
-#define NMO_OBJECT_GUID(_class_id) ((nmo_guid_t){NMO_CKOBJECT_GUID_DWORD1, (uint32_t)(_class_id)})
-
-/** Initializer form for static contexts (e.g. reflection field tables) */
-#define NMO_OBJECT_GUID_VAL(_class_id) {NMO_CKOBJECT_GUID_DWORD1, (uint32_t)(_class_id)}
-
-/* Base object types */
-#define NMO_GUID_CKOBJECT              NMO_OBJECT_GUID(NMO_CID_OBJECT)
-#define NMO_GUID_CKSCENEOBJECT         NMO_OBJECT_GUID(NMO_CID_SCENEOBJECT)
-#define NMO_GUID_CKBEOBJECT            NMO_OBJECT_GUID(NMO_CID_BEOBJECT)
-#define NMO_GUID_CKRENDEROBJECT        NMO_OBJECT_GUID(NMO_CID_RENDEROBJECT)
-
-/* 2D entities */
-#define NMO_GUID_CK2DENTITY            NMO_OBJECT_GUID(NMO_CID_2DENTITY)
-#define NMO_GUID_CKSPRITE              NMO_OBJECT_GUID(NMO_CID_SPRITE)
-#define NMO_GUID_CKSPRITETEXT          NMO_OBJECT_GUID(NMO_CID_SPRITETEXT)
-
-/* 3D entities */
-#define NMO_GUID_CK3DENTITY            NMO_OBJECT_GUID(NMO_CID_3DENTITY)
-#define NMO_GUID_CK3DOBJECT            NMO_OBJECT_GUID(NMO_CID_3DOBJECT)
-#define NMO_GUID_CKCAMERA              NMO_OBJECT_GUID(NMO_CID_CAMERA)
-#define NMO_GUID_CKLIGHT               NMO_OBJECT_GUID(NMO_CID_LIGHT)
-#define NMO_GUID_CKCHARACTER           NMO_OBJECT_GUID(NMO_CID_CHARACTER)
-
-/* Resources */
-#define NMO_GUID_CKMATERIAL            NMO_OBJECT_GUID(NMO_CID_MATERIAL)
-#define NMO_GUID_CKTEXTURE             NMO_OBJECT_GUID(NMO_CID_TEXTURE)
-#define NMO_GUID_CKMESH                NMO_OBJECT_GUID(NMO_CID_MESH)
-
-/* Behaviors and logic */
-#define NMO_GUID_CKBEHAVIOR            NMO_OBJECT_GUID(NMO_CID_BEHAVIOR)
-#define NMO_GUID_CKBEHAVIORIO          NMO_OBJECT_GUID(NMO_CID_BEHAVIORIO)
-#define NMO_GUID_CKBEHAVIORLINK        NMO_OBJECT_GUID(NMO_CID_BEHAVIORLINK)
-#define NMO_GUID_CKPARAMETER           NMO_OBJECT_GUID(NMO_CID_PARAMETER)
-#define NMO_GUID_CKPARAMETERLOCAL      NMO_OBJECT_GUID(NMO_CID_PARAMETERLOCAL)
-#define NMO_GUID_CKSTATE               NMO_OBJECT_GUID(NMO_CID_STATE)
-#define NMO_GUID_CKCRITICALSECTION     NMO_OBJECT_GUID(NMO_CID_CRITICALSECTION)
-
-/* Scene management */
-#define NMO_GUID_CKSCENE               NMO_OBJECT_GUID(NMO_CID_SCENE)
-#define NMO_GUID_CKLEVEL               NMO_OBJECT_GUID(NMO_CID_LEVEL)
-#define NMO_GUID_CKGROUP               NMO_OBJECT_GUID(NMO_CID_GROUP)
-
-/* Data structures */
-#define NMO_GUID_CKDATAARRAY           NMO_OBJECT_GUID(NMO_CID_DATAARRAY)
-
-/* Animation */
-#define NMO_GUID_CKANIMATION           NMO_OBJECT_GUID(NMO_CID_ANIMATION)
-#define NMO_GUID_CKKEYEDANIMATION      NMO_OBJECT_GUID(NMO_CID_KEYEDANIMATION)
-#define NMO_GUID_CKOBJECTANIMATION     NMO_OBJECT_GUID(NMO_CID_OBJECTANIMATION)
-
-/* Parameters (extended) */
-#define NMO_GUID_CKPARAMETERIN         NMO_OBJECT_GUID(NMO_CID_PARAMETERIN)
-#define NMO_GUID_CKPARAMETEROUT        NMO_OBJECT_GUID(NMO_CID_PARAMETEROUT)
-#define NMO_GUID_CKPARAMETEROPERATION  NMO_OBJECT_GUID(NMO_CID_PARAMETEROPERATION)
-
-/* Extended 3D types */
-#define NMO_GUID_CKTARGETCAMERA        NMO_OBJECT_GUID(NMO_CID_TARGETCAMERA)
-#define NMO_GUID_CKTARGETLIGHT         NMO_OBJECT_GUID(NMO_CID_TARGETLIGHT)
-#define NMO_GUID_CKSPRITE3D            NMO_OBJECT_GUID(NMO_CID_SPRITE3D)
-#define NMO_GUID_CKCURVE               NMO_OBJECT_GUID(NMO_CID_CURVE)
-#define NMO_GUID_CKCURVEPOINT          NMO_OBJECT_GUID(NMO_CID_CURVEPOINT)
-#define NMO_GUID_CKBODYPART            NMO_OBJECT_GUID(NMO_CID_BODYPART)
-
-/* Utility types */
-#define NMO_GUID_CKRENDERCONTEXT       NMO_OBJECT_GUID(NMO_CID_RENDERCONTEXT)
-#define NMO_GUID_CKKINEMATICCHAIN      NMO_OBJECT_GUID(NMO_CID_KINEMATICCHAIN)
-#define NMO_GUID_CKSYNCHRO             NMO_OBJECT_GUID(NMO_CID_SYNCHRO)
-#define NMO_GUID_CKPLACE               NMO_OBJECT_GUID(NMO_CID_PLACE)
-#define NMO_GUID_CKSOUND               NMO_OBJECT_GUID(NMO_CID_SOUND)
-#define NMO_GUID_CKWAVESOUND           NMO_OBJECT_GUID(NMO_CID_WAVESOUND)
-#define NMO_GUID_CKMIDISOUND           NMO_OBJECT_GUID(NMO_CID_MIDISOUND)
-#define NMO_GUID_CKINTERFACEOBJECTMANAGER NMO_OBJECT_GUID(NMO_CID_INTERFACEOBJECTMANAGER)
-
-
-/* Mesh variants */
-#define NMO_GUID_CKGRID                NMO_OBJECT_GUID(NMO_CID_GRID)
-#define NMO_GUID_CKLAYER               NMO_OBJECT_GUID(NMO_CID_LAYER)
-#define NMO_GUID_CKPATCHMESH           NMO_OBJECT_GUID(NMO_CID_PATCHMESH)
-
-/* Initializer-form GUIDs for static initializers (brace form) */
-#define NMO_GUID_CKOBJECT_VAL              NMO_OBJECT_GUID_VAL(NMO_CID_OBJECT)
-#define NMO_GUID_CKSCENEOBJECT_VAL         NMO_OBJECT_GUID_VAL(NMO_CID_SCENEOBJECT)
-#define NMO_GUID_CKBEOBJECT_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_BEOBJECT)
-#define NMO_GUID_CKRENDEROBJECT_VAL        NMO_OBJECT_GUID_VAL(NMO_CID_RENDEROBJECT)
-#define NMO_GUID_CK2DENTITY_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_2DENTITY)
-#define NMO_GUID_CKSPRITE_VAL              NMO_OBJECT_GUID_VAL(NMO_CID_SPRITE)
-#define NMO_GUID_CKSPRITETEXT_VAL          NMO_OBJECT_GUID_VAL(NMO_CID_SPRITETEXT)
-#define NMO_GUID_CK3DENTITY_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_3DENTITY)
-#define NMO_GUID_CK3DOBJECT_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_3DOBJECT)
-#define NMO_GUID_CKCAMERA_VAL              NMO_OBJECT_GUID_VAL(NMO_CID_CAMERA)
-#define NMO_GUID_CKLIGHT_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_LIGHT)
-#define NMO_GUID_CKCHARACTER_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_CHARACTER)
-#define NMO_GUID_CKMATERIAL_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_MATERIAL)
-#define NMO_GUID_CKTEXTURE_VAL             NMO_OBJECT_GUID_VAL(NMO_CID_TEXTURE)
-#define NMO_GUID_CKMESH_VAL                NMO_OBJECT_GUID_VAL(NMO_CID_MESH)
-#define NMO_GUID_CKBEHAVIOR_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_BEHAVIOR)
-#define NMO_GUID_CKBEHAVIORIO_VAL          NMO_OBJECT_GUID_VAL(NMO_CID_BEHAVIORIO)
-#define NMO_GUID_CKBEHAVIORLINK_VAL        NMO_OBJECT_GUID_VAL(NMO_CID_BEHAVIORLINK)
-#define NMO_GUID_CKPARAMETER_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_PARAMETER)
-#define NMO_GUID_CKPARAMETERLOCAL_VAL      NMO_OBJECT_GUID_VAL(NMO_CID_PARAMETERLOCAL)
-#define NMO_GUID_CKSTATE_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_STATE)
-#define NMO_GUID_CKCRITICALSECTION_VAL     NMO_OBJECT_GUID_VAL(NMO_CID_CRITICALSECTION)
-#define NMO_GUID_CKSCENE_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_SCENE)
-#define NMO_GUID_CKLEVEL_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_LEVEL)
-#define NMO_GUID_CKGROUP_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_GROUP)
-#define NMO_GUID_CKDATAARRAY_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_DATAARRAY)
-#define NMO_GUID_CKANIMATION_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_ANIMATION)
-#define NMO_GUID_CKKEYEDANIMATION_VAL      NMO_OBJECT_GUID_VAL(NMO_CID_KEYEDANIMATION)
-#define NMO_GUID_CKOBJECTANIMATION_VAL     NMO_OBJECT_GUID_VAL(NMO_CID_OBJECTANIMATION)
-#define NMO_GUID_CKPARAMETERIN_VAL         NMO_OBJECT_GUID_VAL(NMO_CID_PARAMETERIN)
-#define NMO_GUID_CKPARAMETEROUT_VAL        NMO_OBJECT_GUID_VAL(NMO_CID_PARAMETEROUT)
-#define NMO_GUID_CKPARAMETEROPERATION_VAL  NMO_OBJECT_GUID_VAL(NMO_CID_PARAMETEROPERATION)
-#define NMO_GUID_CKTARGETCAMERA_VAL        NMO_OBJECT_GUID_VAL(NMO_CID_TARGETCAMERA)
-#define NMO_GUID_CKTARGETLIGHT_VAL         NMO_OBJECT_GUID_VAL(NMO_CID_TARGETLIGHT)
-#define NMO_GUID_CKSPRITE3D_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_SPRITE3D)
-#define NMO_GUID_CKCURVE_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_CURVE)
-#define NMO_GUID_CKCURVEPOINT_VAL          NMO_OBJECT_GUID_VAL(NMO_CID_CURVEPOINT)
-#define NMO_GUID_CKBODYPART_VAL            NMO_OBJECT_GUID_VAL(NMO_CID_BODYPART)
-#define NMO_GUID_CKRENDERCONTEXT_VAL       NMO_OBJECT_GUID_VAL(NMO_CID_RENDERCONTEXT)
-#define NMO_GUID_CKKINEMATICCHAIN_VAL      NMO_OBJECT_GUID_VAL(NMO_CID_KINEMATICCHAIN)
-#define NMO_GUID_CKSYNCHRO_VAL             NMO_OBJECT_GUID_VAL(NMO_CID_SYNCHRO)
-#define NMO_GUID_CKPLACE_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_PLACE)
-#define NMO_GUID_CKSOUND_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_SOUND)
-#define NMO_GUID_CKWAVESOUND_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_WAVESOUND)
-#define NMO_GUID_CKMIDISOUND_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_MIDISOUND)
-#define NMO_GUID_CKINTERFACEOBJECTMANAGER_VAL NMO_OBJECT_GUID_VAL(NMO_CID_INTERFACEOBJECTMANAGER)
-#define NMO_GUID_CKGRID_VAL                NMO_OBJECT_GUID_VAL(NMO_CID_GRID)
-#define NMO_GUID_CKLAYER_VAL               NMO_OBJECT_GUID_VAL(NMO_CID_LAYER)
-#define NMO_GUID_CKPATCHMESH_VAL           NMO_OBJECT_GUID_VAL(NMO_CID_PATCHMESH)
 
 /* ============================================================================
  * Type Registration Functions
@@ -349,16 +205,6 @@ NMO_API const nmo_type_descriptor_t* nmo_get_object_type_by_class_id(
 NMO_API int nmo_is_object_type(
     const nmo_type_registry_t *registry,
     nmo_guid_t type_guid);
-
-/**
- * @brief Get the object class ID from a type GUID
- * 
- * Extracts the class ID from a Virtools object type GUID.
- * 
- * @param type_guid Type GUID
- * @return Class ID, or 0 if not a Virtools object type
- */
-NMO_API nmo_class_id_t nmo_object_guid_to_class_id(nmo_guid_t type_guid);
 
 #ifdef __cplusplus
 }

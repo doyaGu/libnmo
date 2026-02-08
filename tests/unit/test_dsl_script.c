@@ -9,8 +9,8 @@
 #include "dsl/nmo_dsl.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_builtin_operations.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -99,6 +99,8 @@ static void fixture_init(script_fixture_t *fx) {
 
 #define SCRIPT_CHILD_GUID NMO_GUID(0x53435250u, 0x00000010u)
 #define SCRIPT_ROOT_GUID  NMO_GUID(0x53435250u, 0x00000001u)
+#define SCRIPT_CHILD_GUID_INIT NMO_GUID_INIT(0x53435250u, 0x00000010u)
+#define SCRIPT_ROOT_GUID_INIT  NMO_GUID_INIT(0x53435250u, 0x00000001u)
 
 static nmo_arena_t *arena = NULL;
 static nmo_type_registry_t *registry = NULL;
@@ -132,8 +134,8 @@ static void setup(void) {
     ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
 
     static const nmo_type_field_t child_fields[] = {
-        NMO_FIELD_ARRAY(script_child_t, arr, NMO_GUID_FIELD_INT32),
-        NMO_FIELD(script_child_t, arr_count, NMO_GUID_FIELD_UINT32),
+        NMO_FIELD_ARRAY(script_child_t, arr, CKPGUID_INT),
+        NMO_FIELD(script_child_t, arr_count, CKPGUID_UINT32),
     };
 
     nmo_type_descriptor_t child_desc = {
@@ -154,13 +156,13 @@ static void setup(void) {
     ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &child_desc));
 
     static const nmo_type_field_t root_fields[] = {
-        NMO_FIELD(script_root_t, x, NMO_GUID_FIELD_INT32),
-        NMO_FIELD(script_root_t, big, NMO_GUID_FIELD_INT64),
-        NMO_FIELD(script_root_t, y, NMO_GUID_FIELD_FLOAT),
-        NMO_FIELD(script_root_t, name, NMO_GUID_FIELD_STRING),
-        NMO_FIELD_FULL(script_root_t, inline_arr, NMO_GUID_FIELD_INT32, NMO_FIELD_REPEATED, NMO_SEMANTIC_NONE),
-        NMO_FIELD_ARRAY(script_root_t, arr, NMO_GUID_FIELD_INT32),
-        NMO_FIELD(script_root_t, arr_count, NMO_GUID_FIELD_UINT32),
+        NMO_FIELD(script_root_t, x, CKPGUID_INT),
+        NMO_FIELD(script_root_t, big, CKPGUID_INT64),
+        NMO_FIELD(script_root_t, y, CKPGUID_FLOAT),
+        NMO_FIELD(script_root_t, name, CKPGUID_STRING),
+        NMO_FIELD_FULL(script_root_t, inline_arr, CKPGUID_INT, NMO_FIELD_REPEATED, NMO_SEMANTIC_NONE),
+        NMO_FIELD_ARRAY(script_root_t, arr, CKPGUID_INT),
+        NMO_FIELD(script_root_t, arr_count, CKPGUID_UINT32),
         NMO_FIELD(script_root_t, child, SCRIPT_CHILD_GUID),
     };
 
@@ -484,3 +486,4 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_script, invalid_index_lvalue_rejected);
     REGISTER_TEST(dsl_script, nested_index_lvalue_rejected);
 TEST_MAIN_END()
+

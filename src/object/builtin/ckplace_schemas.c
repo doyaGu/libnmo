@@ -82,15 +82,15 @@ static nmo_status_t nmo_ckplace_deserialize_internal(
 
 static const nmo_type_field_t nmo_ckplace_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckplace_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckplace_state_t, has_camera, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckplace_state_t, has_camera, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckplace_state_t, camera_id),
-    NMO_FIELD(nmo_ckplace_state_t, has_level, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckplace_state_t, has_level, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckplace_state_t, level_id),
-    NMO_FIELD(nmo_ckplace_state_t, portal_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckplace_state_t, portals, NMO_GUID_FIELD_CKPLACEPORTALENTRY),
-    NMO_FIELD(nmo_ckplace_state_t, reference_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckplace_state_t, portal_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckplace_state_t, portals, NMO_GUID_STRUCT_CKPLACEPORTALENTRY),
+    NMO_FIELD(nmo_ckplace_state_t, reference_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckplace_state_t, reference_ids)
 };
 
@@ -132,10 +132,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckplace_serialize,
     nmo_ckplace_deserialize,
     nmo_ckplace_fields,
-    NMO_GUID_CKPLACE,
+    CKPGUID_PLACE,
     "CKPlace",
     NMO_CID_PLACE,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 static nmo_status_t nmo_ckplace_serialize_internal(
@@ -205,3 +205,4 @@ nmo_status_t nmo_ckplace_serialize(
     const nmo_ckplace_state_t *in_state = (const nmo_ckplace_state_t *)instance;
     return nmo_ckplace_serialize_internal(in_state, out_chunk, context);
 }
+

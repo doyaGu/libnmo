@@ -1,0 +1,190 @@
+/**
+ * @file nmo_type_guids.h
+ * @brief Virtools type GUID constants (CKPGUID_*)
+ *
+ * Canonical CKPGUID_* values for parameter types, enums, flags, and metadata.
+ */
+
+#ifndef NMO_TYPE_GUIDS_H
+#define NMO_TYPE_GUIDS_H
+
+#include "core/nmo_guid.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * Parameter type GUIDs (CKParameter/CKParameterManager)
+ *
+ * Note: Object/class GUIDs (CKObject descendants) are declared in
+ * include/object/nmo_object_guids.h.
+ */
+
+/* Core scalar parameter types */
+#define CKPGUID_NONE               NMO_GUID(0x1cb10760, 0x419f50c5)
+#define CKPGUID_NONE_INIT          NMO_GUID_INIT(0x1cb10760, 0x419f50c5)
+
+#define CKPGUID_VOIDBUF            NMO_GUID(0x4d082c90, 0x0c8339a2)
+#define CKPGUID_VOIDBUF_INIT       NMO_GUID_INIT(0x4d082c90, 0x0c8339a2)
+#define CKPGUID_BOOL_D1               0x1ad52a8e
+#define CKPGUID_BOOL_D2               0x5e741920
+#define CKPGUID_BOOL                  NMO_GUID(CKPGUID_BOOL_D1, CKPGUID_BOOL_D2)
+#define CKPGUID_BOOL_INIT             NMO_GUID_INIT(CKPGUID_BOOL_D1, CKPGUID_BOOL_D2)
+
+#define CKPGUID_INT_D1                0x5a5716fd
+#define CKPGUID_INT_D2                0x44e276d7
+#define CKPGUID_INT                   NMO_GUID(CKPGUID_INT_D1, CKPGUID_INT_D2)
+#define CKPGUID_INT_INIT              NMO_GUID_INIT(CKPGUID_INT_D1, CKPGUID_INT_D2)
+
+#define CKPGUID_FLOAT_D1              0x47884c3f
+#define CKPGUID_FLOAT_D2              0x432c2c20
+#define CKPGUID_FLOAT                 NMO_GUID(CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2)
+#define CKPGUID_FLOAT_INIT            NMO_GUID_INIT(CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2)
+
+#define CKPGUID_ANGLE_D1              0x11262cf5
+#define CKPGUID_ANGLE_D2              0x30b0233a
+#define CKPGUID_ANGLE                 NMO_GUID(CKPGUID_ANGLE_D1, CKPGUID_ANGLE_D2)
+#define CKPGUID_ANGLE_INIT            NMO_GUID_INIT(CKPGUID_ANGLE_D1, CKPGUID_ANGLE_D2)
+
+#define CKPGUID_PERCENTAGE_D1         0xf3c84b4e
+#define CKPGUID_PERCENTAGE_D2         0x0ffacc34
+#define CKPGUID_PERCENTAGE            NMO_GUID(CKPGUID_PERCENTAGE_D1, CKPGUID_PERCENTAGE_D2)
+#define CKPGUID_PERCENTAGE_INIT       NMO_GUID_INIT(CKPGUID_PERCENTAGE_D1, CKPGUID_PERCENTAGE_D2)
+
+#define CKPGUID_STRING_D1             0x6bd010e2
+#define CKPGUID_STRING_D2             0x115617ea
+#define CKPGUID_STRING                NMO_GUID(CKPGUID_STRING_D1, CKPGUID_STRING_D2)
+#define CKPGUID_STRING_INIT           NMO_GUID_INIT(CKPGUID_STRING_D1, CKPGUID_STRING_D2)
+
+#define CKPGUID_POINTER_D1            0x50766059
+#define CKPGUID_POINTER_D2            0x159d4bde
+#define CKPGUID_POINTER               NMO_GUID(CKPGUID_POINTER_D1, CKPGUID_POINTER_D2)
+#define CKPGUID_POINTER_INIT          NMO_GUID_INIT(CKPGUID_POINTER_D1, CKPGUID_POINTER_D2)
+
+#define CKPGUID_ID_D1                 0x71653557
+#define CKPGUID_ID_D2                 0x2d1b2e97
+#define CKPGUID_ID                    NMO_GUID(CKPGUID_ID_D1, CKPGUID_ID_D2)
+#define CKPGUID_ID_INIT               NMO_GUID_INIT(CKPGUID_ID_D1, CKPGUID_ID_D2)
+
+#define CKPGUID_CLASSID               NMO_GUID(0x19644e43, 0x4d6f6123)
+#define CKPGUID_CLASSID_INIT          NMO_GUID_INIT(0x19644e43, 0x4d6f6123)
+
+/* Extended scalar types (not present in CK2 SDK headers) */
+#define CKPGUID_INT8_D1               0x4e4d4f02
+#define CKPGUID_INT8_D2               0x00080000
+#define CKPGUID_INT8                  NMO_GUID(CKPGUID_INT8_D1, CKPGUID_INT8_D2)
+#define CKPGUID_INT8_INIT             NMO_GUID_INIT(CKPGUID_INT8_D1, CKPGUID_INT8_D2)
+
+#define CKPGUID_UINT8_D1              0x4e4d4f03
+#define CKPGUID_UINT8_D2              0x00080000
+#define CKPGUID_UINT8                 NMO_GUID(CKPGUID_UINT8_D1, CKPGUID_UINT8_D2)
+#define CKPGUID_UINT8_INIT            NMO_GUID_INIT(CKPGUID_UINT8_D1, CKPGUID_UINT8_D2)
+
+#define CKPGUID_INT16_D1              0x4e4d4f02
+#define CKPGUID_INT16_D2              0x00100000
+#define CKPGUID_INT16                 NMO_GUID(CKPGUID_INT16_D1, CKPGUID_INT16_D2)
+#define CKPGUID_INT16_INIT            NMO_GUID_INIT(CKPGUID_INT16_D1, CKPGUID_INT16_D2)
+
+#define CKPGUID_UINT16_D1             0x4e4d4f03
+#define CKPGUID_UINT16_D2             0x00100000
+#define CKPGUID_UINT16                NMO_GUID(CKPGUID_UINT16_D1, CKPGUID_UINT16_D2)
+#define CKPGUID_UINT16_INIT           NMO_GUID_INIT(CKPGUID_UINT16_D1, CKPGUID_UINT16_D2)
+
+#define CKPGUID_UINT32_D1             0x4e4d4f03
+#define CKPGUID_UINT32_D2             0x00200000
+#define CKPGUID_UINT32                NMO_GUID(CKPGUID_UINT32_D1, CKPGUID_UINT32_D2)
+#define CKPGUID_UINT32_INIT           NMO_GUID_INIT(CKPGUID_UINT32_D1, CKPGUID_UINT32_D2)
+
+#define CKPGUID_INT64_D1              0x4e4d4f02
+#define CKPGUID_INT64_D2              0x00400000
+#define CKPGUID_INT64                 NMO_GUID(CKPGUID_INT64_D1, CKPGUID_INT64_D2)
+#define CKPGUID_INT64_INIT            NMO_GUID_INIT(CKPGUID_INT64_D1, CKPGUID_INT64_D2)
+
+#define CKPGUID_UINT64_D1             0x4e4d4f03
+#define CKPGUID_UINT64_D2             0x00400000
+#define CKPGUID_UINT64                NMO_GUID(CKPGUID_UINT64_D1, CKPGUID_UINT64_D2)
+#define CKPGUID_UINT64_INIT           NMO_GUID_INIT(CKPGUID_UINT64_D1, CKPGUID_UINT64_D2)
+
+#define CKPGUID_DOUBLE_D1             0x4e4d4f04
+#define CKPGUID_DOUBLE_D2             0x00400000
+#define CKPGUID_DOUBLE                NMO_GUID(CKPGUID_DOUBLE_D1, CKPGUID_DOUBLE_D2)
+#define CKPGUID_DOUBLE_INIT           NMO_GUID_INIT(CKPGUID_DOUBLE_D1, CKPGUID_DOUBLE_D2)
+
+#define CKPGUID_GUID_D1               0x4e4d4f08
+#define CKPGUID_GUID_D2               0x00800008
+#define CKPGUID_GUID                  NMO_GUID(CKPGUID_GUID_D1, CKPGUID_GUID_D2)
+#define CKPGUID_GUID_INIT             NMO_GUID_INIT(CKPGUID_GUID_D1, CKPGUID_GUID_D2)
+
+/* Math and geometry parameter types */
+#define CKPGUID_2DVECTOR_D1           0x4efcb34a
+#define CKPGUID_2DVECTOR_D2           0x6079e42f
+#define CKPGUID_2DVECTOR              NMO_GUID(CKPGUID_2DVECTOR_D1, CKPGUID_2DVECTOR_D2)
+#define CKPGUID_2DVECTOR_INIT         NMO_GUID_INIT(CKPGUID_2DVECTOR_D1, CKPGUID_2DVECTOR_D2)
+
+#define CKPGUID_VECTOR_D1             0x48824eae
+#define CKPGUID_VECTOR_D2             0x2fe47960
+#define CKPGUID_VECTOR                NMO_GUID(CKPGUID_VECTOR_D1, CKPGUID_VECTOR_D2)
+#define CKPGUID_VECTOR_INIT           NMO_GUID_INIT(CKPGUID_VECTOR_D1, CKPGUID_VECTOR_D2)
+
+#define CKPGUID_VECTOR4_D1            0x4e4d4f08
+#define CKPGUID_VECTOR4_D2            0x00800003
+#define CKPGUID_VECTOR4               NMO_GUID(CKPGUID_VECTOR4_D1, CKPGUID_VECTOR4_D2)
+#define CKPGUID_VECTOR4_INIT          NMO_GUID_INIT(CKPGUID_VECTOR4_D1, CKPGUID_VECTOR4_D2)
+
+#define CKPGUID_QUATERNION_D1         0x06c439ee
+#define CKPGUID_QUATERNION_D2         0x45b50fc2
+#define CKPGUID_QUATERNION            NMO_GUID(CKPGUID_QUATERNION_D1, CKPGUID_QUATERNION_D2)
+#define CKPGUID_QUATERNION_INIT       NMO_GUID_INIT(CKPGUID_QUATERNION_D1, CKPGUID_QUATERNION_D2)
+
+#define CKPGUID_EULERANGLES_D1        0x13b01b3c
+#define CKPGUID_EULERANGLES_D2        0x1942583e
+#define CKPGUID_EULERANGLES           NMO_GUID(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2)
+#define CKPGUID_EULERANGLES_INIT      NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2)
+
+#define CKPGUID_MATRIX_D1             0x643f046e
+#define CKPGUID_MATRIX_D2             0x65211b71
+#define CKPGUID_MATRIX                NMO_GUID(CKPGUID_MATRIX_D1, CKPGUID_MATRIX_D2)
+#define CKPGUID_MATRIX_INIT           NMO_GUID_INIT(CKPGUID_MATRIX_D1, CKPGUID_MATRIX_D2)
+
+#define CKPGUID_RECT_D1               0x7ab20d20
+#define CKPGUID_RECT_D2               0x693044a9
+#define CKPGUID_RECT                  NMO_GUID(CKPGUID_RECT_D1, CKPGUID_RECT_D2)
+#define CKPGUID_RECT_INIT             NMO_GUID_INIT(CKPGUID_RECT_D1, CKPGUID_RECT_D2)
+
+#define CKPGUID_COLOR_D1              0x57d42fee
+#define CKPGUID_COLOR_D2              0x7cbb3b91
+#define CKPGUID_COLOR                 NMO_GUID(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2)
+#define CKPGUID_COLOR_INIT            NMO_GUID_INIT(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2)
+
+#define CKPGUID_BOX_D1                0x668649c8
+#define CKPGUID_BOX_D2                0x283e2ee1
+#define CKPGUID_BOX                   NMO_GUID(CKPGUID_BOX_D1, CKPGUID_BOX_D2)
+#define CKPGUID_BOX_INIT              NMO_GUID_INIT(CKPGUID_BOX_D1, CKPGUID_BOX_D2)
+
+/* Container types */
+#define CKPGUID_ARRAY              NMO_GUID(0x4e4d4f09, 0x00000002)
+#define CKPGUID_ARRAY_INIT         NMO_GUID_INIT(0x4e4d4f09, 0x00000002)
+
+#define CKPGUID_STATECHUNK         NMO_GUID(0x9fb5e33c, 0x134cb77e)
+#define CKPGUID_STATECHUNK_INIT    NMO_GUID_INIT(0x9fb5e33c, 0x134cb77e)
+
+/* Type system metadata */
+#define CKPGUID_ENUMS              NMO_GUID(0x4dd37f6b, 0x240f5fa2)
+#define CKPGUID_ENUMS_INIT         NMO_GUID_INIT(0x4dd37f6b, 0x240f5fa2)
+
+#define CKPGUID_STRUCTS            NMO_GUID(0x38df566a, 0x30f77b9e)
+#define CKPGUID_STRUCTS_INIT       NMO_GUID_INIT(0x38df566a, 0x30f77b9e)
+
+#define CKPGUID_FLAGS              NMO_GUID(0x2b49245d, 0x582d60d6)
+#define CKPGUID_FLAGS_INIT         NMO_GUID_INIT(0x2b49245d, 0x582d60d6)
+
+
+#ifdef __cplusplus
+}
+#endif
+
+/* Temporary legacy aliases (to be removed after migration). */
+#include "type/nmo_type_guid_compat.h"
+
+#endif /* NMO_TYPE_GUIDS_H */

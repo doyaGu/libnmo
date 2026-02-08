@@ -27,6 +27,7 @@
 #include "object/nmo_ck3dentity_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -45,15 +46,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcamera, nmo_ckcamera_state_t)
 
 static const nmo_type_field_t nmo_ckcamera_fields[] = {
     NMO_FIELD_NAMED("entity", offsetof(nmo_ckcamera_state_t, entity),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcamera_state_t, projection_type, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD(nmo_ckcamera_state_t, fov, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcamera_state_t, orthographic_zoom, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcamera_state_t, width, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckcamera_state_t, height, NMO_GUID_FIELD_INT32),
-    NMO_FIELD(nmo_ckcamera_state_t, near_plane, NMO_GUID_FIELD_FLOAT),
-    NMO_FIELD(nmo_ckcamera_state_t, far_plane, NMO_GUID_FIELD_FLOAT)
+    NMO_FIELD(nmo_ckcamera_state_t, projection_type, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckcamera_state_t, fov, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcamera_state_t, orthographic_zoom, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcamera_state_t, width, CKPGUID_INT),
+    NMO_FIELD(nmo_ckcamera_state_t, height, CKPGUID_INT),
+    NMO_FIELD(nmo_ckcamera_state_t, near_plane, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_ckcamera_state_t, far_plane, CKPGUID_FLOAT)
 };
 
 /* =============================================================================
@@ -206,10 +207,10 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     nmo_ckcamera_deserialize,
     nmo_ckcamera_finish_loading,
     nmo_ckcamera_fields,
-    NMO_GUID_CKCAMERA,
+    CKPGUID_CAMERA,
     "CKCamera",
     NMO_CID_CAMERA,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 
@@ -234,5 +235,6 @@ nmo_status_t nmo_ckcamera_finish_loading(
     (void)repository;
     NMO_RETURN_OK();
 }
+
 
 

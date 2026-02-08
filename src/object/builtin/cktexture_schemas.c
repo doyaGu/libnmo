@@ -38,39 +38,39 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktexture, nmo_cktexture_state_t)
 static const nmo_type_field_t nmo_cktexture_fields[] = {
     /* Base class */
     NMO_FIELD_NAMED("base", offsetof(nmo_cktexture_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), NMO_GUID_CKBEOBJECT_VAL,
+                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Movie filename */
-    NMO_FIELD(nmo_cktexture_state_t, has_movie_filename, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD_OPT(nmo_cktexture_state_t, movie_filename, NMO_GUID_FIELD_STRING),
+    NMO_FIELD(nmo_cktexture_state_t, has_movie_filename, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, movie_filename, CKPGUID_STRING),
     /* Slot info */
-    NMO_FIELD(nmo_cktexture_state_t, has_slot_filenames, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, slot_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_cktexture_state_t, slot_filenames, NMO_GUID_FIELD_STRING),
+    NMO_FIELD(nmo_cktexture_state_t, has_slot_filenames, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, slot_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_cktexture_state_t, slot_filenames, CKPGUID_STRING),
     /* Bitmap kind and data */
-    NMO_FIELD(nmo_cktexture_state_t, bitmap_kind, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_OPT(nmo_cktexture_state_t, reader_slots, NMO_GUID_FIELD_POINTER),
-    NMO_FIELD_OPT(nmo_cktexture_state_t, raw_slots, NMO_GUID_FIELD_POINTER),
-    NMO_FIELD_OPT(nmo_cktexture_state_t, bitmap2_slots, NMO_GUID_FIELD_POINTER),
+    NMO_FIELD(nmo_cktexture_state_t, bitmap_kind, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, reader_slots, CKPGUID_POINTER),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, raw_slots, CKPGUID_POINTER),
+    NMO_FIELD_OPT(nmo_cktexture_state_t, bitmap2_slots, CKPGUID_POINTER),
     /* Pick threshold */
-    NMO_FIELD(nmo_cktexture_state_t, has_pick_threshold, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, pick_threshold, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_cktexture_state_t, has_pick_threshold, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, pick_threshold, CKPGUID_INT),
     /* Packed flags */
-    NMO_FIELD(nmo_cktexture_state_t, has_oldtexonly, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, mipmap_level, NMO_GUID_FIELD_UINT8),
-    NMO_FIELD(nmo_cktexture_state_t, save_options, NMO_GUID_FIELD_CK_TEXTURE_SAVEOPTIONS),
-    NMO_FIELD(nmo_cktexture_state_t, is_transparent, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, is_cubemap, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, has_desired_video_format, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, desired_video_format, NMO_GUID_FIELD_VX_PIXELFORMAT),
-    NMO_FIELD(nmo_cktexture_state_t, has_transparent_color, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD_FULL(nmo_cktexture_state_t, transparent_color, NMO_GUID_FIELD_COLOR,
+    NMO_FIELD(nmo_cktexture_state_t, has_oldtexonly, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, mipmap_level, CKPGUID_UINT8),
+    NMO_FIELD(nmo_cktexture_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
+    NMO_FIELD(nmo_cktexture_state_t, is_transparent, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, is_cubemap, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, has_desired_video_format, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, desired_video_format, NMO_GUID_ENUM_VX_PIXELFORMAT),
+    NMO_FIELD(nmo_cktexture_state_t, has_transparent_color, CKPGUID_BOOL),
+    NMO_FIELD_FULL(nmo_cktexture_state_t, transparent_color, CKPGUID_COLOR,
                    NMO_FIELD_OPTIONAL, 0),
-    NMO_FIELD(nmo_cktexture_state_t, has_current_slot, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, current_slot, NMO_GUID_FIELD_INT32),
+    NMO_FIELD(nmo_cktexture_state_t, has_current_slot, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, current_slot, CKPGUID_INT),
     /* User mipmaps */
-    NMO_FIELD(nmo_cktexture_state_t, has_user_mipmaps, NMO_GUID_FIELD_BOOL),
-    NMO_FIELD(nmo_cktexture_state_t, user_mipmap_count, NMO_GUID_FIELD_UINT32)
+    NMO_FIELD(nmo_cktexture_state_t, has_user_mipmaps, CKPGUID_BOOL),
+    NMO_FIELD(nmo_cktexture_state_t, user_mipmap_count, CKPGUID_UINT32)
 };
 
 static size_t nmo_cktexture_identifier_payload_size(nmo_chunk_t *chunk) {
@@ -706,10 +706,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_cktexture_serialize,
     nmo_cktexture_deserialize,
     nmo_cktexture_fields,
-    NMO_GUID_CKTEXTURE,
+    CKPGUID_TEXTURE,
     "CKTexture",
     NMO_CID_TEXTURE,
-    NMO_GUID_CKBEOBJECT
+    CKPGUID_BEOBJECT
 )
 
 nmo_status_t nmo_cktexture_serialize(
@@ -833,3 +833,4 @@ nmo_status_t nmo_cktexture_finish_loading(
     (void)repository;
     NMO_RETURN_OK();
 }
+

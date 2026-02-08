@@ -39,8 +39,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmessagemanager, nmo_ckmessagemanager_state_
  * ============================================================================= */
 
 static const nmo_type_field_t nmo_ckmessagemanager_fields[] = {
-    NMO_FIELD(nmo_ckmessagemanager_state_t, message_type_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckmessagemanager_state_t, message_type_names, NMO_GUID_FIELD_STRING)
+    NMO_FIELD(nmo_ckmessagemanager_state_t, message_type_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckmessagemanager_state_t, message_type_names, CKPGUID_STRING)
 };
 
 /* =============================================================================
@@ -200,4 +200,5 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     0,
     NMO_GUID_NULL
 )
+
 

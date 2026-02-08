@@ -22,9 +22,9 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktargetlight, nmo_cktargetlight_state_t)
 
 static const nmo_type_field_t nmo_cktargetlight_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_cktargetlight_state_t, base),
-                    sizeof(nmo_cklight_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_cklight_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cktargetlight_state_t, has_target, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_cktargetlight_state_t, has_target, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_cktargetlight_state_t, target_id)
 };
 
@@ -60,10 +60,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_cktargetlight_serialize,
     nmo_cktargetlight_deserialize,
     nmo_cktargetlight_fields,
-    NMO_GUID_CKTARGETLIGHT,
+    CKPGUID_TARGETLIGHT,
     "CKTargetLight",
     NMO_CID_TARGETLIGHT,
-    NMO_GUID_CKLIGHT
+    CKPGUID_LIGHT
 )
 
 static nmo_status_t nmo_cktargetlight_serialize_internal(
@@ -111,3 +111,4 @@ nmo_status_t nmo_cktargetlight_serialize(
     const nmo_cktargetlight_state_t *in_state = (const nmo_cktargetlight_state_t *)instance;
     return nmo_cktargetlight_serialize_internal(in_state, out_chunk, context);
 }
+

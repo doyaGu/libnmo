@@ -134,14 +134,6 @@ NMO_API const char* nmo_field_type_name(
         return type->name;
     }
 
-    if (nmo_guid_is_field_type(type_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(type_guid);
-        type = nmo_type_registry_find_by_guid(registry, mapped);
-        if (type && type->name) {
-            return type->name;
-        }
-    }
-
     return "unknown";
 }
 

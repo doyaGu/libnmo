@@ -11,8 +11,8 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_enums.h"
 #include "object/nmo_object_structs.h"
-#include "type/nmo_builtin_operations.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_class_ids.h"
@@ -329,7 +329,7 @@ int nmo_is_object_type(
 
     /* Look up both type descriptors first */
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, type_guid);
-    const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(registry, NMO_GUID_CKOBJECT);
+    const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(registry, CKPGUID_OBJECT);
     
     if (!type || !ckobject_type) {
         return 0;
@@ -338,12 +338,3 @@ int nmo_is_object_type(
     /* Check if this type is derived from CKObject */
     return nmo_type_is_derived_from(registry, type->id, ckobject_type->id);
 }
-
-nmo_class_id_t nmo_object_guid_to_class_id(nmo_guid_t type_guid) {
-    /* Check if this is a Virtools object GUID (DWORD1 == 0x564B4F42) */
-    if (type_guid.d1 == NMO_CKOBJECT_GUID_DWORD1) {
-        return (nmo_class_id_t)type_guid.d2;
-    }
-    return 0;
-}
-

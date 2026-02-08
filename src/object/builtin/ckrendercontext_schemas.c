@@ -25,7 +25,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckrendercontext, nmo_ckrendercontext_state_t)
 
 static const nmo_type_field_t nmo_ckrendercontext_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckrendercontext_state_t, base),
-                    sizeof(nmo_ckobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -54,10 +54,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     nmo_ckrendercontext_serialize,
     nmo_ckrendercontext_deserialize,
     nmo_ckrendercontext_fields,
-    NMO_GUID_CKRENDERCONTEXT,
+    CKPGUID_RENDERCONTEXT,
     "CKRenderContext",
     NMO_CID_RENDERCONTEXT,
-    NMO_GUID_CKOBJECT
+    CKPGUID_OBJECT
 )
 
 static nmo_status_t nmo_ckrendercontext_serialize_internal(
@@ -96,3 +96,4 @@ nmo_status_t nmo_ckrendercontext_serialize(
     const nmo_ckrendercontext_state_t *in_state = (const nmo_ckrendercontext_state_t *)instance;
     return nmo_ckrendercontext_serialize_internal(in_state, out_chunk, context);
 }
+

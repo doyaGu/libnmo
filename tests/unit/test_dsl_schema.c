@@ -10,8 +10,8 @@
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_dynamic_types.h"
-#include "type/nmo_builtin_operations.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_guids.h"
 
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -300,13 +300,13 @@ TEST(dsl_schema, struct_repeated_field_pointer_backed) {
     const nmo_type_field_t *f = nmo_type_get_field_by_name(t, "nums");
     ASSERT_NE(NULL, f);
     ASSERT_TRUE((f->flags & NMO_FIELD_REPEATED) != 0);
-    ASSERT_TRUE(nmo_guid_equals(f->type_guid, NMO_TYPE_GUID_POINTER));
+    ASSERT_TRUE(nmo_guid_equals(f->type_guid, CKPGUID_POINTER));
     ASSERT_EQ((uint32_t)sizeof(void *), f->size);
 
     const nmo_struct_descriptor_t *sf = nmo_type_get_struct_field_by_name(registry, t, "nums");
     ASSERT_NE(NULL, sf);
-    ASSERT_TRUE(nmo_guid_equals(sf->type_guid, NMO_TYPE_GUID_POINTER));
-    ASSERT_TRUE(nmo_guid_equals(sf->pointee_guid, NMO_TYPE_GUID_INT));
+    ASSERT_TRUE(nmo_guid_equals(sf->type_guid, CKPGUID_POINTER));
+    ASSERT_TRUE(nmo_guid_equals(sf->pointee_guid, CKPGUID_INT));
     ASSERT_EQ(1u, sf->pointer_depth);
     ASSERT_EQ(0u, sf->array_count);
 

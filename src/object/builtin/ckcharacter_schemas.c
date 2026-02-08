@@ -59,29 +59,29 @@ static nmo_status_t read_object_sequence(
 
 static const nmo_type_field_t nmo_ckcharacter_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckcharacter_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcharacter_state_t, body_part_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckcharacter_state_t, body_part_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckcharacter_state_t, body_part_ids),
-    NMO_FIELD(nmo_ckcharacter_state_t, animation_count, NMO_GUID_FIELD_UINT32),
+    NMO_FIELD(nmo_ckcharacter_state_t, animation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_ckcharacter_state_t, animation_ids),
     NMO_FIELD_REF(nmo_ckcharacter_state_t, active_animation_id),
     NMO_FIELD_REF(nmo_ckcharacter_state_t, anim_dest_id),
     NMO_FIELD_REF(nmo_ckcharacter_state_t, root_body_part_id),
     NMO_FIELD_REF(nmo_ckcharacter_state_t, floor_ref_id),
-    NMO_FIELD(nmo_ckcharacter_state_t, subpart_count, NMO_GUID_FIELD_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckcharacter_state_t, subparts, NMO_GUID_FIELD_CKCHARACTERSUBPART)
+    NMO_FIELD(nmo_ckcharacter_state_t, subpart_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_ckcharacter_state_t, subparts, NMO_GUID_STRUCT_CKCHARACTERSUBPART)
 };
 
 static const nmo_type_field_t nmo_ckbodypart_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckbodypart_state_t, base),
-                    sizeof(nmo_ck3dobject_state_t), NMO_GUID_FIELD_VOID,
+                    sizeof(nmo_ck3dobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbodypart_state_t, has_character, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckbodypart_state_t, has_character, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_ckbodypart_state_t, character_id),
-    NMO_FIELD(nmo_ckbodypart_state_t, has_rotation_joint, NMO_GUID_FIELD_UINT8),
+    NMO_FIELD(nmo_ckbodypart_state_t, has_rotation_joint, CKPGUID_UINT8),
     NMO_FIELD_NAMED("rotation_joint", offsetof(nmo_ckbodypart_state_t, rotation_joint),
-                    sizeof(nmo_ckik_joint_t), NMO_GUID_FIELD_CKIKJOINT,
+                    sizeof(nmo_ckik_joint_t), NMO_GUID_STRUCT_CKIKJOINT,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -156,10 +156,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckcharacter_serialize,
     nmo_ckcharacter_deserialize,
     nmo_ckcharacter_fields,
-    NMO_GUID_CKCHARACTER,
+    CKPGUID_CHARACTER,
     "CKCharacter",
     NMO_CID_CHARACTER,
-    NMO_GUID_CK3DENTITY
+    CKPGUID_3DENTITY
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
@@ -168,10 +168,10 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     nmo_ckbodypart_serialize,
     nmo_ckbodypart_deserialize,
     nmo_ckbodypart_fields,
-    NMO_GUID_CKBODYPART,
+    CKPGUID_BODYPART,
     "CKBodyPart",
     NMO_CID_BODYPART,
-    NMO_GUID_CK3DOBJECT
+    CKPGUID_OBJECT3D
 )
 
 static nmo_status_t write_object_sequence(
@@ -496,3 +496,4 @@ nmo_status_t nmo_ckbodypart_serialize(
     const nmo_ckbodypart_state_t *in_state = (const nmo_ckbodypart_state_t *)instance;
     return nmo_ckbodypart_serialize_internal(in_state, out_chunk, context);
 }
+

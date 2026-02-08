@@ -19,7 +19,9 @@
 
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_string.h"
-#include "type/nmo_builtin_type_guids.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_type_guids.h"
+#include "object/nmo_param_guids.h"
 #include "core/nmo_guid.h"
 #include "app/nmo_session.h"
 #include "session/nmo_object_repository.h"
@@ -42,6 +44,19 @@
 #define NMO_SUMMARY_DEFAULT_MAX_DEPTH           2u
 #define NMO_SUMMARY_MAX_ENRICHERS               64u
 #define NMO_SUMMARY_VALUE_BUFFER_SIZE           512u
+
+nmo_summary_config_t nmo_summary_config_default(void) {
+    nmo_summary_config_t config = {
+        .array_preview_max = NMO_SUMMARY_DEFAULT_ARRAY_PREVIEW_MAX,
+        .text_preview_max = NMO_SUMMARY_DEFAULT_TEXT_PREVIEW_MAX,
+        .max_depth = NMO_SUMMARY_DEFAULT_MAX_DEPTH,
+        .show_field_metadata = false,
+        .resolve_object_refs = true,
+        .format_enum_names = true,
+        .format_flags_names = true,
+    };
+    return config;
+}
 
 /* ============================================================================
  * UTF-8 Safe JSON String Helper
@@ -176,8 +191,16 @@ static const nmo_type_registry_t *nmo_summary_get_registry(const nmo_summary_out
 static const char *nmo_summary_resolve_object_name(const nmo_summary_output_t *out, nmo_object_id_t id);
 static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
     const nmo_type_registry_t *registry, nmo_object_t *obj);
+static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field);
 
 /* Value formatting */
+static bool nmo_summary_format_via_type_system(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *type,
+    const void *value_ptr,
+    char *buffer,
+    size_t buffer_size);
+
 static bool nmo_summary_format_value(
     const nmo_type_registry_t *registry,
     const nmo_type_descriptor_t *field_type,
@@ -204,212 +227,92 @@ static bool nmo_summary_emit_reflection_fields(
 static bool nmo_summary_emit_enrichments(nmo_object_t *obj, nmo_summary_output_t *out);
 
 /* ============================================================================
- * Configuration
- * ============================================================================ */
-
-nmo_summary_config_t nmo_summary_config_default(void) {
-    return (nmo_summary_config_t){
-        .array_preview_max = NMO_SUMMARY_DEFAULT_ARRAY_PREVIEW_MAX,
-        .text_preview_max = NMO_SUMMARY_DEFAULT_TEXT_PREVIEW_MAX,
-        .max_depth = NMO_SUMMARY_DEFAULT_MAX_DEPTH,
-        .show_field_metadata = false,
-        .resolve_object_refs = true,
-        .format_enum_names = true,
-        .format_flags_names = true,
-    };
-}
-
-/* ============================================================================
- * Registry Access Helpers
+ * Summary Context Helpers
  * ============================================================================ */
 
 static const nmo_type_registry_t *nmo_summary_get_registry(const nmo_summary_output_t *out) {
-    if (!out || !out->ctx) {
-        return NULL;
+    if (!out) return NULL;
+    nmo_context_t *ctx = out->ctx;
+    if (!ctx && out->session) {
+        ctx = nmo_session_get_context(out->session);
     }
-    return nmo_context_get_type_registry(out->ctx);
+    if (!ctx) return NULL;
+    return nmo_context_get_type_registry(ctx);
 }
 
 static const char *nmo_summary_resolve_object_name(const nmo_summary_output_t *out, nmo_object_id_t id) {
-    if (!out || !out->session || id == 0) {
-        return NULL;
-    }
+    if (!out || id == 0) return NULL;
+    if (!out->session) return NULL;
+
     nmo_object_repository_t *repo = nmo_session_get_repository(out->session);
-    if (!repo) {
-        return NULL;
-    }
+    if (!repo) return NULL;
     nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
-    if (!obj) {
-        return NULL;
-    }
-    const char *name = nmo_object_get_name(obj);
-    return (name && name[0]) ? name : NULL;
+    if (!obj) return NULL;
+    return nmo_object_get_name(obj);
 }
 
 static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
-    const nmo_type_registry_t *registry,
-    nmo_object_t *obj)
+    const nmo_type_registry_t *registry, nmo_object_t *obj)
 {
-    if (!registry || !obj) {
-        return NULL;
-    }
-
-    /* Try by type GUID first (most precise) */
+    if (!registry || !obj) return NULL;
     if (!nmo_guid_is_null(obj->type_guid)) {
-        const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, obj->type_guid);
-        if (type && nmo_type_has_reflection(type)) {
-            return type;
-        }
+        return nmo_type_registry_find_by_guid(registry, obj->type_guid);
     }
-
-    /* Fall back to class ID (with inheritance support) */
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    return nmo_type_registry_find_by_class_id_inherited(registry, class_id);
-}
-
-/* ============================================================================
- * Field GUID Classification
- * ============================================================================ */
-
-static bool nmo_summary_is_field_guid(nmo_guid_t guid) {
-    return (guid.d1 & NMO_GUID_FIELD_BASE_MASK) == NMO_GUID_FIELD_BASE;
-}
-
-static uint32_t nmo_summary_get_field_class(nmo_guid_t guid) {
-    if (!nmo_summary_is_field_guid(guid)) {
-        return 0;
-    }
-    return guid.d1 & 0xFFu;
-}
-
-static uint32_t nmo_summary_get_field_size_bits(nmo_guid_t guid) {
-    return (guid.d2 >> 16) & 0xFFFFu;
+    return nmo_type_registry_find_by_class_id_inherited(registry, obj->class_id);
 }
 
 static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field) {
     if (!field) return false;
     if (field->flags & NMO_FIELD_REFERENCE) return true;
     if (field->semantic == NMO_SEMANTIC_OBJECT_REF) return true;
-    if (nmo_summary_get_field_class(field->type_guid) == NMO_GUID_FIELD_CLASS_OBJECT_ID) return true;
-    return false;
+    return nmo_guid_equals(field->type_guid, CKPGUID_ID);
 }
 
 /* ============================================================================
  * Value Formatting (Text)
  * ============================================================================ */
 
-/**
- * @brief Format a primitive value based on field GUID
- */
-static bool nmo_summary_format_primitive(
+static const nmo_type_descriptor_t *nmo_summary_resolve_value_type(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
+    nmo_guid_t field_guid)
+{
+    if (field_type) {
+        return field_type;
+    }
+    if (!registry) {
+        return NULL;
+    }
+    return nmo_type_registry_find_by_guid(registry, field_guid);
+}
+
+/* ============================================================================
+ * Value Formatting (JSON)
+ * ============================================================================ */
+
+static bool nmo_summary_format_value_string(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *field_type,
     nmo_guid_t field_guid,
     const void *value_ptr,
     size_t value_size,
     char *buffer,
     size_t buffer_size)
 {
-    if (!value_ptr || !buffer || buffer_size == 0) {
-        return false;
+    const nmo_type_descriptor_t *type = nmo_summary_resolve_value_type(registry, field_type, field_guid);
+    if (type && nmo_summary_format_via_type_system(registry, type, value_ptr, buffer, buffer_size)) {
+        return true;
     }
 
-    uint32_t field_class = nmo_summary_get_field_class(field_guid);
-    uint32_t size_bits = nmo_summary_get_field_size_bits(field_guid);
-
-    switch (field_class) {
-        case NMO_GUID_FIELD_CLASS_BOOL: {
-            bool v = (value_size >= 1) ? (*(const uint8_t*)value_ptr != 0) : false;
-            snprintf(buffer, buffer_size, "%s", v ? "true" : "false");
-            return true;
-        }
-
-        case NMO_GUID_FIELD_CLASS_INT: {
-            int64_t v = 0;
-            if (size_bits == 8 && value_size >= 1) v = *(const int8_t*)value_ptr;
-            else if (size_bits == 16 && value_size >= 2) v = *(const int16_t*)value_ptr;
-            else if (size_bits == 32 && value_size >= 4) v = *(const int32_t*)value_ptr;
-            else if (size_bits == 64 && value_size >= 8) v = *(const int64_t*)value_ptr;
-            else if (value_size >= 4) v = *(const int32_t*)value_ptr;
-            snprintf(buffer, buffer_size, "%lld", (long long)v);
-            return true;
-        }
-
-        case NMO_GUID_FIELD_CLASS_UINT: {
-            uint64_t v = 0;
-            if (size_bits == 8 && value_size >= 1) v = *(const uint8_t*)value_ptr;
-            else if (size_bits == 16 && value_size >= 2) v = *(const uint16_t*)value_ptr;
-            else if (size_bits == 32 && value_size >= 4) v = *(const uint32_t*)value_ptr;
-            else if (size_bits == 64 && value_size >= 8) v = *(const uint64_t*)value_ptr;
-            else if (value_size >= 4) v = *(const uint32_t*)value_ptr;
-            snprintf(buffer, buffer_size, "%llu", (unsigned long long)v);
-            return true;
-        }
-
-        case NMO_GUID_FIELD_CLASS_FLOAT: {
-            if (size_bits == 64 && value_size >= 8) {
-                snprintf(buffer, buffer_size, "%.6g", *(const double*)value_ptr);
-            } else if (value_size >= 4) {
-                snprintf(buffer, buffer_size, "%.6g", (double)*(const float*)value_ptr);
-            }
-            return true;
-        }
-
-        case NMO_GUID_FIELD_CLASS_STRING: {
-            const char *str = *(const char*const*)value_ptr;
-            snprintf(buffer, buffer_size, "%s", str ? str : "(null)");
-            return true;
-        }
-
-        case NMO_GUID_FIELD_CLASS_OBJECT_ID: {
-            nmo_object_id_t id = (value_size >= 4) ? *(const nmo_object_id_t*)value_ptr : 0;
-            snprintf(buffer, buffer_size, "#%u", id);
-            return true;
-        }
-
-        case NMO_GUID_FIELD_CLASS_COMPOSITE: {
-            /* Handle well-known composite types */
-            uint32_t sub_id = field_guid.d2 & 0xFFFFu;
-            if (sub_id == 2 && size_bits == 96 && value_size >= 12) {
-                /* Vector3 */
-                const float *v = (const float*)value_ptr;
-                snprintf(buffer, buffer_size, "(%.4g, %.4g, %.4g)", v[0], v[1], v[2]);
-                return true;
-            }
-            if (sub_id == 1 && size_bits == 64 && value_size >= 8) {
-                /* Vector2 */
-                const float *v = (const float*)value_ptr;
-                snprintf(buffer, buffer_size, "(%.4g, %.4g)", v[0], v[1]);
-                return true;
-            }
-            if (sub_id == 3 && size_bits == 128 && value_size >= 16) {
-                /* Vector4 */
-                const float *v = (const float*)value_ptr;
-                snprintf(buffer, buffer_size, "(%.4g, %.4g, %.4g, %.4g)", v[0], v[1], v[2], v[3]);
-                return true;
-            }
-            if (sub_id == 5 && size_bits == 128 && value_size >= 16) {
-                /* Quaternion */
-                const float *q = (const float*)value_ptr;
-                snprintf(buffer, buffer_size, "(%.4g, %.4g, %.4g, %.4g)", q[0], q[1], q[2], q[3]);
-                return true;
-            }
-            if (sub_id == 7 && size_bits == 128 && value_size >= 16) {
-                /* Color (RGBA float) */
-                const float *c = (const float*)value_ptr;
-                snprintf(buffer, buffer_size, "rgba(%.3g, %.3g, %.3g, %.3g)", c[0], c[1], c[2], c[3]);
-                return true;
-            }
-            if (sub_id == 8 && size_bits == 128 && value_size >= 8) {
-                /* GUID */
-                nmo_guid_t g = *(const nmo_guid_t*)value_ptr;
-                nmo_guid_format(g, buffer, buffer_size);
-                return true;
-            }
-            return false;
-        }
-
-        default:
-            return false;
+    if (value_size <= 8) {
+        uint64_t v = 0;
+        memcpy(&v, value_ptr, value_size < 8 ? value_size : 8);
+        snprintf(buffer, buffer_size, "0x%llx", (unsigned long long)v);
+        return true;
     }
+
+    snprintf(buffer, buffer_size, "<binary %zu bytes>", value_size);
+    return true;
 }
 
 /**
@@ -447,129 +350,8 @@ static bool nmo_summary_format_value(
         return true;
     }
 
-    /* First try type system (handles enum, flags, complex types with custom to_string) */
-    if (field_type && nmo_summary_format_via_type_system(registry, field_type, value_ptr, buffer, buffer_size)) {
-        return true;
-    }
-
-    /* Fall back to primitive formatting */
-    if (nmo_summary_format_primitive(field_guid, value_ptr, value_size, buffer, buffer_size)) {
-        return true;
-    }
-
-    /* Last resort: hex dump for unknown types */
-    if (value_size <= 8) {
-        uint64_t v = 0;
-        memcpy(&v, value_ptr, value_size < 8 ? value_size : 8);
-        snprintf(buffer, buffer_size, "0x%llx", (unsigned long long)v);
-        return true;
-    }
-
-    snprintf(buffer, buffer_size, "<binary %zu bytes>", value_size);
-    return true;
-}
-
-/* ============================================================================
- * Value Formatting (JSON)
- * ============================================================================ */
-
-static yyjson_mut_val *nmo_summary_primitive_to_json(
-    yyjson_mut_doc *doc,
-    nmo_guid_t field_guid,
-    const void *value_ptr,
-    size_t value_size)
-{
-    if (!doc || !value_ptr) {
-        return yyjson_mut_null(doc);
-    }
-
-    uint32_t field_class = nmo_summary_get_field_class(field_guid);
-    uint32_t size_bits = nmo_summary_get_field_size_bits(field_guid);
-
-    switch (field_class) {
-        case NMO_GUID_FIELD_CLASS_BOOL: {
-            bool v = (value_size >= 1) ? (*(const uint8_t*)value_ptr != 0) : false;
-            return yyjson_mut_bool(doc, v);
-        }
-
-        case NMO_GUID_FIELD_CLASS_INT: {
-            int64_t v = 0;
-            if (size_bits == 8 && value_size >= 1) v = *(const int8_t*)value_ptr;
-            else if (size_bits == 16 && value_size >= 2) v = *(const int16_t*)value_ptr;
-            else if (size_bits == 32 && value_size >= 4) v = *(const int32_t*)value_ptr;
-            else if (size_bits == 64 && value_size >= 8) v = *(const int64_t*)value_ptr;
-            else if (value_size >= 4) v = *(const int32_t*)value_ptr;
-            return yyjson_mut_sint(doc, v);
-        }
-
-        case NMO_GUID_FIELD_CLASS_UINT: {
-            uint64_t v = 0;
-            if (size_bits == 8 && value_size >= 1) v = *(const uint8_t*)value_ptr;
-            else if (size_bits == 16 && value_size >= 2) v = *(const uint16_t*)value_ptr;
-            else if (size_bits == 32 && value_size >= 4) v = *(const uint32_t*)value_ptr;
-            else if (size_bits == 64 && value_size >= 8) v = *(const uint64_t*)value_ptr;
-            else if (value_size >= 4) v = *(const uint32_t*)value_ptr;
-            return yyjson_mut_uint(doc, v);
-        }
-
-        case NMO_GUID_FIELD_CLASS_FLOAT: {
-            double v = 0.0;
-            if (size_bits == 64 && value_size >= 8) {
-                v = *(const double*)value_ptr;
-            } else if (value_size >= 4) {
-                v = (double)*(const float*)value_ptr;
-            }
-            if (isnan(v) || isinf(v)) {
-                return yyjson_mut_null(doc);
-            }
-            return yyjson_mut_real(doc, v);
-        }
-
-        case NMO_GUID_FIELD_CLASS_STRING: {
-            const char *str = *(const char*const*)value_ptr;
-            return nmo_summary_json_strcpy_safe(doc, str);
-        }
-
-        case NMO_GUID_FIELD_CLASS_OBJECT_ID: {
-            nmo_object_id_t id = (value_size >= 4) ? *(const nmo_object_id_t*)value_ptr : 0;
-            return yyjson_mut_uint(doc, id);
-        }
-
-        case NMO_GUID_FIELD_CLASS_COMPOSITE: {
-            uint32_t sub_id = field_guid.d2 & 0xFFFFu;
-            /* Vector2/3/4, Quaternion, Color as arrays */
-            if ((sub_id >= 1 && sub_id <= 3) || sub_id == 5 || sub_id == 7) {
-                size_t count = 0;
-                if (sub_id == 1) count = 2;      /* Vector2 */
-                else if (sub_id == 2) count = 3; /* Vector3 */
-                else if (sub_id == 3) count = 4; /* Vector4 */
-                else if (sub_id == 5) count = 4; /* Quaternion */
-                else if (sub_id == 7) count = 4; /* Color */
-
-                if (value_size >= count * sizeof(float)) {
-                    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-                    const float *v = (const float*)value_ptr;
-                    for (size_t i = 0; i < count; ++i) {
-                        yyjson_mut_arr_add_real(doc, arr, (double)v[i]);
-                    }
-                    return arr;
-                }
-            }
-            if (sub_id == 8 && value_size >= 8) {
-                /* GUID as string */
-                nmo_guid_t g = *(const nmo_guid_t*)value_ptr;
-                char buf[32];
-                nmo_guid_format(g, buf, sizeof(buf));
-                return yyjson_mut_strcpy(doc, buf);
-            }
-            break;
-        }
-
-        default:
-            break;
-    }
-
-    return NULL;
+    return nmo_summary_format_value_string(
+        registry, field_type, field_guid, value_ptr, value_size, buffer, buffer_size);
 }
 
 static bool nmo_summary_format_value_to_json(
@@ -590,16 +372,10 @@ static bool nmo_summary_format_value_to_json(
         return true;
     }
 
-    /* Try primitive JSON conversion first (preserves types) */
-    yyjson_mut_val *val = nmo_summary_primitive_to_json(out->json_doc, field_guid, value_ptr, value_size);
-    if (val) {
-        *out_val = val;
-        return true;
-    }
-
-    /* Fall back to string representation */
+    /* Use type system string representation for JSON values */
     char buffer[NMO_SUMMARY_VALUE_BUFFER_SIZE];
-    if (nmo_summary_format_value(registry, field_type, field_guid, value_ptr, value_size, buffer, sizeof(buffer))) {
+    if (nmo_summary_format_value_string(registry, field_type, field_guid,
+                                        value_ptr, value_size, buffer, sizeof(buffer))) {
         *out_val = nmo_summary_json_strcpy_safe(out->json_doc, buffer);
         return true;
     }
@@ -635,12 +411,40 @@ static size_t nmo_summary_guess_element_size(nmo_guid_t field_guid, const nmo_ty
         return (size_t)field_type->size;
     }
 
-    uint32_t size_bits = nmo_summary_get_field_size_bits(field_guid);
-    if (size_bits > 0) {
-        return (size_t)((size_bits + 7) / 8);
+    if (nmo_guid_equals(field_guid, CKPGUID_BOOL) ||
+        nmo_guid_equals(field_guid, CKPGUID_INT8) ||
+        nmo_guid_equals(field_guid, CKPGUID_UINT8)) {
+        return 1;
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_INT16) ||
+        nmo_guid_equals(field_guid, CKPGUID_UINT16)) {
+        return 2;
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_INT) ||
+        nmo_guid_equals(field_guid, CKPGUID_UINT32) ||
+        nmo_guid_equals(field_guid, CKPGUID_FLOAT) ||
+        nmo_guid_equals(field_guid, CKPGUID_ID)) {
+        return 4;
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_INT64) ||
+        nmo_guid_equals(field_guid, CKPGUID_UINT64) ||
+        nmo_guid_equals(field_guid, CKPGUID_DOUBLE) ||
+        nmo_guid_equals(field_guid, CKPGUID_GUID)) {
+        return 8;
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_2DVECTOR)) {
+        return sizeof(float) * 2u;
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_VECTOR)) {
+        return sizeof(float) * 3u;
+    }
+    if (nmo_guid_equals(field_guid, CKPGUID_VECTOR4) ||
+        nmo_guid_equals(field_guid, CKPGUID_QUATERNION) ||
+        nmo_guid_equals(field_guid, CKPGUID_COLOR) ||
+        nmo_guid_equals(field_guid, CKPGUID_RECT)) {
+        return sizeof(float) * 4u;
     }
 
-    /* Default fallback */
     return sizeof(uint32_t);
 }
 
@@ -804,12 +608,7 @@ static const nmo_type_descriptor_t *nmo_summary_lookup_field_type(
         return NULL;
     }
 
-    const nmo_type_descriptor_t *field_type = nmo_type_registry_find_by_guid(registry, field_guid);
-    if (!field_type && nmo_guid_is_field_type(field_guid)) {
-        nmo_guid_t mapped = nmo_guid_field_to_type(field_guid);
-        field_type = nmo_type_registry_find_by_guid(registry, mapped);
-    }
-    return field_type;
+    return nmo_type_registry_find_by_guid(registry, field_guid);
 }
 
 static bool nmo_summary_parse_ident(const char **p, char *out, size_t out_cap) {
@@ -1396,10 +1195,6 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
     const nmo_type_descriptor_t *field_type = NULL;
     if (ctx->registry) {
         field_type = nmo_type_registry_find_by_guid(ctx->registry, field->type_guid);
-        if (!field_type && nmo_guid_is_field_type(field->type_guid)) {
-            nmo_guid_t mapped = nmo_guid_field_to_type(field->type_guid);
-            field_type = nmo_type_registry_find_by_guid(ctx->registry, mapped);
-        }
     }
 
     /* Handle repeated (array) fields */
@@ -1486,10 +1281,8 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
             yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value", json_val);
         }
 
-        /* Add string representation for complex types */
-        if (field_type || !nmo_summary_is_field_guid(field->type_guid)) {
-            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "value_str", value_buf);
-        }
+        /* Add string representation for debugging */
+        nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "value_str", value_buf);
 
         /* Resolve object reference names */
         if (nmo_summary_is_object_ref_field(field) && field_ptr && ctx->config->resolve_object_refs) {

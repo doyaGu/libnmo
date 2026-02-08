@@ -469,7 +469,7 @@ nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena) {
     chunk->managers = (nmo_arena_array_t)NMO_ARENA_ARRAY_INIT(uint32_t, arena);
 
     /* Set defaults */
-    chunk->chunk_version = NMO_CHUNK_VERSION_4;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
     chunk->owns_data = 1;
     chunk->arena = arena;
     chunk->file_context = NULL;
