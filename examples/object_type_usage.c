@@ -148,7 +148,7 @@ void example_serialization(void) {
     }
     
     /* Create object state */
-    nmo_ckobject_state_t obj_state = {
+    nmo_object_state_t obj_state = {
         .visibility_flags = NMO_CKOBJECT_VISIBLE
     };
     
@@ -170,7 +170,7 @@ void example_serialization(void) {
     
     /* Deserialize back */
     nmo_chunk_start_read(chunk);
-    nmo_ckobject_state_t obj_state_in = {0};
+    nmo_object_state_t obj_state_in = {0};
     
     printf("\nDeserializing...\n");
     result = ckobject_type->vtable->deserialize(
@@ -211,7 +211,7 @@ void example_3d_entity(void) {
     }
     
     /* Create 3D entity with identity matrix */
-    nmo_ck3dentity_state_t entity_out = {
+    nmo_3dentity_state_t entity_out = {
         .base = { .visibility_flags = NMO_CKOBJECT_VISIBLE },
         .flags = 0x00000001,
         .world_matrix = {
@@ -252,7 +252,7 @@ void example_3d_entity(void) {
     
     /* Deserialize */
     nmo_chunk_start_read(chunk);
-    nmo_ck3dentity_state_t entity_in = {0};
+    nmo_3dentity_state_t entity_in = {0};
     
     result = entity3d_type->vtable->deserialize(
         &entity_in, chunk, entity3d_type, arena);

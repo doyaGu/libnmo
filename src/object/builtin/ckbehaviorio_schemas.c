@@ -8,11 +8,11 @@
  * Based on official Virtools SDK (reference/src/CKBehaviorIO.cpp:19-48).
  */
 
-#include "object/nmo_ckbehaviorio_schemas.h"
+#include "object/nmo_behaviorio_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
@@ -26,18 +26,18 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbehaviorio, nmo_ckbehaviorio_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(behaviorio, nmo_behaviorio_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckbehaviorio_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckbehaviorio_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_behaviorio_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_behaviorio_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbehaviorio_state_t, old_flags, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckbehaviorio_state_t, has_flags, CKPGUID_BOOL)
+    NMO_FIELD(nmo_behaviorio_state_t, old_flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_behaviorio_state_t, has_flags, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -57,21 +57,21 @@ static const nmo_type_field_t nmo_ckbehaviorio_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckbehaviorio_deserialize(
+nmo_status_t nmo_behaviorio_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckbehaviorio_state_t *out_state = (nmo_ckbehaviorio_state_t *)instance;
+    nmo_behaviorio_state_t *out_state = (nmo_behaviorio_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorio_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorio_deserialize");
     }
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Read I/O flags */
@@ -102,23 +102,23 @@ nmo_status_t nmo_ckbehaviorio_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckbehaviorio_serialize(
+nmo_status_t nmo_behaviorio_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckbehaviorio_state_t *in_state = (const nmo_ckbehaviorio_state_t *)instance;
+    const nmo_behaviorio_state_t *in_state = (const nmo_behaviorio_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorio_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorio_serialize");
     }
 
     nmo_status_t result;
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* CKBehaviorIO::Save always writes IOFLAGS in file context */
@@ -136,11 +136,11 @@ nmo_status_t nmo_ckbehaviorio_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckbehaviorio,
-    nmo_ckbehaviorio_state_t,
-    nmo_ckbehaviorio_serialize,
-    nmo_ckbehaviorio_deserialize,
-    nmo_ckbehaviorio_fields,
+    behaviorio,
+    nmo_behaviorio_state_t,
+    nmo_behaviorio_serialize,
+    nmo_behaviorio_deserialize,
+    nmo_behaviorio_fields,
     CKPGUID_BEHAVIORIO,
     "CKBehaviorIO",
     NMO_CID_BEHAVIORIO,

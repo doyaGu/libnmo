@@ -28,7 +28,7 @@
 #include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_ckstatesave_ids.h"
+#include "object/nmo_statesave_ids.h"
 #include "object/nmo_object_guids.h"
 
 #ifdef __cplusplus

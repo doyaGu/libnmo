@@ -6,7 +6,7 @@
  * This replaces the old placeholder deserialization with proper schema-based approach.
  */
 
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
@@ -27,15 +27,15 @@
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckobject_fields[] = {
-    NMO_FIELD(nmo_ckobject_state_t, visibility_flags, NMO_GUID_ENUM_CK_OBJECT_FLAGS)
+static const nmo_type_field_t nmo_object_fields[] = {
+    NMO_FIELD(nmo_object_state_t, visibility_flags, NMO_GUID_ENUM_CK_OBJECT_FLAGS)
 };
 
 /* =============================================================================
  * CKObject LIFECYCLE
  * ============================================================================= */
 
-static nmo_status_t nmo_ckobject_create(
+static nmo_status_t nmo_object_schema_create(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -44,16 +44,16 @@ static nmo_status_t nmo_ckobject_create(
     (void)context;
     if (instance == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_ckobject_create");
+                         "Invalid arguments to nmo_object_schema_create");
     }
 
-    nmo_ckobject_state_t *state = (nmo_ckobject_state_t *)instance;
+    nmo_object_state_t *state = (nmo_object_state_t *)instance;
     memset(state, 0, sizeof(*state));
     state->visibility_flags = NMO_CKOBJECT_VISIBLE;
     NMO_RETURN_OK();
 }
 
-static void nmo_ckobject_destroy(
+static void nmo_object_schema_destroy(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -63,7 +63,26 @@ static void nmo_ckobject_destroy(
     if (instance == NULL) {
         return;
     }
-    memset(instance, 0, sizeof(nmo_ckobject_state_t));
+    memset(instance, 0, sizeof(nmo_object_state_t));
+}
+
+static bool nmo_object_state_equals(const void *a, const void *b)
+{
+    if (a == b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    return memcmp(a, b, sizeof(nmo_object_state_t)) == 0;
+}
+
+static uint32_t nmo_object_state_hash(const void *instance)
+{
+    if (!instance) {
+        return 0;
+    }
+    return (uint32_t)nmo_hash_fnv1a(instance, sizeof(nmo_object_state_t));
 }
 
 /* =============================================================================
@@ -83,7 +102,7 @@ static void nmo_ckobject_destroy(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckobject_deserialize(
+nmo_status_t nmo_object_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -91,10 +110,10 @@ nmo_status_t nmo_ckobject_deserialize(
 {
     (void)type;
     (void)context;
-    nmo_ckobject_state_t *out_state = (nmo_ckobject_state_t *)instance;
+    nmo_object_state_t *out_state = (nmo_object_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobject_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_object_deserialize");
     }
 
     /* Check for OBJECTHIDDEN identifier (highest priority) */
@@ -134,7 +153,7 @@ nmo_status_t nmo_ckobject_deserialize(
  * @param arena     Arena for temporary allocations (not needed for CKObject)
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckobject_serialize(
+nmo_status_t nmo_object_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -142,11 +161,11 @@ nmo_status_t nmo_ckobject_serialize(
 {
     (void)type;
     (void)context;
-    const nmo_ckobject_state_t *in_state = (const nmo_ckobject_state_t *)instance;
+    const nmo_object_state_t *in_state = (const nmo_object_state_t *)instance;
     
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_ckobject_serialize");
+            "Invalid arguments to nmo_object_serialize");
     }
 
     /* Write appropriate identifier based on visibility state */
@@ -178,7 +197,7 @@ nmo_status_t nmo_ckobject_serialize(
  * @param context Serialization context (unused in base implementation)
  * @return Always NMO_OK
  */
-nmo_status_t nmo_ckobject_finish_loading(
+nmo_status_t nmo_object_finish_loading(
     void *state,
     void *context)
 {
@@ -192,15 +211,28 @@ nmo_status_t nmo_ckobject_finish_loading(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckobject,
-    nmo_ckobject_state_t,
-    nmo_ckobject_serialize,
-    nmo_ckobject_deserialize,
-    nmo_ckobject_fields,
+/* NOTE: This schema cannot use NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(object, ...)
+ * because format/nmo_object.h declares nmo_object_create/nmo_object_destroy.
+ */
+nmo_type_vtable_t nmo_object_vtable = {
+    NMO_OBJECT_VTABLE(
+        nmo_object_schema_create,
+        nmo_object_schema_destroy,
+        nmo_object_serialize,
+        nmo_object_deserialize,
+        nmo_object_default_copy,
+        nmo_object_default_validate,
+        nmo_object_state_equals,
+        nmo_object_state_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(
+    nmo_register_object_type,
     CKPGUID_OBJECT,
     "CKObject",
     NMO_CID_OBJECT,
-    (nmo_guid_t){0}
-)
+    (nmo_guid_t){0},
+    nmo_object_state_t,
+    &nmo_object_vtable,
+    nmo_object_fields)
 

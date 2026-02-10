@@ -21,11 +21,11 @@
  * data via raw_tail fields for future math/render schema integration.
  */
 
-#include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_3dentity_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_renderobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -39,36 +39,36 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dentity, nmo_ck3dentity_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(3dentity, nmo_3dentity_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ck3dentity_fields[] = {
+static const nmo_type_field_t nmo_3dentity_fields[] = {
     /* Base class */
-    NMO_FIELD_NAMED("base", offsetof(nmo_ck3dentity_state_t, base),
-                    sizeof(nmo_ckrenderobject_state_t), CKPGUID_NONE,
+    NMO_FIELD_NAMED("base", offsetof(nmo_3dentity_state_t, base),
+                    sizeof(nmo_renderobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     /* Transform */
-    NMO_FIELD_NAMED("world_matrix", offsetof(nmo_ck3dentity_state_t, world_matrix),
+    NMO_FIELD_NAMED("world_matrix", offsetof(nmo_3dentity_state_t, world_matrix),
                     sizeof(float) * 16, CKPGUID_MATRIX,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck3dentity_state_t, entity_flags, NMO_GUID_ENUM_CK_3DENTITY_FLAGS),
-    NMO_FIELD(nmo_ck3dentity_state_t, moveable_flags, NMO_GUID_ENUM_VX_MOVEABLE_FLAGS),
+    NMO_FIELD(nmo_3dentity_state_t, entity_flags, NMO_GUID_ENUM_CK_3DENTITY_FLAGS),
+    NMO_FIELD(nmo_3dentity_state_t, moveable_flags, NMO_GUID_ENUM_VX_MOVEABLE_FLAGS),
     /* Hierarchy */
-    NMO_FIELD_REF(nmo_ck3dentity_state_t, parent_id),
-    NMO_FIELD_REF(nmo_ck3dentity_state_t, place_id),
-    NMO_FIELD(nmo_ck3dentity_state_t, z_order, CKPGUID_INT),
+    NMO_FIELD_REF(nmo_3dentity_state_t, parent_id),
+    NMO_FIELD_REF(nmo_3dentity_state_t, place_id),
+    NMO_FIELD(nmo_3dentity_state_t, z_order, CKPGUID_INT),
     /* Meshes */
-    NMO_FIELD_REF(nmo_ck3dentity_state_t, current_mesh_id),
-    NMO_FIELD(nmo_ck3dentity_state_t, mesh_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ck3dentity_state_t, mesh_ids),
+    NMO_FIELD_REF(nmo_3dentity_state_t, current_mesh_id),
+    NMO_FIELD(nmo_3dentity_state_t, mesh_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_3dentity_state_t, mesh_ids),
     /* Animations */
-    NMO_FIELD(nmo_ck3dentity_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ck3dentity_state_t, animation_ids),
+    NMO_FIELD(nmo_3dentity_state_t, animation_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_3dentity_state_t, animation_ids),
     /* Skin (optional) */
-    NMO_FIELD_OPT(nmo_ck3dentity_state_t, skin, CKPGUID_POINTER)
+    NMO_FIELD_OPT(nmo_3dentity_state_t, skin, CKPGUID_POINTER)
 };
 
 /* =============================================================================
@@ -87,9 +87,9 @@ static const nmo_type_field_t nmo_ck3dentity_fields[] = {
  * RAW BUFFER HELPERS
  * ============================================================================= */
 
-static nmo_status_t nmo_ck3dentity_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, size_t bytes) {
+static nmo_status_t nmo_3dentity_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, size_t bytes) {
     if (!chunk || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck3dentity_read_raw_bytes");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_3dentity_read_raw_bytes");
     }
 
     size_t dwords = (bytes + 3) / 4;
@@ -129,14 +129,14 @@ static nmo_status_t nmo_ck3dentity_read_raw_bytes(nmo_chunk_t *chunk, void *buff
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ck3dentity_deserialize(
+nmo_status_t nmo_3dentity_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ck3dentity_state_t *out_state = (nmo_ck3dentity_state_t *)instance;
+    nmo_3dentity_state_t *out_state = (nmo_3dentity_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
@@ -144,7 +144,7 @@ nmo_status_t nmo_ck3dentity_deserialize(
     }
 
     // First deserialize parent CKRenderObject data
-    nmo_status_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_renderobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -266,8 +266,8 @@ nmo_status_t nmo_ck3dentity_deserialize(
     // Skin data (identifier CK_STATESAVE_3DENTITYSKINDATA)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYSKINDATA) == NMO_OK) {
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
-        out_state->skin = (nmo_ck3dentity_skin_t *)nmo_arena_alloc(
-            arena, sizeof(nmo_ck3dentity_skin_t), _Alignof(nmo_ck3dentity_skin_t));
+        out_state->skin = (nmo_3dentity_skin_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_3dentity_skin_t), _Alignof(nmo_3dentity_skin_t));
         if (!out_state->skin) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate skin data");
         }
@@ -286,13 +286,13 @@ nmo_status_t nmo_ck3dentity_deserialize(
 
         out_state->skin->bone_count = (uint32_t)bone_count;
         if (bone_count > 0) {
-            out_state->skin->bones = (nmo_ck3dentity_skin_bone_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck3dentity_skin_bone_t) * bone_count,
-                _Alignof(nmo_ck3dentity_skin_bone_t));
+            out_state->skin->bones = (nmo_3dentity_skin_bone_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_3dentity_skin_bone_t) * bone_count,
+                _Alignof(nmo_3dentity_skin_bone_t));
             if (!out_state->skin->bones) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate skin bones");
             }
-            memset(out_state->skin->bones, 0, sizeof(nmo_ck3dentity_skin_bone_t) * bone_count);
+            memset(out_state->skin->bones, 0, sizeof(nmo_3dentity_skin_bone_t) * bone_count);
         }
 
         for (uint32_t i = 0; i < out_state->skin->bone_count; ++i) {
@@ -313,18 +313,18 @@ nmo_status_t nmo_ck3dentity_deserialize(
 
         if (vertex_count > 0) {
             out_state->skin->vertex_count = (uint32_t)vertex_count;
-            out_state->skin->vertices = (nmo_ck3dentity_skin_vertex_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck3dentity_skin_vertex_t) * out_state->skin->vertex_count,
-                _Alignof(nmo_ck3dentity_skin_vertex_t));
+            out_state->skin->vertices = (nmo_3dentity_skin_vertex_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_3dentity_skin_vertex_t) * out_state->skin->vertex_count,
+                _Alignof(nmo_3dentity_skin_vertex_t));
             if (!out_state->skin->vertices) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate skin vertices");
             }
             memset(out_state->skin->vertices, 0,
-                   sizeof(nmo_ck3dentity_skin_vertex_t) * out_state->skin->vertex_count);
+                   sizeof(nmo_3dentity_skin_vertex_t) * out_state->skin->vertex_count);
         }
 
         for (uint32_t i = 0; i < out_state->skin->vertex_count; ++i) {
-            nmo_ck3dentity_skin_vertex_t *vertex = &out_state->skin->vertices[i];
+            nmo_3dentity_skin_vertex_t *vertex = &out_state->skin->vertices[i];
             int32_t bone_count_i = 0;
             result = nmo_chunk_read_int(chunk, &bone_count_i);
             if (result != NMO_OK) return result;
@@ -346,7 +346,7 @@ nmo_status_t nmo_ck3dentity_deserialize(
                 if (!vertex->bone_indices) {
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bone indices");
                 }
-                result = nmo_ck3dentity_read_raw_bytes(chunk,
+                result = nmo_3dentity_read_raw_bytes(chunk,
                     vertex->bone_indices, sizeof(uint32_t) * vertex->bone_count);
                 if (result != NMO_OK) {
                     NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read bone indices");
@@ -363,7 +363,7 @@ nmo_status_t nmo_ck3dentity_deserialize(
                 if (!vertex->bone_weights) {
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bone weights");
                 }
-                result = nmo_ck3dentity_read_raw_bytes(chunk,
+                result = nmo_3dentity_read_raw_bytes(chunk,
                     vertex->bone_weights, sizeof(float) * vertex->bone_count);
                 if (result != NMO_OK) {
                     NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read bone weights");
@@ -391,7 +391,7 @@ nmo_status_t nmo_ck3dentity_deserialize(
                 if (!out_state->skin->normals) {
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate skin normals");
                 }
-                result = nmo_ck3dentity_read_raw_bytes(chunk,
+                result = nmo_3dentity_read_raw_bytes(chunk,
                     out_state->skin->normals, expected_bytes);
                 if (result != NMO_OK) {
                     NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read skin normals");
@@ -417,14 +417,14 @@ nmo_status_t nmo_ck3dentity_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ck3dentity_serialize(
+nmo_status_t nmo_3dentity_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ck3dentity_state_t *in_state = (const nmo_ck3dentity_state_t *)instance;
+    const nmo_3dentity_state_t *in_state = (const nmo_3dentity_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
@@ -432,7 +432,7 @@ nmo_status_t nmo_ck3dentity_serialize(
     }
 
     // First serialize parent CKRenderObject data
-    nmo_status_t result = nmo_ckrenderobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_renderobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -521,7 +521,7 @@ nmo_status_t nmo_ck3dentity_serialize(
 
     // Save skin data
     if (in_state->skin) {
-        const nmo_ck3dentity_skin_t *skin = in_state->skin;
+        const nmo_3dentity_skin_t *skin = in_state->skin;
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYSKINDATA);
         if (result != NMO_OK) return result;
 
@@ -546,7 +546,7 @@ nmo_status_t nmo_ck3dentity_serialize(
         if (result != NMO_OK) return result;
 
         for (uint32_t i = 0; i < skin->vertex_count; ++i) {
-            const nmo_ck3dentity_skin_vertex_t *vertex = &skin->vertices[i];
+            const nmo_3dentity_skin_vertex_t *vertex = &skin->vertices[i];
             result = nmo_chunk_write_int(out_chunk, (int32_t)vertex->bone_count);
             if (result != NMO_OK) return result;
 
@@ -586,12 +586,12 @@ nmo_status_t nmo_ck3dentity_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    ck3dentity,
-    nmo_ck3dentity_state_t,
-    nmo_ck3dentity_serialize,
-    nmo_ck3dentity_deserialize,
-    nmo_ck3dentity_finish_loading,
-    nmo_ck3dentity_fields,
+    3dentity,
+    nmo_3dentity_state_t,
+    nmo_3dentity_serialize,
+    nmo_3dentity_deserialize,
+    nmo_3dentity_finish_loading,
+    nmo_3dentity_fields,
     CKPGUID_3DENTITY,
     "CK3dEntity",
     NMO_CID_3DENTITY,
@@ -610,7 +610,7 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
  * @param repository Object repository for reference resolution
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ck3dentity_finish_loading(
+nmo_status_t nmo_3dentity_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)

@@ -734,7 +734,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
 /**
  * @brief Find type by class ID with inheritance fallback
  * 
- * Searches up the class hierarchy using nmo_ckclass API for parent lookups.
+ * Searches up the class hierarchy using nmo_class API for parent lookups.
  * This is crucial for Virtools file loading where derived classes may not have schemas.
  * 
  * @param registry Registry

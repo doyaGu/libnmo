@@ -3,7 +3,7 @@
  * @brief CKCharacter and CKBodyPart schema implementation
  */
 
-#include "object/nmo_ckcharacter_schemas.h"
+#include "object/nmo_character_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
@@ -16,8 +16,8 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcharacter, nmo_ckcharacter_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckbodypart, nmo_ckbodypart_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(character, nmo_character_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(bodypart, nmo_bodypart_state_t)
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
@@ -57,42 +57,42 @@ static nmo_status_t read_object_sequence(
     NMO_RETURN_OK();
 }
 
-static const nmo_type_field_t nmo_ckcharacter_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckcharacter_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_character_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_character_state_t, base),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcharacter_state_t, body_part_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckcharacter_state_t, body_part_ids),
-    NMO_FIELD(nmo_ckcharacter_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckcharacter_state_t, animation_ids),
-    NMO_FIELD_REF(nmo_ckcharacter_state_t, active_animation_id),
-    NMO_FIELD_REF(nmo_ckcharacter_state_t, anim_dest_id),
-    NMO_FIELD_REF(nmo_ckcharacter_state_t, root_body_part_id),
-    NMO_FIELD_REF(nmo_ckcharacter_state_t, floor_ref_id),
-    NMO_FIELD(nmo_ckcharacter_state_t, subpart_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckcharacter_state_t, subparts, NMO_GUID_STRUCT_CKCHARACTERSUBPART)
+    NMO_FIELD(nmo_character_state_t, body_part_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_character_state_t, body_part_ids),
+    NMO_FIELD(nmo_character_state_t, animation_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_character_state_t, animation_ids),
+    NMO_FIELD_REF(nmo_character_state_t, active_animation_id),
+    NMO_FIELD_REF(nmo_character_state_t, anim_dest_id),
+    NMO_FIELD_REF(nmo_character_state_t, root_body_part_id),
+    NMO_FIELD_REF(nmo_character_state_t, floor_ref_id),
+    NMO_FIELD(nmo_character_state_t, subpart_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_character_state_t, subparts, NMO_GUID_STRUCT_CKCHARACTERSUBPART)
 };
 
-static const nmo_type_field_t nmo_ckbodypart_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckbodypart_state_t, base),
-                    sizeof(nmo_ck3dobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_bodypart_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_bodypart_state_t, base),
+                    sizeof(nmo_3dobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbodypart_state_t, has_character, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_ckbodypart_state_t, character_id),
-    NMO_FIELD(nmo_ckbodypart_state_t, has_rotation_joint, CKPGUID_UINT8),
-    NMO_FIELD_NAMED("rotation_joint", offsetof(nmo_ckbodypart_state_t, rotation_joint),
+    NMO_FIELD(nmo_bodypart_state_t, has_character, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_bodypart_state_t, character_id),
+    NMO_FIELD(nmo_bodypart_state_t, has_rotation_joint, CKPGUID_UINT8),
+    NMO_FIELD_NAMED("rotation_joint", offsetof(nmo_bodypart_state_t, rotation_joint),
                     sizeof(nmo_ik_joint_t), NMO_GUID_STRUCT_CKIKJOINT,
                     NMO_FIELD_REQUIRED, 0)
 };
 
-static nmo_status_t ckcharacter_copy(
+static nmo_status_t nmo_character_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckcharacter_state_t *s = src;
-    nmo_ckcharacter_state_t *d = dst;
+    const nmo_character_state_t *s = src;
+    nmo_character_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->body_part_ids,
                                               s->body_part_ids, sizeof(nmo_object_id_t), s->body_part_count));
@@ -111,21 +111,21 @@ static nmo_status_t ckcharacter_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckcharacter_validate(
+static nmo_status_t nmo_character_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckcharacter_state_t *s = instance;
+    const nmo_character_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->body_part_ids, s->body_part_count, "body_part_ids");
     NMO_VALIDATE_COUNT(s->animation_ids, s->animation_count, "animation_ids");
     NMO_VALIDATE_COUNT(s->subparts, s->subpart_count, "subparts");
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckbodypart_copy(
+static nmo_status_t nmo_bodypart_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
@@ -134,7 +134,7 @@ static nmo_status_t ckbodypart_copy(
     return nmo_object_default_copy(src, dst, type, arena);
 }
 
-static nmo_status_t ckbodypart_validate(
+static nmo_status_t nmo_bodypart_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -151,11 +151,11 @@ static nmo_status_t ckbodypart_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckcharacter,
-    nmo_ckcharacter_state_t,
-    nmo_ckcharacter_serialize,
-    nmo_ckcharacter_deserialize,
-    nmo_ckcharacter_fields,
+    character,
+    nmo_character_state_t,
+    nmo_character_serialize,
+    nmo_character_deserialize,
+    nmo_character_fields,
     CKPGUID_CHARACTER,
     "CKCharacter",
     NMO_CID_CHARACTER,
@@ -163,11 +163,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckbodypart,
-    nmo_ckbodypart_state_t,
-    nmo_ckbodypart_serialize,
-    nmo_ckbodypart_deserialize,
-    nmo_ckbodypart_fields,
+    bodypart,
+    nmo_bodypart_state_t,
+    nmo_bodypart_serialize,
+    nmo_bodypart_deserialize,
+    nmo_bodypart_fields,
     CKPGUID_BODYPART,
     "CKBodyPart",
     NMO_CID_BODYPART,
@@ -190,17 +190,17 @@ static nmo_status_t write_object_sequence(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckcharacter_deserialize_internal(
+static nmo_status_t nmo_character_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckcharacter_state_t *out_state)
+    nmo_character_state_t *out_state)
 {
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcharacter_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_character_deserialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -292,17 +292,17 @@ static nmo_status_t nmo_ckcharacter_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckcharacter_serialize_internal(
-    const nmo_ckcharacter_state_t *in_state,
+static nmo_status_t nmo_character_serialize_internal(
+    const nmo_character_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcharacter_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_character_serialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (in_state->body_part_count > 0 && in_state->body_part_ids) {
@@ -357,17 +357,17 @@ static nmo_status_t nmo_ckcharacter_serialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckbodypart_deserialize_internal(
+static nmo_status_t nmo_bodypart_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckbodypart_state_t *out_state)
+    nmo_bodypart_state_t *out_state)
 {
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbodypart_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_bodypart_deserialize");
     }
 
     {
-        nmo_status_t result = nmo_ck3dobject_deserialize(&out_state->base, chunk, NULL, context);
+        nmo_status_t result = nmo_3dobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
@@ -422,17 +422,17 @@ static nmo_status_t nmo_ckbodypart_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckbodypart_serialize_internal(
-    const nmo_ckbodypart_state_t *in_state,
+static nmo_status_t nmo_bodypart_serialize_internal(
+    const nmo_bodypart_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbodypart_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_bodypart_serialize");
     }
 
     {
-        nmo_status_t result = nmo_ck3dobject_serialize(&in_state->base, out_chunk, NULL, context);
+        nmo_status_t result = nmo_3dobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
@@ -453,47 +453,47 @@ static nmo_status_t nmo_ckbodypart_serialize_internal(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckcharacter_deserialize(
+nmo_status_t nmo_character_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckcharacter_state_t *out_state = (nmo_ckcharacter_state_t *)instance;
-    return nmo_ckcharacter_deserialize_internal(chunk, context, out_state);
+    nmo_character_state_t *out_state = (nmo_character_state_t *)instance;
+    return nmo_character_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckcharacter_serialize(
+nmo_status_t nmo_character_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckcharacter_state_t *in_state = (const nmo_ckcharacter_state_t *)instance;
-    return nmo_ckcharacter_serialize_internal(in_state, out_chunk, context);
+    const nmo_character_state_t *in_state = (const nmo_character_state_t *)instance;
+    return nmo_character_serialize_internal(in_state, out_chunk, context);
 }
 
-nmo_status_t nmo_ckbodypart_deserialize(
+nmo_status_t nmo_bodypart_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckbodypart_state_t *out_state = (nmo_ckbodypart_state_t *)instance;
-    return nmo_ckbodypart_deserialize_internal(chunk, context, out_state);
+    nmo_bodypart_state_t *out_state = (nmo_bodypart_state_t *)instance;
+    return nmo_bodypart_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckbodypart_serialize(
+nmo_status_t nmo_bodypart_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckbodypart_state_t *in_state = (const nmo_ckbodypart_state_t *)instance;
-    return nmo_ckbodypart_serialize_internal(in_state, out_chunk, context);
+    const nmo_bodypart_state_t *in_state = (const nmo_bodypart_state_t *)instance;
+    return nmo_bodypart_serialize_internal(in_state, out_chunk, context);
 }
 

@@ -11,12 +11,12 @@
  * - Rendering settings stored in separate identifier section
  */
 
-#include "object/nmo_ckscene_schemas.h"
+#include "object/nmo_scene_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -31,32 +31,32 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckscene, nmo_ckscene_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(scene, nmo_scene_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckscene_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckscene_state_t, base),
-                         sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+static const nmo_type_field_t nmo_scene_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_scene_state_t, base),
+                         sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_ckscene_state_t, level_id),
-    NMO_FIELD_ARRAY(nmo_ckscene_state_t, object_descs, NMO_GUID_STRUCT_CKSCENEOBJECTDESC),
-    NMO_FIELD(nmo_ckscene_state_t, object_count, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckscene_state_t, environment_settings, NMO_GUID_ENUM_CK_SCENE_FLAGS),
-    NMO_FIELD_NAMED("background_color", offsetof(nmo_ckscene_state_t, background_color),
+    NMO_FIELD_REF(nmo_scene_state_t, level_id),
+    NMO_FIELD_ARRAY(nmo_scene_state_t, object_descs, NMO_GUID_STRUCT_CKSCENEOBJECTDESC),
+    NMO_FIELD(nmo_scene_state_t, object_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_scene_state_t, environment_settings, NMO_GUID_ENUM_CK_SCENE_FLAGS),
+    NMO_FIELD_NAMED("background_color", offsetof(nmo_scene_state_t, background_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("ambient_light_color", offsetof(nmo_ckscene_state_t, ambient_light_color),
+    NMO_FIELD_NAMED("ambient_light_color", offsetof(nmo_scene_state_t, ambient_light_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckscene_state_t, fog_mode, NMO_GUID_ENUM_VXFOG_MODE),
-    NMO_FIELD_NAMED("fog_color", offsetof(nmo_ckscene_state_t, fog_color),
+    NMO_FIELD(nmo_scene_state_t, fog_mode, NMO_GUID_ENUM_VXFOG_MODE),
+    NMO_FIELD_NAMED("fog_color", offsetof(nmo_scene_state_t, fog_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckscene_state_t, fog_start, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckscene_state_t, fog_end, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckscene_state_t, fog_density, CKPGUID_FLOAT),
-    NMO_FIELD_REF(nmo_ckscene_state_t, background_texture_id),
-    NMO_FIELD_REF(nmo_ckscene_state_t, starting_camera_id)
+    NMO_FIELD(nmo_scene_state_t, fog_start, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_scene_state_t, fog_end, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_scene_state_t, fog_density, CKPGUID_FLOAT),
+    NMO_FIELD_REF(nmo_scene_state_t, background_texture_id),
+    NMO_FIELD_REF(nmo_scene_state_t, starting_camera_id)
 };
 
 /* Scene object flags (CKEnums.h) */
@@ -82,22 +82,22 @@ static const nmo_type_field_t nmo_ckscene_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckscene_deserialize(
+nmo_status_t nmo_scene_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckscene_state_t *out_state = (nmo_ckscene_state_t *)instance;
+    nmo_scene_state_t *out_state = (nmo_scene_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckscene_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_scene_deserialize");
     }
 
     /* Deserialize base CKBeObject state first */
-    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Section 1: SCENENEWDATA - Level + scene objects */
@@ -259,21 +259,21 @@ nmo_status_t nmo_ckscene_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckscene_serialize(
+nmo_status_t nmo_scene_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckscene_state_t *in_state = (const nmo_ckscene_state_t *)instance;
+    const nmo_scene_state_t *in_state = (const nmo_scene_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckscene_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_scene_serialize");
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Section 1: SCENENEWDATA */
@@ -372,14 +372,14 @@ nmo_status_t nmo_ckscene_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckscene_copy(
+static nmo_status_t nmo_scene_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckscene_state_t *s = src;
-    nmo_ckscene_state_t *d = dst;
+    const nmo_scene_state_t *s = src;
+    nmo_scene_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
@@ -408,14 +408,14 @@ static nmo_status_t ckscene_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckscene_validate(
+static nmo_status_t nmo_scene_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckscene_state_t *s = instance;
+    const nmo_scene_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->object_descs, s->object_count, "object_descs");
     NMO_RETURN_OK();
 }
@@ -425,11 +425,11 @@ static nmo_status_t ckscene_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckscene,
-    nmo_ckscene_state_t,
-    nmo_ckscene_serialize,
-    nmo_ckscene_deserialize,
-    nmo_ckscene_fields,
+    scene,
+    nmo_scene_state_t,
+    nmo_scene_serialize,
+    nmo_scene_deserialize,
+    nmo_scene_fields,
     CKPGUID_SCENE,
     "CKScene",
     NMO_CID_SCENE,

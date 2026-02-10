@@ -170,7 +170,7 @@ NMO_API nmo_status_t nmo_object_copy_chunk_array(
  * Per-Type State Ops (equals/hash/copy/validate)
  * ============================================================================ */
 #define NMO_DEFINE_OBJECT_STATE_OPS(_name, _state_t) \
-static bool _name##_equals(const void *a, const void *b) { \
+static bool nmo_##_name##_equals(const void *a, const void *b) { \
     if (a == b) { \
         return true; \
     } \
@@ -179,24 +179,24 @@ static bool _name##_equals(const void *a, const void *b) { \
     } \
     return memcmp(a, b, sizeof(_state_t)) == 0; \
 } \
-static uint32_t _name##_hash(const void *instance) { \
+static uint32_t nmo_##_name##_hash(const void *instance) { \
     if (!instance) { \
         return 0; \
     } \
     return (uint32_t)nmo_hash_fnv1a(instance, sizeof(_state_t)); \
 } \
-static nmo_status_t _name##_copy(const void *src, void *dst, \
+static nmo_status_t nmo_##_name##_copy(const void *src, void *dst, \
                                  const nmo_type_descriptor_t *type, nmo_arena_t *arena) { \
     return nmo_object_default_copy(src, dst, type, arena); \
 } \
-static nmo_status_t _name##_validate(const void *instance, \
+static nmo_status_t nmo_##_name##_validate(const void *instance, \
                                      const nmo_type_descriptor_t *type, void *context) { \
     return nmo_object_default_validate(instance, type, context); \
 }
 
 /* Per-type equals/hash macro without default copy/validate (for custom ops) */
 #define NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(_name, _state_t) \
-static bool _name##_equals(const void *a, const void *b) { \
+static bool nmo_##_name##_equals(const void *a, const void *b) { \
     if (a == b) { \
         return true; \
     } \
@@ -205,7 +205,7 @@ static bool _name##_equals(const void *a, const void *b) { \
     } \
     return memcmp(a, b, sizeof(_state_t)) == 0; \
 } \
-static uint32_t _name##_hash(const void *instance) { \
+static uint32_t nmo_##_name##_hash(const void *instance) { \
     if (!instance) { \
         return 0; \
     } \
@@ -386,7 +386,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                    _base_guid, _state_t, &nmo_##_prefix##_vtable)
@@ -396,7 +396,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                           _base_guid, _state_t, &nmo_##_prefix##_vtable, _fields)
@@ -406,7 +406,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_FIELDS_COUNT(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                                  _base_guid, _state_t, &nmo_##_prefix##_vtable, _fields, _field_count)
@@ -416,7 +416,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE_EX(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash, _enumerate_refs) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash, _enumerate_refs) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                    _base_guid, _state_t, &nmo_##_prefix##_vtable)
@@ -426,7 +426,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE_EX(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash, _enumerate_refs) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash, _enumerate_refs) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                           _base_guid, _state_t, &nmo_##_prefix##_vtable, _fields)
@@ -436,7 +436,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_EX(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                       _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading)
@@ -446,7 +446,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                              _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading, _fields)
@@ -456,7 +456,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE_EX(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash, _enumerate_refs) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash, _enumerate_refs) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_EX(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                       _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading)
@@ -466,7 +466,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE_EX(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash, _enumerate_refs) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash, _enumerate_refs) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                              _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading, _fields)
@@ -480,7 +480,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                    _base_guid, _state_t, &nmo_##_prefix##_vtable)
@@ -489,7 +489,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                           _base_guid, _state_t, &nmo_##_prefix##_vtable, _fields)
@@ -498,7 +498,7 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(_prefix, _state_t) \
     nmo_type_vtable_t nmo_##_prefix##_vtable = { \
         NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          _prefix##_copy, _prefix##_validate, _prefix##_equals, _prefix##_hash) \
+                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                              _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading, _fields)

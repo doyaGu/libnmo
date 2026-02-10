@@ -41,7 +41,7 @@ TEST(object_serialization, ckobject_roundtrip) {
     nmo_chunk_start_write(chunk);
 
     /* Create object state (visible) */
-    nmo_ckobject_state_t state_out = {
+    nmo_object_state_t state_out = {
         .visibility_flags = NMO_CKOBJECT_VISIBLE
     };
 
@@ -53,7 +53,7 @@ TEST(object_serialization, ckobject_roundtrip) {
     nmo_chunk_start_read(chunk);
 
     /* Deserialize */
-    nmo_ckobject_state_t state_in = {0};
+    nmo_object_state_t state_in = {0};
     result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result);
 
@@ -81,7 +81,7 @@ TEST(object_serialization, ckobject_hidden) {
     nmo_chunk_start_write(chunk);
 
     /* Create hidden object state */
-    nmo_ckobject_state_t state_out = {
+    nmo_object_state_t state_out = {
         .visibility_flags = 0  /* Completely hidden */
     };
 
@@ -91,7 +91,7 @@ TEST(object_serialization, ckobject_hidden) {
 
     /* Deserialize */
     nmo_chunk_start_read(chunk);
-    nmo_ckobject_state_t state_in = {0};
+    nmo_object_state_t state_in = {0};
     result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result);
 
@@ -119,7 +119,7 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
     nmo_chunk_start_write(chunk);
 
     /* Create hierarchically hidden object state */
-    nmo_ckobject_state_t state_out = {
+    nmo_object_state_t state_out = {
         .visibility_flags = NMO_CKOBJECT_HIERARCHICAL  /* No VISIBLE flag */
     };
 
@@ -129,7 +129,7 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
 
     /* Deserialize */
     nmo_chunk_start_read(chunk);
-    nmo_ckobject_state_t state_in = {0};
+    nmo_object_state_t state_in = {0};
     result = ckobject_type->vtable->deserialize(&state_in, chunk, ckobject_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result);
 
@@ -155,7 +155,7 @@ TEST(object_serialization, null_checks) {
     ASSERT_NE(NULL, ckobject_type);
 
     nmo_chunk_t *chunk = nmo_chunk_create(arena, 1024);
-    nmo_ckobject_state_t state = {0};
+    nmo_object_state_t state = {0};
 
     /* NULL instance in serialize */
     nmo_status_t result = ckobject_type->vtable->serialize(NULL, chunk, ckobject_type, &ser_ctx);
@@ -196,7 +196,7 @@ TEST(object_serialization, ck3dentity_roundtrip) {
     nmo_chunk_start_write(chunk);
 
     /* Create 3D entity state with identity matrix */
-    nmo_ck3dentity_state_t state_out = {
+    nmo_3dentity_state_t state_out = {
         .base = { .visibility_flags = NMO_CKOBJECT_VISIBLE },
         .flags = 0x12345678,
         .world_matrix = {
@@ -214,7 +214,7 @@ TEST(object_serialization, ck3dentity_roundtrip) {
 
     /* Deserialize */
     nmo_chunk_start_read(chunk);
-    nmo_ck3dentity_state_t state_in = {0};
+    nmo_3dentity_state_t state_in = {0};
     result = entity3d_type->vtable->deserialize(&state_in, chunk, entity3d_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result);
 
@@ -250,7 +250,7 @@ TEST(object_serialization, ck3dentity_transform) {
     nmo_chunk_start_write(chunk);
 
     /* Create 3D entity with translation */
-    nmo_ck3dentity_state_t state_out = {
+    nmo_3dentity_state_t state_out = {
         .base = { .visibility_flags = NMO_CKOBJECT_VISIBLE },
         .flags = 0x00000001,
         .world_matrix = {
@@ -267,7 +267,7 @@ TEST(object_serialization, ck3dentity_transform) {
     ASSERT_EQ(NMO_OK, result);
 
     nmo_chunk_start_read(chunk);
-    nmo_ck3dentity_state_t state_in = {0};
+    nmo_3dentity_state_t state_in = {0};
     result = entity3d_type->vtable->deserialize(&state_in, chunk, entity3d_type, &ser_ctx);
     ASSERT_EQ(NMO_OK, result);
 

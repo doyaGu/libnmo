@@ -3,7 +3,7 @@
  * @brief CKInterfaceObjectManager schema implementation
  */
 
-#include "object/nmo_ckinterfaceobjectmanager_schemas.h"
+#include "object/nmo_interfaceobjectmanager_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
@@ -18,36 +18,36 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckinterfaceobjectmanager, nmo_ckinterfaceobjectmanager_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(interfaceobjectmanager, nmo_interfaceobjectmanager_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckinterfaceobjectmanager_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckinterfaceobjectmanager_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_interfaceobjectmanager_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_interfaceobjectmanager_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, chunk_count, CKPGUID_INT),
-    NMO_FIELD_ARRAY(nmo_ckinterfaceobjectmanager_state_t, chunks, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_ckinterfaceobjectmanager_state_t, guid, CKPGUID_GUID)
+    NMO_FIELD(nmo_interfaceobjectmanager_state_t, chunk_count, CKPGUID_INT),
+    NMO_FIELD_ARRAY(nmo_interfaceobjectmanager_state_t, chunks, CKPGUID_STATECHUNK),
+    NMO_FIELD(nmo_interfaceobjectmanager_state_t, guid, CKPGUID_GUID)
 };
 
 /* Identifiers from CKInterfaceObjectManager.cpp */
 #define CK_STATESAVE_IOM_CHUNKS 0x01234567u
 #define CK_STATESAVE_IOM_GUID   0x87654321u
 
-static nmo_status_t nmo_ckinterfaceobjectmanager_deserialize_internal(
-    nmo_ckinterfaceobjectmanager_state_t *out_state,
+static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
+    nmo_interfaceobjectmanager_state_t *out_state,
     nmo_chunk_t *chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_interfaceobjectmanager_deserialize");
     }
 
-    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_CHUNKS) == NMO_OK) {
@@ -72,26 +72,26 @@ static nmo_status_t nmo_ckinterfaceobjectmanager_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckinterfaceobjectmanager_copy(
+static nmo_status_t nmo_interfaceobjectmanager_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckinterfaceobjectmanager_state_t *s = src;
-    nmo_ckinterfaceobjectmanager_state_t *d = dst;
+    const nmo_interfaceobjectmanager_state_t *s = src;
+    nmo_interfaceobjectmanager_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     return nmo_object_copy_chunk_array(arena, &d->chunks, s->chunks, (uint32_t)s->chunk_count);
 }
 
-static nmo_status_t ckinterfaceobjectmanager_validate(
+static nmo_status_t nmo_interfaceobjectmanager_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckinterfaceobjectmanager_state_t *s = instance;
+    const nmo_interfaceobjectmanager_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->chunks, (uint32_t)s->chunk_count, "chunks");
     NMO_RETURN_OK();
 }
@@ -101,28 +101,28 @@ static nmo_status_t ckinterfaceobjectmanager_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckinterfaceobjectmanager,
-    nmo_ckinterfaceobjectmanager_state_t,
-    nmo_ckinterfaceobjectmanager_serialize,
-    nmo_ckinterfaceobjectmanager_deserialize,
-    nmo_ckinterfaceobjectmanager_fields,
+    interfaceobjectmanager,
+    nmo_interfaceobjectmanager_state_t,
+    nmo_interfaceobjectmanager_serialize,
+    nmo_interfaceobjectmanager_deserialize,
+    nmo_interfaceobjectmanager_fields,
     CKPGUID_INTERFACEOBJECTMANAGER,
     "CKInterfaceObjectManager",
     NMO_CID_INTERFACEOBJECTMANAGER,
     CKPGUID_OBJECT
 )
 
-static nmo_status_t nmo_ckinterfaceobjectmanager_serialize_internal(
-    const nmo_ckinterfaceobjectmanager_state_t *in_state,
+static nmo_status_t nmo_interfaceobjectmanager_serialize_internal(
+    const nmo_interfaceobjectmanager_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckinterfaceobjectmanager_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_interfaceobjectmanager_serialize");
     }
 
-    nmo_status_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_IOM_CHUNKS);
@@ -149,26 +149,26 @@ static nmo_status_t nmo_ckinterfaceobjectmanager_serialize_internal(
     return nmo_chunk_write_guid(out_chunk, in_state->guid);
 }
 
-nmo_status_t nmo_ckinterfaceobjectmanager_deserialize(
+nmo_status_t nmo_interfaceobjectmanager_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckinterfaceobjectmanager_state_t *out_state = (nmo_ckinterfaceobjectmanager_state_t *)instance;
-    return nmo_ckinterfaceobjectmanager_deserialize_internal(out_state, chunk, context);
+    nmo_interfaceobjectmanager_state_t *out_state = (nmo_interfaceobjectmanager_state_t *)instance;
+    return nmo_interfaceobjectmanager_deserialize_internal(out_state, chunk, context);
 }
 
-nmo_status_t nmo_ckinterfaceobjectmanager_serialize(
+nmo_status_t nmo_interfaceobjectmanager_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckinterfaceobjectmanager_state_t *in_state =
-        (const nmo_ckinterfaceobjectmanager_state_t *)instance;
-    return nmo_ckinterfaceobjectmanager_serialize_internal(in_state, out_chunk, context);
+    const nmo_interfaceobjectmanager_state_t *in_state =
+        (const nmo_interfaceobjectmanager_state_t *)instance;
+    return nmo_interfaceobjectmanager_serialize_internal(in_state, out_chunk, context);
 }
 

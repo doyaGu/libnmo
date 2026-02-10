@@ -3,7 +3,7 @@
  * @brief CKParameterOperation schema implementation
  */
 
-#include "object/nmo_ckparameteroperation_schemas.h"
+#include "object/nmo_parameteroperation_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -16,45 +16,45 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameteroperation, nmo_ckparameteroperation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameteroperation, nmo_parameteroperation_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckparameteroperation_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameteroperation_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_parameteroperation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_parameteroperation_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, operation_guid, CKPGUID_GUID),
-    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, owner_id),
-    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, in1_id),
-    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, in2_id),
-    NMO_FIELD_REF(nmo_ckparameteroperation_state_t, out_id),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_owner, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in1, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_in2, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckparameteroperation_state_t, has_out, CKPGUID_UINT8),
-    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in1_chunk, CKPGUID_STATECHUNK),
-    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, in2_chunk, CKPGUID_STATECHUNK),
-    NMO_FIELD_OPT(nmo_ckparameteroperation_state_t, out_chunk, CKPGUID_STATECHUNK)
+    NMO_FIELD(nmo_parameteroperation_state_t, operation_guid, CKPGUID_GUID),
+    NMO_FIELD_REF(nmo_parameteroperation_state_t, owner_id),
+    NMO_FIELD_REF(nmo_parameteroperation_state_t, in1_id),
+    NMO_FIELD_REF(nmo_parameteroperation_state_t, in2_id),
+    NMO_FIELD_REF(nmo_parameteroperation_state_t, out_id),
+    NMO_FIELD(nmo_parameteroperation_state_t, has_owner, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameteroperation_state_t, has_in1, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameteroperation_state_t, has_in2, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameteroperation_state_t, has_out, CKPGUID_UINT8),
+    NMO_FIELD_OPT(nmo_parameteroperation_state_t, in1_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD_OPT(nmo_parameteroperation_state_t, in2_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD_OPT(nmo_parameteroperation_state_t, out_chunk, CKPGUID_STATECHUNK)
 };
 
-nmo_status_t nmo_ckparameteroperation_deserialize(
+nmo_status_t nmo_parameteroperation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckparameteroperation_state_t *out_state = (nmo_ckparameteroperation_state_t *)instance;
+    nmo_parameteroperation_state_t *out_state = (nmo_parameteroperation_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameteroperation_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameteroperation_deserialize");
     }
 
     {
-        nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+        nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
         if (result != NMO_OK) {
             return result;
         }
@@ -138,21 +138,21 @@ nmo_status_t nmo_ckparameteroperation_deserialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckparameteroperation_copy(
+static nmo_status_t nmo_parameteroperation_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckparameteroperation_state_t *s = src;
-    nmo_ckparameteroperation_state_t *d = dst;
+    const nmo_parameteroperation_state_t *s = src;
+    nmo_parameteroperation_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->in1_chunk, s->in1_chunk));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->in2_chunk, s->in2_chunk));
     return nmo_object_copy_chunk(arena, &d->out_chunk, s->out_chunk);
 }
 
-static nmo_status_t ckparameteroperation_validate(
+static nmo_status_t nmo_parameteroperation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -163,22 +163,22 @@ static nmo_status_t ckparameteroperation_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckparameteroperation_serialize(
+nmo_status_t nmo_parameteroperation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckparameteroperation_state_t *in_state =
-        (const nmo_ckparameteroperation_state_t *)instance;
+    const nmo_parameteroperation_state_t *in_state =
+        (const nmo_parameteroperation_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameteroperation_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameteroperation_serialize");
     }
 
     {
-        nmo_status_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+        nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
         if (result != NMO_OK) {
             return result;
         }
@@ -247,11 +247,11 @@ nmo_status_t nmo_ckparameteroperation_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckparameteroperation,
-    nmo_ckparameteroperation_state_t,
-    nmo_ckparameteroperation_serialize,
-    nmo_ckparameteroperation_deserialize,
-    nmo_ckparameteroperation_fields,
+    parameteroperation,
+    nmo_parameteroperation_state_t,
+    nmo_parameteroperation_serialize,
+    nmo_parameteroperation_deserialize,
+    nmo_parameteroperation_fields,
     CKPGUID_PARAMETEROPERATION,
     "CKParameterOperation",
     NMO_CID_PARAMETEROPERATION,

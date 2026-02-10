@@ -3,7 +3,7 @@
  * @brief CKCurve and CKCurvePoint schema implementation
  */
 
-#include "object/nmo_ckcurve_schemas.h"
+#include "object/nmo_curve_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
@@ -17,8 +17,8 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcurve, nmo_ckcurve_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcurvepoint, nmo_ckcurvepoint_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(curve, nmo_curve_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(curvepoint, nmo_curvepoint_state_t)
 
 static nmo_status_t read_object_sequence(
     nmo_chunk_t *chunk,
@@ -54,45 +54,45 @@ static nmo_status_t read_object_sequence(
     NMO_RETURN_OK();
 }
 
-static const nmo_type_field_t nmo_ckcurve_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckcurve_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_curve_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_curve_state_t, base),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcurve_state_t, has_curve_data, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckcurve_state_t, control_point_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckcurve_state_t, control_point_ids),
-    NMO_FIELD(nmo_ckcurve_state_t, fitting_coeff, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcurve_state_t, step_count, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckcurve_state_t, opened, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckcurve_state_t, sub_point_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckcurve_state_t, sub_points, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK)
+    NMO_FIELD(nmo_curve_state_t, has_curve_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, control_point_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_curve_state_t, control_point_ids),
+    NMO_FIELD(nmo_curve_state_t, fitting_coeff, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_curve_state_t, step_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_curve_state_t, opened, CKPGUID_UINT32),
+    NMO_FIELD(nmo_curve_state_t, sub_point_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_curve_state_t, sub_points, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK)
 };
 
-static const nmo_type_field_t nmo_ckcurvepoint_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckcurvepoint_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_curvepoint_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_curvepoint_state_t, base),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, has_default_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_ckcurvepoint_state_t, curve_id),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, use_tcb, CKPGUID_INT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, linear, CKPGUID_INT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, tension, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, continuity, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, bias, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_in, CKPGUID_VECTOR),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, tangent_out, CKPGUID_VECTOR),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, has_reserved_vector, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckcurvepoint_state_t, reserved_vector, CKPGUID_VECTOR)
+    NMO_FIELD(nmo_curvepoint_state_t, has_default_data, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_curvepoint_state_t, curve_id),
+    NMO_FIELD(nmo_curvepoint_state_t, use_tcb, CKPGUID_INT),
+    NMO_FIELD(nmo_curvepoint_state_t, linear, CKPGUID_INT),
+    NMO_FIELD(nmo_curvepoint_state_t, tension, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_curvepoint_state_t, continuity, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_curvepoint_state_t, bias, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_curvepoint_state_t, tangent_in, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_curvepoint_state_t, tangent_out, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_curvepoint_state_t, has_reserved_vector, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curvepoint_state_t, reserved_vector, CKPGUID_VECTOR)
 };
 
-static nmo_status_t ckcurve_copy(
+static nmo_status_t nmo_curve_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckcurve_state_t *s = src;
-    nmo_ckcurve_state_t *d = dst;
+    const nmo_curve_state_t *s = src;
+    nmo_curve_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->control_point_ids,
                                               s->control_point_ids, sizeof(nmo_object_id_t), s->control_point_count));
@@ -109,20 +109,20 @@ static nmo_status_t ckcurve_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckcurve_validate(
+static nmo_status_t nmo_curve_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckcurve_state_t *s = instance;
+    const nmo_curve_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->control_point_ids, s->control_point_count, "control_point_ids");
     NMO_VALIDATE_COUNT(s->sub_points, s->sub_point_count, "sub_points");
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckcurvepoint_copy(
+static nmo_status_t nmo_curvepoint_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
@@ -131,7 +131,7 @@ static nmo_status_t ckcurvepoint_copy(
     return nmo_object_default_copy(src, dst, type, arena);
 }
 
-static nmo_status_t ckcurvepoint_validate(
+static nmo_status_t nmo_curvepoint_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -147,11 +147,11 @@ static nmo_status_t ckcurvepoint_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckcurve,
-    nmo_ckcurve_state_t,
-    nmo_ckcurve_serialize,
-    nmo_ckcurve_deserialize,
-    nmo_ckcurve_fields,
+    curve,
+    nmo_curve_state_t,
+    nmo_curve_serialize,
+    nmo_curve_deserialize,
+    nmo_curve_fields,
     CKPGUID_CURVE,
     "CKCurve",
     NMO_CID_CURVE,
@@ -159,11 +159,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckcurvepoint,
-    nmo_ckcurvepoint_state_t,
-    nmo_ckcurvepoint_serialize,
-    nmo_ckcurvepoint_deserialize,
-    nmo_ckcurvepoint_fields,
+    curvepoint,
+    nmo_curvepoint_state_t,
+    nmo_curvepoint_serialize,
+    nmo_curvepoint_deserialize,
+    nmo_curvepoint_fields,
     CKPGUID_CURVEPOINT,
     "CKCurvePoint",
     NMO_CID_CURVEPOINT,
@@ -186,17 +186,17 @@ static nmo_status_t write_object_sequence(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckcurve_deserialize_internal(
+static nmo_status_t nmo_curve_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckcurve_state_t *out_state)
+    nmo_curve_state_t *out_state)
 {
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_curve_deserialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -251,17 +251,17 @@ static nmo_status_t nmo_ckcurve_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckcurve_serialize_internal(
-    const nmo_ckcurve_state_t *in_state,
+static nmo_status_t nmo_curve_serialize_internal(
+    const nmo_curve_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurve_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_curve_serialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (in_state->has_curve_data) {
@@ -299,16 +299,16 @@ static nmo_status_t nmo_ckcurve_serialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckcurvepoint_deserialize_internal(
+static nmo_status_t nmo_curvepoint_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckcurvepoint_state_t *out_state)
+    nmo_curvepoint_state_t *out_state)
 {
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_curvepoint_deserialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -359,16 +359,16 @@ static nmo_status_t nmo_ckcurvepoint_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckcurvepoint_serialize_internal(
-    const nmo_ckcurvepoint_state_t *in_state,
+static nmo_status_t nmo_curvepoint_serialize_internal(
+    const nmo_curvepoint_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcurvepoint_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_curvepoint_serialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (in_state->has_default_data) {
@@ -402,47 +402,47 @@ static nmo_status_t nmo_ckcurvepoint_serialize_internal(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckcurve_deserialize(
+nmo_status_t nmo_curve_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckcurve_state_t *out_state = (nmo_ckcurve_state_t *)instance;
-    return nmo_ckcurve_deserialize_internal(chunk, context, out_state);
+    nmo_curve_state_t *out_state = (nmo_curve_state_t *)instance;
+    return nmo_curve_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckcurve_serialize(
+nmo_status_t nmo_curve_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckcurve_state_t *in_state = (const nmo_ckcurve_state_t *)instance;
-    return nmo_ckcurve_serialize_internal(in_state, out_chunk, context);
+    const nmo_curve_state_t *in_state = (const nmo_curve_state_t *)instance;
+    return nmo_curve_serialize_internal(in_state, out_chunk, context);
 }
 
-nmo_status_t nmo_ckcurvepoint_deserialize(
+nmo_status_t nmo_curvepoint_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckcurvepoint_state_t *out_state = (nmo_ckcurvepoint_state_t *)instance;
-    return nmo_ckcurvepoint_deserialize_internal(chunk, context, out_state);
+    nmo_curvepoint_state_t *out_state = (nmo_curvepoint_state_t *)instance;
+    return nmo_curvepoint_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckcurvepoint_serialize(
+nmo_status_t nmo_curvepoint_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckcurvepoint_state_t *in_state = (const nmo_ckcurvepoint_state_t *)instance;
-    return nmo_ckcurvepoint_serialize_internal(in_state, out_chunk, context);
+    const nmo_curvepoint_state_t *in_state = (const nmo_curvepoint_state_t *)instance;
+    return nmo_curvepoint_serialize_internal(in_state, out_chunk, context);
 }
 

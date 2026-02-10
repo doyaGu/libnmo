@@ -13,11 +13,11 @@
  * - Bitmap payload identifiers passed to CKBitmapData::ReadFromChunk filter
  */
 
-#include "object/nmo_cksprite_schemas.h"
+#include "object/nmo_sprite_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
-#include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_2dentity_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -32,32 +32,32 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksprite, nmo_cksprite_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sprite, nmo_sprite_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_cksprite_fields[] = {
-    NMO_FIELD_NAMED("entity", offsetof(nmo_cksprite_state_t, entity),
-                    sizeof(nmo_ck2dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_sprite_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_sprite_state_t, entity),
+                    sizeof(nmo_2dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite_state_t, has_sprite_ref, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_cksprite_state_t, sprite_ref_id),
-    NMO_FIELD(nmo_cksprite_state_t, has_bitmap_data, CKPGUID_BOOL),
-    NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_cksprite_state_t, bitmap_data),
+    NMO_FIELD(nmo_sprite_state_t, has_sprite_ref, CKPGUID_BOOL),
+    NMO_FIELD_REF(nmo_sprite_state_t, sprite_ref_id),
+    NMO_FIELD(nmo_sprite_state_t, has_bitmap_data, CKPGUID_BOOL),
+    NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_sprite_state_t, bitmap_data),
                     sizeof(nmo_bitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite_state_t, has_transparency, CKPGUID_BOOL),
-    NMO_FIELD(nmo_cksprite_state_t, is_transparent, CKPGUID_BOOL),
-    NMO_FIELD_NAMED("transparent_color", offsetof(nmo_cksprite_state_t, transparent_color),
+    NMO_FIELD(nmo_sprite_state_t, has_transparency, CKPGUID_BOOL),
+    NMO_FIELD(nmo_sprite_state_t, is_transparent, CKPGUID_BOOL),
+    NMO_FIELD_NAMED("transparent_color", offsetof(nmo_sprite_state_t, transparent_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksprite_state_t, has_slot, CKPGUID_BOOL),
-    NMO_FIELD(nmo_cksprite_state_t, current_slot, CKPGUID_UINT32),
-    NMO_FIELD(nmo_cksprite_state_t, has_save_options, CKPGUID_BOOL),
-    NMO_FIELD(nmo_cksprite_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
-    NMO_FIELD_ARRAY(nmo_cksprite_state_t, bitmap_properties, CKPGUID_UINT8),
-    NMO_FIELD(nmo_cksprite_state_t, bitmap_properties_size, CKPGUID_UINT64)
+    NMO_FIELD(nmo_sprite_state_t, has_slot, CKPGUID_BOOL),
+    NMO_FIELD(nmo_sprite_state_t, current_slot, CKPGUID_UINT32),
+    NMO_FIELD(nmo_sprite_state_t, has_save_options, CKPGUID_BOOL),
+    NMO_FIELD(nmo_sprite_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
+    NMO_FIELD_ARRAY(nmo_sprite_state_t, bitmap_properties, CKPGUID_UINT8),
+    NMO_FIELD(nmo_sprite_state_t, bitmap_properties_size, CKPGUID_UINT64)
 };
 
 /* =============================================================================
@@ -134,7 +134,7 @@ static nmo_status_t nmo_sprite_copy_identifier_payload(
 static nmo_status_t deserialize_file_backed(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cksprite_state_t *out_state)
+    nmo_sprite_state_t *out_state)
 {
     nmo_status_t result;
     nmo_status_t seek_result;
@@ -225,7 +225,7 @@ static nmo_status_t deserialize_file_backed(
 static nmo_status_t deserialize_chunk_only(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cksprite_state_t *out_state)
+    nmo_sprite_state_t *out_state)
 {
     (void)arena;
     nmo_status_t result;
@@ -278,22 +278,22 @@ static nmo_status_t deserialize_chunk_only(
  * Dispatches to file-backed or chunk-only deserializer.
  * Detection heuristic: if bitmap payload identifiers are present, use file-backed path.
  */
-nmo_status_t nmo_cksprite_deserialize(
+nmo_status_t nmo_sprite_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cksprite_state_t *out_state = (nmo_cksprite_state_t *)instance;
+    nmo_sprite_state_t *out_state = (nmo_sprite_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sprite_deserialize");
     }
 
     /* First deserialize parent CK2dEntity data */
-    nmo_status_t result = nmo_ck2dentity_deserialize(
+    nmo_status_t result = nmo_2dentity_deserialize(
         &out_state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
@@ -321,22 +321,22 @@ nmo_status_t nmo_cksprite_deserialize(
  * 
  * Writes sprite data in original format (matches RCKSprite::Save behavior).
  */
-nmo_status_t nmo_cksprite_serialize(
+nmo_status_t nmo_sprite_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cksprite_state_t *in_state = (const nmo_cksprite_state_t *)instance;
+    const nmo_sprite_state_t *in_state = (const nmo_sprite_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksprite_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sprite_serialize");
     }
     
     /* Serialize parent CK2dEntity data */
-    nmo_status_t result = nmo_ck2dentity_serialize(&in_state->entity, out_chunk, NULL, context);
+    nmo_status_t result = nmo_2dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -429,7 +429,7 @@ nmo_status_t nmo_cksprite_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_cksprite_copy_bitmapdata(
+static nmo_status_t nmo_sprite_copy_bitmapdata(
     nmo_arena_t *arena,
     nmo_bitmapdata_t *dst,
     const nmo_bitmapdata_t *src)
@@ -450,14 +450,14 @@ static nmo_status_t nmo_cksprite_copy_bitmapdata(
                                  src->raw_chunk_data, src->raw_chunk_size);
 }
 
-static nmo_status_t cksprite_copy(
+static nmo_status_t nmo_sprite_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_cksprite_state_t *s = src;
-    nmo_cksprite_state_t *d = dst;
+    const nmo_sprite_state_t *s = src;
+    nmo_sprite_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->entity.base.base.base.raw_tail,
                                               s->entity.base.base.base.raw_tail,
@@ -479,7 +479,7 @@ static nmo_status_t cksprite_copy(
                                               s->entity.base.base.legacy_attributes_size));
 
     if (s->has_bitmap_data) {
-        NMO_RETURN_IF_ERROR(nmo_cksprite_copy_bitmapdata(arena, &d->bitmap_data, &s->bitmap_data));
+        NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &d->bitmap_data, &s->bitmap_data));
     } else {
         d->bitmap_data.pixel_data = NULL;
         d->bitmap_data.palette_data = NULL;
@@ -495,14 +495,14 @@ static nmo_status_t cksprite_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t cksprite_validate(
+static nmo_status_t nmo_sprite_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_cksprite_state_t *s = instance;
+    const nmo_sprite_state_t *s = instance;
     if (s->has_bitmap_data) {
         NMO_VALIDATE_BYTES(s->bitmap_data.pixel_data, s->bitmap_data.pixel_data_size,
                            "bitmap_data.pixel_data");
@@ -526,11 +526,11 @@ static nmo_status_t cksprite_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    cksprite,
-    nmo_cksprite_state_t,
-    nmo_cksprite_serialize,
-    nmo_cksprite_deserialize,
-    nmo_cksprite_fields,
+    sprite,
+    nmo_sprite_state_t,
+    nmo_sprite_serialize,
+    nmo_sprite_deserialize,
+    nmo_sprite_fields,
     CKPGUID_SPRITE,
     "CKSprite",
     NMO_CID_SPRITE,

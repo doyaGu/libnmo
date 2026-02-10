@@ -7,7 +7,7 @@
  * Based on official Virtools SDK (reference/src/CKParameterIn.cpp:140-250).
  */
 
-#include "object/nmo_ckparameterin_schemas.h"
+#include "object/nmo_parameterin_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -20,20 +20,20 @@
 #include "nmo_types.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterin, nmo_ckparameterin_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameterin, nmo_parameterin_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckparameterin_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterin_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_parameterin_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_parameterin_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameterin_state_t, type_guid, CKPGUID_GUID),
-    NMO_FIELD_REF(nmo_ckparameterin_state_t, source_id),
-    NMO_FIELD(nmo_ckparameterin_state_t, is_shared, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckparameterin_state_t, is_disabled, CKPGUID_UINT8)
+    NMO_FIELD(nmo_parameterin_state_t, type_guid, CKPGUID_GUID),
+    NMO_FIELD_REF(nmo_parameterin_state_t, source_id),
+    NMO_FIELD(nmo_parameterin_state_t, is_shared, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -45,21 +45,21 @@ static const nmo_type_field_t nmo_ckparameterin_fields[] = {
  *
  * Reference: reference/src/CKParameterIn.cpp:177-250
  */
-nmo_status_t nmo_ckparameterin_deserialize(
+nmo_status_t nmo_parameterin_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckparameterin_state_t *out_state = (nmo_ckparameterin_state_t *)instance;
+    nmo_parameterin_state_t *out_state = (nmo_parameterin_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -133,14 +133,14 @@ nmo_status_t nmo_ckparameterin_deserialize(
  *
  * Reference: reference/src/CKParameterIn.cpp:142-162
  */
-nmo_status_t nmo_ckparameterin_serialize(
+nmo_status_t nmo_parameterin_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckparameterin_state_t *in_state = (const nmo_ckparameterin_state_t *)instance;
+    const nmo_parameterin_state_t *in_state = (const nmo_parameterin_state_t *)instance;
     nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
@@ -148,7 +148,7 @@ nmo_status_t nmo_ckparameterin_serialize(
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Write identifier based on shared/direct source */
@@ -179,11 +179,11 @@ nmo_status_t nmo_ckparameterin_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckparameterin,
-    nmo_ckparameterin_state_t,
-    nmo_ckparameterin_serialize,
-    nmo_ckparameterin_deserialize,
-    nmo_ckparameterin_fields,
+    parameterin,
+    nmo_parameterin_state_t,
+    nmo_parameterin_serialize,
+    nmo_parameterin_deserialize,
+    nmo_parameterin_fields,
     CKPGUID_PARAMETERIN,
     "CKParameterIn",
     NMO_CID_PARAMETERIN,

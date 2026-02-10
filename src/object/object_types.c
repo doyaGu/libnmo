@@ -24,47 +24,47 @@
 #include "format/nmo_chunk_api.h"
 
 /* Schema headers for vtable integration */
-#include "object/nmo_ckobject_schemas.h"
-#include "object/nmo_cksceneobject_schemas.h"
-#include "object/nmo_ckrenderobject_schemas.h"
-#include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_ckparameter_schemas.h"
-#include "object/nmo_ckparameterlocal_schemas.h"
-#include "object/nmo_ckparameterin_schemas.h"
-#include "object/nmo_ckparameterout_schemas.h"
-#include "object/nmo_ckparameteroperation_schemas.h"
-#include "object/nmo_ckbehavior_schemas.h"
-#include "object/nmo_ckbehaviorio_schemas.h"
-#include "object/nmo_ckbehaviorlink_schemas.h"
-#include "object/nmo_ckmesh_schemas.h"
-#include "object/nmo_ckpatchmesh_schemas.h"
-#include "object/nmo_ck3dentity_schemas.h"
-#include "object/nmo_ck3dobject_schemas.h"
-#include "object/nmo_ckcamera_schemas.h"
-#include "object/nmo_cktargetcamera_schemas.h"
-#include "object/nmo_cklight_schemas.h"
-#include "object/nmo_cktargetlight_schemas.h"
-#include "object/nmo_ckcharacter_schemas.h"
-#include "object/nmo_ckcurve_schemas.h"
-#include "object/nmo_cksprite3d_schemas.h"
-#include "object/nmo_ckscene_schemas.h"
-#include "object/nmo_cklevel_schemas.h"
-#include "object/nmo_ckgroup_schemas.h"
-#include "object/nmo_ckdataarray_schemas.h"
-#include "object/nmo_ckanimation_schemas.h"
-#include "object/nmo_ckmaterial_schemas.h"
-#include "object/nmo_cktexture_schemas.h"
-#include "object/nmo_ck2dentity_schemas.h"
-#include "object/nmo_cksprite_schemas.h"
-#include "object/nmo_ckspritetext_schemas.h"
-#include "object/nmo_ckrendercontext_schemas.h"
-#include "object/nmo_ckkinematicchain_schemas.h"
-#include "object/nmo_cksynchro_schemas.h"
-#include "object/nmo_ckplace_schemas.h"
-#include "object/nmo_cksound_schemas.h"
-#include "object/nmo_ckinterfaceobjectmanager_schemas.h"
-#include "object/nmo_ckgrid_schemas.h"
-#include "object/nmo_cklayer_schemas.h"
+#include "object/nmo_object_schemas.h"
+#include "object/nmo_sceneobject_schemas.h"
+#include "object/nmo_renderobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
+#include "object/nmo_parameter_schemas.h"
+#include "object/nmo_parameterlocal_schemas.h"
+#include "object/nmo_parameterin_schemas.h"
+#include "object/nmo_parameterout_schemas.h"
+#include "object/nmo_parameteroperation_schemas.h"
+#include "object/nmo_behavior_schemas.h"
+#include "object/nmo_behaviorio_schemas.h"
+#include "object/nmo_behaviorlink_schemas.h"
+#include "object/nmo_mesh_schemas.h"
+#include "object/nmo_patchmesh_schemas.h"
+#include "object/nmo_3dentity_schemas.h"
+#include "object/nmo_3dobject_schemas.h"
+#include "object/nmo_camera_schemas.h"
+#include "object/nmo_targetcamera_schemas.h"
+#include "object/nmo_light_schemas.h"
+#include "object/nmo_targetlight_schemas.h"
+#include "object/nmo_character_schemas.h"
+#include "object/nmo_curve_schemas.h"
+#include "object/nmo_sprite3d_schemas.h"
+#include "object/nmo_scene_schemas.h"
+#include "object/nmo_level_schemas.h"
+#include "object/nmo_group_schemas.h"
+#include "object/nmo_dataarray_schemas.h"
+#include "object/nmo_animation_schemas.h"
+#include "object/nmo_material_schemas.h"
+#include "object/nmo_texture_schemas.h"
+#include "object/nmo_2dentity_schemas.h"
+#include "object/nmo_sprite_schemas.h"
+#include "object/nmo_spritetext_schemas.h"
+#include "object/nmo_rendercontext_schemas.h"
+#include "object/nmo_kinematicchain_schemas.h"
+#include "object/nmo_synchro_schemas.h"
+#include "object/nmo_place_schemas.h"
+#include "object/nmo_sound_schemas.h"
+#include "object/nmo_interfaceobjectmanager_schemas.h"
+#include "object/nmo_grid_schemas.h"
+#include "object/nmo_layer_schemas.h"
 
 #include <stddef.h>
 #include <stdalign.h>
@@ -79,10 +79,10 @@ nmo_status_t nmo_register_base_object_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckobject_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cksceneobject_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckbeobject_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckrenderobject_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_object_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_sceneobject_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_beobject_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_renderobject_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -95,9 +95,9 @@ nmo_status_t nmo_register_2d_entity_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ck2dentity_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cksprite_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckspritetext_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_2dentity_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_sprite_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_spritetext_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -110,11 +110,11 @@ nmo_status_t nmo_register_3d_entity_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ck3dentity_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ck3dobject_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckcamera_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cklight_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckcharacter_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_3dentity_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_3dobject_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_camera_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_light_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_character_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -127,9 +127,9 @@ nmo_status_t nmo_register_resource_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckmaterial_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cktexture_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckmesh_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_material_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_texture_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_mesh_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -142,9 +142,9 @@ nmo_status_t nmo_register_behavior_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckbehavior_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckbehaviorio_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckbehaviorlink_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_behavior_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_behaviorio_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_behaviorlink_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -157,9 +157,9 @@ static nmo_status_t nmo_register_scene_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckscene_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cklevel_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckgroup_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_scene_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_level_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_group_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -172,7 +172,7 @@ static nmo_status_t nmo_register_data_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckdataarray_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_dataarray_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -185,9 +185,9 @@ static nmo_status_t nmo_register_animation_types(nmo_type_registry_t *registry) 
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckanimation_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckkeyedanimation_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckobjectanimation_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_animation_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_keyedanimation_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_objectanimation_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -200,11 +200,11 @@ nmo_status_t nmo_register_parameter_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckparameter_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckparameterin_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckparameterout_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckparameterlocal_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckparameteroperation_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_parameter_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_parameterin_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_parameterout_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_parameterlocal_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_parameteroperation_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -217,12 +217,12 @@ nmo_status_t nmo_register_extended_3d_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_cktargetcamera_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cktargetlight_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cksprite3d_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckcurve_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckcurvepoint_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckbodypart_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_targetcamera_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_targetlight_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_sprite3d_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_curve_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_curvepoint_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_bodypart_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -235,17 +235,17 @@ nmo_status_t nmo_register_utility_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckrendercontext_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckkinematicchain_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cksynchro_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckstate_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckcriticalsection_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckplace_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cksound_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckwavesound_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckmidisound_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckinterfaceobjectmanager_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_cklayer_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_rendercontext_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_kinematicchain_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_synchro_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_state_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_criticalsection_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_place_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_sound_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_wavesound_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_midisound_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_interfaceobjectmanager_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_layer_type(registry));
 
     NMO_RETURN_OK();
 }
@@ -258,8 +258,8 @@ nmo_status_t nmo_register_mesh_types(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    NMO_RETURN_IF_ERROR(nmo_register_ckgrid_type(registry));
-    NMO_RETURN_IF_ERROR(nmo_register_ckpatchmesh_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_grid_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_patchmesh_type(registry));
 
     NMO_RETURN_OK();
 }

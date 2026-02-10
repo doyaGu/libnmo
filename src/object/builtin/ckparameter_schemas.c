@@ -17,11 +17,11 @@
  * - Support all 5 storage modes from reference implementation
  */
 
-#include "object/nmo_ckparameter_schemas.h"
+#include "object/nmo_parameter_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -33,8 +33,8 @@
 #include "nmo_types.h"
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
-    ckparameter,
-    nmo_ckparameter_state_t,
+    parameter,
+    nmo_parameter_state_t,
     do { \
         state->mode = CKPARAM_MODE_NONE; \
         state->has_state = false; \
@@ -48,19 +48,19 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckparameter_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameter_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_parameter_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_parameter_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameter_state_t, type_guid, CKPGUID_GUID),
-    NMO_FIELD(nmo_ckparameter_state_t, mode, NMO_GUID_ENUM_CK_PARAMETER_MODE),
-    NMO_FIELD(nmo_ckparameter_state_t, has_state, CKPGUID_BOOL),
-    NMO_FIELD_ARRAY(nmo_ckparameter_state_t, buffer_data, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckparameter_state_t, buffer_size, CKPGUID_UINT64),
-    NMO_FIELD_REF(nmo_ckparameter_state_t, object_id),
-    NMO_FIELD(nmo_ckparameter_state_t, manager_guid, CKPGUID_GUID),
-    NMO_FIELD(nmo_ckparameter_state_t, manager_value, CKPGUID_UINT32),
-    NMO_FIELD_OPT(nmo_ckparameter_state_t, subchunk, CKPGUID_STATECHUNK)
+    NMO_FIELD(nmo_parameter_state_t, type_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_parameter_state_t, mode, NMO_GUID_ENUM_CK_PARAMETER_MODE),
+    NMO_FIELD(nmo_parameter_state_t, has_state, CKPGUID_BOOL),
+    NMO_FIELD_ARRAY(nmo_parameter_state_t, buffer_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameter_state_t, buffer_size, CKPGUID_UINT64),
+    NMO_FIELD_REF(nmo_parameter_state_t, object_id),
+    NMO_FIELD(nmo_parameter_state_t, manager_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_parameter_state_t, manager_value, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_parameter_state_t, subchunk, CKPGUID_STATECHUNK)
 };
 
 /* =============================================================================
@@ -87,22 +87,22 @@ static const nmo_type_field_t nmo_ckparameter_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckparameter_deserialize(
+nmo_status_t nmo_parameter_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckparameter_state_t *out_state = (nmo_ckparameter_state_t *)instance;
+    nmo_parameter_state_t *out_state = (nmo_parameter_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameter_deserialize");
     }
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Seek parameter identifier - optional section */
@@ -206,22 +206,22 @@ nmo_status_t nmo_ckparameter_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckparameter_serialize(
+nmo_status_t nmo_parameter_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckparameter_state_t *in_state = (const nmo_ckparameter_state_t *)instance;
+    const nmo_parameter_state_t *in_state = (const nmo_parameter_state_t *)instance;
     nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckparameter_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameter_serialize");
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Write parameter identifier */
@@ -294,28 +294,28 @@ nmo_status_t nmo_ckparameter_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckparameter_copy(
+static nmo_status_t nmo_parameter_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckparameter_state_t *s = src;
-    nmo_ckparameter_state_t *d = dst;
+    const nmo_parameter_state_t *s = src;
+    nmo_parameter_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->buffer_data,
                                               s->buffer_data, s->buffer_size));
     return nmo_object_copy_chunk(arena, &d->subchunk, s->subchunk);
 }
 
-static nmo_status_t ckparameter_validate(
+static nmo_status_t nmo_parameter_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckparameter_state_t *s = instance;
+    const nmo_parameter_state_t *s = instance;
     NMO_VALIDATE_BYTES(s->buffer_data, s->buffer_size, "buffer_data");
     NMO_RETURN_OK();
 }
@@ -325,11 +325,11 @@ static nmo_status_t ckparameter_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckparameter,
-    nmo_ckparameter_state_t,
-    nmo_ckparameter_serialize,
-    nmo_ckparameter_deserialize,
-    nmo_ckparameter_fields,
+    parameter,
+    nmo_parameter_state_t,
+    nmo_parameter_serialize,
+    nmo_parameter_deserialize,
+    nmo_parameter_fields,
     CKPGUID_PARAMETER,
     "CKParameter",
     NMO_CID_PARAMETER,

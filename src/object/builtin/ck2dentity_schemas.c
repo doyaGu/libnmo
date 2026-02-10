@@ -13,11 +13,11 @@
  * - Homogeneous rect flag (0x200) controls coordinate system
  */
 
-#include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_2dentity_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_renderobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -31,28 +31,28 @@
 #include <stddef.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck2dentity, nmo_ck2dentity_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(2dentity, nmo_2dentity_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ck2dentity_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ck2dentity_state_t, base),
-                    sizeof(nmo_ckrenderobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_2dentity_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_2dentity_state_t, base),
+                    sizeof(nmo_renderobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck2dentity_state_t, rect, CKPGUID_RECT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_homogeneous_rect, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ck2dentity_state_t, homogeneous_rect, CKPGUID_RECT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_source_rect, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ck2dentity_state_t, source_rect, CKPGUID_RECT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_z_order, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ck2dentity_state_t, z_order, CKPGUID_INT),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_parent, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_ck2dentity_state_t, parent_id),
-    NMO_FIELD(nmo_ck2dentity_state_t, has_material, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_ck2dentity_state_t, material_id),
-    NMO_FIELD(nmo_ck2dentity_state_t, flags, NMO_GUID_ENUM_CK_2DENTITY_FLAGS)
+    NMO_FIELD(nmo_2dentity_state_t, rect, CKPGUID_RECT),
+    NMO_FIELD(nmo_2dentity_state_t, has_homogeneous_rect, CKPGUID_BOOL),
+    NMO_FIELD(nmo_2dentity_state_t, homogeneous_rect, CKPGUID_RECT),
+    NMO_FIELD(nmo_2dentity_state_t, has_source_rect, CKPGUID_BOOL),
+    NMO_FIELD(nmo_2dentity_state_t, source_rect, CKPGUID_RECT),
+    NMO_FIELD(nmo_2dentity_state_t, has_z_order, CKPGUID_BOOL),
+    NMO_FIELD(nmo_2dentity_state_t, z_order, CKPGUID_INT),
+    NMO_FIELD(nmo_2dentity_state_t, has_parent, CKPGUID_BOOL),
+    NMO_FIELD_REF(nmo_2dentity_state_t, parent_id),
+    NMO_FIELD(nmo_2dentity_state_t, has_material, CKPGUID_BOOL),
+    NMO_FIELD_REF(nmo_2dentity_state_t, material_id),
+    NMO_FIELD(nmo_2dentity_state_t, flags, NMO_GUID_ENUM_CK_2DENTITY_FLAGS)
 };
 
 /* =============================================================================
@@ -122,7 +122,7 @@ static nmo_status_t write_rect(nmo_chunk_t *chunk, const nmo_rect_t *rect)
 static nmo_status_t deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck2dentity_state_t *out_state)
+    nmo_2dentity_state_t *out_state)
 {
     (void)arena;
     nmo_status_t result;
@@ -199,7 +199,7 @@ static nmo_status_t deserialize_modern(
 static nmo_status_t deserialize_legacy(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck2dentity_state_t *out_state)
+    nmo_2dentity_state_t *out_state)
 {
     (void)arena;
     nmo_status_t result;
@@ -318,22 +318,22 @@ source_rect_done:;
  * 
  * Dispatches to modern or legacy deserializer based on chunk data version.
  */
-nmo_status_t nmo_ck2dentity_deserialize(
+nmo_status_t nmo_2dentity_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ck2dentity_state_t *out_state = (nmo_ck2dentity_state_t *)instance;
+    nmo_2dentity_state_t *out_state = (nmo_2dentity_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_2dentity_deserialize");
     }
     
     /* First deserialize parent CKRenderObject data */
-    nmo_status_t result = nmo_ckrenderobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_renderobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -380,7 +380,7 @@ nmo_status_t nmo_ck2dentity_deserialize(
  * Writes identifier 0x10F000 with conditional blocks based on presence flags.
  */
 static nmo_status_t serialize_modern(
-    const nmo_ck2dentity_state_t *state,
+    const nmo_2dentity_state_t *state,
     nmo_chunk_t *chunk)
 {
     nmo_status_t result;
@@ -439,22 +439,22 @@ static nmo_status_t serialize_modern(
  * 
  * Always uses modern format (v5+) for simplicity.
  */
-nmo_status_t nmo_ck2dentity_serialize(
+nmo_status_t nmo_2dentity_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ck2dentity_state_t *in_state = (const nmo_ck2dentity_state_t *)instance;
+    const nmo_2dentity_state_t *in_state = (const nmo_2dentity_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ck2dentity_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_2dentity_serialize");
     }
     
     /* Serialize parent CKRenderObject data */
-    nmo_status_t result = nmo_ckrenderobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_renderobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -481,11 +481,11 @@ nmo_status_t nmo_ck2dentity_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ck2dentity,
-    nmo_ck2dentity_state_t,
-    nmo_ck2dentity_serialize,
-    nmo_ck2dentity_deserialize,
-    nmo_ck2dentity_fields,
+    2dentity,
+    nmo_2dentity_state_t,
+    nmo_2dentity_serialize,
+    nmo_2dentity_deserialize,
+    nmo_2dentity_fields,
     CKPGUID_2DENTITY,
     "CK2dEntity",
     NMO_CID_2DENTITY,

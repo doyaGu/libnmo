@@ -10,11 +10,11 @@
  * Reference: docs/CK2_3D_reverse_notes_extended.md lines 470-850
  */
 
-#include "object/nmo_ckspritetext_schemas.h"
+#include "object/nmo_spritetext_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_2dentity_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_struct_guids.h"
@@ -28,25 +28,25 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckspritetext, nmo_ck_spritetext_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(spritetext, nmo_spritetext_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckspritetext_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ck_spritetext_state_t, base),
-                    sizeof(nmo_ck2dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_spritetext_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_spritetext_state_t, base),
+                    sizeof(nmo_2dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_OPT(nmo_ck_spritetext_state_t, text_content, CKPGUID_STRING),
-    NMO_FIELD_NAMED("font", offsetof(nmo_ck_spritetext_state_t, font),
+    NMO_FIELD_OPT(nmo_spritetext_state_t, text_content, CKPGUID_STRING),
+    NMO_FIELD_NAMED("font", offsetof(nmo_spritetext_state_t, font),
                     sizeof(nmo_font_info_t), NMO_GUID_STRUCT_FONTINFO,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("font_color", offsetof(nmo_ck_spritetext_state_t, font_color),
+    NMO_FIELD_NAMED("font_color", offsetof(nmo_spritetext_state_t, font_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("background_color", offsetof(nmo_ck_spritetext_state_t, background_color),
+    NMO_FIELD_NAMED("background_color", offsetof(nmo_spritetext_state_t, background_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck_spritetext_state_t, needs_redraw, CKPGUID_BOOL)
+    NMO_FIELD(nmo_spritetext_state_t, needs_redraw, CKPGUID_BOOL)
 };
 
 /* ========================================================================
@@ -63,7 +63,7 @@ static int32_t clamp_int32(int32_t value, int32_t min_val, int32_t max_val) {
 }
 
 static void ckspritetext_init_defaults(
-    nmo_ck_spritetext_state_t *state,
+    nmo_spritetext_state_t *state,
     nmo_arena_t *arena)
 {
     state->text_content = nmo_arena_strdup(arena, "");
@@ -87,7 +87,7 @@ static void ckspritetext_init_defaults(
 static nmo_status_t deserialize_text_content(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_spritetext_state_t *state
+    nmo_spritetext_state_t *state
 ) {
     char *text_str = NULL;
     size_t len = nmo_chunk_read_string(chunk, &text_str);
@@ -103,11 +103,11 @@ static nmo_status_t deserialize_text_content(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckspritetext,
-    nmo_ck_spritetext_state_t,
-    nmo_ckspritetext_serialize,
-    nmo_ckspritetext_deserialize,
-    nmo_ckspritetext_fields,
+    spritetext,
+    nmo_spritetext_state_t,
+    nmo_spritetext_serialize,
+    nmo_spritetext_deserialize,
+    nmo_spritetext_fields,
     CKPGUID_SPRITETEXT,
     "CKSpriteText",
     NMO_CID_SPRITETEXT,
@@ -120,7 +120,7 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
 static nmo_status_t deserialize_font_properties(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_spritetext_state_t *state
+    nmo_spritetext_state_t *state
 ) {
     char *font_name = NULL;
     nmo_status_t result;
@@ -168,7 +168,7 @@ static nmo_status_t deserialize_font_properties(
 static nmo_status_t deserialize_colors(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_spritetext_state_t *state
+    nmo_spritetext_state_t *state
 ) {
     (void)arena;
     nmo_status_t result;
@@ -203,7 +203,7 @@ static nmo_status_t deserialize_colors(
 static nmo_status_t ckspritetext_deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_spritetext_state_t *out_state
+    nmo_spritetext_state_t *out_state
 ) {
     nmo_status_t result;
     
@@ -261,7 +261,7 @@ static nmo_status_t ckspritetext_deserialize_modern(
  * - 0x04000000: Colors (always written)
  */
 static nmo_status_t ckspritetext_serialize_modern(
-    const nmo_ck_spritetext_state_t *state,
+    const nmo_spritetext_state_t *state,
     nmo_chunk_t *chunk,
     nmo_arena_t *arena
 ) {
@@ -336,7 +336,7 @@ static nmo_status_t ckspritetext_serialize_modern(
  * - Clears needs_redraw flag
  */
 static nmo_status_t ckspritetext_finish_loading(
-    nmo_ck_spritetext_state_t *state,
+    nmo_spritetext_state_t *state,
     void *context,
     nmo_arena_t *arena
 ) {
@@ -381,22 +381,22 @@ static nmo_status_t ckspritetext_finish_loading(
  * CKSpriteText Deserialization / Serialization
  * ======================================================================== */
 
-nmo_status_t nmo_ckspritetext_deserialize(
+nmo_status_t nmo_spritetext_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ck_spritetext_state_t *out_state = (nmo_ck_spritetext_state_t *)instance;
+    nmo_spritetext_state_t *out_state = (nmo_spritetext_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_ckspritetext_deserialize");
+            "Invalid arguments to nmo_spritetext_deserialize");
     }
 
-    nmo_status_t result = nmo_ck2dentity_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_2dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -409,22 +409,22 @@ nmo_status_t nmo_ckspritetext_deserialize(
     return ckspritetext_finish_loading(out_state, NULL, arena);
 }
 
-nmo_status_t nmo_ckspritetext_serialize(
+nmo_status_t nmo_spritetext_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ck_spritetext_state_t *in_state = (const nmo_ck_spritetext_state_t *)instance;
+    const nmo_spritetext_state_t *in_state = (const nmo_spritetext_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-            "Invalid arguments to nmo_ckspritetext_serialize");
+            "Invalid arguments to nmo_spritetext_serialize");
     }
 
-    nmo_status_t result = nmo_ck2dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_2dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }

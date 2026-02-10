@@ -10,28 +10,28 @@
 #include "session/nmo_ref_graph.h"  /* For NMO_REF_* compatibility macros */
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_ck3dentity_schemas.h"
-#include "object/nmo_ck2dentity_schemas.h"
-#include "object/nmo_ckmesh_schemas.h"
-#include "object/nmo_ckmaterial_schemas.h"
-#include "object/nmo_cktexture_schemas.h"
-#include "object/nmo_ckcamera_schemas.h"
-#include "object/nmo_cklight_schemas.h"
-#include "object/nmo_ckbehavior_schemas.h"
-#include "object/nmo_ckgroup_schemas.h"
-#include "object/nmo_ckscene_schemas.h"
-#include "object/nmo_cklevel_schemas.h"
-#include "object/nmo_ckdataarray_schemas.h"
-#include "object/nmo_ckparameter_schemas.h"
-#include "object/nmo_ckbehaviorlink_schemas.h"
-#include "object/nmo_ckbehaviorio_schemas.h"
-#include "object/nmo_ckplace_schemas.h"
-#include "object/nmo_cksprite_schemas.h"
-#include "object/nmo_cksprite3d_schemas.h"
-#include "object/nmo_ckanimation_schemas.h"
-#include "object/nmo_cksound_schemas.h"
-#include "object/nmo_ckcurve_schemas.h"
+#include "object/nmo_beobject_schemas.h"
+#include "object/nmo_3dentity_schemas.h"
+#include "object/nmo_2dentity_schemas.h"
+#include "object/nmo_mesh_schemas.h"
+#include "object/nmo_material_schemas.h"
+#include "object/nmo_texture_schemas.h"
+#include "object/nmo_camera_schemas.h"
+#include "object/nmo_light_schemas.h"
+#include "object/nmo_behavior_schemas.h"
+#include "object/nmo_group_schemas.h"
+#include "object/nmo_scene_schemas.h"
+#include "object/nmo_level_schemas.h"
+#include "object/nmo_dataarray_schemas.h"
+#include "object/nmo_parameter_schemas.h"
+#include "object/nmo_behaviorlink_schemas.h"
+#include "object/nmo_behaviorio_schemas.h"
+#include "object/nmo_place_schemas.h"
+#include "object/nmo_sprite_schemas.h"
+#include "object/nmo_sprite3d_schemas.h"
+#include "object/nmo_animation_schemas.h"
+#include "object/nmo_sound_schemas.h"
+#include "object/nmo_curve_schemas.h"
 
 #include <string.h>
 
@@ -213,7 +213,7 @@ NMO_API nmo_status_t nmo_ref_enum_beobject(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckbeobject_state_t *beobj = (const nmo_ckbeobject_state_t *)state;
+    const nmo_beobject_state_t *beobj = (const nmo_beobject_state_t *)state;
     (void)obj;
     
     /* Scripts */
@@ -236,7 +236,7 @@ NMO_API nmo_status_t nmo_ref_enum_3dentity(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ck3dentity_state_t *entity = (const nmo_ck3dentity_state_t *)state;
+    const nmo_3dentity_state_t *entity = (const nmo_3dentity_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &entity->base.base, visitor, user_data);
@@ -285,7 +285,7 @@ NMO_API nmo_status_t nmo_ref_enum_mesh(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ck_mesh_state_t *mesh = (const nmo_ck_mesh_state_t *)state;
+    const nmo_mesh_state_t *mesh = (const nmo_mesh_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &mesh->beobject, visitor, user_data);
@@ -325,7 +325,7 @@ NMO_API nmo_status_t nmo_ref_enum_material(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ck_material_state_t *mat = (const nmo_ck_material_state_t *)state;
+    const nmo_material_state_t *mat = (const nmo_material_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &mat->base, visitor, user_data);
@@ -355,7 +355,7 @@ NMO_API nmo_status_t nmo_ref_enum_behavior(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckbehavior_state_t *beh = (const nmo_ckbehavior_state_t *)state;
+    const nmo_behavior_state_t *beh = (const nmo_behavior_state_t *)state;
     (void)obj;
     
     /* Owner */
@@ -408,7 +408,7 @@ NMO_API nmo_status_t nmo_ref_enum_group(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckgroup_state_t *group = (const nmo_ckgroup_state_t *)state;
+    const nmo_group_state_t *group = (const nmo_group_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &group->base, visitor, user_data);
@@ -432,7 +432,7 @@ NMO_API nmo_status_t nmo_ref_enum_scene(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckscene_state_t *scene = (const nmo_ckscene_state_t *)state;
+    const nmo_scene_state_t *scene = (const nmo_scene_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &scene->base, visitor, user_data);
@@ -467,7 +467,7 @@ NMO_API nmo_status_t nmo_ref_enum_level(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_cklevel_state_t *level = (const nmo_cklevel_state_t *)state;
+    const nmo_level_state_t *level = (const nmo_level_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &level->base, visitor, user_data);
@@ -497,7 +497,7 @@ NMO_API nmo_status_t nmo_ref_enum_dataarray(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckdataarray_state_t *arr = (const nmo_ckdataarray_state_t *)state;
+    const nmo_dataarray_state_t *arr = (const nmo_dataarray_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &arr->base, visitor, user_data);
@@ -512,7 +512,7 @@ NMO_API nmo_status_t nmo_ref_enum_dataarray(
             if (!r->cells) continue;
             
             for (uint32_t col = 0; col < arr->column_count && col < r->column_count; ++col) {
-                nmo_ck_arraytype_t type = arr->column_formats[col].type;
+                nmo_arraytype_t type = arr->column_formats[col].type;
                 nmo_object_id_t ref_id = 0;
                 
                 if (type == CKARRAYTYPE_OBJECT) {
@@ -543,7 +543,7 @@ NMO_API nmo_status_t nmo_ref_enum_parameter(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckparameter_state_t *param = (const nmo_ckparameter_state_t *)state;
+    const nmo_parameter_state_t *param = (const nmo_parameter_state_t *)state;
     (void)obj;
     
     /* Object mode reference */
@@ -563,7 +563,7 @@ NMO_API nmo_status_t nmo_ref_enum_behaviorlink(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckbehaviorlink_state_t *link = (const nmo_ckbehaviorlink_state_t *)state;
+    const nmo_behaviorlink_state_t *link = (const nmo_behaviorlink_state_t *)state;
     (void)obj;
     
     /* Input IO */
@@ -602,7 +602,7 @@ static nmo_status_t nmo_ref_enum_camera(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckcamera_state_t *cam = (const nmo_ckcamera_state_t *)state;
+    const nmo_camera_state_t *cam = (const nmo_camera_state_t *)state;
     
     /* 3DEntity base refs */
     return nmo_ref_enum_3dentity(obj, &cam->entity, visitor, user_data);
@@ -617,7 +617,7 @@ static nmo_status_t nmo_ref_enum_light(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_cklight_state_t *light = (const nmo_cklight_state_t *)state;
+    const nmo_light_state_t *light = (const nmo_light_state_t *)state;
     
     /* 3DEntity base refs */
     return nmo_ref_enum_3dentity(obj, &light->entity, visitor, user_data);
@@ -632,7 +632,7 @@ static nmo_status_t nmo_ref_enum_place(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckplace_state_t *place = (const nmo_ckplace_state_t *)state;
+    const nmo_place_state_t *place = (const nmo_place_state_t *)state;
     
     /* First enumerate BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &place->base, visitor, user_data);
@@ -680,7 +680,7 @@ static nmo_status_t nmo_ref_enum_2dentity(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ck2dentity_state_t *entity = (const nmo_ck2dentity_state_t *)state;
+    const nmo_2dentity_state_t *entity = (const nmo_2dentity_state_t *)state;
     
     /* BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &entity->base.base, visitor, user_data);
@@ -710,7 +710,7 @@ static nmo_status_t nmo_ref_enum_sprite(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_cksprite_state_t *sprite = (const nmo_cksprite_state_t *)state;
+    const nmo_sprite_state_t *sprite = (const nmo_sprite_state_t *)state;
     
     /* 2DEntity base refs */
     nmo_status_t status = nmo_ref_enum_2dentity(obj, &sprite->entity, visitor, user_data);
@@ -735,7 +735,7 @@ static nmo_status_t nmo_ref_enum_texture(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_cktexture_state_t *tex = (const nmo_cktexture_state_t *)state;
+    const nmo_texture_state_t *tex = (const nmo_texture_state_t *)state;
     
     /* BeObject base refs only */
     return nmo_ref_enum_beobject(obj, &tex->base, visitor, user_data);
@@ -750,7 +750,7 @@ static nmo_status_t nmo_ref_enum_animation(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckanimation_state_t *anim = (const nmo_ckanimation_state_t *)state;
+    const nmo_animation_state_t *anim = (const nmo_animation_state_t *)state;
     (void)obj;
     
     /* Root entity */
@@ -775,7 +775,7 @@ static nmo_status_t nmo_ref_enum_keyedanimation(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckkeyedanimation_state_t *anim = (const nmo_ckkeyedanimation_state_t *)state;
+    const nmo_keyedanimation_state_t *anim = (const nmo_keyedanimation_state_t *)state;
     
     /* Base animation refs */
     nmo_status_t status = nmo_ref_enum_animation(obj, &anim->base, visitor, user_data);
@@ -808,7 +808,7 @@ static nmo_status_t nmo_ref_enum_objectanimation(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckobjectanimation_state_t *anim = (const nmo_ckobjectanimation_state_t *)state;
+    const nmo_objectanimation_state_t *anim = (const nmo_objectanimation_state_t *)state;
     (void)obj;
     
     /* Entity */
@@ -837,7 +837,7 @@ static nmo_status_t nmo_ref_enum_wavesound(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckwavesound_state_t *sound = (const nmo_ckwavesound_state_t *)state;
+    const nmo_wavesound_state_t *sound = (const nmo_wavesound_state_t *)state;
     
     /* BeObject base refs */
     nmo_status_t status = nmo_ref_enum_beobject(obj, &sound->base.base, visitor, user_data);
@@ -860,7 +860,7 @@ static nmo_status_t nmo_ref_enum_curve(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_ckcurve_state_t *curve = (const nmo_ckcurve_state_t *)state;
+    const nmo_curve_state_t *curve = (const nmo_curve_state_t *)state;
     
     /* 3DEntity base refs */
     nmo_status_t status = nmo_ref_enum_3dentity(obj, &curve->base, visitor, user_data);
@@ -895,7 +895,7 @@ static nmo_status_t nmo_ref_enum_sprite3d(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_cksprite3d_state_t *sprite = (const nmo_cksprite3d_state_t *)state;
+    const nmo_sprite3d_state_t *sprite = (const nmo_sprite3d_state_t *)state;
     
     /* 3DEntity base refs */
     nmo_status_t status = nmo_ref_enum_3dentity(obj, &sprite->base, visitor, user_data);

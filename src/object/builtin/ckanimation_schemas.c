@@ -3,7 +3,7 @@
  * @brief CKAnimation, CKKeyedAnimation, CKObjectAnimation schema implementation
  */
 
-#include "object/nmo_ckanimation_schemas.h"
+#include "object/nmo_animation_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
@@ -19,9 +19,9 @@
 #include <string.h>
 #include <stddef.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckanimation, nmo_ckanimation_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckkeyedanimation, nmo_ckkeyedanimation_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckobjectanimation, nmo_ckobjectanimation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(animation, nmo_animation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(keyedanimation, nmo_keyedanimation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(objectanimation, nmo_objectanimation_state_t)
 
 /* CKAnimation flag bits (subset used during legacy load) */
 #define CKANIMATION_LINKTOFRAMERATE       0x00000001u
@@ -32,66 +32,66 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckobjectanimation, nmo_ckobjectanimation_stat
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckanimation_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckanimation_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_animation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_animation_state_t, base),
+                    sizeof(nmo_sceneobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckanimation_state_t, has_data, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckanimation_state_t, flags, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckanimation_state_t, frame_rate, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckanimation_state_t, has_length, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckanimation_state_t, length, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckanimation_state_t, has_root_entity, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_ckanimation_state_t, root_entity_id),
-    NMO_FIELD(nmo_ckanimation_state_t, has_character, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_ckanimation_state_t, character_id),
-    NMO_FIELD(nmo_ckanimation_state_t, has_current_step, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckanimation_state_t, current_step, CKPGUID_FLOAT)
+    NMO_FIELD(nmo_animation_state_t, has_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_animation_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_animation_state_t, frame_rate, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_animation_state_t, has_length, CKPGUID_UINT8),
+    NMO_FIELD(nmo_animation_state_t, length, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_animation_state_t, has_root_entity, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_animation_state_t, root_entity_id),
+    NMO_FIELD(nmo_animation_state_t, has_character, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_animation_state_t, character_id),
+    NMO_FIELD(nmo_animation_state_t, has_current_step, CKPGUID_UINT8),
+    NMO_FIELD(nmo_animation_state_t, current_step, CKPGUID_FLOAT)
 };
 
-static const nmo_type_field_t nmo_ckkeyedanimation_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckkeyedanimation_state_t, base),
-                    sizeof(nmo_ckanimation_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_keyedanimation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_keyedanimation_state_t, base),
+                    sizeof(nmo_animation_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckkeyedanimation_state_t, animation_ids),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, has_merge, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, merged, CKPGUID_INT),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, merge_factor, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckkeyedanimation_state_t, subanim_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckkeyedanimation_state_t, subanims, NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM)
+    NMO_FIELD(nmo_keyedanimation_state_t, animation_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_keyedanimation_state_t, animation_ids),
+    NMO_FIELD(nmo_keyedanimation_state_t, has_merge, CKPGUID_UINT8),
+    NMO_FIELD(nmo_keyedanimation_state_t, merged, CKPGUID_INT),
+    NMO_FIELD(nmo_keyedanimation_state_t, merge_factor, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_keyedanimation_state_t, subanim_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_keyedanimation_state_t, subanims, NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM)
 };
 
-static const nmo_type_field_t nmo_ckobjectanimation_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckobjectanimation_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_objectanimation_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_objectanimation_state_t, base),
+                    sizeof(nmo_sceneobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, format, NMO_GUID_ENUM_CK_OBJECTANIMATION_FORMAT),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, root_pos, CKPGUID_VECTOR),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_root_pos, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, flags, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, entity_id),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_length, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, length, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_merge, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, merge_factor, CKPGUID_FLOAT),
-    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, anim1_id),
-    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, anim2_id),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_shared_anim, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_ckobjectanimation_state_t, shared_anim_id),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, has_morph_counts, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_vertex_count, CKPGUID_INT),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, morph_key_count, CKPGUID_INT),
-    NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_ckobjectanimation_state_t, raw_tail),
+    NMO_FIELD(nmo_objectanimation_state_t, format, NMO_GUID_ENUM_CK_OBJECTANIMATION_FORMAT),
+    NMO_FIELD(nmo_objectanimation_state_t, root_pos, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_objectanimation_state_t, has_root_pos, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD_REF(nmo_objectanimation_state_t, entity_id),
+    NMO_FIELD(nmo_objectanimation_state_t, has_length, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, length, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_objectanimation_state_t, has_merge, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, merge_factor, CKPGUID_FLOAT),
+    NMO_FIELD_REF(nmo_objectanimation_state_t, anim1_id),
+    NMO_FIELD_REF(nmo_objectanimation_state_t, anim2_id),
+    NMO_FIELD(nmo_objectanimation_state_t, has_shared_anim, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_objectanimation_state_t, shared_anim_id),
+    NMO_FIELD(nmo_objectanimation_state_t, has_morph_counts, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, morph_vertex_count, CKPGUID_INT),
+    NMO_FIELD(nmo_objectanimation_state_t, morph_key_count, CKPGUID_INT),
+    NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_objectanimation_state_t, raw_tail),
                           sizeof(void *), CKPGUID_UINT8, NMO_FIELD_OPTIONAL, 0),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, raw_tail_size, CKPGUID_UINT64)
+    NMO_FIELD(nmo_objectanimation_state_t, raw_tail_size, CKPGUID_UINT64)
 };
 
 /* =============================================================================
  * IDENTIFIER HELPERS
  * ============================================================================= */
 
-static size_t nmo_ckanimation_identifier_remaining_dwords(nmo_chunk_t *chunk)
+static size_t nmo_animation_identifier_remaining_dwords(nmo_chunk_t *chunk)
 {
     if (!chunk || !chunk->parser_state) {
         return 0;
@@ -127,7 +127,7 @@ static nmo_status_t read_object_id_array(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckanimation_copy(
+static nmo_status_t nmo_animation_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
@@ -136,7 +136,7 @@ static nmo_status_t ckanimation_copy(
     return nmo_object_default_copy(src, dst, type, arena);
 }
 
-static nmo_status_t ckanimation_validate(
+static nmo_status_t nmo_animation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -147,14 +147,14 @@ static nmo_status_t ckanimation_validate(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckkeyedanimation_copy(
+static nmo_status_t nmo_keyedanimation_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckkeyedanimation_state_t *s = src;
-    nmo_ckkeyedanimation_state_t *d = dst;
+    const nmo_keyedanimation_state_t *s = src;
+    nmo_keyedanimation_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->animation_ids,
                                               s->animation_ids, sizeof(nmo_object_id_t), s->animation_count));
@@ -171,40 +171,40 @@ static nmo_status_t ckkeyedanimation_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckkeyedanimation_validate(
+static nmo_status_t nmo_keyedanimation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckkeyedanimation_state_t *s = instance;
+    const nmo_keyedanimation_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->animation_ids, s->animation_count, "animation_ids");
     NMO_VALIDATE_COUNT(s->subanims, s->subanim_count, "subanims");
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckobjectanimation_copy(
+static nmo_status_t nmo_objectanimation_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckobjectanimation_state_t *s = src;
-    nmo_ckobjectanimation_state_t *d = dst;
+    const nmo_objectanimation_state_t *s = src;
+    nmo_objectanimation_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     return nmo_object_copy_bytes(arena, (void **)&d->raw_tail,
                                  s->raw_tail, s->raw_tail_size);
 }
 
-static nmo_status_t ckobjectanimation_validate(
+static nmo_status_t nmo_objectanimation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckobjectanimation_state_t *s = instance;
+    const nmo_objectanimation_state_t *s = instance;
     NMO_VALIDATE_BYTES(s->raw_tail, s->raw_tail_size, "raw_tail");
     NMO_RETURN_OK();
 }
@@ -214,11 +214,11 @@ static nmo_status_t ckobjectanimation_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckanimation,
-    nmo_ckanimation_state_t,
-    nmo_ckanimation_serialize,
-    nmo_ckanimation_deserialize,
-    nmo_ckanimation_fields,
+    animation,
+    nmo_animation_state_t,
+    nmo_animation_serialize,
+    nmo_animation_deserialize,
+    nmo_animation_fields,
     CKPGUID_ANIMATION,
     "CKAnimation",
     NMO_CID_ANIMATION,
@@ -226,11 +226,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckkeyedanimation,
-    nmo_ckkeyedanimation_state_t,
-    nmo_ckkeyedanimation_serialize,
-    nmo_ckkeyedanimation_deserialize,
-    nmo_ckkeyedanimation_fields,
+    keyedanimation,
+    nmo_keyedanimation_state_t,
+    nmo_keyedanimation_serialize,
+    nmo_keyedanimation_deserialize,
+    nmo_keyedanimation_fields,
     CKPGUID_KEYEDANIMATION,
     "CKKeyedAnimation",
     NMO_CID_KEYEDANIMATION,
@@ -238,11 +238,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckobjectanimation,
-    nmo_ckobjectanimation_state_t,
-    nmo_ckobjectanimation_serialize,
-    nmo_ckobjectanimation_deserialize,
-    nmo_ckobjectanimation_fields,
+    objectanimation,
+    nmo_objectanimation_state_t,
+    nmo_objectanimation_serialize,
+    nmo_objectanimation_deserialize,
+    nmo_objectanimation_fields,
     CKPGUID_OBJECTANIMATION,
     "CKObjectAnimation",
     NMO_CID_OBJECTANIMATION,
@@ -289,24 +289,24 @@ static void read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
     *out_size = remaining_bytes;
 }
 
-static nmo_status_t nmo_ckanimation_deserialize_internal(
+static nmo_status_t nmo_animation_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckanimation_state_t *out_state)
+    nmo_animation_state_t *out_state)
 {
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckanimation_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_animation_deserialize");
     }
 
     {
-        nmo_status_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
+        nmo_status_t result = nmo_sceneobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONDATA) == NMO_OK) {
         out_state->has_data = 1;
 
-        size_t remaining_dwords = nmo_ckanimation_identifier_remaining_dwords(chunk);
+        size_t remaining_dwords = nmo_animation_identifier_remaining_dwords(chunk);
         if (remaining_dwords == 3) {
             int32_t can_interrupt = 0;
             int32_t linked_to_framerate = 0;
@@ -367,17 +367,17 @@ static nmo_status_t nmo_ckanimation_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckanimation_serialize_internal(
-    const nmo_ckanimation_state_t *in_state,
+static nmo_status_t nmo_animation_serialize_internal(
+    const nmo_animation_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckanimation_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_animation_serialize");
     }
 
     {
-        nmo_status_t result = nmo_cksceneobject_serialize(&in_state->base, out_chunk, NULL, context);
+        nmo_status_t result = nmo_sceneobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
@@ -423,19 +423,19 @@ static nmo_status_t nmo_ckanimation_serialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckkeyedanimation_deserialize_internal(
+static nmo_status_t nmo_keyedanimation_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckkeyedanimation_state_t *out_state)
+    nmo_keyedanimation_state_t *out_state)
 {
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkeyedanimation_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_keyedanimation_deserialize");
     }
 
-    NMO_RETURN_IF_ERROR(nmo_ckkeyedanimation_create(out_state, NULL, context));
+    NMO_RETURN_IF_ERROR(nmo_keyedanimation_create(out_state, NULL, context));
 
-    nmo_status_t result = nmo_ckanimation_deserialize_internal(chunk, context, &out_state->base);
+    nmo_status_t result = nmo_animation_deserialize_internal(chunk, context, &out_state->base);
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMANIMLIST) == NMO_OK) {
@@ -473,17 +473,17 @@ static nmo_status_t nmo_ckkeyedanimation_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckkeyedanimation_serialize_internal(
-    const nmo_ckkeyedanimation_state_t *in_state,
+static nmo_status_t nmo_keyedanimation_serialize_internal(
+    const nmo_keyedanimation_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkeyedanimation_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_keyedanimation_serialize");
     }
 
-    nmo_status_t result = nmo_ckanimation_serialize_internal(&in_state->base, out_chunk, context);
+    nmo_status_t result = nmo_animation_serialize_internal(&in_state->base, out_chunk, context);
     if (result != NMO_OK) return result;
 
     if (in_state->animation_count > 0 && in_state->animation_ids) {
@@ -523,20 +523,20 @@ static nmo_status_t nmo_ckkeyedanimation_serialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
+static nmo_status_t nmo_objectanimation_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
-    nmo_ckobjectanimation_state_t *out_state)
+    nmo_objectanimation_state_t *out_state)
 {
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobjectanimation_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_objectanimation_deserialize");
     }
 
-    NMO_RETURN_IF_ERROR(nmo_ckobjectanimation_create(out_state, NULL, context));
+    NMO_RETURN_IF_ERROR(nmo_objectanimation_create(out_state, NULL, context));
 
     {
-        nmo_status_t result = nmo_cksceneobject_deserialize(&out_state->base, chunk, NULL, context);
+        nmo_status_t result = nmo_sceneobject_deserialize(&out_state->base, chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
@@ -621,17 +621,17 @@ static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_ckobjectanimation_serialize_internal(
-    const nmo_ckobjectanimation_state_t *in_state,
+static nmo_status_t nmo_objectanimation_serialize_internal(
+    const nmo_objectanimation_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckobjectanimation_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_objectanimation_serialize");
     }
 
     {
-        nmo_status_t result = nmo_cksceneobject_serialize(&in_state->base, out_chunk, NULL, context);
+        nmo_status_t result = nmo_sceneobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
@@ -729,71 +729,71 @@ static nmo_status_t nmo_ckobjectanimation_serialize_internal(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckanimation_deserialize(
+nmo_status_t nmo_animation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckanimation_state_t *out_state = (nmo_ckanimation_state_t *)instance;
-    return nmo_ckanimation_deserialize_internal(chunk, context, out_state);
+    nmo_animation_state_t *out_state = (nmo_animation_state_t *)instance;
+    return nmo_animation_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckanimation_serialize(
+nmo_status_t nmo_animation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckanimation_state_t *in_state = (const nmo_ckanimation_state_t *)instance;
-    return nmo_ckanimation_serialize_internal(in_state, out_chunk, context);
+    const nmo_animation_state_t *in_state = (const nmo_animation_state_t *)instance;
+    return nmo_animation_serialize_internal(in_state, out_chunk, context);
 }
 
-nmo_status_t nmo_ckkeyedanimation_deserialize(
+nmo_status_t nmo_keyedanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckkeyedanimation_state_t *out_state = (nmo_ckkeyedanimation_state_t *)instance;
-    return nmo_ckkeyedanimation_deserialize_internal(chunk, context, out_state);
+    nmo_keyedanimation_state_t *out_state = (nmo_keyedanimation_state_t *)instance;
+    return nmo_keyedanimation_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckkeyedanimation_serialize(
+nmo_status_t nmo_keyedanimation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckkeyedanimation_state_t *in_state =
-        (const nmo_ckkeyedanimation_state_t *)instance;
-    return nmo_ckkeyedanimation_serialize_internal(in_state, out_chunk, context);
+    const nmo_keyedanimation_state_t *in_state =
+        (const nmo_keyedanimation_state_t *)instance;
+    return nmo_keyedanimation_serialize_internal(in_state, out_chunk, context);
 }
 
-nmo_status_t nmo_ckobjectanimation_deserialize(
+nmo_status_t nmo_objectanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckobjectanimation_state_t *out_state = (nmo_ckobjectanimation_state_t *)instance;
-    return nmo_ckobjectanimation_deserialize_internal(chunk, context, out_state);
+    nmo_objectanimation_state_t *out_state = (nmo_objectanimation_state_t *)instance;
+    return nmo_objectanimation_deserialize_internal(chunk, context, out_state);
 }
 
-nmo_status_t nmo_ckobjectanimation_serialize(
+nmo_status_t nmo_objectanimation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckobjectanimation_state_t *in_state =
-        (const nmo_ckobjectanimation_state_t *)instance;
-    return nmo_ckobjectanimation_serialize_internal(in_state, out_chunk, context);
+    const nmo_objectanimation_state_t *in_state =
+        (const nmo_objectanimation_state_t *)instance;
+    return nmo_objectanimation_serialize_internal(in_state, out_chunk, context);
 }
 

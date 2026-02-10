@@ -9,11 +9,11 @@
  * - No additional serialized fields beyond CK3dEntity
  */
 
-#include "object/nmo_ck3dobject_schemas.h"
+#include "object/nmo_3dobject_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_3dentity_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -24,15 +24,15 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ck3dobject, nmo_ck3dobject_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(3dobject, nmo_3dobject_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ck3dobject_fields[] = {
-    NMO_FIELD_NAMED("entity", offsetof(nmo_ck3dobject_state_t, entity),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_3dobject_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_3dobject_state_t, entity),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -50,21 +50,21 @@ static const nmo_type_field_t nmo_ck3dobject_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ck3dobject_deserialize(
+nmo_status_t nmo_3dobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ck3dobject_state_t *out_state = (nmo_ck3dobject_state_t *)instance;
+    nmo_3dobject_state_t *out_state = (nmo_3dobject_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dObject deserialize");
     }
 
-    return nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
+    return nmo_3dentity_deserialize(&out_state->entity, chunk, NULL, context);
 }
 
 /* =============================================================================
@@ -79,21 +79,21 @@ nmo_status_t nmo_ck3dobject_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ck3dobject_serialize(
+nmo_status_t nmo_3dobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ck3dobject_state_t *in_state = (const nmo_ck3dobject_state_t *)instance;
+    const nmo_3dobject_state_t *in_state = (const nmo_3dobject_state_t *)instance;
         nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dObject serialize");
     }
 
-    return nmo_ck3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
+    return nmo_3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
 }
 
 
@@ -107,7 +107,7 @@ nmo_status_t nmo_ck3dobject_serialize(
  * @param repository Object repository for reference resolution
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ck3dobject_finish_loading(
+nmo_status_t nmo_3dobject_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -124,12 +124,12 @@ nmo_status_t nmo_ck3dobject_finish_loading(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    ck3dobject,
-    nmo_ck3dobject_state_t,
-    nmo_ck3dobject_serialize,
-    nmo_ck3dobject_deserialize,
-    nmo_ck3dobject_finish_loading,
-    nmo_ck3dobject_fields,
+    3dobject,
+    nmo_3dobject_state_t,
+    nmo_3dobject_serialize,
+    nmo_3dobject_deserialize,
+    nmo_3dobject_finish_loading,
+    nmo_3dobject_fields,
     CKPGUID_OBJECT3D,
     "CK3dObject",
     NMO_CID_3DOBJECT,

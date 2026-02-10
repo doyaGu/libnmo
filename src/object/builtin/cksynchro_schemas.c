@@ -3,7 +3,7 @@
  * @brief CKSynchroObject/CKStateObject/CKCriticalSectionObject schemas
  */
 
-#include "object/nmo_cksynchro_schemas.h"
+#include "object/nmo_synchro_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -16,71 +16,71 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksynchro, nmo_cksynchro_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckstate, nmo_ckstate_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcriticalsection, nmo_ckcriticalsection_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(synchro, nmo_synchro_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(state, nmo_state_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(criticalsection, nmo_criticalsection_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_cksynchro_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_cksynchro_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_synchro_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_synchro_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksynchro_state_t, max_waiters, CKPGUID_INT),
-    NMO_FIELD_REF_ARRAY(nmo_cksynchro_state_t, arrived_ids),
-    NMO_FIELD(nmo_cksynchro_state_t, arrived_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_cksynchro_state_t, passed_ids),
-    NMO_FIELD(nmo_cksynchro_state_t, passed_count, CKPGUID_UINT32)
+    NMO_FIELD(nmo_synchro_state_t, max_waiters, CKPGUID_INT),
+    NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, arrived_ids),
+    NMO_FIELD(nmo_synchro_state_t, arrived_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, passed_ids),
+    NMO_FIELD(nmo_synchro_state_t, passed_count, CKPGUID_UINT32)
 };
 
-static const nmo_type_field_t nmo_ckstate_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckstate_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_state_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_state_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckstate_state_t, event_flag, CKPGUID_INT)
+    NMO_FIELD(nmo_state_state_t, event_flag, CKPGUID_INT)
 };
 
-static const nmo_type_field_t nmo_ckcriticalsection_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckcriticalsection_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_criticalsection_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_criticalsection_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_ckcriticalsection_state_t, object_in_section_id)
+    NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section_id)
 };
 
 static nmo_status_t deserialize_ckobject_base(
-    nmo_ckobject_state_t *out_base,
+    nmo_object_state_t *out_base,
     nmo_chunk_t *chunk,
     void *context)
 {
-    return nmo_ckobject_deserialize(out_base, chunk, NULL, context);
+    return nmo_object_deserialize(out_base, chunk, NULL, context);
 }
 
 static nmo_status_t serialize_ckobject_base(
-    const nmo_ckobject_state_t *base,
+    const nmo_object_state_t *base,
     nmo_chunk_t *chunk,
     void *context)
 {
-    return nmo_ckobject_serialize(base, chunk, NULL, context);
+    return nmo_object_serialize(base, chunk, NULL, context);
 }
 
 /* =============================================================================
  * CKSynchroObject
  * ============================================================================= */
 
-nmo_status_t nmo_cksynchro_deserialize(
+nmo_status_t nmo_synchro_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cksynchro_state_t *out_state = (nmo_cksynchro_state_t *)instance;
+    nmo_synchro_state_t *out_state = (nmo_synchro_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksynchro_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_deserialize");
     }
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
@@ -124,11 +124,11 @@ nmo_status_t nmo_cksynchro_deserialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    cksynchro,
-    nmo_cksynchro_state_t,
-    nmo_cksynchro_serialize,
-    nmo_cksynchro_deserialize,
-    nmo_cksynchro_fields,
+    synchro,
+    nmo_synchro_state_t,
+    nmo_synchro_serialize,
+    nmo_synchro_deserialize,
+    nmo_synchro_fields,
     CKPGUID_SYNCHRO,
     "CKSynchroObject",
     NMO_CID_SYNCHRO,
@@ -136,11 +136,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckstate,
-    nmo_ckstate_state_t,
-    nmo_ckstate_serialize,
-    nmo_ckstate_deserialize,
-    nmo_ckstate_fields,
+    state,
+    nmo_state_state_t,
+    nmo_state_serialize,
+    nmo_state_deserialize,
+    nmo_state_fields,
     CKPGUID_STATE,
     "CKStateObject",
     NMO_CID_STATE,
@@ -148,28 +148,28 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckcriticalsection,
-    nmo_ckcriticalsection_state_t,
-    nmo_ckcriticalsection_serialize,
-    nmo_ckcriticalsection_deserialize,
-    nmo_ckcriticalsection_fields,
+    criticalsection,
+    nmo_criticalsection_state_t,
+    nmo_criticalsection_serialize,
+    nmo_criticalsection_deserialize,
+    nmo_criticalsection_fields,
     CKPGUID_CRITICALSECTION,
     "CKCriticalSectionObject",
     NMO_CID_CRITICALSECTION,
     CKPGUID_OBJECT
 )
 
-nmo_status_t nmo_cksynchro_serialize(
+nmo_status_t nmo_synchro_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cksynchro_state_t *in_state = (const nmo_cksynchro_state_t *)instance;
+    const nmo_synchro_state_t *in_state = (const nmo_synchro_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksynchro_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_serialize");
     }
 
     nmo_status_t result = serialize_ckobject_base(&in_state->base, out_chunk, context);
@@ -200,17 +200,17 @@ nmo_status_t nmo_cksynchro_serialize(
  * CKStateObject
  * ============================================================================= */
 
-nmo_status_t nmo_ckstate_deserialize(
+nmo_status_t nmo_state_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckstate_state_t *out_state = (nmo_ckstate_state_t *)instance;
+    nmo_state_state_t *out_state = (nmo_state_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckstate_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_state_deserialize");
     }
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
@@ -223,17 +223,17 @@ nmo_status_t nmo_ckstate_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckstate_serialize(
+nmo_status_t nmo_state_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckstate_state_t *in_state = (const nmo_ckstate_state_t *)instance;
+    const nmo_state_state_t *in_state = (const nmo_state_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckstate_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_state_serialize");
     }
 
     nmo_status_t result = serialize_ckobject_base(&in_state->base, out_chunk, context);
@@ -249,17 +249,17 @@ nmo_status_t nmo_ckstate_serialize(
  * CKCriticalSectionObject
  * ============================================================================= */
 
-nmo_status_t nmo_ckcriticalsection_deserialize(
+nmo_status_t nmo_criticalsection_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckcriticalsection_state_t *out_state = (nmo_ckcriticalsection_state_t *)instance;
+    nmo_criticalsection_state_t *out_state = (nmo_criticalsection_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcriticalsection_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_criticalsection_deserialize");
     }
 
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
@@ -272,17 +272,17 @@ nmo_status_t nmo_ckcriticalsection_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckcriticalsection_serialize(
+nmo_status_t nmo_criticalsection_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckcriticalsection_state_t *in_state = (const nmo_ckcriticalsection_state_t *)instance;
+    const nmo_criticalsection_state_t *in_state = (const nmo_criticalsection_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckcriticalsection_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_criticalsection_serialize");
     }
 
     nmo_status_t result = serialize_ckobject_base(&in_state->base, out_chunk, context);

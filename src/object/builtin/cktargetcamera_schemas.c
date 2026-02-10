@@ -3,7 +3,7 @@
  * @brief CKTargetCamera schema implementation
  */
 
-#include "object/nmo_cktargetcamera_schemas.h"
+#include "object/nmo_targetcamera_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
@@ -15,30 +15,30 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cktargetcamera, nmo_cktargetcamera_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(targetcamera, nmo_targetcamera_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_cktargetcamera_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_cktargetcamera_state_t, base),
-                    sizeof(nmo_ckcamera_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_targetcamera_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_targetcamera_state_t, base),
+                    sizeof(nmo_camera_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cktargetcamera_state_t, has_target, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_cktargetcamera_state_t, target_id)
+    NMO_FIELD(nmo_targetcamera_state_t, has_target, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_targetcamera_state_t, target_id)
 };
 
-static nmo_status_t nmo_cktargetcamera_deserialize_internal(
-    nmo_cktargetcamera_state_t *out_state,
+static nmo_status_t nmo_targetcamera_deserialize_internal(
+    nmo_targetcamera_state_t *out_state,
     nmo_chunk_t *chunk,
     void *context)
 {
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktargetcamera_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_targetcamera_deserialize");
     }
 
-    nmo_status_t result = nmo_ckcamera_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_camera_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -56,26 +56,26 @@ static nmo_status_t nmo_cktargetcamera_deserialize_internal(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    cktargetcamera,
-    nmo_cktargetcamera_state_t,
-    nmo_cktargetcamera_serialize,
-    nmo_cktargetcamera_deserialize,
-    nmo_cktargetcamera_fields,
+    targetcamera,
+    nmo_targetcamera_state_t,
+    nmo_targetcamera_serialize,
+    nmo_targetcamera_deserialize,
+    nmo_targetcamera_fields,
     CKPGUID_TARGETCAMERA,
     "CKTargetCamera",
     NMO_CID_TARGETCAMERA,
     CKPGUID_CAMERA
 )
-static nmo_status_t nmo_cktargetcamera_serialize_internal(
-    const nmo_cktargetcamera_state_t *in_state,
+static nmo_status_t nmo_targetcamera_serialize_internal(
+    const nmo_targetcamera_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cktargetcamera_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_targetcamera_serialize");
     }
 
-    nmo_status_t result = nmo_ckcamera_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_camera_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -90,25 +90,25 @@ static nmo_status_t nmo_cktargetcamera_serialize_internal(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_cktargetcamera_deserialize(
+nmo_status_t nmo_targetcamera_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cktargetcamera_state_t *out_state = (nmo_cktargetcamera_state_t *)instance;
-    return nmo_cktargetcamera_deserialize_internal(out_state, chunk, context);
+    nmo_targetcamera_state_t *out_state = (nmo_targetcamera_state_t *)instance;
+    return nmo_targetcamera_deserialize_internal(out_state, chunk, context);
 }
 
-nmo_status_t nmo_cktargetcamera_serialize(
+nmo_status_t nmo_targetcamera_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cktargetcamera_state_t *in_state = (const nmo_cktargetcamera_state_t *)instance;
-    return nmo_cktargetcamera_serialize_internal(in_state, out_chunk, context);
+    const nmo_targetcamera_state_t *in_state = (const nmo_targetcamera_state_t *)instance;
+    return nmo_targetcamera_serialize_internal(in_state, out_chunk, context);
 }
 

@@ -3,7 +3,7 @@
  * @brief CKSound/CKWaveSound/CKMidiSound schema implementation
  */
 
-#include "object/nmo_cksound_schemas.h"
+#include "object/nmo_sound_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -17,77 +17,77 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cksound, nmo_cksound_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckwavesound, nmo_ckwavesound_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmidisound, nmo_ckmidisound_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sound, nmo_sound_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(wavesound, nmo_wavesound_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(midisound, nmo_midisound_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_cksound_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_cksound_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+static const nmo_type_field_t nmo_sound_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_sound_state_t, base),
+                    sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cksound_state_t, save_options, NMO_GUID_ENUM_CK_SOUND_SAVEOPTIONS),
-    NMO_FIELD_OPT(nmo_cksound_state_t, file_name, CKPGUID_STRING)
+    NMO_FIELD(nmo_sound_state_t, save_options, NMO_GUID_ENUM_CK_SOUND_SAVEOPTIONS),
+    NMO_FIELD_OPT(nmo_sound_state_t, file_name, CKPGUID_STRING)
 };
 
-static const nmo_type_field_t nmo_ckwavesound_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckwavesound_state_t, base),
-                    sizeof(nmo_cksound_state_t), CKPGUID_SOUND,
+static const nmo_type_field_t nmo_wavesound_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_wavesound_state_t, base),
+                    sizeof(nmo_sound_state_t), CKPGUID_SOUND,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckwavesound_state_t, has_wave_file_name, CKPGUID_BOOL),
-    NMO_FIELD_OPT(nmo_ckwavesound_state_t, wave_file_name, CKPGUID_STRING),
-    NMO_FIELD(nmo_ckwavesound_state_t, has_duration, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckwavesound_state_t, duration, CKPGUID_INT),
-    NMO_FIELD(nmo_ckwavesound_state_t, has_data2, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckwavesound_state_t, state_flags, NMO_GUID_ENUM_CK_WAVESOUND_STATE),
-    NMO_FIELD(nmo_ckwavesound_state_t, priority, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, gain, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, pan, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, pitch, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, cone_in_angle, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_angle, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, cone_out_gain, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, min_distance, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, max_distance, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckwavesound_state_t, distance_behavior, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_ckwavesound_state_t, attached_object_id),
-    NMO_FIELD_NAMED("position", offsetof(nmo_ckwavesound_state_t, position),
+    NMO_FIELD(nmo_wavesound_state_t, has_wave_file_name, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_wavesound_state_t, wave_file_name, CKPGUID_STRING),
+    NMO_FIELD(nmo_wavesound_state_t, has_duration, CKPGUID_BOOL),
+    NMO_FIELD(nmo_wavesound_state_t, duration, CKPGUID_INT),
+    NMO_FIELD(nmo_wavesound_state_t, has_data2, CKPGUID_BOOL),
+    NMO_FIELD(nmo_wavesound_state_t, state_flags, NMO_GUID_ENUM_CK_WAVESOUND_STATE),
+    NMO_FIELD(nmo_wavesound_state_t, priority, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, gain, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, pan, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, pitch, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, cone_in_angle, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, cone_out_angle, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, cone_out_gain, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, min_distance, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, max_distance, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_wavesound_state_t, distance_behavior, CKPGUID_UINT32),
+    NMO_FIELD_REF(nmo_wavesound_state_t, attached_object_id),
+    NMO_FIELD_NAMED("position", offsetof(nmo_wavesound_state_t, position),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("direction", offsetof(nmo_ckwavesound_state_t, direction),
+    NMO_FIELD_NAMED("direction", offsetof(nmo_wavesound_state_t, direction),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0)
 };
 
-static const nmo_type_field_t nmo_ckmidisound_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckmidisound_state_t, base),
-                    sizeof(nmo_cksound_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_midisound_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_midisound_state_t, base),
+                    sizeof(nmo_sound_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckmidisound_state_t, has_midi_file_name, CKPGUID_BOOL),
-    NMO_FIELD_OPT(nmo_ckmidisound_state_t, midi_file_name, CKPGUID_STRING)
+    NMO_FIELD(nmo_midisound_state_t, has_midi_file_name, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_midisound_state_t, midi_file_name, CKPGUID_STRING)
 };
 
 /* =============================================================================
  * CKSound
  * ============================================================================= */
 
-nmo_status_t nmo_cksound_deserialize(
+nmo_status_t nmo_sound_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cksound_state_t *out_state = (nmo_cksound_state_t *)instance;
+    nmo_sound_state_t *out_state = (nmo_sound_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksound_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sound_deserialize");
     }
 
-    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -103,20 +103,20 @@ nmo_status_t nmo_cksound_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_cksound_serialize(
+nmo_status_t nmo_sound_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cksound_state_t *in_state = (const nmo_cksound_state_t *)instance;
+    const nmo_sound_state_t *in_state = (const nmo_sound_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cksound_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sound_serialize");
     }
 
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -134,20 +134,20 @@ nmo_status_t nmo_cksound_serialize(
  * CKWaveSound
  * ============================================================================= */
 
-nmo_status_t nmo_ckwavesound_deserialize(
+nmo_status_t nmo_wavesound_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckwavesound_state_t *out_state = (nmo_ckwavesound_state_t *)instance;
+    nmo_wavesound_state_t *out_state = (nmo_wavesound_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckwavesound_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_wavesound_deserialize");
     }
 
-    nmo_status_t result = nmo_cksound_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_sound_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -254,20 +254,20 @@ nmo_status_t nmo_ckwavesound_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckwavesound_serialize(
+nmo_status_t nmo_wavesound_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckwavesound_state_t *in_state = (const nmo_ckwavesound_state_t *)instance;
+    const nmo_wavesound_state_t *in_state = (const nmo_wavesound_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckwavesound_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_wavesound_serialize");
     }
 
-    nmo_status_t result = nmo_cksound_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_sound_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -315,20 +315,20 @@ nmo_status_t nmo_ckwavesound_serialize(
  * CKMidiSound
  * ============================================================================= */
 
-nmo_status_t nmo_ckmidisound_deserialize(
+nmo_status_t nmo_midisound_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckmidisound_state_t *out_state = (nmo_ckmidisound_state_t *)instance;
+    nmo_midisound_state_t *out_state = (nmo_midisound_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmidisound_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_midisound_deserialize");
     }
 
-    nmo_status_t result = nmo_cksound_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_sound_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -341,20 +341,20 @@ nmo_status_t nmo_ckmidisound_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckmidisound_serialize(
+nmo_status_t nmo_midisound_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckmidisound_state_t *in_state = (const nmo_ckmidisound_state_t *)instance;
+    const nmo_midisound_state_t *in_state = (const nmo_midisound_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmidisound_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_midisound_serialize");
     }
 
-    nmo_status_t result = nmo_cksound_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_sound_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -363,19 +363,19 @@ nmo_status_t nmo_ckmidisound_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t cksound_copy(
+static nmo_status_t nmo_sound_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_cksound_state_t *s = src;
-    nmo_cksound_state_t *d = dst;
+    const nmo_sound_state_t *s = src;
+    nmo_sound_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     return nmo_object_copy_string(arena, &d->file_name, s->file_name);
 }
 
-static nmo_status_t cksound_validate(
+static nmo_status_t nmo_sound_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -386,20 +386,20 @@ static nmo_status_t cksound_validate(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckwavesound_copy(
+static nmo_status_t nmo_wavesound_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckwavesound_state_t *s = src;
-    nmo_ckwavesound_state_t *d = dst;
+    const nmo_wavesound_state_t *s = src;
+    nmo_wavesound_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_string(arena, &d->base.file_name, s->base.file_name));
     return nmo_object_copy_string(arena, &d->wave_file_name, s->wave_file_name);
 }
 
-static nmo_status_t ckwavesound_validate(
+static nmo_status_t nmo_wavesound_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -410,20 +410,20 @@ static nmo_status_t ckwavesound_validate(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckmidisound_copy(
+static nmo_status_t nmo_midisound_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckmidisound_state_t *s = src;
-    nmo_ckmidisound_state_t *d = dst;
+    const nmo_midisound_state_t *s = src;
+    nmo_midisound_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_string(arena, &d->base.file_name, s->base.file_name));
     return nmo_object_copy_string(arena, &d->midi_file_name, s->midi_file_name);
 }
 
-static nmo_status_t ckmidisound_validate(
+static nmo_status_t nmo_midisound_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
@@ -439,11 +439,11 @@ static nmo_status_t ckmidisound_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    cksound,
-    nmo_cksound_state_t,
-    nmo_cksound_serialize,
-    nmo_cksound_deserialize,
-    nmo_cksound_fields,
+    sound,
+    nmo_sound_state_t,
+    nmo_sound_serialize,
+    nmo_sound_deserialize,
+    nmo_sound_fields,
     CKPGUID_SOUND,
     "CKSound",
     NMO_CID_SOUND,
@@ -451,11 +451,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckwavesound,
-    nmo_ckwavesound_state_t,
-    nmo_ckwavesound_serialize,
-    nmo_ckwavesound_deserialize,
-    nmo_ckwavesound_fields,
+    wavesound,
+    nmo_wavesound_state_t,
+    nmo_wavesound_serialize,
+    nmo_wavesound_deserialize,
+    nmo_wavesound_fields,
     CKPGUID_WAVESOUND,
     "CKWaveSound",
     NMO_CID_WAVESOUND,
@@ -463,11 +463,11 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 )
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckmidisound,
-    nmo_ckmidisound_state_t,
-    nmo_ckmidisound_serialize,
-    nmo_ckmidisound_deserialize,
-    nmo_ckmidisound_fields,
+    midisound,
+    nmo_midisound_state_t,
+    nmo_midisound_serialize,
+    nmo_midisound_deserialize,
+    nmo_midisound_fields,
     CKPGUID_MIDISOUND,
     "CKMidiSound",
     NMO_CID_MIDISOUND,

@@ -35,12 +35,12 @@
  *   - m_LightPower defaults to 1.0
  */
 
-#include "object/nmo_cklight_schemas.h"
+#include "object/nmo_light_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
-#include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_3dentity_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -53,7 +53,7 @@
 #include <stdalign.h>
 #include <string.h>
 
-static void nmo_cklight_set_defaults(nmo_cklight_state_t *state) {
+static void nmo_light_set_defaults(nmo_light_state_t *state) {
     if (state == NULL) {
         return;
     }
@@ -89,7 +89,7 @@ static void nmo_cklight_set_defaults(nmo_cklight_state_t *state) {
     state->light_data.outer_spot_cone = 0.78539819f;
 }
 
-static void nmo_cklight_apply_nonspot_defaults(nmo_cklight_state_t *state) {
+static void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state) {
     if (state == NULL) {
         return;
     }
@@ -100,10 +100,10 @@ static void nmo_cklight_apply_nonspot_defaults(nmo_cklight_state_t *state) {
 }
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
-    cklight,
-    nmo_cklight_state_t,
+    light,
+    nmo_light_state_t,
     do { \
-        nmo_cklight_set_defaults(state); \
+        nmo_light_set_defaults(state); \
     } while (0),
     ((void)0))
 
@@ -111,15 +111,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_cklight_fields[] = {
-    NMO_FIELD_NAMED("entity", offsetof(nmo_cklight_state_t, entity),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_light_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_light_state_t, entity),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("light_data", offsetof(nmo_cklight_state_t, light_data),
+    NMO_FIELD_NAMED("light_data", offsetof(nmo_light_state_t, light_data),
                     sizeof(nmo_light_data_t), NMO_GUID_STRUCT_CKLIGHTDATA,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cklight_state_t, flags, CKPGUID_UINT32),
-    NMO_FIELD(nmo_cklight_state_t, light_power, CKPGUID_FLOAT)
+    NMO_FIELD(nmo_light_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_light_state_t, light_power, CKPGUID_FLOAT)
 };
 
 /* =============================================================================
@@ -129,10 +129,10 @@ static const nmo_type_field_t nmo_cklight_fields[] = {
 /**
  * @brief Deserialize CKLight state from chunk (modern format v5+)
  */
-static nmo_status_t nmo_cklight_deserialize_modern(
+static nmo_status_t nmo_light_deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cklight_state_t *out_state)
+    nmo_light_state_t *out_state)
 {
     (void)arena;
     nmo_status_t result;
@@ -208,7 +208,7 @@ static nmo_status_t nmo_cklight_deserialize_modern(
         }
     } else {
         // Default spotlight parameters for non-spotlights
-        nmo_cklight_apply_nonspot_defaults(out_state);
+        nmo_light_apply_nonspot_defaults(out_state);
     }
     
     // Optional: light power (CK_STATESAVE_LIGHTDATA2)
@@ -229,10 +229,10 @@ static nmo_status_t nmo_cklight_deserialize_modern(
 /**
  * @brief Deserialize CKLight state from chunk (legacy format <v5)
  */
-static nmo_status_t nmo_cklight_deserialize_legacy(
+static nmo_status_t nmo_light_deserialize_legacy(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cklight_state_t *out_state)
+    nmo_light_state_t *out_state)
 {
     (void)arena;
     nmo_status_t result;
@@ -353,14 +353,14 @@ static nmo_status_t nmo_cklight_deserialize_legacy(
 /**
  * @brief Main deserialize function (dispatches to modern/legacy)
  */
-nmo_status_t nmo_cklight_deserialize(
+nmo_status_t nmo_light_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cklight_state_t *out_state = (nmo_cklight_state_t *)instance;
+    nmo_light_state_t *out_state = (nmo_light_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
@@ -368,7 +368,7 @@ nmo_status_t nmo_cklight_deserialize(
     }
 
     // First deserialize parent CK3dEntity data
-    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_deserialize(&out_state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -377,9 +377,9 @@ nmo_status_t nmo_cklight_deserialize(
     uint32_t version = nmo_chunk_get_data_version(chunk);
     
     if (version < 5) {
-        return nmo_cklight_deserialize_legacy(chunk, arena, out_state);
+        return nmo_light_deserialize_legacy(chunk, arena, out_state);
     } else {
-        return nmo_cklight_deserialize_modern(chunk, arena, out_state);
+        return nmo_light_deserialize_modern(chunk, arena, out_state);
     }
 }
 
@@ -390,14 +390,14 @@ nmo_status_t nmo_cklight_deserialize(
 /**
  * @brief Serialize CKLight state to chunk (always uses modern format)
  */
-nmo_status_t nmo_cklight_serialize(
+nmo_status_t nmo_light_serialize(
     const void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cklight_state_t *state = (const nmo_cklight_state_t *)instance;
+    const nmo_light_state_t *state = (const nmo_light_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!state || !chunk || !arena) {
@@ -405,7 +405,7 @@ nmo_status_t nmo_cklight_serialize(
     }
 
     // First serialize parent CK3dEntity data
-    nmo_status_t result = nmo_ck3dentity_serialize(&state->entity, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_serialize(&state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -491,12 +491,12 @@ nmo_status_t nmo_cklight_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    cklight,
-    nmo_cklight_state_t,
-    nmo_cklight_serialize,
-    nmo_cklight_deserialize,
-    nmo_cklight_finish_loading,
-    nmo_cklight_fields,
+    light,
+    nmo_light_state_t,
+    nmo_light_serialize,
+    nmo_light_deserialize,
+    nmo_light_finish_loading,
+    nmo_light_fields,
     CKPGUID_LIGHT,
     "CKLight",
     NMO_CID_LIGHT,
@@ -510,7 +510,7 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
 /**
  * @brief Finish loading CKLight (resolve references, validate data)
  */
-nmo_status_t nmo_cklight_finish_loading(
+nmo_status_t nmo_light_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -519,10 +519,10 @@ nmo_status_t nmo_cklight_finish_loading(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKLight finish_loading");
     }
 
-    nmo_cklight_state_t *light_state = (nmo_cklight_state_t *)instance;
+    nmo_light_state_t *light_state = (nmo_light_state_t *)instance;
 
     // First finish loading parent CK3dEntity
-    nmo_status_t result = nmo_ck3dentity_finish_loading(&light_state->entity, arena, repository);
+    nmo_status_t result = nmo_3dentity_finish_loading(&light_state->entity, arena, repository);
     if (result != NMO_OK) {
         return result;
     }

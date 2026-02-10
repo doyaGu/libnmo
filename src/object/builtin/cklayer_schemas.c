@@ -3,7 +3,7 @@
  * @brief CKLayer schema implementation
  */
 
-#include "object/nmo_cklayer_schemas.h"
+#include "object/nmo_layer_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -16,22 +16,22 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cklayer, nmo_cklayer_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(layer, nmo_layer_state_t)
 
-nmo_status_t nmo_cklayer_deserialize(
+nmo_status_t nmo_layer_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cklayer_state_t *out_state = (nmo_cklayer_state_t *)instance;
+    nmo_layer_state_t *out_state = (nmo_layer_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_layer_deserialize");
     }
 
-    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA) != NMO_OK) {
@@ -87,20 +87,20 @@ nmo_status_t nmo_cklayer_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_cklayer_serialize(
+nmo_status_t nmo_layer_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cklayer_state_t *in_state = (const nmo_cklayer_state_t *)instance;
+    const nmo_layer_state_t *in_state = (const nmo_layer_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklayer_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_layer_serialize");
     }
 
-    nmo_status_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LAYERDATA);
@@ -132,48 +132,48 @@ nmo_status_t nmo_cklayer_serialize(
     NMO_RETURN_OK();
 }
 
-static const nmo_type_field_t nmo_cklayer_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_cklayer_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_layer_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_layer_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_cklayer_state_t, grid_id),
-    NMO_FIELD(nmo_cklayer_state_t, type, CKPGUID_INT),
-    NMO_FIELD(nmo_cklayer_state_t, format, CKPGUID_INT),
-    NMO_FIELD(nmo_cklayer_state_t, version, CKPGUID_INT),
-    NMO_FIELD_NAMED("color_rgba", offsetof(nmo_cklayer_state_t, color_rgba),
+    NMO_FIELD_REF(nmo_layer_state_t, grid_id),
+    NMO_FIELD(nmo_layer_state_t, type, CKPGUID_INT),
+    NMO_FIELD(nmo_layer_state_t, format, CKPGUID_INT),
+    NMO_FIELD(nmo_layer_state_t, version, CKPGUID_INT),
+    NMO_FIELD_NAMED("color_rgba", offsetof(nmo_layer_state_t, color_rgba),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("param_guid", offsetof(nmo_cklayer_state_t, param_guid),
+    NMO_FIELD_NAMED("param_guid", offsetof(nmo_layer_state_t, param_guid),
                     sizeof(nmo_guid_t), CKPGUID_GUID, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_cklayer_state_t, flags, CKPGUID_UINT32),
-    NMO_FIELD(nmo_cklayer_state_t, has_type, CKPGUID_UINT8),
-    NMO_FIELD(nmo_cklayer_state_t, has_version, CKPGUID_UINT8),
-    NMO_FIELD(nmo_cklayer_state_t, has_color, CKPGUID_UINT8),
-    NMO_FIELD(nmo_cklayer_state_t, has_param_guid, CKPGUID_UINT8),
-    NMO_FIELD_OPT(nmo_cklayer_state_t, square_data, CKPGUID_POINTER),
-    NMO_FIELD(nmo_cklayer_state_t, square_data_size, CKPGUID_UINT64)
+    NMO_FIELD(nmo_layer_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_layer_state_t, has_type, CKPGUID_UINT8),
+    NMO_FIELD(nmo_layer_state_t, has_version, CKPGUID_UINT8),
+    NMO_FIELD(nmo_layer_state_t, has_color, CKPGUID_UINT8),
+    NMO_FIELD(nmo_layer_state_t, has_param_guid, CKPGUID_UINT8),
+    NMO_FIELD_OPT(nmo_layer_state_t, square_data, CKPGUID_POINTER),
+    NMO_FIELD(nmo_layer_state_t, square_data_size, CKPGUID_UINT64)
 };
 
-static nmo_status_t cklayer_copy(
+static nmo_status_t nmo_layer_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_cklayer_state_t *s = src;
-    nmo_cklayer_state_t *d = dst;
+    const nmo_layer_state_t *s = src;
+    nmo_layer_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     return nmo_object_copy_bytes(arena, (void **)&d->square_data,
                                  s->square_data, s->square_data_size);
 }
 
-static nmo_status_t cklayer_validate(
+static nmo_status_t nmo_layer_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_cklayer_state_t *s = instance;
+    const nmo_layer_state_t *s = instance;
     NMO_VALIDATE_BYTES(s->square_data, s->square_data_size, "square_data");
     NMO_RETURN_OK();
 }
@@ -183,11 +183,11 @@ static nmo_status_t cklayer_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    cklayer,
-    nmo_cklayer_state_t,
-    nmo_cklayer_serialize,
-    nmo_cklayer_deserialize,
-    nmo_cklayer_fields,
+    layer,
+    nmo_layer_state_t,
+    nmo_layer_serialize,
+    nmo_layer_deserialize,
+    nmo_layer_fields,
     CKPGUID_LAYER,
     "CKLayer",
     NMO_CID_LAYER,

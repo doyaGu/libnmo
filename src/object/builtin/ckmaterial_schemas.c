@@ -10,7 +10,7 @@
  * Reference: reference/include/CKMaterial.h
  */
 
-#include "object/nmo_ckmaterial_schemas.h"
+#include "object/nmo_material_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -26,61 +26,61 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-#include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
 #include "object/nmo_class_ids.h"
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmaterial, nmo_ck_material_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(material, nmo_material_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckmaterial_fields[] = {
+static const nmo_type_field_t nmo_material_fields[] = {
     /* Base class */
-    NMO_FIELD_NAMED("base", offsetof(nmo_ck_material_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+    NMO_FIELD_NAMED("base", offsetof(nmo_material_state_t, base),
+                    sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Colors (packed ARGB) */
-    NMO_FIELD_NAMED("diffuse_color", offsetof(nmo_ck_material_state_t, diffuse_color),
+    NMO_FIELD_NAMED("diffuse_color", offsetof(nmo_material_state_t, diffuse_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("ambient_color", offsetof(nmo_ck_material_state_t, ambient_color),
+    NMO_FIELD_NAMED("ambient_color", offsetof(nmo_material_state_t, ambient_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("specular_color", offsetof(nmo_ck_material_state_t, specular_color),
+    NMO_FIELD_NAMED("specular_color", offsetof(nmo_material_state_t, specular_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("emissive_color", offsetof(nmo_ck_material_state_t, emissive_color),
+    NMO_FIELD_NAMED("emissive_color", offsetof(nmo_material_state_t, emissive_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     /* Specular power */
-    NMO_FIELD(nmo_ck_material_state_t, specular_power, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_material_state_t, specular_power, CKPGUID_FLOAT),
     /* Textures (4 slots) */
-    NMO_FIELD_FULL(nmo_ck_material_state_t, texture_ids, CKPGUID_ID,
+    NMO_FIELD_FULL(nmo_material_state_t, texture_ids, CKPGUID_ID,
                    NMO_FIELD_REFERENCE | NMO_FIELD_REPEATED, 0),
     /* Render settings */
-    NMO_FIELD(nmo_ck_material_state_t, texture_border_color, CKPGUID_COLOR),
-    NMO_FIELD(nmo_ck_material_state_t, packed_modes, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ck_material_state_t, packed_flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_material_state_t, texture_border_color, CKPGUID_COLOR),
+    NMO_FIELD(nmo_material_state_t, packed_modes, CKPGUID_UINT32),
+    NMO_FIELD(nmo_material_state_t, packed_flags, CKPGUID_UINT32),
     /* Effect */
-    NMO_FIELD(nmo_ck_material_state_t, effect, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_ck_material_state_t, effect_parameter_id),
-    NMO_FIELD(nmo_ck_material_state_t, has_effect, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ck_material_state_t, has_effect_param, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ck_material_state_t, has_additional_textures, CKPGUID_UINT8)
+    NMO_FIELD(nmo_material_state_t, effect, CKPGUID_UINT32),
+    NMO_FIELD_REF(nmo_material_state_t, effect_parameter_id),
+    NMO_FIELD(nmo_material_state_t, has_effect, CKPGUID_UINT8),
+    NMO_FIELD(nmo_material_state_t, has_effect_param, CKPGUID_UINT8),
+    NMO_FIELD(nmo_material_state_t, has_additional_textures, CKPGUID_UINT8)
 };
 
-nmo_status_t nmo_ckmaterial_deserialize(
+nmo_status_t nmo_material_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ck_material_state_t *out_state = (nmo_ck_material_state_t *)instance;
+    nmo_material_state_t *out_state = (nmo_material_state_t *)instance;
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_material_deserialize");
     }
 
     {
-        nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+        nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
             if (result != NMO_OK) return result;
     }
 
@@ -214,19 +214,19 @@ nmo_status_t nmo_ckmaterial_deserialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    ckmaterial,
-    nmo_ck_material_state_t,
-    nmo_ckmaterial_serialize,
-    nmo_ckmaterial_deserialize,
-    nmo_ckmaterial_finish_loading,
-    nmo_ckmaterial_fields,
+    material,
+    nmo_material_state_t,
+    nmo_material_serialize,
+    nmo_material_deserialize,
+    nmo_material_finish_loading,
+    nmo_material_fields,
     CKPGUID_MATERIAL,
     "CKMaterial",
     NMO_CID_MATERIAL,
     CKPGUID_BEOBJECT
 )
 
-nmo_status_t nmo_ckmaterial_finish_loading(
+nmo_status_t nmo_material_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -237,21 +237,21 @@ nmo_status_t nmo_ckmaterial_finish_loading(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckmaterial_serialize(
+nmo_status_t nmo_material_serialize(
     const void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ck_material_state_t *state = (const nmo_ck_material_state_t *)instance;
+    const nmo_material_state_t *state = (const nmo_material_state_t *)instance;
 
     if (!state || !chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmaterial_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_material_serialize");
     }
 
     {
-        nmo_status_t result = nmo_ckbeobject_serialize(&state->base, chunk, NULL, context);
+        nmo_status_t result = nmo_beobject_serialize(&state->base, chunk, NULL, context);
             if (result != NMO_OK) return result;
     }
 

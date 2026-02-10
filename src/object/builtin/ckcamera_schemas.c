@@ -20,11 +20,11 @@
  * - Far clip plane (float)
  */
 
-#include "object/nmo_ckcamera_schemas.h"
+#include "object/nmo_camera_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_3dentity_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
@@ -38,23 +38,23 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckcamera, nmo_ckcamera_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(camera, nmo_camera_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckcamera_fields[] = {
-    NMO_FIELD_NAMED("entity", offsetof(nmo_ckcamera_state_t, entity),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_camera_fields[] = {
+    NMO_FIELD_NAMED("entity", offsetof(nmo_camera_state_t, entity),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckcamera_state_t, projection_type, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckcamera_state_t, fov, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcamera_state_t, orthographic_zoom, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcamera_state_t, width, CKPGUID_INT),
-    NMO_FIELD(nmo_ckcamera_state_t, height, CKPGUID_INT),
-    NMO_FIELD(nmo_ckcamera_state_t, near_plane, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ckcamera_state_t, far_plane, CKPGUID_FLOAT)
+    NMO_FIELD(nmo_camera_state_t, projection_type, CKPGUID_UINT32),
+    NMO_FIELD(nmo_camera_state_t, fov, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_camera_state_t, orthographic_zoom, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_camera_state_t, width, CKPGUID_INT),
+    NMO_FIELD(nmo_camera_state_t, height, CKPGUID_INT),
+    NMO_FIELD(nmo_camera_state_t, near_plane, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_camera_state_t, far_plane, CKPGUID_FLOAT)
 };
 
 /* =============================================================================
@@ -80,14 +80,14 @@ static const nmo_type_field_t nmo_ckcamera_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckcamera_deserialize(
+nmo_status_t nmo_camera_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckcamera_state_t *out_state = (nmo_ckcamera_state_t *)instance;
+    nmo_camera_state_t *out_state = (nmo_camera_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !arena || !out_state) {
@@ -95,7 +95,7 @@ nmo_status_t nmo_ckcamera_deserialize(
     }
 
     // First deserialize parent CK3dEntity data
-    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->entity, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_deserialize(&out_state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -150,14 +150,14 @@ nmo_status_t nmo_ckcamera_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckcamera_serialize(
+nmo_status_t nmo_camera_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckcamera_state_t *in_state = (const nmo_ckcamera_state_t *)instance;
+    const nmo_camera_state_t *in_state = (const nmo_camera_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
@@ -165,7 +165,7 @@ nmo_status_t nmo_ckcamera_serialize(
     }
 
     // First serialize parent CK3dEntity data
-    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -201,12 +201,12 @@ nmo_status_t nmo_ckcamera_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    ckcamera,
-    nmo_ckcamera_state_t,
-    nmo_ckcamera_serialize,
-    nmo_ckcamera_deserialize,
-    nmo_ckcamera_finish_loading,
-    nmo_ckcamera_fields,
+    camera,
+    nmo_camera_state_t,
+    nmo_camera_serialize,
+    nmo_camera_deserialize,
+    nmo_camera_finish_loading,
+    nmo_camera_fields,
     CKPGUID_CAMERA,
     "CKCamera",
     NMO_CID_CAMERA,
@@ -224,7 +224,7 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
  * @param repository Object repository for reference resolution
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckcamera_finish_loading(
+nmo_status_t nmo_camera_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)

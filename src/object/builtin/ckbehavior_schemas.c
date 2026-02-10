@@ -17,12 +17,12 @@
  * - Runtime flag filtering
  */
 
-#include "object/nmo_ckbehavior_schemas.h"
+#include "object/nmo_behavior_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_cksceneobject_schemas.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_sceneobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -39,8 +39,8 @@
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
-    ckbehavior,
-    nmo_ckbehavior_state_t,
+    behavior,
+    nmo_behavior_state_t,
     do { \
         state->compatible_class_id = NMO_CID_BEOBJECT; \
     } while (0),
@@ -70,45 +70,45 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckbehavior_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckbehavior_state_t, base),
-                    sizeof(nmo_cksceneobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_behavior_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_behavior_state_t, base),
+                    sizeof(nmo_sceneobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbehavior_state_t, flags, NMO_GUID_ENUM_CK_BEHAVIOR_FLAGS),
-    NMO_FIELD(nmo_ckbehavior_state_t, priority, CKPGUID_INT),
-    NMO_FIELD(nmo_ckbehavior_state_t, compatible_class_id, CKPGUID_INT),
-    NMO_FIELD_REF(nmo_ckbehavior_state_t, owner_id),
-    NMO_FIELD(nmo_ckbehavior_state_t, behavior_type, NMO_GUID_ENUM_CK_BEHAVIOR_TYPE),
-    NMO_FIELD(nmo_ckbehavior_state_t, save_flags, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckbehavior_state_t, has_save_flags, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckbehavior_state_t, use_legacy_identifiers, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckbehavior_state_t, block_guid, CKPGUID_GUID),
-    NMO_FIELD(nmo_ckbehavior_state_t, block_version, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_ckbehavior_state_t, target_parameter_id),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, sub_behaviors),
-    NMO_FIELD(nmo_ckbehavior_state_t, sub_behavior_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckbehavior_state_t, sub_behavior_chunks, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_ckbehavior_state_t, sub_behavior_chunk_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, sub_behavior_links),
-    NMO_FIELD(nmo_ckbehavior_state_t, sub_behavior_link_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, operations),
-    NMO_FIELD(nmo_ckbehavior_state_t, operation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, in_parameters),
-    NMO_FIELD(nmo_ckbehavior_state_t, in_parameter_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, out_parameters),
-    NMO_FIELD(nmo_ckbehavior_state_t, out_parameter_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, local_parameters),
-    NMO_FIELD(nmo_ckbehavior_state_t, local_parameter_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckbehavior_state_t, local_parameter_chunks, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_ckbehavior_state_t, local_parameter_chunk_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, inputs),
-    NMO_FIELD(nmo_ckbehavior_state_t, input_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_ckbehavior_state_t, outputs),
-    NMO_FIELD(nmo_ckbehavior_state_t, output_count, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckbehavior_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS),
-    NMO_FIELD(nmo_ckbehavior_state_t, has_single_activity, CKPGUID_BOOL),
-    NMO_FIELD_OPT(nmo_ckbehavior_state_t, interface_chunk, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_ckbehavior_state_t, has_interface, CKPGUID_BOOL)
+    NMO_FIELD(nmo_behavior_state_t, flags, NMO_GUID_ENUM_CK_BEHAVIOR_FLAGS),
+    NMO_FIELD(nmo_behavior_state_t, priority, CKPGUID_INT),
+    NMO_FIELD(nmo_behavior_state_t, compatible_class_id, CKPGUID_INT),
+    NMO_FIELD_REF(nmo_behavior_state_t, owner_id),
+    NMO_FIELD(nmo_behavior_state_t, behavior_type, NMO_GUID_ENUM_CK_BEHAVIOR_TYPE),
+    NMO_FIELD(nmo_behavior_state_t, save_flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_behavior_state_t, has_save_flags, CKPGUID_BOOL),
+    NMO_FIELD(nmo_behavior_state_t, use_legacy_identifiers, CKPGUID_BOOL),
+    NMO_FIELD(nmo_behavior_state_t, block_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_behavior_state_t, block_version, CKPGUID_UINT32),
+    NMO_FIELD_REF(nmo_behavior_state_t, target_parameter_id),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, sub_behaviors),
+    NMO_FIELD(nmo_behavior_state_t, sub_behavior_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_behavior_state_t, sub_behavior_chunks, CKPGUID_STATECHUNK),
+    NMO_FIELD(nmo_behavior_state_t, sub_behavior_chunk_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, sub_behavior_links),
+    NMO_FIELD(nmo_behavior_state_t, sub_behavior_link_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, operations),
+    NMO_FIELD(nmo_behavior_state_t, operation_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, in_parameters),
+    NMO_FIELD(nmo_behavior_state_t, in_parameter_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, out_parameters),
+    NMO_FIELD(nmo_behavior_state_t, out_parameter_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, local_parameters),
+    NMO_FIELD(nmo_behavior_state_t, local_parameter_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_behavior_state_t, local_parameter_chunks, CKPGUID_STATECHUNK),
+    NMO_FIELD(nmo_behavior_state_t, local_parameter_chunk_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, inputs),
+    NMO_FIELD(nmo_behavior_state_t, input_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, outputs),
+    NMO_FIELD(nmo_behavior_state_t, output_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_behavior_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS),
+    NMO_FIELD(nmo_behavior_state_t, has_single_activity, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_behavior_state_t, interface_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD(nmo_behavior_state_t, has_interface, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -229,18 +229,18 @@ static nmo_status_t read_object_subchunk_list(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckbehavior_deserialize(
+nmo_status_t nmo_behavior_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckbehavior_state_t *out_state = (nmo_ckbehavior_state_t *)instance;
+    nmo_behavior_state_t *out_state = (nmo_behavior_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behavior_deserialize");
     }
 
     /* Deserialize base CKObject state (merged into this chunk by AddChunkAndDelete) */
@@ -248,7 +248,7 @@ nmo_status_t nmo_ckbehavior_deserialize(
         nmo_status_t result = nmo_chunk_start_read(chunk);
         if (result != NMO_OK) return result;
 
-        result = nmo_ckobject_deserialize(&out_state->base.base, chunk, NULL, context);
+        result = nmo_object_deserialize(&out_state->base.base, chunk, NULL, context);
         if (result != NMO_OK) return result;
     }
 
@@ -559,18 +559,18 @@ nmo_status_t nmo_ckbehavior_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckbehavior_serialize(
+nmo_status_t nmo_behavior_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckbehavior_state_t *in_state = (const nmo_ckbehavior_state_t *)instance;
+    const nmo_behavior_state_t *in_state = (const nmo_behavior_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehavior_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behavior_serialize");
     }
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
@@ -586,7 +586,7 @@ nmo_status_t nmo_ckbehavior_serialize(
     if (result != NMO_OK) return result;
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckobject_serialize(&in_state->base.base, out_chunk, NULL, context);
+    result = nmo_object_serialize(&in_state->base.base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (!write_file_format) {
@@ -795,14 +795,14 @@ nmo_status_t nmo_ckbehavior_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckbehavior_copy(
+static nmo_status_t nmo_behavior_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckbehavior_state_t *s = src;
-    nmo_ckbehavior_state_t *d = dst;
+    const nmo_behavior_state_t *s = src;
+    nmo_behavior_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_behaviors,
                                               s->sub_behaviors, sizeof(nmo_object_id_t), s->sub_behavior_count));
@@ -827,14 +827,14 @@ static nmo_status_t ckbehavior_copy(
     return nmo_object_copy_chunk(arena, &d->interface_chunk, s->interface_chunk);
 }
 
-static nmo_status_t ckbehavior_validate(
+static nmo_status_t nmo_behavior_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckbehavior_state_t *s = instance;
+    const nmo_behavior_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->sub_behaviors, s->sub_behavior_count, "sub_behaviors");
     NMO_VALIDATE_COUNT(s->sub_behavior_chunks, s->sub_behavior_chunk_count, "sub_behavior_chunks");
     NMO_VALIDATE_COUNT(s->sub_behavior_links, s->sub_behavior_link_count, "sub_behavior_links");
@@ -853,11 +853,11 @@ static nmo_status_t ckbehavior_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckbehavior,
-    nmo_ckbehavior_state_t,
-    nmo_ckbehavior_serialize,
-    nmo_ckbehavior_deserialize,
-    nmo_ckbehavior_fields,
+    behavior,
+    nmo_behavior_state_t,
+    nmo_behavior_serialize,
+    nmo_behavior_deserialize,
+    nmo_behavior_fields,
     CKPGUID_BEHAVIOR,
     "CKBehavior",
     NMO_CID_BEHAVIOR,

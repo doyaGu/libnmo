@@ -7,7 +7,7 @@
  * Based on official Virtools SDK (reference/src/CKParameterOut.cpp:120-160).
  */
 
-#include "object/nmo_ckparameterout_schemas.h"
+#include "object/nmo_parameterout_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -21,18 +21,18 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterout, nmo_ckparameterout_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameterout, nmo_parameterout_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckparameterout_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterout_state_t, base),
-                    sizeof(nmo_ckparameter_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_parameterout_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_parameterout_state_t, base),
+                    sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF_ARRAY(nmo_ckparameterout_state_t, destination_ids),
-    NMO_FIELD(nmo_ckparameterout_state_t, destination_count, CKPGUID_UINT32)
+    NMO_FIELD_REF_ARRAY(nmo_parameterout_state_t, destination_ids),
+    NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32)
 };
 
 /* =============================================================================
@@ -44,14 +44,14 @@ static const nmo_type_field_t nmo_ckparameterout_fields[] = {
  *
  * Reference: reference/src/CKParameterOut.cpp:145-160
  */
-nmo_status_t nmo_ckparameterout_deserialize(
+nmo_status_t nmo_parameterout_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckparameterout_state_t *out_state = (nmo_ckparameterout_state_t *)instance;
+    nmo_parameterout_state_t *out_state = (nmo_parameterout_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
@@ -59,7 +59,7 @@ nmo_status_t nmo_ckparameterout_deserialize(
     }
 
     /* Read base CKParameter state (merged into this chunk by AddChunkAndDelete) */
-    nmo_status_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Read destinations if present */
@@ -87,14 +87,14 @@ nmo_status_t nmo_ckparameterout_deserialize(
  *
  * Reference: reference/src/CKParameterOut.cpp:130-142
  */
-nmo_status_t nmo_ckparameterout_serialize(
+nmo_status_t nmo_parameterout_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckparameterout_state_t *in_state = (const nmo_ckparameterout_state_t *)instance;
+    const nmo_parameterout_state_t *in_state = (const nmo_parameterout_state_t *)instance;
     nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
@@ -102,7 +102,7 @@ nmo_status_t nmo_ckparameterout_serialize(
     }
 
     /* Write base CKParameter state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckparameter_serialize(&in_state->base, out_chunk, NULL, context);
+    result = nmo_parameter_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Write destinations if any */
@@ -122,14 +122,14 @@ nmo_status_t nmo_ckparameterout_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckparameterout_copy(
+static nmo_status_t nmo_parameterout_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckparameterout_state_t *s = src;
-    nmo_ckparameterout_state_t *d = dst;
+    const nmo_parameterout_state_t *s = src;
+    nmo_parameterout_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.buffer_data,
                                               s->base.buffer_data, s->base.buffer_size));
@@ -138,14 +138,14 @@ static nmo_status_t ckparameterout_copy(
                                  s->destination_ids, sizeof(nmo_object_id_t), s->destination_count);
 }
 
-static nmo_status_t ckparameterout_validate(
+static nmo_status_t nmo_parameterout_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckparameterout_state_t *s = instance;
+    const nmo_parameterout_state_t *s = instance;
     NMO_VALIDATE_BYTES(s->base.buffer_data, s->base.buffer_size, "buffer_data");
     NMO_VALIDATE_COUNT(s->destination_ids, s->destination_count, "destination_ids");
     NMO_RETURN_OK();
@@ -156,11 +156,11 @@ static nmo_status_t ckparameterout_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckparameterout,
-    nmo_ckparameterout_state_t,
-    nmo_ckparameterout_serialize,
-    nmo_ckparameterout_deserialize,
-    nmo_ckparameterout_fields,
+    parameterout,
+    nmo_parameterout_state_t,
+    nmo_parameterout_serialize,
+    nmo_parameterout_deserialize,
+    nmo_parameterout_fields,
     CKPGUID_PARAMETEROUT,
     "CKParameterOut",
     NMO_CID_PARAMETEROUT,

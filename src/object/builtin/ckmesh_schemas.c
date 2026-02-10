@@ -58,10 +58,10 @@
  *   - int array: Progressive data
  */
 
-#include "object/nmo_ckmesh_schemas.h"
+#include "object/nmo_mesh_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -78,49 +78,56 @@
 #include <string.h>
 #include <math.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmesh, nmo_ck_mesh_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(mesh, nmo_mesh_state_t)
+
+/* Mesh flags are persisted with a restricted bitmask in CK2_3D.dll.
+ * Keep this local to the schema to avoid leaking format quirks into headers.
+ */
+#ifndef NMO_MESH_ALLOWED_FLAGS_MASK
+#define NMO_MESH_ALLOWED_FLAGS_MASK 0x007FE39Au
+#endif
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckmesh_fields[] = {
+static const nmo_type_field_t nmo_mesh_fields[] = {
     /* Base class */
-    NMO_FIELD_NAMED("beobject", offsetof(nmo_ck_mesh_state_t, beobject),
-                        sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+    NMO_FIELD_NAMED("beobject", offsetof(nmo_mesh_state_t, beobject),
+                        sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Mesh flags */
-    NMO_FIELD(nmo_ck_mesh_state_t, flags, NMO_GUID_ENUM_VXMESH_FLAGS),
+    NMO_FIELD(nmo_mesh_state_t, flags, NMO_GUID_ENUM_VXMESH_FLAGS),
     /* Bounding info */
-    NMO_FIELD_NAMED("bary_center", offsetof(nmo_ck_mesh_state_t, bary_center),
+    NMO_FIELD_NAMED("bary_center", offsetof(nmo_mesh_state_t, bary_center),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ck_mesh_state_t, radius, CKPGUID_FLOAT),
-    NMO_FIELD_NAMED("local_box_min", offsetof(nmo_ck_mesh_state_t, local_box_min),
+    NMO_FIELD(nmo_mesh_state_t, radius, CKPGUID_FLOAT),
+    NMO_FIELD_NAMED("local_box_min", offsetof(nmo_mesh_state_t, local_box_min),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_NAMED("local_box_max", offsetof(nmo_ck_mesh_state_t, local_box_max),
+    NMO_FIELD_NAMED("local_box_max", offsetof(nmo_mesh_state_t, local_box_max),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     /* Faces */
-    NMO_FIELD(nmo_ck_mesh_state_t, face_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, faces, NMO_GUID_STRUCT_CKFACE),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, face_vertex_indices, CKPGUID_UINT16),
+    NMO_FIELD(nmo_mesh_state_t, face_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, faces, NMO_GUID_STRUCT_CKFACE),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, face_vertex_indices, CKPGUID_UINT16),
     /* Lines */
-    NMO_FIELD(nmo_ck_mesh_state_t, line_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, line_indices, CKPGUID_UINT16),
+    NMO_FIELD(nmo_mesh_state_t, line_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, line_indices, CKPGUID_UINT16),
     /* Vertices */
-    NMO_FIELD(nmo_ck_mesh_state_t, vertex_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertices, NMO_GUID_STRUCT_VXVERTEX),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_colors, CKPGUID_COLOR),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_specular, CKPGUID_COLOR),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, vertex_weights, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_ck_mesh_state_t, vertex_weight_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_mesh_state_t, vertex_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertices, NMO_GUID_STRUCT_VXVERTEX),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertex_colors, CKPGUID_COLOR),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertex_specular, CKPGUID_COLOR),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, vertex_weights, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_mesh_state_t, vertex_weight_count, CKPGUID_UINT32),
     /* Materials */
-    NMO_FIELD(nmo_ck_mesh_state_t, material_group_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_groups, NMO_GUID_STRUCT_CKMATERIALGROUP),
-    NMO_FIELD(nmo_ck_mesh_state_t, material_channel_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ck_mesh_state_t, material_channels, NMO_GUID_STRUCT_CKMATERIALCHANNEL)
+    NMO_FIELD(nmo_mesh_state_t, material_group_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, material_groups, NMO_GUID_STRUCT_CKMATERIALGROUP),
+    NMO_FIELD(nmo_mesh_state_t, material_channel_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_mesh_state_t, material_channels, NMO_GUID_STRUCT_CKMATERIALCHANNEL)
 };
 
 /* =============================================================================
@@ -150,9 +157,9 @@ static inline uint32_t nmo_pack_words_to_dword(uint16_t lo, uint16_t hi) {
  * IDENTIFIER HELPERS
  * ============================================================================= */
 
-static nmo_status_t nmo_ckmesh_peek_dword(nmo_chunk_t *chunk, uint32_t *out_value) {
+static nmo_status_t nmo_mesh_peek_dword(nmo_chunk_t *chunk, uint32_t *out_value) {
     if (!chunk || !out_value) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmesh_peek_dword");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_mesh_peek_dword");
     }
 
     NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, 1, "Cannot peek beyond data");
@@ -164,7 +171,7 @@ static nmo_status_t nmo_ckmesh_peek_dword(nmo_chunk_t *chunk, uint32_t *out_valu
     NMO_RETURN_OK();
 }
 
-static size_t nmo_ckmesh_identifier_remaining_dwords(nmo_chunk_t *chunk) {
+static size_t nmo_mesh_identifier_remaining_dwords(nmo_chunk_t *chunk) {
     if (!chunk || !chunk->parser_state) {
         return 0;
     }
@@ -186,9 +193,9 @@ static size_t nmo_ckmesh_identifier_remaining_dwords(nmo_chunk_t *chunk) {
     return next_pos - state->current_pos;
 }
 
-static nmo_status_t nmo_ckmesh_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, size_t bytes) {
+static nmo_status_t nmo_mesh_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, size_t bytes) {
     if (!chunk || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmesh_read_raw_bytes");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_mesh_read_raw_bytes");
     }
 
     size_t dwords = (bytes + 3) / 4;
@@ -209,10 +216,10 @@ static nmo_status_t nmo_ckmesh_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, 
 /**
  * @brief Deserialize vertex data (identifier 0x20000)
  */
-static nmo_status_t nmo_ckmesh_deserialize_vertices(
+static nmo_status_t nmo_mesh_deserialize_vertices(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_mesh_state_t *out_state)
+    nmo_mesh_state_t *out_state)
 {
     nmo_status_t result;
     
@@ -332,9 +339,9 @@ static nmo_status_t nmo_ckmesh_deserialize_vertices(
     }
     
     // Read UVs (at least one, then N if not uniform)
-    result = nmo_chunk_read_float(chunk, &out_state->vertices[0].uv.u);
+    result = nmo_chunk_read_float(chunk, &out_state->vertices[0].uv.x);
     if (result != NMO_OK) return result;
-    result = nmo_chunk_read_float(chunk, &out_state->vertices[0].uv.v);
+    result = nmo_chunk_read_float(chunk, &out_state->vertices[0].uv.y);
     if (result != NMO_OK) return result;
     
     if (save_flags & NMO_VERTEX_UV_UNIFORM) {
@@ -343,9 +350,9 @@ static nmo_status_t nmo_ckmesh_deserialize_vertices(
         }
     } else {
         for (uint32_t i = 1; i < out_state->vertex_count; i++) {
-            result = nmo_chunk_read_float(chunk, &out_state->vertices[i].uv.u);
+            result = nmo_chunk_read_float(chunk, &out_state->vertices[i].uv.x);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_read_float(chunk, &out_state->vertices[i].uv.v);
+            result = nmo_chunk_read_float(chunk, &out_state->vertices[i].uv.y);
             if (result != NMO_OK) return result;
         }
     }
@@ -379,15 +386,15 @@ static nmo_status_t nmo_ckmesh_deserialize_vertices(
 /**
  * @brief Deserialize CKMesh state from chunk (modern format v9+)
  */
-static nmo_status_t nmo_ckmesh_deserialize_modern(
+static nmo_status_t nmo_mesh_deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_mesh_state_t *out_state)
+    nmo_mesh_state_t *out_state)
 {
     nmo_status_t result;
 
     // Load parent CKBeObject
-    result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
+    result = nmo_beobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result != NMO_OK) {
         return result;
     }
@@ -400,8 +407,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read mesh flags");
         }
-        flags &= NMO_MESH_ALLFLAGS;
-        flags &= NMO_MESH_ALLOWED_FLAGS_MASK;
+            flags &= NMO_MESH_ALLOWED_FLAGS_MASK;
         out_state->flags = flags;
     }
     
@@ -437,7 +443,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
     }
     
     // Read vertices (identifier CK_STATESAVE_MESHVERTICES)
-    result = nmo_ckmesh_deserialize_vertices(chunk, arena, out_state);
+    result = nmo_mesh_deserialize_vertices(chunk, arena, out_state);
     if (result != NMO_OK) {
         return result;
     }
@@ -540,9 +546,9 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
                         
                         if (ch->uv_coords) {
                             for (uint32_t j = 0; j < ch->uv_count; j++) {
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].u);
+                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].x);
                                 if (result != NMO_OK) break;
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].v);
+                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].y);
                                 if (result != NMO_OK) break;
                             }
                         }
@@ -557,7 +563,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
     // Read vertex weights (identifier CK_STATESAVE_MESHWEIGHTS, optional)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHWEIGHTS);
     if (result == NMO_OK) {
-        size_t weights_bytes_total = nmo_ckmesh_identifier_remaining_dwords(chunk) * 4u;
+        size_t weights_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         int32_t weight_count;
         result = nmo_chunk_read_int(chunk, &weight_count);
         if (result == NMO_OK && weight_count > 0 && weight_count < 10000000) {
@@ -583,7 +589,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
                 }
             } else if (remaining_bytes >= (sizeof(uint32_t) + sizeof(float))) {
                 uint32_t peek = 0;
-                result = nmo_ckmesh_peek_dword(chunk, &peek);
+                result = nmo_mesh_peek_dword(chunk, &peek);
                 if (result != NMO_OK) return result;
 
                 if (peek == (uint32_t)(weight_count * sizeof(float))) {
@@ -592,7 +598,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
                     if (result != NMO_OK) return result;
 
                     if (buffer_size > 0) {
-                        result = nmo_ckmesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
+                        result = nmo_mesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
                         if (result != NMO_OK) return result;
                     }
 
@@ -648,7 +654,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
     // Read progressive mesh (identifier CK_STATESAVE_PROGRESSIVEMESH, optional)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PROGRESSIVEMESH);
     if (result == NMO_OK) {
-        size_t pm_bytes_total = nmo_ckmesh_identifier_remaining_dwords(chunk) * 4u;
+        size_t pm_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         out_state->has_progressive_mesh = true;
         
         result = nmo_chunk_read_int(chunk, &out_state->pm_field_0);
@@ -665,7 +671,7 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
             if (!out_state->pm_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate progressive mesh data");
             }
-            result = nmo_ckmesh_read_raw_bytes(chunk, out_state->pm_data, pm_bytes);
+            result = nmo_mesh_read_raw_bytes(chunk, out_state->pm_data, pm_bytes);
             if (result != NMO_OK) return result;
         }
     }
@@ -676,14 +682,14 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
 /**
  * @brief Deserialize CKMesh state from chunk (legacy format < v9)
  */
-static nmo_status_t nmo_ckmesh_deserialize_legacy(
+static nmo_status_t nmo_mesh_deserialize_legacy(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_ck_mesh_state_t *out_state)
+    nmo_mesh_state_t *out_state)
 {
     nmo_status_t result;
 
-    result = nmo_ckbeobject_deserialize(&out_state->beobject, chunk, NULL, arena);
+    result = nmo_beobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result != NMO_OK) {
         return result;
     }
@@ -692,7 +698,6 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
         uint32_t flags;
         result = nmo_chunk_read_dword(chunk, &flags);
         if (result != NMO_OK) return result;
-        flags &= NMO_MESH_ALLFLAGS;
         flags &= NMO_MESH_ALLOWED_FLAGS_MASK;
         out_state->flags = flags;
     }
@@ -819,7 +824,6 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
         }
     }
 
-    /* Shared optional sections (channels, weights, masks, progressive mesh) */
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHCHANNELS) == NMO_OK) {
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
@@ -854,9 +858,9 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 
                         if (ch->uv_coords) {
                             for (uint32_t j = 0; j < ch->uv_count; j++) {
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].u);
+                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].x);
                                 if (result != NMO_OK) break;
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].v);
+                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].y);
                                 if (result != NMO_OK) break;
                             }
                         }
@@ -870,7 +874,7 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHWEIGHTS);
     if (result == NMO_OK) {
-        size_t weights_bytes_total = nmo_ckmesh_identifier_remaining_dwords(chunk) * 4u;
+        size_t weights_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         int32_t weight_count;
         result = nmo_chunk_read_int(chunk, &weight_count);
         if (result == NMO_OK && weight_count > 0 && weight_count < 10000000) {
@@ -894,7 +898,7 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
                 }
             } else if (remaining_bytes >= (sizeof(uint32_t) + sizeof(float))) {
                 uint32_t peek = 0;
-                result = nmo_ckmesh_peek_dword(chunk, &peek);
+                result = nmo_mesh_peek_dword(chunk, &peek);
                 if (result != NMO_OK) return result;
 
                 if (peek == (uint32_t)(weight_count * sizeof(float))) {
@@ -903,7 +907,7 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
                     if (result != NMO_OK) return result;
 
                     if (buffer_size > 0) {
-                        result = nmo_ckmesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
+                        result = nmo_mesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
                         if (result != NMO_OK) return result;
                     }
 
@@ -956,7 +960,7 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PROGRESSIVEMESH);
     if (result == NMO_OK) {
-        size_t pm_bytes_total = nmo_ckmesh_identifier_remaining_dwords(chunk) * 4u;
+        size_t pm_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         out_state->has_progressive_mesh = true;
 
         result = nmo_chunk_read_int(chunk, &out_state->pm_field_0);
@@ -973,7 +977,7 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
             if (!out_state->pm_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate progressive mesh data");
             }
-            result = nmo_ckmesh_read_raw_bytes(chunk, out_state->pm_data, pm_bytes);
+            result = nmo_mesh_read_raw_bytes(chunk, out_state->pm_data, pm_bytes);
             if (result != NMO_OK) return result;
         }
     }
@@ -984,14 +988,14 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 /**
  * @brief Main deserialization dispatcher
  */
-nmo_status_t nmo_ckmesh_deserialize(
+nmo_status_t nmo_mesh_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ck_mesh_state_t *out_state = (nmo_ck_mesh_state_t *)instance;
+    nmo_mesh_state_t *out_state = (nmo_mesh_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
@@ -1002,18 +1006,18 @@ nmo_status_t nmo_ckmesh_deserialize(
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
     
     if (data_version >= 9) {
-        return nmo_ckmesh_deserialize_modern(chunk, arena, out_state);
+        return nmo_mesh_deserialize_modern(chunk, arena, out_state);
     }
 
-    return nmo_ckmesh_deserialize_legacy(chunk, arena, out_state);
+    return nmo_mesh_deserialize_legacy(chunk, arena, out_state);
 }
 
 /* =============================================================================
  * CKMesh SERIALIZATION
  * ============================================================================= */
 
-static uint32_t nmo_ckmesh_compute_save_flags(
-    const nmo_ck_mesh_state_t *state,
+static uint32_t nmo_mesh_compute_save_flags(
+    const nmo_mesh_state_t *state,
     nmo_arena_t *arena)
 {
     uint32_t flags = 0x0Fu;
@@ -1024,15 +1028,15 @@ static uint32_t nmo_ckmesh_compute_save_flags(
 
     const uint32_t vertex_count = state->vertex_count;
 
-    if (state->flags & NMO_MESH_PROCEDURALPOS) {
+    if (state->flags & VXMESH_PROCEDURALPOS) {
         flags |= NMO_VERTEX_POS_EXTERNAL;
     }
 
-    if (!(state->flags & NMO_MESH_PROCEDURALUV) && state->vertices && vertex_count > 0) {
-        float first_u = state->vertices[0].uv.u;
-        float first_v = state->vertices[0].uv.v;
+    if (!(state->flags & VXMESH_PROCEDURALUV) && state->vertices && vertex_count > 0) {
+        float first_u = state->vertices[0].uv.x;
+        float first_v = state->vertices[0].uv.y;
         for (uint32_t i = 0; i < vertex_count; ++i) {
-            if (state->vertices[i].uv.u != first_u || state->vertices[i].uv.v != first_v) {
+            if (state->vertices[i].uv.x != first_u || state->vertices[i].uv.y != first_v) {
                 flags &= ~NMO_VERTEX_UV_UNIFORM;
                 break;
             }
@@ -1061,7 +1065,7 @@ static uint32_t nmo_ckmesh_compute_save_flags(
 
     if (state->vertices && state->faces && state->face_vertex_indices &&
         vertex_count > 0 && state->face_count > 0 &&
-        !(state->flags & (NMO_MESH_GENNORMALS | NMO_MESH_PROCEDURALPOS))) {
+        !(state->flags & (VXMESH_GENNORMALS | VXMESH_PROCEDURALPOS))) {
 
         nmo_vector_t *tmp_normals = (nmo_vector_t *)nmo_arena_alloc(
             arena, sizeof(nmo_vector_t) * vertex_count, alignof(nmo_vector_t));
@@ -1153,21 +1157,21 @@ static uint32_t nmo_ckmesh_compute_save_flags(
  * @param arena     Arena for temporary allocations (must not be NULL)
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckmesh_serialize(
+nmo_status_t nmo_mesh_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ck_mesh_state_t *in_state = (const nmo_ck_mesh_state_t *)instance;
+    const nmo_mesh_state_t *in_state = (const nmo_mesh_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to serialize");
     }
 
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->beobject, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->beobject, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -1225,7 +1229,7 @@ nmo_status_t nmo_ckmesh_serialize(
     }
 
     if (in_state->vertex_count > 0 && in_state->vertices) {
-        uint32_t save_flags = nmo_ckmesh_compute_save_flags(in_state, arena);
+        uint32_t save_flags = nmo_mesh_compute_save_flags(in_state, arena);
 
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHVERTICES);
         if (result != NMO_OK) return result;
@@ -1291,12 +1295,12 @@ nmo_status_t nmo_ckmesh_serialize(
         }
 
         if (in_state->vertex_count > 0) {
-            memcpy(&buffer[offset++], &in_state->vertices[0].uv.u, sizeof(float));
-            memcpy(&buffer[offset++], &in_state->vertices[0].uv.v, sizeof(float));
+            memcpy(&buffer[offset++], &in_state->vertices[0].uv.x, sizeof(float));
+            memcpy(&buffer[offset++], &in_state->vertices[0].uv.y, sizeof(float));
             if (!(save_flags & NMO_VERTEX_UV_UNIFORM)) {
                 for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
-                    memcpy(&buffer[offset++], &in_state->vertices[i].uv.u, sizeof(float));
-                    memcpy(&buffer[offset++], &in_state->vertices[i].uv.v, sizeof(float));
+                    memcpy(&buffer[offset++], &in_state->vertices[i].uv.x, sizeof(float));
+                    memcpy(&buffer[offset++], &in_state->vertices[i].uv.y, sizeof(float));
                 }
             }
         }
@@ -1330,9 +1334,9 @@ nmo_status_t nmo_ckmesh_serialize(
             result = nmo_chunk_write_int(out_chunk, (int32_t)uv_count);
             if (result != NMO_OK) return result;
             for (uint32_t j = 0; j < uv_count; ++j) {
-                result = nmo_chunk_write_float(out_chunk, channel->uv_coords[j].u);
+                result = nmo_chunk_write_float(out_chunk, channel->uv_coords[j].x);
                 if (result != NMO_OK) return result;
-                result = nmo_chunk_write_float(out_chunk, channel->uv_coords[j].v);
+                result = nmo_chunk_write_float(out_chunk, channel->uv_coords[j].y);
                 if (result != NMO_OK) return result;
             }
         }
@@ -1418,14 +1422,14 @@ nmo_status_t nmo_ckmesh_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckmesh_copy(
+static nmo_status_t nmo_mesh_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ck_mesh_state_t *s = src;
-    nmo_ck_mesh_state_t *d = dst;
+    const nmo_mesh_state_t *s = src;
+    nmo_mesh_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->beobject.base.raw_tail,
                                               s->beobject.base.raw_tail, s->beobject.base.raw_tail_size));
@@ -1473,14 +1477,14 @@ static nmo_status_t ckmesh_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckmesh_validate(
+static nmo_status_t nmo_mesh_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ck_mesh_state_t *s = instance;
+    const nmo_mesh_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->faces, s->face_count, "faces");
     if (s->face_count > 0) {
         NMO_VALIDATE_COUNT(s->face_vertex_indices, (uint32_t)(s->face_count * 3u),
@@ -1513,11 +1517,11 @@ static nmo_status_t ckmesh_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckmesh,
-    nmo_ck_mesh_state_t,
-    nmo_ckmesh_serialize,
-    nmo_ckmesh_deserialize,
-    nmo_ckmesh_fields,
+    mesh,
+    nmo_mesh_state_t,
+    nmo_mesh_serialize,
+    nmo_mesh_deserialize,
+    nmo_mesh_fields,
     CKPGUID_MESH,
     "CKMesh",
     NMO_CID_MESH,
@@ -1531,7 +1535,7 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
 /**
  * @brief Finish loading (resolve references, build normals if needed)
  */
-nmo_status_t nmo_ckmesh_finish_loading(
+nmo_status_t nmo_mesh_finish_loading(
     void *state,
     nmo_arena_t *arena,
     void *repository)
@@ -1541,7 +1545,7 @@ nmo_status_t nmo_ckmesh_finish_loading(
     }
     
     // Cast state
-    nmo_ck_mesh_state_t *mesh_state = (nmo_ck_mesh_state_t *)state;
+    nmo_mesh_state_t *mesh_state = (nmo_mesh_state_t *)state;
     
     // Mesh-specific finish loading tasks would go here:
     // - Build face normals if missing

@@ -8,7 +8,7 @@
  * Based on official Virtools SDK (reference/src/CKAttributeManager.cpp:726-890).
  */
 
-#include "object/nmo_ckattributemanager_schemas.h"
+#include "object/nmo_attributemanager_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckattributemanager, nmo_ckattributemanager_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(attributemanager, nmo_attributemanager_state_t)
 
 /* =============================================================================
  * IDENTIFIER CONSTANTS
@@ -40,11 +40,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckattributemanager, nmo_ckattributemanager_st
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckattributemanager_fields[] = {
-    NMO_FIELD(nmo_ckattributemanager_state_t, category_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, categories, NMO_GUID_STRUCT_CKATTRIBUTECATEGORY),
-    NMO_FIELD(nmo_ckattributemanager_state_t, attribute_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckattributemanager_state_t, attributes, NMO_GUID_STRUCT_CKATTRIBUTEDESCRIPTOR)
+static const nmo_type_field_t nmo_attributemanager_fields[] = {
+    NMO_FIELD(nmo_attributemanager_state_t, category_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_attributemanager_state_t, categories, NMO_GUID_STRUCT_CKATTRIBUTECATEGORY),
+    NMO_FIELD(nmo_attributemanager_state_t, attribute_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_attributemanager_state_t, attributes, NMO_GUID_STRUCT_CKATTRIBUTEDESCRIPTOR)
 };
 
 /* =============================================================================
@@ -64,18 +64,18 @@ static const nmo_type_field_t nmo_ckattributemanager_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckattributemanager_deserialize(
+nmo_status_t nmo_attributemanager_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckattributemanager_state_t *out_state = (nmo_ckattributemanager_state_t *)instance;
+    nmo_attributemanager_state_t *out_state = (nmo_attributemanager_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_attributemanager_deserialize");
     }
 
     /* Seek identifier */
@@ -192,7 +192,7 @@ nmo_status_t nmo_ckattributemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckattributemanager_serialize(
+nmo_status_t nmo_attributemanager_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -200,11 +200,11 @@ nmo_status_t nmo_ckattributemanager_serialize(
 {
     (void)type;
     (void)context;
-    const nmo_ckattributemanager_state_t *in_state =
-        (const nmo_ckattributemanager_state_t *)instance;
+    const nmo_attributemanager_state_t *in_state =
+        (const nmo_attributemanager_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckattributemanager_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_attributemanager_serialize");
     }
 
     nmo_status_t result;
@@ -276,11 +276,11 @@ nmo_status_t nmo_ckattributemanager_serialize(
  * ============================================================================= */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckattributemanager,
-    nmo_ckattributemanager_state_t,
-    nmo_ckattributemanager_serialize,
-    nmo_ckattributemanager_deserialize,
-    nmo_ckattributemanager_fields,
+    attributemanager,
+    nmo_attributemanager_state_t,
+    nmo_attributemanager_serialize,
+    nmo_attributemanager_deserialize,
+    nmo_attributemanager_fields,
     NMO_MANAGER_GUID_ATTRIBUTE,
     "CKAttributeManager",
     0,

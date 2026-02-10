@@ -11,12 +11,12 @@
  * - PostLoad ensures bidirectional group membership consistency
  */
 
-#include "object/nmo_ckgroup_schemas.h"
+#include "object/nmo_group_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -31,18 +31,18 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckgroup, nmo_ckgroup_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(group, nmo_group_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckgroup_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckgroup_state_t, base),
-                       sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+static const nmo_type_field_t nmo_group_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_group_state_t, base),
+                       sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF_ARRAY(nmo_ckgroup_state_t, object_ids),
-    NMO_FIELD(nmo_ckgroup_state_t, object_count, CKPGUID_UINT32)
+    NMO_FIELD_REF_ARRAY(nmo_group_state_t, object_ids),
+    NMO_FIELD(nmo_group_state_t, object_count, CKPGUID_UINT32)
 };
 
 /* =============================================================================
@@ -62,22 +62,22 @@ static const nmo_type_field_t nmo_ckgroup_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckgroup_deserialize(
+nmo_status_t nmo_group_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckgroup_state_t *out_state = (nmo_ckgroup_state_t *)instance;
+    nmo_group_state_t *out_state = (nmo_group_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_group_deserialize");
     }
 
     /* Deserialize base CKBeObject state first */
-    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Seek group data identifier */
@@ -143,21 +143,21 @@ nmo_status_t nmo_ckgroup_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckgroup_serialize(
+nmo_status_t nmo_group_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckgroup_state_t *in_state = (const nmo_ckgroup_state_t *)instance;
+    const nmo_group_state_t *in_state = (const nmo_group_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_group_serialize");
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Only write data if group is non-empty */
@@ -182,14 +182,14 @@ nmo_status_t nmo_ckgroup_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckgroup_copy(
+static nmo_status_t nmo_group_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckgroup_state_t *s = src;
-    nmo_ckgroup_state_t *d = dst;
+    const nmo_group_state_t *s = src;
+    nmo_group_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
@@ -207,14 +207,14 @@ static nmo_status_t ckgroup_copy(
                                  s->object_ids, sizeof(nmo_object_id_t), s->object_count);
 }
 
-static nmo_status_t ckgroup_validate(
+static nmo_status_t nmo_group_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckgroup_state_t *s = instance;
+    const nmo_group_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->object_ids, s->object_count, "object_ids");
     NMO_RETURN_OK();
 }
@@ -224,12 +224,12 @@ static nmo_status_t ckgroup_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    ckgroup,
-    nmo_ckgroup_state_t,
-    nmo_ckgroup_serialize,
-    nmo_ckgroup_deserialize,
-    nmo_ckgroup_finish_loading,
-    nmo_ckgroup_fields,
+    group,
+    nmo_group_state_t,
+    nmo_group_serialize,
+    nmo_group_deserialize,
+    nmo_group_finish_loading,
+    nmo_group_fields,
     CKPGUID_GROUP,
     "CKGroup",
     NMO_CID_GROUP,
@@ -249,23 +249,23 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
  * 
  * This is equivalent to CKGroup::PostLoad() in Virtools SDK.
  * 
- * @param state CKGroup state (must be nmo_ckgroup_state_t*)
+ * @param state CKGroup state (must be nmo_group_state_t*)
  * @param arena Arena for allocations
  * @param repository Object repository for reference resolution (opaque void*)
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckgroup_finish_loading(
+nmo_status_t nmo_group_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
 {
     if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgroup_finish_loading");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_group_finish_loading");
     }
 
     (void)arena;
 
-    nmo_ckgroup_state_t *group_state = (nmo_ckgroup_state_t *)instance;
+    nmo_group_state_t *group_state = (nmo_group_state_t *)instance;
     nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
 
     /* Nothing to do for empty groups */

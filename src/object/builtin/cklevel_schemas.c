@@ -12,12 +12,12 @@
  * - Optional manager activation state
  */
 
-#include "object/nmo_cklevel_schemas.h"
+#include "object/nmo_level_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -31,25 +31,25 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(cklevel, nmo_cklevel_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(level, nmo_level_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_cklevel_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_cklevel_state_t, base),
-                       sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+static const nmo_type_field_t nmo_level_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_level_state_t, base),
+                       sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF_ARRAY(nmo_cklevel_state_t, scene_ids),
-    NMO_FIELD(nmo_cklevel_state_t, scene_count, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_cklevel_state_t, current_scene_id),
-    NMO_FIELD_REF(nmo_cklevel_state_t, level_scene_id),
-    NMO_FIELD_OPT(nmo_cklevel_state_t, level_scene_chunk, CKPGUID_STATECHUNK),
-    NMO_FIELD_ARRAY(nmo_cklevel_state_t, inactive_manager_guids, CKPGUID_GUID),
-    NMO_FIELD(nmo_cklevel_state_t, inactive_manager_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_cklevel_state_t, duplicate_manager_names, CKPGUID_STRING),
-    NMO_FIELD(nmo_cklevel_state_t, duplicate_manager_count, CKPGUID_UINT32)
+    NMO_FIELD_REF_ARRAY(nmo_level_state_t, scene_ids),
+    NMO_FIELD(nmo_level_state_t, scene_count, CKPGUID_UINT32),
+    NMO_FIELD_REF(nmo_level_state_t, current_scene_id),
+    NMO_FIELD_REF(nmo_level_state_t, level_scene_id),
+    NMO_FIELD_OPT(nmo_level_state_t, level_scene_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD_ARRAY(nmo_level_state_t, inactive_manager_guids, CKPGUID_GUID),
+    NMO_FIELD(nmo_level_state_t, inactive_manager_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING),
+    NMO_FIELD(nmo_level_state_t, duplicate_manager_count, CKPGUID_UINT32)
 };
 
 /* =============================================================================
@@ -69,22 +69,22 @@ static const nmo_type_field_t nmo_cklevel_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_cklevel_deserialize(
+nmo_status_t nmo_level_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_cklevel_state_t *out_state = (nmo_cklevel_state_t *)instance;
+    nmo_level_state_t *out_state = (nmo_level_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklevel_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_level_deserialize");
     }
 
     /* Deserialize base CKBeObject state first */
-    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Section 1: LEVELDEFAULTDATA - Legacy arrays + scene list */
@@ -266,21 +266,21 @@ nmo_status_t nmo_cklevel_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_cklevel_serialize(
+nmo_status_t nmo_level_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_cklevel_state_t *in_state = (const nmo_cklevel_state_t *)instance;
+    const nmo_level_state_t *in_state = (const nmo_level_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_cklevel_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_level_serialize");
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Section 1: LEVELDEFAULTDATA */
@@ -349,14 +349,14 @@ nmo_status_t nmo_cklevel_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t cklevel_copy(
+static nmo_status_t nmo_level_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_cklevel_state_t *s = src;
-    nmo_cklevel_state_t *d = dst;
+    const nmo_level_state_t *s = src;
+    nmo_level_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
@@ -380,14 +380,14 @@ static nmo_status_t cklevel_copy(
                                         s->duplicate_manager_names, s->duplicate_manager_count);
 }
 
-static nmo_status_t cklevel_validate(
+static nmo_status_t nmo_level_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_cklevel_state_t *s = instance;
+    const nmo_level_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->scene_ids, s->scene_count, "scene_ids");
     NMO_VALIDATE_COUNT(s->inactive_manager_guids, s->inactive_manager_count,
                        "inactive_manager_guids");
@@ -401,11 +401,11 @@ static nmo_status_t cklevel_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    cklevel,
-    nmo_cklevel_state_t,
-    nmo_cklevel_serialize,
-    nmo_cklevel_deserialize,
-    nmo_cklevel_fields,
+    level,
+    nmo_level_state_t,
+    nmo_level_serialize,
+    nmo_level_deserialize,
+    nmo_level_fields,
     CKPGUID_LEVEL,
     "CKLevel",
     NMO_CID_LEVEL,

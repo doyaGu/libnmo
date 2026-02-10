@@ -8,7 +8,7 @@
  * Based on official Virtools SDK (reference/src/CKMessageManager.cpp:178-250).
  */
 
-#include "object/nmo_ckmessagemanager_schemas.h"
+#include "object/nmo_messagemanager_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -25,7 +25,7 @@
 #include <stddef.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmessagemanager, nmo_ckmessagemanager_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(messagemanager, nmo_messagemanager_state_t)
 
 /* =============================================================================
  * IDENTIFIER CONSTANTS
@@ -38,9 +38,9 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckmessagemanager, nmo_ckmessagemanager_state_
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckmessagemanager_fields[] = {
-    NMO_FIELD(nmo_ckmessagemanager_state_t, message_type_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckmessagemanager_state_t, message_type_names, CKPGUID_STRING)
+static const nmo_type_field_t nmo_messagemanager_fields[] = {
+    NMO_FIELD(nmo_messagemanager_state_t, message_type_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_messagemanager_state_t, message_type_names, CKPGUID_STRING)
 };
 
 /* =============================================================================
@@ -60,18 +60,18 @@ static const nmo_type_field_t nmo_ckmessagemanager_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckmessagemanager_deserialize(
+nmo_status_t nmo_messagemanager_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckmessagemanager_state_t *out_state = (nmo_ckmessagemanager_state_t *)instance;
+    nmo_messagemanager_state_t *out_state = (nmo_messagemanager_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_messagemanager_deserialize");
     }
 
     /* Seek identifier */
@@ -131,7 +131,7 @@ nmo_status_t nmo_ckmessagemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckmessagemanager_serialize(
+nmo_status_t nmo_messagemanager_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -139,11 +139,11 @@ nmo_status_t nmo_ckmessagemanager_serialize(
 {
     (void)type;
     (void)context;
-    const nmo_ckmessagemanager_state_t *in_state =
-        (const nmo_ckmessagemanager_state_t *)instance;
+    const nmo_messagemanager_state_t *in_state =
+        (const nmo_messagemanager_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckmessagemanager_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_messagemanager_serialize");
     }
 
     if (in_state->message_type_count > 0 && in_state->message_type_names == NULL) {
@@ -190,11 +190,11 @@ nmo_status_t nmo_ckmessagemanager_serialize(
  * ============================================================================= */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckmessagemanager,
-    nmo_ckmessagemanager_state_t,
-    nmo_ckmessagemanager_serialize,
-    nmo_ckmessagemanager_deserialize,
-    nmo_ckmessagemanager_fields,
+    messagemanager,
+    nmo_messagemanager_state_t,
+    nmo_messagemanager_serialize,
+    nmo_messagemanager_deserialize,
+    nmo_messagemanager_fields,
     NMO_MANAGER_GUID_MESSAGE,
     "CKMessageManager",
     0,

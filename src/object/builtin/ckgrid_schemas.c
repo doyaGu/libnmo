@@ -3,7 +3,7 @@
  * @brief CKGrid schema implementation
  */
 
-#include "object/nmo_ckgrid_schemas.h"
+#include "object/nmo_grid_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -17,27 +17,27 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckgrid, nmo_ckgrid_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(grid, nmo_grid_state_t)
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
 }
 
-nmo_status_t nmo_ckgrid_deserialize(
+nmo_status_t nmo_grid_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckgrid_state_t *out_state = (nmo_ckgrid_state_t *)instance;
+    nmo_grid_state_t *out_state = (nmo_grid_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgrid_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_grid_deserialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GRIDDATA) != NMO_OK) {
@@ -89,20 +89,20 @@ nmo_status_t nmo_ckgrid_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckgrid_serialize(
+nmo_status_t nmo_grid_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckgrid_state_t *in_state = (const nmo_ckgrid_state_t *)instance;
+    const nmo_grid_state_t *in_state = (const nmo_grid_state_t *)instance;
 
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckgrid_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_grid_serialize");
     }
 
-    nmo_status_t result = nmo_ck3dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GRIDDATA);
@@ -138,30 +138,30 @@ nmo_status_t nmo_ckgrid_serialize(
     NMO_RETURN_OK();
 }
 
-static const nmo_type_field_t nmo_ckgrid_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckgrid_state_t, base),
-                    sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_grid_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_grid_state_t, base),
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckgrid_state_t, width, CKPGUID_INT),
-    NMO_FIELD(nmo_ckgrid_state_t, length, CKPGUID_INT),
-    NMO_FIELD(nmo_ckgrid_state_t, priority, CKPGUID_INT),
-    NMO_FIELD(nmo_ckgrid_state_t, orientation_mode, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckgrid_state_t, has_file_flag, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckgrid_state_t, file_flag, CKPGUID_INT),
-    NMO_FIELD_REF_ARRAY(nmo_ckgrid_state_t, layer_ids),
-    NMO_FIELD(nmo_ckgrid_state_t, layer_count, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckgrid_state_t, layer_chunk_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckgrid_state_t, layer_chunks, CKPGUID_STATECHUNK)
+    NMO_FIELD(nmo_grid_state_t, width, CKPGUID_INT),
+    NMO_FIELD(nmo_grid_state_t, length, CKPGUID_INT),
+    NMO_FIELD(nmo_grid_state_t, priority, CKPGUID_INT),
+    NMO_FIELD(nmo_grid_state_t, orientation_mode, CKPGUID_UINT32),
+    NMO_FIELD(nmo_grid_state_t, has_file_flag, CKPGUID_UINT8),
+    NMO_FIELD(nmo_grid_state_t, file_flag, CKPGUID_INT),
+    NMO_FIELD_REF_ARRAY(nmo_grid_state_t, layer_ids),
+    NMO_FIELD(nmo_grid_state_t, layer_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_grid_state_t, layer_chunk_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_grid_state_t, layer_chunks, CKPGUID_STATECHUNK)
 };
 
-static nmo_status_t ckgrid_copy(
+static nmo_status_t nmo_grid_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckgrid_state_t *s = src;
-    nmo_ckgrid_state_t *d = dst;
+    const nmo_grid_state_t *s = src;
+    nmo_grid_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->layer_ids,
                                               s->layer_ids, sizeof(nmo_object_id_t), s->layer_count));
@@ -169,14 +169,14 @@ static nmo_status_t ckgrid_copy(
                                        s->layer_chunks, s->layer_chunk_count);
 }
 
-static nmo_status_t ckgrid_validate(
+static nmo_status_t nmo_grid_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckgrid_state_t *s = instance;
+    const nmo_grid_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->layer_ids, s->layer_count, "layer_ids");
     NMO_VALIDATE_COUNT(s->layer_chunks, s->layer_chunk_count, "layer_chunks");
     NMO_RETURN_OK();
@@ -187,11 +187,11 @@ static nmo_status_t ckgrid_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckgrid,
-    nmo_ckgrid_state_t,
-    nmo_ckgrid_serialize,
-    nmo_ckgrid_deserialize,
-    nmo_ckgrid_fields,
+    grid,
+    nmo_grid_state_t,
+    nmo_grid_serialize,
+    nmo_grid_deserialize,
+    nmo_grid_fields,
     CKPGUID_GRID,
     "CKGrid",
     NMO_CID_GRID,

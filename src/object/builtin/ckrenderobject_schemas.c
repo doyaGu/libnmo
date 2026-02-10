@@ -14,11 +14,11 @@
  * the parent chain functionality as required by design.md ��6.4.
  */
 
-#include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_renderobject_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -31,15 +31,15 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckrenderobject, nmo_ckrenderobject_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(renderobject, nmo_renderobject_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckrenderobject_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckrenderobject_state_t, base),
-                    sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+static const nmo_type_field_t nmo_renderobject_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_renderobject_state_t, base),
+                    sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -62,20 +62,20 @@ static const nmo_type_field_t nmo_ckrenderobject_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckrenderobject_deserialize(
+nmo_status_t nmo_renderobject_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckrenderobject_state_t *out_state = (nmo_ckrenderobject_state_t *)instance;
+    nmo_renderobject_state_t *out_state = (nmo_renderobject_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_renderobject_deserialize");
     }
 
-    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -100,20 +100,20 @@ nmo_status_t nmo_ckrenderobject_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckrenderobject_serialize(
+nmo_status_t nmo_renderobject_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckrenderobject_state_t *in_state = (const nmo_ckrenderobject_state_t *)instance;
+    const nmo_renderobject_state_t *in_state = (const nmo_renderobject_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckrenderobject_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_renderobject_serialize");
     }
 
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -121,14 +121,14 @@ nmo_status_t nmo_ckrenderobject_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckrenderobject_copy(
+static nmo_status_t nmo_renderobject_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckrenderobject_state_t *s = src;
-    nmo_ckrenderobject_state_t *d = dst;
+    const nmo_renderobject_state_t *s = src;
+    nmo_renderobject_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
@@ -144,14 +144,14 @@ static nmo_status_t ckrenderobject_copy(
                                  s->base.legacy_attributes_raw, s->base.legacy_attributes_size);
 }
 
-static nmo_status_t ckrenderobject_validate(
+static nmo_status_t nmo_renderobject_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckrenderobject_state_t *s = instance;
+    const nmo_renderobject_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->base.script_ids, s->base.script_count, "script_ids");
     NMO_VALIDATE_COUNT(s->base.attribute_parameter_ids, s->base.attribute_count, "attribute_parameter_ids");
     NMO_VALIDATE_COUNT(s->base.attribute_types, s->base.attribute_count, "attribute_types");
@@ -165,11 +165,11 @@ static nmo_status_t ckrenderobject_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckrenderobject,
-    nmo_ckrenderobject_state_t,
-    nmo_ckrenderobject_serialize,
-    nmo_ckrenderobject_deserialize,
-    nmo_ckrenderobject_fields,
+    renderobject,
+    nmo_renderobject_state_t,
+    nmo_renderobject_serialize,
+    nmo_renderobject_deserialize,
+    nmo_renderobject_fields,
     CKPGUID_RENDEROBJECT,
     "CKRenderObject",
     NMO_CID_RENDEROBJECT,

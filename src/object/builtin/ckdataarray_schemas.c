@@ -8,12 +8,12 @@
  * Based on official Virtools SDK (reference/src/CKDataArray.cpp:1735-1960).
  */
 
-#include "object/nmo_ckdataarray_schemas.h"
+#include "object/nmo_dataarray_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckbeobject_schemas.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_beobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
@@ -30,8 +30,8 @@
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
-    ckdataarray,
-    nmo_ckdataarray_state_t,
+    dataarray,
+    nmo_dataarray_state_t,
     do { \
         state->key_column = -1; \
     } while (0),
@@ -41,17 +41,17 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckdataarray_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckdataarray_state_t, base),
-                         sizeof(nmo_ckbeobject_state_t), CKPGUID_BEOBJECT,
+static const nmo_type_field_t nmo_dataarray_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_dataarray_state_t, base),
+                         sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckdataarray_state_t, column_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, column_formats, NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT),
-    NMO_FIELD(nmo_ckdataarray_state_t, row_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_ckdataarray_state_t, rows, NMO_GUID_STRUCT_CKDATAARRAYROW),
-    NMO_FIELD(nmo_ckdataarray_state_t, order, CKPGUID_INT),
-    NMO_FIELD(nmo_ckdataarray_state_t, column_index, CKPGUID_UINT32),
-    NMO_FIELD(nmo_ckdataarray_state_t, key_column, CKPGUID_INT)
+    NMO_FIELD(nmo_dataarray_state_t, column_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_dataarray_state_t, column_formats, NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT),
+    NMO_FIELD(nmo_dataarray_state_t, row_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY(nmo_dataarray_state_t, rows, NMO_GUID_STRUCT_CKDATAARRAYROW),
+    NMO_FIELD(nmo_dataarray_state_t, order, CKPGUID_INT),
+    NMO_FIELD(nmo_dataarray_state_t, column_index, CKPGUID_UINT32),
+    NMO_FIELD(nmo_dataarray_state_t, key_column, CKPGUID_INT)
 };
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
@@ -75,22 +75,22 @@ static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckdataarray_deserialize(
+nmo_status_t nmo_dataarray_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckdataarray_state_t *out_state = (nmo_ckdataarray_state_t *)instance;
+    nmo_dataarray_state_t *out_state = (nmo_dataarray_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_dataarray_deserialize");
     }
 
     /* Deserialize base CKBeObject state first */
-    nmo_status_t result = nmo_ckbeobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     nmo_last_error_clear();
@@ -129,7 +129,7 @@ nmo_status_t nmo_ckdataarray_deserialize(
                 int32_t type;
                 result = nmo_chunk_read_int(chunk, &type);
                 if (result != NMO_OK) return result;
-                fmt->type = (nmo_ck_arraytype_t)((uint32_t)type);
+                fmt->type = (nmo_arraytype_t)((uint32_t)type);
 
                 /* Read parameter type GUID for PARAMETER columns */
                 if (fmt->type == CKARRAYTYPE_PARAMETER) {
@@ -266,21 +266,21 @@ nmo_status_t nmo_ckdataarray_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckdataarray_serialize(
+nmo_status_t nmo_dataarray_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckdataarray_state_t *in_state = (const nmo_ckdataarray_state_t *)instance;
+    const nmo_dataarray_state_t *in_state = (const nmo_dataarray_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckdataarray_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_dataarray_serialize");
     }
 
     /* Write base class (CKBeObject) data */
-    nmo_status_t result = nmo_ckbeobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     nmo_last_error_clear();
@@ -375,14 +375,14 @@ nmo_status_t nmo_ckdataarray_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckdataarray_copy(
+static nmo_status_t nmo_dataarray_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_ckdataarray_state_t *s = src;
-    nmo_ckdataarray_state_t *d = dst;
+    const nmo_dataarray_state_t *s = src;
+    nmo_dataarray_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
 
     if (s->column_count > 0) {
@@ -409,7 +409,7 @@ static nmo_status_t ckdataarray_copy(
                 for (uint32_t c = 0; c < sr->column_count; ++c) {
                     nmo_dataarray_cell_t *cell = &dr->cells[c];
                     if (d->column_formats && c < d->column_count) {
-                        nmo_ck_arraytype_t type_id = d->column_formats[c].type;
+                        nmo_arraytype_t type_id = d->column_formats[c].type;
                         if (type_id == CKARRAYTYPE_STRING && sr->cells[c].string_value) {
                             cell->string_value = nmo_arena_strdup(arena, sr->cells[c].string_value);
                         } else if (type_id == CKARRAYTYPE_PARAMETER && sr->cells[c].parameter_chunk) {
@@ -424,14 +424,14 @@ static nmo_status_t ckdataarray_copy(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t ckdataarray_validate(
+static nmo_status_t nmo_dataarray_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
     (void)context;
-    const nmo_ckdataarray_state_t *s = instance;
+    const nmo_dataarray_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->column_formats, s->column_count, "column_formats");
     NMO_VALIDATE_COUNT(s->rows, s->row_count, "rows");
     NMO_RETURN_OK();
@@ -442,11 +442,11 @@ static nmo_status_t ckdataarray_validate(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
-    ckdataarray,
-    nmo_ckdataarray_state_t,
-    nmo_ckdataarray_serialize,
-    nmo_ckdataarray_deserialize,
-    nmo_ckdataarray_fields,
+    dataarray,
+    nmo_dataarray_state_t,
+    nmo_dataarray_serialize,
+    nmo_dataarray_deserialize,
+    nmo_dataarray_fields,
     CKPGUID_DATAARRAY,
     "CKDataArray",
     NMO_CID_DATAARRAY,

@@ -7,11 +7,11 @@
  * Based on official Virtools SDK (reference/src/CKParameterLocal.cpp:100-140).
  */
 
-#include "object/nmo_ckparameterlocal_schemas.h"
+#include "object/nmo_parameterlocal_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -21,18 +21,18 @@
 #include "nmo_types.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckparameterlocal, nmo_ckparameterlocal_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameterlocal, nmo_parameterlocal_state_t)
 
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckparameterlocal_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckparameterlocal_state_t, base),
-                    sizeof(nmo_ckparameter_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_parameterlocal_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_parameterlocal_state_t, base),
+                    sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckparameterlocal_state_t, is_myself, CKPGUID_UINT8),
-    NMO_FIELD(nmo_ckparameterlocal_state_t, is_setting, CKPGUID_UINT8)
+    NMO_FIELD(nmo_parameterlocal_state_t, is_myself, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameterlocal_state_t, is_setting, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -44,21 +44,21 @@ static const nmo_type_field_t nmo_ckparameterlocal_fields[] = {
  *
  * Reference: reference/src/CKParameterLocal.cpp:131-145
  */
-nmo_status_t nmo_ckparameterlocal_deserialize(
+nmo_status_t nmo_parameterlocal_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckparameterlocal_state_t *out_state = (nmo_ckparameterlocal_state_t *)instance;
+    nmo_parameterlocal_state_t *out_state = (nmo_parameterlocal_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
     /* Read base CKParameter state (merged into this chunk by AddChunkAndDelete) */
-    nmo_status_t result = nmo_ckparameter_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Check if "myself" parameter */
@@ -79,14 +79,14 @@ nmo_status_t nmo_ckparameterlocal_deserialize(
  *
  * Reference: reference/src/CKParameterLocal.cpp:119-130
  */
-nmo_status_t nmo_ckparameterlocal_serialize(
+nmo_status_t nmo_parameterlocal_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckparameterlocal_state_t *in_state = (const nmo_ckparameterlocal_state_t *)instance;
+    const nmo_parameterlocal_state_t *in_state = (const nmo_parameterlocal_state_t *)instance;
     nmo_status_t result;
 
     if (in_state == NULL || out_chunk == NULL) {
@@ -95,9 +95,9 @@ nmo_status_t nmo_ckparameterlocal_serialize(
 
     /* Write base state (CKObject when "myself", otherwise CKParameter) */
     if (in_state->is_myself) {
-        result = nmo_ckobject_serialize(&in_state->base.base, out_chunk, NULL, context);
+        result = nmo_object_serialize(&in_state->base.base, out_chunk, NULL, context);
     } else {
-        result = nmo_ckparameter_serialize(&in_state->base, out_chunk, NULL, context);
+        result = nmo_parameter_serialize(&in_state->base, out_chunk, NULL, context);
     }
     if (result != NMO_OK) return result;
 
@@ -121,11 +121,11 @@ nmo_status_t nmo_ckparameterlocal_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckparameterlocal,
-    nmo_ckparameterlocal_state_t,
-    nmo_ckparameterlocal_serialize,
-    nmo_ckparameterlocal_deserialize,
-    nmo_ckparameterlocal_fields,
+    parameterlocal,
+    nmo_parameterlocal_state_t,
+    nmo_parameterlocal_serialize,
+    nmo_parameterlocal_deserialize,
+    nmo_parameterlocal_fields,
     CKPGUID_PARAMETERLOCAL,
     "CKParameterLocal",
     NMO_CID_PARAMETERLOCAL,

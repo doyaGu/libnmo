@@ -8,11 +8,11 @@
  * Based on official Virtools SDK (reference/src/CKBehaviorLink.cpp:49-121).
  */
 
-#include "object/nmo_ckbehaviorlink_schemas.h"
+#include "object/nmo_behaviorlink_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_ckobject_schemas.h"
+#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
@@ -27,8 +27,8 @@
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
-    ckbehaviorlink,
-    nmo_ckbehaviorlink_state_t,
+    behaviorlink,
+    nmo_behaviorlink_state_t,
     do { \
         state->activation_delay = 1; \
         state->initial_activation_delay = 1; \
@@ -39,19 +39,19 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
  * REFLECTION FIELDS
  * ============================================================================= */
 
-static const nmo_type_field_t nmo_ckbehaviorlink_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckbehaviorlink_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_behaviorlink_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_behaviorlink_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, activation_delay, CKPGUID_INT16),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, initial_activation_delay, CKPGUID_INT16),
-    NMO_FIELD_REF(nmo_ckbehaviorlink_state_t, in_io_id),
-    NMO_FIELD_REF(nmo_ckbehaviorlink_state_t, out_io_id),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_format, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, use_new_format, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_curdelay, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_ios, CKPGUID_BOOL),
-    NMO_FIELD(nmo_ckbehaviorlink_state_t, has_legacy_delay, CKPGUID_BOOL)
+    NMO_FIELD(nmo_behaviorlink_state_t, activation_delay, CKPGUID_INT16),
+    NMO_FIELD(nmo_behaviorlink_state_t, initial_activation_delay, CKPGUID_INT16),
+    NMO_FIELD_REF(nmo_behaviorlink_state_t, in_io_id),
+    NMO_FIELD_REF(nmo_behaviorlink_state_t, out_io_id),
+    NMO_FIELD(nmo_behaviorlink_state_t, has_format, CKPGUID_BOOL),
+    NMO_FIELD(nmo_behaviorlink_state_t, use_new_format, CKPGUID_BOOL),
+    NMO_FIELD(nmo_behaviorlink_state_t, has_legacy_curdelay, CKPGUID_BOOL),
+    NMO_FIELD(nmo_behaviorlink_state_t, has_legacy_ios, CKPGUID_BOOL),
+    NMO_FIELD(nmo_behaviorlink_state_t, has_legacy_delay, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -72,23 +72,23 @@ static const nmo_type_field_t nmo_ckbehaviorlink_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckbehaviorlink_deserialize(
+nmo_status_t nmo_behaviorlink_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckbehaviorlink_state_t *out_state = (nmo_ckbehaviorlink_state_t *)instance;
+    nmo_behaviorlink_state_t *out_state = (nmo_behaviorlink_state_t *)instance;
 
     if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorlink_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorlink_deserialize");
     }
 
     nmo_status_t result;
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Try new format first (preferred) */
@@ -162,23 +162,23 @@ nmo_status_t nmo_ckbehaviorlink_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_ckbehaviorlink_serialize(
+nmo_status_t nmo_behaviorlink_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckbehaviorlink_state_t *in_state = (const nmo_ckbehaviorlink_state_t *)instance;
+    const nmo_behaviorlink_state_t *in_state = (const nmo_behaviorlink_state_t *)instance;
 
     if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckbehaviorlink_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorlink_serialize");
     }
 
     nmo_status_t result;
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
@@ -236,11 +236,11 @@ nmo_status_t nmo_ckbehaviorlink_serialize(
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckbehaviorlink,
-    nmo_ckbehaviorlink_state_t,
-    nmo_ckbehaviorlink_serialize,
-    nmo_ckbehaviorlink_deserialize,
-    nmo_ckbehaviorlink_fields,
+    behaviorlink,
+    nmo_behaviorlink_state_t,
+    nmo_behaviorlink_serialize,
+    nmo_behaviorlink_deserialize,
+    nmo_behaviorlink_fields,
     CKPGUID_BEHAVIORLINK,
     "CKBehaviorLink",
     NMO_CID_BEHAVIORLINK,

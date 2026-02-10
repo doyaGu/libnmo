@@ -3,7 +3,7 @@
  * @brief CKKinematicChain schema implementation
  */
 
-#include "object/nmo_ckkinematicchain_schemas.h"
+#include "object/nmo_kinematicchain_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
@@ -15,20 +15,20 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(ckkinematicchain, nmo_ckkinematicchain_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(kinematicchain, nmo_kinematicchain_state_t)
 #include <stddef.h>
 #include <stdalign.h>
 
-static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
-    nmo_ckkinematicchain_state_t *out_state,
+static nmo_status_t nmo_kinematicchain_deserialize_internal(
+    nmo_kinematicchain_state_t *out_state,
     nmo_chunk_t *chunk,
     void *context)
 {
     if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkinematicchain_deserialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_kinematicchain_deserialize");
     }
 
-    nmo_status_t result = nmo_ckobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KINEMATICCHAINALL) == NMO_OK) {
@@ -42,13 +42,13 @@ static nmo_status_t nmo_ckkinematicchain_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-static const nmo_type_field_t nmo_ckkinematicchain_fields[] = {
-    NMO_FIELD_NAMED("base", offsetof(nmo_ckkinematicchain_state_t, base),
-                    sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
+static const nmo_type_field_t nmo_kinematicchain_fields[] = {
+    NMO_FIELD_NAMED("base", offsetof(nmo_kinematicchain_state_t, base),
+                    sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckkinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_ckkinematicchain_state_t, start_effector_id),
-    NMO_FIELD_REF(nmo_ckkinematicchain_state_t, end_effector_id)
+    NMO_FIELD(nmo_kinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_kinematicchain_state_t, start_effector_id),
+    NMO_FIELD_REF(nmo_kinematicchain_state_t, end_effector_id)
 };
 
 /* ============================================================================
@@ -56,27 +56,27 @@ static const nmo_type_field_t nmo_ckkinematicchain_fields[] = {
  * ============================================================================ */
 
 NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
-    ckkinematicchain,
-    nmo_ckkinematicchain_state_t,
-    nmo_ckkinematicchain_serialize,
-    nmo_ckkinematicchain_deserialize,
-    nmo_ckkinematicchain_fields,
+    kinematicchain,
+    nmo_kinematicchain_state_t,
+    nmo_kinematicchain_serialize,
+    nmo_kinematicchain_deserialize,
+    nmo_kinematicchain_fields,
     CKPGUID_KINEMATICCHAIN,
     "CKKinematicChain",
     NMO_CID_KINEMATICCHAIN,
     CKPGUID_OBJECT
 )
 
-static nmo_status_t nmo_ckkinematicchain_serialize_internal(
-    const nmo_ckkinematicchain_state_t *in_state,
+static nmo_status_t nmo_kinematicchain_serialize_internal(
+    const nmo_kinematicchain_state_t *in_state,
     nmo_chunk_t *out_chunk,
     void *context)
 {
     if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_ckkinematicchain_serialize");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_kinematicchain_serialize");
     }
 
-    nmo_status_t result = nmo_ckobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (in_state->has_chain_data) {
@@ -90,25 +90,25 @@ static nmo_status_t nmo_ckkinematicchain_serialize_internal(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_ckkinematicchain_deserialize(
+nmo_status_t nmo_kinematicchain_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    nmo_ckkinematicchain_state_t *out_state = (nmo_ckkinematicchain_state_t *)instance;
-    return nmo_ckkinematicchain_deserialize_internal(out_state, chunk, context);
+    nmo_kinematicchain_state_t *out_state = (nmo_kinematicchain_state_t *)instance;
+    return nmo_kinematicchain_deserialize_internal(out_state, chunk, context);
 }
 
-nmo_status_t nmo_ckkinematicchain_serialize(
+nmo_status_t nmo_kinematicchain_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    const nmo_ckkinematicchain_state_t *in_state = (const nmo_ckkinematicchain_state_t *)instance;
-    return nmo_ckkinematicchain_serialize_internal(in_state, out_chunk, context);
+    const nmo_kinematicchain_state_t *in_state = (const nmo_kinematicchain_state_t *)instance;
+    return nmo_kinematicchain_serialize_internal(in_state, out_chunk, context);
 }
 
