@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_array.h"
 #include "core/nmo_hash.h"
 
 #include "object/nmo_deserialize_context.h"
@@ -40,6 +41,10 @@ NMO_API nmo_status_t nmo_object_default_copy(
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena);
+
+NMO_API void nmo_object_dispose_array_fields(
+    void *instance,
+    const nmo_type_descriptor_t *type);
 
 /* Shared deep-copy / validate implementations used by object vtables. */
 NMO_API nmo_status_t nmo_object_copy(
@@ -110,6 +115,23 @@ NMO_API nmo_status_t nmo_object_copy_chunk_array(
     uint32_t count);
 
 /* ============================================================================
+ * Chunk Array Helpers (nmo_array_t)
+ * ============================================================================ */
+NMO_API void nmo_object_array_set_chunk_lifecycle(nmo_array_t *array);
+
+NMO_API void nmo_object_array_set_string_lifecycle(nmo_array_t *array);
+
+NMO_API nmo_status_t nmo_object_clone_chunk_array(
+    nmo_arena_t *arena,
+    nmo_array_t *dst,
+    const nmo_array_t *src);
+
+NMO_API nmo_status_t nmo_object_clone_string_array(
+    nmo_arena_t *arena,
+    nmo_array_t *dst,
+    const nmo_array_t *src);
+
+/* ============================================================================
  * Validation Helpers
  * ============================================================================ */
 #define NMO_VALIDATE_COUNT(ptr, count, label) \
@@ -160,6 +182,7 @@ NMO_API nmo_status_t nmo_object_copy_chunk_array(
         } \
         _state_t *state = (_state_t *)instance; \
         _destroy_block; \
+        nmo_object_dispose_array_fields(state, type); \
         memset(state, 0, sizeof(*state)); \
     }
 

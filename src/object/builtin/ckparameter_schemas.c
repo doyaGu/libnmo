@@ -28,6 +28,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
@@ -36,6 +37,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     parameter,
     nmo_parameter_state_t,
     do { \
+        nmo_status_t result = nmo_array_init(&state->buffer_data, sizeof(uint8_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
         state->mode = CKPARAM_MODE_NONE; \
         state->has_state = false; \
     } while (0),
@@ -56,7 +59,6 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
     NMO_FIELD(nmo_parameter_state_t, mode, NMO_GUID_ENUM_CK_PARAMETER_MODE),
     NMO_FIELD(nmo_parameter_state_t, has_state, CKPGUID_BOOL),
     NMO_FIELD_ARRAY(nmo_parameter_state_t, buffer_data, CKPGUID_UINT8),
-    NMO_FIELD(nmo_parameter_state_t, buffer_size, CKPGUID_UINT64),
     NMO_FIELD_REF(nmo_parameter_state_t, object_id),
     NMO_FIELD(nmo_parameter_state_t, manager_guid, CKPGUID_GUID),
     NMO_FIELD(nmo_parameter_state_t, manager_value, CKPGUID_UINT32),
@@ -95,8 +97,6 @@ nmo_status_t nmo_parameter_deserialize(
 {
     (void)type;
     nmo_parameter_state_t *out_state = (nmo_parameter_state_t *)instance;
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
-
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameter_deserialize");
     }
@@ -166,10 +166,10 @@ nmo_status_t nmo_parameter_deserialize(
         size_t buffer_size = 0;
         result = nmo_chunk_read_buffer(chunk, &buffer_ptr, &buffer_size);
         if (result == NMO_OK && buffer_size > 0) {
-            out_state->buffer_data = (uint8_t *)nmo_arena_alloc(arena, buffer_size, 1);
-            if (out_state->buffer_data) {
-                memcpy(out_state->buffer_data, buffer_ptr, buffer_size);
-                out_state->buffer_size = buffer_size;
+            nmo_array_clear(&out_state->buffer_data);
+            result = nmo_array_alloc(&out_state->buffer_data, sizeof(uint8_t), buffer_size, NULL);
+            if (result == NMO_OK) {
+                memcpy(out_state->buffer_data.data, buffer_ptr, buffer_size);
             }
         }
         NMO_RETURN_OK();
@@ -236,7 +236,7 @@ nmo_status_t nmo_parameter_serialize(
     if (!in_state->has_state) {
         bool inferred_has_state = false;
         if (in_state->mode != CKPARAM_MODE_NONE ||
-            in_state->buffer_size > 0 ||
+            in_state->buffer_data.count > 0 ||
             in_state->object_id != 0 ||
             in_state->subchunk != NULL ||
             in_state->manager_guid.d1 != 0 ||
@@ -283,9 +283,9 @@ nmo_status_t nmo_parameter_serialize(
         default:
             result = nmo_chunk_write_dword(out_chunk, 1);
             if (result != NMO_OK) return result;
-            if (in_state->buffer_data && in_state->buffer_size > 0) {
-                result = nmo_chunk_write_buffer(out_chunk, in_state->buffer_data,
-                    in_state->buffer_size);
+            if (in_state->buffer_data.data && in_state->buffer_data.count > 0) {
+                result = nmo_chunk_write_buffer(out_chunk, in_state->buffer_data.data,
+                    in_state->buffer_data.count);
                 if (result != NMO_OK) return result;
             }
             break;
@@ -303,8 +303,7 @@ static nmo_status_t nmo_parameter_copy(
     const nmo_parameter_state_t *s = src;
     nmo_parameter_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->buffer_data,
-                                              s->buffer_data, s->buffer_size));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->buffer_data, &d->buffer_data, &s->buffer_data.allocator));
     return nmo_object_copy_chunk(arena, &d->subchunk, s->subchunk);
 }
 
@@ -316,7 +315,7 @@ static nmo_status_t nmo_parameter_validate(
     (void)type;
     (void)context;
     const nmo_parameter_state_t *s = instance;
-    NMO_VALIDATE_BYTES(s->buffer_data, s->buffer_size, "buffer_data");
+    NMO_VALIDATE_BYTES(s->buffer_data.data, s->buffer_data.count, "buffer_data");
     NMO_RETURN_OK();
 }
 

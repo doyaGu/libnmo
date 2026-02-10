@@ -16,6 +16,7 @@
 #define NMO_CKSCENE_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_array.h"
 #include "nmo_beobject_schemas.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
@@ -55,8 +56,7 @@ typedef struct nmo_scene_state {
     nmo_object_id_t level_id;                  /**< Parent level ID */
     
     /* Scene objects */
-    nmo_scene_object_desc_t *object_descs;     /**< Array of scene object descriptors */
-    uint32_t object_count;                     /**< Number of scene objects */
+    nmo_array_t object_descs;                  /**< Scene object descriptors (nmo_scene_object_desc_t) */
     
     /* Environment settings */
     uint32_t environment_settings;             /**< Scene behavior flags */

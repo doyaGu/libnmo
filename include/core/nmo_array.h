@@ -54,9 +54,12 @@ NMO_API nmo_status_t nmo_array_init(nmo_array_t *array,
 /**
  * @brief Configure lifecycle callbacks for stored elements.
  *
+ * Init callbacks run when new element slots are created (extend/alloc/resize).
+ * Reset callbacks run before overwriting existing slots (set).
  * Copy callbacks are invoked when elements are written into the array
  * (append/insert/set/clone). Move callbacks are invoked when elements
  * are relocated inside the array (reserve/insert/remove/shrink).
+ * When init/reset are NULL, new slots are zero-initialized by default.
  */
 NMO_API void nmo_array_set_lifecycle(nmo_array_t *array,
                                       const nmo_container_lifecycle_t *lifecycle);

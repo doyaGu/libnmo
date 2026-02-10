@@ -54,10 +54,13 @@ NMO_API nmo_status_t nmo_arena_array_init(nmo_arena_array_t *array,
 /**
  * @brief Configure lifecycle callbacks for stored elements.
  *
- * When a dispose callback is provided it is invoked for every element that
- * leaves the array (overwrite, remove, pop, clear, dispose, set_data).
+ * Init callbacks run when new element slots are created (extend/alloc/resize).
+ * Reset callbacks run before overwriting existing slots (set).
+ * Dispose callbacks are invoked for every element that leaves the array
+ * (remove, pop, clear, dispose, set_data).
  * Copy callbacks run when elements are written into the array and move
  * callbacks run when elements are relocated inside the array.
+ * When init/reset are NULL, new slots are zero-initialized by default.
  * Passing NULL resets the lifecycle to a no-op configuration.
  *
  * @param array  Array to configure (required)

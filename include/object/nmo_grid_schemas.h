@@ -8,6 +8,7 @@
 
 #include "object/nmo_3dentity_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "core/nmo_array.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -34,11 +35,8 @@ typedef struct nmo_grid_state {
     uint8_t has_file_flag;
     int32_t file_flag;
 
-    nmo_object_id_t *layer_ids;
-    uint32_t layer_count;
-
-    uint32_t layer_chunk_count;
-    nmo_chunk_t **layer_chunks;
+    nmo_array_t layer_ids;    /**< Layer IDs (nmo_object_id_t) */
+    nmo_array_t layer_chunks; /**< Layer chunks (nmo_chunk_t *) */
 } nmo_grid_state_t;
 
 NMO_API nmo_status_t nmo_grid_deserialize(

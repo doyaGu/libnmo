@@ -320,10 +320,14 @@ nmo_indexed_map_t *nmo_indexed_map_create(
     map->value_size = value_size;
     map->hash_func = hash_func ? hash_func : indexed_map_hash_default;
     map->compare_func = compare_func ? compare_func : indexed_map_default_compare;
+    map->key_lifecycle.init = NULL;
+    map->key_lifecycle.reset = NULL;
     map->key_lifecycle.copy = NULL;
     map->key_lifecycle.move = NULL;
     map->key_lifecycle.dispose = NULL;
     map->key_lifecycle.user_data = NULL;
+    map->value_lifecycle.init = NULL;
+    map->value_lifecycle.reset = NULL;
     map->value_lifecycle.copy = NULL;
     map->value_lifecycle.move = NULL;
     map->value_lifecycle.dispose = NULL;
@@ -399,6 +403,8 @@ void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
     if (key_lifecycle) {
         map->key_lifecycle = *key_lifecycle;
     } else {
+        map->key_lifecycle.init = NULL;
+        map->key_lifecycle.reset = NULL;
         map->key_lifecycle.copy = NULL;
         map->key_lifecycle.move = NULL;
         map->key_lifecycle.dispose = NULL;
@@ -408,6 +414,8 @@ void nmo_indexed_map_set_lifecycle(nmo_indexed_map_t *map,
     if (value_lifecycle) {
         map->value_lifecycle = *value_lifecycle;
     } else {
+        map->value_lifecycle.init = NULL;
+        map->value_lifecycle.reset = NULL;
         map->value_lifecycle.copy = NULL;
         map->value_lifecycle.move = NULL;
         map->value_lifecycle.dispose = NULL;
@@ -458,10 +466,8 @@ nmo_status_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, con
 
     if (found) {
         size_t dense_index = map->hash_to_dense[slot];
-        if (map->value_lifecycle.dispose) {
-            void *value_ptr = map->dense_values + (dense_index * map->value_size);
-            map->value_lifecycle.dispose(value_ptr, map->value_lifecycle.user_data);
-        }
+        void *value_ptr = map->dense_values + (dense_index * map->value_size);
+        nmo_container_reset_element(&map->value_lifecycle, value_ptr, map->value_size);
         indexed_map_copy_value(map,
                                map->dense_values + (dense_index * map->value_size),
                                value);

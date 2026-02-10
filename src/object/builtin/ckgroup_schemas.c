@@ -23,6 +23,7 @@
 #include "format/nmo_chunk_api.h"
 #include "session/nmo_object_repository.h"
 #include "core/nmo_error.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "type/nmo_reflection.h"
@@ -31,7 +32,14 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(group, nmo_group_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    group,
+    nmo_group_state_t,
+    do {
+        nmo_status_t result = nmo_array_init(&state->object_ids, sizeof(nmo_object_id_t), 0, NULL);
+        if (result != NMO_OK) return result;
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -41,8 +49,7 @@ static const nmo_type_field_t nmo_group_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_group_state_t, base),
                        sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF_ARRAY(nmo_group_state_t, object_ids),
-    NMO_FIELD(nmo_group_state_t, object_count, CKPGUID_UINT32)
+    NMO_FIELD_REF_ARRAY(nmo_group_state_t, object_ids)
 };
 
 /* =============================================================================
@@ -70,8 +77,6 @@ nmo_status_t nmo_group_deserialize(
 {
     (void)type;
     nmo_group_state_t *out_state = (nmo_group_state_t *)instance;
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
-
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_group_deserialize");
     }
@@ -102,23 +107,20 @@ nmo_status_t nmo_group_deserialize(
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
         }
 
-        out_state->object_count = (uint32_t)count;
-        out_state->object_ids = (nmo_object_id_t *)nmo_arena_alloc(
-            arena,
-            count * sizeof(nmo_object_id_t),
-            _Alignof(nmo_object_id_t)
-        );
+        nmo_array_clear(&out_state->object_ids);
+        result = nmo_array_reserve(&out_state->object_ids, count);
+        if (result != NMO_OK) return result;
 
-        if (!out_state->object_ids) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
-        }
+        nmo_object_id_t *ids = NULL;
+        result = nmo_array_extend(&out_state->object_ids, count, (void **)&ids);
+        if (result != NMO_OK) return result;
 
         /* Read object IDs */
         for (int32_t i = 0; i < count; i++) {
-            result = nmo_chunk_read_object_id(chunk, &out_state->object_ids[i]);
+            result = nmo_chunk_read_object_id(chunk, &ids[i]);
             if (result != NMO_OK) {
                 /* Partial read - save what we got */
-                out_state->object_count = i;
+                out_state->object_ids.count = i;
                 NMO_RETURN_OK();
             }
         }
@@ -161,7 +163,7 @@ nmo_status_t nmo_group_serialize(
     if (result != NMO_OK) return result;
 
     /* Only write data if group is non-empty */
-    if (in_state->object_count == 0 || !in_state->object_ids) {
+    if (in_state->object_ids.count == 0 || !in_state->object_ids.data) {
         NMO_RETURN_OK();
     }
 
@@ -170,12 +172,13 @@ nmo_status_t nmo_group_serialize(
     if (result != NMO_OK) return result;
 
     /* Write object count */
-    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_ids.count);
     if (result != NMO_OK) return result;
 
     /* Write object IDs */
-    for (uint32_t i = 0; i < in_state->object_count; i++) {
-        result = nmo_chunk_write_object_id(out_chunk, in_state->object_ids[i]);
+    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->object_ids);
+    for (uint32_t i = 0; i < in_state->object_ids.count; i++) {
+        result = nmo_chunk_write_object_id(out_chunk, ids[i]);
         if (result != NMO_OK) return result;
     }
 
@@ -193,18 +196,19 @@ static nmo_status_t nmo_group_copy(
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.script_ids,
-                                              s->base.script_ids, sizeof(nmo_object_id_t), s->base.script_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_parameter_ids,
-                                              s->base.attribute_parameter_ids, sizeof(nmo_object_id_t), s->base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_types,
-                                              s->base.attribute_types, sizeof(uint32_t), s->base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->base.attribute_chunks,
-                                                    s->base.attribute_chunks, s->base.attribute_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
-                                              s->base.legacy_attributes_raw, s->base.legacy_attributes_size));
-    return nmo_object_copy_array(arena, (void **)&d->object_ids,
-                                 s->object_ids, sizeof(nmo_object_id_t), s->object_count);
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
+                                        &s->base.script_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
+                                        &d->base.attribute_parameter_ids,
+                                        &s->base.attribute_parameter_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types, &d->base.attribute_types,
+                                        &s->base.attribute_types.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
+                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.legacy_attributes_raw,
+                                        &d->base.legacy_attributes_raw,
+                                        &s->base.legacy_attributes_raw.allocator));
+    return nmo_array_clone(&s->object_ids, &d->object_ids, &s->object_ids.allocator);
 }
 
 static nmo_status_t nmo_group_validate(
@@ -215,7 +219,7 @@ static nmo_status_t nmo_group_validate(
     (void)type;
     (void)context;
     const nmo_group_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->object_ids, s->object_count, "object_ids");
+    NMO_VALIDATE_COUNT(s->object_ids.data, s->object_ids.count, "object_ids");
     NMO_RETURN_OK();
 }
 
@@ -269,7 +273,7 @@ nmo_status_t nmo_group_finish_loading(
     nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
 
     /* Nothing to do for empty groups */
-    if (group_state->object_count == 0 || !group_state->object_ids) {
+    if (group_state->object_ids.count == 0 || !group_state->object_ids.data) {
         NMO_RETURN_OK();
     }
 
@@ -288,8 +292,9 @@ nmo_status_t nmo_group_finish_loading(
     uint32_t resolved_count = 0;
     uint32_t unresolved_count = 0;
 
-    for (uint32_t i = 0; i < group_state->object_count; i++) {
-        nmo_object_id_t obj_id = group_state->object_ids[i];
+    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &group_state->object_ids);
+    for (uint32_t i = 0; i < group_state->object_ids.count; i++) {
+        nmo_object_id_t obj_id = ids[i];
         
         /* Skip null references */
         if (obj_id == 0) {

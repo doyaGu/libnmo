@@ -12,11 +12,20 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
-#include "core/nmo_arena.h"
+#include "core/nmo_array.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(synchro, nmo_synchro_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    synchro,
+    nmo_synchro_state_t,
+    do {
+        nmo_status_t result = nmo_array_init(&state->arrived_ids, sizeof(nmo_object_id_t), 0, NULL);
+        if (result != NMO_OK) return result;
+        result = nmo_array_init(&state->passed_ids, sizeof(nmo_object_id_t), 0, NULL);
+        if (result != NMO_OK) return result;
+    } while (0),
+    ((void)0))
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(state, nmo_state_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(criticalsection, nmo_criticalsection_state_t)
 
@@ -30,9 +39,7 @@ static const nmo_type_field_t nmo_synchro_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_synchro_state_t, max_waiters, CKPGUID_INT),
     NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, arrived_ids),
-    NMO_FIELD(nmo_synchro_state_t, arrived_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, passed_ids),
-    NMO_FIELD(nmo_synchro_state_t, passed_count, CKPGUID_UINT32)
+    NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, passed_ids)
 };
 
 static const nmo_type_field_t nmo_state_fields[] = {
@@ -77,7 +84,6 @@ nmo_status_t nmo_synchro_deserialize(
 {
     (void)type;
     nmo_synchro_state_t *out_state = (nmo_synchro_state_t *)instance;
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (!chunk || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_deserialize");
@@ -92,26 +98,32 @@ nmo_status_t nmo_synchro_deserialize(
         size_t count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &count);
         if (result == NMO_OK && count > 0) {
-            out_state->arrived_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena, count * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
-            if (out_state->arrived_ids) {
-                out_state->arrived_count = (uint32_t)count;
-                for (size_t i = 0; i < count; ++i) {
-                    nmo_chunk_read_object_sequence_item(chunk, &out_state->arrived_ids[i]);
-                }
+            nmo_array_clear(&out_state->arrived_ids);
+            result = nmo_array_reserve(&out_state->arrived_ids, count);
+            if (result != NMO_OK) return result;
+
+            nmo_object_id_t *arrived_ids = NULL;
+            result = nmo_array_extend(&out_state->arrived_ids, count, (void **)&arrived_ids);
+            if (result != NMO_OK) return result;
+
+            for (size_t i = 0; i < count; ++i) {
+                nmo_chunk_read_object_sequence_item(chunk, &arrived_ids[i]);
             }
         }
 
         count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &count);
         if (result == NMO_OK && count > 0) {
-            out_state->passed_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena, count * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
-            if (out_state->passed_ids) {
-                out_state->passed_count = (uint32_t)count;
-                for (size_t i = 0; i < count; ++i) {
-                    nmo_chunk_read_object_sequence_item(chunk, &out_state->passed_ids[i]);
-                }
+            nmo_array_clear(&out_state->passed_ids);
+            result = nmo_array_reserve(&out_state->passed_ids, count);
+            if (result != NMO_OK) return result;
+
+            nmo_object_id_t *passed_ids = NULL;
+            result = nmo_array_extend(&out_state->passed_ids, count, (void **)&passed_ids);
+            if (result != NMO_OK) return result;
+
+            for (size_t i = 0; i < count; ++i) {
+                nmo_chunk_read_object_sequence_item(chunk, &passed_ids[i]);
             }
         }
     }
@@ -181,16 +193,18 @@ nmo_status_t nmo_synchro_serialize(
     result = nmo_chunk_write_int(out_chunk, in_state->max_waiters);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->arrived_count);
+    result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->arrived_ids.count);
     if (result != NMO_OK) return result;
-    for (uint32_t i = 0; i < in_state->arrived_count; ++i) {
-        nmo_chunk_write_object_sequence_item(out_chunk, in_state->arrived_ids[i]);
+    const nmo_object_id_t *arrived_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->arrived_ids);
+    for (uint32_t i = 0; i < in_state->arrived_ids.count; ++i) {
+        nmo_chunk_write_object_sequence_item(out_chunk, arrived_ids[i]);
     }
 
-    result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->passed_count);
+    result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->passed_ids.count);
     if (result != NMO_OK) return result;
-    for (uint32_t i = 0; i < in_state->passed_count; ++i) {
-        nmo_chunk_write_object_sequence_item(out_chunk, in_state->passed_ids[i]);
+    const nmo_object_id_t *passed_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->passed_ids);
+    for (uint32_t i = 0; i < in_state->passed_ids.count; ++i) {
+        nmo_chunk_write_object_sequence_item(out_chunk, passed_ids[i]);
     }
 
     NMO_RETURN_OK();

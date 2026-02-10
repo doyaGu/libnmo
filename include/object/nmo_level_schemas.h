@@ -15,6 +15,7 @@
 #define NMO_CKLEVEL_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "nmo_beobject_schemas.h"
 #include "object/nmo_object_type_common.h"
@@ -52,8 +53,7 @@ typedef struct nmo_level_state {
     nmo_beobject_state_t base;         /**< CKBeObject base state */
     
     /* Scene management */
-    nmo_object_id_t *scene_ids;          /**< Array of scene object IDs */
-    uint32_t scene_count;                /**< Number of scenes in level */
+    nmo_array_t scene_ids;               /**< Scene object IDs (nmo_object_id_t) */
     
     nmo_object_id_t current_scene_id;    /**< Current active scene ID */
     nmo_object_id_t level_scene_id;      /**< Default level scene ID */
@@ -62,11 +62,9 @@ typedef struct nmo_level_state {
     nmo_chunk_t *level_scene_chunk;      /**< Embedded chunk for level scene */
     
     /* Manager state (optional, rarely used) */
-    nmo_guid_t *inactive_manager_guids;  /**< Array of inactive manager GUIDs */
-    uint32_t inactive_manager_count;     /**< Number of inactive managers */
+    nmo_array_t inactive_manager_guids;  /**< Inactive manager GUIDs (nmo_guid_t) */
     
-    char **duplicate_manager_names;      /**< Array of duplicate manager names */
-    uint32_t duplicate_manager_count;    /**< Number of duplicate managers */
+    nmo_array_t duplicate_manager_names; /**< Duplicate manager names (char *) */
 } nmo_level_state_t;
 
 /* =============================================================================

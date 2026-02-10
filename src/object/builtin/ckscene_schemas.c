@@ -24,14 +24,21 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
-#include "core/nmo_arena.h"
+#include "core/nmo_array.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(scene, nmo_scene_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    scene,
+    nmo_scene_state_t,
+    do {
+        nmo_status_t result = nmo_array_init(&state->object_descs, sizeof(nmo_scene_object_desc_t), 0, NULL);
+        if (result != NMO_OK) return result;
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -43,7 +50,6 @@ static const nmo_type_field_t nmo_scene_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF(nmo_scene_state_t, level_id),
     NMO_FIELD_ARRAY(nmo_scene_state_t, object_descs, NMO_GUID_STRUCT_CKSCENEOBJECTDESC),
-    NMO_FIELD(nmo_scene_state_t, object_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_scene_state_t, environment_settings, NMO_GUID_ENUM_CK_SCENE_FLAGS),
     NMO_FIELD_NAMED("background_color", offsetof(nmo_scene_state_t, background_color),
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
@@ -90,8 +96,6 @@ nmo_status_t nmo_scene_deserialize(
 {
     (void)type;
     nmo_scene_state_t *out_state = (nmo_scene_state_t *)instance;
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
-
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_scene_deserialize");
     }
@@ -112,28 +116,25 @@ nmo_status_t nmo_scene_deserialize(
         result = nmo_chunk_read_int(chunk, &desc_count);
         if (result != NMO_OK) return result;
 
+        nmo_array_clear(&out_state->object_descs);
         if (desc_count > 0) {
             const uint32_t MAX_SCENE_OBJECTS = 100000;
             if ((uint32_t)desc_count > MAX_SCENE_OBJECTS) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Scene object count exceeds maximum");
             }
 
-            out_state->object_count = (uint32_t)desc_count;
-            out_state->object_descs = (nmo_scene_object_desc_t *)nmo_arena_alloc(
-                arena,
-                desc_count * sizeof(nmo_scene_object_desc_t),
-                _Alignof(nmo_scene_object_desc_t)
-            );
+            result = nmo_array_reserve(&out_state->object_descs, (size_t)desc_count);
+            if (result != NMO_OK) return result;
 
-            if (!out_state->object_descs) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate scene object descriptor array");
-            }
+            nmo_scene_object_desc_t *descs = NULL;
+            result = nmo_array_extend(&out_state->object_descs, (size_t)desc_count, (void **)&descs);
+            if (result != NMO_OK) return result;
 
             /* Initialize descriptors */
             for (int32_t i = 0; i < desc_count; i++) {
-                out_state->object_descs[i].object_id = 0;
-                out_state->object_descs[i].initial_value = NULL;
-                out_state->object_descs[i].flags = 0;
+                descs[i].object_id = 0;
+                descs[i].initial_value = NULL;
+                descs[i].flags = 0;
             }
 
             /* Read object ID sequence */
@@ -142,9 +143,9 @@ nmo_status_t nmo_scene_deserialize(
 
             for (int32_t i = 0; i < desc_count; i++) {
                 result = nmo_chunk_read_object_sequence_item(chunk,
-                    &out_state->object_descs[i].object_id);
+                    &descs[i].object_id);
                 if (result != NMO_OK) {
-                    out_state->object_count = i;
+                    out_state->object_descs.count = (size_t)i;
                     break;
                 }
             }
@@ -158,9 +159,9 @@ nmo_status_t nmo_scene_deserialize(
                 /* Read pairs of chunks: initial value + reserved (NULL) */
                 for (int32_t i = 0; i < desc_count && (size_t)(i * 2) < sub_chunk_count; i++) {
                     /* Read initial value chunk */
-                    result = nmo_chunk_read_sub_chunk(chunk, &out_state->object_descs[i].initial_value);
+                    result = nmo_chunk_read_sub_chunk(chunk, &descs[i].initial_value);
                     if (result != NMO_OK) {
-                        out_state->object_descs[i].initial_value = NULL;
+                        descs[i].initial_value = NULL;
                         /* Continue reading - missing initial value is valid */
                     }
 
@@ -180,7 +181,7 @@ nmo_status_t nmo_scene_deserialize(
                     break;
                 }
                 if (nmo_chunk_get_data_version(chunk) >= 8) {
-                    out_state->object_descs[i].flags = flags;
+                    descs[i].flags = flags;
                 } else {
                     uint32_t converted = flags & CK_SCENEOBJECT_ACTIVE;
                     if (flags & 2) {
@@ -191,7 +192,7 @@ nmo_status_t nmo_scene_deserialize(
                     } else {
                         converted |= CK_SCENEOBJECT_START_DEACTIVATE;
                     }
-                    out_state->object_descs[i].flags = converted;
+                    descs[i].flags = converted;
                 }
             }
         }
@@ -285,30 +286,33 @@ nmo_status_t nmo_scene_serialize(
     if (result != NMO_OK) return result;
 
     /* Write object count */
-    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_count);
+    result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->object_descs.count);
     if (result != NMO_OK) return result;
 
-    if (in_state->object_count > 0) {
+    if (in_state->object_descs.count > 0) {
         /* Write object ID sequence */
-        result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->object_count);
+        result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->object_descs.count);
         if (result != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < in_state->object_count; i++) {
+        const nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
+                                                              &in_state->object_descs);
+        for (uint32_t i = 0; i < in_state->object_descs.count; i++) {
             result = nmo_chunk_write_object_sequence_item(out_chunk,
-                in_state->object_descs[i].object_id);
+                descs[i].object_id);
             if (result != NMO_OK) return result;
         }
 
         /* Write sub-chunk sequence (initial values + reserved NULLs) */
-        result = nmo_chunk_start_sub_chunk_sequence(out_chunk, in_state->object_count * 2);
+        result = nmo_chunk_start_sub_chunk_sequence(out_chunk,
+                                                    (uint32_t)in_state->object_descs.count * 2);
         if (result != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < in_state->object_count; i++) {
+        for (uint32_t i = 0; i < in_state->object_descs.count; i++) {
             /* Write initial value chunk */
-            if (in_state->object_descs[i].initial_value) {
+            if (descs[i].initial_value) {
                 result = nmo_chunk_write_sub_chunk_sequence(
                     out_chunk,
-                    in_state->object_descs[i].initial_value);
+                    descs[i].initial_value);
                 if (result != NMO_OK) return result;
             } else {
                 /* Write NULL chunk */
@@ -322,8 +326,8 @@ nmo_status_t nmo_scene_serialize(
         }
 
         /* Write object flags */
-        for (uint32_t i = 0; i < in_state->object_count; i++) {
-            result = nmo_chunk_write_dword(out_chunk, in_state->object_descs[i].flags);
+        for (uint32_t i = 0; i < in_state->object_descs.count; i++) {
+            result = nmo_chunk_write_dword(out_chunk, descs[i].flags);
             if (result != NMO_OK) return result;
         }
     }
@@ -394,14 +398,17 @@ static nmo_status_t nmo_scene_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
                                               s->base.legacy_attributes_raw, s->base.legacy_attributes_size));
 
-    if (s->object_count > 0) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->object_descs,
-                                                  s->object_descs, sizeof(nmo_scene_object_desc_t),
-                                                  s->object_count));
-        for (uint32_t i = 0; i < s->object_count; ++i) {
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->object_descs, &d->object_descs,
+                                        &s->object_descs.allocator));
+    if (s->object_descs.count > 0) {
+        const nmo_scene_object_desc_t *src_descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
+                                                                  &s->object_descs);
+        nmo_scene_object_desc_t *dst_descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
+                                                            &d->object_descs);
+        for (uint32_t i = 0; i < s->object_descs.count; ++i) {
             nmo_chunk_t *clone = NULL;
-            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &clone, s->object_descs[i].initial_value));
-            d->object_descs[i].initial_value = clone;
+            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &clone, src_descs[i].initial_value));
+            dst_descs[i].initial_value = clone;
         }
     }
 
@@ -416,7 +423,7 @@ static nmo_status_t nmo_scene_validate(
     (void)type;
     (void)context;
     const nmo_scene_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->object_descs, s->object_count, "object_descs");
+    NMO_VALIDATE_COUNT(s->object_descs.data, s->object_descs.count, "object_descs");
     NMO_RETURN_OK();
 }
 

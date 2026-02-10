@@ -26,6 +26,7 @@
 #include "app/nmo_session.h"
 #include "session/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
+#include "core/nmo_array.h"
 
 #include "dsl/nmo_dsl.h"
 
@@ -509,6 +510,14 @@ static uint64_t nmo_summary_guess_array_count(
 {
     if (!owner_type || !owner_instance || !field) {
         return 0;
+    }
+
+    if (field->flags & NMO_FIELD_REPEATED) {
+        const void *field_ptr = nmo_field_get_ptr_const(owner_instance, field);
+        if (field_ptr && field->size == sizeof(nmo_array_t)) {
+            const nmo_array_t *array = (const nmo_array_t *)field_ptr;
+            return (uint64_t)array->count;
+        }
     }
 
     /* Look for a count field with naming convention: {field_name}_count */

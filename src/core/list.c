@@ -172,6 +172,8 @@ nmo_list_t *nmo_list_create(nmo_arena_t *arena, size_t element_size) {
     list->head = NULL;
     list->tail = NULL;
     list->free_nodes = NULL;
+    list->lifecycle.init = NULL;
+    list->lifecycle.reset = NULL;
     list->lifecycle.copy = NULL;
     list->lifecycle.move = NULL;
     list->lifecycle.dispose = NULL;
@@ -204,6 +206,8 @@ void nmo_list_set_lifecycle(nmo_list_t *list,
     if (lifecycle) {
         list->lifecycle = *lifecycle;
     } else {
+        list->lifecycle.init = NULL;
+        list->lifecycle.reset = NULL;
         list->lifecycle.copy = NULL;
         list->lifecycle.move = NULL;
         list->lifecycle.dispose = NULL;

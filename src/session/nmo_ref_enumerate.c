@@ -32,6 +32,7 @@
 #include "object/nmo_animation_schemas.h"
 #include "object/nmo_sound_schemas.h"
 #include "object/nmo_curve_schemas.h"
+#include "core/nmo_array.h"
 
 #include <string.h>
 
@@ -444,9 +445,11 @@ NMO_API nmo_status_t nmo_ref_enum_scene(
     NMO_REF_VISIT(visitor, user_data, scene->level_id, NMO_REF_SCENE, "level");
     
     /* Scene objects */
-    if (scene->object_descs) {
-        for (uint32_t i = 0; i < scene->object_count; ++i) {
-            nmo_object_id_t obj_id = scene->object_descs[i].object_id;
+    if (scene->object_descs.data && scene->object_descs.count > 0) {
+        const nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
+                                                              &scene->object_descs);
+        for (uint32_t i = 0; i < scene->object_descs.count; ++i) {
+            nmo_object_id_t obj_id = descs[i].object_id;
             if (obj_id != 0) {
                 if (!visitor(user_data, obj_id, NMO_REF_SCENE, "scene_objects", i)) {
                     NMO_RETURN_OK();
@@ -476,8 +479,17 @@ NMO_API nmo_status_t nmo_ref_enum_level(
     }
     
     /* Scenes */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, level->scene_ids, level->scene_count,
-                        NMO_REF_SCENE, "scenes");
+    if (level->scene_ids.data && level->scene_ids.count > 0) {
+        const nmo_object_id_t *scene_ids = NMO_ARRAY_DATA(nmo_object_id_t, &level->scene_ids);
+        for (uint32_t i = 0; i < level->scene_ids.count; ++i) {
+            nmo_object_id_t id = scene_ids[i];
+            if (id != 0) {
+                if (!visitor(user_data, id, NMO_REF_SCENE, "scenes", i)) {
+                    NMO_RETURN_OK();
+                }
+            }
+        }
+    }
     
     /* Current scene */
     NMO_REF_VISIT(visitor, user_data, level->current_scene_id, NMO_REF_SCENE, "current_scene");

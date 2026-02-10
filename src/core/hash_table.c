@@ -261,10 +261,14 @@ nmo_hash_table_t *nmo_hash_table_create(
     table->value_size = value_size;
     table->hash_func = hash_func ? hash_func : nmo_hash_fnv1a;
     table->compare_func = compare_func ? compare_func : nmo_hash_table_default_compare;
+    table->key_lifecycle.init = NULL;
+    table->key_lifecycle.reset = NULL;
     table->key_lifecycle.copy = NULL;
     table->key_lifecycle.move = NULL;
     table->key_lifecycle.dispose = NULL;
     table->key_lifecycle.user_data = NULL;
+    table->value_lifecycle.init = NULL;
+    table->value_lifecycle.reset = NULL;
     table->value_lifecycle.copy = NULL;
     table->value_lifecycle.move = NULL;
     table->value_lifecycle.dispose = NULL;
@@ -316,6 +320,8 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
     if (key_lifecycle) {
         table->key_lifecycle = *key_lifecycle;
     } else {
+        table->key_lifecycle.init = NULL;
+        table->key_lifecycle.reset = NULL;
         table->key_lifecycle.copy = NULL;
         table->key_lifecycle.move = NULL;
         table->key_lifecycle.dispose = NULL;
@@ -325,6 +331,8 @@ void nmo_hash_table_set_lifecycle(nmo_hash_table_t *table,
     if (value_lifecycle) {
         table->value_lifecycle = *value_lifecycle;
     } else {
+        table->value_lifecycle.init = NULL;
+        table->value_lifecycle.reset = NULL;
         table->value_lifecycle.copy = NULL;
         table->value_lifecycle.move = NULL;
         table->value_lifecycle.dispose = NULL;
@@ -364,7 +372,7 @@ nmo_status_t nmo_hash_table_insert(nmo_hash_table_t *table, const void *key, con
 
     uint8_t *value_dest = table->values + ((size_t)slot * table->value_size);
     if (found) {
-        nmo_hash_table_dispose_value(table, (size_t)slot);
+        nmo_container_reset_element(&table->value_lifecycle, value_dest, table->value_size);
         nmo_hash_table_copy_value(table, value_dest, value);
         NMO_RETURN_OK();
     }

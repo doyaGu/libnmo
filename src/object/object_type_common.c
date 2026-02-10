@@ -5,9 +5,34 @@
 
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_array.h"
 #include "core/nmo_error.h"
 #include "format/nmo_chunk.h"
+#include "type/nmo_reflection.h"
 #include <string.h>
+
+void nmo_object_dispose_array_fields(
+    void *instance,
+    const nmo_type_descriptor_t *type)
+{
+    if (!instance || !type || !type->fields || type->field_count == 0) {
+        return;
+    }
+
+    for (size_t i = 0; i < type->field_count; ++i) {
+        const nmo_type_field_t *field = &type->fields[i];
+        if (!(field->flags & NMO_FIELD_REPEATED)) {
+            continue;
+        }
+        if (field->size != sizeof(nmo_array_t)) {
+            continue;
+        }
+        nmo_array_t *array = (nmo_array_t *)nmo_field_get_ptr(instance, field);
+        if (array) {
+            nmo_array_dispose(array);
+        }
+    }
+}
 
 nmo_status_t nmo_object_default_create(
     void *instance,
@@ -46,6 +71,40 @@ nmo_status_t nmo_object_default_copy(
                                 "NULL src/dst/type in copy");
     }
     memcpy(dst, src, type->size);
+
+    if (!type->fields || type->field_count == 0) {
+        NMO_RETURN_OK();
+    }
+
+    for (size_t i = 0; i < type->field_count; ++i) {
+        const nmo_type_field_t *field = &type->fields[i];
+        if (!(field->flags & NMO_FIELD_REPEATED)) {
+            continue;
+        }
+        if (field->size != sizeof(nmo_array_t)) {
+            continue;
+        }
+
+        const nmo_array_t *src_array = (const nmo_array_t *)nmo_field_get_ptr_const(src, field);
+        nmo_array_t *dst_array = (nmo_array_t *)nmo_field_get_ptr(dst, field);
+
+        if (!src_array || !dst_array) {
+            continue;
+        }
+
+        if (src_array->element_size == 0) {
+            memset(dst_array, 0, sizeof(*dst_array));
+            continue;
+        }
+
+        nmo_array_t clone = {0};
+        nmo_status_t result = nmo_array_clone(src_array, &clone, &src_array->allocator);
+        if (result != NMO_OK) {
+            return result;
+        }
+        *dst_array = clone;
+    }
+
     NMO_RETURN_OK();
 }
 
@@ -220,5 +279,156 @@ nmo_status_t nmo_object_copy_chunk_array(
         NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &mem[i], src[i]));
     }
     *dst = mem;
+    NMO_RETURN_OK();
+}
+
+static void nmo_object_dispose_chunk_ptr(void *element, void *user_data)
+{
+    (void)user_data;
+    if (!element) {
+        return;
+    }
+    nmo_chunk_t *chunk = *(nmo_chunk_t **)element;
+    if (chunk) {
+        nmo_chunk_destroy(chunk);
+    }
+}
+
+static void nmo_object_reset_chunk_ptr(void *element, void *user_data)
+{
+    (void)user_data;
+    if (!element) {
+        return;
+    }
+    nmo_chunk_t **slot = (nmo_chunk_t **)element;
+    if (*slot) {
+        nmo_chunk_destroy(*slot);
+        *slot = NULL;
+    }
+}
+
+static void nmo_object_reset_string_ptr(void *element, void *user_data)
+{
+    (void)user_data;
+    if (!element) {
+        return;
+    }
+    *(char **)element = NULL;
+}
+
+void nmo_object_array_set_chunk_lifecycle(nmo_array_t *array)
+{
+    if (!array) {
+        return;
+    }
+
+    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    lifecycle.reset = nmo_object_reset_chunk_ptr;
+    lifecycle.dispose = nmo_object_dispose_chunk_ptr;
+    nmo_array_set_lifecycle(array, &lifecycle);
+}
+
+void nmo_object_array_set_string_lifecycle(nmo_array_t *array)
+{
+    if (!array) {
+        return;
+    }
+
+    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    lifecycle.reset = nmo_object_reset_string_ptr;
+    nmo_array_set_lifecycle(array, &lifecycle);
+}
+
+nmo_status_t nmo_object_clone_chunk_array(
+    nmo_arena_t *arena,
+    nmo_array_t *dst,
+    const nmo_array_t *src)
+{
+    if (!arena || !dst || !src) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid arguments to nmo_object_clone_chunk_array");
+    }
+
+    if (src->element_size != sizeof(nmo_chunk_t *)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Chunk array element size mismatch");
+    }
+
+    nmo_status_t result = nmo_array_init(dst, src->element_size, src->count, &src->allocator);
+    if (result != NMO_OK) {
+        return result;
+    }
+    nmo_object_array_set_chunk_lifecycle(dst);
+
+    if (src->count == 0 || src->data == NULL) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_chunk_t **out_chunks = NULL;
+    result = nmo_array_extend(dst, src->count, (void **)&out_chunks);
+    if (result != NMO_OK) {
+        nmo_array_dispose(dst);
+        return result;
+    }
+
+    nmo_chunk_t *const *src_chunks = NMO_ARRAY_DATA(nmo_chunk_t *, src);
+    for (size_t i = 0; i < src->count; ++i) {
+        if (src_chunks[i]) {
+            nmo_chunk_t *clone = nmo_chunk_clone(src_chunks[i], arena);
+            if (!clone) {
+                nmo_array_dispose(dst);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                        "Out of memory cloning chunk array element");
+            }
+            out_chunks[i] = clone;
+        } else {
+            out_chunks[i] = NULL;
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_object_clone_string_array(
+    nmo_arena_t *arena,
+    nmo_array_t *dst,
+    const nmo_array_t *src)
+{
+    if (!arena || !dst || !src) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "Invalid arguments to nmo_object_clone_string_array");
+    }
+
+    if (src->element_size != sizeof(char *)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                "String array element size mismatch");
+    }
+
+    nmo_status_t result = nmo_array_init(dst, src->element_size, src->count, &src->allocator);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (src->count == 0 || src->data == NULL) {
+        NMO_RETURN_OK();
+    }
+
+    char **out_strings = NULL;
+    result = nmo_array_extend(dst, src->count, (void **)&out_strings);
+    if (result != NMO_OK) {
+        nmo_array_dispose(dst);
+        return result;
+    }
+
+    char *const *src_strings = NMO_ARRAY_DATA(char *, src);
+    for (size_t i = 0; i < src->count; ++i) {
+        out_strings[i] = NULL;
+        result = nmo_object_copy_string(arena, &out_strings[i], src_strings[i]);
+        if (result != NMO_OK) {
+            nmo_array_dispose(dst);
+            return result;
+        }
+    }
+
     NMO_RETURN_OK();
 }

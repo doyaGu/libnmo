@@ -14,10 +14,20 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(place, nmo_place_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    place,
+    nmo_place_state_t,
+    do {
+        nmo_status_t result = nmo_array_init(&state->portals, sizeof(nmo_place_portal_entry_t), 0, NULL);
+        if (result != NMO_OK) return result;
+        result = nmo_array_init(&state->reference_ids, sizeof(nmo_object_id_t), 0, NULL);
+        if (result != NMO_OK) return result;
+    } while (0),
+    ((void)0))
 
 static nmo_status_t nmo_place_deserialize_internal(
     nmo_place_state_t *out_state,
@@ -52,17 +62,17 @@ static nmo_status_t nmo_place_deserialize_internal(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEPORTALS) == NMO_OK) {
         int32_t count = 0;
         if (nmo_chunk_read_int(chunk, &count) == NMO_OK && count > 0) {
-            out_state->portal_count = (uint32_t)count;
-            out_state->portals = (nmo_place_portal_entry_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_place_portal_entry_t) * out_state->portal_count,
-                _Alignof(nmo_place_portal_entry_t));
-            if (!out_state->portals) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate portal array");
-            }
+            nmo_array_clear(&out_state->portals);
+            nmo_status_t result = nmo_array_reserve(&out_state->portals, count);
+            if (result != NMO_OK) return result;
 
-            for (uint32_t i = 0; i < out_state->portal_count; ++i) {
-                (void)nmo_chunk_read_object_id(chunk, &out_state->portals[i].place_id);
-                (void)nmo_chunk_read_object_id(chunk, &out_state->portals[i].portal_id);
+            nmo_place_portal_entry_t *portals = NULL;
+            result = nmo_array_extend(&out_state->portals, count, (void **)&portals);
+            if (result != NMO_OK) return result;
+
+            for (uint32_t i = 0; i < (uint32_t)count; ++i) {
+                (void)nmo_chunk_read_object_id(chunk, &portals[i].place_id);
+                (void)nmo_chunk_read_object_id(chunk, &portals[i].portal_id);
             }
         }
     }
@@ -72,8 +82,11 @@ static nmo_status_t nmo_place_deserialize_internal(
         size_t count = 0;
         nmo_status_t result = nmo_chunk_read_object_id_array(chunk, &ids, &count, arena);
         if (result == NMO_OK && count > 0) {
-            out_state->reference_count = (uint32_t)count;
-            out_state->reference_ids = ids;
+            nmo_array_clear(&out_state->reference_ids);
+            result = nmo_array_alloc(&out_state->reference_ids, sizeof(nmo_object_id_t), count, NULL);
+            if (result == NMO_OK) {
+                memcpy(out_state->reference_ids.data, ids, sizeof(nmo_object_id_t) * count);
+            }
         }
     }
 
@@ -88,9 +101,7 @@ static const nmo_type_field_t nmo_place_fields[] = {
     NMO_FIELD_REF(nmo_place_state_t, camera_id),
     NMO_FIELD(nmo_place_state_t, has_level, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_place_state_t, level_id),
-    NMO_FIELD(nmo_place_state_t, portal_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY(nmo_place_state_t, portals, NMO_GUID_STRUCT_CKPLACEPORTALENTRY),
-    NMO_FIELD(nmo_place_state_t, reference_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_place_state_t, reference_ids)
 };
 
@@ -103,10 +114,8 @@ static nmo_status_t nmo_place_copy(
     const nmo_place_state_t *s = src;
     nmo_place_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->portals,
-                                              s->portals, sizeof(nmo_place_portal_entry_t), s->portal_count));
-    return nmo_object_copy_array(arena, (void **)&d->reference_ids,
-                                 s->reference_ids, sizeof(nmo_object_id_t), s->reference_count);
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->portals, &d->portals, &s->portals.allocator));
+    return nmo_array_clone(&s->reference_ids, &d->reference_ids, &s->reference_ids.allocator);
 }
 
 static nmo_status_t nmo_place_validate(
@@ -117,8 +126,8 @@ static nmo_status_t nmo_place_validate(
     (void)type;
     (void)context;
     const nmo_place_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->portals, s->portal_count, "portals");
-    NMO_VALIDATE_COUNT(s->reference_ids, s->reference_count, "reference_ids");
+    NMO_VALIDATE_COUNT(s->portals.data, s->portals.count, "portals");
+    NMO_VALIDATE_COUNT(s->reference_ids.data, s->reference_ids.count, "reference_ids");
     NMO_RETURN_OK();
 }
 
@@ -167,16 +176,18 @@ static nmo_status_t nmo_place_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->portal_count > 0 && in_state->portals) {
+    if (in_state->portals.count > 0 && in_state->portals.data) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACEPORTALS);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->portal_count);
+        result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->portals.count);
         if (result != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < in_state->portal_count; ++i) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->portals[i].place_id);
+        const nmo_place_portal_entry_t *portals = NMO_ARRAY_DATA(
+            nmo_place_portal_entry_t, &in_state->portals);
+        for (uint32_t i = 0; i < in_state->portals.count; ++i) {
+            result = nmo_chunk_write_object_id(out_chunk, portals[i].place_id);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_object_id(out_chunk, in_state->portals[i].portal_id);
+            result = nmo_chunk_write_object_id(out_chunk, portals[i].portal_id);
             if (result != NMO_OK) return result;
         }
     }

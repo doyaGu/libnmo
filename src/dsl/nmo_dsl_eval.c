@@ -6,6 +6,7 @@
 #include "type/nmo_type_string.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_array.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -223,6 +224,18 @@ static bool resolve_repeated_field_view(
     if (elem_size == 0) {
         set_err(ev, "array element size unknown");
         return false;
+    }
+
+    if (field->size == sizeof(nmo_array_t)) {
+        const nmo_array_t *array = (const nmo_array_t *)field_ptr;
+        size_t array_elem_size = array->element_size ? array->element_size : elem_size;
+
+        *out_array_ptr = array->data;
+        *out_count = (uint64_t)array->count;
+        *out_elem_size = array_elem_size;
+        *out_elem_guid = elem_guid;
+        *out_elem_type = elem_type;
+        return true;
     }
 
     uint64_t callback_count = 0;

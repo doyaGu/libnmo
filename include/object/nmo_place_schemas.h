@@ -9,6 +9,7 @@
 #include "object/nmo_beobject_schemas.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
+#include "core/nmo_array.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -33,11 +34,8 @@ typedef struct nmo_place_state {
     uint8_t has_level;
     nmo_object_id_t level_id;
 
-    uint32_t portal_count;
-    nmo_place_portal_entry_t *portals;
-
-    uint32_t reference_count;
-    nmo_object_id_t *reference_ids;
+    nmo_array_t portals;       /**< Portal entries (nmo_place_portal_entry_t) */
+    nmo_array_t reference_ids; /**< Reference IDs (nmo_object_id_t) */
 } nmo_place_state_t;
 
 NMO_API nmo_status_t nmo_place_deserialize(

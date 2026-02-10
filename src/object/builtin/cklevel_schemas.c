@@ -23,6 +23,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "type/nmo_reflection.h"
@@ -31,7 +32,19 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(level, nmo_level_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    level,
+    nmo_level_state_t,
+    do {
+        nmo_status_t result = nmo_array_init(&state->scene_ids, sizeof(nmo_object_id_t), 0, NULL);
+        if (result != NMO_OK) return result;
+        result = nmo_array_init(&state->inactive_manager_guids, sizeof(nmo_guid_t), 0, NULL);
+        if (result != NMO_OK) return result;
+        result = nmo_array_init(&state->duplicate_manager_names, sizeof(char *), 0, NULL);
+        if (result != NMO_OK) return result;
+        nmo_object_array_set_string_lifecycle(&state->duplicate_manager_names);
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -42,14 +55,11 @@ static const nmo_type_field_t nmo_level_fields[] = {
                        sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF_ARRAY(nmo_level_state_t, scene_ids),
-    NMO_FIELD(nmo_level_state_t, scene_count, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_level_state_t, current_scene_id),
     NMO_FIELD_REF(nmo_level_state_t, level_scene_id),
     NMO_FIELD_OPT(nmo_level_state_t, level_scene_chunk, CKPGUID_STATECHUNK),
     NMO_FIELD_ARRAY(nmo_level_state_t, inactive_manager_guids, CKPGUID_GUID),
-    NMO_FIELD(nmo_level_state_t, inactive_manager_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING),
-    NMO_FIELD(nmo_level_state_t, duplicate_manager_count, CKPGUID_UINT32)
+    NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING)
 };
 
 /* =============================================================================
@@ -77,8 +87,6 @@ nmo_status_t nmo_level_deserialize(
 {
     (void)type;
     nmo_level_state_t *out_state = (nmo_level_state_t *)instance;
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
-
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_level_deserialize");
     }
@@ -112,27 +120,24 @@ nmo_status_t nmo_level_deserialize(
         result = nmo_chunk_read_object_sequence_start(chunk, &scene_count);
         if (result != NMO_OK) return result;
 
+        nmo_array_clear(&out_state->scene_ids);
         if (scene_count > 0) {
             const uint32_t MAX_SCENES = 10000;
             if (scene_count > MAX_SCENES) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Scene count exceeds maximum");
             }
 
-            out_state->scene_count = (uint32_t)scene_count;
-            out_state->scene_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena,
-                scene_count * sizeof(nmo_object_id_t),
-                _Alignof(nmo_object_id_t)
-            );
+            result = nmo_array_reserve(&out_state->scene_ids, scene_count);
+            if (result != NMO_OK) return result;
 
-            if (!out_state->scene_ids) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate scene ID array");
-            }
+            nmo_object_id_t *scene_ids = NULL;
+            result = nmo_array_extend(&out_state->scene_ids, scene_count, (void **)&scene_ids);
+            if (result != NMO_OK) return result;
 
             for (size_t i = 0; i < scene_count; i++) {
-                result = nmo_chunk_read_object_sequence_item(chunk, &out_state->scene_ids[i]);
+                result = nmo_chunk_read_object_sequence_item(chunk, &scene_ids[i]);
                 if (result != NMO_OK) {
-                    out_state->scene_count = (uint32_t)i;
+                    out_state->scene_ids.count = i;
                     break;
                 }
             }
@@ -178,26 +183,23 @@ nmo_status_t nmo_level_deserialize(
             if (guid_count > 1000) break;
         }
 
+        nmo_array_clear(&out_state->inactive_manager_guids);
         if (guid_count > 0) {
-            out_state->inactive_manager_count = guid_count;
-            out_state->inactive_manager_guids = (nmo_guid_t *)nmo_arena_alloc(
-                arena,
-                guid_count * sizeof(nmo_guid_t),
-                _Alignof(nmo_guid_t)
-            );
+            result = nmo_array_reserve(&out_state->inactive_manager_guids, guid_count);
+            if (result != NMO_OK) return result;
 
-            if (!out_state->inactive_manager_guids) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate inactive manager GUID array");
-            }
+            nmo_guid_t *guids = NULL;
+            result = nmo_array_extend(&out_state->inactive_manager_guids, guid_count, (void **)&guids);
+            if (result != NMO_OK) return result;
 
             /* Re-read GUIDs from start position */
             result = nmo_chunk_goto(chunk, start_pos);
             if (result != NMO_OK) return result;
 
             for (uint32_t i = 0; i < guid_count; i++) {
-                result = nmo_chunk_read_guid(chunk, &out_state->inactive_manager_guids[i]);
+                result = nmo_chunk_read_guid(chunk, &guids[i]);
                 if (result != NMO_OK) {
-                    out_state->inactive_manager_count = i;
+                    out_state->inactive_manager_guids.count = i;
                     break;
                 }
             }
@@ -219,27 +221,23 @@ nmo_status_t nmo_level_deserialize(
                 if (name_count > 1000) break;
             }
 
+            nmo_array_clear(&out_state->duplicate_manager_names);
             if (name_count > 0) {
-                /* Allocate array for pointers */
-                out_state->duplicate_manager_count = name_count;
-                out_state->duplicate_manager_names = (char **)nmo_arena_alloc(
-                    arena,
-                    name_count * sizeof(char *),
-                    _Alignof(char *)
-                );
+                result = nmo_array_reserve(&out_state->duplicate_manager_names, name_count);
+                if (result != NMO_OK) return result;
 
-                if (!out_state->duplicate_manager_names) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager name array");
-                }
+                char **names = NULL;
+                result = nmo_array_extend(&out_state->duplicate_manager_names, name_count, (void **)&names);
+                if (result != NMO_OK) return result;
 
                 /* Re-read strings */
                 result = nmo_chunk_goto(chunk, str_start_pos);
                 if (result != NMO_OK) return result;
 
                 for (uint32_t i = 0; i < name_count; i++) {
-                    size_t len = nmo_chunk_read_string(chunk, &out_state->duplicate_manager_names[i]);
-                    if (len == 0 || !out_state->duplicate_manager_names[i]) {
-                        out_state->duplicate_manager_count = i;
+                    size_t len = nmo_chunk_read_string(chunk, &names[i]);
+                    if (len == 0 || !names[i]) {
+                        out_state->duplicate_manager_names.count = i;
                         break;
                     }
                 }
@@ -296,11 +294,12 @@ nmo_status_t nmo_level_serialize(
     if (result != NMO_OK) return result;
 
     /* 3) Scene list */
-    result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->scene_count);
+    result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->scene_ids.count);
     if (result != NMO_OK) return result;
 
-    for (uint32_t i = 0; i < in_state->scene_count; i++) {
-        result = nmo_chunk_write_object_sequence_item(out_chunk, in_state->scene_ids[i]);
+    const nmo_object_id_t *scene_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->scene_ids);
+    for (uint32_t i = 0; i < in_state->scene_ids.count; i++) {
+        result = nmo_chunk_write_object_sequence_item(out_chunk, scene_ids[i]);
         if (result != NMO_OK) return result;
     }
 
@@ -321,22 +320,24 @@ nmo_status_t nmo_level_serialize(
     }
 
     /* Section 3: LEVELINACTIVEMAN (optional) */
-    if (in_state->inactive_manager_count > 0 && in_state->inactive_manager_guids) {
+    if (in_state->inactive_manager_guids.count > 0 && in_state->inactive_manager_guids.data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELINACTIVEMAN);
         if (result != NMO_OK) return result;
 
-        for (uint32_t i = 0; i < in_state->inactive_manager_count; i++) {
-            result = nmo_chunk_write_guid(out_chunk, in_state->inactive_manager_guids[i]);
+        const nmo_guid_t *inactive_guids = NMO_ARRAY_DATA(nmo_guid_t, &in_state->inactive_manager_guids);
+        for (uint32_t i = 0; i < in_state->inactive_manager_guids.count; i++) {
+            result = nmo_chunk_write_guid(out_chunk, inactive_guids[i]);
             if (result != NMO_OK) return result;
         }
 
         /* Section 4: LEVELDUPLICATEMAN (optional) */
-        if (in_state->duplicate_manager_count > 0 && in_state->duplicate_manager_names) {
+        if (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
             if (result != NMO_OK) return result;
 
-            for (uint32_t i = 0; i < in_state->duplicate_manager_count; i++) {
-                result = nmo_chunk_write_string(out_chunk, in_state->duplicate_manager_names[i]);
+            const char *const *dup_names = NMO_ARRAY_DATA(const char *, &in_state->duplicate_manager_names);
+            for (uint32_t i = 0; i < in_state->duplicate_manager_names.count; i++) {
+                result = nmo_chunk_write_string(out_chunk, dup_names[i]);
                 if (result != NMO_OK) return result;
             }
 
@@ -371,13 +372,12 @@ static nmo_status_t nmo_level_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
                                               s->base.legacy_attributes_raw, s->base.legacy_attributes_size));
 
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->scene_ids,
-                                              s->scene_ids, sizeof(nmo_object_id_t), s->scene_count));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->scene_ids, &d->scene_ids, &s->scene_ids.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->level_scene_chunk, s->level_scene_chunk));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->inactive_manager_guids,
-                                              s->inactive_manager_guids, sizeof(nmo_guid_t), s->inactive_manager_count));
-    return nmo_object_copy_string_array(arena, &d->duplicate_manager_names,
-                                        s->duplicate_manager_names, s->duplicate_manager_count);
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->inactive_manager_guids, &d->inactive_manager_guids,
+                                        &s->inactive_manager_guids.allocator));
+    return nmo_object_clone_string_array(arena, &d->duplicate_manager_names,
+                                         &s->duplicate_manager_names);
 }
 
 static nmo_status_t nmo_level_validate(
@@ -388,10 +388,10 @@ static nmo_status_t nmo_level_validate(
     (void)type;
     (void)context;
     const nmo_level_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->scene_ids, s->scene_count, "scene_ids");
-    NMO_VALIDATE_COUNT(s->inactive_manager_guids, s->inactive_manager_count,
+    NMO_VALIDATE_COUNT(s->scene_ids.data, s->scene_ids.count, "scene_ids");
+    NMO_VALIDATE_COUNT(s->inactive_manager_guids.data, s->inactive_manager_guids.count,
                        "inactive_manager_guids");
-    NMO_VALIDATE_COUNT(s->duplicate_manager_names, s->duplicate_manager_count,
+    NMO_VALIDATE_COUNT(s->duplicate_manager_names.data, s->duplicate_manager_names.count,
                        "duplicate_manager_names");
     NMO_RETURN_OK();
 }

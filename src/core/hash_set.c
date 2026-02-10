@@ -201,6 +201,8 @@ nmo_hash_set_t *nmo_hash_set_create(const nmo_allocator_t *allocator,
     set->key_size = key_size;
     set->hash_func = hash_func ? hash_func : nmo_hash_fnv1a;
     set->compare_func = compare_func ? compare_func : nmo_hash_set_default_compare;
+    set->key_lifecycle.init = NULL;
+    set->key_lifecycle.reset = NULL;
     set->key_lifecycle.copy = NULL;
     set->key_lifecycle.move = NULL;
     set->key_lifecycle.dispose = NULL;
@@ -247,6 +249,8 @@ void nmo_hash_set_set_lifecycle(nmo_hash_set_t *set,
     if (key_lifecycle) {
         set->key_lifecycle = *key_lifecycle;
     } else {
+        set->key_lifecycle.init = NULL;
+        set->key_lifecycle.reset = NULL;
         set->key_lifecycle.copy = NULL;
         set->key_lifecycle.move = NULL;
         set->key_lifecycle.dispose = NULL;

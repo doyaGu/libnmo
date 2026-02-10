@@ -15,6 +15,7 @@
 #define NMO_CKPARAMETER_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "nmo_object_schemas.h"
 #include "object/nmo_object_type_common.h"
@@ -68,8 +69,7 @@ typedef struct nmo_parameter_state {
     bool has_state;
     
     /* Buffer mode (MODE_BUFFER) */
-    uint8_t *buffer_data;              /**< Parameter data buffer */
-    size_t buffer_size;                /**< Buffer size in bytes */
+    nmo_array_t buffer_data;           /**< Parameter data buffer (uint8_t) */
     
     /* Object mode (MODE_OBJECT) */
     nmo_object_id_t object_id;         /**< Referenced object ID */

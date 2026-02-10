@@ -18,6 +18,7 @@
 #define NMO_CKBEHAVIOR_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "nmo_sceneobject_schemas.h"
 #include "object/nmo_object_type_common.h"
@@ -86,35 +87,25 @@ typedef struct nmo_behavior_state {
     nmo_object_id_t target_parameter_id;   /**< Target parameter ID */
     
     /* Graph data arrays (only if not building block) */
-    nmo_object_id_t *sub_behaviors;        /**< Sub-behavior IDs */
-    uint32_t sub_behavior_count;           /**< Number of sub-behaviors */
-    nmo_chunk_t **sub_behavior_chunks;     /**< Sub-behavior sub-chunks (non-file mode) */
-    uint32_t sub_behavior_chunk_count;     /**< Number of sub-behavior sub-chunks */
+    nmo_array_t sub_behaviors;             /**< Sub-behavior IDs (nmo_object_id_t) */
+    nmo_array_t sub_behavior_chunks;       /**< Sub-behavior sub-chunks (nmo_chunk_t *) */
     
-    nmo_object_id_t *sub_behavior_links;   /**< Sub-behavior link IDs */
-    uint32_t sub_behavior_link_count;      /**< Number of links */
+    nmo_array_t sub_behavior_links;        /**< Sub-behavior link IDs (nmo_object_id_t) */
     
-    nmo_object_id_t *operations;           /**< Operation IDs */
-    uint32_t operation_count;              /**< Number of operations */
+    nmo_array_t operations;                /**< Operation IDs (nmo_object_id_t) */
     
     /* Parameter arrays */
-    nmo_object_id_t *in_parameters;        /**< Input parameter IDs */
-    uint32_t in_parameter_count;           /**< Number of input parameters */
+    nmo_array_t in_parameters;             /**< Input parameter IDs (nmo_object_id_t) */
     
-    nmo_object_id_t *out_parameters;       /**< Output parameter IDs */
-    uint32_t out_parameter_count;          /**< Number of output parameters */
+    nmo_array_t out_parameters;            /**< Output parameter IDs (nmo_object_id_t) */
     
-    nmo_object_id_t *local_parameters;     /**< Local parameter IDs */
-    uint32_t local_parameter_count;        /**< Number of local parameters */
-    nmo_chunk_t **local_parameter_chunks;  /**< Local parameter sub-chunks (non-file mode) */
-    uint32_t local_parameter_chunk_count;  /**< Number of local parameter sub-chunks */
+    nmo_array_t local_parameters;          /**< Local parameter IDs (nmo_object_id_t) */
+    nmo_array_t local_parameter_chunks;    /**< Local parameter sub-chunks (nmo_chunk_t *) */
     
     /* I/O arrays */
-    nmo_object_id_t *inputs;               /**< Input IDs (BehaviorIO) */
-    uint32_t input_count;                  /**< Number of inputs */
+    nmo_array_t inputs;                    /**< Input IDs (BehaviorIO) */
     
-    nmo_object_id_t *outputs;              /**< Output IDs (BehaviorIO) */
-    uint32_t output_count;                 /**< Number of outputs */
+    nmo_array_t outputs;                   /**< Output IDs (BehaviorIO) */
     
     /* Scene activity (optional) */
     uint32_t single_activity_flags;        /**< Scene activity flags */

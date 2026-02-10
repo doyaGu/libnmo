@@ -15,6 +15,7 @@
 #define NMO_CKGROUP_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_array.h"
 #include "nmo_beobject_schemas.h"
 #include "object/nmo_object_type_common.h"
 
@@ -45,8 +46,7 @@ typedef struct nmo_group_state {
     nmo_beobject_state_t base;      /**< CKBeObject base state */
     
     /* Object array */
-    nmo_object_id_t *object_ids;      /**< Array of grouped object IDs */
-    uint32_t object_count;            /**< Number of objects in group */
+    nmo_array_t object_ids;           /**< Grouped object IDs (nmo_object_id_t) */
 } nmo_group_state_t;
 
 /* =============================================================================

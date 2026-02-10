@@ -8,6 +8,7 @@
 
 #include "object/nmo_object_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "core/nmo_array.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -26,10 +27,8 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_synchro_state {
     nmo_object_state_t base;
     int32_t max_waiters;
-    nmo_object_id_t *arrived_ids;
-    uint32_t arrived_count;
-    nmo_object_id_t *passed_ids;
-    uint32_t passed_count;
+    nmo_array_t arrived_ids;  /**< Arrived IDs (nmo_object_id_t) */
+    nmo_array_t passed_ids;   /**< Passed IDs (nmo_object_id_t) */
 } nmo_synchro_state_t;
 
 /**

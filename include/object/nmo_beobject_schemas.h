@@ -14,8 +14,9 @@
 #define NMO_CKBEOBJECT_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "core/nmo_array.h"
 #include "nmo_sceneobject_schemas.h"
- #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,28 +45,24 @@ typedef struct nmo_beobject_state {
     nmo_sceneobject_state_t base;  /**< CKSceneObject base state */
     
     /* Scripts */
-    nmo_object_id_t *script_ids;  /**< Array of script behavior IDs */
-    uint32_t script_count;         /**< Number of scripts */
+    nmo_array_t script_ids;        /**< Script behavior IDs (nmo_object_id_t) */
     
     /* Priority */
     int32_t priority;              /**< Execution priority (0 = default) */
     
     /* Attributes */
-    nmo_object_id_t *attribute_parameter_ids;  /**< Array of attribute parameter IDs */
-    uint32_t *attribute_types;                 /**< Array of attribute type IDs */
-    uint32_t attribute_count;                  /**< Number of attributes */
+    nmo_array_t attribute_parameter_ids;       /**< Attribute parameter IDs (nmo_object_id_t) */
+    nmo_array_t attribute_types;               /**< Attribute type IDs (uint32_t) */
 
     /* Attribute parameter sub-chunks (non-file mode) */
-    nmo_chunk_t **attribute_chunks;            /**< Optional sub-chunks per attribute */
-    uint32_t attribute_chunk_count;            /**< Number of attribute sub-chunks */
+    nmo_array_t attribute_chunks;              /**< Attribute sub-chunks (nmo_chunk_t *) */
 
     /* Single activity flags (file save only) */
     uint8_t has_single_activity;               /**< True if single activity flags exist */
     uint32_t single_activity_flags;            /**< Scene object activity flags */
 
     /* Legacy attribute payload (CK_STATESAVE_ATTRIBUTES) */
-    void *legacy_attributes_raw;               /**< Raw legacy attribute data */
-    size_t legacy_attributes_size;             /**< Size of legacy attribute payload */
+    nmo_array_t legacy_attributes_raw;         /**< Legacy attribute payload (uint8_t) */
 } nmo_beobject_state_t;
 
 /* =============================================================================

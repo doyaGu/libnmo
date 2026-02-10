@@ -30,6 +30,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
+#include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 #include "type/nmo_reflection.h"
@@ -43,6 +44,28 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     nmo_behavior_state_t,
     do { \
         state->compatible_class_id = NMO_CID_BEOBJECT; \
+        nmo_status_t result = nmo_array_init(&state->sub_behaviors, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->sub_behavior_chunks, sizeof(nmo_chunk_t *), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        nmo_object_array_set_chunk_lifecycle(&state->sub_behavior_chunks); \
+        result = nmo_array_init(&state->sub_behavior_links, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->operations, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->in_parameters, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->out_parameters, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->local_parameters, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->local_parameter_chunks, sizeof(nmo_chunk_t *), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        nmo_object_array_set_chunk_lifecycle(&state->local_parameter_chunks); \
+        result = nmo_array_init(&state->inputs, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
+        result = nmo_array_init(&state->outputs, sizeof(nmo_object_id_t), 0, NULL); \
+        if (result != NMO_OK) return result; \
     } while (0),
     ((void)0))
 
@@ -86,25 +109,15 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
     NMO_FIELD(nmo_behavior_state_t, block_version, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_behavior_state_t, target_parameter_id),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, sub_behaviors),
-    NMO_FIELD(nmo_behavior_state_t, sub_behavior_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY(nmo_behavior_state_t, sub_behavior_chunks, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_behavior_state_t, sub_behavior_chunk_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, sub_behavior_links),
-    NMO_FIELD(nmo_behavior_state_t, sub_behavior_link_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, operations),
-    NMO_FIELD(nmo_behavior_state_t, operation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, in_parameters),
-    NMO_FIELD(nmo_behavior_state_t, in_parameter_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, out_parameters),
-    NMO_FIELD(nmo_behavior_state_t, out_parameter_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, local_parameters),
-    NMO_FIELD(nmo_behavior_state_t, local_parameter_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY(nmo_behavior_state_t, local_parameter_chunks, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_behavior_state_t, local_parameter_chunk_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, inputs),
-    NMO_FIELD(nmo_behavior_state_t, input_count, CKPGUID_UINT32),
     NMO_FIELD_REF_ARRAY(nmo_behavior_state_t, outputs),
-    NMO_FIELD(nmo_behavior_state_t, output_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_behavior_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS),
     NMO_FIELD(nmo_behavior_state_t, has_single_activity, CKPGUID_BOOL),
     NMO_FIELD_OPT(nmo_behavior_state_t, interface_chunk, CKPGUID_STATECHUNK),
@@ -118,15 +131,13 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
 /**
  * @brief Read object ID array using XObjectPointerArray format
  */
-static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_arena_t *arena,
-                                         nmo_object_id_t **out_ids, uint32_t *out_count) {
+static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_array_t *out_ids) {
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     if (result != NMO_OK) return result;
 
     if (count == 0) {
-        *out_ids = NULL;
-        *out_count = 0;
+        nmo_array_clear(out_ids);
         NMO_RETURN_OK();
     }
 
@@ -135,17 +146,18 @@ static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_arena_t *arena,
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Array count exceeds maximum");
     }
 
-    *out_count = (uint32_t)count;
-    *out_ids = (nmo_object_id_t *)nmo_arena_alloc(arena, count * sizeof(nmo_object_id_t),
-                                                  _Alignof(nmo_object_id_t));
-    if (!*out_ids) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
-    }
+    nmo_array_clear(out_ids);
+    result = nmo_array_reserve(out_ids, count);
+    if (result != NMO_OK) return result;
+
+    nmo_object_id_t *ids = NULL;
+    result = nmo_array_extend(out_ids, count, (void **)&ids);
+    if (result != NMO_OK) return result;
 
     for (uint32_t i = 0; i < (uint32_t)count; i++) {
-        result = nmo_chunk_read_object_sequence_item(chunk, &(*out_ids)[i]);
+        result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
         if (result != NMO_OK) {
-            *out_count = i;
+            out_ids->count = i;
             break;
         }
     }
@@ -156,12 +168,13 @@ static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_arena_t *arena,
 /**
  * @brief Write object ID array using XObjectPointerArray format
  */
-static nmo_status_t write_object_sequence(nmo_chunk_t *chunk, const nmo_object_id_t *ids, uint32_t count) {
-    nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, count);
+static nmo_status_t write_object_sequence(nmo_chunk_t *chunk, const nmo_array_t *ids) {
+    nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, (uint32_t)ids->count);
     if (result != NMO_OK) return result;
 
-    for (uint32_t i = 0; i < count; i++) {
-        result = nmo_chunk_write_object_sequence_item(chunk, ids[i]);
+    const nmo_object_id_t *values = NMO_ARRAY_DATA(nmo_object_id_t, ids);
+    for (uint32_t i = 0; i < ids->count; i++) {
+        result = nmo_chunk_write_object_sequence_item(chunk, values[i]);
         if (result != NMO_OK) return result;
     }
 
@@ -170,19 +183,16 @@ static nmo_status_t write_object_sequence(nmo_chunk_t *chunk, const nmo_object_i
 
 static nmo_status_t read_object_subchunk_list(
     nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_object_id_t **out_ids,
-    nmo_chunk_t ***out_chunks,
-    uint32_t *out_count)
+    nmo_array_t *out_ids,
+    nmo_array_t *out_chunks)
 {
     int32_t count = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count);
     if (result != NMO_OK) return result;
 
     if (count <= 0) {
-        *out_ids = NULL;
-        *out_chunks = NULL;
-        *out_count = 0;
+        nmo_array_clear(out_ids);
+        nmo_array_clear(out_chunks);
         NMO_RETURN_OK();
     }
 
@@ -191,22 +201,28 @@ static nmo_status_t read_object_subchunk_list(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Array count exceeds maximum");
     }
 
-    *out_count = (uint32_t)count;
-    *out_ids = (nmo_object_id_t *)nmo_arena_alloc(arena, count * sizeof(nmo_object_id_t),
-                                                  _Alignof(nmo_object_id_t));
-    *out_chunks = (nmo_chunk_t **)nmo_arena_alloc(arena, count * sizeof(nmo_chunk_t *),
-                                                  _Alignof(nmo_chunk_t *));
-    if (!*out_ids || !*out_chunks) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate sub-chunk list");
-    }
+    nmo_array_clear(out_ids);
+    nmo_array_clear(out_chunks);
+    result = nmo_array_reserve(out_ids, count);
+    if (result != NMO_OK) return result;
+    result = nmo_array_reserve(out_chunks, count);
+    if (result != NMO_OK) return result;
+
+    nmo_object_id_t *ids = NULL;
+    nmo_chunk_t **chunks = NULL;
+    result = nmo_array_extend(out_ids, count, (void **)&ids);
+    if (result != NMO_OK) return result;
+    result = nmo_array_extend(out_chunks, count, (void **)&chunks);
+    if (result != NMO_OK) return result;
 
     for (uint32_t i = 0; i < (uint32_t)count; i++) {
-        result = nmo_chunk_read_object_id(chunk, &(*out_ids)[i]);
+        result = nmo_chunk_read_object_id(chunk, &ids[i]);
         if (result != NMO_OK) {
-            *out_count = i;
+            out_ids->count = i;
+            out_chunks->count = i;
             break;
         }
-        (void)nmo_chunk_read_sub_chunk(chunk, &(*out_chunks)[i]);
+        (void)nmo_chunk_read_sub_chunk(chunk, &chunks[i]);
     }
 
     NMO_RETURN_OK();
@@ -237,7 +253,6 @@ nmo_status_t nmo_behavior_deserialize(
 {
     (void)type;
     nmo_behavior_state_t *out_state = (nmo_behavior_state_t *)instance;
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behavior_deserialize");
@@ -276,19 +291,15 @@ nmo_status_t nmo_behavior_deserialize(
 
     if (!is_file && newdata_seek != NMO_OK) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBBEHAV) == NMO_OK) {
-            (void)read_object_subchunk_list(chunk, arena,
+            (void)read_object_subchunk_list(chunk,
                                             &out_state->sub_behaviors,
-                                            &out_state->sub_behavior_chunks,
-                                            &out_state->sub_behavior_count);
-            out_state->sub_behavior_chunk_count = out_state->sub_behavior_count;
+                                            &out_state->sub_behavior_chunks);
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS) == NMO_OK) {
-            (void)read_object_subchunk_list(chunk, arena,
+            (void)read_object_subchunk_list(chunk,
                                             &out_state->local_parameters,
-                                            &out_state->local_parameter_chunks,
-                                            &out_state->local_parameter_count);
-            out_state->local_parameter_chunk_count = out_state->local_parameter_count;
+                                            &out_state->local_parameter_chunks);
         }
 
         NMO_RETURN_OK();
@@ -348,50 +359,42 @@ nmo_status_t nmo_behavior_deserialize(
             }
 
             if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
-                result = read_object_sequence(chunk, arena, &out_state->sub_behaviors,
-                                              &out_state->sub_behavior_count);
+                result = read_object_sequence(chunk, &out_state->sub_behaviors);
                 if (result != NMO_OK) return result;
             }
 
             if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
-                result = read_object_sequence(chunk, arena, &out_state->sub_behavior_links,
-                                              &out_state->sub_behavior_link_count);
+                result = read_object_sequence(chunk, &out_state->sub_behavior_links);
                 if (result != NMO_OK) return result;
             }
 
             if (graph_save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
-                result = read_object_sequence(chunk, arena, &out_state->operations,
-                                              &out_state->operation_count);
+                result = read_object_sequence(chunk, &out_state->operations);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIORINPARAMS) {
-                result = read_object_sequence(chunk, arena, &out_state->in_parameters,
-                                              &out_state->in_parameter_count);
+                result = read_object_sequence(chunk, &out_state->in_parameters);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIOROUTPARAMS) {
-                result = read_object_sequence(chunk, arena, &out_state->out_parameters,
-                                              &out_state->out_parameter_count);
+                result = read_object_sequence(chunk, &out_state->out_parameters);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIORLOCALPARAMS) {
-                result = read_object_sequence(chunk, arena, &out_state->local_parameters,
-                                              &out_state->local_parameter_count);
+                result = read_object_sequence(chunk, &out_state->local_parameters);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIORINPUTS) {
-                result = read_object_sequence(chunk, arena, &out_state->inputs,
-                                              &out_state->input_count);
+                result = read_object_sequence(chunk, &out_state->inputs);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIOROUTPUTS) {
-                result = read_object_sequence(chunk, arena, &out_state->outputs,
-                                              &out_state->output_count);
+                result = read_object_sequence(chunk, &out_state->outputs);
                 if (result != NMO_OK) return result;
             }
         } else {
@@ -507,36 +510,28 @@ nmo_status_t nmo_behavior_deserialize(
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBBEHAV) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->sub_behaviors,
-                                       &out_state->sub_behavior_count);
+            (void)read_object_sequence(chunk, &out_state->sub_behaviors);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBLINKS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->sub_behavior_links,
-                                       &out_state->sub_behavior_link_count);
+            (void)read_object_sequence(chunk, &out_state->sub_behavior_links);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROPERATIONS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->operations,
-                                       &out_state->operation_count);
+            (void)read_object_sequence(chunk, &out_state->operations);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORINPARAMS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->in_parameters,
-                                       &out_state->in_parameter_count);
+            (void)read_object_sequence(chunk, &out_state->in_parameters);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->local_parameters,
-                                       &out_state->local_parameter_count);
+            (void)read_object_sequence(chunk, &out_state->local_parameters);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROUTPARAMS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->out_parameters,
-                                       &out_state->out_parameter_count);
+            (void)read_object_sequence(chunk, &out_state->out_parameters);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORINPUTS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->inputs,
-                                       &out_state->input_count);
+            (void)read_object_sequence(chunk, &out_state->inputs);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROUTPUTS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena, &out_state->outputs,
-                                       &out_state->output_count);
+            (void)read_object_sequence(chunk, &out_state->outputs);
         }
     }
 
@@ -590,17 +585,21 @@ nmo_status_t nmo_behavior_serialize(
     if (result != NMO_OK) return result;
 
     if (!write_file_format) {
-        if (in_state->sub_behavior_count > 0 && in_state->sub_behaviors) {
+        if (in_state->sub_behaviors.count > 0 && in_state->sub_behaviors.data) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORSUBBEHAV);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->sub_behavior_count);
+            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->sub_behaviors.count);
             if (result != NMO_OK) return result;
-            for (uint32_t i = 0; i < in_state->sub_behavior_count; ++i) {
-                result = nmo_chunk_write_object_id(out_chunk, in_state->sub_behaviors[i]);
+            const nmo_object_id_t *sub_behaviors = NMO_ARRAY_DATA(nmo_object_id_t,
+                                                                  &in_state->sub_behaviors);
+            const nmo_chunk_t *const *sub_chunks = NMO_ARRAY_DATA(
+                const nmo_chunk_t *, &in_state->sub_behavior_chunks);
+            for (uint32_t i = 0; i < in_state->sub_behaviors.count; ++i) {
+                result = nmo_chunk_write_object_id(out_chunk, sub_behaviors[i]);
                 if (result != NMO_OK) return result;
                 nmo_chunk_t *sub = NULL;
-                if (in_state->sub_behavior_chunks && i < in_state->sub_behavior_chunk_count) {
-                    sub = in_state->sub_behavior_chunks[i];
+                if (sub_chunks && i < in_state->sub_behavior_chunks.count) {
+                    sub = (nmo_chunk_t *)sub_chunks[i];
                 }
                 if (!sub) {
                     sub = nmo_chunk_create(arena);
@@ -614,18 +613,22 @@ nmo_status_t nmo_behavior_serialize(
             NMO_RETURN_OK();
         }
 
-        if (in_state->local_parameter_count > 0 || in_state->local_parameter_chunks) {
+        if (in_state->local_parameters.count > 0 || in_state->local_parameter_chunks.count > 0) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->local_parameter_count);
+            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->local_parameters.count);
             if (result != NMO_OK) return result;
-            if (in_state->local_parameter_count > 0) {
-                for (uint32_t i = 0; i < in_state->local_parameter_count; ++i) {
-                    result = nmo_chunk_write_object_id(out_chunk, in_state->local_parameters[i]);
+            if (in_state->local_parameters.count > 0) {
+                const nmo_object_id_t *local_parameters = NMO_ARRAY_DATA(
+                    nmo_object_id_t, &in_state->local_parameters);
+                const nmo_chunk_t *const *local_chunks = NMO_ARRAY_DATA(
+                    const nmo_chunk_t *, &in_state->local_parameter_chunks);
+                for (uint32_t i = 0; i < in_state->local_parameters.count; ++i) {
+                    result = nmo_chunk_write_object_id(out_chunk, local_parameters[i]);
                     if (result != NMO_OK) return result;
                     nmo_chunk_t *sub = NULL;
-                    if (in_state->local_parameter_chunks && i < in_state->local_parameter_chunk_count) {
-                        sub = in_state->local_parameter_chunks[i];
+                    if (local_chunks && i < in_state->local_parameter_chunks.count) {
+                        sub = (nmo_chunk_t *)local_chunks[i];
                     }
                     if (!sub) {
                         sub = nmo_chunk_create(arena);
@@ -711,21 +714,21 @@ nmo_status_t nmo_behavior_serialize(
     if (in_state->has_save_flags) {
         save_flags = in_state->save_flags;
     } else {
-        if (in_state->sub_behavior_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
+        if (in_state->sub_behaviors.count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
         else save_flags &= ~CK_STATESAVE_BEHAVIORSUBBEHAV;
-        if (in_state->sub_behavior_link_count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
+        if (in_state->sub_behavior_links.count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
         else save_flags &= ~CK_STATESAVE_BEHAVIORSUBLINKS;
-        if (in_state->operation_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
+        if (in_state->operations.count > 0) save_flags |= CK_STATESAVE_BEHAVIOROPERATIONS;
         else save_flags &= ~CK_STATESAVE_BEHAVIOROPERATIONS;
-        if (in_state->in_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
+        if (in_state->in_parameters.count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
         else save_flags &= ~CK_STATESAVE_BEHAVIORINPARAMS;
-        if (in_state->out_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPARAMS;
+        if (in_state->out_parameters.count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPARAMS;
         else save_flags &= ~CK_STATESAVE_BEHAVIOROUTPARAMS;
-        if (in_state->local_parameter_count > 0) save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS;
+        if (in_state->local_parameters.count > 0) save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS;
         else save_flags &= ~CK_STATESAVE_BEHAVIORLOCALPARAMS;
-        if (in_state->input_count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
+        if (in_state->inputs.count > 0) save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
         else save_flags &= ~CK_STATESAVE_BEHAVIORINPUTS;
-        if (in_state->output_count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
+        if (in_state->outputs.count > 0) save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
         else save_flags &= ~CK_STATESAVE_BEHAVIOROUTPUTS;
     }
 
@@ -741,42 +744,42 @@ nmo_status_t nmo_behavior_serialize(
     }
 
     if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
-        result = write_object_sequence(out_chunk, in_state->sub_behaviors, in_state->sub_behavior_count);
+        result = write_object_sequence(out_chunk, &in_state->sub_behaviors);
         if (result != NMO_OK) return result;
     }
 
     if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
-        result = write_object_sequence(out_chunk, in_state->sub_behavior_links, in_state->sub_behavior_link_count);
+        result = write_object_sequence(out_chunk, &in_state->sub_behavior_links);
         if (result != NMO_OK) return result;
     }
 
     if (graph_save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
-        result = write_object_sequence(out_chunk, in_state->operations, in_state->operation_count);
+        result = write_object_sequence(out_chunk, &in_state->operations);
         if (result != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORINPARAMS) {
-        result = write_object_sequence(out_chunk, in_state->in_parameters, in_state->in_parameter_count);
+        result = write_object_sequence(out_chunk, &in_state->in_parameters);
         if (result != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIOROUTPARAMS) {
-        result = write_object_sequence(out_chunk, in_state->out_parameters, in_state->out_parameter_count);
+        result = write_object_sequence(out_chunk, &in_state->out_parameters);
         if (result != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORLOCALPARAMS) {
-        result = write_object_sequence(out_chunk, in_state->local_parameters, in_state->local_parameter_count);
+        result = write_object_sequence(out_chunk, &in_state->local_parameters);
         if (result != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIORINPUTS) {
-        result = write_object_sequence(out_chunk, in_state->inputs, in_state->input_count);
+        result = write_object_sequence(out_chunk, &in_state->inputs);
         if (result != NMO_OK) return result;
     }
 
     if (save_flags & CK_STATESAVE_BEHAVIOROUTPUTS) {
-        result = write_object_sequence(out_chunk, in_state->outputs, in_state->output_count);
+        result = write_object_sequence(out_chunk, &in_state->outputs);
         if (result != NMO_OK) return result;
     }
 
@@ -804,26 +807,24 @@ static nmo_status_t nmo_behavior_copy(
     const nmo_behavior_state_t *s = src;
     nmo_behavior_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_behaviors,
-                                              s->sub_behaviors, sizeof(nmo_object_id_t), s->sub_behavior_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->sub_behavior_chunks,
-                                                    s->sub_behavior_chunks, s->sub_behavior_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_behavior_links,
-                                              s->sub_behavior_links, sizeof(nmo_object_id_t), s->sub_behavior_link_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->operations,
-                                              s->operations, sizeof(nmo_object_id_t), s->operation_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->in_parameters,
-                                              s->in_parameters, sizeof(nmo_object_id_t), s->in_parameter_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->out_parameters,
-                                              s->out_parameters, sizeof(nmo_object_id_t), s->out_parameter_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->local_parameters,
-                                              s->local_parameters, sizeof(nmo_object_id_t), s->local_parameter_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->local_parameter_chunks,
-                                                    s->local_parameter_chunks, s->local_parameter_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->inputs,
-                                              s->inputs, sizeof(nmo_object_id_t), s->input_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->outputs,
-                                              s->outputs, sizeof(nmo_object_id_t), s->output_count));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->sub_behaviors, &d->sub_behaviors,
+                                        &s->sub_behaviors.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->sub_behavior_chunks,
+                                                     &s->sub_behavior_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->sub_behavior_links, &d->sub_behavior_links,
+                                        &s->sub_behavior_links.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->operations, &d->operations,
+                                        &s->operations.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->in_parameters, &d->in_parameters,
+                                        &s->in_parameters.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->out_parameters, &d->out_parameters,
+                                        &s->out_parameters.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->local_parameters, &d->local_parameters,
+                                        &s->local_parameters.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->local_parameter_chunks,
+                                                     &s->local_parameter_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->inputs, &d->inputs, &s->inputs.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->outputs, &d->outputs, &s->outputs.allocator));
     return nmo_object_copy_chunk(arena, &d->interface_chunk, s->interface_chunk);
 }
 
@@ -835,16 +836,19 @@ static nmo_status_t nmo_behavior_validate(
     (void)type;
     (void)context;
     const nmo_behavior_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->sub_behaviors, s->sub_behavior_count, "sub_behaviors");
-    NMO_VALIDATE_COUNT(s->sub_behavior_chunks, s->sub_behavior_chunk_count, "sub_behavior_chunks");
-    NMO_VALIDATE_COUNT(s->sub_behavior_links, s->sub_behavior_link_count, "sub_behavior_links");
-    NMO_VALIDATE_COUNT(s->operations, s->operation_count, "operations");
-    NMO_VALIDATE_COUNT(s->in_parameters, s->in_parameter_count, "in_parameters");
-    NMO_VALIDATE_COUNT(s->out_parameters, s->out_parameter_count, "out_parameters");
-    NMO_VALIDATE_COUNT(s->local_parameters, s->local_parameter_count, "local_parameters");
-    NMO_VALIDATE_COUNT(s->local_parameter_chunks, s->local_parameter_chunk_count, "local_parameter_chunks");
-    NMO_VALIDATE_COUNT(s->inputs, s->input_count, "inputs");
-    NMO_VALIDATE_COUNT(s->outputs, s->output_count, "outputs");
+    NMO_VALIDATE_COUNT(s->sub_behaviors.data, s->sub_behaviors.count, "sub_behaviors");
+    NMO_VALIDATE_COUNT(s->sub_behavior_chunks.data, s->sub_behavior_chunks.count,
+                       "sub_behavior_chunks");
+    NMO_VALIDATE_COUNT(s->sub_behavior_links.data, s->sub_behavior_links.count,
+                       "sub_behavior_links");
+    NMO_VALIDATE_COUNT(s->operations.data, s->operations.count, "operations");
+    NMO_VALIDATE_COUNT(s->in_parameters.data, s->in_parameters.count, "in_parameters");
+    NMO_VALIDATE_COUNT(s->out_parameters.data, s->out_parameters.count, "out_parameters");
+    NMO_VALIDATE_COUNT(s->local_parameters.data, s->local_parameters.count, "local_parameters");
+    NMO_VALIDATE_COUNT(s->local_parameter_chunks.data, s->local_parameter_chunks.count,
+                       "local_parameter_chunks");
+    NMO_VALIDATE_COUNT(s->inputs.data, s->inputs.count, "inputs");
+    NMO_VALIDATE_COUNT(s->outputs.data, s->outputs.count, "outputs");
     NMO_RETURN_OK();
 }
 
