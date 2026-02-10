@@ -3,7 +3,7 @@
  * @brief CKSprite3D schema implementation
  */
 
-#include "object/nmo_sprite3d_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_object_enum_guids.h"

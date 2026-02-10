@@ -8,11 +8,11 @@
  * Based on official Virtools SDK (reference/src/CKBehaviorIO.cpp:19-48).
  */
 
-#include "object/nmo_behaviorio_schemas.h"
+#include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_object_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"

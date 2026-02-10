@@ -18,6 +18,7 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_bit_array.h"
 #include "core/nmo_debug.h"
+#include "type/nmo_type_guids.h"
 #include <string.h>
 #include <assert.h>
 #include <stddef.h>
@@ -467,6 +468,7 @@ static nmo_status_t validate_type_descriptor(
     const nmo_type_registry_t *registry,
     const nmo_type_descriptor_t *descriptor
 ) {
+    (void)registry;
     if (!descriptor) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "NULL type descriptor");
@@ -483,12 +485,31 @@ static nmo_status_t validate_type_descriptor(
     }
 
     if (!descriptor->valid) {
-        NMO_RETURN_OK();
+        const bool is_incomplete_struct =
+            (descriptor->category == NMO_TYPE_CATEGORY_STRUCT) &&
+            (descriptor->class_id == 0) &&
+            (descriptor->fields == NULL) &&
+            (descriptor->field_count == 0);
+        if (is_incomplete_struct) {
+            NMO_RETURN_OK();
+        }
     }
 
     if (descriptor->size == 0) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Type size must be non-zero");
+        const bool is_struct_like =
+            (descriptor->category & (NMO_TYPE_CATEGORY_STRUCT |
+                                     NMO_TYPE_CATEGORY_UNION |
+                                     NMO_TYPE_CATEGORY_ENUM |
+                                     NMO_TYPE_CATEGORY_FLAGS)) != 0u;
+        const bool has_fields = (descriptor->fields != NULL) || (descriptor->field_count > 0);
+        const bool allow_zero_size =
+            nmo_guid_equals(descriptor->guid, CKPGUID_NONE) ||
+            nmo_guid_equals(descriptor->guid, CKPGUID_VOIDBUF) ||
+            (!is_struct_like && !has_fields && descriptor->class_id == 0);
+        if (!allow_zero_size) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Type size must be non-zero");
+        }
     }
 
     if (descriptor->alignment != 0 && !is_power_of_two_u32(descriptor->alignment)) {
@@ -2281,11 +2302,6 @@ nmo_status_t nmo_type_registry_set_ui_visibility(
     
     if (!registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
-    }
-
-    nmo_status_t mutable_res = ensure_registry_mutable(registry, "register saver manager");
-    if (mutable_res != NMO_OK) {
-        return mutable_res;
     }
 
     nmo_status_t mutable_res = ensure_registry_mutable(registry, "set UI visibility");

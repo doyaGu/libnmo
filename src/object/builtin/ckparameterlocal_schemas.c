@@ -7,11 +7,10 @@
  * Based on official Virtools SDK (reference/src/CKParameterLocal.cpp:100-140).
  */
 
-#include "object/nmo_parameterlocal_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"

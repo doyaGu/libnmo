@@ -13,11 +13,10 @@
  * - Bitmap payload identifiers passed to CKBitmapData::ReadFromChunk filter
  */
 
-#include "object/nmo_sprite_schemas.h"
+#include "object/builtin/nmo_sprite_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
-#include "object/nmo_2dentity_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -462,21 +461,20 @@ static nmo_status_t nmo_sprite_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->entity.base.base.base.raw_tail,
                                               s->entity.base.base.base.raw_tail,
                                               s->entity.base.base.base.raw_tail_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->entity.base.base.script_ids,
-                                              s->entity.base.base.script_ids, sizeof(nmo_object_id_t),
-                                              s->entity.base.base.script_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->entity.base.base.attribute_parameter_ids,
-                                              s->entity.base.base.attribute_parameter_ids, sizeof(nmo_object_id_t),
-                                              s->entity.base.base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->entity.base.base.attribute_types,
-                                              s->entity.base.base.attribute_types, sizeof(uint32_t),
-                                              s->entity.base.base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->entity.base.base.attribute_chunks,
-                                                    s->entity.base.base.attribute_chunks,
-                                                    s->entity.base.base.attribute_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->entity.base.base.legacy_attributes_raw,
-                                              s->entity.base.base.legacy_attributes_raw,
-                                              s->entity.base.base.legacy_attributes_size));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.script_ids,
+                                         &d->entity.base.base.script_ids,
+                                         &s->entity.base.base.script_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.attribute_parameter_ids,
+                                         &d->entity.base.base.attribute_parameter_ids,
+                                         &s->entity.base.base.attribute_parameter_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.attribute_types,
+                                         &d->entity.base.base.attribute_types,
+                                         &s->entity.base.base.attribute_types.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->entity.base.base.attribute_chunks,
+                                                    &s->entity.base.base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.legacy_attributes_raw,
+                                         &d->entity.base.base.legacy_attributes_raw,
+                                         &s->entity.base.base.legacy_attributes_raw.allocator));
 
     if (s->has_bitmap_data) {
         NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &d->bitmap_data, &s->bitmap_data));

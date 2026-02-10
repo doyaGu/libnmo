@@ -3,7 +3,7 @@
  * @brief CKCharacter and CKBodyPart schema implementation
  */
 
-#include "object/nmo_character_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"

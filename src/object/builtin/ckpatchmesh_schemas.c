@@ -3,7 +3,7 @@
  * @brief CKPatchMesh schema implementation
  */
 
-#include "object/nmo_patchmesh_schemas.h"
+#include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
@@ -323,20 +323,20 @@ static nmo_status_t nmo_patchmesh_copy(
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.beobject.base.raw_tail,
                                               s->base.beobject.base.raw_tail, s->base.beobject.base.raw_tail_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.beobject.script_ids,
-                                              s->base.beobject.script_ids, sizeof(nmo_object_id_t), s->base.beobject.script_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.beobject.attribute_parameter_ids,
-                                              s->base.beobject.attribute_parameter_ids, sizeof(nmo_object_id_t),
-                                              s->base.beobject.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.beobject.attribute_types,
-                                              s->base.beobject.attribute_types, sizeof(uint32_t),
-                                              s->base.beobject.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->base.beobject.attribute_chunks,
-                                                    s->base.beobject.attribute_chunks,
-                                                    s->base.beobject.attribute_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.beobject.legacy_attributes_raw,
-                                              s->base.beobject.legacy_attributes_raw,
-                                              s->base.beobject.legacy_attributes_size));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.beobject.script_ids,
+                                        &d->base.beobject.script_ids,
+                                        &s->base.beobject.script_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.beobject.attribute_parameter_ids,
+                                        &d->base.beobject.attribute_parameter_ids,
+                                        &s->base.beobject.attribute_parameter_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.beobject.attribute_types,
+                                        &d->base.beobject.attribute_types,
+                                        &s->base.beobject.attribute_types.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.beobject.attribute_chunks,
+                                                     &s->base.beobject.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.beobject.legacy_attributes_raw,
+                                        &d->base.beobject.legacy_attributes_raw,
+                                        &s->base.beobject.legacy_attributes_raw.allocator));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.faces,
                                               s->base.faces, sizeof(nmo_face_t), s->base.face_count));

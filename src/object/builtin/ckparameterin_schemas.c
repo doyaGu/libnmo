@@ -7,7 +7,7 @@
  * Based on official Virtools SDK (reference/src/CKParameterIn.cpp:140-250).
  */
 
-#include "object/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"

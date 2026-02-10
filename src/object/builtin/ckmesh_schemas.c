@@ -58,10 +58,9 @@
  *   - int array: Progressive data
  */
 
-#include "object/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_beobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -1433,16 +1432,19 @@ static nmo_status_t nmo_mesh_copy(
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->beobject.base.raw_tail,
                                               s->beobject.base.raw_tail, s->beobject.base.raw_tail_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->beobject.script_ids,
-                                              s->beobject.script_ids, sizeof(nmo_object_id_t), s->beobject.script_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->beobject.attribute_parameter_ids,
-                                              s->beobject.attribute_parameter_ids, sizeof(nmo_object_id_t), s->beobject.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->beobject.attribute_types,
-                                              s->beobject.attribute_types, sizeof(uint32_t), s->beobject.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->beobject.attribute_chunks,
-                                                    s->beobject.attribute_chunks, s->beobject.attribute_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->beobject.legacy_attributes_raw,
-                                              s->beobject.legacy_attributes_raw, s->beobject.legacy_attributes_size));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.script_ids, &d->beobject.script_ids,
+                                        &s->beobject.script_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.attribute_parameter_ids,
+                                        &d->beobject.attribute_parameter_ids,
+                                        &s->beobject.attribute_parameter_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.attribute_types,
+                                        &d->beobject.attribute_types,
+                                        &s->beobject.attribute_types.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->beobject.attribute_chunks,
+                                                     &s->beobject.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.legacy_attributes_raw,
+                                        &d->beobject.legacy_attributes_raw,
+                                        &s->beobject.legacy_attributes_raw.allocator));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
                                               s->faces, sizeof(nmo_face_t), s->face_count));

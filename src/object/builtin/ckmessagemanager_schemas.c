@@ -8,7 +8,7 @@
  * Based on official Virtools SDK (reference/src/CKMessageManager.cpp:178-250).
  */
 
-#include "object/nmo_messagemanager_schemas.h"
+#include "object/builtin/nmo_messagemanager_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"

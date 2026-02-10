@@ -225,13 +225,6 @@ static void nmo_hash_table_dispose_entry(nmo_hash_table_t *table, size_t index) 
     }
 }
 
-static void nmo_hash_table_dispose_value(nmo_hash_table_t *table, size_t index) {
-    if (table->value_lifecycle.dispose) {
-        void *value_ptr = table->values + (index * table->value_size);
-        table->value_lifecycle.dispose(value_ptr, table->value_lifecycle.user_data);
-    }
-}
-
 nmo_hash_table_t *nmo_hash_table_create(
     const nmo_allocator_t *allocator,
     size_t key_size,

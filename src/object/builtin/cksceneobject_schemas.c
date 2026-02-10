@@ -13,8 +13,8 @@
  * the parent chain functionality as required by design.md ��6.4.
  */
 
-#include "object/nmo_object_schemas.h"
-#include "object/nmo_sceneobject_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
+#include "object/builtin/nmo_sceneobject_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"

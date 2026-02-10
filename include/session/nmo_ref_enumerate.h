@@ -22,6 +22,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "core/nmo_array.h"
 #include "object/nmo_class_ids.h"
 #include "session/nmo_ref_graph.h"  /* For nmo_ref_kind_t (Session layer) */
 
@@ -212,6 +213,29 @@ NMO_API nmo_status_t nmo_ref_enumerate_object(
         if ((arr) != NULL) { \
             for (uint32_t _i = 0; _i < (count); ++_i) { \
                 nmo_object_id_t _id = (arr)[_i]; \
+                if (_id != 0) { \
+                    if (!(visitor)((user_data), _id, (kind), (field), _i)) { \
+                        return NMO_OK; \
+                    } \
+                } \
+            } \
+        } \
+    } while(0)
+
+/**
+ * @brief Visit an nmo_array_t of object IDs
+ *
+ * Usage: NMO_REF_VISIT_NMO_ARRAY(visitor, ud, state->script_ids, 
+ *                                 NMO_REF_SCRIPT, "scripts");
+ */
+#define NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, array, kind, field) \
+    do { \
+        const nmo_array_t *_arr = &(array); \
+        const nmo_object_id_t *_ids = (const nmo_object_id_t *)nmo_array_data(_arr); \
+        size_t _count = nmo_array_size(_arr); \
+        if (_count > 0 && _ids != NULL) { \
+            for (uint32_t _i = 0; _i < (uint32_t)_count; ++_i) { \
+                nmo_object_id_t _id = _ids[_i]; \
                 if (_id != 0) { \
                     if (!(visitor)((user_data), _id, (kind), (field), _i)) { \
                         return NMO_OK; \

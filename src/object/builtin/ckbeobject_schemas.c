@@ -14,11 +14,9 @@
  * This is the serialization workhorse for the entire BeObject hierarchy.
  */
 
-#include "object/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_sceneobject_schemas.h"
-#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -191,6 +189,7 @@ nmo_status_t nmo_beobject_deserialize(
     (void)type;
     nmo_beobject_state_t *out_state = (nmo_beobject_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
+    (void)arena;
 
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_beobject_deserialize");

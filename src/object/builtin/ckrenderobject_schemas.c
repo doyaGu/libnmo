@@ -9,16 +9,12 @@
  * - It does NOT override Load/Save - inherits CKBeObject's behavior
  * - No additional data is serialized to chunks beyond CKBeObject
  * - Runtime rendering data (callbacks, Z-order) is NOT persisted
- * 
- * This schema correctly delegates to CKBeObject deserializer, maintaining
- * the parent chain functionality as required by design.md ��6.4.
  */
 
-#include "object/nmo_renderobject_schemas.h"
+#include "object/builtin/nmo_renderobject_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_beobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -132,16 +128,20 @@ static nmo_status_t nmo_renderobject_copy(
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.script_ids,
-                                              s->base.script_ids, sizeof(nmo_object_id_t), s->base.script_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_parameter_ids,
-                                              s->base.attribute_parameter_ids, sizeof(nmo_object_id_t), s->base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_types,
-                                              s->base.attribute_types, sizeof(uint32_t), s->base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->base.attribute_chunks,
-                                                    s->base.attribute_chunks, s->base.attribute_chunk_count));
-    return nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
-                                 s->base.legacy_attributes_raw, s->base.legacy_attributes_size);
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
+                                        &s->base.script_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
+                                        &d->base.attribute_parameter_ids,
+                                        &s->base.attribute_parameter_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types,
+                                        &d->base.attribute_types,
+                                        &s->base.attribute_types.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
+                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.legacy_attributes_raw,
+                                        &d->base.legacy_attributes_raw,
+                                        &s->base.legacy_attributes_raw.allocator));
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t nmo_renderobject_validate(
@@ -152,11 +152,22 @@ static nmo_status_t nmo_renderobject_validate(
     (void)type;
     (void)context;
     const nmo_renderobject_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->base.script_ids, s->base.script_count, "script_ids");
-    NMO_VALIDATE_COUNT(s->base.attribute_parameter_ids, s->base.attribute_count, "attribute_parameter_ids");
-    NMO_VALIDATE_COUNT(s->base.attribute_types, s->base.attribute_count, "attribute_types");
-    NMO_VALIDATE_COUNT(s->base.attribute_chunks, s->base.attribute_chunk_count, "attribute_chunks");
-    NMO_VALIDATE_BYTES(s->base.legacy_attributes_raw, s->base.legacy_attributes_size, "legacy_attributes_raw");
+    size_t script_count = nmo_array_size(&s->base.script_ids);
+    size_t attribute_count = nmo_array_size(&s->base.attribute_parameter_ids);
+    size_t chunk_count = nmo_array_size(&s->base.attribute_chunks);
+    size_t legacy_bytes = nmo_array_size(&s->base.legacy_attributes_raw) *
+                          nmo_array_element_size(&s->base.legacy_attributes_raw);
+
+    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.script_ids), (uint32_t)script_count,
+                       "script_ids");
+    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_parameter_ids), (uint32_t)attribute_count,
+                       "attribute_parameter_ids");
+    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_types), (uint32_t)attribute_count,
+                       "attribute_types");
+    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_chunks), (uint32_t)chunk_count,
+                       "attribute_chunks");
+    NMO_VALIDATE_BYTES(nmo_array_data(&s->base.legacy_attributes_raw), legacy_bytes,
+                       "legacy_attributes_raw");
     NMO_RETURN_OK();
 }
 

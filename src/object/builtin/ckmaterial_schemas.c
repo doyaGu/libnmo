@@ -10,11 +10,12 @@
  * Reference: reference/include/CKMaterial.h
  */
 
-#include "object/nmo_material_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_color.h"
@@ -25,9 +26,6 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdalign.h>
-
-#include "object/nmo_beobject_schemas.h"
-#include "object/nmo_class_ids.h"
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(material, nmo_material_state_t)
 

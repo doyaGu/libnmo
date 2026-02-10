@@ -13,11 +13,10 @@
  * - Homogeneous rect flag (0x200) controls coordinate system
  */
 
-#include "object/nmo_2dentity_schemas.h"
+#include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_renderobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"

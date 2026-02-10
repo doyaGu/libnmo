@@ -17,11 +17,10 @@
  * - Support all 5 storage modes from reference implementation
  */
 
-#include "object/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"

@@ -3,7 +3,7 @@
  * @brief CKSound/CKWaveSound/CKMidiSound schema implementation
  */
 
-#include "object/nmo_sound_schemas.h"
+#include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"

@@ -9,11 +9,10 @@
  * - No additional serialized fields beyond CK3dEntity
  */
 
-#include "object/nmo_3dobject_schemas.h"
+#include "object/builtin/nmo_3dobject_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_3dentity_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"

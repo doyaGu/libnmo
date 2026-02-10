@@ -3,7 +3,7 @@
  * @brief CKRenderContext schema implementation
  */
 
-#include "object/nmo_rendercontext_schemas.h"
+#include "object/builtin/nmo_rendercontext_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"

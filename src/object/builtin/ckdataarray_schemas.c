@@ -8,12 +8,12 @@
  * Based on official Virtools SDK (reference/src/CKDataArray.cpp:1735-1960).
  */
 
-#include "object/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_beobject_schemas.h"
-#include "object/nmo_object_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"

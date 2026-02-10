@@ -10,28 +10,28 @@
 #include "session/nmo_ref_graph.h"  /* For NMO_REF_* compatibility macros */
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_beobject_schemas.h"
-#include "object/nmo_3dentity_schemas.h"
-#include "object/nmo_2dentity_schemas.h"
-#include "object/nmo_mesh_schemas.h"
-#include "object/nmo_material_schemas.h"
-#include "object/nmo_texture_schemas.h"
-#include "object/nmo_camera_schemas.h"
-#include "object/nmo_light_schemas.h"
-#include "object/nmo_behavior_schemas.h"
-#include "object/nmo_group_schemas.h"
-#include "object/nmo_scene_schemas.h"
-#include "object/nmo_level_schemas.h"
-#include "object/nmo_dataarray_schemas.h"
-#include "object/nmo_parameter_schemas.h"
-#include "object/nmo_behaviorlink_schemas.h"
-#include "object/nmo_behaviorio_schemas.h"
-#include "object/nmo_place_schemas.h"
-#include "object/nmo_sprite_schemas.h"
-#include "object/nmo_sprite3d_schemas.h"
-#include "object/nmo_animation_schemas.h"
-#include "object/nmo_sound_schemas.h"
-#include "object/nmo_curve_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_2dentity_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_level_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_behaviorio_schemas.h"
+#include "object/builtin/nmo_place_schemas.h"
+#include "object/builtin/nmo_sprite_schemas.h"
+#include "object/builtin/nmo_sprite3d_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_sound_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "core/nmo_array.h"
 
 #include <string.h>
@@ -218,12 +218,12 @@ NMO_API nmo_status_t nmo_ref_enum_beobject(
     (void)obj;
     
     /* Scripts */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beobj->script_ids, beobj->script_count,
-                        NMO_REF_SCRIPT, "scripts");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beobj->script_ids,
+                            NMO_REF_SCRIPT, "scripts");
     
     /* Attribute parameters */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beobj->attribute_parameter_ids, 
-                        beobj->attribute_count, NMO_REF_PARAMETER, "attribute_parameters");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beobj->attribute_parameter_ids,
+                            NMO_REF_PARAMETER, "attribute_parameters");
     
     NMO_RETURN_OK();
 }
@@ -366,36 +366,36 @@ NMO_API nmo_status_t nmo_ref_enum_behavior(
     NMO_REF_VISIT(visitor, user_data, beh->target_parameter_id, NMO_REF_TARGET, "target_parameter");
     
     /* Sub-behaviors */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->sub_behaviors, beh->sub_behavior_count,
-                        NMO_REF_OWNER, "sub_behaviors");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->sub_behaviors,
+                            NMO_REF_OWNER, "sub_behaviors");
     
     /* Sub-behavior links */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->sub_behavior_links, beh->sub_behavior_link_count,
-                        NMO_REF_BEHAVIOR_LINK, "sub_behavior_links");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->sub_behavior_links,
+                            NMO_REF_BEHAVIOR_LINK, "sub_behavior_links");
     
     /* Inputs */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->inputs, beh->input_count,
-                        NMO_REF_OWNER, "inputs");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->inputs,
+                            NMO_REF_OWNER, "inputs");
     
     /* Outputs */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->outputs, beh->output_count,
-                        NMO_REF_OWNER, "outputs");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->outputs,
+                            NMO_REF_OWNER, "outputs");
     
     /* Input parameters */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->in_parameters, beh->in_parameter_count,
-                        NMO_REF_PARAMETER, "in_parameters");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->in_parameters,
+                            NMO_REF_PARAMETER, "in_parameters");
     
     /* Output parameters */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->out_parameters, beh->out_parameter_count,
-                        NMO_REF_PARAMETER, "out_parameters");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->out_parameters,
+                            NMO_REF_PARAMETER, "out_parameters");
     
     /* Local parameters */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->local_parameters, beh->local_parameter_count,
-                        NMO_REF_PARAMETER, "local_parameters");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->local_parameters,
+                            NMO_REF_PARAMETER, "local_parameters");
     
     /* Operations */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, beh->operations, beh->operation_count,
-                        NMO_REF_PARAMETER, "operations");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->operations,
+                            NMO_REF_PARAMETER, "operations");
     
     NMO_RETURN_OK();
 }
@@ -418,8 +418,8 @@ NMO_API nmo_status_t nmo_ref_enum_group(
     }
     
     /* Group members */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, group->object_ids, group->object_count,
-                        NMO_REF_GROUP_MEMBER, "members");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, group->object_ids,
+                            NMO_REF_GROUP_MEMBER, "members");
     
     NMO_RETURN_OK();
 }
@@ -663,18 +663,20 @@ static nmo_status_t nmo_ref_enum_place(
     }
     
     /* Portals */
-    if (place->portals) {
-        for (uint32_t i = 0; i < place->portal_count; ++i) {
-            NMO_REF_VISIT(visitor, user_data, place->portals[i].place_id, 
+    if (place->portals.count > 0 && place->portals.data) {
+        const nmo_place_portal_entry_t *portals = NMO_ARRAY_DATA(nmo_place_portal_entry_t,
+                                                                 &place->portals);
+        for (uint32_t i = 0; i < place->portals.count; ++i) {
+            NMO_REF_VISIT(visitor, user_data, portals[i].place_id,
                           NMO_REF_PLACE, "portal_places");
-            NMO_REF_VISIT(visitor, user_data, place->portals[i].portal_id, 
+            NMO_REF_VISIT(visitor, user_data, portals[i].portal_id,
                           NMO_REF_PLACE, "portals");
         }
     }
     
     /* References */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, place->reference_ids, place->reference_count,
-                        NMO_REF_SCENE, "references");
+    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, place->reference_ids,
+                            NMO_REF_SCENE, "references");
     
     NMO_RETURN_OK();
 }

@@ -147,6 +147,9 @@ static nmo_status_t validate_struct_field_consistency(
                                  "Array field '%s' missing repeated flag", s->name);
             }
         } else if ((t->flags & NMO_FIELD_REPEATED) != 0u) {
+            if (nmo_guid_equals(s->type_guid, NMO_TYPE_GUID_POINTER)) {
+                continue;
+            }
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "Non-array field '%s' marked as repeated", s->name);
         }

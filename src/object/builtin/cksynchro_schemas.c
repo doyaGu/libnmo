@@ -3,7 +3,7 @@
  * @brief CKSynchroObject/CKStateObject/CKCriticalSectionObject schemas
  */
 
-#include "object/nmo_synchro_schemas.h"
+#include "object/builtin/nmo_synchro_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"

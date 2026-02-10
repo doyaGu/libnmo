@@ -21,11 +21,10 @@
  * data via raw_tail fields for future math/render schema integration.
  */
 
-#include "object/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_renderobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"

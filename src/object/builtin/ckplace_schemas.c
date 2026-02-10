@@ -3,12 +3,12 @@
  * @brief CKPlace schema implementation
  */
 
-#include "object/nmo_place_schemas.h"
+#include "object/builtin/nmo_place_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
-#include "object/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"

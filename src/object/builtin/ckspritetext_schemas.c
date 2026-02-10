@@ -10,11 +10,10 @@
  * Reference: docs/CK2_3D_reverse_notes_extended.md lines 470-850
  */
 
-#include "object/nmo_spritetext_schemas.h"
+#include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_2dentity_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_struct_guids.h"

@@ -17,12 +17,10 @@
  * - Runtime flag filtering
  */
 
-#include "object/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_sceneobject_schemas.h"
-#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"

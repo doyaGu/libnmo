@@ -7,7 +7,7 @@
  * Based on official Virtools SDK (reference/src/CKParameterOut.cpp:120-160).
  */
 
-#include "object/nmo_parameterout_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -131,8 +131,8 @@ static nmo_status_t nmo_parameterout_copy(
     const nmo_parameterout_state_t *s = src;
     nmo_parameterout_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.buffer_data,
-                                              s->base.buffer_data, s->base.buffer_size));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.buffer_data, &d->base.buffer_data,
+                                        &s->base.buffer_data.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->base.subchunk, s->base.subchunk));
     return nmo_object_copy_array(arena, (void **)&d->destination_ids,
                                  s->destination_ids, sizeof(nmo_object_id_t), s->destination_count);
@@ -146,7 +146,9 @@ static nmo_status_t nmo_parameterout_validate(
     (void)type;
     (void)context;
     const nmo_parameterout_state_t *s = instance;
-    NMO_VALIDATE_BYTES(s->base.buffer_data, s->base.buffer_size, "buffer_data");
+    size_t buffer_bytes = nmo_array_size(&s->base.buffer_data) *
+                          nmo_array_element_size(&s->base.buffer_data);
+    NMO_VALIDATE_BYTES(nmo_array_data(&s->base.buffer_data), buffer_bytes, "buffer_data");
     NMO_VALIDATE_COUNT(s->destination_ids, s->destination_count, "destination_ids");
     NMO_RETURN_OK();
 }

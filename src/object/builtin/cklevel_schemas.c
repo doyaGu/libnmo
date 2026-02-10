@@ -12,12 +12,10 @@
  * - Optional manager activation state
  */
 
-#include "object/nmo_level_schemas.h"
+#include "object/builtin/nmo_level_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_beobject_schemas.h"
-#include "object/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
@@ -361,16 +359,19 @@ static nmo_status_t nmo_level_copy(
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.base.raw_tail,
                                               s->base.base.raw_tail, s->base.base.raw_tail_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.script_ids,
-                                              s->base.script_ids, sizeof(nmo_object_id_t), s->base.script_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_parameter_ids,
-                                              s->base.attribute_parameter_ids, sizeof(nmo_object_id_t), s->base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.attribute_types,
-                                              s->base.attribute_types, sizeof(uint32_t), s->base.attribute_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk_array(arena, &d->base.attribute_chunks,
-                                                    s->base.attribute_chunks, s->base.attribute_chunk_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.legacy_attributes_raw,
-                                              s->base.legacy_attributes_raw, s->base.legacy_attributes_size));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
+                                        &s->base.script_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
+                                        &d->base.attribute_parameter_ids,
+                                        &s->base.attribute_parameter_ids.allocator));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types,
+                                        &d->base.attribute_types,
+                                        &s->base.attribute_types.allocator));
+    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
+                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.legacy_attributes_raw,
+                                        &d->base.legacy_attributes_raw,
+                                        &s->base.legacy_attributes_raw.allocator));
 
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->scene_ids, &d->scene_ids, &s->scene_ids.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->level_scene_chunk, s->level_scene_chunk));
