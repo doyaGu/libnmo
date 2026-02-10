@@ -40,6 +40,10 @@ static nmo_allocator_t type_allocator_from_registry(const nmo_type_registry_t *r
     return registry->type_allocator;
 }
 
+static bool is_power_of_two_u32(uint32_t value) {
+    return value != 0u && (value & (value - 1u)) == 0u;
+}
+
 static char *allocator_strdup(nmo_allocator_t *allocator, const char *src) {
     if (!allocator || !src) {
         return NULL;
@@ -459,6 +463,91 @@ static void ensure_class_id_inherited_cache(nmo_type_registry_t *registry) {
     }
 }
 
+static nmo_status_t validate_type_descriptor(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *descriptor
+) {
+    if (!descriptor) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL type descriptor");
+    }
+
+    if (nmo_guid_is_null(descriptor->guid)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Type GUID must not be null");
+    }
+
+    if (descriptor->name && descriptor->name[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Type name must not be empty");
+    }
+
+    if (!descriptor->valid) {
+        NMO_RETURN_OK();
+    }
+
+    if (descriptor->size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Type size must be non-zero");
+    }
+
+    if (descriptor->alignment != 0 && !is_power_of_two_u32(descriptor->alignment)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Type alignment must be a power of two");
+    }
+
+    if (nmo_guid_equals(descriptor->guid, descriptor->base_type)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Type cannot inherit from itself");
+    }
+
+    if ((descriptor->category & (NMO_TYPE_CATEGORY_ENUM | NMO_TYPE_CATEGORY_FLAGS)) != 0u) {
+        if (descriptor->field_count > 0 || descriptor->fields != NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Enum/flags types must not define fields");
+        }
+    }
+
+    if ((descriptor->fields == NULL && descriptor->field_count > 0) ||
+        (descriptor->fields != NULL && descriptor->field_count == 0)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Field pointer/count mismatch");
+    }
+
+    if (descriptor->fields && descriptor->field_count > 0) {
+        for (size_t i = 0; i < descriptor->field_count; i++) {
+            const nmo_type_field_t *field = &descriptor->fields[i];
+            if (!field->name || field->name[0] == '\0') {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Field name must not be empty");
+            }
+            if (nmo_guid_is_null(field->type_guid)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Field type GUID must not be null");
+            }
+            if (field->size == 0) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Field size must be non-zero");
+            }
+            if ((uint64_t)field->offset + (uint64_t)field->size > (uint64_t)descriptor->size) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Field '%s' exceeds type size", field->name);
+            }
+        }
+    }
+
+    if (descriptor->class_id != 0) {
+        if (!descriptor->vtable ||
+            !descriptor->vtable->serialize ||
+            !descriptor->vtable->deserialize) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Object types must provide serialize/deserialize vtable callbacks");
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t ensure_registry_mutable(
     nmo_type_registry_t *registry,
     const char *action)
@@ -683,6 +772,11 @@ nmo_status_t nmo_type_registry_register(
     nmo_status_t mutable_res = ensure_registry_mutable(registry, "register type");
     if (mutable_res != NMO_OK) {
         return mutable_res;
+    }
+
+    nmo_status_t validate_res = validate_type_descriptor(registry, descriptor);
+    if (validate_res != NMO_OK) {
+        return validate_res;
     }
 
     // Check for GUID collision

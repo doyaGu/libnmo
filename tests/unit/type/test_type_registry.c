@@ -32,6 +32,37 @@ static nmo_status_t dummy_manager_deserialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t dummy_type_serialize(
+    const void *instance,
+    struct nmo_chunk *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context
+) {
+    (void)instance;
+    (void)chunk;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t dummy_type_deserialize(
+    void *instance,
+    struct nmo_chunk *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context
+) {
+    (void)instance;
+    (void)chunk;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_type_vtable_t dummy_type_vtable = {
+    .serialize = dummy_type_serialize,
+    .deserialize = dummy_type_deserialize
+};
+
 /* ============================================================================
  * Test: Registry Creation
  * ============================================================================ */
@@ -125,6 +156,49 @@ TEST(type_registry, register_multiple_types) {
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_FLOAT));
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_VECTOR3));
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(type_registry, register_invalid_field_bounds_fails) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_field_t fields[1] = {0};
+    fields[0].name = "field";
+    fields[0].type_guid = GUID_INT;
+    fields[0].offset = 4;
+    fields[0].size = 4;
+
+    nmo_type_descriptor_t type = {0};
+    type.guid = GUID_FLOAT;
+    type.name = "BadStruct";
+    type.category = NMO_TYPE_CATEGORY_STRUCT;
+    type.size = 4;
+    type.alignment = 4;
+    type.fields = fields;
+    type.field_count = 1;
+
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(type_registry, register_object_without_vtable_fails) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_descriptor_t type = {0};
+    type.guid = GUID_INT;
+    type.name = "ObjectType";
+    type.category = NMO_TYPE_CATEGORY_STRUCT;
+    type.size = 4;
+    type.alignment = 4;
+    type.class_id = 0x1234;
+
+    nmo_status_t result = nmo_type_registry_register(registry, &type);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
+
     nmo_arena_destroy(arena);
 }
 
@@ -364,6 +438,7 @@ TEST(type_registry, find_by_class_id_direct) {
     object_type.class_id = 0x1001;
     object_type.valid = true;
     object_type.base_type = NMO_GUID_NULL;
+    object_type.vtable = &dummy_type_vtable;
 
     nmo_status_t result = nmo_type_registry_register(registry, &object_type);
     ASSERT_EQ(NMO_OK, result);
@@ -394,6 +469,7 @@ TEST(type_registry, unregister_removes_lookups) {
     test_type.class_id = 0x2002;
     test_type.valid = true;
     test_type.base_type = NMO_GUID_NULL;
+    test_type.vtable = &dummy_type_vtable;
 
     nmo_status_t result = nmo_type_registry_register(registry, &test_type);
     ASSERT_EQ(NMO_OK, result);
@@ -527,6 +603,7 @@ TEST(type_registry, slot_recycling_clears_class_id_map) {
     type_a.size = 4;
     type_a.alignment = 4;
     type_a.class_id = 0x1111;
+    type_a.vtable = &dummy_type_vtable;
     nmo_type_registry_register(registry, &type_a);
 
     nmo_type_registry_unregister(registry, GUID_INT);
@@ -538,6 +615,7 @@ TEST(type_registry, slot_recycling_clears_class_id_map) {
     type_b.size = 4;
     type_b.alignment = 4;
     type_b.class_id = 0x2222;
+    type_b.vtable = &dummy_type_vtable;
     nmo_type_registry_register(registry, &type_b);
 
     ASSERT_EQ(NULL, nmo_type_registry_find_by_class_id(registry, 0x1111));
@@ -722,6 +800,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_registry, create_destroy);
     REGISTER_TEST(type_registry, register_simple_type);
     REGISTER_TEST(type_registry, register_multiple_types);
+    REGISTER_TEST(type_registry, register_invalid_field_bounds_fails);
+    REGISTER_TEST(type_registry, register_object_without_vtable_fails);
     REGISTER_TEST(type_registry, finalize_blocks_mutation);
     REGISTER_TEST(type_registry, register_copies_name_and_fields);
     REGISTER_TEST(type_registry, register_duplicate_guid_fails);

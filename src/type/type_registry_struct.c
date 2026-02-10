@@ -101,6 +101,60 @@ static const nmo_type_descriptor_t* resolve_field_type(
     return nmo_type_registry_find_by_guid(type_registry, *io_guid);
 }
 
+static nmo_status_t validate_struct_field_consistency(
+    const nmo_struct_descriptor_t *struct_fields,
+    const nmo_type_field_t *type_fields,
+    size_t field_count,
+    uint32_t total_size,
+    bool is_union
+) {
+    if (!struct_fields || !type_fields || field_count == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Field descriptors must not be empty");
+    }
+
+    for (size_t i = 0; i < field_count; i++) {
+        const nmo_struct_descriptor_t *s = &struct_fields[i];
+        const nmo_type_field_t *t = &type_fields[i];
+
+        if (!s->name || !t->name || strcmp(s->name, t->name) != 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Field name mismatch at index %zu", i);
+        }
+        if (!nmo_guid_equals(s->type_guid, t->type_guid)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Field type mismatch for '%s'", s->name);
+        }
+        if (s->offset != t->offset) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Field offset mismatch for '%s'", s->name);
+        }
+        if (s->size != t->size) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Field size mismatch for '%s'", s->name);
+        }
+        if ((uint64_t)t->offset + (uint64_t)t->size > (uint64_t)total_size) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Field '%s' exceeds type size", s->name);
+        }
+        if (is_union && t->offset != 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Union field '%s' must have offset 0", s->name);
+        }
+        if (s->array_count > 0) {
+            if ((t->flags & NMO_FIELD_REPEATED) == 0u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Array field '%s' missing repeated flag", s->name);
+            }
+        } else if ((t->flags & NMO_FIELD_REPEATED) != 0u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Non-array field '%s' marked as repeated", s->name);
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Layout Calculation
  * ============================================================================ */
@@ -418,6 +472,16 @@ nmo_status_t nmo_type_registry_register_struct(
         type_fields[i].default_value = field_def->default_value;
 
         offset += total_field_size;
+    }
+
+    nmo_status_t consistency_res = validate_struct_field_consistency(
+        struct_fields,
+        type_fields,
+        struct_def->field_count,
+        total_size,
+        false);
+    if (consistency_res != NMO_OK) {
+        return consistency_res;
     }
     
     /* Allocate specialized_metadata */
@@ -1241,6 +1305,16 @@ nmo_status_t nmo_type_registry_register_union(
         type_fields[i].semantic = NMO_SEMANTIC_NONE;
         type_fields[i].units = NMO_UNITS_NONE;
         type_fields[i].default_value = field_def->default_value;
+    }
+
+    nmo_status_t consistency_res = validate_struct_field_consistency(
+        union_fields,
+        type_fields,
+        union_def->field_count,
+        total_size,
+        true);
+    if (consistency_res != NMO_OK) {
+        return consistency_res;
     }
 
     /* Allocate specialized metadata */

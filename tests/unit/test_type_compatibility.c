@@ -21,6 +21,37 @@ static nmo_guid_t guid_derived1 = {0x10000002, 0x00000000};
 static nmo_guid_t guid_derived2 = {0x10000003, 0x00000000};
 static nmo_guid_t guid_unrelated = {0x10000004, 0x00000000};
 
+static nmo_status_t dummy_type_serialize(
+    const void *instance,
+    struct nmo_chunk *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context
+) {
+    (void)instance;
+    (void)chunk;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t dummy_type_deserialize(
+    void *instance,
+    struct nmo_chunk *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)chunk;
+    (void)type;
+    (void)context;
+    NMO_RETURN_OK();
+}
+
+static nmo_type_vtable_t dummy_type_vtable = {
+    .serialize = dummy_type_serialize,
+    .deserialize = dummy_type_deserialize
+};
+
 /* Test type IDs */
 static nmo_type_id_t id_base = NMO_TYPE_ID_INVALID;
 static nmo_type_id_t id_derived1 = NMO_TYPE_ID_INVALID;
@@ -419,6 +450,7 @@ TEST(type_conversion, class_id_conversions) {
     type_with_classid.class_id = 12345; /* Virtools CK_CLASSID */
     type_with_classid.valid = true;
     type_with_classid.base_type = NMO_GUID_NULL;
+    type_with_classid.vtable = &dummy_type_vtable;
     
     nmo_status_t res = nmo_type_registry_register(registry, &type_with_classid);
     ASSERT_EQ(NMO_OK, res);
