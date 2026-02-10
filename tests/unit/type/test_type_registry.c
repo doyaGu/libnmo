@@ -128,6 +128,40 @@ TEST(type_registry, register_multiple_types) {
     nmo_arena_destroy(arena);
 }
 
+TEST(type_registry, finalize_blocks_mutation) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_type_descriptor_t int_type = {0};
+    int_type.guid = GUID_INT;
+    int_type.name = "int";
+    int_type.category = NMO_TYPE_CATEGORY_SCALAR;
+    int_type.size = 4;
+    int_type.alignment = 4;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &int_type));
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(registry));
+
+    nmo_type_descriptor_t float_type = {0};
+    float_type.guid = GUID_FLOAT;
+    float_type.name = "float";
+    float_type.category = NMO_TYPE_CATEGORY_SCALAR;
+    float_type.size = 4;
+    float_type.alignment = 4;
+
+    nmo_status_t result = nmo_type_registry_register(registry, &float_type);
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, result);
+
+    result = nmo_type_registry_unregister(registry, GUID_INT);
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, result);
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_begin_update(registry));
+    result = nmo_type_registry_register(registry, &float_type);
+    ASSERT_EQ(NMO_OK, result);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(type_registry, register_copies_name_and_fields) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
@@ -688,6 +722,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_registry, create_destroy);
     REGISTER_TEST(type_registry, register_simple_type);
     REGISTER_TEST(type_registry, register_multiple_types);
+    REGISTER_TEST(type_registry, finalize_blocks_mutation);
     REGISTER_TEST(type_registry, register_copies_name_and_fields);
     REGISTER_TEST(type_registry, register_duplicate_guid_fails);
     REGISTER_TEST(type_registry, compat_mask_supports_more_than_256_types);

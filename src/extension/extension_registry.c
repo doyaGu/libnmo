@@ -169,6 +169,10 @@ void nmo_extension_registry_destroy(nmo_extension_registry_t *registry)
 {
     if (registry == NULL) return;
 
+    if (registry->type_registry) {
+        (void)nmo_type_registry_begin_update(registry->type_registry);
+    }
+
     /* Unload all plugins in reverse order */
     while (registry->instances.count > 0) {
         nmo_extension_instance_t *instance = *(nmo_extension_instance_t **)
@@ -196,6 +200,11 @@ nmo_status_t nmo_extension_registry_register_static(
     if (registry == NULL || plugins == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
             "registry and plugins are required");
+    }
+
+    nmo_status_t update_status = nmo_type_registry_begin_update(registry->type_registry);
+    if (update_status != NMO_OK) {
+        return update_status;
     }
 
     if (plugin_count == 0) {
@@ -257,6 +266,11 @@ nmo_status_t nmo_extension_registry_load_library(
     if (registry == NULL || path == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
             "registry and path are required");
+    }
+
+    nmo_status_t update_status = nmo_type_registry_begin_update(registry->type_registry);
+    if (update_status != NMO_OK) {
+        return update_status;
     }
 
     nmo_shared_library_t *library = NULL;
@@ -354,6 +368,11 @@ nmo_status_t nmo_extension_registry_unload_by_guid(
     if (registry == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
             "registry is required");
+    }
+
+    nmo_status_t update_status = nmo_type_registry_begin_update(registry->type_registry);
+    if (update_status != NMO_OK) {
+        return update_status;
     }
 
     /* Find the instance */

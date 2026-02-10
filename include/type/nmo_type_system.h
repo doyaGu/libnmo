@@ -592,6 +592,8 @@ typedef struct nmo_type_registry {
     size_t builtin_count;               /* Built-in types */
     size_t plugin_count;                /* Plugin-defined types */
     uint32_t registry_version;          /* Version for cache invalidation */
+    bool finalized;                     /* True once finalized (read-only) */
+    uint8_t _padding1[3];               /* Padding for alignment */
 } nmo_type_registry_t;
 
 /* ============================================================================
@@ -843,9 +845,20 @@ int32_t nmo_type_get_derivation_depth(
  *
  * @param registry Registry
  * @return nmo_ok() on success
- * @note After finalize, registry is read-mostly and safe for concurrent reads.
+ * @note After finalize, registry is read-only until begin_update() is called.
  */
 nmo_status_t nmo_type_registry_finalize(nmo_type_registry_t *registry);
+
+/**
+ * @brief Begin a mutation phase after finalize
+ *
+ * Clears the finalized flag so registration/unregistration is permitted again.
+ * Caller must re-finalize after completing mutations.
+ *
+ * @param registry Registry
+ * @return nmo_ok() on success
+ */
+nmo_status_t nmo_type_registry_begin_update(nmo_type_registry_t *registry);
 
 /* --- Type Conversion API (Phase 6.3.3) ---
  *

@@ -146,6 +146,11 @@ nmo_status_t nmo_type_registry_register_enum(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry or enum_def");
     }
+
+    if (type_registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot register enum types");
+    }
     
     if (!enum_def->name || enum_def->name[0] == '\0') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,

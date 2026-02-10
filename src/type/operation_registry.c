@@ -355,6 +355,7 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
     registry->registry_version = 0;
     registry->cache_version = 0;
     registry->cached_type_registry_version = 0;
+    registry->finalized = false;
     
     /* Create hash map for O(1) family lookup: GUID -> family index */
     registry->family_map = nmo_hash_table_create(
@@ -425,6 +426,7 @@ nmo_status_t nmo_operation_registry_finalize(
     }
 
     ensure_lookup_cache(registry, type_registry);
+    registry->finalized = true;
 
     NMO_RETURN_OK();
 }
@@ -441,6 +443,11 @@ nmo_status_t nmo_operation_registry_register(
     if (!registry || !desc || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid parameters");
+    }
+
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Operation registry is finalized; cannot register operations");
     }
     
     /* Validate operation descriptor */
@@ -533,6 +540,11 @@ nmo_status_t nmo_operation_registry_register_bulk(
     if (!registry || !descs || count == 0 || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid parameters");
+    }
+
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Operation registry is finalized; cannot register operations");
     }
     
     /* Register operations one by one */

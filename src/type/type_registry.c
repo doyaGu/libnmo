@@ -459,6 +459,17 @@ static void ensure_class_id_inherited_cache(nmo_type_registry_t *registry) {
     }
 }
 
+static nmo_status_t ensure_registry_mutable(
+    nmo_type_registry_t *registry,
+    const char *action)
+{
+    if (registry && registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot %s", action);
+    }
+    return NMO_OK;
+}
+
 /* ============================================================================
  * Public API Implementation
  * ============================================================================ */
@@ -486,6 +497,7 @@ nmo_type_registry_t* nmo_type_registry_create_ex(nmo_arena_t *arena, nmo_allocat
         "type_registry",
         "type_allocator");
     registry->derivation_masks_valid = false;
+    registry->finalized = false;
 
     // Initialize type array
     if (nmo_arena_array_init(&registry->types,
@@ -666,6 +678,11 @@ nmo_status_t nmo_type_registry_register(
     if (!registry || !descriptor) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL registry or descriptor");
+    }
+
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "register type");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
     }
 
     // Check for GUID collision
@@ -944,6 +961,11 @@ nmo_status_t nmo_type_registry_unregister(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "unregister type");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
+    }
+
     // Find type by GUID
     nmo_type_id_t type_id;
     if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) != NMO_OK) {
@@ -1067,6 +1089,11 @@ nmo_status_t nmo_type_registry_add_name_alias(
 {
     if (!registry || !alias || !registry->name_map) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
+    }
+
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "add name alias");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
     }
 
     if (type_id < 0 || (size_t)type_id >= registry->types.count) {
@@ -1332,6 +1359,22 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
     registry->derivation_masks_valid = true;
 }
 
+nmo_status_t nmo_type_registry_begin_update(nmo_type_registry_t *registry) {
+    if (!registry) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
+    }
+
+    if (!registry->finalized) {
+        NMO_RETURN_OK();
+    }
+
+    registry->finalized = false;
+    registry->derivation_masks_valid = false;
+    registry->class_id_inherited_version = 0u;
+
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_type_registry_finalize(nmo_type_registry_t *registry) {
     if (!registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
@@ -1339,6 +1382,7 @@ nmo_status_t nmo_type_registry_finalize(nmo_type_registry_t *registry) {
 
     nmo_type_registry_update_derivation_masks(registry);
     ensure_class_id_inherited_cache(registry);
+    registry->finalized = true;
 
     NMO_RETURN_OK();
 }
@@ -2144,6 +2188,16 @@ nmo_status_t nmo_type_registry_set_ui_visibility(
     if (!registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
     }
+
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "register saver manager");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
+    }
+
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "set UI visibility");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
+    }
     
     nmo_type_id_t type_id = NMO_TYPE_ID_INVALID;
     if (nmo_hash_table_get(registry->guid_map, &guid, &type_id) != NMO_OK) {
@@ -2263,6 +2317,11 @@ nmo_status_t nmo_type_registry_unregister_saver_manager(
     if (!registry || !registry->manager_guid_map) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry or no managers");
     }
+
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "unregister saver manager");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
+    }
     
     // Find manager
     nmo_manager_index_t manager_index = NMO_MANAGER_INDEX_INVALID;
@@ -2333,6 +2392,11 @@ nmo_status_t nmo_type_registry_set_type_manager(
     
     if (!registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL registry");
+    }
+
+    nmo_status_t mutable_res = ensure_registry_mutable(registry, "set type manager");
+    if (mutable_res != NMO_OK) {
+        return mutable_res;
     }
     
     // Find type

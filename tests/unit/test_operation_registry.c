@@ -164,6 +164,39 @@ TEST(operation_registry, create_null_arena) {
     ASSERT_EQ(NULL, registry);
 }
 
+TEST(operation_registry, finalize_blocks_registration) {
+    test_context_t *ctx = setup_context();
+    ASSERT_NE(NULL, ctx);
+
+    nmo_type_descriptor_t int_type = {0};
+    int_type.guid = GUID_TYPE_INT;
+    int_type.name = "INT";
+    int_type.size = sizeof(int32_t);
+    int_type.alignment = alignof(int32_t);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type));
+
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_finalize(ctx->operation_registry, ctx->type_registry));
+
+    nmo_operation_desc_t desc = {0};
+    desc.operation_guid = GUID_OP_ADD;
+    desc.p1_type_guid = GUID_TYPE_INT;
+    desc.p2_type_guid = GUID_TYPE_INT;
+    desc.result_type_guid = GUID_TYPE_INT;
+    desc.function = mock_add_int;
+    desc.flags = NMO_OP_BINARY | NMO_OP_COMMUTATIVE;
+    desc.priority = 100;
+    desc.name = "Add";
+
+    nmo_status_t result = nmo_operation_registry_register(
+        ctx->operation_registry,
+        &desc,
+        ctx->type_registry
+    );
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, result);
+
+    teardown_context(ctx);
+}
+
 /* ============================================================================
  * Registration Tests (Placeholder - will be implemented in Task 6.1.2)
  * ============================================================================ */
@@ -1422,6 +1455,7 @@ TEST(operation_registry, performance_lookup_1000_operations) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(operation_registry, create_destroy);
     REGISTER_TEST(operation_registry, create_null_arena);
+    REGISTER_TEST(operation_registry, finalize_blocks_registration);
     REGISTER_TEST(operation_registry, register_operation_success);
     REGISTER_TEST(operation_registry, register_operation_not_implemented);
     REGISTER_TEST(operation_registry, register_null_params);

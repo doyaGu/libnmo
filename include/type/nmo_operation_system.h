@@ -212,6 +212,8 @@ typedef struct nmo_operation_registry {
     uint32_t registry_version;           /**< Incremented on operation changes */
     uint32_t cache_version;              /**< Version used by lookup_cache */
     uint32_t cached_type_registry_version; /**< Type registry version for cache */
+    bool finalized;                       /**< True once finalized (read-only) */
+    uint8_t _padding0[3];                 /**< Padding for alignment */
     
     /* Statistics */
     uint64_t total_operations;           /**< Total operations across all families */

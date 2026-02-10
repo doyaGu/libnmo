@@ -250,7 +250,12 @@ nmo_status_t nmo_type_registry_register_struct(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry or struct_def");
     }
-    
+
+    if (type_registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot register struct types");
+    }
+
     if (!struct_def->name || struct_def->name[0] == '\0') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Struct type name cannot be empty");
@@ -560,6 +565,11 @@ nmo_status_t nmo_type_registry_begin_struct(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry or empty name");
     }
+
+    if (type_registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot begin struct definitions");
+    }
     
     /* Generate GUID if null */
     if (nmo_guid_is_null(guid)) {
@@ -650,6 +660,11 @@ nmo_status_t nmo_type_registry_add_field(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL parameters");
     }
+
+    if (type_registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot add struct fields");
+    }
     
     /* Find incomplete struct */
     incomplete_struct_t *incomplete = find_incomplete_struct(type_registry, struct_type_id);
@@ -710,6 +725,11 @@ nmo_status_t nmo_type_registry_finalize_struct(
     if (!type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry");
+    }
+
+    if (type_registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot finalize struct definitions");
     }
     
     /* Find incomplete struct */
@@ -1037,6 +1057,11 @@ nmo_status_t nmo_type_registry_register_union(
     if (!type_registry || !union_def) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry or union_def");
+    }
+
+    if (type_registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot register union types");
     }
 
     if (!union_def->name || union_def->name[0] == '\0') {

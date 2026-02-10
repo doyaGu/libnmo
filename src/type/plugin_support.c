@@ -348,6 +348,11 @@ nmo_status_t nmo_type_registry_set_creator_plugin(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
     }
 
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot set creator plugin");
+    }
+
     if (type_id < 0 || (size_t)type_id >= registry->types.count) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid type ID");
     }
@@ -380,6 +385,11 @@ nmo_status_t nmo_type_registry_unregister_derived(
 {
     if (!registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
+    }
+
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot unregister derived types");
     }
 
     const nmo_type_descriptor_t *base_type = nmo_type_registry_find_by_guid(registry, base_guid);
@@ -466,6 +476,11 @@ nmo_status_t nmo_type_registry_unregister_plugin_types(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
     }
 
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot unregister plugin types");
+    }
+
     /* First pass: count all types from this plugin */
     size_t remove_count = 0;
     for (size_t i = 0; i < registry->types.count; i++) {
@@ -531,6 +546,11 @@ nmo_status_t nmo_type_registry_invalidate(
 {
     if (!registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid registry pointer");
+    }
+
+    if (registry->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot invalidate types");
     }
 
     // Find type by GUID
