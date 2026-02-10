@@ -162,7 +162,7 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {
         free(entries);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -224,7 +224,7 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_cli_close_output_stream(global, out);
     free(entries);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -266,14 +266,14 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     }
 
     if (!class_id) {
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         fprintf(stderr, "Error: Unknown class '%s'\n", type_arg);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
     if (!class_name) {
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         fprintf(stderr, "Error: Class ID %u not found\n", class_id);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -281,7 +281,7 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     char out_err[128];
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -351,7 +351,7 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     }
 
     nmo_cli_close_output_stream(global, out);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -372,7 +372,7 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
     size_t class_count = 0;
     nmo_cli_class_entry_t *entries = collect_class_entries(ctx, &class_count);
     if (!entries || class_count == 0) {
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         fprintf(stderr, "Error: No class metadata available\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -381,7 +381,7 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {
         free(entries);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
@@ -430,7 +430,7 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         class_node_t *nodes = (class_node_t *)calloc(class_count, sizeof(*nodes));
         if (!nodes) {
             free(entries);
-            nmo_context_destroy(ctx);
+            nmo_context_release(ctx);
             fprintf(stderr, "Error: Out of memory\n");
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
@@ -492,6 +492,6 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
 
     nmo_cli_close_output_stream(global, out);
     free(entries);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
     return NMO_CLI_EXIT_SUCCESS;
 }

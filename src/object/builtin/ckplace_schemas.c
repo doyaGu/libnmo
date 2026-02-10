@@ -53,9 +53,9 @@ static nmo_status_t nmo_ckplace_deserialize_internal(
         int32_t count = 0;
         if (nmo_chunk_read_int(chunk, &count) == NMO_OK && count > 0) {
             out_state->portal_count = (uint32_t)count;
-            out_state->portals = (nmo_ckplace_portal_entry_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ckplace_portal_entry_t) * out_state->portal_count,
-                _Alignof(nmo_ckplace_portal_entry_t));
+            out_state->portals = (nmo_place_portal_entry_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_place_portal_entry_t) * out_state->portal_count,
+                _Alignof(nmo_place_portal_entry_t));
             if (!out_state->portals) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate portal array");
             }
@@ -104,7 +104,7 @@ static nmo_status_t ckplace_copy(
     nmo_ckplace_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->portals,
-                                              s->portals, sizeof(nmo_ckplace_portal_entry_t), s->portal_count));
+                                              s->portals, sizeof(nmo_place_portal_entry_t), s->portal_count));
     return nmo_object_copy_array(arena, (void **)&d->reference_ids,
                                  s->reference_ids, sizeof(nmo_object_id_t), s->reference_count);
 }

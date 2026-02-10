@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
+#include "type/nmo_type_runtime.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,7 +17,6 @@ extern "C" {
 
 /* Forward declarations */
 typedef struct nmo_allocator nmo_allocator_t;
-typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_arena nmo_arena_t;
@@ -71,23 +71,28 @@ NMO_API void nmo_context_retain(nmo_context_t *ctx);
 NMO_API void nmo_context_release(nmo_context_t *ctx);
 
 /**
- * @brief Destroy context (alias for release)
- *
- * Convenience function, equivalent to nmo_context_release().
- *
- * @param ctx Context to destroy
- */
-static inline void nmo_context_destroy(nmo_context_t *ctx) {
-    nmo_context_release(ctx);
-}
-
-/**
  * @brief Get type registry (schema v2)
  *
  * @param ctx Context
  * @return Type registry, or NULL if not initialized
  */
 NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx);
+
+/**
+ * @brief Get operation registry
+ *
+ * @param ctx Context
+ * @return Operation registry, or NULL if not initialized
+ */
+NMO_API nmo_operation_registry_t *nmo_context_get_operation_registry(const nmo_context_t *ctx);
+
+/**
+ * @brief Get aggregated type runtime view
+ *
+ * @param ctx Context
+ * @return Runtime view, or NULL if context is NULL
+ */
+NMO_API const nmo_type_runtime_t *nmo_context_get_type_runtime(const nmo_context_t *ctx);
 
 /**
  * @brief Get manager registry

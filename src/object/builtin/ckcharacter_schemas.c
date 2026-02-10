@@ -81,7 +81,7 @@ static const nmo_type_field_t nmo_ckbodypart_fields[] = {
     NMO_FIELD_REF(nmo_ckbodypart_state_t, character_id),
     NMO_FIELD(nmo_ckbodypart_state_t, has_rotation_joint, CKPGUID_UINT8),
     NMO_FIELD_NAMED("rotation_joint", offsetof(nmo_ckbodypart_state_t, rotation_joint),
-                    sizeof(nmo_ckik_joint_t), NMO_GUID_STRUCT_CKIKJOINT,
+                    sizeof(nmo_ik_joint_t), NMO_GUID_STRUCT_CKIKJOINT,
                     NMO_FIELD_REQUIRED, 0)
 };
 
@@ -100,7 +100,7 @@ static nmo_status_t ckcharacter_copy(
                                               s->animation_ids, sizeof(nmo_object_id_t), s->animation_count));
     if (s->subpart_count > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->subparts,
-                                                  s->subparts, sizeof(nmo_ckcharacter_subpart_t),
+                                                  s->subparts, sizeof(nmo_character_subpart_t),
                                                   s->subpart_count));
         for (uint32_t i = 0; i < s->subpart_count; ++i) {
             nmo_chunk_t *clone = NULL;
@@ -232,9 +232,9 @@ static nmo_status_t nmo_ckcharacter_deserialize_internal(
             (void)nmo_chunk_read_dword(chunk, &count);
             if (count > 0) {
                 out_state->subpart_count = count;
-                out_state->subparts = (nmo_ckcharacter_subpart_t *)nmo_arena_alloc(
-                    arena, sizeof(nmo_ckcharacter_subpart_t) * count,
-                    _Alignof(nmo_ckcharacter_subpart_t));
+                out_state->subparts = (nmo_character_subpart_t *)nmo_arena_alloc(
+                    arena, sizeof(nmo_character_subpart_t) * count,
+                    _Alignof(nmo_character_subpart_t));
                 if (!out_state->subparts) {
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate subpart array");
                 }
@@ -259,9 +259,9 @@ static nmo_status_t nmo_ckcharacter_deserialize_internal(
             (void)nmo_chunk_start_read_sub_chunk_sequence(chunk, &count);
             if (count > 0) {
                 out_state->subpart_count = (uint32_t)count;
-                out_state->subparts = (nmo_ckcharacter_subpart_t *)nmo_arena_alloc(
-                    arena, sizeof(nmo_ckcharacter_subpart_t) * out_state->subpart_count,
-                    _Alignof(nmo_ckcharacter_subpart_t));
+                out_state->subparts = (nmo_character_subpart_t *)nmo_arena_alloc(
+                    arena, sizeof(nmo_character_subpart_t) * out_state->subpart_count,
+                    _Alignof(nmo_character_subpart_t));
                 if (!out_state->subparts) {
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate subpart array");
                 }
@@ -384,11 +384,11 @@ static nmo_status_t nmo_ckbodypart_deserialize_internal(
             if (pos < total) {
                 remaining_dwords = total - pos;
             }
-            if (remaining_dwords * 4 >= sizeof(nmo_ckik_joint_t)) {
+            if (remaining_dwords * 4 >= sizeof(nmo_ik_joint_t)) {
                 out_state->has_rotation_joint = 1;
                 (void)nmo_chunk_read_and_fill_buffer(chunk,
                                                      &out_state->rotation_joint,
-                                                     sizeof(nmo_ckik_joint_t));
+                                                     sizeof(nmo_ik_joint_t));
             }
         }
     } else {
@@ -445,7 +445,7 @@ static nmo_status_t nmo_ckbodypart_serialize_internal(
         if (in_state->has_rotation_joint) {
             result = nmo_chunk_write_buffer_no_size(out_chunk,
                                                     &in_state->rotation_joint,
-                                                    sizeof(nmo_ckik_joint_t));
+                                                    sizeof(nmo_ik_joint_t));
             if (result != NMO_OK) return result;
         }
     }

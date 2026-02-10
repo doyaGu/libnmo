@@ -7,6 +7,7 @@
 #define NMO_CKPLACE_SCHEMAS_H
 
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
@@ -21,14 +22,6 @@ typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /**
- * @brief CKPlace portal entry
- */
-typedef struct nmo_ckplace_portal_entry {
-    nmo_object_id_t place_id;
-    nmo_object_id_t portal_id;
-} nmo_ckplace_portal_entry_t;
-
-/**
  * @brief CKPlace state
  */
 typedef struct nmo_ckplace_state {
@@ -41,7 +34,7 @@ typedef struct nmo_ckplace_state {
     nmo_object_id_t level_id;
 
     uint32_t portal_count;
-    nmo_ckplace_portal_entry_t *portals;
+    nmo_place_portal_entry_t *portals;
 
     uint32_t reference_count;
     nmo_object_id_t *reference_ids;

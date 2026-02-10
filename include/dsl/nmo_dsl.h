@@ -133,7 +133,7 @@ typedef struct nmo_dsl_schema_options {
 
 typedef struct nmo_dsl_eval_context {
     const nmo_type_registry_t *registry;
-    const nmo_operation_registry_t *ops;    /* nullable, Phase E */
+    nmo_operation_registry_t *ops;          /* nullable, Phase E */
 
     const nmo_type_descriptor_t *root_type;
     void *root_instance;              /* mutable for script mode */

@@ -792,6 +792,28 @@ TEST(builtin_operations, check_total_operations_count) {
     teardown_registries();
 }
 
+TEST(builtin_operations, finalize_keeps_lookup_stable) {
+    setup_registries();
+
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_finalize(operation_registry, type_registry));
+
+    const nmo_guid_t op_guid = NMO_OP_GUID_ADD;
+    const nmo_type_descriptor_t *int_type = get_type(CKPGUID_INT);
+    ASSERT_NE(NULL, int_type);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        int_type,
+        int_type,
+        type_registry,
+        &cell));
+    ASSERT_NE(NULL, cell);
+
+    teardown_registries();
+}
+
 
 
 /* ============================================================================
@@ -829,5 +851,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builtin_operations, vector_cross_vector3);
 
     REGISTER_TEST(builtin_operations, check_total_operations_count);
+    REGISTER_TEST(builtin_operations, finalize_keeps_lookup_stable);
 TEST_MAIN_END()
 

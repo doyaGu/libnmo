@@ -20,6 +20,7 @@
 
 #include "nmo_types.h"
 #include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_ckstatesave_ids.h"
 
@@ -36,31 +37,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 /* =============================================================================
  * CKSprite STATE STRUCTURES
  * ============================================================================= */
-
-/**
- * @brief CKBitmapData - bitmap payload (simplified)
- * 
- * Full implementation would include palette, pixel buffer, video backup, etc.
- * For now, preserve as raw buffer for round-trip.
- */
-typedef struct nmo_ckbitmapdata {
-    uint32_t width;                     /**< Image width (optional) */
-    uint32_t height;                    /**< Image height (optional) */
-    uint8_t *pixel_data;                /**< Raw pixel buffer (optional) */
-    size_t pixel_data_size;             /**< Pixel buffer size in bytes */
-
-    /* Raw bitmap payloads by identifier (preserved for round-trip) */
-    uint8_t *palette_data;              /**< Payload for 0x200000 */
-    size_t palette_size;                /**< Size of palette payload */
-    uint8_t *system_copy_data;          /**< Payload for 0x10000000 */
-    size_t system_copy_size;            /**< Size of system copy payload */
-    uint8_t *video_backup_data;         /**< Payload for 0x800000 */
-    size_t video_backup_size;           /**< Size of video backup payload */
-    uint8_t *pixels_data;               /**< Payload for 0x400000 */
-    size_t pixels_size;                 /**< Size of pixels payload */
-    uint8_t *raw_chunk_data;            /**< Payload for 0x40000 */
-    size_t raw_chunk_size;              /**< Size of raw payload */
-} nmo_ckbitmapdata_t;
 
 /**
  * @brief CKSprite state
@@ -83,7 +59,7 @@ typedef struct nmo_cksprite_state {
     
     /* Bitmap data (optional, not present if sprite_ref is used) */
     bool has_bitmap_data;               /**< True if bitmap payload is present */
-    nmo_ckbitmapdata_t bitmap_data;     /**< Bitmap pixel data */
+    nmo_bitmapdata_t bitmap_data;     /**< Bitmap pixel data */
     
     /* Transparency (identifier 0x20000) */
     bool has_transparency;              /**< True if transparency is set */
@@ -105,18 +81,6 @@ typedef struct nmo_cksprite_state {
 /* =============================================================================
  * CHUNK IDENTIFIERS
  * ============================================================================= */
-
-/** Sprite reference identifier (clone from another sprite) */
-#define NMO_CKSPRITE_CHUNK_SPRITE_REF    CK_STATESAVE_SPRITESHARED
-
-/** Transparency identifier (color + boolean) */
-#define NMO_CKSPRITE_CHUNK_TRANSPARENCY  CK_STATESAVE_SPRITETRANSPARENT
-
-/** Current slot identifier (animation frame) */
-#define NMO_CKSPRITE_CHUNK_SLOT          CK_STATESAVE_SPRITECURRENTIMAGE
-
-/** Save options identifier (bitmap flags + properties) */
-#define NMO_CKSPRITE_CHUNK_SAVE_OPTIONS  CK_STATESAVE_SPRITEFORMAT
 
 /** Bitmap payload identifiers (passed to CKBitmapData::ReadFromChunk) */
 #define NMO_CKSPRITE_BITMAP_PALETTE      0x200000

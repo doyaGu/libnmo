@@ -101,7 +101,7 @@ static size_t nmo_cktexture_identifier_payload_size(nmo_chunk_t *chunk) {
 static nmo_status_t nmo_cktexture_read_reader_slot(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cktexture_reader_slot_t *slot)
+    nmo_texture_reader_slot_t *slot)
 {
     (void)arena;
     memset(slot, 0, sizeof(*slot));
@@ -155,7 +155,7 @@ static nmo_status_t nmo_cktexture_read_reader_slot(
 
 static nmo_status_t nmo_cktexture_write_reader_slot(
     nmo_chunk_t *chunk,
-    const nmo_cktexture_reader_slot_t *slot)
+    const nmo_texture_reader_slot_t *slot)
 {
     nmo_status_t result = nmo_chunk_write_dword(chunk, slot->format_type);
     if (result != NMO_OK) return result;
@@ -191,7 +191,7 @@ static nmo_status_t nmo_cktexture_write_reader_slot(
 static nmo_status_t nmo_cktexture_read_raw_slot(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cktexture_raw_slot_t *slot)
+    nmo_texture_raw_slot_t *slot)
 {
     (void)arena;
     memset(slot, 0, sizeof(*slot));
@@ -254,7 +254,7 @@ static nmo_status_t nmo_cktexture_read_raw_slot(
 
 static nmo_status_t nmo_cktexture_write_raw_slot(
     nmo_chunk_t *chunk,
-    const nmo_cktexture_raw_slot_t *slot)
+    const nmo_texture_raw_slot_t *slot)
 {
     nmo_status_t result = nmo_chunk_write_int(chunk, slot->bits_per_pixel);
     if (result != NMO_OK) return result;
@@ -293,7 +293,7 @@ static nmo_status_t nmo_cktexture_write_raw_slot(
 static nmo_status_t nmo_cktexture_read_bitmap2_slot(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_cktexture_bitmap2_slot_t *slot)
+    nmo_texture_bitmap2_slot_t *slot)
 {
     (void)arena;
     memset(slot, 0, sizeof(*slot));
@@ -315,7 +315,7 @@ static nmo_status_t nmo_cktexture_read_bitmap2_slot(
 
 static nmo_status_t nmo_cktexture_write_bitmap2_slot(
     nmo_chunk_t *chunk,
-    const nmo_cktexture_bitmap2_slot_t *slot)
+    const nmo_texture_bitmap2_slot_t *slot)
 {
     nmo_status_t result = nmo_chunk_write_int(chunk, slot->header_size);
     if (result != NMO_OK) return result;
@@ -379,8 +379,8 @@ nmo_status_t nmo_cktexture_deserialize(
         if (count < 0) count = 0;
 
         if (count > 0) {
-            nmo_cktexture_reader_slot_t *slots = (nmo_cktexture_reader_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_cktexture_reader_slot_t) * (size_t)count, _Alignof(nmo_cktexture_reader_slot_t));
+            nmo_texture_reader_slot_t *slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_reader_slot_t) * (size_t)count, _Alignof(nmo_texture_reader_slot_t));
             if (!slots) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate reader slots");
             }
@@ -398,8 +398,8 @@ nmo_status_t nmo_cktexture_deserialize(
         if (count < 0) count = 0;
 
         if (count > 0) {
-            nmo_cktexture_raw_slot_t *slots = (nmo_cktexture_raw_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_cktexture_raw_slot_t) * (size_t)count, _Alignof(nmo_cktexture_raw_slot_t));
+            nmo_texture_raw_slot_t *slots = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_raw_slot_t) * (size_t)count, _Alignof(nmo_texture_raw_slot_t));
             if (!slots) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw slots");
             }
@@ -417,8 +417,8 @@ nmo_status_t nmo_cktexture_deserialize(
         if (count < 0) count = 0;
 
         if (count > 0) {
-            nmo_cktexture_bitmap2_slot_t *slots = (nmo_cktexture_bitmap2_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_cktexture_bitmap2_slot_t) * (size_t)count, _Alignof(nmo_cktexture_bitmap2_slot_t));
+            nmo_texture_bitmap2_slot_t *slots = (nmo_texture_bitmap2_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_bitmap2_slot_t) * (size_t)count, _Alignof(nmo_texture_bitmap2_slot_t));
             if (!slots) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bitmap2 slots");
             }
@@ -549,8 +549,8 @@ nmo_status_t nmo_cktexture_deserialize(
         nmo_chunk_read_int(chunk, &count);
         if (count < 0) count = 0;
         if (count > 0) {
-            nmo_cktexture_raw_slot_t *mips = (nmo_cktexture_raw_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_cktexture_raw_slot_t) * (size_t)count, _Alignof(nmo_cktexture_raw_slot_t));
+            nmo_texture_raw_slot_t *mips = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_raw_slot_t) * (size_t)count, _Alignof(nmo_texture_raw_slot_t));
             if (!mips) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate mipmap slots");
             }
@@ -578,12 +578,12 @@ nmo_status_t nmo_cktexture_deserialize(
 
 static nmo_status_t nmo_cktexture_copy_reader_slots(
     nmo_arena_t *arena,
-    nmo_cktexture_reader_slot_t **dst,
-    const nmo_cktexture_reader_slot_t *src,
+    nmo_texture_reader_slot_t **dst,
+    const nmo_texture_reader_slot_t *src,
     uint32_t count)
 {
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
-                                              sizeof(nmo_cktexture_reader_slot_t), count));
+                                              sizeof(nmo_texture_reader_slot_t), count));
     for (uint32_t i = 0; i < count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].data,
                                                   src[i].data, src[i].data_size));
@@ -595,12 +595,12 @@ static nmo_status_t nmo_cktexture_copy_reader_slots(
 
 static nmo_status_t nmo_cktexture_copy_raw_slots(
     nmo_arena_t *arena,
-    nmo_cktexture_raw_slot_t **dst,
-    const nmo_cktexture_raw_slot_t *src,
+    nmo_texture_raw_slot_t **dst,
+    const nmo_texture_raw_slot_t *src,
     uint32_t count)
 {
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
-                                              sizeof(nmo_cktexture_raw_slot_t), count));
+                                              sizeof(nmo_texture_raw_slot_t), count));
     for (uint32_t i = 0; i < count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].blue_data,
                                                   src[i].blue_data, src[i].blue_size));
@@ -616,12 +616,12 @@ static nmo_status_t nmo_cktexture_copy_raw_slots(
 
 static nmo_status_t nmo_cktexture_copy_bitmap2_slots(
     nmo_arena_t *arena,
-    nmo_cktexture_bitmap2_slot_t **dst,
-    const nmo_cktexture_bitmap2_slot_t *src,
+    nmo_texture_bitmap2_slot_t **dst,
+    const nmo_texture_bitmap2_slot_t *src,
     uint32_t count)
 {
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
-                                              sizeof(nmo_cktexture_bitmap2_slot_t), count));
+                                              sizeof(nmo_texture_bitmap2_slot_t), count));
     for (uint32_t i = 0; i < count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].buffer,
                                                   src[i].buffer, src[i].buffer_size));

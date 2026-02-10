@@ -55,10 +55,10 @@ static const nmo_type_field_t nmo_ckwavesound_fields[] = {
     NMO_FIELD(nmo_ckwavesound_state_t, distance_behavior, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_ckwavesound_state_t, attached_object_id),
     NMO_FIELD_NAMED("position", offsetof(nmo_ckwavesound_state_t, position),
-                    sizeof(nmo_vx_vector3_t), CKPGUID_VECTOR,
+                    sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("direction", offsetof(nmo_ckwavesound_state_t, direction),
-                    sizeof(nmo_vx_vector3_t), CKPGUID_VECTOR,
+                    sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0)
 };
 

@@ -160,7 +160,7 @@ static nmo_status_t ckkeyedanimation_copy(
                                               s->animation_ids, sizeof(nmo_object_id_t), s->animation_count));
     if (s->subanim_count > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->subanims,
-                                                  s->subanims, sizeof(nmo_ckkeyedanimation_subanim_t),
+                                                  s->subanims, sizeof(nmo_keyedanimation_subanim_t),
                                                   s->subanim_count));
         for (uint32_t i = 0; i < s->subanim_count; ++i) {
             nmo_chunk_t *clone = NULL;
@@ -456,9 +456,9 @@ static nmo_status_t nmo_ckkeyedanimation_deserialize_internal(
         (void)nmo_chunk_read_dword(chunk, &count);
         if (count > 0) {
             out_state->subanim_count = count;
-            out_state->subanims = (nmo_ckkeyedanimation_subanim_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ckkeyedanimation_subanim_t) * count,
-                _Alignof(nmo_ckkeyedanimation_subanim_t));
+            out_state->subanims = (nmo_keyedanimation_subanim_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_keyedanimation_subanim_t) * count,
+                _Alignof(nmo_keyedanimation_subanim_t));
             if (!out_state->subanims) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate subanim array");
             }

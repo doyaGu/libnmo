@@ -38,6 +38,7 @@ typedef struct nmo_chunk_file_context nmo_chunk_file_context_t;
 
 typedef struct nmo_object_data nmo_object_data_t;
 typedef struct nmo_manager_data nmo_manager_data_t;
+typedef struct nmo_type_runtime nmo_type_runtime_t;
 
 /**
  * @brief Stats produced by repository deserialization.
@@ -88,7 +89,7 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
     nmo_object_t ***out_created_objects);
 
 /**
- * @brief Deserialize all objects in a repository using the type registry.
+ * @brief Deserialize all objects in a repository using the type runtime.
  *
  * This function handles per-object lifecycle correctly:
  * - alloc_state (combined inherited state)
@@ -100,7 +101,7 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
  * - shadow_storage: captures tails/bytes it owns
  *
  * @param repo Repository to iterate
- * @param type_reg Type registry for schema dispatch
+ * @param type_rt Type runtime for schema dispatch and operation hooks
  * @param arena Arena used by deserialize context / schema allocations
  * @param logger Optional logger
  * @param shadow_storage Optional shadow storage for capturing unconsumed chunk tails
@@ -110,7 +111,7 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
  */
 NMO_API nmo_status_t nmo_object_system_deserialize_repository(
     nmo_object_repository_t *repo,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,
@@ -131,7 +132,7 @@ NMO_API nmo_status_t nmo_object_system_deserialize_repository(
  */
 NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
@@ -192,7 +193,7 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
  * - shadow_storage: captures tails/bytes it owns
  *
  * @param repo Repository containing the objects
- * @param type_reg Type registry for schema dispatch
+ * @param type_rt Type runtime for schema dispatch and operation hooks
  * @param arena Arena used by deserialize context / schema allocations
  * @param logger Optional logger
  * @param shadow_storage Optional shadow storage for capturing unconsumed chunk tails
@@ -204,7 +205,7 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
  */
 NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_object_repository_t *repo,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,

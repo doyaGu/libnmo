@@ -234,7 +234,7 @@ nmo_status_t nmo_extension_registry_register_static(
         registered_count++;
     }
 
-    NMO_RETURN_OK();
+    return nmo_type_registry_finalize(registry->type_registry);
 
 rollback:
     /* Roll back successfully registered plugins in reverse order */
@@ -326,7 +326,7 @@ nmo_status_t nmo_extension_registry_load_library(
         registered_count++;
     }
 
-    NMO_RETURN_OK();
+    return nmo_type_registry_finalize(registry->type_registry);
 
 rollback:
     /* Roll back successfully registered plugins in reverse order */
@@ -365,7 +365,7 @@ nmo_status_t nmo_extension_registry_unload_by_guid(
     }
 
     unload_instance(registry, instance);
-    NMO_RETURN_OK();
+    return nmo_type_registry_finalize(registry->type_registry);
 }
 
 /* ============================================================================

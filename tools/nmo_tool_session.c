@@ -40,7 +40,7 @@ bool nmo_tool_open_session(const char *path,
     nmo_session_t *session = nmo_session_load(ctx, path);
     if (!session) {
         set_err(errbuf, errbuf_size, "Failed to load file");
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         return false;
     }
 
@@ -55,6 +55,6 @@ void nmo_tool_close_session(nmo_context_t *ctx, nmo_session_t *session) {
         nmo_session_destroy(session);
     }
     if (ctx) {
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
     }
 }

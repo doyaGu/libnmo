@@ -7,6 +7,8 @@
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_type_runtime.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include <stdio.h>
@@ -45,6 +47,13 @@ TEST(context_session, create_default) {
     /* Check that we have a type registry (replaces deprecated schema_registry) */
     nmo_type_registry_t* type_reg = nmo_context_get_type_registry(ctx);
     ASSERT_NOT_NULL(type_reg);
+    nmo_operation_registry_t* op_reg = nmo_context_get_operation_registry(ctx);
+    ASSERT_NOT_NULL(op_reg);
+
+    const nmo_type_runtime_t *runtime = nmo_context_get_type_runtime(ctx);
+    ASSERT_NOT_NULL(runtime);
+    ASSERT_EQ(type_reg, runtime->types);
+    ASSERT_EQ(op_reg, runtime->ops);
 
     /* Check allocator and logger */
     nmo_allocator_t* allocator = nmo_context_get_allocator(ctx);
@@ -349,6 +358,31 @@ TEST(context_session, type_registry_access) {
     nmo_context_release(ctx);
 }
 
+TEST(context_session, operation_registry_access) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_operation_registry_t *registry = nmo_context_get_operation_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_session_t *session1 = nmo_session_create(ctx);
+    nmo_session_t *session2 = nmo_session_create(ctx);
+
+    nmo_context_t *ctx1 = nmo_session_get_context(session1);
+    nmo_context_t *ctx2 = nmo_session_get_context(session2);
+
+    nmo_operation_registry_t *reg1 = nmo_context_get_operation_registry(ctx1);
+    nmo_operation_registry_t *reg2 = nmo_context_get_operation_registry(ctx2);
+
+    ASSERT_EQ(registry, reg1);
+    ASSERT_EQ(registry, reg2);
+
+    nmo_session_destroy(session1);
+    nmo_session_destroy(session2);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, create_default);
     REGISTER_TEST(context_session, create_custom);
@@ -359,4 +393,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, session_file_info);
     REGISTER_TEST(context_session, null_inputs);
     REGISTER_TEST(context_session, type_registry_access);
+    REGISTER_TEST(context_session, operation_registry_access);
 TEST_MAIN_END()

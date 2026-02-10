@@ -8,6 +8,9 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_runtime.h"
+#include "type/nmo_operation_system.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_types.h"
 #include "format/nmo_manager_registry.h"
@@ -58,6 +61,8 @@ typedef struct nmo_context {
     nmo_logger_t *logger;
     int logger_owned;
     nmo_type_registry_t *type_registry;      /* Schema v2 */
+    nmo_operation_registry_t *operation_registry;
+    nmo_type_runtime_t type_runtime;
     nmo_manager_registry_t *manager_registry;
     nmo_extension_registry_t *extension_registry;
     nmo_arena_t *arena;
@@ -172,8 +177,42 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     /* Compute state layouts for all types (ECS support) */
     nmo_type_registry_compute_state_layouts(ctx->type_registry);
 
+    ctx->operation_registry = nmo_operation_registry_create(ctx->arena);
+    if (ctx->operation_registry == NULL) {
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    nmo_status_t op_result = nmo_register_builtin_operations(
+        ctx->operation_registry,
+        ctx->type_registry);
+    if (op_result != NMO_OK) {
+        nmo_operation_registry_destroy(ctx->operation_registry);
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    ctx->type_runtime.types = ctx->type_registry;
+    ctx->type_runtime.ops = ctx->operation_registry;
+    ctx->type_runtime.types_finalized_version = 0u;
+    ctx->type_runtime.ops_finalized_version = 0u;
+
+    nmo_status_t runtime_result = nmo_type_runtime_finalize(&ctx->type_runtime);
+    if (runtime_result != NMO_OK) {
+        nmo_operation_registry_destroy(ctx->operation_registry);
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
     ctx->manager_registry = nmo_manager_registry_create(ctx->arena);
     if (ctx->manager_registry == NULL) {
+        nmo_operation_registry_destroy(ctx->operation_registry);
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
@@ -186,6 +225,7 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         ctx->manager_registry);
     if (ctx->extension_registry == NULL) {
         nmo_manager_registry_destroy(ctx->manager_registry);
+        nmo_operation_registry_destroy(ctx->operation_registry);
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
@@ -234,6 +274,10 @@ void nmo_context_release(nmo_context_t *ctx) {
             nmo_manager_registry_destroy(ctx->manager_registry);
         }
 
+        if (ctx->operation_registry != NULL) {
+            nmo_operation_registry_destroy(ctx->operation_registry);
+        }
+
         /* Destroy type registry */
         if (ctx->type_registry != NULL) {
             nmo_type_registry_destroy(ctx->type_registry);
@@ -251,6 +295,14 @@ void nmo_context_release(nmo_context_t *ctx) {
 
 nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx) {
     return ctx ? ctx->type_registry : NULL;
+}
+
+nmo_operation_registry_t *nmo_context_get_operation_registry(const nmo_context_t *ctx) {
+    return ctx ? ctx->operation_registry : NULL;
+}
+
+const nmo_type_runtime_t *nmo_context_get_type_runtime(const nmo_context_t *ctx) {
+    return ctx ? &ctx->type_runtime : NULL;
 }
 
 /**

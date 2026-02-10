@@ -34,6 +34,7 @@
 #include "core/nmo_arena.h"
 #include "object/nmo_serialize_context.h"
 #include "format/nmo_object.h"
+#include "type/nmo_type_runtime.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +44,7 @@ extern "C" {
 typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_operation_registry nmo_operation_registry_t;
 typedef struct nmo_object nmo_object_t;
 
 /** Magic value for detecting nmo_deserialize_context_t */
@@ -77,8 +79,14 @@ typedef struct nmo_deserialize_context {
     /** Object being deserialized */
     nmo_object_t *object;
     
-    /** Type registry for hierarchy lookups */
-    nmo_type_registry_t *type_registry;
+    /** Aggregated runtime view (type + operation registries) */
+    const nmo_type_runtime_t *type_runtime;
+
+    /** Type registry for hierarchy lookups (cached alias of type_runtime->types) */
+    const nmo_type_registry_t *type_registry;
+
+    /** Operation registry (cached alias of type_runtime->ops) */
+    nmo_operation_registry_t *operation_registry;
     
     /** Current chunk version (for compatibility decisions) */
     uint32_t chunk_version;
@@ -105,14 +113,14 @@ typedef struct nmo_deserialize_context {
  * 
  * @param arena Arena for allocations
  * @param repository Object repository
- * @param type_registry Type registry
+ * @param type_runtime Type runtime aggregate
  * @param flags Context flags
  * @return Initialized context
  */
 static inline nmo_deserialize_context_t nmo_deserialize_context_create(
     nmo_arena_t *arena,
     void *repository,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_runtime_t *type_runtime,
     uint32_t flags)
 {
     nmo_deserialize_context_t ctx = {
@@ -121,7 +129,9 @@ static inline nmo_deserialize_context_t nmo_deserialize_context_create(
         .arena = arena,
         .repository = repository,
         .object = NULL,
-        .type_registry = type_registry,
+        .type_runtime = type_runtime,
+        .type_registry = type_runtime ? type_runtime->types : NULL,
+        .operation_registry = type_runtime ? type_runtime->ops : NULL,
         .chunk_version = 0,
         .load_session = NULL,
         .raw_chunk_callback = NULL

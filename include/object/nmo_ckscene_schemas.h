@@ -17,6 +17,7 @@
 
 #include "nmo_types.h"
 #include "nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
@@ -32,19 +33,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 /* =============================================================================
  * CKScene STATE STRUCTURES
  * ============================================================================= */
-
-/**
- * @brief Scene object descriptor
- * 
- * Stores per-object information in a scene, including initial state and flags.
- * 
- * Reference: CKSceneObjectDesc in reference/include/CKScene.h
- */
-typedef struct nmo_scene_object_desc {
-    nmo_object_id_t object_id;      /**< Scene object ID */
-    nmo_chunk_t *initial_value;     /**< Initial state chunk (can be NULL) */
-    uint32_t flags;                 /**< Object flags (active, reset, activate) */
-} nmo_scene_object_desc_t;
 
 /**
  * @brief CKScene state

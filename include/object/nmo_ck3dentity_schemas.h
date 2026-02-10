@@ -7,6 +7,7 @@
 #define NMO_CK3DENTITY_SCHEMAS_H
 
 #include "object/nmo_ckrenderobject_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
@@ -20,38 +21,6 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
-
-/**
- * @brief CK3dEntity skin vertex data
- */
-typedef struct nmo_ck3dentity_skin_vertex {
-    uint32_t bone_count;
-    nmo_vector_t initial_pos;
-    uint32_t *bone_indices;
-    float *bone_weights;
-} nmo_ck3dentity_skin_vertex_t;
-
-/**
- * @brief CK3dEntity skin bone data
- */
-typedef struct nmo_ck3dentity_skin_bone {
-    nmo_object_id_t bone_id;
-    uint32_t bone_flags;
-    nmo_matrix_t inverse_bind_matrix;
-} nmo_ck3dentity_skin_bone_t;
-
-/**
- * @brief CK3dEntity skin data
- */
-typedef struct nmo_ck3dentity_skin {
-    nmo_matrix_t object_init_matrix;
-    uint32_t bone_count;
-    nmo_ck3dentity_skin_bone_t *bones;
-    uint32_t vertex_count;
-    nmo_ck3dentity_skin_vertex_t *vertices;
-    uint32_t normal_count;
-    nmo_vector_t *normals;
-} nmo_ck3dentity_skin_t;
 
 /**
  * @brief CK3dEntity state structure

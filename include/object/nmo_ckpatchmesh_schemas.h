@@ -7,10 +7,11 @@
 #define NMO_CKPATCHMESH_SCHEMAS_H
 
 #include "object/nmo_ckmesh_schemas.h"
+#include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
-#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,29 +29,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef CK_PATCHMESH_FORMAT nmo_ckpatchmesh_format_t;
 
 /**
- * @brief Patch data (type + smoothing + raw indices)
- */
-typedef struct nmo_ckpatchmesh_patch {
-    uint32_t type;
-    uint32_t smoothing_group;
-    uint8_t data[40];
-} nmo_ckpatchmesh_patch_t;
-
-/**
- * @brief Patch mesh texture channel
- */
-typedef struct nmo_ckpatchmesh_channel {
-    nmo_object_id_t material_id;
-    uint32_t flags;
-    uint32_t type;
-    uint32_t subtype;
-    uint32_t patch_count;
-    uint8_t *patches_raw;
-    uint32_t uv_count;
-    nmo_vector2_t *uvs;
-} nmo_ckpatchmesh_channel_t;
-
-/**
  * @brief CKPatchMesh state
  */
 typedef struct nmo_ckpatchmesh_state {
@@ -66,14 +44,14 @@ typedef struct nmo_ckpatchmesh_state {
 
     uint32_t patch_count;
     nmo_object_id_t *patch_material_ids;
-    nmo_ckpatchmesh_patch_t *patches;
+    nmo_patchmesh_patch_t *patches;
 
     uint32_t edge_count;
     uint8_t *edge_data;
     size_t edge_data_size;
 
     uint32_t channel_count;
-    nmo_ckpatchmesh_channel_t *channels;
+    nmo_patchmesh_channel_t *channels;
 
     /* Legacy DATA2 payloads */
     nmo_object_id_t legacy_default_material_id;

@@ -897,8 +897,8 @@ static int nmo_load_file_with_io(
     nmo_log(logger, NMO_LOG_INFO, "Phase 14: Deserializing objects");
 
     {
-        nmo_type_registry_t *type_reg = nmo_context_get_type_registry(ctx);
-        if (type_reg == NULL) {
+        const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+        if (type_rt == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
             return NMO_ERR_INVALID_STATE;
         }
@@ -906,7 +906,7 @@ static int nmo_load_file_with_io(
         nmo_object_system_deserialize_stats_t stats = {0};
         nmo_status_t deser_result = nmo_object_system_deserialize_loaded_objects(
             repo,
-            type_reg,
+            type_rt,
             arena,
             logger,
             shadow_storage,

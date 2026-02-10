@@ -7,6 +7,7 @@
 #define NMO_CKCURVE_SCHEMAS_H
 
 #include "object/nmo_ck3dentity_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
@@ -20,14 +21,6 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
-
-/**
- * @brief Curve point subchunk entry
- */
-typedef struct nmo_ckcurve_point_subchunk {
-    nmo_object_id_t point_id;
-    nmo_chunk_t *chunk;
-} nmo_ckcurve_point_subchunk_t;
 
 /**
  * @brief CKCurve state
@@ -44,7 +37,7 @@ typedef struct nmo_ckcurve_state {
     uint32_t opened;
 
     uint32_t sub_point_count;
-    nmo_ckcurve_point_subchunk_t *sub_points;
+    nmo_curve_point_subchunk_t *sub_points;
 } nmo_ckcurve_state_t;
 
 /**

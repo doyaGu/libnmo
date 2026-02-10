@@ -38,6 +38,25 @@ struct nmo_shadow_storage {
     nmo_arena_t *arena;
 };
 
+static bool shadow_storage_mark_can_rewind(const nmo_shadow_storage_t *storage) {
+    if (storage == NULL || storage->arena == NULL) {
+        return false;
+    }
+
+    nmo_arena_mark_t probe;
+    if (nmo_arena_mark(storage->arena, &probe) != NMO_OK) {
+        return false;
+    }
+
+    bool can_rewind =
+        storage->included_files_mark.arena == storage->arena &&
+        storage->included_files_mark.mark_epoch == probe.mark_epoch &&
+        storage->included_files_mark.mark_depth + 1u == probe.mark_depth;
+
+    (void)nmo_arena_rewind(storage->arena, &probe);
+    return can_rewind;
+}
+
 static int shadow_storage_clear_included_files_scope(nmo_shadow_storage_t *storage) {
     if (storage == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -45,7 +64,9 @@ static int shadow_storage_clear_included_files_scope(nmo_shadow_storage_t *stora
 
     int rewind_result = NMO_OK;
     if (storage->included_files_scope_active) {
-        rewind_result = nmo_arena_rewind(storage->arena, &storage->included_files_mark);
+        if (shadow_storage_mark_can_rewind(storage)) {
+            rewind_result = nmo_arena_rewind(storage->arena, &storage->included_files_mark);
+        }
         storage->included_files_scope_active = false;
     }
 

@@ -17,6 +17,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_object_struct_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,88 +28,6 @@ typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_arena nmo_arena_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
-
-/* =============================================================================
- * ATTRIBUTE STRUCTURES
- * ============================================================================= */
-
-/**
- * @brief Attribute category descriptor
- * 
- * Categories group related attributes together.
- */
-typedef struct nmo_ckattribute_category {
-    /**
-     * @brief Category name
-     * 
-     * Allocated from arena, null-terminated string.
-     */
-    const char *name;
-
-    /**
-     * @brief Category flags
-     * 
-     * Controls category behavior (system, user, etc.).
-     */
-    uint32_t flags;
-
-    /**
-     * @brief Whether this category is present
-     * 
-     * If false, this is an unused slot in the array.
-     */
-    bool present;
-} nmo_ckattribute_category_t;
-
-/**
- * @brief Attribute type descriptor
- * 
- * Defines a single attribute type that can be attached to objects.
- */
-typedef struct nmo_ckattribute_descriptor {
-    /**
-     * @brief Attribute name
-     * 
-     * Allocated from arena, null-terminated string.
-     */
-    const char *name;
-
-    /**
-     * @brief Parameter type GUID
-     * 
-     * Defines the data type of this attribute (int, float, string, etc.).
-     */
-    nmo_guid_t parameter_type_guid;
-
-    /**
-     * @brief Category index
-     * 
-     * Index into the categories array, or -1 if no category.
-     */
-    int32_t category_index;
-
-    /**
-     * @brief Compatible class ID
-     * 
-     * Restricts this attribute to specific object types.
-     * 0 means compatible with all object types.
-     */
-    int32_t compatible_class_id;
-
-    /**
-     * @brief Attribute flags
-     * 
-     * Controls attribute behavior (system, user, save, etc.).
-     */
-    uint32_t flags;
-
-    /**
-     * @brief Whether this attribute is present
-     * 
-     * If false, this is an unused slot in the array.
-     */
-    bool present;
-} nmo_ckattribute_descriptor_t;
 
 /**
  * @brief CKAttributeManager state structure
@@ -134,7 +53,7 @@ typedef struct nmo_ckattributemanager_state {
      * 
      * Array of category_count categories, allocated from arena.
      */
-    nmo_ckattribute_category_t *categories;
+    nmo_attribute_category_t *categories;
 
     /**
      * @brief Number of attributes
@@ -148,7 +67,7 @@ typedef struct nmo_ckattributemanager_state {
      * 
      * Array of attribute_count attributes, allocated from arena.
      */
-    nmo_ckattribute_descriptor_t *attributes;
+    nmo_attribute_descriptor_t *attributes;
 } nmo_ckattributemanager_state_t;
 
 /* =============================================================================

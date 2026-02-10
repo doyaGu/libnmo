@@ -508,7 +508,7 @@ NMO_API nmo_status_t nmo_ref_enum_dataarray(
     /* Iterate rows and find OBJECT/PARAMETER columns */
     if (arr->rows && arr->column_formats) {
         for (uint32_t row = 0; row < arr->row_count; ++row) {
-            nmo_ckdataarray_row_t *r = &arr->rows[row];
+            nmo_dataarray_row_t *r = &arr->rows[row];
             if (!r->cells) continue;
             
             for (uint32_t col = 0; col < arr->column_count && col < r->column_count; ++col) {

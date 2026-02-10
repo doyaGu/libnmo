@@ -78,16 +78,6 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL type registry");
 
-    /* ColorF (float RGBA) */
-    static const nmo_struct_field_def_t colorf_fields[] = {
-        NMO_STRUCT_FIELD_GUID("r", CKPGUID_FLOAT),
-        NMO_STRUCT_FIELD_GUID("g", CKPGUID_FLOAT),
-        NMO_STRUCT_FIELD_GUID("b", CKPGUID_FLOAT),
-        NMO_STRUCT_FIELD_GUID("a", CKPGUID_FLOAT)
-    };
-    static const nmo_struct_type_def_t colorf_def =
-        NMO_STRUCT_DEF("ColorF", CKPGUID_COLORF, colorf_fields);
-
     /* CKBitmapData */
     static const nmo_struct_field_def_t ckbitmapdata_fields[] = {
         NMO_STRUCT_FIELD_GUID("width", CKPGUID_UINT32),
@@ -415,7 +405,6 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_DEF("CKKeyedAnimationSubanim", NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM,
                        ckkeyedanimationsubanim_fields);
 
-    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &colorf_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckbitmapdata_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &fontinfo_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &cklightdata_def, NULL));

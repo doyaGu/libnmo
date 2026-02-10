@@ -12,6 +12,7 @@
 #define NMO_CKSOUND_SCHEMAS_H
 
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 
@@ -24,15 +25,6 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
-
-/**
- * @brief Simple 3D vector (x,y,z)
- */
-typedef struct nmo_vx_vector3 {
-    float x;
-    float y;
-    float z;
-} nmo_vx_vector3_t;
 
 /**
  * @brief CKSound state
@@ -71,8 +63,8 @@ typedef struct nmo_ckwavesound_state {
     uint32_t distance_behavior;
 
     nmo_object_id_t attached_object_id;
-    nmo_vx_vector3_t position;
-    nmo_vx_vector3_t direction;
+    nmo_vector_t position;
+    nmo_vector_t direction;
 } nmo_ckwavesound_state_t;
 
 /**

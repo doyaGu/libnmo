@@ -982,7 +982,7 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
         }
 
         /* Find operation family by name */
-        const nmo_operation_registry_t *ops = ev->ctx->ops;
+        nmo_operation_registry_t *ops = ev->ctx->ops;
         const nmo_operation_family_t *fam = NULL;
         for (uint32_t fi = 0; fi < ops->family_count; ++fi) {
             if (ops->families[fi] && ops->families[fi]->name &&
@@ -1014,7 +1014,7 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
 
         const nmo_operation_tree_cell_t *cell = NULL;
         nmo_status_t st = nmo_operation_registry_find(
-            (nmo_operation_registry_t *)ops,
+            ops,
             &fam->operation_guid,
             p1_type,
             p2_type,

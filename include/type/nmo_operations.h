@@ -96,7 +96,7 @@ extern "C" {
  */
 NMO_API nmo_status_t nmo_register_builtin_operations(
     nmo_operation_registry_t *operation_registry,
-    nmo_type_registry_t *type_registry
+    const nmo_type_registry_t *type_registry
 );
 
 /**

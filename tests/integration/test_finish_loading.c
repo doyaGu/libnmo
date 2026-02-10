@@ -39,7 +39,7 @@ TEST(finish_loading, basic_execution) {
     if (result != NMO_OK) {
         printf("SKIP: Test file not found or failed to load: %s\n", TEST_FILE);
         nmo_session_destroy(session);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         return;
     }
 
@@ -55,7 +55,7 @@ TEST(finish_loading, basic_execution) {
 
     /* Cleanup */
     nmo_session_destroy(session);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
 }
 
 /**
@@ -75,7 +75,7 @@ TEST(finish_loading, query_api) {
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         return;
     }
 
@@ -113,7 +113,7 @@ TEST(finish_loading, query_api) {
 
     /* Cleanup */
     nmo_session_destroy(session);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
 }
 
 /**
@@ -133,7 +133,7 @@ TEST(finish_loading, index_rebuild) {
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         return;
     }
 
@@ -159,7 +159,7 @@ TEST(finish_loading, index_rebuild) {
 
     /* Cleanup */
     nmo_session_destroy(session);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
 }
 
 /**
@@ -181,7 +181,7 @@ TEST(finish_loading, selective_index_building) {
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         return;
     }
 
@@ -201,7 +201,7 @@ TEST(finish_loading, selective_index_building) {
 
     /* Cleanup */
     nmo_session_destroy(session);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
 }
 
 /**
@@ -223,7 +223,7 @@ TEST(finish_loading, query_without_index) {
     if (result != NMO_OK) {
         printf("SKIP: Test file not found\n");
         nmo_session_destroy(session);
-        nmo_context_destroy(ctx);
+        nmo_context_release(ctx);
         return;
     }
 
@@ -242,7 +242,7 @@ TEST(finish_loading, query_without_index) {
 
     /* Cleanup */
     nmo_session_destroy(session);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
 }
 
 TEST_MAIN_BEGIN()

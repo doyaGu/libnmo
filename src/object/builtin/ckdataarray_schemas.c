@@ -109,16 +109,16 @@ nmo_status_t nmo_ckdataarray_deserialize(
 
         out_state->column_count = (uint32_t)column_count;
         if (column_count > 0) {
-            out_state->column_formats = (nmo_ckdataarray_column_format_t *)
-                nmo_arena_alloc(arena, column_count * sizeof(nmo_ckdataarray_column_format_t),
-                               _Alignof(nmo_ckdataarray_column_format_t));
+            out_state->column_formats = (nmo_dataarray_column_format_t *)
+                nmo_arena_alloc(arena, column_count * sizeof(nmo_dataarray_column_format_t),
+                               _Alignof(nmo_dataarray_column_format_t));
             if (!out_state->column_formats) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate column formats");
             }
 
             /* Read each column format */
             for (int32_t i = 0; i < column_count; i++) {
-                nmo_ckdataarray_column_format_t *fmt = &out_state->column_formats[i];
+                nmo_dataarray_column_format_t *fmt = &out_state->column_formats[i];
 
                 /* Read column name */
                 char *temp_name = NULL;
@@ -161,30 +161,30 @@ nmo_status_t nmo_ckdataarray_deserialize(
 
         out_state->row_count = (uint32_t)row_count;
         if (row_count > 0) {
-            out_state->rows = (nmo_ckdataarray_row_t *)
-                nmo_arena_alloc(arena, row_count * sizeof(nmo_ckdataarray_row_t),
-                               _Alignof(nmo_ckdataarray_row_t));
+            out_state->rows = (nmo_dataarray_row_t *)
+                nmo_arena_alloc(arena, row_count * sizeof(nmo_dataarray_row_t),
+                               _Alignof(nmo_dataarray_row_t));
             if (!out_state->rows) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate rows");
             }
 
             /* Read each row */
             for (uint32_t row_idx = 0; row_idx < out_state->row_count; row_idx++) {
-                nmo_ckdataarray_row_t *row = &out_state->rows[row_idx];
+                nmo_dataarray_row_t *row = &out_state->rows[row_idx];
                 row->column_count = out_state->column_count;
 
                 if (out_state->column_count > 0) {
-                    row->cells = (nmo_ckdataarray_cell_t *)
-                        nmo_arena_alloc(arena, out_state->column_count * sizeof(nmo_ckdataarray_cell_t),
-                                       _Alignof(nmo_ckdataarray_cell_t));
+                    row->cells = (nmo_dataarray_cell_t *)
+                        nmo_arena_alloc(arena, out_state->column_count * sizeof(nmo_dataarray_cell_t),
+                                       _Alignof(nmo_dataarray_cell_t));
                     if (!row->cells) {
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate row cells");
                     }
 
                     /* Read each cell */
                     for (uint32_t col_idx = 0; col_idx < out_state->column_count; col_idx++) {
-                        nmo_ckdataarray_column_format_t *fmt = &out_state->column_formats[col_idx];
-                        nmo_ckdataarray_cell_t *cell = &row->cells[col_idx];
+                        nmo_dataarray_column_format_t *fmt = &out_state->column_formats[col_idx];
+                        nmo_dataarray_cell_t *cell = &row->cells[col_idx];
 
                         switch (fmt->type) {
                         case CKARRAYTYPE_INT:
@@ -294,7 +294,7 @@ nmo_status_t nmo_ckdataarray_serialize(
     if (result != NMO_OK) return result;
 
     for (uint32_t i = 0; i < in_state->column_count; i++) {
-        const nmo_ckdataarray_column_format_t *fmt = &in_state->column_formats[i];
+        const nmo_dataarray_column_format_t *fmt = &in_state->column_formats[i];
 
         result = nmo_chunk_write_string(out_chunk, fmt->name ? fmt->name : "");
         if (result != NMO_OK) return result;
@@ -316,11 +316,11 @@ nmo_status_t nmo_ckdataarray_serialize(
     if (result != NMO_OK) return result;
 
     for (uint32_t row_idx = 0; row_idx < in_state->row_count; row_idx++) {
-        const nmo_ckdataarray_row_t *row = &in_state->rows[row_idx];
+        const nmo_dataarray_row_t *row = &in_state->rows[row_idx];
 
         for (uint32_t col_idx = 0; col_idx < in_state->column_count; col_idx++) {
-            const nmo_ckdataarray_column_format_t *fmt = &in_state->column_formats[col_idx];
-            const nmo_ckdataarray_cell_t *cell = &row->cells[col_idx];
+            const nmo_dataarray_column_format_t *fmt = &in_state->column_formats[col_idx];
+            const nmo_dataarray_cell_t *cell = &row->cells[col_idx];
 
             switch (fmt->type) {
             case CKARRAYTYPE_INT:
@@ -387,7 +387,7 @@ static nmo_status_t ckdataarray_copy(
 
     if (s->column_count > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->column_formats,
-                                                  s->column_formats, sizeof(nmo_ckdataarray_column_format_t),
+                                                  s->column_formats, sizeof(nmo_dataarray_column_format_t),
                                                   s->column_count));
         for (uint32_t i = 0; i < s->column_count; ++i) {
             if (s->column_formats[i].name) {
@@ -398,16 +398,16 @@ static nmo_status_t ckdataarray_copy(
 
     if (s->row_count > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->rows,
-                                                  s->rows, sizeof(nmo_ckdataarray_row_t), s->row_count));
+                                                  s->rows, sizeof(nmo_dataarray_row_t), s->row_count));
         for (uint32_t r = 0; r < s->row_count; ++r) {
-            const nmo_ckdataarray_row_t *sr = &s->rows[r];
-            nmo_ckdataarray_row_t *dr = &d->rows[r];
+            const nmo_dataarray_row_t *sr = &s->rows[r];
+            nmo_dataarray_row_t *dr = &d->rows[r];
             if (sr->column_count > 0) {
                 NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&dr->cells,
-                                                          sr->cells, sizeof(nmo_ckdataarray_cell_t),
+                                                          sr->cells, sizeof(nmo_dataarray_cell_t),
                                                           sr->column_count));
                 for (uint32_t c = 0; c < sr->column_count; ++c) {
-                    nmo_ckdataarray_cell_t *cell = &dr->cells[c];
+                    nmo_dataarray_cell_t *cell = &dr->cells[c];
                     if (d->column_formats && c < d->column_count) {
                         nmo_ck_arraytype_t type_id = d->column_formats[c].type;
                         if (type_id == CKARRAYTYPE_STRING && sr->cells[c].string_value) {

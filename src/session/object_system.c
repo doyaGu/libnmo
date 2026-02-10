@@ -22,6 +22,7 @@
 #include "object/nmo_serialize_context.h"
 
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_runtime.h"
 
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
@@ -204,14 +205,14 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
 
 nmo_status_t nmo_object_system_deserialize_repository(
     nmo_object_repository_t *repo,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,
     uint32_t deser_flags,
     nmo_object_system_deserialize_stats_t *out_stats)
 {
-    if (repo == NULL || type_reg == NULL || arena == NULL) {
+    if (repo == NULL || type_rt == NULL || type_rt->types == NULL || arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -225,7 +226,7 @@ nmo_status_t nmo_object_system_deserialize_repository(
     }
 
     nmo_deserialize_context_t deser_ctx = nmo_deserialize_context_create(
-        arena, repo, type_reg, deser_flags);
+        arena, repo, type_rt, deser_flags);
 
     for (size_t i = 0; i < repo_count; i++) {
         nmo_object_t *obj = objects[i];
@@ -264,7 +265,7 @@ nmo_status_t nmo_object_system_deserialize_repository(
         }
 
         const nmo_type_descriptor_t *schema_type =
-            nmo_type_registry_find_by_class_id_inherited(type_reg, obj->class_id);
+            nmo_type_registry_find_by_class_id_inherited(type_rt->types, obj->class_id);
 
         if (schema_type == NULL || schema_type->vtable == NULL ||
             schema_type->vtable->deserialize == NULL) {
@@ -379,13 +380,13 @@ nmo_status_t nmo_object_system_deserialize_repository(
 
 nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx)
 {
-    if (obj == NULL || arena == NULL || type_reg == NULL) {
+    if (obj == NULL || arena == NULL || type_rt == NULL || type_rt->types == NULL) {
         return NULL;
     }
 
@@ -398,7 +399,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     }
 
     const nmo_type_descriptor_t *schema_type =
-        nmo_type_registry_find_by_class_id_inherited(type_reg, obj->class_id);
+        nmo_type_registry_find_by_class_id_inherited(type_rt->types, obj->class_id);
 
     if (schema_type == NULL) {
         if (logger) {
@@ -716,7 +717,7 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
 
 nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_object_repository_t *repo,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,
@@ -725,14 +726,15 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
     size_t file_object_count,
     nmo_object_system_deserialize_stats_t *out_stats)
 {
-    if (repo == NULL || type_reg == NULL || arena == NULL || load_session == NULL) {
+    if (repo == NULL || type_rt == NULL || type_rt->types == NULL ||
+        arena == NULL || load_session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_object_system_deserialize_stats_t stats = {0};
 
     nmo_deserialize_context_t deser_ctx = nmo_deserialize_context_create(
-        arena, repo, type_reg, deser_flags);
+        arena, repo, type_rt, deser_flags);
 
     for (size_t file_index = 0; file_index < file_object_count; file_index++) {
         nmo_object_id_t runtime_id = NMO_OBJECT_ID_INVALID;
@@ -779,7 +781,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         }
 
         const nmo_type_descriptor_t *schema_type =
-            nmo_type_registry_find_by_class_id_inherited(type_reg, obj->class_id);
+            nmo_type_registry_find_by_class_id_inherited(type_rt->types, obj->class_id);
 
         if (schema_type == NULL || schema_type->vtable == NULL ||
             schema_type->vtable->deserialize == NULL) {

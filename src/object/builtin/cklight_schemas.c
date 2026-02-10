@@ -116,7 +116,7 @@ static const nmo_type_field_t nmo_cklight_fields[] = {
                     sizeof(nmo_ck3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("light_data", offsetof(nmo_cklight_state_t, light_data),
-                    sizeof(nmo_ck_light_data_t), NMO_GUID_STRUCT_CKLIGHTDATA,
+                    sizeof(nmo_light_data_t), NMO_GUID_STRUCT_CKLIGHTDATA,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_cklight_state_t, flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_cklight_state_t, light_power, CKPGUID_FLOAT)

@@ -7,10 +7,11 @@
 #define NMO_CKANIMATION_SCHEMAS_H
 
 #include "object/nmo_cksceneobject_schemas.h"
+#include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
-#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,14 +47,6 @@ typedef struct nmo_ckanimation_state {
 } nmo_ckanimation_state_t;
 
 /**
- * @brief CKKeyedAnimation sub-animation entry
- */
-typedef struct nmo_ckkeyedanimation_subanim {
-    nmo_object_id_t object_id;
-    nmo_chunk_t *chunk;
-} nmo_ckkeyedanimation_subanim_t;
-
-/**
  * @brief CKKeyedAnimation state
  */
 typedef struct nmo_ckkeyedanimation_state {
@@ -67,7 +60,7 @@ typedef struct nmo_ckkeyedanimation_state {
     float merge_factor;
 
     uint32_t subanim_count;
-    nmo_ckkeyedanimation_subanim_t *subanims;
+    nmo_keyedanimation_subanim_t *subanims;
 } nmo_ckkeyedanimation_state_t;
 
 /**

@@ -43,6 +43,7 @@
 #include "session/nmo_shadow_storage.h"
 #include "format/nmo_chunk_context.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_runtime.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -82,6 +83,7 @@ struct nmo_save_context {
     nmo_object_repository_t *repo;
     nmo_logger_t *logger;
     nmo_type_registry_t *type_reg;
+    const nmo_type_runtime_t *type_rt;
     nmo_manager_registry_t *manager_reg;
 
     /* Options */
@@ -150,7 +152,7 @@ static nmo_status_t save_execute_post_hooks(nmo_save_context_t *ctx);
 
 static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
@@ -361,6 +363,7 @@ nmo_save_context_t *nmo_save_context_create(
     save_ctx->repo = nmo_session_get_repository(session);
     save_ctx->logger = nmo_context_get_logger(ctx);
     save_ctx->type_reg = nmo_context_get_type_registry(ctx);
+    save_ctx->type_rt = nmo_context_get_type_runtime(ctx);
     save_ctx->manager_reg = nmo_context_get_manager_registry(ctx);
 
     /* Store options */
@@ -609,6 +612,11 @@ static nmo_status_t save_validate_session(nmo_save_context_t *ctx) {
         return SAVE_ERR(NMO_ERR_INVALID_STATE, "No type registry");
     }
 
+    if (ctx->type_rt == NULL || ctx->type_rt->types == NULL) {
+        nmo_log(ctx->logger, NMO_LOG_ERROR, "Type runtime not available");
+        return SAVE_ERR(NMO_ERR_INVALID_STATE, "No type runtime");
+    }
+
     /* Build reference map */
     ctx->reference_map = (uint8_t *)nmo_arena_alloc(
         ctx->arena, ctx->object_count * sizeof(uint8_t), 1);
@@ -819,7 +827,7 @@ static nmo_status_t save_serialize_objects(nmo_save_context_t *ctx) {
 
         nmo_chunk_t *old_chunk = obj->chunk;
         obj->chunk = serialize_object_with_schema(
-            obj, ctx->type_reg, ctx->arena, ctx->logger, shadow_storage, ctx->chunk_file_ctx);
+            obj, ctx->type_rt, ctx->arena, ctx->logger, shadow_storage, ctx->chunk_file_ctx);
 
         if (obj->chunk == NULL) {
             nmo_log(ctx->logger, NMO_LOG_ERROR,
@@ -1440,14 +1448,14 @@ static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags) {
 
 static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
-    nmo_type_registry_t *type_reg,
+    const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx)
 {
     return nmo_object_system_serialize_object_chunk(
-        obj, type_reg, arena, logger, shadow_storage, file_ctx);
+        obj, type_rt, arena, logger, shadow_storage, file_ctx);
 
 #if 0
     if (!obj || !arena || !type_reg) {

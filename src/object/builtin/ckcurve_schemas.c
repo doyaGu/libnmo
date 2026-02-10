@@ -98,7 +98,7 @@ static nmo_status_t ckcurve_copy(
                                               s->control_point_ids, sizeof(nmo_object_id_t), s->control_point_count));
     if (s->sub_point_count > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_points,
-                                                  s->sub_points, sizeof(nmo_ckcurve_point_subchunk_t),
+                                                  s->sub_points, sizeof(nmo_curve_point_subchunk_t),
                                                   s->sub_point_count));
         for (uint32_t i = 0; i < s->sub_point_count; ++i) {
             nmo_chunk_t *clone = NULL;
@@ -234,9 +234,9 @@ static nmo_status_t nmo_ckcurve_deserialize_internal(
         (void)nmo_chunk_read_dword(chunk, &count);
         if (count > 0) {
             out_state->sub_point_count = count;
-            out_state->sub_points = (nmo_ckcurve_point_subchunk_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ckcurve_point_subchunk_t) * count,
-                _Alignof(nmo_ckcurve_point_subchunk_t));
+            out_state->sub_points = (nmo_curve_point_subchunk_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_curve_point_subchunk_t) * count,
+                _Alignof(nmo_curve_point_subchunk_t));
             if (!out_state->sub_points) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate curve subchunk array");
             }

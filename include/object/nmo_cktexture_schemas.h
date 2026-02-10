@@ -23,6 +23,7 @@
 
 #include "nmo_types.h"
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ckstatesave_ids.h"
@@ -62,85 +63,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 #define NMO_CKBMPDATA_DYNAMIC                  0x00000010  /**< Dynamic texture */
 #define NMO_CKBMPDATA_HASPALETTE               0x00000020  /**< Has palette data */
 
-/* ========================================================================
- * Structure Definitions
- * ======================================================================== */
-
-/**
- * @brief Texture format and dimensions
- *
- * Describes the texture's pixel format, size, and video memory requirements.
- */
-typedef struct nmo_texture_format {
-    uint32_t width;              /**< Texture width in pixels */
-    uint32_t height;             /**< Texture height in pixels */
-    uint32_t bits_per_pixel;     /**< Bits per pixel (8, 16, 24, 32) */
-    uint32_t bytes_per_line;     /**< Bytes per scanline (stride) */
-    uint32_t image_size;         /**< Total image size in bytes */
-    uint32_t red_mask;           /**< Red channel bitmask */
-    uint32_t green_mask;         /**< Green channel bitmask */
-    uint32_t blue_mask;          /**< Blue channel bitmask */
-    uint32_t alpha_mask;         /**< Alpha channel bitmask */
-} nmo_texture_format_t;
-
-/**
- * @brief Mipmap level data
- *
- * Each mipmap level contains a progressively smaller version of the texture.
- */
-typedef struct nmo_mipmap_level {
-    uint32_t width;              /**< Mipmap width */
-    uint32_t height;             /**< Mipmap height */
-    uint32_t size;               /**< Data size in bytes */
-    uint8_t *data;               /**< Pixel data (arena-allocated) */
-} nmo_mipmap_level_t;
-
-/**
- * @brief Reader-compressed bitmap slot payload.
- */
-typedef struct nmo_cktexture_reader_slot {
-    uint32_t format_type;      /**< 0 = empty, 1 = no alpha plane, 2 = alpha plane */
-    uint32_t extension;        /**< CKFileExtension packed into 4 bytes */
-    nmo_guid_t reader_guid;    /**< Bitmap reader GUID */
-    uint32_t data_size;        /**< Compressed data size */
-    uint8_t *data;             /**< Compressed payload */
-    uint32_t alpha_count;      /**< Distinct alpha count (format_type == 2) */
-    uint32_t alpha_value;      /**< Single alpha value (alpha_count == 1) */
-    uint32_t alpha_plane_size; /**< Alpha plane size (alpha_count > 1) */
-    uint8_t *alpha_plane;      /**< Alpha plane payload */
-} nmo_cktexture_reader_slot_t;
-
-/**
- * @brief Raw bitmap slot payload (WriteRawBitmap layout).
- */
-typedef struct nmo_cktexture_raw_slot {
-    int32_t bits_per_pixel;
-    int32_t width;
-    int32_t height;
-    uint32_t alpha_mask;
-    uint32_t red_mask;
-    uint32_t green_mask;
-    uint32_t blue_mask;
-    uint32_t compression;
-    uint32_t blue_size;
-    uint8_t *blue_data;
-    uint32_t green_size;
-    uint8_t *green_data;
-    uint32_t red_size;
-    uint8_t *red_data;
-    uint32_t alpha_size;
-    uint8_t *alpha_data;
-} nmo_cktexture_raw_slot_t;
-
-/**
- * @brief Legacy bitmap2 slot payload.
- */
-typedef struct nmo_cktexture_bitmap2_slot {
-    int32_t header_size;
-    uint32_t buffer_size;
-    uint8_t *buffer;
-} nmo_cktexture_bitmap2_slot_t;
-
 /**
  * @brief CKTexture state structure (inherits from CKBeObject)
  *
@@ -169,9 +91,9 @@ typedef struct nmo_cktexture_state {
 
     /* Bitmap payloads */
     CKTEXTURE_BITMAP_KIND bitmap_kind;
-    nmo_cktexture_reader_slot_t *reader_slots;
-    nmo_cktexture_raw_slot_t *raw_slots;
-    nmo_cktexture_bitmap2_slot_t *bitmap2_slots;
+    nmo_texture_reader_slot_t *reader_slots;
+    nmo_texture_raw_slot_t *raw_slots;
+    nmo_texture_bitmap2_slot_t *bitmap2_slots;
 
     /* Pick threshold */
     uint8_t has_pick_threshold;
@@ -196,7 +118,7 @@ typedef struct nmo_cktexture_state {
     size_t save_format_size;
     uint8_t has_user_mipmaps;
     uint32_t user_mipmap_count;
-    nmo_cktexture_raw_slot_t *user_mipmaps;
+    nmo_texture_raw_slot_t *user_mipmaps;
 } nmo_cktexture_state_t;
 
 /* ========================================================================

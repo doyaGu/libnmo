@@ -7,6 +7,8 @@
 #define NMO_OBJECT_STRUCTS_H
 
 #include "core/nmo_error.h"
+#include "object/nmo_object_struct_defs.h"
+#include "object/nmo_object_struct_guids.h"
 
 #ifdef __cplusplus
 extern "C" {

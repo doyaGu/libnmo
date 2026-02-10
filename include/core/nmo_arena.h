@@ -56,10 +56,10 @@ typedef struct nmo_arena_mark {
  * @brief Arena configuration (Phase 5 optimization)
  */
 typedef struct nmo_arena_config {
-    size_t initial_block_size;    /**< Initial block size (default: 64KB) */
-    size_t max_block_size;        /**< Maximum block size (default: 16MB, 0=unlimited) */
-    float growth_factor;          /**< Growth factor for new blocks (default: 2.0) */
-    size_t alignment;             /**< Default alignment (default: 16 bytes, max: 16) */
+    size_t initial_block_size; /**< Initial block size (default: 64KB) */
+    size_t max_block_size;     /**< Maximum block size (default: 16MB, 0=unlimited) */
+    float growth_factor;       /**< Growth factor for new blocks (default: 2.0) */
+    size_t alignment;          /**< Default alignment (default: 16 bytes, max: 16) */
 } nmo_arena_config_t;
 
 /**
@@ -184,24 +184,7 @@ NMO_API int nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *c
  * @param str String to duplicate (NULL returns NULL)
  * @return Pointer to duplicated string or NULL on failure/NULL input
  */
-NMO_API const char* nmo_arena_strdup(nmo_arena_t *arena, const char *str);
-
-/* ============================================================================
- * Leak Detection (TODO - Future Enhancement)
- * ============================================================================ */
-
-/**
- * @brief Arena leak detection mode
- *
- * For debugging, arenas can track allocations with tags to detect leaks.
- * This is planned for a future enhancement:
- *
- * 1. Tag allocations: nmo_arena_alloc_tagged(arena, size, alignment, "file.c:123")
- * 2. Dump leaks: nmo_arena_dump_leaks(arena) - lists unfreed allocations
- * 3. Stats: nmo_arena_get_allocation_count(arena)
- *
- * Current workaround: Use arena reset/create boundaries to isolate leaks.
- */
+NMO_API const char *nmo_arena_strdup(nmo_arena_t *arena, const char *str);
 
 #ifdef __cplusplus
 }

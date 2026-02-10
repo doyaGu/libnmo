@@ -8,6 +8,7 @@
 
 #include "object/nmo_ck3dentity_schemas.h"
 #include "object/nmo_ck3dobject_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
@@ -21,24 +22,6 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
-
-/**
- * @brief IK joint data (matches CKIkJoint layout)
- */
-typedef struct nmo_ckik_joint {
-    uint32_t flags;
-    nmo_vector_t min;
-    nmo_vector_t max;
-    nmo_vector_t damping;
-} nmo_ckik_joint_t;
-
-/**
- * @brief Character subpart entry (optional subchunks)
- */
-typedef struct nmo_ckcharacter_subpart {
-    nmo_object_id_t object_id;
-    nmo_chunk_t *chunk;
-} nmo_ckcharacter_subpart_t;
 
 /**
  * @brief CKCharacter state
@@ -58,7 +41,7 @@ typedef struct nmo_ckcharacter_state {
     nmo_object_id_t floor_ref_id;
 
     uint32_t subpart_count;
-    nmo_ckcharacter_subpart_t *subparts;
+    nmo_character_subpart_t *subparts;
 } nmo_ckcharacter_state_t;
 
 /**
@@ -71,7 +54,7 @@ typedef struct nmo_ckbodypart_state {
     nmo_object_id_t character_id;
 
     uint8_t has_rotation_joint;
-    nmo_ckik_joint_t rotation_joint;
+    nmo_ik_joint_t rotation_joint;
 } nmo_ckbodypart_state_t;
 
 NMO_API nmo_status_t nmo_ckcharacter_deserialize(

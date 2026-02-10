@@ -106,13 +106,13 @@ nmo_status_t nmo_ckattributemanager_deserialize(
 
     /* Allocate categories */
     if (category_count > 0) {
-        out_state->categories = (nmo_ckattribute_category_t *)nmo_arena_alloc(
-            arena, category_count * sizeof(nmo_ckattribute_category_t),
-            _Alignof(nmo_ckattribute_category_t));
+        out_state->categories = (nmo_attribute_category_t *)nmo_arena_alloc(
+            arena, category_count * sizeof(nmo_attribute_category_t),
+            _Alignof(nmo_attribute_category_t));
         if (!out_state->categories) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate categories");
         }
-        memset(out_state->categories, 0, category_count * sizeof(nmo_ckattribute_category_t));
+        memset(out_state->categories, 0, category_count * sizeof(nmo_attribute_category_t));
 
         /* Read each category */
         for (int32_t i = 0; i < category_count; i++) {
@@ -120,7 +120,7 @@ nmo_status_t nmo_ckattributemanager_deserialize(
             result = nmo_chunk_read_int(chunk, &present);
             if (result != NMO_OK) return result;
 
-            nmo_ckattribute_category_t *cat = &out_state->categories[i];
+            nmo_attribute_category_t *cat = &out_state->categories[i];
             cat->present = (present != 0);
 
             if (cat->present) {
@@ -136,13 +136,13 @@ nmo_status_t nmo_ckattributemanager_deserialize(
 
     /* Allocate attributes */
     if (attribute_count > 0) {
-        out_state->attributes = (nmo_ckattribute_descriptor_t *)nmo_arena_alloc(
-            arena, attribute_count * sizeof(nmo_ckattribute_descriptor_t),
-            _Alignof(nmo_ckattribute_descriptor_t));
+        out_state->attributes = (nmo_attribute_descriptor_t *)nmo_arena_alloc(
+            arena, attribute_count * sizeof(nmo_attribute_descriptor_t),
+            _Alignof(nmo_attribute_descriptor_t));
         if (!out_state->attributes) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate attributes");
         }
-        memset(out_state->attributes, 0, attribute_count * sizeof(nmo_ckattribute_descriptor_t));
+        memset(out_state->attributes, 0, attribute_count * sizeof(nmo_attribute_descriptor_t));
 
         /* Read each attribute */
         for (int32_t i = 0; i < attribute_count; i++) {
@@ -150,7 +150,7 @@ nmo_status_t nmo_ckattributemanager_deserialize(
             result = nmo_chunk_read_int(chunk, &present);
             if (result != NMO_OK) return result;
 
-            nmo_ckattribute_descriptor_t *attr = &out_state->attributes[i];
+            nmo_attribute_descriptor_t *attr = &out_state->attributes[i];
             attr->present = (present != 0);
 
             if (attr->present) {
@@ -229,7 +229,7 @@ nmo_status_t nmo_ckattributemanager_serialize(
 
     /* Write categories */
     for (uint32_t i = 0; i < in_state->category_count; i++) {
-        const nmo_ckattribute_category_t *cat = &in_state->categories[i];
+        const nmo_attribute_category_t *cat = &in_state->categories[i];
 
         result = nmo_chunk_write_int(out_chunk, cat->present ? 1 : 0);
         if (result != NMO_OK) return result;
@@ -245,7 +245,7 @@ nmo_status_t nmo_ckattributemanager_serialize(
 
     /* Write attributes */
     for (uint32_t i = 0; i < in_state->attribute_count; i++) {
-        const nmo_ckattribute_descriptor_t *attr = &in_state->attributes[i];
+        const nmo_attribute_descriptor_t *attr = &in_state->attributes[i];
 
         result = nmo_chunk_write_int(out_chunk, attr->present ? 1 : 0);
         if (result != NMO_OK) return result;

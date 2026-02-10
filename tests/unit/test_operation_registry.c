@@ -467,6 +467,151 @@ TEST(operation_registry, lookup_cache_hits) {
     teardown_context(ctx);
 }
 
+TEST(operation_registry, finalize_invalidates_cache_on_type_version_change) {
+    test_context_t *ctx = setup_context();
+    ASSERT_NE(NULL, ctx);
+
+    nmo_type_descriptor_t int_type = {0};
+    int_type.guid = GUID_TYPE_INT;
+    int_type.name = "INT";
+    int_type.size = sizeof(int32_t);
+    int_type.alignment = alignof(int32_t);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type));
+
+    nmo_operation_desc_t desc = {0};
+    desc.operation_guid = GUID_OP_ADD;
+    desc.p1_type_guid = GUID_TYPE_INT;
+    desc.p2_type_guid = GUID_TYPE_INT;
+    desc.result_type_guid = GUID_TYPE_INT;
+    desc.function = mock_add_int;
+    desc.flags = NMO_OP_BINARY;
+    desc.priority = 100;
+    desc.name = "Add";
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(ctx->operation_registry, &desc, ctx->type_registry));
+
+    const nmo_type_descriptor_t *int_desc =
+        nmo_type_registry_find_by_guid(ctx->type_registry, GUID_TYPE_INT);
+    ASSERT_NE(NULL, int_desc);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        ctx->operation_registry, &GUID_OP_ADD, int_desc, int_desc, ctx->type_registry, &cell));
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        ctx->operation_registry, &GUID_OP_ADD, int_desc, int_desc, ctx->type_registry, &cell));
+
+    uint64_t total_ops = 0;
+    uint64_t total_lookups = 0;
+    uint64_t cache_hits = 0;
+    nmo_operation_registry_get_stats(ctx->operation_registry, &total_ops, &total_lookups, &cache_hits);
+    ASSERT_EQ(2, total_lookups);
+    ASSERT_EQ(1, cache_hits);
+
+    nmo_type_descriptor_t new_type = {0};
+    new_type.guid = NMO_GUID(0x20000003u, 0x00000000u);
+    new_type.name = "NEW_TYPE";
+    new_type.size = sizeof(int32_t);
+    new_type.alignment = alignof(int32_t);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &new_type));
+
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_finalize(ctx->operation_registry, ctx->type_registry));
+
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        ctx->operation_registry, &GUID_OP_ADD, int_desc, int_desc, ctx->type_registry, &cell));
+
+    nmo_operation_registry_get_stats(ctx->operation_registry, &total_ops, &total_lookups, &cache_hits);
+    ASSERT_EQ(3, total_lookups);
+    ASSERT_EQ(1, cache_hits);
+
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        ctx->operation_registry, &GUID_OP_ADD, int_desc, int_desc, ctx->type_registry, &cell));
+    nmo_operation_registry_get_stats(ctx->operation_registry, &total_ops, &total_lookups, &cache_hits);
+    ASSERT_EQ(4, total_lookups);
+    ASSERT_EQ(2, cache_hits);
+
+    teardown_context(ctx);
+}
+
+TEST(operation_registry, find_typed_requires_matching_result_type) {
+    test_context_t *ctx = setup_context();
+    ASSERT_NE(NULL, ctx);
+
+    nmo_type_descriptor_t int_type = {0};
+    int_type.guid = GUID_TYPE_INT;
+    int_type.name = "INT";
+    int_type.size = sizeof(int32_t);
+    int_type.alignment = alignof(int32_t);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &int_type));
+
+    nmo_type_descriptor_t float_type = {0};
+    float_type.guid = GUID_TYPE_FLOAT;
+    float_type.name = "FLOAT";
+    float_type.size = sizeof(float);
+    float_type.alignment = alignof(float);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(ctx->type_registry, &float_type));
+
+    nmo_operation_desc_t int_result = {0};
+    int_result.operation_guid = GUID_OP_ADD;
+    int_result.p1_type_guid = GUID_TYPE_INT;
+    int_result.p2_type_guid = GUID_TYPE_INT;
+    int_result.result_type_guid = GUID_TYPE_INT;
+    int_result.function = mock_add_int;
+    int_result.flags = NMO_OP_BINARY;
+    int_result.priority = 50;
+    int_result.name = "AddInt";
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(
+        ctx->operation_registry, &int_result, ctx->type_registry));
+
+    nmo_operation_desc_t float_result = {0};
+    float_result.operation_guid = GUID_OP_ADD;
+    float_result.p1_type_guid = GUID_TYPE_INT;
+    float_result.p2_type_guid = GUID_TYPE_INT;
+    float_result.result_type_guid = GUID_TYPE_FLOAT;
+    float_result.function = mock_add_int_to_float;
+    float_result.flags = NMO_OP_BINARY;
+    float_result.priority = 100;
+    float_result.name = "AddFloat";
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_register(
+        ctx->operation_registry, &float_result, ctx->type_registry));
+
+    const nmo_type_descriptor_t *int_desc =
+        nmo_type_registry_find_by_guid(ctx->type_registry, GUID_TYPE_INT);
+    const nmo_type_descriptor_t *float_desc =
+        nmo_type_registry_find_by_guid(ctx->type_registry, GUID_TYPE_FLOAT);
+    ASSERT_NE(NULL, int_desc);
+    ASSERT_NE(NULL, float_desc);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find_typed(
+        ctx->operation_registry,
+        &GUID_OP_ADD,
+        int_desc,
+        int_desc,
+        float_desc,
+        ctx->type_registry,
+        &cell));
+    ASSERT_NE(NULL, cell);
+    ASSERT_TRUE(nmo_guid_equals(cell->result_type->guid, GUID_TYPE_FLOAT));
+
+    nmo_type_descriptor_t fake_result = {0};
+    fake_result.guid = NMO_GUID(0x99999999u, 0x00000000u);
+    fake_result.name = "MISSING";
+    fake_result.size = sizeof(int32_t);
+    fake_result.alignment = alignof(int32_t);
+
+    cell = NULL;
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_operation_registry_find_typed(
+        ctx->operation_registry,
+        &GUID_OP_ADD,
+        int_desc,
+        int_desc,
+        &fake_result,
+        ctx->type_registry,
+        &cell));
+    ASSERT_EQ(NULL, cell);
+
+    teardown_context(ctx);
+}
+
 TEST(operation_registry, find_operation_not_implemented) {
     test_context_t *ctx = setup_context();
     ASSERT_NE(NULL, ctx);
@@ -1286,6 +1431,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(operation_registry, find_operation_not_implemented);
     REGISTER_TEST(operation_registry, find_null_params);
     REGISTER_TEST(operation_registry, lookup_cache_hits);
+    REGISTER_TEST(operation_registry, finalize_invalidates_cache_on_type_version_change);
+    REGISTER_TEST(operation_registry, find_typed_requires_matching_result_type);
     REGISTER_TEST(operation_registry, execute_operation_success);
     REGISTER_TEST(operation_registry, execute_selects_requested_result_type);
     REGISTER_TEST(operation_registry, get_family_success);

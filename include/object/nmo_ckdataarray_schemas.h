@@ -23,8 +23,9 @@
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 #include "nmo_ckbeobject_schemas.h"
-#include "object/nmo_object_type_common.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_struct_defs.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,78 +49,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * Each type has specific serialization rules.
  */
 typedef CK_ARRAYTYPE nmo_ck_arraytype_t;
-
-/* =============================================================================
- * CKDataArray STRUCTURES
- * ============================================================================= */
-
-/**
- * @brief Column format descriptor
- * 
- * Describes a single column in the data array.
- * For PARAMETER type, parameter_type_guid is required.
- */
-typedef struct nmo_ckdataarray_column_format {
-    /**
-     * @brief Column name
-     * 
-     * Allocated from arena, null-terminated string.
-     */
-    const char *name;
-
-    /**
-     * @brief Column data type
-     * 
-     * One of CKARRAYTYPE_* values.
-     */
-    nmo_ck_arraytype_t type;
-
-    /**
-     * @brief Parameter type GUID (only for PARAMETER type)
-     * 
-     * Specifies the parameter type when type == CKARRAYTYPE_PARAMETER.
-     * Ignored for other types.
-     */
-    nmo_guid_t parameter_type_guid;
-} nmo_ckdataarray_column_format_t;
-
-/**
- * @brief Data array cell value (union for type safety)
- * 
- * Stores a single cell value in the data matrix.
- * The actual type is determined by the column format.
- */
-typedef union nmo_ckdataarray_cell {
-    int32_t int_value;            /**< INT type value */
-    float float_value;            /**< FLOAT type value */
-    const char *string_value;     /**< STRING type value (allocated from arena) */
-    nmo_object_id_t object_id;    /**< OBJECT type value */
-    nmo_object_id_t parameter_id; /**< PARAMETER type value (file mode: object ID) */
-    nmo_chunk_t *parameter_chunk; /**< PARAMETER type value (non-file: sub-chunk) */
-} nmo_ckdataarray_cell_t;
-
-/**
- * @brief Data array row
- * 
- * Represents a single row in the data matrix.
- * Contains column_count cells.
- */
-typedef struct nmo_ckdataarray_row {
-    /**
-     * @brief Number of cells in this row
-     * 
-     * Must match the number of columns in the array.
-     */
-    uint32_t column_count;
-
-    /**
-     * @brief Cell values
-     * 
-     * Array of column_count cells, allocated from arena.
-     * The type of each cell is determined by the corresponding column format.
-     */
-    nmo_ckdataarray_cell_t *cells;
-} nmo_ckdataarray_row_t;
 
 /**
  * @brief CKDataArray state structure
@@ -150,7 +79,7 @@ typedef struct nmo_ckdataarray_state {
      * Array of column_count formats, allocated from arena.
      * Defines the schema of the table.
      */
-    nmo_ckdataarray_column_format_t *column_formats;
+    nmo_dataarray_column_format_t *column_formats;
 
     /**
      * @brief Number of rows
@@ -165,7 +94,7 @@ typedef struct nmo_ckdataarray_state {
      * Array of row_count rows, allocated from arena.
      * Contains the actual table data.
      */
-    nmo_ckdataarray_row_t *rows;
+    nmo_dataarray_row_t *rows;
 
     /**
      * @brief Sorting order

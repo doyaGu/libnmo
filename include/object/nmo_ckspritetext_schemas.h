@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "object/nmo_ck2dentity_schemas.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_ckstatesave_ids.h"
 
@@ -32,15 +33,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 #define NMO_FONT_WEIGHT_BOLD        700
 #define NMO_FONT_WEIGHT_EXTRABOLD   800
 #define NMO_FONT_WEIGHT_HEAVY       900
-
-/** Font properties structure (matches VXFONTINFO serialization) */
-typedef struct nmo_font_info {
-    const char *font_name;
-    int32_t size;
-    int32_t weight;
-    int32_t italic;
-    int32_t underline;
-} nmo_font_info_t;
 
 /** CKSpriteText state (uses CK2dEntity base, matches Save/Load) */
 typedef struct nmo_ck_spritetext_state {

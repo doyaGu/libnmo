@@ -46,7 +46,7 @@ static const nmo_type_field_t nmo_cksprite_fields[] = {
     NMO_FIELD_REF(nmo_cksprite_state_t, sprite_ref_id),
     NMO_FIELD(nmo_cksprite_state_t, has_bitmap_data, CKPGUID_BOOL),
     NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_cksprite_state_t, bitmap_data),
-                    sizeof(nmo_ckbitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,
+                    sizeof(nmo_bitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_cksprite_state_t, has_transparency, CKPGUID_BOOL),
     NMO_FIELD(nmo_cksprite_state_t, is_transparent, CKPGUID_BOOL),
@@ -140,7 +140,7 @@ static nmo_status_t deserialize_file_backed(
     nmo_status_t seek_result;
     
     /* Check for sprite reference (identifier 0x80000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_SPRITE_REF);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITESHARED);
     if (seek_result == NMO_OK) {
         out_state->has_sprite_ref = true;
         result = nmo_chunk_read_object_id(chunk, &out_state->sprite_ref_id);
@@ -168,7 +168,7 @@ static nmo_status_t deserialize_file_backed(
     }
     
     /* Read transparency (identifier 0x20000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_TRANSPARENCY);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETRANSPARENT);
     if (seek_result == NMO_OK) {
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
@@ -185,7 +185,7 @@ static nmo_status_t deserialize_file_backed(
     }
     
     /* Read current slot (identifier 0x10000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_SLOT);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
     if (seek_result == NMO_OK) {
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
@@ -195,7 +195,7 @@ static nmo_status_t deserialize_file_backed(
     }
     
     /* Read save options (identifier 0x20000000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_SAVE_OPTIONS);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFORMAT);
     if (seek_result == NMO_OK) {
         out_state->has_save_options = true;
         result = nmo_chunk_read_dword(chunk, &out_state->save_options);
@@ -234,7 +234,7 @@ static nmo_status_t deserialize_chunk_only(
     /* Chunk-only load skips bitmap payload, only reads references and state */
     
     /* Read transparency (identifier 0x20000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_TRANSPARENCY);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETRANSPARENT);
     if (seek_result == NMO_OK) {
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
@@ -250,7 +250,7 @@ static nmo_status_t deserialize_chunk_only(
     }
     
     /* Read current slot (identifier 0x10000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_SLOT);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
     if (seek_result == NMO_OK) {
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
@@ -260,7 +260,7 @@ static nmo_status_t deserialize_chunk_only(
     }
     
     /* Read sprite reference (identifier 0x80000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, NMO_CKSPRITE_CHUNK_SPRITE_REF);
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITESHARED);
     if (seek_result == NMO_OK) {
         out_state->has_sprite_ref = true;
         result = nmo_chunk_read_object_id(chunk, &out_state->sprite_ref_id);
@@ -343,7 +343,7 @@ nmo_status_t nmo_cksprite_serialize(
     
     /* Write sprite reference (identifier 0x80000) if present */
     if (in_state->has_sprite_ref) {
-        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_SPRITE_REF);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITESHARED);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->sprite_ref_id);
         if (result != NMO_OK) return result;
@@ -393,7 +393,7 @@ nmo_status_t nmo_cksprite_serialize(
     
     /* Write transparency (identifier 0x20000) */
     if (in_state->has_transparency) {
-        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_TRANSPARENCY);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITETRANSPARENT);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->transparent_color);
         if (result != NMO_OK) return result;
@@ -403,7 +403,7 @@ nmo_status_t nmo_cksprite_serialize(
     
     /* Write current slot (identifier 0x10000) */
     if (in_state->has_slot) {
-        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_SLOT);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->current_slot);
         if (result != NMO_OK) return result;
@@ -411,7 +411,7 @@ nmo_status_t nmo_cksprite_serialize(
     
     /* Write save options (identifier 0x20000000) */
     if (in_state->has_save_options) {
-        result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_CHUNK_SAVE_OPTIONS);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITEFORMAT);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->save_options);
         if (result != NMO_OK) return result;
@@ -431,8 +431,8 @@ nmo_status_t nmo_cksprite_serialize(
 
 static nmo_status_t nmo_cksprite_copy_bitmapdata(
     nmo_arena_t *arena,
-    nmo_ckbitmapdata_t *dst,
-    const nmo_ckbitmapdata_t *src)
+    nmo_bitmapdata_t *dst,
+    const nmo_bitmapdata_t *src)
 {
     if (src->pixel_data_size > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->pixel_data,

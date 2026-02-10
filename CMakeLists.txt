@@ -248,6 +248,7 @@ set(NMO_OBJECT_SOURCES
 # Type System sources
 set(NMO_TYPE_SOURCES
     src/type/type_registry.c
+    src/type/type_runtime.c
     src/type/plugin_support.c
     src/type/operation_registry.c
     src/type/type_parser.c

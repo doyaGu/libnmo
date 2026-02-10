@@ -20,6 +20,7 @@
 #include "format/nmo_chunk.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
@@ -32,22 +33,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 /* ========================================================================
  * Material State Structure
  * ======================================================================== */
-
-/**
- * @brief Material color properties
- *
- * Four color components for material lighting:
- * - Ambient: Base color in ambient lighting (default 0.3, 0.3, 0.3, 1.0)
- * - Diffuse: Color for diffuse lighting (default 0.7, 0.7, 0.7, 1.0)
- * - Specular: Highlight color (default 0.5, 0.5, 0.5, 1.0)
- * - Emissive: Self-illumination color (default 0, 0, 0, 1.0)
- */
-typedef struct nmo_material_colors {
-    nmo_color_t ambient;   /**< Ambient color (default 0.3, 0.3, 0.3, 1.0) */
-    nmo_color_t diffuse;   /**< Diffuse color (default 0.7, 0.7, 0.7, 1.0) */
-    nmo_color_t specular;  /**< Specular color (default 0.5, 0.5, 0.5, 1.0) */
-    nmo_color_t emissive;  /**< Emissive color (default 0, 0, 0, 1.0) */
-} nmo_material_colors_t;
 
 /**
  * @brief Texture blend modes

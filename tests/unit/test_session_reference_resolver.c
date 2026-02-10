@@ -25,7 +25,7 @@ TEST(session_reference_resolver, ensure_and_reset) {
     ASSERT_EQ(resolver_again, nmo_session_get_reference_resolver(session));
 
     nmo_session_destroy(session);
-    nmo_context_destroy(ctx);
+    nmo_context_release(ctx);
 }
 
 TEST_MAIN_BEGIN()

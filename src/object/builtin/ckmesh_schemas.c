@@ -6,7 +6,7 @@
  * 
  * Serialization format (from CK2_3D.dll analysis):
  * 
- * Modern format (version �?):
+ * Modern format:
  * - Identifier 0x2000: Mesh flags (DWORD masked with 0x7FE39A)
  * 
  * - Identifier 0x100000: Material groups
@@ -93,14 +93,14 @@ static const nmo_type_field_t nmo_ckmesh_fields[] = {
     NMO_FIELD(nmo_ck_mesh_state_t, flags, NMO_GUID_ENUM_VXMESH_FLAGS),
     /* Bounding info */
     NMO_FIELD_NAMED("bary_center", offsetof(nmo_ck_mesh_state_t, bary_center),
-                    sizeof(nmo_vx_vector_t), CKPGUID_VECTOR,
+                    sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_ck_mesh_state_t, radius, CKPGUID_FLOAT),
     NMO_FIELD_NAMED("local_box_min", offsetof(nmo_ck_mesh_state_t, local_box_min),
-                    sizeof(nmo_vx_vector_t), CKPGUID_VECTOR,
+                    sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("local_box_max", offsetof(nmo_ck_mesh_state_t, local_box_max),
-                    sizeof(nmo_vx_vector_t), CKPGUID_VECTOR,
+                    sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
     /* Faces */
     NMO_FIELD(nmo_ck_mesh_state_t, face_count, CKPGUID_UINT32),
@@ -217,7 +217,7 @@ static nmo_status_t nmo_ckmesh_deserialize_vertices(
     nmo_status_t result;
     
     // Seek to vertex data identifier
-    result = nmo_chunk_seek_identifier(chunk, 0x20000);
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHVERTICES);
     if (result != NMO_OK) {
         // No vertex data (valid for some meshes)
         out_state->vertex_count = 0;
@@ -248,8 +248,8 @@ static nmo_status_t nmo_ckmesh_deserialize_vertices(
     }
     
     // Allocate vertex array
-    out_state->vertices = (nmo_vx_vertex_t *)nmo_arena_alloc(
-        arena, sizeof(nmo_vx_vertex_t) * vertex_count, alignof(nmo_vx_vertex_t));
+    out_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_vertex_t) * vertex_count, alignof(nmo_vertex_t));
     if (!out_state->vertices) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate vertex array");
     }
@@ -416,9 +416,9 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
         
         if (group_count > 0 && group_count < 10000) {
             out_state->material_group_count = (uint32_t)group_count;
-            out_state->material_groups = (nmo_ck_material_group_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck_material_group_t) * group_count,
-                alignof(nmo_ck_material_group_t));
+            out_state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_material_group_t) * group_count,
+                alignof(nmo_material_group_t));
             
             if (!out_state->material_groups) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate material groups");
@@ -453,8 +453,8 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
         
         if (face_count > 0 && face_count < 10000000) {
             out_state->face_count = (uint32_t)face_count;
-            out_state->faces = (nmo_ck_face_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck_face_t) * face_count, alignof(nmo_ck_face_t));
+            out_state->faces = (nmo_face_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_face_t) * face_count, alignof(nmo_face_t));
             out_state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(
                 arena, sizeof(uint16_t) * face_count * 3, alignof(uint16_t));
             
@@ -511,13 +511,13 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
         result = nmo_chunk_read_int(chunk, &channel_count);
         if (result == NMO_OK && channel_count > 0 && channel_count < 100) {
             out_state->material_channel_count = (uint32_t)channel_count;
-            out_state->material_channels = (nmo_ck_material_channel_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck_material_channel_t) * channel_count,
-                alignof(nmo_ck_material_channel_t));
+            out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_material_channel_t) * channel_count,
+                alignof(nmo_material_channel_t));
             
             if (out_state->material_channels) {
                 for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
-                    nmo_ck_material_channel_t *ch = &out_state->material_channels[i];
+                    nmo_material_channel_t *ch = &out_state->material_channels[i];
                     
                     result = nmo_chunk_read_object_id(chunk, &ch->material_id);
                     if (result != NMO_OK) break;
@@ -534,9 +534,9 @@ static nmo_status_t nmo_ckmesh_deserialize_modern(
                     
                     ch->uv_count = (uint32_t)uv_count;
                     if (uv_count > 0 && uv_count < 1000000) {
-                        ch->uv_coords = (nmo_vx_2d_vector_t *)nmo_arena_alloc(
-                            arena, sizeof(nmo_vx_2d_vector_t) * uv_count,
-                            alignof(nmo_vx_2d_vector_t));
+                        ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
+                            arena, sizeof(nmo_vector2_t) * uv_count,
+                            alignof(nmo_vector2_t));
                         
                         if (ch->uv_coords) {
                             for (uint32_t j = 0; j < ch->uv_count; j++) {
@@ -708,9 +708,9 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 
         if (vertex_count > 0 && vertex_count < 1000000) {
             out_state->vertex_count = (uint32_t)vertex_count;
-            out_state->vertices = (nmo_vx_vertex_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_vx_vertex_t) * out_state->vertex_count,
-                alignof(nmo_vx_vertex_t));
+            out_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_vertex_t) * out_state->vertex_count,
+                alignof(nmo_vertex_t));
             out_state->vertex_colors = (uint32_t *)nmo_arena_alloc(
                 arena, sizeof(uint32_t) * out_state->vertex_count, alignof(uint32_t));
             out_state->vertex_specular = (uint32_t *)nmo_arena_alloc(
@@ -762,9 +762,9 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 
         if (face_count > 0 && face_count < 10000000) {
             out_state->face_count = (uint32_t)face_count;
-            out_state->faces = (nmo_ck_face_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck_face_t) * out_state->face_count,
-                alignof(nmo_ck_face_t));
+            out_state->faces = (nmo_face_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_face_t) * out_state->face_count,
+                alignof(nmo_face_t));
             out_state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(
                 arena, sizeof(uint16_t) * out_state->face_count * 3,
                 alignof(uint16_t));
@@ -825,13 +825,13 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
         result = nmo_chunk_read_int(chunk, &channel_count);
         if (result == NMO_OK && channel_count > 0 && channel_count < 100) {
             out_state->material_channel_count = (uint32_t)channel_count;
-            out_state->material_channels = (nmo_ck_material_channel_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ck_material_channel_t) * out_state->material_channel_count,
-                alignof(nmo_ck_material_channel_t));
+            out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_material_channel_t) * out_state->material_channel_count,
+                alignof(nmo_material_channel_t));
 
             if (out_state->material_channels) {
                 for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
-                    nmo_ck_material_channel_t *ch = &out_state->material_channels[i];
+                    nmo_material_channel_t *ch = &out_state->material_channels[i];
 
                     result = nmo_chunk_read_object_id(chunk, &ch->material_id);
                     if (result != NMO_OK) break;
@@ -848,9 +848,9 @@ static nmo_status_t nmo_ckmesh_deserialize_legacy(
 
                     ch->uv_count = (uint32_t)uv_count;
                     if (uv_count > 0 && uv_count < 1000000) {
-                        ch->uv_coords = (nmo_vx_2d_vector_t *)nmo_arena_alloc(
-                            arena, sizeof(nmo_vx_2d_vector_t) * uv_count,
-                            alignof(nmo_vx_2d_vector_t));
+                        ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
+                            arena, sizeof(nmo_vector2_t) * uv_count,
+                            alignof(nmo_vector2_t));
 
                         if (ch->uv_coords) {
                             for (uint32_t j = 0; j < ch->uv_count; j++) {
@@ -1063,8 +1063,8 @@ static uint32_t nmo_ckmesh_compute_save_flags(
         vertex_count > 0 && state->face_count > 0 &&
         !(state->flags & (NMO_MESH_GENNORMALS | NMO_MESH_PROCEDURALPOS))) {
 
-        nmo_vx_vector_t *tmp_normals = (nmo_vx_vector_t *)nmo_arena_alloc(
-            arena, sizeof(nmo_vx_vector_t) * vertex_count, alignof(nmo_vx_vector_t));
+        nmo_vector_t *tmp_normals = (nmo_vector_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_vector_t) * vertex_count, alignof(nmo_vector_t));
         if (tmp_normals) {
             for (uint32_t i = 0; i < vertex_count; ++i) {
                 tmp_normals[i].x = 0.0f;
@@ -1080,13 +1080,13 @@ static uint32_t nmo_ckmesh_compute_save_flags(
                     continue;
                 }
 
-                nmo_vx_vector_t v0 = state->vertices[i0].position;
-                nmo_vx_vector_t v1 = state->vertices[i1].position;
-                nmo_vx_vector_t v2 = state->vertices[i2].position;
+                nmo_vector_t v0 = state->vertices[i0].position;
+                nmo_vector_t v1 = state->vertices[i1].position;
+                nmo_vector_t v2 = state->vertices[i2].position;
 
-                nmo_vx_vector_t e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
-                nmo_vx_vector_t e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
-                nmo_vx_vector_t n = {
+                nmo_vector_t e1 = {v1.x - v0.x, v1.y - v0.y, v1.z - v0.z};
+                nmo_vector_t e2 = {v2.x - v0.x, v2.y - v0.y, v2.z - v0.z};
+                nmo_vector_t n = {
                     e1.y * e2.z - e1.z * e2.y,
                     e1.z * e2.x - e1.x * e2.z,
                     e1.x * e2.y - e1.y * e2.x
@@ -1103,9 +1103,9 @@ static uint32_t nmo_ckmesh_compute_save_flags(
                 tmp_normals[i2].z += n.z;
             }
 
-            nmo_vx_vector_t total_diff = {0.0f, 0.0f, 0.0f};
+            nmo_vector_t total_diff = {0.0f, 0.0f, 0.0f};
             for (uint32_t i = 0; i < vertex_count; ++i) {
-                nmo_vx_vector_t computed = tmp_normals[i];
+                nmo_vector_t computed = tmp_normals[i];
                 float len = sqrtf(computed.x * computed.x + computed.y * computed.y + computed.z * computed.z);
                 if (len > 0.000001f) {
                     computed.x /= len;
@@ -1113,7 +1113,7 @@ static uint32_t nmo_ckmesh_compute_save_flags(
                     computed.z /= len;
                 }
 
-                nmo_vx_vector_t stored = state->vertices[i].normal;
+                nmo_vector_t stored = state->vertices[i].normal;
                 float s_len = sqrtf(stored.x * stored.x + stored.y * stored.y + stored.z * stored.z);
                 if (s_len > 0.000001f) {
                     stored.x /= s_len;
@@ -1121,7 +1121,7 @@ static uint32_t nmo_ckmesh_compute_save_flags(
                     stored.z /= s_len;
                 }
 
-                nmo_vx_vector_t diff = {
+                nmo_vector_t diff = {
                     computed.x - stored.x,
                     computed.y - stored.y,
                     computed.z - stored.z
@@ -1314,7 +1314,7 @@ nmo_status_t nmo_ckmesh_serialize(
         if (result != NMO_OK) return result;
 
         for (uint32_t i = 0; i < in_state->material_channel_count; ++i) {
-            const nmo_ck_material_channel_t *channel = &in_state->material_channels[i];
+            const nmo_material_channel_t *channel = &in_state->material_channels[i];
             result = nmo_chunk_write_object_id(out_chunk, channel->material_id);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, channel->flags);
@@ -1441,7 +1441,7 @@ static nmo_status_t ckmesh_copy(
                                               s->beobject.legacy_attributes_raw, s->beobject.legacy_attributes_size));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
-                                              s->faces, sizeof(nmo_ck_face_t), s->face_count));
+                                              s->faces, sizeof(nmo_face_t), s->face_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->face_vertex_indices,
                                               s->face_vertex_indices, sizeof(uint16_t),
                                               (uint32_t)(s->face_count * 3u)));
@@ -1449,7 +1449,7 @@ static nmo_status_t ckmesh_copy(
                                               s->line_indices, sizeof(uint16_t),
                                               (uint32_t)(s->line_count * 2u)));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertices,
-                                              s->vertices, sizeof(nmo_vx_vertex_t), s->vertex_count));
+                                              s->vertices, sizeof(nmo_vertex_t), s->vertex_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_colors,
                                               s->vertex_colors, sizeof(uint32_t), s->vertex_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_specular,
@@ -1457,16 +1457,16 @@ static nmo_status_t ckmesh_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_weights,
                                               s->vertex_weights, sizeof(float), s->vertex_weight_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->material_groups,
-                                              s->material_groups, sizeof(nmo_ck_material_group_t),
+                                              s->material_groups, sizeof(nmo_material_group_t),
                                               s->material_group_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->material_channels,
-                                              s->material_channels, sizeof(nmo_ck_material_channel_t),
+                                              s->material_channels, sizeof(nmo_material_channel_t),
                                               s->material_channel_count));
     for (uint32_t i = 0; i < s->material_channel_count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena,
                                                   (void **)&d->material_channels[i].uv_coords,
                                                   s->material_channels[i].uv_coords,
-                                                  sizeof(nmo_vx_2d_vector_t),
+                                                  sizeof(nmo_vector2_t),
                                                   s->material_channels[i].uv_count));
     }
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->pm_data, s->pm_data, s->pm_data_size));

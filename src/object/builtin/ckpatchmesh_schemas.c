@@ -105,9 +105,9 @@ static nmo_status_t nmo_ckpatchmesh_deserialize_internal(
             out_state->patch_material_ids = (nmo_object_id_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_object_id_t) * out_state->patch_count,
                 _Alignof(nmo_object_id_t));
-            out_state->patches = (nmo_ckpatchmesh_patch_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ckpatchmesh_patch_t) * out_state->patch_count,
-                _Alignof(nmo_ckpatchmesh_patch_t));
+            out_state->patches = (nmo_patchmesh_patch_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_patchmesh_patch_t) * out_state->patch_count,
+                _Alignof(nmo_patchmesh_patch_t));
 
             if (!out_state->patch_material_ids || !out_state->patches) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate patchmesh patches");
@@ -141,20 +141,20 @@ static nmo_status_t nmo_ckpatchmesh_deserialize_internal(
         size_t channel_count = 0;
         if (nmo_chunk_read_object_sequence_start(chunk, &channel_count) == NMO_OK && channel_count > 0) {
             out_state->channel_count = (uint32_t)channel_count;
-            out_state->channels = (nmo_ckpatchmesh_channel_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_ckpatchmesh_channel_t) * out_state->channel_count,
-                _Alignof(nmo_ckpatchmesh_channel_t));
+            out_state->channels = (nmo_patchmesh_channel_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_patchmesh_channel_t) * out_state->channel_count,
+                _Alignof(nmo_patchmesh_channel_t));
             if (!out_state->channels) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate patchmesh channels");
             }
-            memset(out_state->channels, 0, sizeof(nmo_ckpatchmesh_channel_t) * out_state->channel_count);
+            memset(out_state->channels, 0, sizeof(nmo_patchmesh_channel_t) * out_state->channel_count);
 
             for (uint32_t i = 0; i < out_state->channel_count; ++i) {
                 (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->channels[i].material_id);
             }
 
             for (uint32_t i = 0; i < out_state->channel_count; ++i) {
-                nmo_ckpatchmesh_channel_t *channel = &out_state->channels[i];
+                nmo_patchmesh_channel_t *channel = &out_state->channels[i];
                 (void)nmo_chunk_read_dword(chunk, &channel->flags);
                 (void)nmo_chunk_read_dword(chunk, &channel->type);
                 (void)nmo_chunk_read_dword(chunk, &channel->subtype);
@@ -339,7 +339,7 @@ static nmo_status_t ckpatchmesh_copy(
                                               s->base.beobject.legacy_attributes_size));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.faces,
-                                              s->base.faces, sizeof(nmo_ck_face_t), s->base.face_count));
+                                              s->base.faces, sizeof(nmo_face_t), s->base.face_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.face_vertex_indices,
                                               s->base.face_vertex_indices, sizeof(uint16_t),
                                               (uint32_t)(s->base.face_count * 3u)));
@@ -347,7 +347,7 @@ static nmo_status_t ckpatchmesh_copy(
                                               s->base.line_indices, sizeof(uint16_t),
                                               (uint32_t)(s->base.line_count * 2u)));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertices,
-                                              s->base.vertices, sizeof(nmo_vx_vertex_t), s->base.vertex_count));
+                                              s->base.vertices, sizeof(nmo_vertex_t), s->base.vertex_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertex_colors,
                                               s->base.vertex_colors, sizeof(uint32_t), s->base.vertex_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertex_specular,
@@ -355,16 +355,16 @@ static nmo_status_t ckpatchmesh_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertex_weights,
                                               s->base.vertex_weights, sizeof(float), s->base.vertex_weight_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.material_groups,
-                                              s->base.material_groups, sizeof(nmo_ck_material_group_t),
+                                              s->base.material_groups, sizeof(nmo_material_group_t),
                                               s->base.material_group_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.material_channels,
-                                              s->base.material_channels, sizeof(nmo_ck_material_channel_t),
+                                              s->base.material_channels, sizeof(nmo_material_channel_t),
                                               s->base.material_channel_count));
     for (uint32_t i = 0; i < s->base.material_channel_count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena,
                                                   (void **)&d->base.material_channels[i].uv_coords,
                                                   s->base.material_channels[i].uv_coords,
-                                                  sizeof(nmo_vx_2d_vector_t),
+                                                  sizeof(nmo_vector2_t),
                                                   s->base.material_channels[i].uv_count));
     }
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->base.pm_data, s->base.pm_data, s->base.pm_data_size));
@@ -374,13 +374,13 @@ static nmo_status_t ckpatchmesh_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->patch_material_ids,
                                               s->patch_material_ids, sizeof(nmo_object_id_t), s->patch_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->patches,
-                                              s->patches, sizeof(nmo_ckpatchmesh_patch_t), s->patch_count));
+                                              s->patches, sizeof(nmo_patchmesh_patch_t), s->patch_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->edge_data,
                                               s->edge_data, s->edge_data_size));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->channels,
-                                              s->channels, sizeof(nmo_ckpatchmesh_channel_t), s->channel_count));
+                                              s->channels, sizeof(nmo_patchmesh_channel_t), s->channel_count));
     for (uint32_t i = 0; i < s->channel_count; ++i) {
-        size_t patch_bytes = (size_t)s->channels[i].patch_count * sizeof(nmo_ckpatchmesh_patch_t);
+        size_t patch_bytes = (size_t)s->channels[i].patch_count * sizeof(nmo_patchmesh_patch_t);
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->channels[i].patches_raw,
                                                   s->channels[i].patches_raw, patch_bytes));
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->channels[i].uvs,
@@ -421,7 +421,7 @@ static nmo_status_t ckpatchmesh_validate(
         for (uint32_t i = 0; i < s->channel_count; ++i) {
             if (s->channels[i].patch_count > 0) {
                 NMO_VALIDATE_BYTES(s->channels[i].patches_raw,
-                                   (size_t)s->channels[i].patch_count * sizeof(nmo_ckpatchmesh_patch_t),
+                                   (size_t)s->channels[i].patch_count * sizeof(nmo_patchmesh_patch_t),
                                    "channels.patches_raw");
             }
             if (s->channels[i].uv_count > 0) {
@@ -530,7 +530,7 @@ static nmo_status_t nmo_ckpatchmesh_serialize_internal(
         }
 
         for (uint32_t i = 0; i < in_state->channel_count; ++i) {
-            const nmo_ckpatchmesh_channel_t *channel = &in_state->channels[i];
+            const nmo_patchmesh_channel_t *channel = &in_state->channels[i];
             result = nmo_chunk_write_dword(out_chunk, channel->flags);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, channel->type);

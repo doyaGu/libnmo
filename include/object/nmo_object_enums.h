@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_enum_guids.h"
 
 #ifdef __cplusplus
 extern "C" {
