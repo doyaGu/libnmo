@@ -22,6 +22,14 @@ extern "C" {
 #endif
 
 /* Forward declaration */
+/* OWNERSHIP:
+ * - owner: caller
+ * - allocator: arena (storage + included files), heap (chunk tails)
+ * - lifetime: until nmo_shadow_storage_destroy()
+ * - free: nmo_shadow_storage_destroy()/reset
+ * - note: included-files overwrite uses arena mark/rewind to reclaim prior capture
+ * - thread: caller-synchronized
+ */
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 
 /**
@@ -61,7 +69,10 @@ NMO_API void nmo_shadow_storage_reset(nmo_shadow_storage_t *storage);
  * @brief Capture the Included Files blob from the file header.
  *
  * The data is copied into arena-allocated memory. Calling this again
- * overwrites the previous capture.
+ * rewinds the previous included-files capture scope and overwrites it.
+ * OWNERSHIP:
+ * - storage owns the copied data
+ * - valid until reset/destroy or next capture
  *
  * @param storage Shadow storage instance
  * @param data    Pointer to included files data
@@ -77,6 +88,9 @@ NMO_API int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
  * This preserves bytes that were not consumed during deserialization,
  * keyed by the chunk's object ID. Calling again for the same chunk_id
  * overwrites the previous capture.
+ * OWNERSHIP:
+ * - storage owns the copied data
+ * - valid until reset/destroy or next capture for the same chunk_id
  *
  * @param storage   Shadow storage instance
  * @param chunk_id  Object ID (runtime ID) of the chunk owner
@@ -94,6 +108,7 @@ NMO_API int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
  * @param storage  Shadow storage instance
  * @param out_size Output: size of returned data (may be NULL)
  * @return Pointer to data, or NULL if not captured
+ * @note Returned pointer is storage-owned; do not free.
  */
 NMO_API const void *nmo_shadow_get_included_files(const nmo_shadow_storage_t *storage,
                                                    size_t *out_size);
@@ -105,6 +120,7 @@ NMO_API const void *nmo_shadow_get_included_files(const nmo_shadow_storage_t *st
  * @param chunk_id  Object ID (runtime ID) to look up
  * @param out_size  Output: size of returned data (may be NULL)
  * @return Pointer to tail data, or NULL if not found
+ * @note Returned pointer is storage-owned; do not free.
  */
 NMO_API const void *nmo_shadow_get_chunk_tail(const nmo_shadow_storage_t *storage,
                                                uint32_t chunk_id,

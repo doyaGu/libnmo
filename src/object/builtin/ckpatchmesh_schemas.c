@@ -13,6 +13,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_reflection.h"
+#include "object/nmo_object_enum_guids.h"
 #include "object/nmo_object_struct_guids.h"
 #include <string.h>
 
@@ -26,7 +27,7 @@ static const nmo_type_field_t nmo_ckpatchmesh_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckpatchmesh_state_t, base),
                     sizeof(nmo_ck_mesh_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckpatchmesh_state_t, format, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckpatchmesh_state_t, format, NMO_GUID_ENUM_CK_PATCHMESH_FORMAT),
     NMO_FIELD(nmo_ckpatchmesh_state_t, patch_flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_ckpatchmesh_state_t, iteration_count, CKPGUID_INT),
     NMO_FIELD(nmo_ckpatchmesh_state_t, vec_count, CKPGUID_INT),
@@ -77,7 +78,7 @@ static nmo_status_t nmo_ckpatchmesh_deserialize_internal(
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PATCHMESHDATA3) == NMO_OK) {
-        out_state->format = NMO_PATCHMESH_FORMAT_DATA3;
+        out_state->format = CKPATCHMESH_FORMAT_DATA3;
 
         (void)nmo_chunk_read_dword(chunk, &out_state->patch_flags);
         (void)nmo_chunk_read_int(chunk, &out_state->iteration_count);
@@ -191,7 +192,7 @@ static nmo_status_t nmo_ckpatchmesh_deserialize_internal(
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PATCHMESHDATA2) == NMO_OK) {
-        out_state->format = NMO_PATCHMESH_FORMAT_DATA2;
+        out_state->format = CKPATCHMESH_FORMAT_DATA2;
 
         (void)nmo_chunk_read_dword(chunk, &out_state->patch_flags);
         (void)nmo_chunk_read_object_id(chunk, &out_state->legacy_default_material_id);
@@ -474,7 +475,7 @@ static nmo_status_t nmo_ckpatchmesh_serialize_internal(
         }
     }
 
-    if (in_state->format == NMO_PATCHMESH_FORMAT_DATA3) {
+    if (in_state->format == CKPATCHMESH_FORMAT_DATA3) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PATCHMESHDATA3);
         if (result != NMO_OK) return result;
 
@@ -561,7 +562,7 @@ static nmo_status_t nmo_ckpatchmesh_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (in_state->format == NMO_PATCHMESH_FORMAT_DATA2) {
+    if (in_state->format == CKPATCHMESH_FORMAT_DATA2) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PATCHMESHDATA2);
         if (result != NMO_OK) return result;
 

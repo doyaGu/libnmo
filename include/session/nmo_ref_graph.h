@@ -112,6 +112,7 @@ typedef struct nmo_ref_graph_stats {
  * @param session Session with loaded objects (required)
  * @param arena Arena for edge allocations (required)
  * @return Reference graph or NULL on failure
+ * @note Returned graph is caller-owned; arena owns edge storage.
  */
 NMO_API nmo_ref_graph_t *nmo_ref_graph_create(
     nmo_session_t *session,
@@ -132,6 +133,7 @@ NMO_API void nmo_ref_graph_destroy(nmo_ref_graph_t *graph);
  * @param edges Output pointer to edge array
  * @param count Output edge count
  * @return NMO_OK on success
+ * @note Returned array is graph-owned; valid until graph destruction.
  */
 NMO_API nmo_status_t nmo_ref_graph_get_edges(
     nmo_ref_graph_t *graph,
@@ -148,6 +150,7 @@ NMO_API nmo_status_t nmo_ref_graph_get_edges(
  * @param edges Output pointer to edge array
  * @param count Output edge count
  * @return NMO_OK on success
+ * @note Returned array is graph-owned; valid until graph destruction.
  */
 NMO_API nmo_status_t nmo_ref_graph_get_object_edges(
     nmo_ref_graph_t *graph,
@@ -178,6 +181,7 @@ NMO_API nmo_status_t nmo_ref_graph_get_stats(
  * @param broken_edges Output array of broken edges (can be NULL)
  * @param broken_count Output count of broken edges (can be NULL)
  * @return NMO_OK if all references valid, NMO_ERR_VALIDATION_FAILED otherwise
+ * @note broken_edges (if requested) is graph-owned; valid until graph destruction.
  */
 NMO_API nmo_status_t nmo_ref_graph_validate(
     nmo_ref_graph_t *graph,

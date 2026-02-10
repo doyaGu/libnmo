@@ -22,7 +22,9 @@ static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t
  * Object repository structure
  */
 typedef struct nmo_object_repository {
+    nmo_allocator_t base_allocator;
     nmo_allocator_t allocator;
+    nmo_allocator_debug_t allocator_debug;
 
     /* ID indexed map (provides both hash lookup and iteration) */
     nmo_indexed_map_t *id_map; /* nmo_object_id_t -> nmo_object_t* */
@@ -36,7 +38,9 @@ typedef struct nmo_object_repository {
     /* Optional attached index for incremental maintenance */
     nmo_object_index_t *attached_index;
 
-    /* Scratch arrays for query results (caller must not free) */
+    /* Scratch arrays for query results (caller must not free).
+     * OWNERSHIP: repo allocator, valid until next query or destroy.
+     */
     nmo_object_t **scratch_all;
     size_t scratch_all_capacity;
     nmo_object_t **scratch_class;
@@ -53,6 +57,32 @@ static void nmo_object_repository_dispose_object_ptr(void *element, void *user_d
     if (obj != NULL) {
         nmo_object_destroy(obj);
     }
+}
+
+static void nmo_object_repository_set_owning_lifecycle(nmo_object_repository_t *repo) {
+    if (repo == NULL || repo->id_map == NULL) {
+        return;
+    }
+
+    nmo_container_lifecycle_t value_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    value_lifecycle.dispose = nmo_object_repository_dispose_object_ptr;
+    nmo_indexed_map_set_lifecycle(repo->id_map, NULL, &value_lifecycle);
+}
+
+static int nmo_object_repository_remove_without_dispose(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t id
+) {
+    if (repo == NULL || repo->id_map == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Temporarily disable value disposal so rollback keeps caller ownership. */
+    nmo_container_lifecycle_t non_owning = NMO_CONTAINER_LIFECYCLE_INIT;
+    nmo_indexed_map_set_lifecycle(repo->id_map, NULL, &non_owning);
+    nmo_status_t remove_result = nmo_indexed_map_remove(repo->id_map, &id);
+    nmo_object_repository_set_owning_lifecycle(repo);
+    return remove_result;
 }
 
 static int nmo_object_repository_scratch_reserve(
@@ -141,7 +171,12 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
     }
 
     memset(repo, 0, sizeof(*repo));
-    repo->allocator = snapshot;
+    repo->base_allocator = snapshot;
+    repo->allocator = nmo_allocator_debug_init(
+        &repo->allocator_debug,
+        snapshot,
+        "object_repository",
+        "repo_allocator");
 
     /* Create ID indexed map */
     repo->id_map = nmo_indexed_map_create(
@@ -155,15 +190,11 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
     );
 
     if (repo->id_map == NULL) {
-        nmo_free(&repo->allocator, repo);
+        nmo_free(&repo->base_allocator, repo);
         return NULL;
     }
 
-    {
-        nmo_container_lifecycle_t value_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-        value_lifecycle.dispose = nmo_object_repository_dispose_object_ptr;
-        nmo_indexed_map_set_lifecycle(repo->id_map, NULL, &value_lifecycle);
-    }
+    nmo_object_repository_set_owning_lifecycle(repo);
 
     /* Create name hash table */
     repo->name_table = nmo_hash_table_create(
@@ -177,7 +208,7 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
 
     if (repo->name_table == NULL) {
         nmo_indexed_map_destroy(repo->id_map);
-        nmo_free(&repo->allocator, repo);
+        nmo_free(&repo->base_allocator, repo);
         return NULL;
     }
 
@@ -194,7 +225,7 @@ void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
         nmo_hash_table_destroy(repo->name_table);
         nmo_free(&repo->allocator, repo->scratch_all);
         nmo_free(&repo->allocator, repo->scratch_class);
-        nmo_free(&repo->allocator, repo);
+        nmo_free(&repo->base_allocator, repo);
     }
 }
 
@@ -211,10 +242,12 @@ void nmo_object_repository_set_index(
 /**
  * Add object
  */
-int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) {
-    if (repo == NULL || obj == NULL) {
+int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_ref) {
+    if (repo == NULL || obj_ref == NULL || *obj_ref == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+
+    nmo_object_t *obj = *obj_ref;
 
     /* Allocate a new runtime ID if the object doesn't have one */
     if (obj->id == NMO_OBJECT_ID_NONE) {
@@ -240,7 +273,10 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) 
         nmo_status_t name_result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
         if (name_result != NMO_OK) {
             /* Rollback ID insertion */
-            nmo_indexed_map_remove(repo->id_map, &obj->id);
+            nmo_status_t rollback_result = nmo_object_repository_remove_without_dispose(repo, obj->id);
+            if (rollback_result != NMO_OK) {
+                return rollback_result;
+            }
             return name_result;
         }
     }
@@ -251,10 +287,14 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t *obj) 
         if (obj->name != NULL && obj->name[0] != '\0') {
             nmo_hash_table_remove(repo->name_table, &obj->name);
         }
-        nmo_indexed_map_remove(repo->id_map, &obj->id);
+        nmo_status_t rollback_result = nmo_object_repository_remove_without_dispose(repo, obj->id);
+        if (rollback_result != NMO_OK) {
+            return rollback_result;
+        }
         return result;
     }
 
+    *obj_ref = NULL;
     return NMO_OK;
 }
 

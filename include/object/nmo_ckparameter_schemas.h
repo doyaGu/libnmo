@@ -18,6 +18,7 @@
 #include "core/nmo_guid.h"
 #include "nmo_ckobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,13 +44,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * - MODE_SUBCHUNK: Custom sub-chunk (SaveLoadFunction)
  * - MODE_NONE: No data (ParameterOut or ParameterOperation placeholder)
  */
-typedef enum nmo_ckparameter_mode {
-    NMO_CKPARAM_MODE_NONE = 3,       /**< No data stored */
-    NMO_CKPARAM_MODE_BUFFER = 1,     /**< Raw buffer data */
-    NMO_CKPARAM_MODE_OBJECT = 2,     /**< Object reference (CK_ID) */
-    NMO_CKPARAM_MODE_MANAGER = 4,    /**< Manager-specific int */
-    NMO_CKPARAM_MODE_SUBCHUNK = 0    /**< Custom sub-chunk */
-} nmo_ckparameter_mode_t;
+typedef CK_PARAMETER_MODE nmo_ckparameter_mode_t;
 
 /**
  * @brief CKParameter state

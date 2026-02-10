@@ -96,7 +96,7 @@ static nmo_status_t op_atan_float(
 
 nmo_status_t nmo_register_trigonometry_operations(
     nmo_operation_registry_t *operation_registry,
-    nmo_type_registry_t *type_registry
+    const nmo_type_registry_t *type_registry
 ) {
     if (!operation_registry || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,

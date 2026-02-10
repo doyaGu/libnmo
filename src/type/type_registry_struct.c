@@ -16,12 +16,21 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
+#include "core/nmo_debug.h"
 #include "core/nmo_error.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdalign.h>
+#include <stddef.h>
+
+typedef struct nmo_max_align_helper {
+    long double ld;
+    long long ll;
+    void *ptr;
+} nmo_max_align_helper_t;
 
 /* ============================================================================
  * Helper Functions
@@ -37,6 +46,41 @@ static uint32_t align_up(uint32_t offset, uint32_t alignment) {
 
 static bool is_power_of_two_u32(uint32_t value) {
     return value != 0 && (value & (value - 1u)) == 0;
+}
+
+static char *type_allocator_strdup(nmo_allocator_t *allocator, const char *src) {
+    if (!allocator || !src) {
+        return NULL;
+    }
+    const size_t len = strlen(src) + 1u;
+    char *dst = (char *)nmo_alloc(allocator, len, _Alignof(char));
+    if (!dst) {
+        return NULL;
+    }
+    memcpy(dst, src, len);
+    return dst;
+}
+
+static void free_heap_type_fields(nmo_allocator_t *allocator, nmo_type_field_t *fields, size_t count) {
+    if (!allocator || !fields) {
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (fields[i].name) {
+            nmo_free(allocator, (void *)fields[i].name);
+            fields[i].name = NULL;
+        }
+        if (fields[i].description) {
+            nmo_free(allocator, (void *)fields[i].description);
+            fields[i].description = NULL;
+        }
+        if (fields[i].default_value) {
+            nmo_free(allocator, (void *)fields[i].default_value);
+            fields[i].default_value = NULL;
+        }
+    }
+    nmo_free(allocator, fields);
 }
 
 /**
@@ -381,7 +425,7 @@ nmo_status_t nmo_type_registry_register_struct(
     
     spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
     spec_meta->metadata_type = NMO_METADATA_TYPE_STRUCT;
-    spec_meta->reserved = 0;
+    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
     spec_meta->struct_meta.fields = struct_fields;
     spec_meta->struct_meta.field_count = struct_def->field_count;
     
@@ -723,13 +767,15 @@ nmo_status_t nmo_type_registry_finalize_struct(
                                 "Failed to allocate struct descriptors");
     }
 
-    nmo_type_field_t *type_fields = (nmo_type_field_t*)
-        nmo_arena_alloc(arena, sizeof(nmo_type_field_t) * incomplete->field_count,
-                        alignof(nmo_type_field_t));
+    nmo_type_field_t *type_fields = (nmo_type_field_t *)nmo_alloc(
+        &type_registry->type_allocator,
+        sizeof(nmo_type_field_t) * incomplete->field_count,
+        _Alignof(nmo_type_field_t));
     if (!type_fields) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate type field descriptors");
+                         "Failed to allocate type field descriptors");
     }
+    memset(type_fields, 0, sizeof(nmo_type_field_t) * incomplete->field_count);
     
     /* Build field descriptors with calculated offsets */
     uint32_t offset = 0;
@@ -762,6 +808,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
         if (!field_type) {
             char guid_str[64];
             nmo_guid_format(field_def->type_guid, guid_str, sizeof(guid_str));
+            free_heap_type_fields(&type_registry->type_allocator, type_fields, i);
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                     "Field type not found for '%s' (GUID: %s)",
                                     field_def->name, guid_str);
@@ -785,9 +832,24 @@ nmo_status_t nmo_type_registry_finalize_struct(
         field_desc->pointee_guid = pointee_guid;
         field_desc->pointer_depth = pointer_depth;
 
-        memset(&type_fields[i], 0, sizeof(type_fields[i]));
-        type_fields[i].name = field_def->name;
-        type_fields[i].description = field_def->description;
+        if (field_def->name) {
+            type_fields[i].name = type_allocator_strdup(&type_registry->type_allocator, field_def->name);
+            if (!type_fields[i].name) {
+                free_heap_type_fields(&type_registry->type_allocator, type_fields, i);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to copy field name");
+            }
+        }
+
+        if (field_def->description) {
+            type_fields[i].description = type_allocator_strdup(&type_registry->type_allocator, field_def->description);
+            if (!type_fields[i].description) {
+                free_heap_type_fields(&type_registry->type_allocator, type_fields, i + 1u);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to copy field description");
+            }
+        }
+
         type_fields[i].type_guid = field_type_guid;
         type_fields[i].offset = offset;
         type_fields[i].size = total_field_size;
@@ -799,7 +861,19 @@ nmo_status_t nmo_type_registry_finalize_struct(
         type_fields[i].removed_version = 0;
         type_fields[i].semantic = NMO_SEMANTIC_NONE;
         type_fields[i].units = NMO_UNITS_NONE;
-        type_fields[i].default_value = field_def->default_value;
+        if (field_def->default_value && total_field_size > 0) {
+            void *default_copy = nmo_alloc(
+                &type_registry->type_allocator,
+                total_field_size,
+                _Alignof(nmo_max_align_helper_t));
+            if (!default_copy) {
+                free_heap_type_fields(&type_registry->type_allocator, type_fields, i + 1u);
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to copy field default value");
+            }
+            memcpy(default_copy, field_def->default_value, total_field_size);
+            type_fields[i].default_value = default_copy;
+        }
 
         offset += total_field_size;
     }
@@ -814,7 +888,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
     
     spec_meta->type_id = struct_type_id;
     spec_meta->metadata_type = NMO_METADATA_TYPE_STRUCT;
-    spec_meta->reserved = 0;
+    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
     spec_meta->struct_meta.fields = struct_fields;
     spec_meta->struct_meta.field_count = incomplete->field_count;
     
@@ -1154,7 +1228,7 @@ nmo_status_t nmo_type_registry_register_union(
 
     spec_meta->type_id = NMO_TYPE_ID_INVALID;
     spec_meta->metadata_type = NMO_METADATA_TYPE_UNION;
-    spec_meta->reserved = 0;
+    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
     spec_meta->union_meta.fields = union_fields;
     spec_meta->union_meta.field_count = union_def->field_count;
 

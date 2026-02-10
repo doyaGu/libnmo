@@ -47,7 +47,7 @@ TEST(load_session_id_remap, with_existing_objects) {
     for (int i = 1; i <= 5; i++) {
         nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)i, 0x00000001);
         ASSERT_NOT_NULL(obj);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
     }
 
     /* Start load session */
@@ -77,10 +77,11 @@ TEST(load_session_id_remap, register_objects) {
     for (int i = 0; i < 10; i++) {
         nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)(100 + i), 0x00000001);
         ASSERT_NOT_NULL(obj);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+        nmo_object_t *repo_obj = obj;
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
         /* Register with file object index */
-        int result = nmo_load_session_register(session, obj, (nmo_object_id_t)i);
+        int result = nmo_load_session_register(session, repo_obj, (nmo_object_id_t)i);
         ASSERT_EQ(NMO_OK, result);
     }
 
@@ -113,9 +114,10 @@ TEST(load_session_id_remap, build_remap_table) {
     for (int i = 0; i < 5; i++) {
         nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)(100 + i), 0x00000001);
         ASSERT_NOT_NULL(obj);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+        nmo_object_t *repo_obj = obj;
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
-        nmo_load_session_register(session, obj, (nmo_object_id_t)i);  // File object indices: 0-4
+        nmo_load_session_register(session, repo_obj, (nmo_object_id_t)i);  // File object indices: 0-4
     }
 
     /* Build remap table */
@@ -161,8 +163,9 @@ TEST(load_session_id_remap, remap_table_iteration) {
     for (int i = 0; i < 3; i++) {
         nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)(50 + i), 0x00000001);
         ASSERT_NOT_NULL(obj);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
-        nmo_load_session_register(session, obj, (nmo_object_id_t)i);
+        nmo_object_t *repo_obj = obj;
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+        nmo_load_session_register(session, repo_obj, (nmo_object_id_t)i);
     }
 
     nmo_id_remap_table_t* table = nmo_build_remap_table(session);
@@ -212,7 +215,9 @@ TEST(load_session_id_remap, id_remap_plan_create) {
     for (int i = 0; i < 5; i++) {
         objects[i] = nmo_object_create(&allocator, (nmo_object_id_t)(200 + i), 0x00000001);
         ASSERT_NOT_NULL(objects[i]);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, objects[i]));
+        nmo_object_t *repo_obj = objects[i];
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &objects[i]));
+        objects[i] = repo_obj;
     }
 
     /* Create remap plan */
@@ -260,7 +265,9 @@ TEST(load_session_id_remap, id_remap_plan_preserve_and_fill_gaps) {
     for (int i = 0; i < 5; i++) {
         objects[i] = nmo_object_create(&allocator, (nmo_object_id_t)(300 + i), 0x00000001);
         ASSERT_NOT_NULL(objects[i]);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, objects[i]));
+        nmo_object_t *repo_obj = objects[i];
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &objects[i]));
+        objects[i] = repo_obj;
     }
 
     objects[0]->file_id = 1;
@@ -328,7 +335,9 @@ TEST(load_session_id_remap, remap_plan_large) {
     for (int i = 0; i < count; i++) {
         objects[i] = nmo_object_create(&allocator, (nmo_object_id_t)(1000 + i), 0x00000001);
         ASSERT_NOT_NULL(objects[i]);
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, objects[i]));
+        nmo_object_t *repo_obj = objects[i];
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &objects[i]));
+        objects[i] = repo_obj;
     }
 
     /* Create remap plan */
@@ -369,9 +378,10 @@ TEST(load_session_id_remap, load_session_end) {
     /* Register an object */
     nmo_object_t* obj = nmo_object_create(&allocator, 100, 0x00000001);
     ASSERT_NOT_NULL(obj);
-    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+    nmo_object_t *repo_obj = obj;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
-    int result = nmo_load_session_register(session, obj, 0);
+    int result = nmo_load_session_register(session, repo_obj, 0);
     ASSERT_EQ(NMO_OK, result);
 
     /* End session */

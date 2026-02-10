@@ -27,6 +27,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_error.h"
+#include "core/nmo_debug.h"
 
 #include <string.h>
 #include <stdalign.h>
@@ -137,7 +138,8 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
             }
         }
 
-        int add_result = nmo_object_repository_add(repo, obj);
+        nmo_object_t *repo_obj = obj;
+        int add_result = nmo_object_repository_add(repo, &obj);
         if (add_result != NMO_OK) {
             nmo_object_destroy(obj);
             object_system_rollback_created(repo, created, desc_count);
@@ -148,7 +150,9 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
         }
 
         /* Repository owns obj beyond this point. */
-        created[i] = obj;
+        NMO_DEBUG_ASSERT(obj == NULL);
+        created[i] = repo_obj;
+        obj = repo_obj;
 
         int file_index_result = nmo_object_set_file_index(obj, desc->file_index);
         if (file_index_result != NMO_OK) {
@@ -274,8 +278,10 @@ nmo_status_t nmo_object_system_deserialize_repository(
             continue;
         }
 
-        uint32_t state_size = schema_type->total_state_size > 0 ?
-                              schema_type->total_state_size : schema_type->size;
+        uint32_t state_size = schema_type->size;
+        if (schema_type->ext && schema_type->ext->total_state_size > 0) {
+            state_size = schema_type->ext->total_state_size;
+        }
 
         nmo_status_t alloc_result = nmo_object_alloc_state(obj, state_size);
         if (alloc_result != NMO_OK) {
@@ -787,8 +793,10 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             continue;
         }
 
-        uint32_t state_size = schema_type->total_state_size > 0 ?
-                              schema_type->total_state_size : schema_type->size;
+        uint32_t state_size = schema_type->size;
+        if (schema_type->ext && schema_type->ext->total_state_size > 0) {
+            state_size = schema_type->ext->total_state_size;
+        }
 
         nmo_status_t alloc_result = nmo_object_alloc_state(obj, state_size);
         if (alloc_result != NMO_OK) {

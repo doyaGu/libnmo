@@ -515,9 +515,9 @@ NMO_API nmo_status_t nmo_ref_enum_dataarray(
                 nmo_ck_arraytype_t type = arr->column_formats[col].type;
                 nmo_object_id_t ref_id = 0;
                 
-                if (type == NMO_ARRAYTYPE_OBJECT) {
+                if (type == CKARRAYTYPE_OBJECT) {
                     ref_id = r->cells[col].object_id;
-                } else if (type == NMO_ARRAYTYPE_PARAMETER) {
+                } else if (type == CKARRAYTYPE_PARAMETER) {
                     ref_id = r->cells[col].parameter_id;
                 }
                 
@@ -547,7 +547,7 @@ NMO_API nmo_status_t nmo_ref_enum_parameter(
     (void)obj;
     
     /* Object mode reference */
-    if (param->mode == NMO_CKPARAM_MODE_OBJECT && param->object_id != 0) {
+    if (param->mode == CKPARAM_MODE_OBJECT && param->object_id != 0) {
         NMO_REF_VISIT(visitor, user_data, param->object_id, NMO_REF_PARAMETER, "value");
     }
     

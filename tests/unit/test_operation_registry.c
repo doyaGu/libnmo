@@ -1285,6 +1285,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(operation_registry, find_operation_success);
     REGISTER_TEST(operation_registry, find_operation_not_implemented);
     REGISTER_TEST(operation_registry, find_null_params);
+    REGISTER_TEST(operation_registry, lookup_cache_hits);
     REGISTER_TEST(operation_registry, execute_operation_success);
     REGISTER_TEST(operation_registry, execute_selects_requested_result_type);
     REGISTER_TEST(operation_registry, get_family_success);

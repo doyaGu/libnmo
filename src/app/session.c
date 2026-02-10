@@ -29,7 +29,7 @@
  * Session structure
  */
 typedef struct nmo_session {
-    /* Borrowed context (not owned) */
+    /* Retained context reference */
     nmo_context_t *context;
 
     /* Allocator snapshot used to allocate/free the session + arena */
@@ -95,17 +95,20 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         return NULL;
     }
 
+    nmo_context_retain(ctx);
+
     nmo_allocator_t *ctx_allocator = nmo_context_get_allocator(ctx);
     nmo_allocator_t allocator = (ctx_allocator != NULL) ? *ctx_allocator : nmo_allocator_default();
 
     nmo_session_t *session = (nmo_session_t *) nmo_alloc(&allocator, sizeof(nmo_session_t), _Alignof(nmo_session_t));
     if (session == NULL) {
+        nmo_context_release(ctx);
         return NULL;
     }
 
     memset(session, 0, sizeof(*session));
 
-    /* Borrow context (do not retain) */
+    /* Retained context */
     session->context = ctx;
 
     /* Snapshot allocator for consistent frees */
@@ -115,6 +118,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     session->arena = nmo_arena_create(&session->allocator, DEFAULT_ARENA_SIZE);
     if (session->arena == NULL) {
         nmo_free(&session->allocator, session);
+        nmo_context_release(ctx);
         return NULL;
     }
 
@@ -123,6 +127,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     if (session->repository == NULL) {
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
+        nmo_context_release(ctx);
         return NULL;
     }
 
@@ -130,6 +135,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
+        nmo_context_release(ctx);
         return NULL;
     }
 
@@ -140,6 +146,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
+        nmo_context_release(ctx);
         return NULL;
     }
 
@@ -172,6 +179,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
+        nmo_context_release(ctx);
         return NULL;
     }
 
@@ -183,6 +191,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         nmo_object_repository_destroy(session->repository);
         nmo_arena_destroy(session->arena);
         nmo_free(&session->allocator, session);
+        nmo_context_release(ctx);
         return NULL;
     }
     
@@ -240,7 +249,10 @@ void nmo_session_destroy(nmo_session_t *session) {
             nmo_arena_destroy(session->arena);
         }
 
-        /* Do not release context - we only borrowed it */
+        if (session->context != NULL) {
+            nmo_context_release(session->context);
+            session->context = NULL;
+        }
 
         nmo_free(&session->allocator, session);
     }

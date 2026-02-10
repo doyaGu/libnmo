@@ -5,10 +5,12 @@
 
 #include "object/nmo_object_structs.h"
 #include "object/nmo_object_struct_guids.h"
+#include "object/nmo_param_guids.h"
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_error.h"
+#include "object/nmo_object_enum_guids.h"
 
 #define NMO_STRUCT_FIELD_GUID(_name, _guid) \
     { \
@@ -119,7 +121,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKLightData */
     static const nmo_struct_field_def_t cklightdata_fields[] = {
-        NMO_STRUCT_FIELD_GUID("type", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("type", CKPGUID_LIGHTTYPE),
         NMO_STRUCT_FIELD_GUID("diffuse", CKPGUID_COLORF),
         NMO_STRUCT_FIELD_GUID("specular", CKPGUID_COLORF),
         NMO_STRUCT_FIELD_GUID("ambient", CKPGUID_COLORF),
@@ -135,6 +137,40 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     };
     static const nmo_struct_type_def_t cklightdata_def =
         NMO_STRUCT_DEF("CKLightData", NMO_GUID_STRUCT_CKLIGHTDATA, cklightdata_fields);
+
+    /* CK3dEntitySkinVertex */
+    static const nmo_struct_field_def_t ck3dentityskinvertex_fields[] = {
+        NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("initial_pos", CKPGUID_VECTOR),
+        NMO_STRUCT_FIELD_PTR("bone_indices", NMO_FIELD_REPEATED),
+        NMO_STRUCT_FIELD_PTR("bone_weights", NMO_FIELD_REPEATED)
+    };
+    static const nmo_struct_type_def_t ck3dentityskinvertex_def =
+        NMO_STRUCT_DEF("CK3dEntitySkinVertex", CKPGUID_CK3DENTITYSKINVERTEX,
+                       ck3dentityskinvertex_fields);
+
+    /* CK3dEntitySkinBone */
+    static const nmo_struct_field_def_t ck3dentityskinbone_fields[] = {
+        NMO_STRUCT_FIELD_GUID_FLAGS("bone_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_GUID("bone_flags", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("inverse_bind_matrix", CKPGUID_MATRIX)
+    };
+    static const nmo_struct_type_def_t ck3dentityskinbone_def =
+        NMO_STRUCT_DEF("CK3dEntitySkinBone", CKPGUID_CK3DENTITYSKINBONE,
+                       ck3dentityskinbone_fields);
+
+    /* CK3dEntitySkin */
+    static const nmo_struct_field_def_t ck3dentityskin_fields[] = {
+        NMO_STRUCT_FIELD_GUID("object_init_matrix", CKPGUID_MATRIX),
+        NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_PTR("bones", NMO_FIELD_REPEATED),
+        NMO_STRUCT_FIELD_GUID("vertex_count", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_PTR("vertices", NMO_FIELD_REPEATED),
+        NMO_STRUCT_FIELD_GUID("normal_count", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_PTR("normals", NMO_FIELD_REPEATED)
+    };
+    static const nmo_struct_type_def_t ck3dentityskin_def =
+        NMO_STRUCT_DEF("CK3dEntitySkin", CKPGUID_CK3DENTITYSKIN, ck3dentityskin_fields);
 
     /* CKSceneObjectDesc */
     static const nmo_struct_field_def_t cksceneobjectdesc_fields[] = {
@@ -179,7 +215,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     /* CKDataArrayColumnFormat */
     static const nmo_struct_field_def_t ckdataarraycolumnformat_fields[] = {
         NMO_STRUCT_FIELD_GUID("name", CKPGUID_STRING),
-        NMO_STRUCT_FIELD_GUID("type", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("type", NMO_GUID_ENUM_CK_ARRAYTYPE),
         NMO_STRUCT_FIELD_GUID("parameter_type_guid", CKPGUID_GUID)
     };
     static const nmo_struct_type_def_t ckdataarraycolumnformat_def =
@@ -383,6 +419,9 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckbitmapdata_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &fontinfo_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &cklightdata_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ck3dentityskinvertex_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ck3dentityskinbone_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ck3dentityskin_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &cksceneobjectdesc_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckplaceportalentry_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshpatch_def, NULL));

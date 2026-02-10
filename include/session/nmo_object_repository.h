@@ -22,6 +22,13 @@ typedef struct nmo_object_index nmo_object_index_t;
 /**
  * @brief Object repository
  */
+/* OWNERSHIP:
+ * - owner: caller
+ * - allocator: repository allocator (heap)
+ * - lifetime: until nmo_object_repository_destroy()
+ * - free: nmo_object_repository_destroy()
+ * - thread: caller-synchronized
+ */
 typedef struct nmo_object_repository nmo_object_repository_t;
 
 /**
@@ -49,10 +56,12 @@ NMO_API void nmo_object_repository_set_index(
 /**
  * @brief Add object to repository
  * @param repository Repository
- * @param object Object to add
+ * @param object In/out object pointer (move ownership into repository)
+ * @note On success, repository takes ownership and sets *object = NULL.
+ *       On failure, *object is unchanged and caller retains ownership.
  * @return NMO_OK on success
  */
-NMO_API int nmo_object_repository_add(nmo_object_repository_t *repository, nmo_object_t *object);
+NMO_API int nmo_object_repository_add(nmo_object_repository_t *repository, nmo_object_t **object);
 
 /**
  * @brief Find object by ID
@@ -80,6 +89,7 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_reposi
  * @return Array of objects or NULL (caller must not free).
  *         The returned array is owned by the repository and is valid until the
  *         next call to nmo_object_repository_find_by_class() or repository destruction.
+ * @note Returned array is repository-owned; do not free.
  */
 NMO_API nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repository,
                                                            nmo_class_id_t class_id,
@@ -107,6 +117,7 @@ NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository_t *re
  *         The returned array is owned by the repository and is valid until the
  *         next call to nmo_object_repository_get_all() or repository destruction.
  *         Returns NULL on error or if repository is empty.
+ * @note Returned array is repository-owned; do not free.
  */
 NMO_API nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repository,
                                                      size_t *out_count);
@@ -124,6 +135,7 @@ NMO_API nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_reposi
  * @brief Remove object from repository
  * @param repository Repository
  * @param id Object ID
+ * @note Removed object is destroyed by the repository.
  * @return NMO_OK on success
  */
 NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nmo_object_id_t id);
@@ -131,6 +143,7 @@ NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nm
 /**
  * @brief Clear all objects
  * @param repository Repository
+ * @note All contained objects are destroyed.
  * @return NMO_OK on success
  */
 NMO_API int nmo_object_repository_clear(nmo_object_repository_t *repository);

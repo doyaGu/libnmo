@@ -25,7 +25,7 @@ typedef struct nmo_arena nmo_arena_t;
  * @brief Global context structure
  *
  * Reference-counted global state that owns schema registry and manager registry.
- * Thread-safe for concurrent access.
+ * retain/release is thread-safe; registry mutation remains caller-synchronized.
  */
 typedef struct nmo_context nmo_context_t;
 
@@ -92,7 +92,7 @@ NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *
 /**
  * @brief Get manager registry
  *
- * Thread-safe access to the manager registry.
+ * Borrowed pointer; caller-synchronized for registry operations.
  *
  * @param ctx Context
  * @return Manager registry or NULL
@@ -102,7 +102,7 @@ NMO_API nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_conte
 /**
  * @brief Get extension registry
  *
- * Thread-safe access to the extension registry.
+ * Borrowed pointer; caller-synchronized for registry operations.
  *
  * @param ctx Context
  * @return Extension registry or NULL

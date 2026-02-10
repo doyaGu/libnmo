@@ -38,6 +38,21 @@ extern "C" {
 typedef struct nmo_arena nmo_arena_t;
 
 /**
+ * @brief Arena scope marker for mark/rewind.
+ *
+ * Treat this as an opaque snapshot token. It is only valid for the arena that
+ * produced it and must be rewound in strict LIFO order.
+ */
+typedef struct nmo_arena_mark {
+    const nmo_arena_t *arena;
+    void *chunk;
+    size_t chunk_used;
+    size_t bytes_used;
+    size_t mark_depth;
+    uint32_t mark_epoch;
+} nmo_arena_mark_t;
+
+/**
  * @brief Arena configuration (Phase 5 optimization)
  */
 typedef struct nmo_arena_config {
@@ -114,6 +129,29 @@ NMO_API size_t nmo_arena_total_allocated(nmo_arena_t *arena);
  * @return Bytes used
  */
 NMO_API size_t nmo_arena_bytes_used(nmo_arena_t *arena);
+
+/**
+ * @brief Capture current arena state for scoped rewinding.
+ *
+ * Marks must be rewound in strict LIFO order.
+ *
+ * @param arena Arena allocator
+ * @param out_mark Output marker snapshot
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark);
+
+/**
+ * @brief Rewind arena allocations back to a previous marker.
+ *
+ * Rewind does not free chunks; it only restores allocation cursors and used
+ * byte counters.
+ *
+ * @param arena Arena allocator
+ * @param mark Marker previously captured by nmo_arena_mark
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark);
 
 /**
  * @brief Reserve capacity (preallocate memory) - Phase 5 optimization

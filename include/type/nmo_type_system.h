@@ -7,6 +7,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_ownership.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -118,10 +119,18 @@ typedef struct nmo_flags_descriptor {
  * 
  * Stores enum values, struct fields, or flags bits for a specific type.
  */
+/* OWNERSHIP:
+ * - owner: type_registry
+ * - allocator: arena (registered types) or type_allocator (deep copies)
+ * - lifetime: registry
+ * - free: nmo_type_registry_destroy()/unregister
+ * - thread: caller-synchronized
+ */
 typedef struct nmo_specialized_metadata {
     nmo_type_id_t type_id;              /* Owner type ID */
     uint16_t metadata_type;             /* ENUM, STRUCT, or FLAGS */
-    uint16_t reserved;
+    uint16_t ownership;                 /* Ownership tag (NMO_OWNERSHIP_*) */
+    uint16_t _reserved;                 /* Padding / future use */
     
     union {
         struct {
@@ -151,6 +160,7 @@ typedef struct nmo_specialized_metadata {
 #define NMO_METADATA_TYPE_STRUCT 2
 #define NMO_METADATA_TYPE_FLAGS  3
 #define NMO_METADATA_TYPE_UNION  4
+
 
 /* Specialized metadata index constants */
 #define NMO_SPECIALIZED_INDEX_INVALID ((uint32_t)UINT32_MAX)
@@ -238,7 +248,7 @@ typedef struct nmo_type_field {
     /* === Annotations (optional) === */
     nmo_field_semantic_t semantic;      /* Semantic hint */
     nmo_field_units_t units;            /* Unit of measurement */
-    const void *default_value;          /* Default value pointer (optional) */
+    const void *default_value;          /* Registry-owned default (type_allocator) */
 } nmo_type_field_t;
 
 /* ============================================================================
@@ -500,19 +510,34 @@ typedef struct nmo_type_descriptor {
 /**
  * @brief Per-type alias list tracking (registry-owned).
  */
+/* OWNERSHIP:
+ * - aliases array: arena (registry->arena)
+ * - alias strings: type_allocator
+ * - lifetime: registry
+ * - free: nmo_type_registry_destroy()/unregister
+ */
 typedef struct nmo_type_alias_list {
     const char **aliases;  /* Pointer array of alias strings */
     size_t count;          /* Number of aliases */
     size_t capacity;       /* Allocated alias slots */
+    uint16_t aliases_ownership;       /* Ownership of alias array */
+    uint16_t alias_string_ownership;  /* Ownership of alias strings */
 } nmo_type_alias_list_t;
 
 /**
  * @brief Per-type derived list tracking (registry-owned).
  */
+/* OWNERSHIP:
+ * - children array: type_allocator
+ * - lifetime: registry
+ * - free: nmo_type_registry_destroy()/unregister
+ */
 typedef struct nmo_type_child_list {
     nmo_type_id_t *children; /* Pointer array of child type IDs */
     size_t count;            /* Number of children */
     size_t capacity;         /* Allocated child slots */
+    uint16_t children_ownership;      /* Ownership of children array */
+    uint16_t _reserved;               /* Padding / future use */
 } nmo_type_child_list_t;
 
 /* ============================================================================
@@ -523,6 +548,13 @@ typedef struct nmo_type_child_list {
  * ============================================================================ */
 
 typedef struct nmo_type_registry {
+    /* OWNERSHIP:
+     * - owner: context/registry
+     * - allocator: arena for container storage, type_allocator for registry-owned data
+     * - lifetime: registry
+     * - free: nmo_type_registry_destroy()
+     * - thread: caller-synchronized
+     */
     /* === Type Storage === */
     nmo_arena_array_t types;     /* Type array (index = type_id) */
     
@@ -554,6 +586,7 @@ typedef struct nmo_type_registry {
     /* === Memory Management === */
     nmo_arena_t *arena;                 /* Arena allocator */
     nmo_allocator_t type_allocator;     /* Allocator for type-owned data */
+    nmo_allocator_debug_t type_allocator_debug; /* Debug tracking wrapper */
     
     /* === Statistics === */
     size_t builtin_count;               /* Built-in types */
@@ -565,10 +598,19 @@ typedef struct nmo_type_registry {
  * Type Registry API
  * ============================================================================ */
 
+/* OWNERSHIP (Type Registry API):
+ * - registry returned by create(): caller-owned, destroy with nmo_type_registry_destroy()
+ * - descriptors/arrays returned by lookup APIs: registry-owned, do not free
+ * - any const pointer returned by this header is borrowed unless stated
+ * - inputs to register APIs are deep-copied into type_allocator unless documented
+ * - thread: caller-synchronized
+ */
+
 /**
  * @brief Create type registry
  * @param arena Arena allocator for registry memory
  * @return New registry instance, or NULL on failure
+ * @note Returned registry is caller-owned.
  */
 nmo_type_registry_t* nmo_type_registry_create(nmo_arena_t *arena);
 
@@ -577,6 +619,7 @@ nmo_type_registry_t* nmo_type_registry_create(nmo_arena_t *arena);
  * @param arena Arena allocator for registry memory
  * @param type_allocator Allocator for type-owned data (descriptors, strings, fields)
  * @return New registry instance, or NULL on failure
+ * @note Returned registry is caller-owned.
  */
 nmo_type_registry_t* nmo_type_registry_create_ex(nmo_arena_t *arena, nmo_allocator_t type_allocator);
 
@@ -595,6 +638,7 @@ void nmo_type_registry_destroy(nmo_type_registry_t *registry);
  * @param registry Registry
  * @param descriptor Type descriptor to register
  * @return nmo_ok() on success, error on failure
+ * @note Descriptor contents are deep-copied into the registry.
  */
 nmo_status_t nmo_type_registry_register(
     nmo_type_registry_t *registry,
@@ -609,6 +653,7 @@ nmo_status_t nmo_type_registry_register(
  * @param registry Registry
  * @param guid Type GUID to unregister
  * @return nmo_ok() on success, error if not found
+ * @note Does not take ownership of inputs.
  */
 nmo_status_t nmo_type_registry_unregister(
     nmo_type_registry_t *registry,
@@ -623,6 +668,7 @@ nmo_status_t nmo_type_registry_unregister(
  * @param registry Registry
  * @param plugin_guid Plugin GUID
  * @return nmo_ok() on success
+ * @note Does not take ownership of inputs.
  */
 nmo_status_t nmo_type_registry_unregister_plugin_types(
     nmo_type_registry_t *registry,
@@ -634,6 +680,7 @@ nmo_status_t nmo_type_registry_unregister_plugin_types(
  * @param registry Registry
  * @param guid Type GUID
  * @return Type descriptor, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_type_descriptor_t* nmo_type_registry_find_by_guid(
     const nmo_type_registry_t *registry,
@@ -647,6 +694,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_guid(
  * @param registry Registry
  * @param name Type name
  * @return Type descriptor, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_type_descriptor_t* nmo_type_registry_find_by_name(
     const nmo_type_registry_t *registry,
@@ -660,8 +708,9 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_name(
  *
  * @param registry Registry
  * @param type_id Type ID to alias
- * @param alias Alias string (will be copied into the registry arena)
+ * @param alias Alias string (will be copied into registry-owned storage)
  * @return nmo_ok() on success, error on failure
+ * @note Alias string is copied; caller retains ownership of input string.
  */
 nmo_status_t nmo_type_registry_add_name_alias(
     nmo_type_registry_t *registry,
@@ -676,6 +725,7 @@ nmo_status_t nmo_type_registry_add_name_alias(
  * @param registry Registry
  * @param class_id Virtools CK_CLASSID
  * @return Type descriptor, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
     const nmo_type_registry_t *registry,
@@ -690,9 +740,10 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
  * @param registry Registry
  * @param class_id Virtools CK_CLASSID
  * @return Type descriptor (possibly parent class), or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
-    nmo_type_registry_t *registry,
+    const nmo_type_registry_t *registry,
     uint32_t class_id);
 
 /**
@@ -701,6 +752,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
  * @param registry Registry
  * @param id Type ID
  * @return Type descriptor, or NULL if invalid ID
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_type_descriptor_t* nmo_type_registry_get_by_id(
     const nmo_type_registry_t *registry,
@@ -721,6 +773,7 @@ const nmo_type_descriptor_t* nmo_type_registry_get_by_id(
  * @param child_id Child type ID
  * @param parent_id Parent type ID
  * @return true if child_id derives from parent_id (or is same type)
+ * @note Does not allocate; no ownership transfer.
  */
 bool nmo_type_is_derived_from(
     nmo_type_registry_t *registry,
@@ -739,6 +792,7 @@ bool nmo_type_is_derived_from(
  * @param out_count Output: length of chain
  * @param arena Arena allocator for output array
  * @return nmo_ok() on success
+ * @note out_chain is arena-owned; free by destroying the arena.
  */
 nmo_status_t nmo_type_get_inheritance_chain(
     const nmo_type_registry_t *registry,
@@ -761,6 +815,7 @@ nmo_status_t nmo_type_get_inheritance_chain(
  * @param type1 First type ID
  * @param type2 Second type ID
  * @return true if compatible (type1 can be used as type2 or vice versa)
+ * @note Does not allocate; no ownership transfer.
  */
 bool nmo_type_is_compatible(
     nmo_type_registry_t *registry,
@@ -774,6 +829,7 @@ bool nmo_type_is_compatible(
  * @param child_id Child type ID
  * @param parent_id Parent type ID
  * @return Depth (1=direct parent, 2=grandparent, etc), or -1 if not derived
+ * @note Does not allocate; no ownership transfer.
  */
 int32_t nmo_type_get_derivation_depth(
     nmo_type_registry_t *registry,
@@ -787,6 +843,7 @@ int32_t nmo_type_get_derivation_depth(
  *
  * @param registry Registry
  * @return nmo_ok() on success
+ * @note After finalize, registry is read-mostly and safe for concurrent reads.
  */
 nmo_status_t nmo_type_registry_finalize(nmo_type_registry_t *registry);
 
@@ -817,6 +874,7 @@ nmo_status_t nmo_type_registry_finalize(nmo_type_registry_t *registry);
  * @param registry Registry
  * @param guid Type GUID
  * @return Type ID, or NMO_TYPE_ID_INVALID if not found
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_type_id_t nmo_type_registry_guid_to_type_id(
     const nmo_type_registry_t *registry,
@@ -829,6 +887,7 @@ nmo_type_id_t nmo_type_registry_guid_to_type_id(
  * @param type_id Type ID
  * @param out_guid Output: Type GUID
  * @return nmo_ok() on success, error if invalid ID
+ * @note Does not allocate; out_guid is caller-owned.
  */
 nmo_status_t nmo_type_registry_type_id_to_guid(
     const nmo_type_registry_t *registry,
@@ -841,6 +900,7 @@ nmo_status_t nmo_type_registry_type_id_to_guid(
  * @param registry Registry
  * @param guid Type GUID
  * @return Type name, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const char* nmo_type_registry_guid_to_name(
     const nmo_type_registry_t *registry,
@@ -853,6 +913,7 @@ const char* nmo_type_registry_guid_to_name(
  * @param name Type name
  * @param out_guid Output: Type GUID
  * @return nmo_ok() on success, error if not found
+ * @note Does not allocate; out_guid is caller-owned.
  */
 nmo_status_t nmo_type_registry_name_to_guid(
     const nmo_type_registry_t *registry,
@@ -865,6 +926,7 @@ nmo_status_t nmo_type_registry_name_to_guid(
  * @param registry Registry
  * @param type_id Type ID
  * @return Type name, or NULL if invalid ID
+ * @note Returned pointer is registry-owned; do not free.
  */
 const char* nmo_type_registry_type_id_to_name(
     const nmo_type_registry_t *registry,
@@ -876,6 +938,7 @@ const char* nmo_type_registry_type_id_to_name(
  * @param registry Registry
  * @param name Type name
  * @return Type ID, or NMO_TYPE_ID_INVALID if not found
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_type_id_t nmo_type_registry_name_to_type_id(
     const nmo_type_registry_t *registry,
@@ -888,6 +951,7 @@ nmo_type_id_t nmo_type_registry_name_to_type_id(
  * @param class_id Virtools CK_CLASSID
  * @param out_guid Output: Type GUID
  * @return nmo_ok() on success, error if not found
+ * @note Does not allocate; out_guid is caller-owned.
  */
 nmo_status_t nmo_type_registry_class_id_to_guid(
     const nmo_type_registry_t *registry,
@@ -901,6 +965,7 @@ nmo_status_t nmo_type_registry_class_id_to_guid(
  * @param guid Type GUID
  * @param out_class_id Output: Virtools CK_CLASSID
  * @return nmo_ok() on success, error if not found or type has no ClassID
+ * @note Does not allocate; out_class_id is caller-owned.
  */
 nmo_status_t nmo_type_registry_guid_to_class_id(
     const nmo_type_registry_t *registry,
@@ -914,6 +979,7 @@ nmo_status_t nmo_type_registry_guid_to_class_id(
  * @param type_id Type ID
  * @param out_class_id Output: Virtools CK_CLASSID
  * @return nmo_ok() on success, error if invalid ID or type has no ClassID
+ * @note Does not allocate; out_class_id is caller-owned.
  */
 nmo_status_t nmo_type_registry_type_id_to_class_id(
     const nmo_type_registry_t *registry,
@@ -926,6 +992,7 @@ nmo_status_t nmo_type_registry_type_id_to_class_id(
  * @param registry Registry
  * @param class_id Virtools CK_CLASSID
  * @return Type ID, or NMO_TYPE_ID_INVALID if not found
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_type_id_t nmo_type_registry_class_id_to_type_id(
     const nmo_type_registry_t *registry,
@@ -938,6 +1005,7 @@ nmo_type_id_t nmo_type_registry_class_id_to_type_id(
  * Reference: CKParameterManager::UpdateDerivationTables, lines 1265-1276
  * 
  * @param registry Registry
+ * @note Does not allocate; no ownership transfer.
  */
 void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry);
 
@@ -951,6 +1019,7 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry);
  * Should be called after all types are registered.
  * 
  * @param registry Registry
+ * @note Does not allocate; no ownership transfer.
  */
 void nmo_type_registry_compute_state_layouts(nmo_type_registry_t *registry);
 
@@ -964,6 +1033,7 @@ void nmo_type_registry_compute_state_layouts(nmo_type_registry_t *registry);
  * @param derived_type The derived type whose state layout we're querying
  * @param ancestor_type The ancestor type whose offset we want
  * @return Byte offset, or (uint32_t)-1 if not found
+ * @note Does not allocate; no ownership transfer.
  */
 uint32_t nmo_type_get_state_offset(
     const nmo_type_registry_t *registry,
@@ -977,6 +1047,7 @@ uint32_t nmo_type_get_state_offset(
  * @param total_types Output: total types
  * @param builtin_types Output: built-in types
  * @param plugin_types Output: plugin types
+ * @note Does not allocate; outputs are caller-owned.
  */
 void nmo_type_registry_get_stats(
     const nmo_type_registry_t *registry,
@@ -993,6 +1064,7 @@ void nmo_type_registry_get_stats(
  * 
  * @param registry Registry
  * @return Total number of valid types
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_type_count(const nmo_type_registry_t *registry);
 
@@ -1001,6 +1073,7 @@ size_t nmo_type_registry_get_type_count(const nmo_type_registry_t *registry);
  * 
  * @param registry Registry
  * @return Number of builtin types
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_builtin_count(const nmo_type_registry_t *registry);
 
@@ -1009,6 +1082,7 @@ size_t nmo_type_registry_get_builtin_count(const nmo_type_registry_t *registry);
  * 
  * @param registry Registry
  * @return Number of plugin-registered types
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_plugin_type_count(const nmo_type_registry_t *registry);
 
@@ -1017,6 +1091,7 @@ size_t nmo_type_registry_get_plugin_type_count(const nmo_type_registry_t *regist
  * 
  * @param registry Registry
  * @return Number of Flags types
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_flags_count(const nmo_type_registry_t *registry);
 
@@ -1025,6 +1100,7 @@ size_t nmo_type_registry_get_flags_count(const nmo_type_registry_t *registry);
  * 
  * @param registry Registry
  * @return Number of Enum types
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_enum_count(const nmo_type_registry_t *registry);
 
@@ -1033,6 +1109,7 @@ size_t nmo_type_registry_get_enum_count(const nmo_type_registry_t *registry);
  * 
  * @param registry Registry
  * @return Number of Struct types
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_struct_count(const nmo_type_registry_t *registry);
 
@@ -1043,6 +1120,7 @@ size_t nmo_type_registry_get_struct_count(const nmo_type_registry_t *registry);
  * 
  * @param registry Registry
  * @return Estimated memory usage in bytes
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_memory_usage(const nmo_type_registry_t *registry);
 
@@ -1055,6 +1133,7 @@ size_t nmo_type_registry_get_memory_usage(const nmo_type_registry_t *registry);
  * @param registry Registry
  * @param guid Type GUID
  * @return true if type should be visible in UI, false otherwise
+ * @note Does not allocate; no ownership transfer.
  */
 bool nmo_type_registry_is_ui_visible(
     const nmo_type_registry_t *registry,
@@ -1066,6 +1145,7 @@ bool nmo_type_registry_is_ui_visible(
  * @param registry Registry
  * @param type_id Type ID
  * @return true if type should be visible in UI, false otherwise
+ * @note Does not allocate; no ownership transfer.
  */
 bool nmo_type_registry_is_ui_visible_by_id(
     const nmo_type_registry_t *registry,
@@ -1080,6 +1160,7 @@ bool nmo_type_registry_is_ui_visible_by_id(
  * @param guid Type GUID
  * @param visible true to make visible, false to hide
  * @return nmo_ok() on success, error if type not found
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_set_ui_visibility(
     nmo_type_registry_t *registry,
@@ -1095,8 +1176,9 @@ nmo_status_t nmo_type_registry_set_ui_visibility(
  * 
  * @param registry Registry
  * @param metadata Metadata container (enum/struct/flags). Contents are
- *        deep-copied into the registry arena, so caller buffers may be temporary.
+ *        deep-copied into registry-owned storage, so caller buffers may be temporary.
  * @return nmo_ok() on success
+ * @note Metadata is deep-copied into the registry; caller retains ownership.
  */
 nmo_status_t nmo_type_registry_register_metadata(
     nmo_type_registry_t *registry,
@@ -1108,6 +1190,7 @@ nmo_status_t nmo_type_registry_register_metadata(
  * @param registry Registry
  * @param type_id Type ID
  * @return Metadata container, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_specialized_metadata_t* nmo_type_registry_get_metadata(
     const nmo_type_registry_t *registry,
@@ -1118,6 +1201,7 @@ const nmo_specialized_metadata_t* nmo_type_registry_get_metadata(
  * 
  * @param registry Registry
  * @param type_id Type ID
+ * @note Does not take ownership of inputs.
  */
 void nmo_type_registry_unregister_metadata(
     nmo_type_registry_t *registry,
@@ -1137,6 +1221,7 @@ void nmo_type_registry_unregister_metadata(
  * @param type_id Type ID
  * @param plugin_guid Plugin GUID
  * @return nmo_ok() on success
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_set_creator_plugin(
     nmo_type_registry_t *registry,
@@ -1152,6 +1237,7 @@ nmo_status_t nmo_type_registry_set_creator_plugin(
  * @param registry Registry
  * @param base_guid Base type GUID
  * @return nmo_ok() on success
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_unregister_derived(
     nmo_type_registry_t *registry,
@@ -1166,6 +1252,7 @@ nmo_status_t nmo_type_registry_unregister_derived(
  * @param registry Registry
  * @param guid Type GUID
  * @return nmo_ok() on success
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_invalidate(
     nmo_type_registry_t *registry,
@@ -1191,6 +1278,8 @@ nmo_status_t nmo_type_registry_invalidate(
  * @param deserialize Deserialize callback function
  * @param manager_context Manager-specific context (optional)
  * @return nmo_ok() on success, error if GUID already registered
+ * @note Manager name is copied into the registry arena.
+ * @note Serialize/deserialize callbacks must remain valid while registered.
  */
 nmo_status_t nmo_type_registry_register_saver_manager(
     nmo_type_registry_t *registry,
@@ -1209,6 +1298,7 @@ nmo_status_t nmo_type_registry_register_saver_manager(
  * @param registry Type registry
  * @param manager_guid Manager GUID
  * @return nmo_ok() on success, error if not found
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_unregister_saver_manager(
     nmo_type_registry_t *registry,
@@ -1220,6 +1310,7 @@ nmo_status_t nmo_type_registry_unregister_saver_manager(
  * @param registry Type registry
  * @param manager_guid Manager GUID
  * @return Manager descriptor, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_saver_manager_t* nmo_type_registry_get_saver_manager(
     const nmo_type_registry_t *registry,
@@ -1235,6 +1326,7 @@ const nmo_saver_manager_t* nmo_type_registry_get_saver_manager(
  * @param type_guid Type GUID
  * @param manager_guid Manager GUID
  * @return nmo_ok() on success, error if type or manager not found
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_set_type_manager(
     nmo_type_registry_t *registry,
@@ -1247,6 +1339,7 @@ nmo_status_t nmo_type_registry_set_type_manager(
  * @param registry Type registry
  * @param type_guid Type GUID
  * @return Manager descriptor, or NULL if no manager assigned
+ * @note Returned pointer is registry-owned; do not free.
  */
 const nmo_saver_manager_t* nmo_type_registry_get_type_manager(
     const nmo_type_registry_t *registry,
@@ -1260,6 +1353,7 @@ const nmo_saver_manager_t* nmo_type_registry_get_type_manager(
  * @param registry Type registry
  * @param type_guid Type GUID
  * @return nmo_ok() on success
+ * @note Does not allocate; no ownership transfer.
  */
 nmo_status_t nmo_type_registry_clear_type_manager(
     nmo_type_registry_t *registry,
@@ -1270,6 +1364,7 @@ nmo_status_t nmo_type_registry_clear_type_manager(
  * 
  * @param registry Type registry
  * @return Number of registered saver managers
+ * @note Does not allocate; no ownership transfer.
  */
 size_t nmo_type_registry_get_manager_count(const nmo_type_registry_t *registry);
 

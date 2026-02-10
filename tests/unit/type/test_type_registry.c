@@ -696,6 +696,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_registry, get_by_id);
     REGISTER_TEST(type_registry, find_by_class_id_direct);
     REGISTER_TEST(type_registry, unregister_removes_lookups);
+    REGISTER_TEST(type_registry, unregister_removes_aliases);
     REGISTER_TEST(type_registry, slot_recycling);
     REGISTER_TEST(type_registry, slot_recycling_clears_class_id_map);
     REGISTER_TEST(type_registry, unregister_clears_type_manager_mapping);

@@ -17,6 +17,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_bit_array.h"
+#include "core/nmo_debug.h"
 #include <string.h>
 #include <assert.h>
 #include <stddef.h>
@@ -217,6 +218,9 @@ static void free_alias_list(nmo_type_registry_t *registry, nmo_type_id_t type_id
         return;
     }
 
+    NMO_OWNERSHIP_EXPECT(list->aliases_ownership, NMO_OWNERSHIP_ARENA);
+    NMO_OWNERSHIP_EXPECT(list->alias_string_ownership, NMO_OWNERSHIP_HEAP);
+
     for (size_t i = 0; i < list->count; i++) {
         if (list->aliases[i]) {
             nmo_free(&registry->type_allocator, (void *)list->aliases[i]);
@@ -283,6 +287,8 @@ static void free_child_list(nmo_type_registry_t *registry, nmo_type_id_t type_id
         return;
     }
 
+    NMO_OWNERSHIP_EXPECT(list->children_ownership, NMO_OWNERSHIP_HEAP);
+
     if (list->children) {
         nmo_free(&registry->type_allocator, list->children);
         list->children = NULL;
@@ -308,8 +314,16 @@ static void free_type_storage(
         type->name = NULL;
     }
 
+    const bool is_incomplete_struct_state =
+        (type->category == NMO_TYPE_CATEGORY_STRUCT) &&
+        (type->valid == false) &&
+        (type->fields == NULL) &&
+        (type->field_count == 0);
+
     if (type->description) {
-        nmo_free(&registry->type_allocator, (void *)type->description);
+        if (!is_incomplete_struct_state) {
+            nmo_free(&registry->type_allocator, (void *)type->description);
+        }
         type->description = NULL;
     }
 
@@ -325,7 +339,7 @@ static void free_type_storage(
                 fields[i].description = NULL;
             }
             if (fields[i].default_value) {
-                nmo_free(&registry->type_allocator, fields[i].default_value);
+                nmo_free(&registry->type_allocator, (void *)fields[i].default_value);
                 fields[i].default_value = NULL;
             }
         }
@@ -466,7 +480,11 @@ nmo_type_registry_t* nmo_type_registry_create_ex(nmo_arena_t *arena, nmo_allocat
     memset(registry, 0, sizeof(nmo_type_registry_t));
     
     registry->arena = arena;
-    registry->type_allocator = type_allocator;
+    registry->type_allocator = nmo_allocator_debug_init(
+        &registry->type_allocator_debug,
+        type_allocator,
+        "type_registry",
+        "type_allocator");
     registry->derivation_masks_valid = false;
 
     // Initialize type array
@@ -720,12 +738,13 @@ nmo_status_t nmo_type_registry_register(
         type->name = name_copy;
     }
     if (type->description) {
-        const bool is_incomplete_struct =
+        const bool is_incomplete_struct_state =
             (type->category == NMO_TYPE_CATEGORY_STRUCT) &&
             (type->valid == false) &&
-            (type->fields == NULL) &&
-            (type->field_count == 0);
-        if (!is_incomplete_struct) {
+            (source_fields == NULL) &&
+            (source_field_count == 0);
+
+        if (!is_incomplete_struct_state) {
             char *desc_copy = allocator_strdup(&registry->type_allocator, type->description);
             if (!desc_copy) {
                 free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
@@ -793,10 +812,13 @@ nmo_status_t nmo_type_registry_register(
         nmo_type_alias_list_t *alias_list = get_alias_list(registry, (nmo_type_id_t)slot);
         if (alias_list) {
             alias_list->count = 0;
+            alias_list->aliases_ownership = NMO_OWNERSHIP_ARENA;
+            alias_list->alias_string_ownership = NMO_OWNERSHIP_HEAP;
         }
         nmo_type_child_list_t *child_list = get_child_list(registry, (nmo_type_id_t)slot);
         if (child_list) {
             child_list->count = 0;
+            child_list->children_ownership = NMO_OWNERSHIP_HEAP;
         }
     } else {
         // Append new slot
@@ -806,6 +828,8 @@ nmo_status_t nmo_type_registry_register(
             return res;
         }
         nmo_type_alias_list_t alias_list = {0};
+        alias_list.aliases_ownership = NMO_OWNERSHIP_ARENA;
+        alias_list.alias_string_ownership = NMO_OWNERSHIP_HEAP;
         res = nmo_arena_array_append(&registry->alias_lists, &alias_list);
         if (res != NMO_OK) {
             nmo_arena_array_pop(&registry->types, NULL);
@@ -813,6 +837,7 @@ nmo_status_t nmo_type_registry_register(
             return res;
         }
         nmo_type_child_list_t child_list = {0};
+        child_list.children_ownership = NMO_OWNERSHIP_HEAP;
         res = nmo_arena_array_append(&registry->child_lists, &child_list);
         if (res != NMO_OK) {
             nmo_arena_array_pop(&registry->alias_lists, NULL);
@@ -1119,25 +1144,27 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id(
 }
 
 const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
-    nmo_type_registry_t *registry,
+    const nmo_type_registry_t *registry,
     uint32_t class_id)
 {
     if (!registry || class_id == 0) return NULL;
 
-    ensure_class_id_inherited_cache(registry);
+    nmo_type_registry_t *mutable_registry = (nmo_type_registry_t *)registry;
+
+    ensure_class_id_inherited_cache(mutable_registry);
 
     nmo_type_id_t cached_id = NMO_TYPE_ID_INVALID;
-    if (registry->class_id_inherited_map &&
-        nmo_hash_table_get(registry->class_id_inherited_map, &class_id, &cached_id) == NMO_OK) {
-        return nmo_type_registry_get_by_id(registry, cached_id);
+    if (mutable_registry->class_id_inherited_map &&
+        nmo_hash_table_get(mutable_registry->class_id_inherited_map, &class_id, &cached_id) == NMO_OK) {
+        return nmo_type_registry_get_by_id(mutable_registry, cached_id);
     }
 
     // First try direct lookup
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(registry, class_id);
     if (type) {
         nmo_type_id_t type_id = type->id;
-        if (registry->class_id_inherited_map) {
-            nmo_hash_table_insert(registry->class_id_inherited_map, &class_id, &type_id);
+        if (mutable_registry->class_id_inherited_map) {
+            nmo_hash_table_insert(mutable_registry->class_id_inherited_map, &class_id, &type_id);
         }
         return type;
     }
@@ -1146,16 +1173,16 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     uint32_t slow = class_id;
     uint32_t fast = class_id;
     while (true) {
-        slow = nmo_class_get_parent(registry, slow);
+        slow = nmo_class_get_parent(mutable_registry, slow);
         if (slow == 0) {
             break;
         }
 
-        fast = nmo_class_get_parent(registry, fast);
+        fast = nmo_class_get_parent(mutable_registry, fast);
         if (fast == 0) {
             break;
         }
-        fast = nmo_class_get_parent(registry, fast);
+        fast = nmo_class_get_parent(mutable_registry, fast);
         if (fast == 0) {
             break;
         }
@@ -1168,7 +1195,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     // Walk up class hierarchy to find parent with schema
     uint32_t current_class_id = class_id;
     while (true) {
-        uint32_t parent_id = nmo_class_get_parent(registry, current_class_id);
+        uint32_t parent_id = nmo_class_get_parent(mutable_registry, current_class_id);
         if (parent_id == 0) {
             break;
         }
@@ -1176,8 +1203,8 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
         type = nmo_type_registry_find_by_class_id(registry, parent_id);
         if (type) {
             nmo_type_id_t type_id = type->id;
-            if (registry->class_id_inherited_map) {
-                nmo_hash_table_insert(registry->class_id_inherited_map, &class_id, &type_id);
+            if (mutable_registry->class_id_inherited_map) {
+                nmo_hash_table_insert(mutable_registry->class_id_inherited_map, &class_id, &type_id);
             }
             return type;
         }

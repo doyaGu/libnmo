@@ -1,5 +1,6 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
+#include "core/nmo_debug.h"
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
@@ -57,6 +58,10 @@ typedef struct nmo_arena {
     /* Statistics */
     size_t total_allocated;
     size_t bytes_used;
+
+    /* Scope markers (mark/rewind) */
+    size_t mark_depth;
+    uint32_t mark_epoch;
 } nmo_arena_t;
 
 static size_t nmo_arena_align_used(const nmo_arena_chunk_t *chunk, size_t alignment) {
@@ -136,6 +141,8 @@ nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_con
     arena->default_alignment = cfg.alignment;
     arena->total_allocated = 0;
     arena->bytes_used = 0;
+    arena->mark_depth = 0;
+    arena->mark_epoch = 1;
 
     // Create first chunk
     arena->first = arena_create_chunk(&alloc, cfg.initial_block_size);
@@ -265,6 +272,11 @@ void nmo_arena_reset(nmo_arena_t *arena) {
 
     arena->current = arena->first;
     arena->bytes_used = 0;
+    arena->mark_depth = 0;
+    arena->mark_epoch++;
+    if (arena->mark_epoch == 0) {
+        arena->mark_epoch = 1;
+    }
 }
 
 void nmo_arena_destroy(nmo_arena_t *arena) {
@@ -290,6 +302,60 @@ size_t nmo_arena_total_allocated(nmo_arena_t *arena) {
 
 size_t nmo_arena_bytes_used(nmo_arena_t *arena) {
     return arena ? arena->bytes_used : 0;
+}
+
+int nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
+    if (arena == NULL || out_mark == NULL || arena->current == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    out_mark->arena = arena;
+    out_mark->chunk = arena->current;
+    out_mark->chunk_used = arena->current->used;
+    out_mark->bytes_used = arena->bytes_used;
+    out_mark->mark_epoch = arena->mark_epoch;
+    out_mark->mark_depth = ++arena->mark_depth;
+    return NMO_OK;
+}
+
+int nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) {
+    if (arena == NULL || mark == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (mark->arena != arena ||
+        mark->mark_epoch != arena->mark_epoch ||
+        mark->mark_depth == 0 ||
+        mark->mark_depth != arena->mark_depth) {
+        NMO_DEBUG_ASSERT(0 && "Invalid arena rewind mark (arena/epoch/LIFO mismatch)");
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_arena_chunk_t *target = (nmo_arena_chunk_t *)mark->chunk;
+    if (target == NULL || mark->chunk_used > target->size) {
+        NMO_DEBUG_ASSERT(0 && "Invalid arena rewind mark payload");
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_arena_chunk_t *cursor = arena->first;
+    while (cursor != NULL && cursor != target) {
+        cursor = cursor->next;
+    }
+    if (cursor == NULL) {
+        NMO_DEBUG_ASSERT(0 && "Arena rewind target chunk not found");
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    target->used = mark->chunk_used;
+    for (nmo_arena_chunk_t *chunk = target->next; chunk != NULL; chunk = chunk->next) {
+        chunk->used = 0;
+    }
+
+    arena->current = target;
+    arena->bytes_used = mark->bytes_used;
+    arena->next_chunk_size = target->size;
+    arena->mark_depth--;
+    return NMO_OK;
 }
 
 /**

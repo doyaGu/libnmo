@@ -121,7 +121,7 @@ static int test_basic_round_trip(void) {
         }
 
         if (nmo_object_set_name(obj, "TestObject") != NMO_OK ||
-            nmo_object_repository_add(save_repo, obj) != NMO_OK) {
+            nmo_object_repository_add(save_repo, &obj) != NMO_OK) {
             nmo_object_destroy(obj);
             nmo_session_destroy(save_session);
             nmo_context_release(ctx);
@@ -227,7 +227,7 @@ static int test_manager_hooks(void) {
         return 1;
     }
     if (nmo_object_set_name(obj, "HookedObject") != NMO_OK ||
-        nmo_object_repository_add(save_repo, obj) != NMO_OK) {
+        nmo_object_repository_add(save_repo, &obj) != NMO_OK) {
         nmo_object_destroy(obj);
         nmo_session_destroy(save_session);
         nmo_context_release(ctx);

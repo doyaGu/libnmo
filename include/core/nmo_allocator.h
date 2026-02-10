@@ -67,6 +67,17 @@ typedef struct nmo_allocator_tracking {
 } nmo_allocator_tracking_t;
 
 /**
+ * @brief Debug allocator context
+ *
+ * Records allocator origin for runtime validation in Debug builds.
+ */
+typedef struct nmo_allocator_debug {
+    nmo_allocator_t base;   /**< Base allocator to wrap */
+    const char *module;     /**< Allocator origin module */
+    const char *tag;        /**< Allocator usage tag */
+} nmo_allocator_debug_t;
+
+/**
  * @brief Create default system allocator
  *
  * Returns an allocator that uses malloc/free.
@@ -99,6 +110,23 @@ NMO_API nmo_allocator_t nmo_allocator_custom(nmo_alloc_fn alloc, nmo_free_fn fre
 NMO_API nmo_allocator_t nmo_allocator_tracking_init(nmo_allocator_tracking_t *tracking,
                                                      nmo_allocator_t base,
                                                      nmo_allocator_stats_t *stats);
+
+/**
+ * @brief Create a debug allocator wrapper
+ *
+ * Records module/tag metadata per allocation and validates matching frees.
+ * In non-Debug builds, this behaves like a normal wrapper without assertions.
+ *
+ * @param debug Debug context storage (required)
+ * @param base Base allocator to wrap
+ * @param module Allocator origin module (string literal recommended)
+ * @param tag Allocator usage tag (string literal recommended)
+ * @return Debug allocator instance
+ */
+NMO_API nmo_allocator_t nmo_allocator_debug_init(nmo_allocator_debug_t *debug,
+                                                  nmo_allocator_t base,
+                                                  const char *module,
+                                                  const char *tag);
 
 /**
  * @brief Reset allocator statistics to zero.

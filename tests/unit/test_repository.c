@@ -33,19 +33,23 @@ TEST(repository, add_find_by_id) {
     nmo_object_t* obj2 = nmo_object_create(&allocator, (nmo_object_id_t)200, (nmo_class_id_t)0x00000002);
     ASSERT_NOT_NULL(obj2);
     
-    int result = nmo_object_repository_add(repo, obj1);
+    int result = nmo_object_repository_add(repo, &obj1);
     ASSERT_EQ(result, NMO_OK);
     
-    result = nmo_object_repository_add(repo, obj2);
+    result = nmo_object_repository_add(repo, &obj2);
     ASSERT_EQ(result, NMO_OK);
+    ASSERT_NULL(obj1);
+    ASSERT_NULL(obj2);
     
     ASSERT_EQ(nmo_object_repository_get_count(repo), 2);
     
     nmo_object_t* found1 = nmo_object_repository_find_by_id(repo, (nmo_object_id_t)100);
-    ASSERT_EQ(found1, obj1);
+    ASSERT_NOT_NULL(found1);
+    ASSERT_EQ(found1->id, 100);
     
     nmo_object_t* found2 = nmo_object_repository_find_by_id(repo, (nmo_object_id_t)200);
-    ASSERT_EQ(found2, obj2);
+    ASSERT_NOT_NULL(found2);
+    ASSERT_EQ(found2->id, 200);
     
     nmo_object_repository_destroy(repo);
 }
@@ -59,10 +63,11 @@ TEST(repository, find_by_name) {
     ASSERT_NOT_NULL(obj);
     nmo_object_set_name(obj, "TestObject");
     
-    nmo_object_repository_add(repo, obj);
+    nmo_object_repository_add(repo, &obj);
     
     nmo_object_t* found = nmo_object_repository_find_by_name(repo, "TestObject");
-    ASSERT_EQ(found, obj);
+    ASSERT_NOT_NULL(found);
+    ASSERT_EQ(found->id, 100);
     
     found = nmo_object_repository_find_by_name(repo, "NonExistent");
     ASSERT_NULL(found);
@@ -85,9 +90,9 @@ TEST(repository, find_by_class) {
     nmo_object_t* obj3 = nmo_object_create(&allocator, (nmo_object_id_t)300, (nmo_class_id_t)0x00000002);  // CKBeObject
     ASSERT_NOT_NULL(obj3);
     
-    nmo_object_repository_add(repo, obj1);
-    nmo_object_repository_add(repo, obj2);
-    nmo_object_repository_add(repo, obj3);
+    nmo_object_repository_add(repo, &obj1);
+    nmo_object_repository_add(repo, &obj2);
+    nmo_object_repository_add(repo, &obj3);
     
     size_t count = 0;
     nmo_object_t** found = nmo_object_repository_find_by_class(repo, (nmo_class_id_t)0x00000001, &count);
@@ -114,7 +119,7 @@ TEST(repository, remove) {
     nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)100, (nmo_class_id_t)0x00000001);
     ASSERT_NOT_NULL(obj);
     
-    nmo_object_repository_add(repo, obj);
+    nmo_object_repository_add(repo, &obj);
     
     ASSERT_EQ(nmo_object_repository_get_count(repo), 1);
     
@@ -139,7 +144,7 @@ TEST(repository, growth) {
         nmo_object_t* obj = nmo_object_create(&allocator, (nmo_object_id_t)(1000 + i), (nmo_class_id_t)0x00000001);
         ASSERT_NOT_NULL(obj);
         
-        int result = nmo_object_repository_add(repo, obj);
+        int result = nmo_object_repository_add(repo, &obj);
         ASSERT_EQ(result, NMO_OK);
     }
     

@@ -76,11 +76,12 @@ static nmo_object_t *create_test_object(
         nmo_object_set_name(obj, name);
     }
 
-    if (nmo_object_repository_add(f->repo, obj) != NMO_OK) {
+    nmo_object_t *repo_obj = obj;
+    if (nmo_object_repository_add(f->repo, &obj) != NMO_OK) {
         nmo_object_destroy(obj);
         return NULL;
     }
-    return obj;
+    return repo_obj;
 }
 
 /* ==================== Tests ==================== */

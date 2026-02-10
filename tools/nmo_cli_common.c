@@ -11,10 +11,27 @@
 #ifdef _WIN32
 #include <io.h>
 #define isatty _isatty
-#define fileno _fileno
 #else
 #include <unistd.h>
 #endif
+
+static int nmo_cli_stream_isatty(FILE *stream) {
+    if (stream == stdout) {
+#ifdef _WIN32
+        return isatty(_fileno(stdout));
+#else
+        return isatty(STDOUT_FILENO);
+#endif
+    }
+    if (stream == stderr) {
+#ifdef _WIN32
+        return isatty(_fileno(stderr));
+#else
+        return isatty(STDERR_FILENO);
+#endif
+    }
+    return 0;
+}
 
 void nmo_cli_global_opts_init(nmo_cli_global_opts_t *opts) {
     if (!opts) {
@@ -270,7 +287,7 @@ bool nmo_cli_should_colorize(const nmo_cli_global_opts_t *opts, FILE *stream) {
         return false;
     case NMO_CLI_COLOR_AUTO:
     default:
-        return isatty(fileno(stream)) != 0;
+        return nmo_cli_stream_isatty(stream) != 0;
     }
 }
 

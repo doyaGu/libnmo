@@ -22,6 +22,13 @@ extern "C" {
 /**
  * @brief Object index structure (opaque)
  */
+/* OWNERSHIP:
+ * - owner: caller
+ * - allocator: arena
+ * - lifetime: until nmo_object_index_destroy()
+ * - free: nmo_object_index_destroy()
+ * - thread: caller-synchronized
+ */
 typedef struct nmo_object_index nmo_object_index_t;
 
 /**
@@ -53,6 +60,7 @@ typedef struct nmo_index_stats {
  * @param repo Object repository to index
  * @param arena Arena for memory allocation
  * @return New index or NULL on error
+ * @note Returned index is caller-owned; arena owns internal allocations.
  * 
  * Reference: CKFile constructor initializes m_IndexByClassId
  */
@@ -154,6 +162,7 @@ NMO_API uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *ind
  * @param class_id Class ID to search for
  * @param out_count Output: number of objects found
  * @return Array of object pointers (valid until next rebuild), or NULL if none found
+ * @note Returned array is index-owned; do not free.
  * 
  * Time complexity: O(1) average case with index, O(n) without index
  * 
@@ -210,6 +219,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name(
  *         If class_id != 0, the returned array is owned by the index and is valid until the
  *         next call to nmo_object_index_get_by_name_all() with a non-zero class_id, or until
  *         the index is destroyed.
+ * @note Returned array is index-owned; do not free.
  */
 NMO_API nmo_object_t **nmo_object_index_get_by_name_all(
     const nmo_object_index_t *index,
@@ -257,6 +267,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_guid(
  * @param guid Type GUID
  * @param out_count Output: number of objects found
  * @return Array of object pointers, or NULL if none found
+ * @note Returned array is index-owned; do not free.
  */
 NMO_API nmo_object_t **nmo_object_index_get_by_guid_all(
     const nmo_object_index_t *index,

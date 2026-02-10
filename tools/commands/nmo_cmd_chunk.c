@@ -467,7 +467,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
             const nmo_cli_chunk_entry_t *e = &entries[i];
             nmo_chunk_t *chunk = e->chunk;
 
-            char idx_buf[16], parent_buf[16], size_buf[16];
+            char idx_buf[32], parent_buf[32], size_buf[32];
             snprintf(idx_buf, sizeof(idx_buf), "%zu", i);
             if (e->parent_index >= 0) {
                 snprintf(parent_buf, sizeof(parent_buf), "%lld", (long long)e->parent_index);

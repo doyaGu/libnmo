@@ -24,6 +24,7 @@
 #include "object/nmo_ckobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -35,7 +36,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     ckparameter,
     nmo_ckparameter_state_t,
     do { \
-        state->mode = NMO_CKPARAM_MODE_NONE; \
+        state->mode = CKPARAM_MODE_NONE; \
         state->has_state = false; \
     } while (0),
     ((void)0))
@@ -52,7 +53,7 @@ static const nmo_type_field_t nmo_ckparameter_fields[] = {
                     sizeof(nmo_ckobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_ckparameter_state_t, type_guid, CKPGUID_GUID),
-    NMO_FIELD(nmo_ckparameter_state_t, mode, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckparameter_state_t, mode, NMO_GUID_ENUM_CK_PARAMETER_MODE),
     NMO_FIELD(nmo_ckparameter_state_t, has_state, CKPGUID_BOOL),
     NMO_FIELD_ARRAY(nmo_ckparameter_state_t, buffer_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_ckparameter_state_t, buffer_size, CKPGUID_UINT64),
@@ -137,12 +138,12 @@ nmo_status_t nmo_ckparameter_deserialize(
     out_state->has_state = true;
 
     if (param_state == 3) {
-        out_state->mode = NMO_CKPARAM_MODE_NONE;
+        out_state->mode = CKPARAM_MODE_NONE;
         NMO_RETURN_OK();
     }
 
     if (param_state == 0) {
-        out_state->mode = NMO_CKPARAM_MODE_SUBCHUNK;
+        out_state->mode = CKPARAM_MODE_SUBCHUNK;
         result = nmo_chunk_read_sub_chunk(chunk, &out_state->subchunk);
         if (result != NMO_OK) {
             out_state->subchunk = NULL;
@@ -151,7 +152,7 @@ nmo_status_t nmo_ckparameter_deserialize(
     }
 
     if (param_state == 2) {
-        out_state->mode = NMO_CKPARAM_MODE_OBJECT;
+        out_state->mode = CKPARAM_MODE_OBJECT;
         result = nmo_chunk_read_object_id(chunk, &out_state->object_id);
         if (result != NMO_OK) {
             return result;
@@ -160,7 +161,7 @@ nmo_status_t nmo_ckparameter_deserialize(
     }
 
     if (param_state == 1) {
-        out_state->mode = NMO_CKPARAM_MODE_BUFFER;
+        out_state->mode = CKPARAM_MODE_BUFFER;
         void *buffer_ptr = NULL;
         size_t buffer_size = 0;
         result = nmo_chunk_read_buffer(chunk, &buffer_ptr, &buffer_size);
@@ -175,7 +176,7 @@ nmo_status_t nmo_ckparameter_deserialize(
     }
 
     /* Manager-specific int mode: param_state is manager_guid.d1 */
-    out_state->mode = NMO_CKPARAM_MODE_MANAGER;
+    out_state->mode = CKPARAM_MODE_MANAGER;
     out_state->manager_guid.d1 = param_state;
     result = nmo_chunk_read_dword(chunk, &out_state->manager_guid.d2);
     if (result != NMO_OK) {
@@ -234,7 +235,7 @@ nmo_status_t nmo_ckparameter_serialize(
     /* Write parameter state and payload if present */
     if (!in_state->has_state) {
         bool inferred_has_state = false;
-        if (in_state->mode != NMO_CKPARAM_MODE_NONE ||
+        if (in_state->mode != CKPARAM_MODE_NONE ||
             in_state->buffer_size > 0 ||
             in_state->object_id != 0 ||
             in_state->subchunk != NULL ||
@@ -250,26 +251,26 @@ nmo_status_t nmo_ckparameter_serialize(
 
     /* Write parameter state and payload */
     switch (in_state->mode) {
-        case NMO_CKPARAM_MODE_NONE:
+        case CKPARAM_MODE_NONE:
             result = nmo_chunk_write_dword(out_chunk, 3);
             if (result != NMO_OK) return result;
             break;
 
-        case NMO_CKPARAM_MODE_SUBCHUNK:
+        case CKPARAM_MODE_SUBCHUNK:
             result = nmo_chunk_write_dword(out_chunk, 0);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_sub_chunk(out_chunk, in_state->subchunk);
             if (result != NMO_OK) return result;
             break;
 
-        case NMO_CKPARAM_MODE_OBJECT:
+        case CKPARAM_MODE_OBJECT:
             result = nmo_chunk_write_dword(out_chunk, 2);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_object_id(out_chunk, in_state->object_id);
             if (result != NMO_OK) return result;
             break;
 
-        case NMO_CKPARAM_MODE_MANAGER:
+        case CKPARAM_MODE_MANAGER:
             result = nmo_chunk_write_dword(out_chunk, in_state->manager_guid.d1);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, in_state->manager_guid.d2);
@@ -278,7 +279,7 @@ nmo_status_t nmo_ckparameter_serialize(
             if (result != NMO_OK) return result;
             break;
 
-        case NMO_CKPARAM_MODE_BUFFER:
+        case CKPARAM_MODE_BUFFER:
         default:
             result = nmo_chunk_write_dword(out_chunk, 1);
             if (result != NMO_OK) return result;

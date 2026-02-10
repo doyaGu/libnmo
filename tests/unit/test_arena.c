@@ -157,6 +157,63 @@ TEST(arena, allocation_data_integrity) {
     nmo_arena_destroy(arena);
 }
 
+TEST(arena, mark_rewind_bytes_used) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    void *base = nmo_arena_alloc(arena, 128, 8);
+    ASSERT_NOT_NULL(base);
+    size_t used_before_mark = nmo_arena_bytes_used(arena);
+    ASSERT_EQ(used_before_mark, 128u);
+
+    nmo_arena_mark_t mark;
+    ASSERT_EQ(NMO_OK, nmo_arena_mark(arena, &mark));
+
+    void *tmp1 = nmo_arena_alloc(arena, 256, 8);
+    void *tmp2 = nmo_arena_alloc(arena, 64, 8);
+    ASSERT_NOT_NULL(tmp1);
+    ASSERT_NOT_NULL(tmp2);
+    ASSERT_TRUE(nmo_arena_bytes_used(arena) > used_before_mark);
+
+    ASSERT_EQ(NMO_OK, nmo_arena_rewind(arena, &mark));
+    ASSERT_EQ(nmo_arena_bytes_used(arena), used_before_mark);
+
+    void *after_rewind = nmo_arena_alloc(arena, 64, 8);
+    ASSERT_NOT_NULL(after_rewind);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(arena, mark_rewind_across_chunks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 128);
+    ASSERT_NOT_NULL(arena);
+
+    void *first = nmo_arena_alloc(arena, 96, 8);
+    ASSERT_NOT_NULL(first);
+
+    nmo_arena_mark_t outer_mark;
+    ASSERT_EQ(NMO_OK, nmo_arena_mark(arena, &outer_mark));
+    size_t used_at_outer_mark = nmo_arena_bytes_used(arena);
+
+    void *spill = nmo_arena_alloc(arena, 512, 8);
+    ASSERT_NOT_NULL(spill);
+    ASSERT_TRUE(nmo_arena_bytes_used(arena) > used_at_outer_mark);
+
+    nmo_arena_mark_t inner_mark;
+    ASSERT_EQ(NMO_OK, nmo_arena_mark(arena, &inner_mark));
+    void *tail = nmo_arena_alloc(arena, 64, 8);
+    ASSERT_NOT_NULL(tail);
+
+    ASSERT_EQ(NMO_OK, nmo_arena_rewind(arena, &inner_mark));
+    ASSERT_EQ(NMO_OK, nmo_arena_rewind(arena, &outer_mark));
+    ASSERT_EQ(nmo_arena_bytes_used(arena), used_at_outer_mark);
+
+    void *reuse = nmo_arena_alloc(arena, 32, 8);
+    ASSERT_NOT_NULL(reuse);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, create_destroy);
     REGISTER_TEST(arena, create_with_custom_allocator);
@@ -169,4 +226,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, many_small_allocations);
     REGISTER_TEST(arena, zero_size_allocation);
     REGISTER_TEST(arena, allocation_data_integrity);
+    REGISTER_TEST(arena, mark_rewind_bytes_used);
+    REGISTER_TEST(arena, mark_rewind_across_chunks);
 TEST_MAIN_END()

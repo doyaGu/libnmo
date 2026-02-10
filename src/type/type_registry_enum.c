@@ -14,6 +14,8 @@
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
+#include "core/nmo_debug.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hash_table.h"
@@ -25,6 +27,19 @@
 /* ============================================================================
  * Helper Functions
  * ============================================================================ */
+
+static char *type_allocator_strdup(nmo_allocator_t *allocator, const char *src) {
+    if (!allocator || !src) {
+        return NULL;
+    }
+    const size_t len = strlen(src) + 1u;
+    char *dst = (char *)nmo_alloc(allocator, len, _Alignof(char));
+    if (!dst) {
+        return NULL;
+    }
+    memcpy(dst, src, len);
+    return dst;
+}
 
 /**
  * @brief Validate enum value definitions
@@ -211,7 +226,7 @@ nmo_status_t nmo_type_registry_register_enum(
     
     spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
     spec_meta->metadata_type = NMO_METADATA_TYPE_ENUM;
-    spec_meta->reserved = 0;
+    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
     spec_meta->enum_meta.values = enum_values;
     spec_meta->enum_meta.value_count = enum_def->value_count;
     
@@ -367,7 +382,7 @@ nmo_status_t nmo_type_registry_register_flags(
     
     spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
     spec_meta->metadata_type = NMO_METADATA_TYPE_FLAGS;
-    spec_meta->reserved = 0;
+    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
     spec_meta->flags_meta.bits = flags_bits;
     spec_meta->flags_meta.bit_count = flags_def->bit_count;
     
@@ -661,12 +676,24 @@ nmo_status_t nmo_type_registry_change_enum_string(
         NMO_RETURN_OK();
     }
 
+    NMO_OWNERSHIP_ASSERT_VALID(metadata->ownership);
+    const bool metadata_is_arena_owned = (metadata->ownership == NMO_OWNERSHIP_ARENA);
     nmo_arena_t *arena = type_registry->arena;
     size_t new_count = old_count + add_count;
-    nmo_enum_descriptor_t *new_values = (nmo_enum_descriptor_t *)nmo_arena_alloc(
-        arena,
-        sizeof(nmo_enum_descriptor_t) * new_count,
-        alignof(nmo_enum_descriptor_t));
+    const nmo_enum_descriptor_t *old_values = metadata->enum_meta.values;
+    nmo_enum_descriptor_t *new_values = NULL;
+
+    if (metadata_is_arena_owned) {
+        new_values = (nmo_enum_descriptor_t *)nmo_arena_alloc(
+            arena,
+            sizeof(nmo_enum_descriptor_t) * new_count,
+            alignof(nmo_enum_descriptor_t));
+    } else {
+        new_values = (nmo_enum_descriptor_t *)nmo_alloc(
+            &type_registry->type_allocator,
+            sizeof(nmo_enum_descriptor_t) * new_count,
+            alignof(nmo_enum_descriptor_t));
+    }
     if (!new_values) {
         nmo_arena_destroy(temp_arena);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -692,17 +719,43 @@ nmo_status_t nmo_type_registry_change_enum_string(
             continue;
         }
 
-        const char *name_copy = nmo_arena_strdup(arena, parsed_values[j].name);
-        if (!name_copy) {
+        const char *name_copy = NULL;
+        const char *desc_copy = NULL;
+
+        if (metadata_is_arena_owned) {
+            name_copy = nmo_arena_strdup(arena, parsed_values[j].name);
+            desc_copy = parsed_values[j].description ?
+                nmo_arena_strdup(arena, parsed_values[j].description) : NULL;
+        } else {
+            name_copy = type_allocator_strdup(&type_registry->type_allocator, parsed_values[j].name);
+            desc_copy = parsed_values[j].description ?
+                type_allocator_strdup(&type_registry->type_allocator, parsed_values[j].description) : NULL;
+        }
+
+        if (!name_copy || (parsed_values[j].description && !desc_copy)) {
+            if (!metadata_is_arena_owned) {
+                if (desc_copy) {
+                    nmo_free(&type_registry->type_allocator, (void *)desc_copy);
+                }
+                if (name_copy) {
+                    nmo_free(&type_registry->type_allocator, (void *)name_copy);
+                }
+                for (size_t k = old_count; k < out_index; k++) {
+                    nmo_free(&type_registry->type_allocator, (void *)new_values[k].name);
+                    if (new_values[k].description) {
+                        nmo_free(&type_registry->type_allocator, (void *)new_values[k].description);
+                    }
+                }
+                nmo_free(&type_registry->type_allocator, (void *)new_values);
+            }
             nmo_arena_destroy(temp_arena);
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                    "Failed to copy new enum value name");
+                                    "Failed to copy new enum value strings");
         }
 
         new_values[out_index].name = name_copy;
         new_values[out_index].value = parsed_values[j].value;
-        new_values[out_index].description = parsed_values[j].description ?
-            nmo_arena_strdup(arena, parsed_values[j].description) : NULL;
+        new_values[out_index].description = desc_copy;
         new_values[out_index].flags = 0;
         out_index++;
     }
@@ -710,6 +763,10 @@ nmo_status_t nmo_type_registry_change_enum_string(
     /* Update metadata to point to the extended list. */
     metadata->enum_meta.values = new_values;
     metadata->enum_meta.value_count = new_count;
+
+    if (!metadata_is_arena_owned && old_values) {
+        nmo_free(&type_registry->type_allocator, (void *)old_values);
+    }
 
     nmo_arena_destroy(temp_arena);
     NMO_RETURN_OK();
@@ -832,12 +889,24 @@ nmo_status_t nmo_type_registry_change_flags_string(
         NMO_RETURN_OK();
     }
 
+    NMO_OWNERSHIP_ASSERT_VALID(metadata->ownership);
+    const bool metadata_is_arena_owned = (metadata->ownership == NMO_OWNERSHIP_ARENA);
     nmo_arena_t *arena = type_registry->arena;
     size_t new_count = old_count + add_count;
-    nmo_flags_descriptor_t *new_bits = (nmo_flags_descriptor_t *)nmo_arena_alloc(
-        arena,
-        sizeof(nmo_flags_descriptor_t) * new_count,
-        alignof(nmo_flags_descriptor_t));
+    const nmo_flags_descriptor_t *old_bits = metadata->flags_meta.bits;
+    nmo_flags_descriptor_t *new_bits = NULL;
+
+    if (metadata_is_arena_owned) {
+        new_bits = (nmo_flags_descriptor_t *)nmo_arena_alloc(
+            arena,
+            sizeof(nmo_flags_descriptor_t) * new_count,
+            alignof(nmo_flags_descriptor_t));
+    } else {
+        new_bits = (nmo_flags_descriptor_t *)nmo_alloc(
+            &type_registry->type_allocator,
+            sizeof(nmo_flags_descriptor_t) * new_count,
+            alignof(nmo_flags_descriptor_t));
+    }
     if (!new_bits) {
         nmo_arena_destroy(temp_arena);
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -861,23 +930,53 @@ nmo_status_t nmo_type_registry_change_flags_string(
             continue;
         }
 
-        const char *name_copy = nmo_arena_strdup(arena, parsed_bits[j].name);
-        if (!name_copy) {
+        const char *name_copy = NULL;
+        const char *desc_copy = NULL;
+
+        if (metadata_is_arena_owned) {
+            name_copy = nmo_arena_strdup(arena, parsed_bits[j].name);
+            desc_copy = parsed_bits[j].description ?
+                nmo_arena_strdup(arena, parsed_bits[j].description) : NULL;
+        } else {
+            name_copy = type_allocator_strdup(&type_registry->type_allocator, parsed_bits[j].name);
+            desc_copy = parsed_bits[j].description ?
+                type_allocator_strdup(&type_registry->type_allocator, parsed_bits[j].description) : NULL;
+        }
+
+        if (!name_copy || (parsed_bits[j].description && !desc_copy)) {
+            if (!metadata_is_arena_owned) {
+                if (desc_copy) {
+                    nmo_free(&type_registry->type_allocator, (void *)desc_copy);
+                }
+                if (name_copy) {
+                    nmo_free(&type_registry->type_allocator, (void *)name_copy);
+                }
+                for (size_t k = old_count; k < out_index; k++) {
+                    nmo_free(&type_registry->type_allocator, (void *)new_bits[k].name);
+                    if (new_bits[k].description) {
+                        nmo_free(&type_registry->type_allocator, (void *)new_bits[k].description);
+                    }
+                }
+                nmo_free(&type_registry->type_allocator, (void *)new_bits);
+            }
             nmo_arena_destroy(temp_arena);
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                    "Failed to copy new flags bit name");
+                                    "Failed to copy new flags bit strings");
         }
 
         new_bits[out_index].name = name_copy;
         new_bits[out_index].mask = parsed_bits[j].mask;
-        new_bits[out_index].description = parsed_bits[j].description ?
-            nmo_arena_strdup(arena, parsed_bits[j].description) : NULL;
+        new_bits[out_index].description = desc_copy;
         new_bits[out_index].flags = 0;
         out_index++;
     }
 
     metadata->flags_meta.bits = new_bits;
     metadata->flags_meta.bit_count = new_count;
+
+    if (!metadata_is_arena_owned && old_bits) {
+        nmo_free(&type_registry->type_allocator, (void *)old_bits);
+    }
 
     nmo_arena_destroy(temp_arena);
     NMO_RETURN_OK();

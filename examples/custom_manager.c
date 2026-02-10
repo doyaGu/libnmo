@@ -99,9 +99,13 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Failed to create object\n");
     } else {
         nmo_object_set_name(obj, "CustomObject");
+        nmo_object_t *repo_obj = obj;
         nmo_object_repository_t *repo = nmo_session_get_repository(session);
         if (repo != NULL) {
-            obj_added_to_repo = (nmo_object_repository_add(repo, obj) == NMO_OK);
+            obj_added_to_repo = (nmo_object_repository_add(repo, &obj) == NMO_OK);
+            if (obj_added_to_repo) {
+                obj = repo_obj;
+            }
         }
         printf("Object created successfully (ID: %u)\n\n",
                nmo_object_get_id(obj));

@@ -138,6 +138,7 @@ set(NMO_CORE_SOURCES
     src/core/indexed_map.c
     src/core/list.c
     src/core/pool.c
+    src/core/ownership.c
     src/core/refcount.c
     src/core/shared_library.c
 )
@@ -328,6 +329,8 @@ if(NMO_BUILD_SHARED)
 else()
     add_library(nmo STATIC ${NMO_SOURCES})
 endif()
+
+target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS>)
 
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})

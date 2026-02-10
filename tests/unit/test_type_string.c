@@ -924,21 +924,20 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
         .name = "TestObjRef",
         .description = NULL,
         .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
         .size = (uint32_t)sizeof(test_objref_t),
         .alignment = (uint32_t)alignof(test_objref_t),
         .fields = fields,
         .field_count = sizeof(fields) / sizeof(fields[0]),
-        .compat_mask = 0,
         .vtable = NULL,
         .finish_loading = NULL,
         .creator_plugin_guid = NMO_NULL_GUID,
         .saver_manager = 0,
-        .specialized_index = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
         .valid = true,
-        .hierarchy = NULL,
-        .state_offsets = NULL,
-        .hierarchy_depth = 0,
-        .total_state_size = 0
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
     };
 
     ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));

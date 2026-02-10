@@ -80,6 +80,7 @@ typedef struct nmo_reference_stats {
  * @param repo Object repository to resolve against (required)
  * @param arena Arena for allocations (required)
  * @return New resolver or NULL on allocation failure
+ * @note Returned resolver is caller-owned; arena owns internal allocations.
  */
 NMO_API nmo_reference_resolver_t *nmo_reference_resolver_create(
     nmo_object_repository_t *repo,
@@ -115,6 +116,7 @@ NMO_API int nmo_reference_resolver_register_strategy(
  * @param resolver Resolver instance (required)
  * @param ref Reference descriptor (required, copied internally)
  * @return Pointer to registered reference copy, or NULL on failure
+ * @note Returned pointer is resolver-owned; valid until resolver destruction.
  */
 NMO_API nmo_object_ref_t *nmo_reference_resolver_register_reference(
     nmo_reference_resolver_t *resolver,
@@ -188,6 +190,7 @@ NMO_API int nmo_reference_resolver_has_unresolved(
  *                 next nmo_reference_resolver_resolve_all() or resolver destruction)
  * @param out_count Number of unresolved references
  * @return NMO_OK on success
+ * @note Returned array is resolver-owned; do not free.
  */
 NMO_API int nmo_reference_resolver_get_unresolved(
     const nmo_reference_resolver_t *resolver,

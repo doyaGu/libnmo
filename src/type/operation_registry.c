@@ -436,7 +436,7 @@ nmo_status_t nmo_operation_registry_finalize(
 nmo_status_t nmo_operation_registry_register(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *desc,
-    nmo_type_registry_t *type_registry
+    const nmo_type_registry_t *type_registry
 ) {
     if (!registry || !desc || !type_registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -527,7 +527,7 @@ nmo_status_t nmo_operation_registry_register_bulk(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *descs,
     uint32_t count,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     nmo_logger_t *logger
 ) {
     if (!registry || !descs || count == 0 || !type_registry) {
@@ -620,7 +620,7 @@ static nmo_status_t find_p2_layer(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     const nmo_operation_p2_layer_t **out_p2_layer
 ) {
     if (!registry || !operation_guid || !p1_type || !out_p2_layer) {
@@ -670,7 +670,7 @@ static nmo_status_t find_p2_layer(
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p1_type derives from candidate */
                     int32_t depth = nmo_type_get_derivation_depth(
-                        type_registry, p1_type_id, candidate_id);
+                        (nmo_type_registry_t *)type_registry, p1_type_id, candidate_id);
 
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p1_depth < 0 || depth < best_p1_depth)) {
@@ -717,7 +717,7 @@ static nmo_status_t find_p2_layer(
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p2_type derives from candidate */
                     int32_t depth = nmo_type_get_derivation_depth(
-                        type_registry, p2_type_id, candidate_id);
+                        (nmo_type_registry_t *)type_registry, p2_type_id, candidate_id);
 
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p2_depth < 0 || depth < best_p2_depth)) {
@@ -746,7 +746,7 @@ nmo_status_t nmo_operation_registry_find_typed(
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
     const nmo_type_descriptor_t *result_type,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 ) {
     if (!registry || !operation_guid || !p1_type || !result_type || !out_cell) {
@@ -862,7 +862,7 @@ nmo_status_t nmo_operation_registry_find(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 ) {
     if (!registry || !operation_guid || !p1_type || !out_cell) {
@@ -872,6 +872,38 @@ nmo_status_t nmo_operation_registry_find(
     
     *out_cell = NULL;
     registry->total_lookups++;
+
+    if (type_registry) {
+        ensure_lookup_cache(registry, type_registry);
+
+        nmo_type_id_t p1_id = nmo_type_registry_guid_to_type_id(type_registry, p1_type->guid);
+        nmo_type_id_t p2_id = NMO_TYPE_ID_INVALID;
+        if (p2_type) {
+            p2_id = nmo_type_registry_guid_to_type_id(type_registry, p2_type->guid);
+        }
+
+        if (p1_id != NMO_TYPE_ID_INVALID && (p2_type == NULL || p2_id != NMO_TYPE_ID_INVALID)) {
+            nmo_operation_cache_key_t key = {
+                .operation_guid = *operation_guid,
+                .p1_type_id = p1_id,
+                .p2_type_id = p2_id,
+                .result_type_guid = (nmo_guid_t){0, 0},
+            };
+
+            const nmo_operation_tree_cell_t *cached_cell = NULL;
+            if (registry->lookup_cache &&
+                nmo_hash_table_get(registry->lookup_cache, &key, &cached_cell) == NMO_OK &&
+                cached_cell) {
+                registry->cache_hits++;
+
+                nmo_operation_tree_cell_t *mutable_cell = (nmo_operation_tree_cell_t *)cached_cell;
+                mutable_cell->call_count++;
+
+                *out_cell = cached_cell;
+                NMO_RETURN_OK();
+            }
+        }
+    }
     
     /* Step 1: Find operation family by GUID (O(1) hash lookup) */
     uint32_t family_index = 0;
@@ -913,7 +945,7 @@ nmo_status_t nmo_operation_registry_find(
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p1_type derives from candidate */
                     int32_t depth = nmo_type_get_derivation_depth(
-                        type_registry, p1_type_id, candidate_id);
+                        (nmo_type_registry_t *)type_registry, p1_type_id, candidate_id);
                     
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p1_depth < 0 || depth < best_p1_depth)) {
@@ -960,7 +992,7 @@ nmo_status_t nmo_operation_registry_find(
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p2_type derives from candidate */
                     int32_t depth = nmo_type_get_derivation_depth(
-                        type_registry, p2_type_id, candidate_id);
+                        (nmo_type_registry_t *)type_registry, p2_type_id, candidate_id);
                     
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p2_depth < 0 || depth < best_p2_depth)) {
@@ -1024,7 +1056,7 @@ nmo_status_t nmo_operation_registry_execute(
     const nmo_type_descriptor_t *p2_type,
     void *result_data,
     const nmo_type_descriptor_t *result_type,
-    nmo_type_registry_t *type_registry
+    const nmo_type_registry_t *type_registry
 ) {
     if (!registry || !operation_guid || !p1_data || !p1_type || !result_data || !result_type) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,

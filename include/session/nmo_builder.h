@@ -17,6 +17,13 @@ extern "C" {
 /**
  * @brief Builder context
  */
+/* OWNERSHIP:
+ * - owner: caller
+ * - allocator: internal (heap)
+ * - lifetime: until nmo_builder_destroy()
+ * - free: nmo_builder_destroy()
+ * - thread: caller-synchronized
+ */
 typedef struct nmo_builder nmo_builder_t;
 
 /**
@@ -34,6 +41,7 @@ typedef enum nmo_build_stage {
  * Create builder
  * @param output_path Output file path
  * @return Builder or NULL on error
+ * @note Returned builder is caller-owned.
  */
 NMO_API nmo_builder_t *nmo_builder_create(const char *output_path);
 
@@ -95,6 +103,7 @@ NMO_API nmo_status_t nmo_builder_finish(nmo_builder_t *builder);
  * Get builder error
  * @param builder Builder
  * @return Error message or NULL if no error
+ * @note Returned pointer is builder-owned; do not free.
  */
 NMO_API const char *nmo_builder_get_error(const nmo_builder_t *builder);
 

@@ -77,6 +77,13 @@ typedef nmo_status_t (*nmo_ref_enumerator_fn)(
  *
  * Maps class IDs to their reference enumerator functions.
  */
+/* OWNERSHIP:
+ * - owner: caller
+ * - allocator: arena
+ * - lifetime: until nmo_ref_enumerator_registry_destroy()
+ * - free: nmo_ref_enumerator_registry_destroy()
+ * - thread: caller-synchronized
+ */
 typedef struct nmo_ref_enumerator_registry nmo_ref_enumerator_registry_t;
 
 /* ============================================================================
@@ -88,6 +95,7 @@ typedef struct nmo_ref_enumerator_registry nmo_ref_enumerator_registry_t;
  *
  * @param arena Arena for allocations
  * @return Registry or NULL on failure
+ * @note Returned registry is caller-owned; arena owns internal allocations.
  */
 NMO_API nmo_ref_enumerator_registry_t *nmo_ref_enumerator_registry_create(
     nmo_arena_t *arena
@@ -165,6 +173,7 @@ NMO_API nmo_status_t nmo_ref_enumerator_register_builtins(
  * @param visitor Visitor callback
  * @param user_data User context
  * @return NMO_OK on success, NMO_ERR_NOT_FOUND if no enumerator registered
+ * @note Enumeration does not allocate; visitor must not free object state.
  */
 NMO_API nmo_status_t nmo_ref_enumerate_object(
     nmo_ref_enumerator_registry_t *registry,

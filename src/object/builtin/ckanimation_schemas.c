@@ -9,6 +9,7 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -65,7 +66,7 @@ static const nmo_type_field_t nmo_ckobjectanimation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_ckobjectanimation_state_t, base),
                     sizeof(nmo_cksceneobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD(nmo_ckobjectanimation_state_t, format, CKPGUID_UINT32),
+    NMO_FIELD(nmo_ckobjectanimation_state_t, format, NMO_GUID_ENUM_CK_OBJECTANIMATION_FORMAT),
     NMO_FIELD(nmo_ckobjectanimation_state_t, root_pos, CKPGUID_VECTOR),
     NMO_FIELD(nmo_ckobjectanimation_state_t, has_root_pos, CKPGUID_UINT8),
     NMO_FIELD(nmo_ckobjectanimation_state_t, flags, CKPGUID_UINT32),
@@ -542,7 +543,7 @@ static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMSHARED) == NMO_OK) {
-        out_state->format = NMO_OBJANIM_FORMAT_SHARED;
+        out_state->format = CKOBJANIM_FORMAT_SHARED;
         out_state->has_shared_anim = 1;
         (void)nmo_chunk_read_object_id(chunk, &out_state->shared_anim_id);
         out_state->has_root_pos = 1;
@@ -564,7 +565,7 @@ static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMCONTROLLERS) == NMO_OK) {
-        out_state->format = NMO_OBJANIM_FORMAT_CONTROLLERS;
+        out_state->format = CKOBJANIM_FORMAT_CONTROLLERS;
         out_state->has_root_pos = 1;
         (void)nmo_chunk_read_vector3(chunk, &out_state->root_pos);
         for (int i = 0; i < 4; ++i) {
@@ -586,7 +587,7 @@ static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMNEWDATA) == NMO_OK) {
-        out_state->format = NMO_OBJANIM_FORMAT_NEWDATA;
+        out_state->format = CKOBJANIM_FORMAT_NEWDATA;
         out_state->has_root_pos = 1;
         (void)nmo_chunk_read_vector3(chunk, &out_state->root_pos);
         for (int i = 0; i < 4; ++i) {
@@ -610,9 +611,9 @@ static nmo_status_t nmo_ckobjectanimation_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (out_state->format == NMO_OBJANIM_FORMAT_NONE) {
+    if (out_state->format == CKOBJANIM_FORMAT_NONE) {
         if (data_version < 1) {
-            out_state->format = NMO_OBJANIM_FORMAT_LEGACY;
+            out_state->format = CKOBJANIM_FORMAT_LEGACY;
         }
         read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
     }
@@ -635,7 +636,7 @@ static nmo_status_t nmo_ckobjectanimation_serialize_internal(
     }
 
     switch (in_state->format) {
-    case NMO_OBJANIM_FORMAT_SHARED: {
+    case CKOBJANIM_FORMAT_SHARED: {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMSHARED);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->shared_anim_id);
@@ -660,7 +661,7 @@ static nmo_status_t nmo_ckobjectanimation_serialize_internal(
         }
         break;
     }
-    case NMO_OBJANIM_FORMAT_CONTROLLERS: {
+    case CKOBJANIM_FORMAT_CONTROLLERS: {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMCONTROLLERS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->root_pos);
@@ -685,7 +686,7 @@ static nmo_status_t nmo_ckobjectanimation_serialize_internal(
         }
         break;
     }
-    case NMO_OBJANIM_FORMAT_NEWDATA: {
+    case CKOBJANIM_FORMAT_NEWDATA: {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMNEWDATA);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->root_pos);

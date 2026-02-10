@@ -83,11 +83,12 @@ static nmo_object_t *create_test_object(test_fixture_t *fix,
         }
     }
     
-    if (nmo_object_repository_add(fix->repo, obj) != NMO_OK) {
+    nmo_object_t *repo_obj = obj;
+    if (nmo_object_repository_add(fix->repo, &obj) != NMO_OK) {
         nmo_object_destroy(obj);
         return NULL;
     }
-    return obj;
+    return repo_obj;
 }
 
 /**

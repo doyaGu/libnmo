@@ -132,7 +132,7 @@ nmo_status_t nmo_ckdataarray_deserialize(
                 fmt->type = (nmo_ck_arraytype_t)((uint32_t)type);
 
                 /* Read parameter type GUID for PARAMETER columns */
-                if (fmt->type == NMO_ARRAYTYPE_PARAMETER) {
+                if (fmt->type == CKARRAYTYPE_PARAMETER) {
                     result = nmo_chunk_read_guid(chunk, &fmt->parameter_type_guid);
                     if (result != NMO_OK) return result;
 
@@ -187,29 +187,29 @@ nmo_status_t nmo_ckdataarray_deserialize(
                         nmo_ckdataarray_cell_t *cell = &row->cells[col_idx];
 
                         switch (fmt->type) {
-                        case NMO_ARRAYTYPE_INT:
+                        case CKARRAYTYPE_INT:
                             result = nmo_chunk_read_int(chunk, &cell->int_value);
                             if (result != NMO_OK) return result;
                             break;
 
-                        case NMO_ARRAYTYPE_FLOAT:
+                        case CKARRAYTYPE_FLOAT:
                             result = nmo_chunk_read_float(chunk, &cell->float_value);
                             if (result != NMO_OK) return result;
                             break;
 
-                        case NMO_ARRAYTYPE_STRING: {
+                        case CKARRAYTYPE_STRING: {
                             char *temp_str = NULL;
                             nmo_chunk_read_string(chunk, &temp_str);
                             cell->string_value = temp_str; /* Note: Relies on chunk's buffer */
                             break;
                         }
 
-                        case NMO_ARRAYTYPE_OBJECT:
+                        case CKARRAYTYPE_OBJECT:
                             result = nmo_chunk_read_object_id(chunk, &cell->object_id);
                             if (result != NMO_OK) return result;
                             break;
 
-                        case NMO_ARRAYTYPE_PARAMETER:
+                        case CKARRAYTYPE_PARAMETER:
                             if (nmo_chunk_is_file_mode(chunk)) {
                                 result = nmo_chunk_read_object_id(chunk, &cell->parameter_id);
                                 if (result != NMO_OK) return result;
@@ -302,7 +302,7 @@ nmo_status_t nmo_ckdataarray_serialize(
         result = nmo_chunk_write_dword(out_chunk, (uint32_t)fmt->type);
         if (result != NMO_OK) return result;
 
-        if (fmt->type == NMO_ARRAYTYPE_PARAMETER) {
+        if (fmt->type == CKARRAYTYPE_PARAMETER) {
             result = nmo_chunk_write_guid(out_chunk, fmt->parameter_type_guid);
             if (result != NMO_OK) return result;
         }
@@ -323,27 +323,27 @@ nmo_status_t nmo_ckdataarray_serialize(
             const nmo_ckdataarray_cell_t *cell = &row->cells[col_idx];
 
             switch (fmt->type) {
-            case NMO_ARRAYTYPE_INT:
+            case CKARRAYTYPE_INT:
                 result = nmo_chunk_write_int(out_chunk, cell->int_value);
                 if (result != NMO_OK) return result;
                 break;
 
-            case NMO_ARRAYTYPE_FLOAT:
+            case CKARRAYTYPE_FLOAT:
                 result = nmo_chunk_write_float(out_chunk, cell->float_value);
                 if (result != NMO_OK) return result;
                 break;
 
-            case NMO_ARRAYTYPE_STRING:
+            case CKARRAYTYPE_STRING:
                 result = nmo_chunk_write_string(out_chunk, cell->string_value ? cell->string_value : "");
                 if (result != NMO_OK) return result;
                 break;
 
-            case NMO_ARRAYTYPE_OBJECT:
+            case CKARRAYTYPE_OBJECT:
                 result = nmo_chunk_write_object_id(out_chunk, cell->object_id);
                 if (result != NMO_OK) return result;
                 break;
 
-            case NMO_ARRAYTYPE_PARAMETER:
+            case CKARRAYTYPE_PARAMETER:
                 if (nmo_chunk_is_file_mode(out_chunk)) {
                     result = nmo_chunk_write_object_id(out_chunk, cell->parameter_id);
                     if (result != NMO_OK) return result;
@@ -410,9 +410,9 @@ static nmo_status_t ckdataarray_copy(
                     nmo_ckdataarray_cell_t *cell = &dr->cells[c];
                     if (d->column_formats && c < d->column_count) {
                         nmo_ck_arraytype_t type_id = d->column_formats[c].type;
-                        if (type_id == NMO_ARRAYTYPE_STRING && sr->cells[c].string_value) {
+                        if (type_id == CKARRAYTYPE_STRING && sr->cells[c].string_value) {
                             cell->string_value = nmo_arena_strdup(arena, sr->cells[c].string_value);
-                        } else if (type_id == NMO_ARRAYTYPE_PARAMETER && sr->cells[c].parameter_chunk) {
+                        } else if (type_id == CKARRAYTYPE_PARAMETER && sr->cells[c].parameter_chunk) {
                             cell->parameter_chunk = nmo_chunk_clone(sr->cells[c].parameter_chunk, arena);
                         }
                     }

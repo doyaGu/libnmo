@@ -115,6 +115,30 @@ TEST(shadow_storage, overwrite_included_files) {
     nmo_arena_destroy(arena);
 }
 
+TEST(shadow_storage, overwrite_included_files_reclaims_scope) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_shadow_storage_t *storage = nmo_shadow_storage_create(arena);
+    ASSERT_NOT_NULL(storage);
+
+    uint8_t first[1024];
+    uint8_t second[128];
+    memset(first, 0xAA, sizeof(first));
+    memset(second, 0xBB, sizeof(second));
+
+    ASSERT_EQ(nmo_shadow_capture_included_files(storage, first, sizeof(first)), NMO_OK);
+    size_t used_after_first = nmo_arena_bytes_used(arena);
+    ASSERT_TRUE(used_after_first >= sizeof(first));
+
+    ASSERT_EQ(nmo_shadow_capture_included_files(storage, second, sizeof(second)), NMO_OK);
+    size_t used_after_second = nmo_arena_bytes_used(arena);
+    ASSERT_TRUE(used_after_second <= used_after_first);
+
+    nmo_shadow_storage_destroy(storage);
+    nmo_arena_destroy(arena);
+}
+
 TEST(shadow_storage, overwrite_chunk_tail) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -168,6 +192,34 @@ TEST(shadow_storage, reset_clears_all) {
     ASSERT_EQ(nmo_shadow_chunk_tail_count(storage), 0u);
     ASSERT_NULL(nmo_shadow_get_included_files(storage, NULL));
     ASSERT_NULL(nmo_shadow_get_chunk_tail(storage, 1, NULL));
+
+    nmo_shadow_storage_destroy(storage);
+    nmo_arena_destroy(arena);
+}
+
+TEST(shadow_storage, reset_after_external_arena_reset_clears_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_shadow_storage_t *storage = nmo_shadow_storage_create(arena);
+    ASSERT_NOT_NULL(storage);
+
+    const uint8_t data[] = {0xAA, 0x55, 0x10};
+    ASSERT_EQ(nmo_shadow_capture_included_files(storage, data, sizeof(data)), NMO_OK);
+    ASSERT_TRUE(nmo_shadow_has_included_files(storage));
+
+    /* Simulate external arena scope invalidation before storage reset. */
+    nmo_arena_reset(arena);
+    nmo_shadow_storage_reset(storage);
+    ASSERT_FALSE(nmo_shadow_has_included_files(storage));
+
+    size_t out_size = 123u;
+    ASSERT_NULL(nmo_shadow_get_included_files(storage, &out_size));
+    ASSERT_EQ(0u, out_size);
+
+    /* Storage should remain reusable after the failed rewind path is handled. */
+    ASSERT_EQ(nmo_shadow_capture_included_files(storage, data, sizeof(data)), NMO_OK);
+    ASSERT_TRUE(nmo_shadow_has_included_files(storage));
 
     nmo_shadow_storage_destroy(storage);
     nmo_arena_destroy(arena);
@@ -328,8 +380,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(shadow_storage, capture_included_files);
     REGISTER_TEST(shadow_storage, capture_chunk_tail);
     REGISTER_TEST(shadow_storage, overwrite_included_files);
+    REGISTER_TEST(shadow_storage, overwrite_included_files_reclaims_scope);
     REGISTER_TEST(shadow_storage, overwrite_chunk_tail);
     REGISTER_TEST(shadow_storage, reset_clears_all);
+    REGISTER_TEST(shadow_storage, reset_after_external_arena_reset_clears_state);
     REGISTER_TEST(shadow_storage, clear_with_null_data);
     REGISTER_TEST(shadow_storage, iterate_chunk_tails);
     REGISTER_TEST(shadow_storage, null_handling);

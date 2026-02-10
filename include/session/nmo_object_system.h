@@ -60,6 +60,10 @@ typedef struct nmo_object_system_deserialize_stats {
  * - Optionally updates the session ID sanitizer.
  *
  * On failure, this function rolls back objects created during this call.
+ * OWNERSHIP:
+ * - object_allocator: used for object-owned allocations
+ * - scratch_arena: owns out_created_objects array
+ * - repo: takes ownership of created objects
  *
  * @param object_allocator Allocator used for object-owned allocations (NULL for default)
  * @param scratch_arena Arena used only for the returned created_objects array
@@ -91,6 +95,9 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
  * - vtable create() before deserialize()
  * - vtable destroy() on create/deserialize failure
  * - chunk start_read()/close() always paired
+ * OWNERSHIP:
+ * - arena: owns deserialize context scratch data
+ * - shadow_storage: captures tails/bytes it owns
  *
  * @param repo Repository to iterate
  * @param type_reg Type registry for schema dispatch
@@ -117,6 +124,8 @@ NMO_API nmo_status_t nmo_object_system_deserialize_repository(
  * - a reused existing chunk (if unmodified), or
  * - a newly generated chunk in the provided arena, or
  * - NULL on allocation/parameter errors.
+ * OWNERSHIP:
+ * - arena: owns any newly generated chunk
  *
  * @param file_ctx Optional file context for CKFile-style ID remap during write
  */
@@ -139,6 +148,9 @@ NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
  *
  * This intentionally does NOT deserialize objects, because manager load-data
  * hooks run between remap and object deserialization.
+ * OWNERSHIP:
+ * - object_allocator: used for object-owned allocations
+ * - scratch_arena: owns temporary rollback buffers
  *
  * @param object_allocator Allocator used for object-owned allocations (NULL for default)
  * @param scratch_arena Arena used for temporary allocations/rollback tracking
@@ -175,6 +187,9 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
  *
  * This is the load-pipeline counterpart to nmo_object_system_deserialize_repository(),
  * but scoped to objects that were part of the current file load.
+ * OWNERSHIP:
+ * - arena: owns deserialize context scratch data
+ * - shadow_storage: captures tails/bytes it owns
  *
  * @param repo Repository containing the objects
  * @param type_reg Type registry for schema dispatch

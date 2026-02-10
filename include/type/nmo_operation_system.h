@@ -190,6 +190,13 @@ typedef struct nmo_operation_family {
  * Rationale: Registry is typically populated at initialization time.
  */
 typedef struct nmo_operation_registry {
+    /* OWNERSHIP:
+     * - owner: context/registry
+     * - allocator: arena
+     * - lifetime: registry
+     * - free: nmo_operation_registry_destroy()
+     * - thread: caller-synchronized
+     */
     nmo_arena_t *arena;                  /**< Arena for all allocations */
     
     /* Operation families (root level) */
@@ -216,11 +223,18 @@ typedef struct nmo_operation_registry {
  * Registry Lifecycle
  * ============================================================================ */
 
+/* OWNERSHIP (Operation Registry API):
+ * - registry returned by create(): caller-owned, destroy with nmo_operation_registry_destroy()
+ * - lookup results are registry-owned; do not free
+ * - thread: caller-synchronized
+ */
+
 /**
  * @brief Create operation registry
  *
  * @param arena Arena for allocations (must outlive registry)
  * @return Registry or NULL on error
+ * @note Returned registry is caller-owned.
  */
 NMO_API nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena);
 
@@ -269,7 +283,7 @@ NMO_API nmo_status_t nmo_operation_registry_finalize(
 NMO_API nmo_status_t nmo_operation_registry_register(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *desc,
-    nmo_type_registry_t *type_registry
+    const nmo_type_registry_t *type_registry
 );
 
 /**
@@ -293,7 +307,7 @@ NMO_API nmo_status_t nmo_operation_registry_register_bulk(
     nmo_operation_registry_t *registry,
     const nmo_operation_desc_t *descs,
     uint32_t count,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     nmo_logger_t *logger
 );
 
@@ -314,6 +328,7 @@ NMO_API nmo_status_t nmo_operation_registry_register_bulk(
  * @param type_registry  Type registry for inheritance matching (optional, can be NULL)
  * @param out_cell       Output cell pointer (set to NULL if not found)
  * @return NMO_OK if found, NMO_ERROR_NOT_FOUND if no match
+ * @note Returned cell is registry-owned; do not free.
  *
  * @note
  * - Searches exact match first, then compatible types (if type_registry provided)
@@ -325,7 +340,7 @@ NMO_API nmo_status_t nmo_operation_registry_find(
     const nmo_guid_t *operation_guid,
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 );
 
@@ -344,6 +359,7 @@ NMO_API nmo_status_t nmo_operation_registry_find(
  * @param type_registry  Type registry for inheritance matching (optional, can be NULL)
  * @param out_cell       Output cell pointer (set to NULL if not found)
  * @return NMO_OK if found, NMO_ERR_NOT_FOUND if no match
+ * @note Returned cell is registry-owned; do not free.
  */
 NMO_API nmo_status_t nmo_operation_registry_find_typed(
     nmo_operation_registry_t *registry,
@@ -351,7 +367,7 @@ NMO_API nmo_status_t nmo_operation_registry_find_typed(
     const nmo_type_descriptor_t *p1_type,
     const nmo_type_descriptor_t *p2_type,
     const nmo_type_descriptor_t *result_type,
-    nmo_type_registry_t *type_registry,
+    const nmo_type_registry_t *type_registry,
     const nmo_operation_tree_cell_t **out_cell
 );
 
@@ -370,6 +386,7 @@ NMO_API nmo_status_t nmo_operation_registry_find_typed(
  * @param result_type    Expected result type descriptor
  * @param type_registry  Type registry for inheritance matching (optional, can be NULL)
  * @return NMO_OK on success, error code on failure
+ * @note Does not allocate; caller provides result buffer.
  */
 NMO_API nmo_status_t nmo_operation_registry_execute(
     nmo_operation_registry_t *registry,
@@ -380,7 +397,7 @@ NMO_API nmo_status_t nmo_operation_registry_execute(
     const nmo_type_descriptor_t *p2_type,
     void *result_data,
     const nmo_type_descriptor_t *result_type,
-    nmo_type_registry_t *type_registry
+    const nmo_type_registry_t *type_registry
 );
 
 /* ============================================================================
@@ -393,6 +410,7 @@ NMO_API nmo_status_t nmo_operation_registry_execute(
  * @param registry       Operation registry
  * @param operation_guid Operation family GUID
  * @return Family pointer or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_operation_family_t *nmo_operation_registry_get_family(
     const nmo_operation_registry_t *registry,

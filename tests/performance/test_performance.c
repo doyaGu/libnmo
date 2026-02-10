@@ -119,7 +119,7 @@ void test_index_lookup(void) {
         char name[32];
         sprintf(name, "Object_%zu", i);
         nmo_object_set_name(obj, name);
-        nmo_object_repository_add(repo, obj);
+        nmo_object_repository_add(repo, &obj);
     }
     
     /* Test without index (linear search) */

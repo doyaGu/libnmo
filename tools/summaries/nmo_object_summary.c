@@ -851,7 +851,7 @@ static bool nmo_summary_emit_select_path(
             }
             if (index >= count) {
                 char detail[128];
-                snprintf(detail, sizeof(detail), "%s[%llu] (count=%llu)", field_name,
+                snprintf(detail, sizeof(detail), "%.48s[%llu] (count=%llu)", field_name,
                          (unsigned long long)index, (unsigned long long)count);
                 nmo_summary_emit_select_error(out, json_select_arr, path, NMO_SELECT_STATUS_INDEX_OOB, detail);
                 return false;

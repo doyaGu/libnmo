@@ -31,7 +31,7 @@ typedef struct nmo_shadow_storage nmo_shadow_storage_t;
  * @brief Session structure
  *
  * Single-threaded per-operation state. Owns arena and object repository.
- * Borrows context (does not retain).
+ * Retains context until nmo_session_destroy().
  */
 typedef struct nmo_session nmo_session_t;
 
@@ -53,10 +53,10 @@ typedef struct nmo_file_info {
 /**
  * @brief Create session
  *
- * Creates a new session borrowing the given context. The session is
+ * Creates a new session retaining the given context. The session is
  * single-threaded and owns its own arena and object repository.
  *
- * @param ctx Context to borrow (must remain valid for session lifetime)
+ * @param ctx Context to retain
  * @return Session or NULL on error
  */
 NMO_API nmo_session_t *nmo_session_create(nmo_context_t *ctx);
@@ -65,7 +65,7 @@ NMO_API nmo_session_t *nmo_session_create(nmo_context_t *ctx);
  * @brief Destroy session
  *
  * Destroys the session and all owned resources (arena, repository).
- * Does not affect the borrowed context.
+ * Releases the retained context reference.
  *
  * @param session Session to destroy
  */
@@ -74,7 +74,7 @@ NMO_API void nmo_session_destroy(nmo_session_t *session);
 /**
  * @brief Get context
  *
- * Returns the borrowed context.
+ * Returns the retained context pointer.
  *
  * @param session Session
  * @return Context

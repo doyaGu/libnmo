@@ -10,6 +10,7 @@
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
+#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,11 +25,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 /**
  * @brief Patch mesh format type
  */
-typedef enum nmo_ckpatchmesh_format {
-    NMO_PATCHMESH_FORMAT_NONE = 0,
-    NMO_PATCHMESH_FORMAT_DATA3 = 1,
-    NMO_PATCHMESH_FORMAT_DATA2 = 2
-} nmo_ckpatchmesh_format_t;
+typedef CK_PATCHMESH_FORMAT nmo_ckpatchmesh_format_t;
 
 /**
  * @brief Patch data (type + smoothing + raw indices)

@@ -14,6 +14,7 @@
 #define NMO_CKLIGHT_SCHEMAS_H
 
 #include "core/nmo_color.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ck3dentity_schemas.h"
 #include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
@@ -29,22 +30,13 @@ typedef struct nmo_chunk nmo_chunk_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /**
- * @brief Light types (VXLIGHT_TYPE from Virtools)
- */
-typedef enum nmo_vx_light_type {
-    NMO_LIGHT_POINT = 1,        ///< Point light (omnidirectional)
-    NMO_LIGHT_SPOT = 2,         ///< Spotlight (cone with inner/outer angles)
-    NMO_LIGHT_DIRECTIONAL = 3   ///< Directional light (parallel rays)
-} nmo_vx_light_type_t;
-
-/**
  * @brief CKLightData structure (104 bytes at 0x1A8 in RCKLight)
  * 
  * Stores all lighting parameters. Serialized with identifier CK_STATESAVE_LIGHTDATA (0x00400000).
  */
 typedef struct nmo_ck_light_data {
     // Light type (4 bytes at 0x00)
-    nmo_vx_light_type_t type;
+    VXLIGHT_TYPE type;
     
     // Colors (48 bytes: 3 × RGBA float)
     nmo_color_t diffuse;     ///< Diffuse color (main light color)

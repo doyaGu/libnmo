@@ -388,7 +388,7 @@ nmo_status_t nmo_cktexture_deserialize(
                 nmo_status_t result = nmo_cktexture_read_reader_slot(chunk, arena, &slots[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->bitmap_kind = NMO_CKTEXTURE_BITMAP_READER;
+            out_state->bitmap_kind = CKTEXTURE_BITMAP_READER;
             out_state->reader_slots = slots;
             out_state->slot_count = (uint32_t)count;
         }
@@ -407,7 +407,7 @@ nmo_status_t nmo_cktexture_deserialize(
                 nmo_status_t result = nmo_cktexture_read_raw_slot(chunk, arena, &slots[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->bitmap_kind = NMO_CKTEXTURE_BITMAP_RAW;
+            out_state->bitmap_kind = CKTEXTURE_BITMAP_RAW;
             out_state->raw_slots = slots;
             out_state->slot_count = (uint32_t)count;
         }
@@ -426,7 +426,7 @@ nmo_status_t nmo_cktexture_deserialize(
                 nmo_status_t result = nmo_cktexture_read_bitmap2_slot(chunk, arena, &slots[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->bitmap_kind = NMO_CKTEXTURE_BITMAP_BITMAP2;
+            out_state->bitmap_kind = CKTEXTURE_BITMAP_BITMAP2;
             out_state->bitmap2_slots = slots;
             out_state->slot_count = (uint32_t)count;
         }
@@ -730,7 +730,7 @@ nmo_status_t nmo_cktexture_serialize(
         if (result != NMO_OK) return result;
     }
 
-    if (state->bitmap_kind == NMO_CKTEXTURE_BITMAP_READER && state->reader_slots && state->slot_count > 0) {
+    if (state->bitmap_kind == CKTEXTURE_BITMAP_READER && state->reader_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
         if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
@@ -738,7 +738,7 @@ nmo_status_t nmo_cktexture_serialize(
             result = nmo_cktexture_write_reader_slot(chunk, &state->reader_slots[i]);
             if (result != NMO_OK) return result;
         }
-    } else if (state->bitmap_kind == NMO_CKTEXTURE_BITMAP_RAW && state->raw_slots && state->slot_count > 0) {
+    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_RAW && state->raw_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED);
         if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
@@ -746,7 +746,7 @@ nmo_status_t nmo_cktexture_serialize(
             result = nmo_cktexture_write_raw_slot(chunk, &state->raw_slots[i]);
             if (result != NMO_OK) return result;
         }
-    } else if (state->bitmap_kind == NMO_CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots && state->slot_count > 0) {
+    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXBITMAPS);
         if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);

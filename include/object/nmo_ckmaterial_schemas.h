@@ -19,6 +19,7 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk.h"
 #include "object/nmo_ckbeobject_schemas.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
@@ -51,96 +52,97 @@ typedef struct nmo_material_colors {
 /**
  * @brief Texture blend modes
  *
- * Controls how texture and face color are mixed.
+ * Canonical type is VXTEXTURE_BLENDMODE (registered in object enum registry).
  */
-typedef enum nmo_texture_blend_mode {
-    NMO_TEXBLEND_DECAL = 1,              /**< Texture replaces color */
-    NMO_TEXBLEND_MODULATE = 2,           /**< Texture * color */
-    NMO_TEXBLEND_DECALALPHA = 3,         /**< Texture alpha controls blend */
-    NMO_TEXBLEND_MODULATEALPHA = 4,      /**< Texture * color with alpha */
-    NMO_TEXBLEND_DECALMASK = 5,          /**< Texture with mask */
-    NMO_TEXBLEND_MODULATEMASK = 6,       /**< Modulate with mask */
-    NMO_TEXBLEND_COPY = 7,               /**< Direct copy */
-    NMO_TEXBLEND_ADD = 8,                /**< Additive blending */
-    NMO_TEXBLEND_DOTPRODUCT3 = 9,        /**< Dot product (bump mapping) */
-    NMO_TEXBLEND_MAX = 10                /**< Maximum value */
-} nmo_texture_blend_mode_t;
+typedef VXTEXTURE_BLENDMODE nmo_texture_blend_mode_t;
+#define NMO_TEXBLEND_DECAL VXTEXTUREBLEND_DECAL
+#define NMO_TEXBLEND_MODULATE VXTEXTUREBLEND_MODULATE
+#define NMO_TEXBLEND_DECALALPHA VXTEXTUREBLEND_DECALALPHA
+#define NMO_TEXBLEND_MODULATEALPHA VXTEXTUREBLEND_MODULATEALPHA
+#define NMO_TEXBLEND_DECALMASK VXTEXTUREBLEND_DECALMASK
+#define NMO_TEXBLEND_MODULATEMASK VXTEXTUREBLEND_MODULATEMASK
+#define NMO_TEXBLEND_COPY VXTEXTUREBLEND_COPY
+#define NMO_TEXBLEND_ADD VXTEXTUREBLEND_ADD
+#define NMO_TEXBLEND_DOTPRODUCT3 VXTEXTUREBLEND_DOTPRODUCT3
+#define NMO_TEXBLEND_MAX VXTEXTUREBLEND_MAX
 
 /**
  * @brief Texture filter modes
  *
- * Controls texture filtering when magnified or minified.
+ * Canonical type is VXTEXTURE_FILTERMODE (registered in object enum registry).
  */
-typedef enum nmo_texture_filter_mode {
-    NMO_TEXFILTER_NEAREST = 1,           /**< Nearest neighbor (point sampling) */
-    NMO_TEXFILTER_LINEAR = 2,            /**< Bilinear filtering */
-    NMO_TEXFILTER_MIPNEAREST = 3,        /**< Mipmap nearest */
-    NMO_TEXFILTER_MIPLINEAR = 4,         /**< Mipmap linear (trilinear) */
-    NMO_TEXFILTER_LINEARMIPNEAREST = 5,  /**< Linear with mipmap nearest */
-    NMO_TEXFILTER_LINEARMIPLINEAR = 6,   /**< Trilinear filtering */
-    NMO_TEXFILTER_ANISOTROPIC = 7        /**< Anisotropic filtering */
-} nmo_texture_filter_mode_t;
+typedef VXTEXTURE_FILTERMODE nmo_texture_filter_mode_t;
+#define NMO_TEXFILTER_NEAREST VXTEXTUREFILTER_NEAREST
+#define NMO_TEXFILTER_LINEAR VXTEXTUREFILTER_LINEAR
+#define NMO_TEXFILTER_MIPNEAREST VXTEXTUREFILTER_MIPNEAREST
+#define NMO_TEXFILTER_MIPLINEAR VXTEXTUREFILTER_MIPLINEAR
+#define NMO_TEXFILTER_LINEARMIPNEAREST VXTEXTUREFILTER_LINEARMIPNEAREST
+#define NMO_TEXFILTER_LINEARMIPLINEAR VXTEXTUREFILTER_LINEARMIPLINEAR
+#define NMO_TEXFILTER_ANISOTROPIC VXTEXTUREFILTER_ANISOTROPIC
 
 /**
  * @brief Texture address modes
  *
- * Controls how texture coordinates outside 0..1 are interpreted.
+ * Canonical type is VXTEXTURE_ADDRESSMODE (registered in object enum registry).
  */
-typedef enum nmo_texture_address_mode {
-    NMO_TEXADDR_WRAP = 1,                /**< Repeat texture */
-    NMO_TEXADDR_MIRROR = 2,              /**< Mirror texture */
-    NMO_TEXADDR_CLAMP = 3,               /**< Clamp to edge */
-    NMO_TEXADDR_BORDER = 4               /**< Use border color */
-} nmo_texture_address_mode_t;
+typedef VXTEXTURE_ADDRESSMODE nmo_texture_address_mode_t;
+#define NMO_TEXADDR_WRAP VXTEXTURE_ADDRESSWRAP
+#define NMO_TEXADDR_MIRROR VXTEXTURE_ADDRESSMIRROR
+#define NMO_TEXADDR_CLAMP VXTEXTURE_ADDRESSCLAMP
+#define NMO_TEXADDR_BORDER VXTEXTURE_ADDRESSBORDER
 
 /**
  * @brief Shade modes
+ *
+ * Canonical type is VXSHADE_MODE (registered in object enum registry).
  */
-typedef enum nmo_shade_mode {
-    NMO_SHADE_FLAT = 1,                  /**< Flat shading */
-    NMO_SHADE_GOURAUD = 2,               /**< Gouraud shading (default) */
-    NMO_SHADE_PHONG = 3                  /**< Phong shading */
-} nmo_shade_mode_t;
+typedef VXSHADE_MODE nmo_shade_mode_t;
+#define NMO_SHADE_FLAT VXSHADE_FLAT
+#define NMO_SHADE_GOURAUD VXSHADE_GOURAUD
+#define NMO_SHADE_PHONG VXSHADE_PHONG
 
 /**
  * @brief Fill modes
+ *
+ * Canonical type is VXFILL_MODE (registered in object enum registry).
  */
-typedef enum nmo_fill_mode {
-    NMO_FILL_POINT = 1,                  /**< Render as points */
-    NMO_FILL_WIREFRAME = 2,              /**< Render as wireframe */
-    NMO_FILL_SOLID = 3                   /**< Render solid (default) */
-} nmo_fill_mode_t;
+typedef VXFILL_MODE nmo_fill_mode_t;
+#define NMO_FILL_POINT VXFILL_POINT
+#define NMO_FILL_WIREFRAME VXFILL_WIREFRAME
+#define NMO_FILL_SOLID VXFILL_SOLID
 
 /**
  * @brief Alpha test comparison functions
+ *
+ * Canonical type is VXCMPFUNC (registered in object enum registry).
  */
-typedef enum nmo_alpha_func {
-    NMO_ALPHA_NEVER = 1,                 /**< Never pass */
-    NMO_ALPHA_LESS = 2,                  /**< Pass if less */
-    NMO_ALPHA_EQUAL = 3,                 /**< Pass if equal */
-    NMO_ALPHA_LESSEQUAL = 4,             /**< Pass if less or equal */
-    NMO_ALPHA_GREATER = 5,               /**< Pass if greater */
-    NMO_ALPHA_NOTEQUAL = 6,              /**< Pass if not equal */
-    NMO_ALPHA_GREATEREQUAL = 7,          /**< Pass if greater or equal */
-    NMO_ALPHA_ALWAYS = 8                 /**< Always pass */
-} nmo_alpha_func_t;
+typedef VXCMPFUNC nmo_alpha_func_t;
+#define NMO_ALPHA_NEVER VXCMP_NEVER
+#define NMO_ALPHA_LESS VXCMP_LESS
+#define NMO_ALPHA_EQUAL VXCMP_EQUAL
+#define NMO_ALPHA_LESSEQUAL VXCMP_LESSEQUAL
+#define NMO_ALPHA_GREATER VXCMP_GREATER
+#define NMO_ALPHA_NOTEQUAL VXCMP_NOTEQUAL
+#define NMO_ALPHA_GREATEREQUAL VXCMP_GREATEREQUAL
+#define NMO_ALPHA_ALWAYS VXCMP_ALWAYS
 
 /**
  * @brief Source/destination blend factors
+ *
+ * Canonical type is VXBLEND_MODE (registered in object enum registry).
  */
-typedef enum nmo_blend_factor {
-    NMO_BLEND_ZERO = 1,                  /**< (0, 0, 0, 0) */
-    NMO_BLEND_ONE = 2,                   /**< (1, 1, 1, 1) */
-    NMO_BLEND_SRCCOLOR = 3,              /**< Source color */
-    NMO_BLEND_INVSRCCOLOR = 4,           /**< 1 - source color */
-    NMO_BLEND_SRCALPHA = 5,              /**< Source alpha */
-    NMO_BLEND_INVSRCALPHA = 6,           /**< 1 - source alpha */
-    NMO_BLEND_DESTALPHA = 7,             /**< Destination alpha */
-    NMO_BLEND_INVDESTALPHA = 8,          /**< 1 - destination alpha */
-    NMO_BLEND_DESTCOLOR = 9,             /**< Destination color */
-    NMO_BLEND_INVDESTCOLOR = 10,         /**< 1 - destination color */
-    NMO_BLEND_SRCALPHASAT = 11           /**< Source alpha saturate */
-} nmo_blend_factor_t;
+typedef VXBLEND_MODE nmo_blend_factor_t;
+#define NMO_BLEND_ZERO VXBLEND_ZERO
+#define NMO_BLEND_ONE VXBLEND_ONE
+#define NMO_BLEND_SRCCOLOR VXBLEND_SRCCOLOR
+#define NMO_BLEND_INVSRCCOLOR VXBLEND_INVSRCCOLOR
+#define NMO_BLEND_SRCALPHA VXBLEND_SRCALPHA
+#define NMO_BLEND_INVSRCALPHA VXBLEND_INVSRCALPHA
+#define NMO_BLEND_DESTALPHA VXBLEND_DESTALPHA
+#define NMO_BLEND_INVDESTALPHA VXBLEND_INVDESTALPHA
+#define NMO_BLEND_DESTCOLOR VXBLEND_DESTCOLOR
+#define NMO_BLEND_INVDESTCOLOR VXBLEND_INVDESTCOLOR
+#define NMO_BLEND_SRCALPHASAT VXBLEND_SRCALPHASAT
 
 /**
  * @brief CKMaterial state

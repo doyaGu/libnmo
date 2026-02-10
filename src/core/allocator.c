@@ -1,4 +1,5 @@
 #include "core/nmo_allocator.h"
+#include "core/nmo_debug.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
@@ -122,6 +123,13 @@ typedef struct nmo_tracking_header {
     size_t size;
 } nmo_tracking_header_t;
 
+typedef struct nmo_debug_header {
+    void *raw;
+    size_t size;
+    const char *module;
+    const char *tag;
+} nmo_debug_header_t;
+
 static void *tracking_alloc(void *user_data, size_t size, size_t alignment) {
     nmo_allocator_tracking_t *tracking = (nmo_allocator_tracking_t *)user_data;
     if (tracking == NULL || tracking->base.alloc == NULL) {
@@ -199,6 +207,74 @@ nmo_allocator_t nmo_allocator_tracking_init(nmo_allocator_tracking_t *tracking,
     tracking->stats = stats;
 
     return nmo_allocator_custom(tracking_alloc, tracking_free, tracking);
+}
+
+static void *debug_alloc(void *user_data, size_t size, size_t alignment) {
+    nmo_allocator_debug_t *debug = (nmo_allocator_debug_t *)user_data;
+    if (debug == NULL || debug->base.alloc == NULL) {
+        return NULL;
+    }
+
+    if (size == 0) {
+        return NULL;
+    }
+
+    if (alignment == 0) {
+        alignment = alignof(max_align_t);
+    }
+
+    if (!nmo_is_power_of_two(alignment)) {
+        return NULL;
+    }
+
+    size_t header_size = sizeof(nmo_debug_header_t);
+    if (size > SIZE_MAX - header_size - (alignment - 1)) {
+        return NULL;
+    }
+    size_t total = size + header_size + (alignment - 1);
+
+    void *raw = debug->base.alloc(debug->base.user_data, total, alignof(max_align_t));
+    if (raw == NULL) {
+        return NULL;
+    }
+
+    uintptr_t start = (uintptr_t)raw + header_size;
+    uintptr_t aligned = (start + (alignment - 1)) & ~(uintptr_t)(alignment - 1);
+    nmo_debug_header_t *header = (nmo_debug_header_t *)(aligned - header_size);
+    header->raw = raw;
+    header->size = size;
+    header->module = debug->module;
+    header->tag = debug->tag;
+
+    return (void *)aligned;
+}
+
+static void debug_free(void *user_data, void *ptr) {
+    nmo_allocator_debug_t *debug = (nmo_allocator_debug_t *)user_data;
+    if (debug == NULL || debug->base.free == NULL || ptr == NULL) {
+        return;
+    }
+
+    nmo_debug_header_t *header = (nmo_debug_header_t *)((uint8_t *)ptr - sizeof(nmo_debug_header_t));
+    NMO_DEBUG_ASSERT(header->module == debug->module);
+    NMO_DEBUG_ASSERT(header->tag == debug->tag);
+
+    debug->base.free(debug->base.user_data, header->raw);
+}
+
+nmo_allocator_t nmo_allocator_debug_init(nmo_allocator_debug_t *debug,
+                                         nmo_allocator_t base,
+                                         const char *module,
+                                         const char *tag) {
+    if (debug == NULL) {
+        return nmo_allocator_custom(NULL, NULL, NULL);
+    }
+
+    debug->base = base;
+    debug->module = module;
+    debug->tag = tag;
+
+    return nmo_allocator_custom(debug_alloc, debug_free, debug);
 }
 
 void nmo_allocator_stats_reset(nmo_allocator_stats_t *stats) {

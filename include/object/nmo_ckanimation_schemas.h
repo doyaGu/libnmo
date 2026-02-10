@@ -10,6 +10,7 @@
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
+#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,13 +73,7 @@ typedef struct nmo_ckkeyedanimation_state {
 /**
  * @brief ObjectAnimation data format
  */
-typedef enum nmo_ckobjectanimation_format {
-    NMO_OBJANIM_FORMAT_NONE = 0,
-    NMO_OBJANIM_FORMAT_SHARED = 1,
-    NMO_OBJANIM_FORMAT_CONTROLLERS = 2,
-    NMO_OBJANIM_FORMAT_NEWDATA = 3,
-    NMO_OBJANIM_FORMAT_LEGACY = 4
-} nmo_ckobjectanimation_format_t;
+typedef CK_OBJECTANIMATION_FORMAT nmo_ckobjectanimation_format_t;
 
 /**
  * @brief CKObjectAnimation state

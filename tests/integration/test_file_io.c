@@ -25,7 +25,7 @@ nmo_session_t* create_test_session(nmo_context_t* ctx) {
     if (obj1 == NULL ||
         nmo_object_set_name(obj1, "TestObject1") != NMO_OK ||
         nmo_object_set_chunk(obj1, NULL) != NMO_OK ||
-        nmo_object_repository_add(repo, obj1) != NMO_OK) {
+        nmo_object_repository_add(repo, &obj1) != NMO_OK) {
         nmo_object_destroy(obj1);
         nmo_session_destroy(session);
         fprintf(stderr, "ERROR: Failed to add object 1\n");
@@ -37,7 +37,7 @@ nmo_session_t* create_test_session(nmo_context_t* ctx) {
     if (obj2 == NULL ||
         nmo_object_set_name(obj2, "TestObject2") != NMO_OK ||
         nmo_object_set_chunk(obj2, NULL) != NMO_OK ||
-        nmo_object_repository_add(repo, obj2) != NMO_OK) {
+        nmo_object_repository_add(repo, &obj2) != NMO_OK) {
         nmo_object_destroy(obj2);
         nmo_session_destroy(session);
         fprintf(stderr, "ERROR: Failed to add object 2\n");

@@ -28,12 +28,13 @@ static nmo_object_t *create_session_object(
         }
     }
 
-    if (nmo_object_repository_add(repo, object) != NMO_OK) {
+    nmo_object_t *repo_object = object;
+    if (nmo_object_repository_add(repo, &object) != NMO_OK) {
         nmo_object_destroy(object);
         return NULL;
     }
 
-    return object;
+    return repo_object;
 }
 
 /**

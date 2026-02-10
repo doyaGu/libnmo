@@ -14,6 +14,20 @@
 #include <string.h>
 #include <ctype.h>
 
+static char *nmo_cli_strdup_local(const char *value) {
+    const char *src = value ? value : "";
+    size_t len = strlen(src);
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) {
+        return NULL;
+    }
+    if (len > 0) {
+        memcpy(copy, src, len);
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
 const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size) {
     if (!buf || buf_size == 0) {
         return "-";
@@ -98,14 +112,14 @@ const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t 
 
 static char *nmo_cli_escape_bytes(const char *value) {
     if (!value) {
-        return strdup("");
+        return nmo_cli_strdup_local("");
     }
 
     size_t len = strlen(value);
     size_t max_len = len * 4 + 1; /* worst-case: \xHH */
     char *out = (char *)malloc(max_len);
     if (!out) {
-        return strdup("");
+        return nmo_cli_strdup_local("");
     }
 
     size_t pos = 0;
@@ -164,7 +178,7 @@ bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t ce
         if (cells[i]) {
             row->cells[i] = nmo_cli_escape_bytes(cells[i]);
         } else {
-            row->cells[i] = strdup("");
+            row->cells[i] = nmo_cli_strdup_local("");
         }
     }
 

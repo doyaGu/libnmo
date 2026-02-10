@@ -62,7 +62,7 @@ static void nmo_cklight_set_defaults(nmo_cklight_state_t *state) {
     state->flags = 0x100u;
     state->light_power = 1.0f;
 
-    state->light_data.type = NMO_LIGHT_POINT;
+    state->light_data.type = VX_LIGHTPOINT;
 
     state->light_data.diffuse.r = 1.0f;
     state->light_data.diffuse.g = 1.0f;
@@ -151,13 +151,13 @@ static nmo_status_t nmo_cklight_deserialize_modern(
     }
     
     // Unpack: Type in low 8 bits, Flags in high 24 bits
-    out_state->light_data.type = (nmo_vx_light_type_t)(packed_type_flags & 0xFFu);
+    out_state->light_data.type = (VXLIGHT_TYPE)(packed_type_flags & 0xFFu);
     out_state->flags = packed_type_flags & ~0xFFu;
     
     // Validate type
-    if (out_state->light_data.type < NMO_LIGHT_POINT ||
-        out_state->light_data.type > NMO_LIGHT_DIRECTIONAL) {
-        out_state->light_data.type = NMO_LIGHT_POINT;  // Default to point light
+        if (out_state->light_data.type < VX_LIGHTPOINT ||
+            out_state->light_data.type > VX_LIGHTPARA) {
+        out_state->light_data.type = VX_LIGHTPOINT;  // Default to point light
     }
     
     // Read Diffuse color (packed ARGB)
@@ -191,7 +191,7 @@ static nmo_status_t nmo_cklight_deserialize_modern(
     }
     
     // Conditional: spotlight parameters (only if Type == VX_LIGHTSPOT)
-    if (out_state->light_data.type == NMO_LIGHT_SPOT) {
+    if (out_state->light_data.type == VX_LIGHTSPOT) {
         result = nmo_chunk_read_float(chunk, &out_state->light_data.outer_spot_cone);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read outer spot cone");
@@ -249,12 +249,12 @@ static nmo_status_t nmo_cklight_deserialize_legacy(
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read type");
     }
-    out_state->light_data.type = (nmo_vx_light_type_t)type;
+    out_state->light_data.type = (VXLIGHT_TYPE)type;
     
     // Validate type
-    if (out_state->light_data.type < NMO_LIGHT_POINT ||
-        out_state->light_data.type > NMO_LIGHT_DIRECTIONAL) {
-        out_state->light_data.type = NMO_LIGHT_POINT;
+        if (out_state->light_data.type < VX_LIGHTPOINT ||
+            out_state->light_data.type > VX_LIGHTPARA) {
+        out_state->light_data.type = VX_LIGHTPOINT;
     }
     
     // Read Diffuse.rgb (3 floats)
@@ -453,7 +453,7 @@ nmo_status_t nmo_cklight_serialize(
     }
 
     // Conditional: spotlight parameters (only if Type == VX_LIGHTSPOT)
-    if (state->light_data.type == NMO_LIGHT_SPOT) {
+    if (state->light_data.type == VX_LIGHTSPOT) {
         result = nmo_chunk_write_float(chunk, state->light_data.outer_spot_cone);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write outer spot cone");
@@ -528,8 +528,8 @@ nmo_status_t nmo_cklight_finish_loading(
     }
 
     // Validate light type
-    if (light_state->light_data.type < NMO_LIGHT_POINT ||
-        light_state->light_data.type > NMO_LIGHT_DIRECTIONAL) {
+        if (light_state->light_data.type < VX_LIGHTPOINT ||
+            light_state->light_data.type > VX_LIGHTPARA) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid light type");
     }
 

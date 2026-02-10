@@ -190,6 +190,7 @@ extern "C" {
  * @param type Type descriptor
  * @param name Field name to find
  * @return Field descriptor, or NULL if not found
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_type_field_t* nmo_type_get_field_by_name(
     const nmo_type_descriptor_t *type,
@@ -201,6 +202,7 @@ NMO_API const nmo_type_field_t* nmo_type_get_field_by_name(
  * @param type Type descriptor
  * @param index Field index (0-based)
  * @return Field descriptor, or NULL if out of range
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_type_field_t* nmo_type_get_field_by_index(
     const nmo_type_descriptor_t *type,
@@ -333,6 +335,7 @@ typedef bool (*nmo_field_visitor_fn)(
  * @param visitor Callback for each field
  * @param user_data User context
  * @return NMO_OK on success
+ * @note Does not allocate; visitor must not free field pointers.
  */
 NMO_API nmo_status_t nmo_type_foreach_field(
     const nmo_type_descriptor_t *type,
@@ -348,6 +351,7 @@ NMO_API nmo_status_t nmo_type_foreach_field(
  * @param visitor Callback for each reference field
  * @param user_data User context
  * @return NMO_OK on success
+ * @note Does not allocate; visitor must not free field pointers.
  */
 NMO_API nmo_status_t nmo_type_foreach_ref_field(
     const nmo_type_descriptor_t *type,
@@ -365,6 +369,7 @@ NMO_API nmo_status_t nmo_type_foreach_ref_field(
  * @param registry Type registry (for GUID -> name resolution)
  * @param type_guid Field type GUID
  * @return Type name string (e.g., "int32", "float", "object_id")
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const char* nmo_field_type_name(
     const nmo_type_registry_t *registry,
@@ -376,6 +381,7 @@ NMO_API const char* nmo_field_type_name(
 
 /**
  * @brief Get specialized metadata for a type
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_specialized_metadata_t* nmo_type_get_specialized_metadata(
     const nmo_type_registry_t *registry,
@@ -405,6 +411,7 @@ typedef bool (*nmo_flags_bit_visitor_fn)(
 
 /**
  * @brief Get struct/union field by name
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_name(
     const nmo_type_registry_t *registry,
@@ -413,6 +420,7 @@ NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_name(
 
 /**
  * @brief Get struct/union field by index
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_index(
     const nmo_type_registry_t *registry,
@@ -421,6 +429,7 @@ NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_index(
 
 /**
  * @brief Iterate over struct/union fields
+ * @note Does not allocate; visitor must not free field pointers.
  */
 NMO_API nmo_status_t nmo_type_foreach_struct_field(
     const nmo_type_registry_t *registry,
@@ -431,6 +440,7 @@ NMO_API nmo_status_t nmo_type_foreach_struct_field(
 
 /**
  * @brief Get enum value by name
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_name(
     const nmo_type_registry_t *registry,
@@ -439,6 +449,7 @@ NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_name(
 
 /**
  * @brief Get enum value by index
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_index(
     const nmo_type_registry_t *registry,
@@ -447,6 +458,7 @@ NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_index(
 
 /**
  * @brief Iterate over enum values
+ * @note Does not allocate; visitor must not free value pointers.
  */
 NMO_API nmo_status_t nmo_type_foreach_enum_value(
     const nmo_type_registry_t *registry,
@@ -456,6 +468,7 @@ NMO_API nmo_status_t nmo_type_foreach_enum_value(
 
 /**
  * @brief Get flags bit by name
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_name(
     const nmo_type_registry_t *registry,
@@ -464,6 +477,7 @@ NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_name(
 
 /**
  * @brief Get flags bit by index
+ * @note Returned pointer is registry-owned; do not free.
  */
 NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_index(
     const nmo_type_registry_t *registry,
@@ -472,6 +486,7 @@ NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_index(
 
 /**
  * @brief Iterate over flags bits
+ * @note Does not allocate; visitor must not free bit pointers.
  */
 NMO_API nmo_status_t nmo_type_foreach_flags_bit(
     const nmo_type_registry_t *registry,
@@ -486,6 +501,7 @@ NMO_API nmo_status_t nmo_type_foreach_flags_bit(
  * @param buffer Output buffer
  * @param buffer_size Buffer size
  * @return Number of characters written
+ * @note buffer is caller-owned; function does not allocate.
  */
 NMO_API size_t nmo_field_flags_to_string(uint32_t flags, char *buffer, size_t buffer_size);
 

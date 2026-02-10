@@ -14,6 +14,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena_array.h"
+#include "core/nmo_debug.h"
 #include <string.h>
 #include <assert.h>
 
@@ -232,7 +233,7 @@ static nmo_status_t nmo_deep_copy_metadata(
     memset(copy, 0, sizeof(*copy));
     copy->type_id = metadata->type_id;
     copy->metadata_type = metadata->metadata_type;
-    copy->reserved = metadata->reserved;
+    copy->ownership = NMO_OWNERSHIP_HEAP;
 
     nmo_last_error_clear();
     nmo_status_t result = NMO_OK;
@@ -267,11 +268,14 @@ static void nmo_free_metadata(
         return;
     }
 
+    NMO_OWNERSHIP_ASSERT_VALID(metadata->ownership);
+    NMO_OWNERSHIP_EXPECT(metadata->ownership, NMO_OWNERSHIP_HEAP);
+
     switch (metadata->metadata_type) {
         case NMO_METADATA_TYPE_ENUM:
             if (metadata->enum_meta.values) {
                 for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
-                    nmo_enum_descriptor_t *value = &metadata->enum_meta.values[i];
+                    const nmo_enum_descriptor_t *value = &metadata->enum_meta.values[i];
                     if (value->name) {
                         nmo_free(&registry->type_allocator, (void *)value->name);
                     }
@@ -279,13 +283,13 @@ static void nmo_free_metadata(
                         nmo_free(&registry->type_allocator, (void *)value->description);
                     }
                 }
-                nmo_free(&registry->type_allocator, metadata->enum_meta.values);
+                nmo_free(&registry->type_allocator, (void *)metadata->enum_meta.values);
             }
             break;
         case NMO_METADATA_TYPE_FLAGS:
             if (metadata->flags_meta.bits) {
                 for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
-                    nmo_flags_descriptor_t *bit = &metadata->flags_meta.bits[i];
+                    const nmo_flags_descriptor_t *bit = &metadata->flags_meta.bits[i];
                     if (bit->name) {
                         nmo_free(&registry->type_allocator, (void *)bit->name);
                     }
@@ -293,13 +297,13 @@ static void nmo_free_metadata(
                         nmo_free(&registry->type_allocator, (void *)bit->description);
                     }
                 }
-                nmo_free(&registry->type_allocator, metadata->flags_meta.bits);
+                nmo_free(&registry->type_allocator, (void *)metadata->flags_meta.bits);
             }
             break;
         case NMO_METADATA_TYPE_STRUCT:
             if (metadata->struct_meta.fields) {
                 for (size_t i = 0; i < metadata->struct_meta.field_count; i++) {
-                    nmo_struct_descriptor_t *field = &metadata->struct_meta.fields[i];
+                    const nmo_struct_descriptor_t *field = &metadata->struct_meta.fields[i];
                     if (field->name) {
                         nmo_free(&registry->type_allocator, (void *)field->name);
                     }
@@ -307,13 +311,13 @@ static void nmo_free_metadata(
                         nmo_free(&registry->type_allocator, (void *)field->description);
                     }
                 }
-                nmo_free(&registry->type_allocator, metadata->struct_meta.fields);
+                nmo_free(&registry->type_allocator, (void *)metadata->struct_meta.fields);
             }
             break;
         case NMO_METADATA_TYPE_UNION:
             if (metadata->union_meta.fields) {
                 for (size_t i = 0; i < metadata->union_meta.field_count; i++) {
-                    nmo_struct_descriptor_t *field = &metadata->union_meta.fields[i];
+                    const nmo_struct_descriptor_t *field = &metadata->union_meta.fields[i];
                     if (field->name) {
                         nmo_free(&registry->type_allocator, (void *)field->name);
                     }
@@ -321,7 +325,7 @@ static void nmo_free_metadata(
                         nmo_free(&registry->type_allocator, (void *)field->description);
                     }
                 }
-                nmo_free(&registry->type_allocator, metadata->union_meta.fields);
+                nmo_free(&registry->type_allocator, (void *)metadata->union_meta.fields);
             }
             break;
         default:
@@ -642,7 +646,10 @@ void nmo_type_registry_unregister_metadata(
             nmo_specialized_metadata_t **entry =
                 (nmo_specialized_metadata_t **)nmo_arena_array_get(&registry->metadata, index);
             if (entry && *entry) {
-                nmo_free_metadata(registry, *entry);
+                NMO_OWNERSHIP_ASSERT_VALID((*entry)->ownership);
+                if ((*entry)->ownership == NMO_OWNERSHIP_HEAP) {
+                    nmo_free_metadata(registry, *entry);
+                }
                 *entry = NULL;
             }
         }

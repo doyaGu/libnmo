@@ -27,7 +27,7 @@ static void populate_repository(
         };
         obj->type_guid = guid;
 
-        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, obj));
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
     }
 }
 

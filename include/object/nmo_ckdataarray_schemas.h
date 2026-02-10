@@ -24,6 +24,7 @@
 #include "core/nmo_guid.h"
 #include "nmo_ckbeobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_enum_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,13 +47,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * Defines the type of data stored in a column.
  * Each type has specific serialization rules.
  */
-typedef enum nmo_ck_arraytype {
-    NMO_ARRAYTYPE_INT = 1,        /**< Integer (32-bit) */
-    NMO_ARRAYTYPE_FLOAT = 2,      /**< Float (32-bit) */
-    NMO_ARRAYTYPE_STRING = 3,     /**< String (null-terminated) */
-    NMO_ARRAYTYPE_OBJECT = 4,     /**< Object reference (CK_ID) */
-    NMO_ARRAYTYPE_PARAMETER = 5   /**< Parameter object (requires GUID) */
-} nmo_ck_arraytype_t;
+typedef CK_ARRAYTYPE nmo_ck_arraytype_t;
 
 /* =============================================================================
  * CKDataArray STRUCTURES
@@ -75,14 +70,14 @@ typedef struct nmo_ckdataarray_column_format {
     /**
      * @brief Column data type
      * 
-     * One of NMO_ARRAYTYPE_* values.
+     * One of CKARRAYTYPE_* values.
      */
     nmo_ck_arraytype_t type;
 
     /**
      * @brief Parameter type GUID (only for PARAMETER type)
      * 
-     * Specifies the parameter type when type == NMO_ARRAYTYPE_PARAMETER.
+     * Specifies the parameter type when type == CKARRAYTYPE_PARAMETER.
      * Ignored for other types.
      */
     nmo_guid_t parameter_type_guid;

@@ -7,6 +7,8 @@
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_debug.h"
+#include "core/nmo_ownership.h"
 #include <string.h>
 #include <stdalign.h>
 #include <stdlib.h>
@@ -23,18 +25,46 @@ struct nmo_shadow_storage {
     /* Included Files blob */
     void *included_files_data;
     size_t included_files_size;
+    nmo_arena_mark_t included_files_mark;
+    bool included_files_scope_active;
 
     /* Chunk tails: chunk_id (uint32_t) -> shadow_entry_t */
     nmo_hash_table_t *chunk_tails;
 
+    /* Ownership marker for chunk tail allocations */
+    nmo_ownership_tag_t tail_ownership;
+    nmo_allocator_t tail_allocator;
+    nmo_allocator_debug_t tail_allocator_debug;
     nmo_arena_t *arena;
 };
 
+static int shadow_storage_clear_included_files_scope(nmo_shadow_storage_t *storage) {
+    if (storage == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int rewind_result = NMO_OK;
+    if (storage->included_files_scope_active) {
+        rewind_result = nmo_arena_rewind(storage->arena, &storage->included_files_mark);
+        storage->included_files_scope_active = false;
+    }
+
+    memset(&storage->included_files_mark, 0, sizeof(storage->included_files_mark));
+    storage->included_files_data = NULL;
+    storage->included_files_size = 0;
+    if (rewind_result != NMO_OK) {
+        return rewind_result;
+    }
+    return NMO_OK;
+}
+
 static void shadow_entry_dispose(void *value, void *user_data) {
-    (void)user_data;
+    nmo_shadow_storage_t *storage = (nmo_shadow_storage_t *)user_data;
     shadow_entry_t *entry = (shadow_entry_t *)value;
-    nmo_allocator_t alloc = nmo_allocator_default();
-    nmo_free(&alloc, entry->data);
+    NMO_DEBUG_ASSERT(storage != NULL);
+    NMO_OWNERSHIP_ASSERT_VALID(storage->tail_ownership);
+    NMO_OWNERSHIP_EXPECT(storage->tail_ownership, NMO_OWNERSHIP_HEAP);
+    nmo_free(&storage->tail_allocator, entry->data);
     entry->data = NULL;
     entry->size = 0;
 }
@@ -53,6 +83,14 @@ nmo_shadow_storage_t *nmo_shadow_storage_create(nmo_arena_t *arena) {
     storage->arena = arena;
     storage->included_files_data = NULL;
     storage->included_files_size = 0;
+    storage->included_files_scope_active = false;
+    memset(&storage->included_files_mark, 0, sizeof(storage->included_files_mark));
+    storage->tail_ownership = NMO_OWNERSHIP_HEAP;
+    storage->tail_allocator = nmo_allocator_debug_init(
+        &storage->tail_allocator_debug,
+        nmo_allocator_default(),
+        "shadow_storage",
+        "chunk_tail");
 
     /* Create hash table for chunk tails: key=uint32_t, value=shadow_entry_t */
     storage->chunk_tails = nmo_hash_table_create(
@@ -69,7 +107,7 @@ nmo_shadow_storage_t *nmo_shadow_storage_create(nmo_arena_t *arena) {
     }
     nmo_container_lifecycle_t value_lifecycle = {
         .dispose = shadow_entry_dispose,
-        .user_data = NULL
+        .user_data = storage
     };
     nmo_hash_table_set_lifecycle(storage->chunk_tails, NULL, &value_lifecycle);
 
@@ -80,6 +118,8 @@ void nmo_shadow_storage_destroy(nmo_shadow_storage_t *storage) {
     if (storage == NULL) {
         return;
     }
+
+    (void)shadow_storage_clear_included_files_scope(storage);
 
     if (storage->chunk_tails) {
         nmo_hash_table_destroy(storage->chunk_tails);
@@ -96,8 +136,7 @@ void nmo_shadow_storage_reset(nmo_shadow_storage_t *storage) {
         return;
     }
 
-    storage->included_files_data = NULL;
-    storage->included_files_size = 0;
+    (void)shadow_storage_clear_included_files_scope(storage);
 
     if (storage->chunk_tails) {
         nmo_hash_table_clear(storage->chunk_tails);
@@ -111,15 +150,26 @@ int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
     }
 
     if (data == NULL || size == 0) {
-        /* Clear existing data */
-        storage->included_files_data = NULL;
-        storage->included_files_size = 0;
-        return NMO_OK;
+        return shadow_storage_clear_included_files_scope(storage);
     }
+
+    int clear_result = shadow_storage_clear_included_files_scope(storage);
+    if (clear_result != NMO_OK) {
+        return clear_result;
+    }
+
+    int mark_result = nmo_arena_mark(storage->arena, &storage->included_files_mark);
+    if (mark_result != NMO_OK) {
+        return mark_result;
+    }
+    storage->included_files_scope_active = true;
 
     /* Allocate and copy data into arena */
     void *copy = nmo_arena_alloc(storage->arena, size, 8);
     if (copy == NULL) {
+        (void)nmo_arena_rewind(storage->arena, &storage->included_files_mark);
+        storage->included_files_scope_active = false;
+        memset(&storage->included_files_mark, 0, sizeof(storage->included_files_mark));
         return NMO_ERR_NOMEM;
     }
 
@@ -146,8 +196,9 @@ int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
     }
 
     /* Allocate and copy tail data (freed on update/remove) */
-    nmo_allocator_t alloc = nmo_allocator_default();
-    void *copy = nmo_alloc(&alloc, tail_size, 1);
+    NMO_OWNERSHIP_ASSERT_VALID(storage->tail_ownership);
+    NMO_OWNERSHIP_EXPECT(storage->tail_ownership, NMO_OWNERSHIP_HEAP);
+    void *copy = nmo_alloc(&storage->tail_allocator, tail_size, 1);
     if (copy == NULL) {
         return NMO_ERR_NOMEM;
     }
@@ -161,7 +212,7 @@ int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
 
     nmo_status_t result = nmo_hash_table_insert(storage->chunk_tails, &chunk_id, &entry);
     if (result != NMO_OK) {
-        nmo_free(&alloc, copy);
+        nmo_free(&storage->tail_allocator, copy);
         return result;
     }
 

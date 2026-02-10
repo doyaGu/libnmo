@@ -204,8 +204,8 @@ TEST(comparison, sessions_with_objects) {
     ASSERT_NOT_NULL(obj1);
     ASSERT_NOT_NULL(obj2);
 
-    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, obj1));
-    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, obj2));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, &obj1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, &obj2));
     
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
@@ -239,8 +239,8 @@ TEST(comparison, different_object_names) {
     ASSERT_NOT_NULL(obj1);
     ASSERT_NOT_NULL(obj2);
 
-    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, obj1));
-    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, obj2));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, &obj1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, &obj2));
     
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);

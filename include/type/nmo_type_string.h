@@ -78,6 +78,7 @@ typedef nmo_status_t (*nmo_object_name_to_id_resolver_fn)(
  *
  * These are optional. If unset, object IDs will be formatted and parsed as
  * "#<id>" only.
+ * @note Resolver function pointers must remain valid until replaced.
  */
 NMO_API void nmo_type_string_set_object_resolvers(
     nmo_object_id_to_name_resolver_fn id_to_name,
@@ -97,6 +98,7 @@ NMO_API void nmo_type_string_set_object_resolvers(
  * @param buffer         Output string buffer
  * @param buffer_size    Buffer capacity in bytes
  * @return NMO_OK on success, error code otherwise
+ * @note Buffer is caller-owned; function does not allocate.
  *
  * @note
  * - Buffer must be at least 32 bytes for primitive types
@@ -122,6 +124,7 @@ NMO_API nmo_status_t nmo_type_value_to_string(
  * @param registry       Type registry for enum/flags metadata (optional)
  * @param string         Input string
  * @return NMO_OK on success, error code otherwise
+ * @note value is caller-owned; function does not allocate.
  *
  * @note
  * - value must be pre-allocated to type->size bytes
@@ -156,6 +159,7 @@ NMO_API nmo_status_t nmo_type_value_from_string(
 
 /**
  * @brief Float to string: "3.14159" or "-2.5e-3"
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_float_to_string(
     const void *value,
@@ -163,6 +167,9 @@ NMO_API nmo_status_t nmo_float_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_float_from_string(
     void *value,
     const char *string
@@ -170,6 +177,7 @@ NMO_API nmo_status_t nmo_float_from_string(
 
 /**
  * @brief Int to string: "42" or "0x2A"
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_int_to_string(
     const void *value,
@@ -178,6 +186,9 @@ NMO_API nmo_status_t nmo_int_to_string(
     bool use_hex  /**< true for "0x..." format */
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_int_from_string(
     void *value,
     const char *string
@@ -185,6 +196,7 @@ NMO_API nmo_status_t nmo_int_from_string(
 
 /**
  * @brief Bool to string: "true" or "false"
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_bool_to_string(
     const void *value,
@@ -192,6 +204,9 @@ NMO_API nmo_status_t nmo_bool_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_bool_from_string(
     void *value,
     const char *string
@@ -199,6 +214,7 @@ NMO_API nmo_status_t nmo_bool_from_string(
 
 /**
  * @brief Vector (3D) to string: "(1.0, 2.0, 3.0)"
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_vector2_to_string(
     const void *value,  /**< float[2] */
@@ -206,17 +222,30 @@ NMO_API nmo_status_t nmo_vector2_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_vector2_from_string(
     void *value,  /**< float[2] */
     const char *string
 );
 
+/**
+ * @brief Vector3 to string: "(x, y, z)"
+ * @note Buffer is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_vector_to_string(
     const void *value,  /**< float[3] */
     char *buffer,
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_vector_from_string(
     void *value,  /**< float[3] */
     const char *string
@@ -224,6 +253,7 @@ NMO_API nmo_status_t nmo_vector_from_string(
 
 /**
  * @brief Vector4 to string: "(x, y, z, w)"
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_vector4_to_string(
     const void *value,  /**< float[4] */
@@ -231,6 +261,9 @@ NMO_API nmo_status_t nmo_vector4_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_vector4_from_string(
     void *value,  /**< float[4] */
     const char *string
@@ -238,6 +271,7 @@ NMO_API nmo_status_t nmo_vector4_from_string(
 
 /**
  * @brief Quaternion to string: "(x, y, z, w)"
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_quaternion_to_string(
     const void *value,  /**< float[4] */
@@ -245,6 +279,9 @@ NMO_API nmo_status_t nmo_quaternion_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_quaternion_from_string(
     void *value,  /**< float[4] */
     const char *string
@@ -252,6 +289,7 @@ NMO_API nmo_status_t nmo_quaternion_from_string(
 
 /**
  * @brief Matrix (4x4) to string
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_matrix_to_string(
     const void *value,  /**< nmo_matrix_t */
@@ -259,6 +297,9 @@ NMO_API nmo_status_t nmo_matrix_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_matrix_from_string(
     void *value,  /**< nmo_matrix_t */
     const char *string
@@ -273,6 +314,9 @@ NMO_API nmo_status_t nmo_color_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_color_from_string(
     void *value,  /**< float[4] */
     const char *string
@@ -288,6 +332,7 @@ NMO_API nmo_status_t nmo_color_from_string(
  * @param buffer_size    Buffer capacity
  * @param use_name       true to output name, false for numeric value
  * @return NMO_OK on success
+ * @note Buffer is caller-owned; function does not allocate.
  *
  * Reference: CKEnumStruct::GetEnumEntry (CKParameterManager.cpp:298-304)
  */
@@ -300,6 +345,9 @@ NMO_API nmo_status_t nmo_enum_to_string(
     bool use_name
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_enum_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
@@ -317,6 +365,7 @@ NMO_API nmo_status_t nmo_enum_from_string(
  * @param buffer_size    Buffer capacity
  * @param use_names      true to output names, false for hex value
  * @return NMO_OK on success
+ * @note Buffer is caller-owned; function does not allocate.
  *
  * Reference: CKFlagsStruct (CKParameterManager.cpp:298-304)
  */
@@ -329,6 +378,9 @@ NMO_API nmo_status_t nmo_flags_to_string(
     bool use_names
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_flags_from_string(
     void *value,
     const nmo_type_descriptor_t *type,
@@ -338,6 +390,7 @@ NMO_API nmo_status_t nmo_flags_from_string(
 
 /**
  * @brief String to string: "\"Hello\\nWorld\"" (with escaping)
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_string_to_string(
     const void *value,  /**< const char* */
@@ -345,6 +398,9 @@ NMO_API nmo_status_t nmo_string_to_string(
     size_t buffer_size
 );
 
+/**
+ * @note Output string is arena-owned; free by destroying the arena.
+ */
 NMO_API nmo_status_t nmo_string_from_string(
     void *value,  /**< char** (arena-allocated) */
     const char *string,
@@ -359,6 +415,7 @@ NMO_API nmo_status_t nmo_string_from_string(
  * @param buffer_size    Buffer capacity
  * @param session        Session for object name lookup (can be NULL)
  * @return NMO_OK on success
+ * @note Buffer is caller-owned; function does not allocate.
  */
 NMO_API nmo_status_t nmo_object_id_to_string(
     const void *value,
@@ -367,6 +424,9 @@ NMO_API nmo_status_t nmo_object_id_to_string(
     struct nmo_session *session  /**< Optional - for name lookup */
 );
 
+/**
+ * @note value is caller-owned; function does not allocate.
+ */
 NMO_API nmo_status_t nmo_object_id_from_string(
     void *value,
     const char *string,
@@ -384,6 +444,7 @@ NMO_API nmo_status_t nmo_object_id_from_string(
  * @param dst            Destination buffer
  * @param dst_size       Buffer capacity
  * @return Number of bytes written (excluding null terminator)
+ * @note dst is caller-owned; function does not allocate.
  */
 NMO_API size_t nmo_string_escape(
     const char *src,
@@ -398,6 +459,7 @@ NMO_API size_t nmo_string_escape(
  * @param dst            Destination buffer
  * @param dst_size       Buffer capacity
  * @return Number of bytes written (excluding null terminator)
+ * @note dst is caller-owned; function does not allocate.
  */
 NMO_API size_t nmo_string_unescape(
     const char *src,

@@ -30,6 +30,10 @@ typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
  *
  * All allocations use the provided arena; the caller retains ownership
  * of the arena lifetime.
+ * OWNERSHIP:
+ * - return value: caller-owned
+ * - allocator: arena
+ * - free: nmo_id_sanitizer_destroy()
  */
 NMO_API nmo_id_sanitizer_t *nmo_id_sanitizer_create(nmo_arena_t *arena);
 

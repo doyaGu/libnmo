@@ -305,12 +305,19 @@ void *nmo_object_get_ancestor_state(
     if (object->state == NULL) {
         return NULL;
     }
+
+    if (!derived_type_desc->ext ||
+        !derived_type_desc->ext->hierarchy ||
+        !derived_type_desc->ext->state_offsets ||
+        derived_type_desc->ext->hierarchy_depth == 0) {
+        return NULL;
+    }
     
     /* Find offset for the ancestor type */
-    for (uint16_t i = 0; i < derived_type_desc->hierarchy_depth; i++) {
-        if (derived_type_desc->hierarchy[i] == type_desc ||
-            nmo_guid_equals(derived_type_desc->hierarchy[i]->guid, type_desc->guid)) {
-            uint32_t offset = derived_type_desc->state_offsets[i];
+    for (uint16_t i = 0; i < derived_type_desc->ext->hierarchy_depth; i++) {
+        if (derived_type_desc->ext->hierarchy[i] == type_desc ||
+            nmo_guid_equals(derived_type_desc->ext->hierarchy[i]->guid, type_desc->guid)) {
+            uint32_t offset = derived_type_desc->ext->state_offsets[i];
             return (uint8_t *)object->state + offset;
         }
     }

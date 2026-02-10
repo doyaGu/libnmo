@@ -159,9 +159,9 @@ TEST(context_session, session_create) {
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
 
-    /* Verify session has borrowed context */
-    nmo_context_t* borrowed_ctx = nmo_session_get_context(session);
-    ASSERT_EQ(ctx, borrowed_ctx);
+    /* Verify session retains context */
+    nmo_context_t* retained_ctx = nmo_session_get_context(session);
+    ASSERT_EQ(ctx, retained_ctx);
 
     /* Verify session has arena */
     nmo_arena_t* arena = nmo_session_get_arena(session);
@@ -176,9 +176,9 @@ TEST(context_session, session_create) {
 }
 
 /**
- * Test session does not retain context
+ * Test session retain/release behavior for context
  */
-TEST(context_session, session_borrows_context) {
+TEST(context_session, session_retains_context) {
     nmo_context_desc_t desc = {0};  // Zero-initialized for defaults
     nmo_context_t* ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
@@ -189,13 +189,13 @@ TEST(context_session, session_borrows_context) {
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
 
-    /* Context refcount should NOT change */
+    /* Session creation retains one reference */
     int refcount_after_session = nmo_context_get_refcount(ctx);
-    ASSERT_EQ(1, refcount_after_session);
+    ASSERT_EQ(2, refcount_after_session);
 
     nmo_session_destroy(session);
 
-    /* Context refcount should still be 1 */
+    /* Session destroy releases its retained reference */
     int refcount_after_destroy = nmo_context_get_refcount(ctx);
     ASSERT_EQ(1, refcount_after_destroy);
 
@@ -354,7 +354,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(context_session, create_custom);
     REGISTER_TEST(context_session, refcounting);
     REGISTER_TEST(context_session, session_create);
-    REGISTER_TEST(context_session, session_borrows_context);
+    REGISTER_TEST(context_session, session_retains_context);
     REGISTER_TEST(context_session, multiple_sessions);
     REGISTER_TEST(context_session, session_file_info);
     REGISTER_TEST(context_session, null_inputs);

@@ -24,6 +24,7 @@
 #include "nmo_types.h"
 #include "object/nmo_ckbeobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_ckstatesave_ids.h"
 #include "core/nmo_guid.h"
 
@@ -93,16 +94,6 @@ typedef struct nmo_mipmap_level {
     uint32_t size;               /**< Data size in bytes */
     uint8_t *data;               /**< Pixel data (arena-allocated) */
 } nmo_mipmap_level_t;
-
-/**
- * @brief Bitmap payload kind stored in CKTexture chunks.
- */
-typedef enum nmo_cktexture_bitmap_kind {
-    NMO_CKTEXTURE_BITMAP_NONE = 0,
-    NMO_CKTEXTURE_BITMAP_READER = 1,
-    NMO_CKTEXTURE_BITMAP_RAW = 2,
-    NMO_CKTEXTURE_BITMAP_BITMAP2 = 3
-} nmo_cktexture_bitmap_kind_t;
 
 /**
  * @brief Reader-compressed bitmap slot payload.
@@ -177,7 +168,7 @@ typedef struct nmo_cktexture_state {
     char **slot_filenames;
 
     /* Bitmap payloads */
-    nmo_cktexture_bitmap_kind_t bitmap_kind;
+    CKTEXTURE_BITMAP_KIND bitmap_kind;
     nmo_cktexture_reader_slot_t *reader_slots;
     nmo_cktexture_raw_slot_t *raw_slots;
     nmo_cktexture_bitmap2_slot_t *bitmap2_slots;
