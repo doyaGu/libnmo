@@ -63,11 +63,11 @@ typedef struct nmo_chunk_writer {
     // Identifier linked-list tracking
     size_t prev_identifier_pos; // Position of previous identifier for linked-list chaining
 
-    // Version context stack (Phase 1.3)
+    // Version context stack
     nmo_chunk_version_context_t version_stack[NMO_CHUNK_WRITER_MAX_DEPTH];
     int version_stack_top;  // -1 = empty, 0+ = current index
 
-    // IntList auditor (Phase 2.3, DEBUG mode only)
+    // IntList auditor (DEBUG mode only)
 #ifndef NDEBUG
     nmo_intlist_audit_t intlist_audit;
 #endif
@@ -299,7 +299,7 @@ nmo_chunk_writer_t *nmo_chunk_writer_create(nmo_arena_t *arena) {
     memset(w, 0, sizeof(nmo_chunk_writer_t));
     w->arena = arena;
     w->data_capacity = WRITER_INITIAL_CAPACITY;
-    w->version_stack_top = -1;  // Empty stack (Phase 1.3)
+    w->version_stack_top = -1;  // Empty stack
 
     // Allocate initial buffer
     w->data = (uint32_t *) nmo_arena_alloc(arena,
@@ -1226,7 +1226,7 @@ int nmo_chunk_writer_write_identifier(nmo_chunk_writer_t *w, uint32_t identifier
 }
 
 /* ============================================================================
- * Reserve-and-Patch API (Phase 2.2)
+ * Reserve-and-Patch API Reserve-and-Patch:
  * ============================================================================ */
 
 nmo_patch_token_t nmo_chunk_writer_reserve_u32(nmo_chunk_writer_t *w) {
@@ -1524,7 +1524,7 @@ int nmo_chunk_writer_write_color(nmo_chunk_writer_t *w, const nmo_color_t *c) {
 }
 
 /* ========================================================================
- * Phase 1.3: Version Context Stack Implementation
+ * Version Context Stack Implementation
  * ======================================================================== */
 
 int nmo_chunk_writer_push_context(nmo_chunk_writer_t *w, uint32_t version) {
@@ -1601,7 +1601,7 @@ void nmo_chunk_writer_set_expected_ids(nmo_chunk_writer_t *w, int expected_count
 }
 
 /* ========================================================================
- * Phase 2.3: IntList Auditor Implementation
+ * IntList Auditor Implementation
  * ======================================================================== */
 
 void nmo_chunk_writer_begin_intlist(nmo_chunk_writer_t *w,

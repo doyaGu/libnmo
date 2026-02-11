@@ -101,7 +101,6 @@ static int test_basic_round_trip(void) {
     nmo_context_t* ctx = nmo_context_create(&ctx_desc);
     if (ctx == NULL) return 1;
 
-    /* Save phase */
     nmo_session_t* save_session = nmo_session_create(ctx);
     if (save_session == NULL) {
         nmo_context_release(ctx);
@@ -148,7 +147,6 @@ static int test_basic_round_trip(void) {
 
     nmo_session_destroy(save_session);
 
-    /* Load phase */
     nmo_session_t* load_session = nmo_session_create(ctx);
     if (load_session == NULL) {
         nmo_context_release(ctx);
@@ -214,7 +212,6 @@ static int test_manager_hooks(void) {
 
     nmo_manager_registry_register(manager_reg, 1, manager);
 
-    /* Save phase */
     nmo_session_t* save_session = nmo_session_create(ctx);
     nmo_object_repository_t* save_repo = nmo_session_get_repository(save_session);
     const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
@@ -248,7 +245,6 @@ static int test_manager_hooks(void) {
     nmo_save_file(save_session, test_file, NULL);
     nmo_session_destroy(save_session);
 
-    /* Load phase */
     nmo_session_t* load_session = nmo_session_create(ctx);
     nmo_load_file(load_session, test_file, NULL);
     nmo_session_destroy(load_session);

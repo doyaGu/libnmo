@@ -780,7 +780,7 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
         return true;
     }
 
-    /* ---- Phase D: type builtins ---- */
+    /* ---- Type builtins ---- */
 
     if (strcmp(name, "type") == 0) {
         if (call->arg_count != 1) { set_err(ev, "type(x)"); goto fail; }
@@ -983,7 +983,7 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
         return true;
     }
 
-    /* ---- Phase E: operation invocation ---- */
+    /* ---- Operation invocation ---- */
 
     if (strcmp(name, "op") == 0) {
         if (call->arg_count < 2 || call->arg_count > 3) {
@@ -1334,7 +1334,7 @@ bool nmo_dsl_eval_expr_impl(nmo_dsl_eval_state_t *ev, const nmo_dsl_expr_t *e, n
 }
 
 /* ============================================================================
- * Phase B: Mutable field resolution and assignment
+ * Mutable field resolution and assignment
  * ============================================================================ */
 
 static bool resolve_mutable_ident(nmo_dsl_eval_state_t *ev,

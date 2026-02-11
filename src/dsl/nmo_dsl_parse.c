@@ -481,7 +481,7 @@ nmo_dsl_expr_t *nmo_dsl_parse_expression(nmo_dsl_parser_t *ps) {
 }
 
 /* ============================================================================
- * Script Parsing (Phase B)
+ * Script Parsing
  * ============================================================================ */
 
 static bool is_lvalue(const nmo_dsl_expr_t *e) {
@@ -572,7 +572,7 @@ nmo_dsl_stmt_t *nmo_dsl_parse_script(nmo_dsl_parser_t *ps) {
 }
 
 /* ============================================================================
- * Schema Parsing (Phase C)
+ * Schema Parsing
  * ============================================================================ */
 
 static const char *expect_ident(nmo_dsl_parser_t *ps) {
@@ -964,7 +964,7 @@ bool nmo_dsl_parse_module(nmo_dsl_parser_t *ps, nmo_dsl_module_ast_t *out_module
     out_module->schema_decls = NULL;
     out_module->script_stmts = NULL;
 
-    /* Current phase requires a leading schema block. */
+    /* Current implementation requires a leading schema block. */
     nmo_dsl_stmt_t *schema_head = NULL;
     if (!tok_is(ps, NMO_DSL_TOK_KW_SCHEMA)) {
         parse_fail(ps, "module must start with schema { ... }");

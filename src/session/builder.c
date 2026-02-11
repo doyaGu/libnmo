@@ -1,9 +1,9 @@
 ﻿/**
  * @file builder.c
- * @brief Minimal builder implementation for reference object support (Phase 4)
+ * @brief Minimal builder implementation for reference object support
  * 
  * NOTE: This is a stub implementation focusing on reference object functionality.
- * Full builder implementation (save pipeline, chunking, etc.) is planned for Phase 5+.
+ * Full builder implementation (save pipeline, chunking, etc.) is planned for future.
  */
 
 #include "session/nmo_builder.h"
@@ -29,7 +29,7 @@ typedef struct {
 } nmo_file_object_t;
 
 /**
- * Builder structure (minimal implementation for Phase 4)
+ * Builder structure (minimal implementation)
  */
 struct nmo_builder {
     nmo_arena_t *arena;              /* Memory arena */
@@ -39,7 +39,7 @@ struct nmo_builder {
     size_t object_count;             /* Current object count */
     size_t object_capacity;          /* Allocated capacity */
     
-    /* Object tracking bitmasks (simple arrays for Phase 4) */
+    /* Object tracking bitmasks (simple arrays) */
     uint32_t *saved_mask;            /* Objects already saved */
     uint32_t *referenced_mask;       /* Objects saved as references */
     size_t mask_size;                /* Size of mask arrays (in uint32_t units) */
@@ -192,7 +192,7 @@ void nmo_builder_destroy(nmo_builder_t *builder) {
 }
 
 /**
- * Add object as reference (Phase 4 implementation)
+ * Add object as reference
  * 
  * Based on CKFile::SaveObjectAsReference (reference/src/CKFile.cpp:810-838)
  */
@@ -258,7 +258,7 @@ nmo_status_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_obj
     nmo_class_id_t class_id = file_obj->class_id;
     if (nmo_class_is_derived_from(NULL, class_id, 10) ||  /* CKCID_SCENE */
         nmo_class_is_derived_from(NULL, class_id, 21)) {  /* CKCID_LEVEL */
-        /* Scene/level object detected - may need special handling in Phase 5+ save pipeline */
+        /* Scene/level object detected - may need special handling in save pipeline */
     }
     
     NMO_RETURN_OK();
@@ -266,7 +266,7 @@ nmo_status_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_obj
 
 /**
  * Stub implementations for remaining builder API
- * (Full implementation planned for Phase 5+)
+ * (Full implementation planned for future)
  */
 
 nmo_status_t nmo_builder_start(nmo_builder_t *builder) {
@@ -321,7 +321,7 @@ nmo_status_t nmo_builder_add_object(
     
     /* Stub: Not implemented yet */
     snprintf(builder->error_msg, sizeof(builder->error_msg), 
-             "nmo_builder_add_object not implemented (Phase 5+)");
+             "nmo_builder_add_object not implemented");
     NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR, "Not implemented");
 }
 

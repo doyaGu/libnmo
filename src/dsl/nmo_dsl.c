@@ -22,8 +22,8 @@ struct nmo_dsl_program {
     nmo_dsl_mode_t mode;
     const char *source;         /* arena copy */
     nmo_dsl_expr_t *expr;       /* EXPRESSION mode: root AST */
-    nmo_dsl_stmt_t *stmts;     /* SCRIPT mode (Phase B) */
-    nmo_dsl_stmt_t *schema_decls; /* SCHEMA mode (Phase C) */
+    nmo_dsl_stmt_t *stmts;     /* SCRIPT mode */
+    nmo_dsl_stmt_t *schema_decls; /* SCHEMA mode */
 };
 
 /* ============================================================================
@@ -242,7 +242,7 @@ nmo_status_t nmo_dsl_exec(
 }
 
 /* ============================================================================
- * Apply schema declarations to the type registry (Phase C)
+ * Apply schema declarations to the type registry
  * ============================================================================ */
 
 typedef struct schema_apply_context {
