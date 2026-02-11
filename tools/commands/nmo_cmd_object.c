@@ -944,7 +944,8 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_val *edge = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, edge, "target_id", out_edges[i].to);
             yyjson_mut_obj_add_str(doc, edge, "kind", nmo_ref_kind_name(out_edges[i].kind));
-            yyjson_mut_obj_add_str(doc, edge, "field", out_edges[i].field_path);
+            yyjson_mut_obj_add_str(doc, edge, "field",
+                                   out_edges[i].field_path ? out_edges[i].field_path : "unknown");
             if (out_edges[i].index > 0) {
                 yyjson_mut_obj_add_uint(doc, edge, "index", out_edges[i].index);
             }
@@ -975,7 +976,8 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_val *edge = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, edge, "source_id", in_edges[i].from);
             yyjson_mut_obj_add_str(doc, edge, "kind", nmo_ref_kind_name(in_edges[i].kind));
-            yyjson_mut_obj_add_str(doc, edge, "field", in_edges[i].field_path);
+            yyjson_mut_obj_add_str(doc, edge, "field",
+                                   in_edges[i].field_path ? in_edges[i].field_path : "unknown");
             if (in_edges[i].index > 0) {
                 yyjson_mut_obj_add_uint(doc, edge, "index", in_edges[i].index);
             }
@@ -1032,11 +1034,12 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 snprintf(id_buf, sizeof(id_buf), "%u", out_edges[i].to);
 
                 char field_buf[32];
+                const char *field_name = out_edges[i].field_path ? out_edges[i].field_path : "unknown";
                 if (out_edges[i].index > 0) {
                     snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                             out_edges[i].field_path, out_edges[i].index);
+                             field_name, out_edges[i].index);
                 } else {
-                    snprintf(field_buf, sizeof(field_buf), "%s", out_edges[i].field_path);
+                    snprintf(field_buf, sizeof(field_buf), "%s", field_name);
                 }
 
                 nmo_object_t *target = nmo_object_repository_find_by_id(repo, out_edges[i].to);
@@ -1089,11 +1092,12 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 snprintf(id_buf, sizeof(id_buf), "%u", in_edges[i].from);
 
                 char field_buf[32];
+                const char *field_name = in_edges[i].field_path ? in_edges[i].field_path : "unknown";
                 if (in_edges[i].index > 0) {
                     snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                             in_edges[i].field_path, in_edges[i].index);
+                             field_name, in_edges[i].index);
                 } else {
-                    snprintf(field_buf, sizeof(field_buf), "%s", in_edges[i].field_path);
+                    snprintf(field_buf, sizeof(field_buf), "%s", field_name);
                 }
 
                 nmo_object_t *source = nmo_object_repository_find_by_id(repo, in_edges[i].from);

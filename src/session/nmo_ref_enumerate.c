@@ -1,1058 +1,339 @@
 /**
- * @file nmo_ref_enumerate.c
- * @brief Extensible reference enumeration implementation
+ * @file nmo_ref_enumerate_type.c
+ * @brief Reference enumeration using type system metadata
  *
- * Phase 4.1: Provides registry for type-specific reference extractors.
- * Implements visitor pattern for DRY enumeration.
+ * Phase 4.1: Uses type registry + reflection fields (or custom enumerate_refs
+ * vtable entries) to enumerate object references without hard-coded classes.
  */
 
 #include "session/nmo_ref_enumerate.h"
-#include "session/nmo_ref_graph.h"  /* For NMO_REF_* compatibility macros */
 #include "format/nmo_object.h"
-#include "object/nmo_class_ids.h"
-#include "object/builtin/nmo_beobject_schemas.h"
-#include "object/builtin/nmo_3dentity_schemas.h"
-#include "object/builtin/nmo_2dentity_schemas.h"
-#include "object/builtin/nmo_mesh_schemas.h"
-#include "object/builtin/nmo_material_schemas.h"
-#include "object/builtin/nmo_texture_schemas.h"
-#include "object/builtin/nmo_camera_schemas.h"
-#include "object/builtin/nmo_light_schemas.h"
-#include "object/builtin/nmo_behavior_schemas.h"
-#include "object/builtin/nmo_group_schemas.h"
-#include "object/builtin/nmo_scene_schemas.h"
-#include "object/builtin/nmo_level_schemas.h"
-#include "object/builtin/nmo_dataarray_schemas.h"
-#include "object/builtin/nmo_parameter_schemas.h"
-#include "object/builtin/nmo_behaviorlink_schemas.h"
-#include "object/builtin/nmo_behaviorio_schemas.h"
-#include "object/builtin/nmo_place_schemas.h"
-#include "object/builtin/nmo_sprite_schemas.h"
-#include "object/builtin/nmo_sprite3d_schemas.h"
-#include "object/builtin/nmo_animation_schemas.h"
-#include "object/builtin/nmo_sound_schemas.h"
-#include "object/builtin/nmo_curve_schemas.h"
+#include "type/nmo_reflection.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
+#include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 
 #include <string.h>
 
-/* ============================================================================
- * Registry Structure
- * ============================================================================ */
+typedef struct nmo_ref_field_enum_ctx {
+    const nmo_type_descriptor_t *type;
+    const void *instance;
+    nmo_ref_visitor_fn visitor;
+    void *user_data;
+} nmo_ref_field_enum_ctx_t;
 
-/**
- * @brief Enumerator registry entry
- */
-typedef struct nmo_ref_enumerator_entry {
-    nmo_class_id_t class_id;
-    nmo_ref_enumerator_fn enumerator;
-} nmo_ref_enumerator_entry_t;
+typedef struct nmo_ref_bridge_ctx {
+    nmo_ref_visitor_fn visitor;
+    void *user_data;
+} nmo_ref_bridge_ctx_t;
 
-/**
- * @brief Enumerator registry
- */
-struct nmo_ref_enumerator_registry {
-    nmo_arena_t *arena;
-    nmo_ref_enumerator_entry_t *entries;
-    size_t entry_count;
-    size_t entry_capacity;
-};
-
-/* ============================================================================
- * Registry API Implementation
- * ============================================================================ */
-
-NMO_API nmo_ref_enumerator_registry_t *nmo_ref_enumerator_registry_create(
-    nmo_arena_t *arena)
-{
-    if (!arena) {
-        return NULL;
-    }
-    
-    nmo_ref_enumerator_registry_t *registry = nmo_arena_alloc(
-        arena, sizeof(nmo_ref_enumerator_registry_t), 
-        _Alignof(nmo_ref_enumerator_registry_t));
-    if (!registry) {
-        return NULL;
-    }
-    
-    registry->arena = arena;
-    registry->entries = NULL;
-    registry->entry_count = 0;
-    registry->entry_capacity = 0;
-    
-    return registry;
+static bool nmo_ref_name_has(const char *name, const char *token) {
+    return name && token && strstr(name, token) != NULL;
 }
 
-NMO_API void nmo_ref_enumerator_registry_destroy(
-    nmo_ref_enumerator_registry_t *registry)
-{
-    /* Arena-allocated, nothing to do */
-    (void)registry;
+static nmo_ref_kind_t nmo_ref_kind_from_field(const nmo_type_field_t *field) {
+    if (!field || !field->name) {
+        return NMO_REF_UNKNOWN;
+    }
+
+    const char *name = field->name;
+
+    if (nmo_ref_name_has(name, "parent")) {
+        return NMO_REF_HIERARCHY;
+    }
+    if (nmo_ref_name_has(name, "mesh")) {
+        return NMO_REF_MESH;
+    }
+    if (nmo_ref_name_has(name, "material")) {
+        return NMO_REF_MATERIAL;
+    }
+    if (nmo_ref_name_has(name, "texture")) {
+        return NMO_REF_TEXTURE;
+    }
+    if (nmo_ref_name_has(name, "owner")) {
+        return NMO_REF_OWNER;
+    }
+    if (nmo_ref_name_has(name, "link")) {
+        return NMO_REF_BEHAVIOR_LINK;
+    }
+    if (nmo_ref_name_has(name, "parameter")) {
+        return NMO_REF_PARAMETER;
+    }
+    if (nmo_ref_name_has(name, "target")) {
+        return NMO_REF_TARGET;
+    }
+    if (nmo_ref_name_has(name, "group")) {
+        return NMO_REF_GROUP_MEMBER;
+    }
+    if (nmo_ref_name_has(name, "scene") || nmo_ref_name_has(name, "level")) {
+        return NMO_REF_SCENE;
+    }
+    if (nmo_ref_name_has(name, "animation") || nmo_ref_name_has(name, "anim")) {
+        return NMO_REF_ANIMATION;
+    }
+    if (nmo_ref_name_has(name, "place")) {
+        return NMO_REF_PLACE;
+    }
+    if (nmo_ref_name_has(name, "bone") || nmo_ref_name_has(name, "body_part")) {
+        return NMO_REF_SKIN_BONE;
+    }
+    if (nmo_ref_name_has(name, "dataarray") || nmo_ref_name_has(name, "data_array")) {
+        return NMO_REF_DATA_ARRAY;
+    }
+    if (nmo_ref_name_has(name, "script")) {
+        return NMO_REF_SCRIPT;
+    }
+
+    return NMO_REF_UNKNOWN;
 }
 
-/**
- * @brief Grow entry array if needed
- */
-static bool grow_entries(nmo_ref_enumerator_registry_t *registry) {
-    if (registry->entry_count < registry->entry_capacity) {
-        return true;
-    }
-    
-    size_t new_cap = registry->entry_capacity == 0 ? 64 : registry->entry_capacity * 2;
-    nmo_ref_enumerator_entry_t *new_entries = nmo_arena_alloc(
-        registry->arena, 
-        new_cap * sizeof(nmo_ref_enumerator_entry_t),
-        _Alignof(nmo_ref_enumerator_entry_t));
-    if (!new_entries) {
+static bool nmo_ref_get_pointer_array_count(
+    const nmo_type_descriptor_t *type,
+    const char *field_name,
+    const void *instance,
+    uint32_t *out_count)
+{
+    if (!type || !field_name || !instance || !out_count) {
         return false;
     }
-    
-    if (registry->entries && registry->entry_count > 0) {
-        memcpy(new_entries, registry->entries, 
-               registry->entry_count * sizeof(nmo_ref_enumerator_entry_t));
+
+    size_t name_len = strlen(field_name);
+    size_t base_len = name_len;
+
+    if (name_len > 4 && strcmp(field_name + name_len - 4, "_ids") == 0) {
+        base_len = name_len - 4;
+    } else if (name_len > 3 && strcmp(field_name + name_len - 3, "_id") == 0) {
+        base_len = name_len - 3;
+    } else if (name_len > 1 && field_name[name_len - 1] == 's') {
+        base_len = name_len - 1;
     }
-    
-    registry->entries = new_entries;
-    registry->entry_capacity = new_cap;
+
+    if (base_len == 0 || base_len + 6 >= 128) {
+        return false;
+    }
+
+    char count_name[128];
+    memcpy(count_name, field_name, base_len);
+    memcpy(count_name + base_len, "_count", 7);
+
+    const nmo_type_field_t *count_field = nmo_type_get_field_by_name(type, count_name);
+    if (!count_field && base_len > 0) {
+        const char *last_underscore = NULL;
+        for (size_t i = 0; i < base_len; ++i) {
+            if (field_name[i] == '_') {
+                last_underscore = field_name + i;
+            }
+        }
+        if (last_underscore) {
+            size_t short_base_len = (size_t)(last_underscore - field_name);
+            if (short_base_len > 0 && short_base_len + 6 < sizeof(count_name)) {
+                memcpy(count_name, field_name, short_base_len);
+                memcpy(count_name + short_base_len, "_count", 7);
+                count_field = nmo_type_get_field_by_name(type, count_name);
+            }
+        }
+    }
+    if (!count_field) {
+        return false;
+    }
+
+    *out_count = nmo_field_get_uint32(instance, count_field);
     return true;
 }
 
-NMO_API nmo_status_t nmo_ref_enumerator_register(
-    nmo_ref_enumerator_registry_t *registry,
-    nmo_class_id_t class_id,
-    nmo_ref_enumerator_fn enumerator)
+static bool nmo_ref_field_visitor(
+    void *user_data,
+    const nmo_type_field_t *field,
+    const void *field_ptr)
 {
-    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-               "NULL registry");
-    NMO_ENSURE(enumerator != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-               "NULL enumerator");
-    
-    /* Check for existing registration (update if found) */
-    for (size_t i = 0; i < registry->entry_count; ++i) {
-        if (registry->entries[i].class_id == class_id) {
-            registry->entries[i].enumerator = enumerator;
-            NMO_RETURN_OK();
+    nmo_ref_field_enum_ctx_t *ctx = (nmo_ref_field_enum_ctx_t *)user_data;
+    if (!ctx || !field || !field_ptr) {
+        return true;
+    }
+
+    nmo_ref_kind_t kind = nmo_ref_kind_from_field(field);
+
+    if (!nmo_field_is_array(field)) {
+        nmo_object_id_t id = nmo_field_get_object_id(ctx->instance, field);
+        if (id != 0) {
+            return ctx->visitor(ctx->user_data, id, kind, field->name, 0);
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(nmo_array_t)) {
+        const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
+        if (!arr->data || arr->count == 0) {
+            return true;
+        }
+        if (arr->element_size != sizeof(nmo_object_id_t)) {
+            return true;
+        }
+
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
+        for (size_t i = 0; i < arr->count; ++i) {
+            if (ids[i] == 0) {
+                continue;
+            }
+            if (!ctx->visitor(ctx->user_data, ids[i], kind, field->name, (uint32_t)i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(nmo_object_id_t *)) {
+        const nmo_object_id_t *ids = *(const nmo_object_id_t *const *)field_ptr;
+        if (!ids) {
+            return true;
+        }
+
+        uint32_t count = 0;
+        if (!nmo_ref_get_pointer_array_count(ctx->type, field->name, ctx->instance, &count)) {
+            return true;
+        }
+
+        for (uint32_t i = 0; i < count; ++i) {
+            if (ids[i] == 0) {
+                continue;
+            }
+            if (!ctx->visitor(ctx->user_data, ids[i], kind, field->name, i)) {
+                return false;
+            }
         }
     }
-    
-    /* Add new entry */
-    if (!grow_entries(registry)) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                         "Failed to grow enumerator registry");
-    }
-    
-    nmo_ref_enumerator_entry_t *entry = &registry->entries[registry->entry_count++];
-    entry->class_id = class_id;
-    entry->enumerator = enumerator;
-    
-    NMO_RETURN_OK();
+
+    return true;
 }
 
-NMO_API nmo_ref_enumerator_fn nmo_ref_enumerator_lookup(
-    nmo_ref_enumerator_registry_t *registry,
-    nmo_class_id_t class_id)
+static bool nmo_ref_bridge_visitor(
+    void *user_data,
+    uint32_t target_id,
+    uint32_t ref_kind,
+    const char *field_name,
+    uint32_t index)
 {
-    if (!registry) {
-        return NULL;
+    nmo_ref_bridge_ctx_t *ctx = (nmo_ref_bridge_ctx_t *)user_data;
+    if (!ctx || !ctx->visitor) {
+        return false;
     }
-    
-    /* Try exact match */
-    for (size_t i = 0; i < registry->entry_count; ++i) {
-        if (registry->entries[i].class_id == class_id) {
-            return registry->entries[i].enumerator;
+
+    return ctx->visitor(ctx->user_data, target_id, (nmo_ref_kind_t)ref_kind, field_name, index);
+}
+
+static nmo_status_t nmo_ref_enumerate_fields(
+    const nmo_type_descriptor_t *type,
+    const void *instance,
+    nmo_ref_visitor_fn visitor,
+    void *user_data)
+{
+    nmo_ref_field_enum_ctx_t ctx = {
+        .type = type,
+        .instance = instance,
+        .visitor = visitor,
+        .user_data = user_data
+    };
+
+    return nmo_type_foreach_ref_field(type, instance, nmo_ref_field_visitor, &ctx);
+}
+
+static const void *nmo_ref_get_base_instance(
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *derived_type,
+    const void *derived_instance,
+    const nmo_type_descriptor_t *current_type,
+    const void *current_instance,
+    const nmo_type_descriptor_t *base_type)
+{
+    const nmo_type_field_t *base_field = nmo_type_get_field_by_name(current_type, "base");
+    if (base_field && nmo_guid_equals(base_field->type_guid, base_type->guid)) {
+        return nmo_field_get_ptr_const(current_instance, base_field);
+    }
+
+    if (derived_type && derived_type->ext && derived_type->ext->state_offsets) {
+        uint32_t offset = nmo_type_get_state_offset(types, derived_type, base_type);
+        if (offset != (uint32_t)-1) {
+            return (const char *)derived_instance + offset;
         }
     }
-    
-    /* No inheritance lookup - we register all derived classes explicitly */
+
     return NULL;
 }
 
-/* ============================================================================
- * Enumeration API
- * ============================================================================ */
+static nmo_status_t nmo_ref_enumerate_type_chain(
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *type,
+    const void *instance,
+    nmo_ref_visitor_fn visitor,
+    void *user_data)
+{
+    const nmo_type_descriptor_t *current = type;
+    const void *current_instance = instance;
+    const nmo_type_descriptor_t *derived_type = type;
+    const void *derived_instance = instance;
+
+    for (size_t depth = 0; current && current_instance && depth < 64; ++depth) {
+        nmo_status_t status = nmo_ref_enumerate_fields(current, current_instance, visitor, user_data);
+        if (status != NMO_OK) {
+            return status;
+        }
+
+        if (nmo_guid_is_null(current->base_type)) {
+            break;
+        }
+
+        const nmo_type_descriptor_t *base =
+            nmo_type_registry_find_by_guid(types, current->base_type);
+        if (!base) {
+            break;
+        }
+
+        const void *base_instance = nmo_ref_get_base_instance(
+            types, derived_type, derived_instance, current, current_instance, base);
+        if (!base_instance) {
+            break;
+        }
+
+        current = base;
+        current_instance = base_instance;
+    }
+
+    NMO_RETURN_OK();
+}
 
 NMO_API nmo_status_t nmo_ref_enumerate_object(
-    nmo_ref_enumerator_registry_t *registry,
+    const nmo_type_registry_t *types,
     nmo_object_t *obj,
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-               "NULL registry");
+    NMO_ENSURE(types != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+               "NULL type registry");
     NMO_ENSURE(obj != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL object");
     NMO_ENSURE(visitor != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                "NULL visitor");
-    
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    nmo_ref_enumerator_fn enumerator = nmo_ref_enumerator_lookup(registry, class_id);
-    
-    if (!enumerator) {
-        /* No enumerator registered for this class or its parents */
-        NMO_RETURN_OK(); /* Not an error - just no refs to enumerate */
-    }
-    
+
     const void *state = nmo_object_get_state(obj);
     if (!state) {
-        NMO_RETURN_OK(); /* No state, no refs */
+        NMO_RETURN_OK();
     }
-    
-    return enumerator(obj, state, visitor, user_data);
-}
 
-/* ============================================================================
- * Built-in Enumerators
- * ============================================================================ */
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(types, class_id);
+    if (!type) {
+        NMO_RETURN_OK();
+    }
 
-/**
- * @brief Enumerate CKBeObject references (scripts, attributes)
- */
-NMO_API nmo_status_t nmo_ref_enum_beobject(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_beobject_state_t *beobj = (const nmo_beobject_state_t *)state;
-    (void)obj;
-    
-    /* Scripts */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beobj->script_ids,
-                            NMO_REF_SCRIPT, "scripts");
-    
-    /* Attribute parameters */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beobj->attribute_parameter_ids,
-                            NMO_REF_PARAMETER, "attribute_parameters");
-    
-    NMO_RETURN_OK();
-}
+    if (type->vtable && type->vtable->enumerate_refs) {
+        nmo_ref_bridge_ctx_t bridge = {
+            .visitor = visitor,
+            .user_data = user_data
+        };
 
-/**
- * @brief Enumerate CK3dEntity references
- */
-NMO_API nmo_status_t nmo_ref_enum_3dentity(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_3dentity_state_t *entity = (const nmo_3dentity_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &entity->base.base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
+        return type->vtable->enumerate_refs(state, type, nmo_ref_bridge_visitor, &bridge);
     }
-    
-    /* Parent */
-    NMO_REF_VISIT(visitor, user_data, entity->parent_id, NMO_REF_HIERARCHY, "parent");
-    
-    /* Place */
-    NMO_REF_VISIT(visitor, user_data, entity->place_id, NMO_REF_PLACE, "place");
-    
-    /* Current mesh */
-    NMO_REF_VISIT(visitor, user_data, entity->current_mesh_id, NMO_REF_MESH, "current_mesh");
-    
-    /* Mesh array */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, entity->mesh_ids, entity->mesh_count,
-                        NMO_REF_MESH, "meshes");
-    
-    /* Animation array */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, entity->animation_ids, entity->animation_count,
-                        NMO_REF_ANIMATION, "animations");
-    
-    /* Skin bones */
-    if (entity->skin) {
-        for (uint32_t i = 0; i < entity->skin->bone_count && entity->skin->bones; ++i) {
-            nmo_object_id_t bone_id = entity->skin->bones[i].bone_id;
-            if (bone_id != 0) {
-                if (!visitor(user_data, bone_id, NMO_REF_SKIN_BONE, "skin_bones", i)) {
-                    NMO_RETURN_OK();
-                }
-            }
-        }
-    }
-    
-    NMO_RETURN_OK();
-}
 
-/**
- * @brief Enumerate CKMesh references
- */
-NMO_API nmo_status_t nmo_ref_enum_mesh(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_mesh_state_t *mesh = (const nmo_mesh_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &mesh->beobject, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Material channels */
-    for (uint32_t i = 0; i < mesh->material_channel_count && mesh->material_channels; ++i) {
-        nmo_object_id_t mat_id = mesh->material_channels[i].material_id;
-        if (mat_id != 0) {
-            if (!visitor(user_data, mat_id, NMO_REF_MATERIAL, "material_channels", i)) {
-                NMO_RETURN_OK();
-            }
-        }
-    }
-    
-    /* Material groups */
-    for (uint32_t i = 0; i < mesh->material_group_count && mesh->material_groups; ++i) {
-        nmo_object_id_t mat_id = mesh->material_groups[i].material_id;
-        if (mat_id != 0) {
-            if (!visitor(user_data, mat_id, NMO_REF_MATERIAL, "material_groups", i)) {
-                NMO_RETURN_OK();
-            }
-        }
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKMaterial references
- */
-NMO_API nmo_status_t nmo_ref_enum_material(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_material_state_t *mat = (const nmo_material_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &mat->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Texture slots (up to 4) */
-    NMO_REF_VISIT_FIXED(visitor, user_data, mat->texture_ids, 4, 
-                        NMO_REF_TEXTURE, "textures");
-    
-    /* Effect parameter */
-    if (mat->has_effect_param) {
-        NMO_REF_VISIT(visitor, user_data, mat->effect_parameter_id, 
-                      NMO_REF_PARAMETER, "effect_parameter");
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKBehavior references
- */
-NMO_API nmo_status_t nmo_ref_enum_behavior(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_behavior_state_t *beh = (const nmo_behavior_state_t *)state;
-    (void)obj;
-    
-    /* Owner */
-    NMO_REF_VISIT(visitor, user_data, beh->owner_id, NMO_REF_OWNER, "owner");
-    
-    /* Target parameter */
-    NMO_REF_VISIT(visitor, user_data, beh->target_parameter_id, NMO_REF_TARGET, "target_parameter");
-    
-    /* Sub-behaviors */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->sub_behaviors,
-                            NMO_REF_OWNER, "sub_behaviors");
-    
-    /* Sub-behavior links */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->sub_behavior_links,
-                            NMO_REF_BEHAVIOR_LINK, "sub_behavior_links");
-    
-    /* Inputs */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->inputs,
-                            NMO_REF_OWNER, "inputs");
-    
-    /* Outputs */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->outputs,
-                            NMO_REF_OWNER, "outputs");
-    
-    /* Input parameters */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->in_parameters,
-                            NMO_REF_PARAMETER, "in_parameters");
-    
-    /* Output parameters */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->out_parameters,
-                            NMO_REF_PARAMETER, "out_parameters");
-    
-    /* Local parameters */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->local_parameters,
-                            NMO_REF_PARAMETER, "local_parameters");
-    
-    /* Operations */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, beh->operations,
-                            NMO_REF_PARAMETER, "operations");
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKGroup references
- */
-NMO_API nmo_status_t nmo_ref_enum_group(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_group_state_t *group = (const nmo_group_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &group->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Group members */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, group->object_ids,
-                            NMO_REF_GROUP_MEMBER, "members");
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKScene references
- */
-NMO_API nmo_status_t nmo_ref_enum_scene(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_scene_state_t *scene = (const nmo_scene_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &scene->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Level reference */
-    NMO_REF_VISIT(visitor, user_data, scene->level_id, NMO_REF_SCENE, "level");
-    
-    /* Scene objects */
-    if (scene->object_descs.data && scene->object_descs.count > 0) {
-        const nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
-                                                              &scene->object_descs);
-        for (uint32_t i = 0; i < scene->object_descs.count; ++i) {
-            nmo_object_id_t obj_id = descs[i].object_id;
-            if (obj_id != 0) {
-                if (!visitor(user_data, obj_id, NMO_REF_SCENE, "scene_objects", i)) {
-                    NMO_RETURN_OK();
-                }
-            }
-        }
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKLevel references
- */
-NMO_API nmo_status_t nmo_ref_enum_level(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_level_state_t *level = (const nmo_level_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &level->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Scenes */
-    if (level->scene_ids.data && level->scene_ids.count > 0) {
-        const nmo_object_id_t *scene_ids = NMO_ARRAY_DATA(nmo_object_id_t, &level->scene_ids);
-        for (uint32_t i = 0; i < level->scene_ids.count; ++i) {
-            nmo_object_id_t id = scene_ids[i];
-            if (id != 0) {
-                if (!visitor(user_data, id, NMO_REF_SCENE, "scenes", i)) {
-                    NMO_RETURN_OK();
-                }
-            }
-        }
-    }
-    
-    /* Current scene */
-    NMO_REF_VISIT(visitor, user_data, level->current_scene_id, NMO_REF_SCENE, "current_scene");
-    
-    /* Level scene */
-    NMO_REF_VISIT(visitor, user_data, level->level_scene_id, NMO_REF_SCENE, "level_scene");
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKDataArray references
- */
-NMO_API nmo_status_t nmo_ref_enum_dataarray(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_dataarray_state_t *arr = (const nmo_dataarray_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &arr->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Iterate rows and find OBJECT/PARAMETER columns */
-    if (arr->rows && arr->column_formats) {
-        for (uint32_t row = 0; row < arr->row_count; ++row) {
-            nmo_dataarray_row_t *r = &arr->rows[row];
-            if (!r->cells) continue;
-            
-            for (uint32_t col = 0; col < arr->column_count && col < r->column_count; ++col) {
-                nmo_arraytype_t type = arr->column_formats[col].type;
-                nmo_object_id_t ref_id = 0;
-                
-                if (type == CKARRAYTYPE_OBJECT) {
-                    ref_id = r->cells[col].object_id;
-                } else if (type == CKARRAYTYPE_PARAMETER) {
-                    ref_id = r->cells[col].parameter_id;
-                }
-                
-                if (ref_id != 0) {
-                    uint32_t idx = row * arr->column_count + col;
-                    if (!visitor(user_data, ref_id, NMO_REF_DATA_ARRAY, "cells", idx)) {
-                        NMO_RETURN_OK();
-                    }
-                }
-            }
-        }
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKParameter references
- */
-NMO_API nmo_status_t nmo_ref_enum_parameter(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_parameter_state_t *param = (const nmo_parameter_state_t *)state;
-    (void)obj;
-    
-    /* Object mode reference */
-    if (param->mode == CKPARAM_MODE_OBJECT && param->object_id != 0) {
-        NMO_REF_VISIT(visitor, user_data, param->object_id, NMO_REF_PARAMETER, "value");
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKBehaviorLink references
- */
-NMO_API nmo_status_t nmo_ref_enum_behaviorlink(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_behaviorlink_state_t *link = (const nmo_behaviorlink_state_t *)state;
-    (void)obj;
-    
-    /* Input IO */
-    NMO_REF_VISIT(visitor, user_data, link->in_io_id, NMO_REF_BEHAVIOR_LINK, "in_io");
-    
-    /* Output IO */
-    NMO_REF_VISIT(visitor, user_data, link->out_io_id, NMO_REF_BEHAVIOR_LINK, "out_io");
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKBehaviorIO references
- */
-NMO_API nmo_status_t nmo_ref_enum_behaviorio(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    /* CKBehaviorIO has no object references, just flags */
-    (void)obj;
-    (void)state;
-    (void)visitor;
-    (void)user_data;
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKCamera references (3DEntity + target)
- */
-static nmo_status_t nmo_ref_enum_camera(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_camera_state_t *cam = (const nmo_camera_state_t *)state;
-    
-    /* 3DEntity base refs */
-    return nmo_ref_enum_3dentity(obj, &cam->entity, visitor, user_data);
-}
-
-/**
- * @brief Enumerate CKLight references (3DEntity + target)
- */
-static nmo_status_t nmo_ref_enum_light(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_light_state_t *light = (const nmo_light_state_t *)state;
-    
-    /* 3DEntity base refs */
-    return nmo_ref_enum_3dentity(obj, &light->entity, visitor, user_data);
-}
-
-/**
- * @brief Enumerate CKPlace references
- */
-static nmo_status_t nmo_ref_enum_place(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_place_state_t *place = (const nmo_place_state_t *)state;
-    
-    /* First enumerate BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &place->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Camera */
-    if (place->has_camera) {
-        NMO_REF_VISIT(visitor, user_data, place->camera_id, NMO_REF_TARGET, "camera");
-    }
-    
-    /* Level */
-    if (place->has_level) {
-        NMO_REF_VISIT(visitor, user_data, place->level_id, NMO_REF_SCENE, "level");
-    }
-    
-    /* Portals */
-    if (place->portals.count > 0 && place->portals.data) {
-        const nmo_place_portal_entry_t *portals = NMO_ARRAY_DATA(nmo_place_portal_entry_t,
-                                                                 &place->portals);
-        for (uint32_t i = 0; i < place->portals.count; ++i) {
-            NMO_REF_VISIT(visitor, user_data, portals[i].place_id,
-                          NMO_REF_PLACE, "portal_places");
-            NMO_REF_VISIT(visitor, user_data, portals[i].portal_id,
-                          NMO_REF_PLACE, "portals");
-        }
-    }
-    
-    /* References */
-    NMO_REF_VISIT_NMO_ARRAY(visitor, user_data, place->reference_ids,
-                            NMO_REF_SCENE, "references");
-    
-    NMO_RETURN_OK();
-}
-
-/* ============================================================================
- * Additional Built-in Enumerators (Phase 4.2)
- * ============================================================================ */
-
-/**
- * @brief Enumerate CK2dEntity references (parent, material)
- */
-static nmo_status_t nmo_ref_enum_2dentity(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_2dentity_state_t *entity = (const nmo_2dentity_state_t *)state;
-    
-    /* BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &entity->base.base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Parent */
-    if (entity->has_parent) {
-        NMO_REF_VISIT(visitor, user_data, entity->parent_id, NMO_REF_HIERARCHY, "parent");
-    }
-    
-    /* Material */
-    if (entity->has_material) {
-        NMO_REF_VISIT(visitor, user_data, entity->material_id, NMO_REF_MATERIAL, "material");
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKSprite references (extends 2DEntity)
- */
-static nmo_status_t nmo_ref_enum_sprite(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_sprite_state_t *sprite = (const nmo_sprite_state_t *)state;
-    
-    /* 2DEntity base refs */
-    nmo_status_t status = nmo_ref_enum_2dentity(obj, &sprite->entity, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Sprite reference (clone source) */
-    if (sprite->has_sprite_ref) {
-        NMO_REF_VISIT(visitor, user_data, sprite->sprite_ref_id, NMO_REF_TEXTURE, "sprite_ref");
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKTexture references (BeObject only, no additional refs)
- */
-static nmo_status_t nmo_ref_enum_texture(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_texture_state_t *tex = (const nmo_texture_state_t *)state;
-    
-    /* BeObject base refs only */
-    return nmo_ref_enum_beobject(obj, &tex->base, visitor, user_data);
-}
-
-/**
- * @brief Enumerate CKAnimation references
- */
-static nmo_status_t nmo_ref_enum_animation(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_animation_state_t *anim = (const nmo_animation_state_t *)state;
-    (void)obj;
-    
-    /* Root entity */
-    if (anim->has_root_entity) {
-        NMO_REF_VISIT(visitor, user_data, anim->root_entity_id, NMO_REF_TARGET, "root_entity");
-    }
-    
-    /* Character */
-    if (anim->has_character) {
-        NMO_REF_VISIT(visitor, user_data, anim->character_id, NMO_REF_TARGET, "character");
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKKeyedAnimation references
- */
-static nmo_status_t nmo_ref_enum_keyedanimation(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_keyedanimation_state_t *anim = (const nmo_keyedanimation_state_t *)state;
-    
-    /* Base animation refs */
-    nmo_status_t status = nmo_ref_enum_animation(obj, &anim->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Animation IDs */
-    NMO_REF_VISIT_ARRAY(visitor, user_data, anim->animation_ids, anim->animation_count,
-                        NMO_REF_ANIMATION, "animations");
-    
-    /* Subanims */
-    for (uint32_t i = 0; i < anim->subanim_count && anim->subanims; ++i) {
-        if (anim->subanims[i].object_id != 0) {
-            if (!visitor(user_data, anim->subanims[i].object_id, NMO_REF_ANIMATION, "subanims", i)) {
-                NMO_RETURN_OK();
-            }
-        }
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKObjectAnimation references
- */
-static nmo_status_t nmo_ref_enum_objectanimation(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_objectanimation_state_t *anim = (const nmo_objectanimation_state_t *)state;
-    (void)obj;
-    
-    /* Entity */
-    NMO_REF_VISIT(visitor, user_data, anim->entity_id, NMO_REF_TARGET, "entity");
-    
-    /* Merge animations */
-    if (anim->has_merge) {
-        NMO_REF_VISIT(visitor, user_data, anim->anim1_id, NMO_REF_ANIMATION, "anim1");
-        NMO_REF_VISIT(visitor, user_data, anim->anim2_id, NMO_REF_ANIMATION, "anim2");
-    }
-    
-    /* Shared animation */
-    if (anim->has_shared_anim) {
-        NMO_REF_VISIT(visitor, user_data, anim->shared_anim_id, NMO_REF_ANIMATION, "shared_anim");
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKSound/CKWaveSound references
- */
-static nmo_status_t nmo_ref_enum_wavesound(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_wavesound_state_t *sound = (const nmo_wavesound_state_t *)state;
-    
-    /* BeObject base refs */
-    nmo_status_t status = nmo_ref_enum_beobject(obj, &sound->base.base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Attached object */
-    NMO_REF_VISIT(visitor, user_data, sound->attached_object_id, NMO_REF_TARGET, "attached_object");
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKCurve references (3DEntity + control points)
- */
-static nmo_status_t nmo_ref_enum_curve(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_curve_state_t *curve = (const nmo_curve_state_t *)state;
-    
-    /* 3DEntity base refs */
-    nmo_status_t status = nmo_ref_enum_3dentity(obj, &curve->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Control points */
-    if (curve->has_curve_data) {
-        NMO_REF_VISIT_ARRAY(visitor, user_data, curve->control_point_ids, 
-                            curve->control_point_count, NMO_REF_TARGET, "control_points");
-    }
-    
-    /* Sub-points */
-    for (uint32_t i = 0; i < curve->sub_point_count && curve->sub_points; ++i) {
-        if (curve->sub_points[i].point_id != 0) {
-            if (!visitor(user_data, curve->sub_points[i].point_id, NMO_REF_TARGET, "sub_points", i)) {
-                NMO_RETURN_OK();
-            }
-        }
-    }
-    
-    NMO_RETURN_OK();
-}
-
-/**
- * @brief Enumerate CKSprite3D references (3DEntity + material)
- */
-static nmo_status_t nmo_ref_enum_sprite3d(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_ref_visitor_fn visitor,
-    void *user_data)
-{
-    const nmo_sprite3d_state_t *sprite = (const nmo_sprite3d_state_t *)state;
-    
-    /* 3DEntity base refs */
-    nmo_status_t status = nmo_ref_enum_3dentity(obj, &sprite->base, visitor, user_data);
-    if (status != NMO_OK) {
-        return status;
-    }
-    
-    /* Material (always present, check for non-zero) */
-    NMO_REF_VISIT(visitor, user_data, sprite->material_id, NMO_REF_MATERIAL, "material");
-    
-    NMO_RETURN_OK();
-}
-
-/* ============================================================================
- * Register All Built-in Enumerators
- * ============================================================================ */
-
-NMO_API nmo_status_t nmo_ref_enumerator_register_builtins(
-    nmo_ref_enumerator_registry_t *registry)
-{
-    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-               "NULL registry");
-    
-    nmo_status_t status;
-    
-    /* Base classes */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_BEOBJECT, nmo_ref_enum_beobject);
-    if (status != NMO_OK) return status;
-    
-    /* 2D objects */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_2DENTITY, nmo_ref_enum_2dentity);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_SPRITE, nmo_ref_enum_sprite);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_SPRITETEXT, nmo_ref_enum_2dentity);
-    if (status != NMO_OK) return status;
-    
-    /* 3D objects */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_3DENTITY, nmo_ref_enum_3dentity);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_3DOBJECT, nmo_ref_enum_3dentity);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_CHARACTER, nmo_ref_enum_3dentity);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_BODYPART, nmo_ref_enum_3dentity);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_SPRITE3D, nmo_ref_enum_sprite3d);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_CURVE, nmo_ref_enum_curve);
-    if (status != NMO_OK) return status;
-    
-    /* Render objects */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_MESH, nmo_ref_enum_mesh);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_MATERIAL, nmo_ref_enum_material);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_TEXTURE, nmo_ref_enum_texture);
-    if (status != NMO_OK) return status;
-    
-    /* Camera/Light */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_CAMERA, nmo_ref_enum_camera);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_TARGETCAMERA, nmo_ref_enum_camera);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_LIGHT, nmo_ref_enum_light);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_TARGETLIGHT, nmo_ref_enum_light);
-    if (status != NMO_OK) return status;
-    
-    /* Behavior system */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_BEHAVIOR, nmo_ref_enum_behavior);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_BEHAVIORLINK, nmo_ref_enum_behaviorlink);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_BEHAVIORIO, nmo_ref_enum_behaviorio);
-    if (status != NMO_OK) return status;
-    
-    /* Parameters */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_PARAMETER, nmo_ref_enum_parameter);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_PARAMETERIN, nmo_ref_enum_parameter);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_PARAMETEROUT, nmo_ref_enum_parameter);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_PARAMETERLOCAL, nmo_ref_enum_parameter);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_PARAMETEROPERATION, nmo_ref_enum_parameter);
-    if (status != NMO_OK) return status;
-    
-    /* Containers */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_GROUP, nmo_ref_enum_group);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_SCENE, nmo_ref_enum_scene);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_LEVEL, nmo_ref_enum_level);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_DATAARRAY, nmo_ref_enum_dataarray);
-    if (status != NMO_OK) return status;
-    
-    /* Places */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_PLACE, nmo_ref_enum_place);
-    if (status != NMO_OK) return status;
-    
-    /* Animation types */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_ANIMATION, nmo_ref_enum_animation);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_KEYEDANIMATION, nmo_ref_enum_keyedanimation);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_OBJECTANIMATION, nmo_ref_enum_objectanimation);
-    if (status != NMO_OK) return status;
-    
-    /* Sound types */
-    status = nmo_ref_enumerator_register(registry, NMO_CID_SOUND, nmo_ref_enum_beobject);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_WAVESOUND, nmo_ref_enum_wavesound);
-    if (status != NMO_OK) return status;
-    
-    status = nmo_ref_enumerator_register(registry, NMO_CID_MIDISOUND, nmo_ref_enum_beobject);
-    if (status != NMO_OK) return status;
-    
-    NMO_RETURN_OK();
+    return nmo_ref_enumerate_type_chain(types, type, state, visitor, user_data);
 }

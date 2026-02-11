@@ -6,6 +6,7 @@
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_guids.h"
+#include "object/nmo_class_ids.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
@@ -137,6 +138,21 @@ TEST(object_types, is_object_type) {
     nmo_arena_destroy(arena);
 }
 
+/* Test: Behavior/parameter group helpers */
+TEST(object_types, class_group_checks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    nmo_register_object_types(registry);
+
+    ASSERT_EQ(1, nmo_object_class_is_behavior(registry, NMO_CID_BEHAVIOR));
+    ASSERT_EQ(1, nmo_object_class_is_parameter(registry, NMO_CID_PARAMETER));
+    ASSERT_EQ(1, nmo_object_class_is_parameter(registry, NMO_CID_PARAMETERIN));
+    ASSERT_EQ(0, nmo_object_class_is_behavior(registry, NMO_CID_MESH));
+    ASSERT_EQ(0, nmo_object_class_is_parameter(registry, NMO_CID_MESH));
+
+    nmo_arena_destroy(arena);
+}
+
 /* Test: 3D entity hierarchy */
 TEST(object_types, 3d_entity_hierarchy) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
@@ -196,6 +212,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_types, lookup_by_class_id);
     REGISTER_TEST(object_types, inheritance_check);
     REGISTER_TEST(object_types, is_object_type);
+    REGISTER_TEST(object_types, class_group_checks);
     REGISTER_TEST(object_types, 3d_entity_hierarchy);
     REGISTER_TEST(object_types, resource_types);
 TEST_MAIN_END()

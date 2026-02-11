@@ -8,6 +8,7 @@
 
 #include "session/nmo_ref_graph.h"
 #include "session/nmo_ref_enumerate.h"
+#include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "session/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -41,7 +42,7 @@ static const char *ref_kind_names[] = {
 struct nmo_ref_graph {
     nmo_arena_t *arena;
     nmo_session_t *session;
-    nmo_ref_enumerator_registry_t *enum_registry;
+    const nmo_type_registry_t *type_registry;
     
     /* Edge storage */
     nmo_ref_edge_t *edges;
@@ -160,14 +161,13 @@ nmo_ref_graph_t *nmo_ref_graph_create(nmo_session_t *session, nmo_arena_t *arena
     graph->arena = arena;
     graph->session = session;
     
-    /* Create and populate enumerator registry */
-    graph->enum_registry = nmo_ref_enumerator_registry_create(arena);
-    if (!graph->enum_registry) {
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    if (!ctx) {
         return NULL;
     }
-    
-    /* Register all built-in enumerators */
-    if (nmo_ref_enumerator_register_builtins(graph->enum_registry) != NMO_OK) {
+
+    graph->type_registry = nmo_context_get_type_registry(ctx);
+    if (!graph->type_registry) {
         return NULL;
     }
     
@@ -183,8 +183,7 @@ nmo_ref_graph_t *nmo_ref_graph_create(nmo_session_t *session, nmo_arena_t *arena
         nmo_object_t *obj = objects[i];
         graph->current_object_id = nmo_object_get_id(obj);
         
-        /* Use registry-based enumeration */
-        nmo_ref_enumerate_object(graph->enum_registry, obj, ref_graph_visitor, graph);
+        nmo_ref_enumerate_object(graph->type_registry, obj, ref_graph_visitor, graph);
     }
     
     return graph;

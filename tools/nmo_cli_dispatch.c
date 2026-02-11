@@ -225,6 +225,16 @@ static void behavior_stats_usage(FILE *out) {
     fprintf(out, "Show behavior counts and distribution by class.\n");
 }
 
+static void behavior_graph_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior graph <id> <file>\n\n");
+    fprintf(out, "Export a behavior graph summary for a specific behavior object.\n");
+}
+
+static void behavior_links_usage(FILE *out) {
+    fprintf(out, "Usage: nmo behavior links <id> <file>\n\n");
+    fprintf(out, "Show sub-behavior link details for a specific behavior object.\n");
+}
+
 static void parameter_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo parameter list <file>\n\n");
     fprintf(out, "List parameter objects in the file (CKParameter* family).\n");
@@ -274,8 +284,8 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"list", "ls", "List behaviors", nmo_cmd_behavior_list, behavior_list_usage},
     {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage},
     {"show", "s", "Show behavior object", nmo_cmd_behavior_show, behavior_show_usage},
-    {"graph", "g", "Export behavior graph", stub_handler, stub_usage},
-    {"links", "l", "Show behavior links", stub_handler, stub_usage},
+    {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage},
+    {"links", "l", "Show behavior links", nmo_cmd_behavior_links, behavior_links_usage},
 };
 
 /* parameter group actions */

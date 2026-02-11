@@ -385,7 +385,8 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
                 yyjson_mut_obj_add_uint(doc, edge, "source_id", broken_edges[i].from);
                 yyjson_mut_obj_add_uint(doc, edge, "target_id", broken_edges[i].to);
                 yyjson_mut_obj_add_str(doc, edge, "kind", nmo_ref_kind_name(broken_edges[i].kind));
-                yyjson_mut_obj_add_str(doc, edge, "field", broken_edges[i].field_path);
+                yyjson_mut_obj_add_str(doc, edge, "field",
+                                       broken_edges[i].field_path ? broken_edges[i].field_path : "unknown");
                 if (broken_edges[i].index > 0) {
                     yyjson_mut_obj_add_uint(doc, edge, "index", broken_edges[i].index);
                 }
@@ -453,11 +454,12 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
                 snprintf(to_buf, sizeof(to_buf), "%u", broken_edges[i].to);
 
                 char field_buf[32];
+                const char *field_name = broken_edges[i].field_path ? broken_edges[i].field_path : "unknown";
                 if (broken_edges[i].index > 0) {
                     snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                             broken_edges[i].field_path, broken_edges[i].index);
+                             field_name, broken_edges[i].index);
                 } else {
-                    snprintf(field_buf, sizeof(field_buf), "%s", broken_edges[i].field_path);
+                    snprintf(field_buf, sizeof(field_buf), "%s", field_name);
                 }
 
                 nmo_object_t *source = nmo_object_repository_find_by_id(repo, broken_edges[i].from);

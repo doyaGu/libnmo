@@ -338,3 +338,40 @@ int nmo_is_object_type(
     /* Check if this type is derived from CKObject */
     return nmo_type_is_derived_from(registry, type->id, ckobject_type->id);
 }
+
+static int nmo_object_class_is_derived_from_guid(
+    nmo_type_registry_t *registry,
+    nmo_class_id_t class_id,
+    nmo_guid_t base_guid)
+{
+    if (!registry) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(registry, base_guid);
+    if (!base) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *child = nmo_type_registry_find_by_class_id_inherited(
+        registry, (uint32_t)class_id);
+    if (!child) {
+        return 0;
+    }
+
+    return nmo_type_is_derived_from(registry, child->id, base->id);
+}
+
+int nmo_object_class_is_behavior(
+    nmo_type_registry_t *registry,
+    nmo_class_id_t class_id)
+{
+    return nmo_object_class_is_derived_from_guid(registry, class_id, CKPGUID_BEHAVIOR);
+}
+
+int nmo_object_class_is_parameter(
+    nmo_type_registry_t *registry,
+    nmo_class_id_t class_id)
+{
+    return nmo_object_class_is_derived_from_guid(registry, class_id, CKPGUID_PARAMETER);
+}

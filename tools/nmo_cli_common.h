@@ -119,7 +119,8 @@ void nmo_cli_close_output_stream(const nmo_cli_global_opts_t *opts, FILE *stream
  * @brief Get class name from class ID using context's type registry
  * @param ctx Context with type registry
  * @param class_id Class ID
- * @return Class name (static string) or NULL if not found
+ * @return Class name (type registry string) or NULL if not found
+ * @note Falls back to inherited class with a registered type if needed.
  */
 const char *nmo_cli_class_name_from_id(nmo_context_t *ctx, nmo_class_id_t class_id);
 
@@ -136,6 +137,7 @@ nmo_class_id_t nmo_cli_class_id_from_name(nmo_context_t *ctx, const char *name);
  * @param ctx Context with type registry
  * @param class_id Class ID
  * @return Parent class ID or 0 if root/not found
+ * @note Uses the type registry base_type chain (no class hierarchy tables).
  */
 nmo_class_id_t nmo_cli_class_get_parent(nmo_context_t *ctx, nmo_class_id_t class_id);
 

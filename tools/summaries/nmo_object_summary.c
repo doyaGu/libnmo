@@ -1,6 +1,6 @@
 /**
  * @file nmo_object_summary.c
- * @brief Object semantic summary system (v2 - Reflection-first implementation)
+ * @brief Object semantic summary system (Reflection-first implementation)
  *
  * This is a complete rewrite of the summary system using reflection as the
  * PRIMARY mechanism. All object types with reflection metadata get automatic
@@ -25,7 +25,7 @@
 #include "core/nmo_guid.h"
 #include "app/nmo_session.h"
 #include "session/nmo_object_repository.h"
-#include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "core/nmo_array.h"
 
 #include "dsl/nmo_dsl.h"
@@ -176,7 +176,7 @@ static yyjson_mut_val *nmo_summary_json_strcpy_safe(yyjson_mut_doc *doc, const c
  * ============================================================================ */
 
 typedef struct {
-    nmo_class_id_t class_id;
+    nmo_guid_t base_guid;
     nmo_summary_enricher_fn enricher;
 } nmo_enricher_entry_t;
 
@@ -1400,11 +1400,29 @@ static bool nmo_summary_emit_enrichments(nmo_object_t *obj, nmo_summary_output_t
         return false;
     }
 
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
     const void *state = nmo_object_get_state(obj);
+    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
+    if (!registry) {
+        return false;
+    }
+
+    const nmo_type_descriptor_t *type = nmo_summary_get_type_for_object(registry, obj);
+    if (!type) {
+        return false;
+    }
 
     for (size_t i = 0; i < g_enricher_count; ++i) {
-        if (g_enrichers[i].class_id == class_id && g_enrichers[i].enricher) {
+        if (!g_enrichers[i].enricher) {
+            continue;
+        }
+
+        const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(
+            registry, g_enrichers[i].base_guid);
+        if (!base) {
+            continue;
+        }
+
+        if (nmo_type_is_derived_from((nmo_type_registry_t *)registry, type->id, base->id)) {
             return g_enrichers[i].enricher(obj, state, out);
         }
     }
@@ -1416,28 +1434,28 @@ static bool nmo_summary_emit_enrichments(nmo_object_t *obj, nmo_summary_output_t
  * Enricher Registry
  * ============================================================================ */
 
-void nmo_summary_register_enricher(nmo_class_id_t class_id, nmo_summary_enricher_fn enricher) {
+void nmo_summary_register_enricher(nmo_guid_t base_guid, nmo_summary_enricher_fn enricher) {
     if (g_enricher_count >= NMO_SUMMARY_MAX_ENRICHERS) {
         return;
     }
 
     /* Check for duplicate */
     for (size_t i = 0; i < g_enricher_count; ++i) {
-        if (g_enrichers[i].class_id == class_id) {
+        if (nmo_guid_equals(g_enrichers[i].base_guid, base_guid)) {
             g_enrichers[i].enricher = enricher;
             return;
         }
     }
 
     g_enrichers[g_enricher_count++] = (nmo_enricher_entry_t){
-        .class_id = class_id,
+        .base_guid = base_guid,
         .enricher = enricher,
     };
 }
 
-bool nmo_summary_has_enricher(nmo_class_id_t class_id) {
+bool nmo_summary_has_enricher(nmo_guid_t base_guid) {
     for (size_t i = 0; i < g_enricher_count; ++i) {
-        if (g_enrichers[i].class_id == class_id) {
+        if (nmo_guid_equals(g_enrichers[i].base_guid, base_guid)) {
             return true;
         }
     }
@@ -1503,8 +1521,8 @@ static bool nmo_enricher_behavior(nmo_object_t *obj, const void *state, nmo_summ
 void nmo_summary_init_builtin_enrichers(void) {
     if (g_enrichers_initialized) return;
 
-    nmo_summary_register_enricher(NMO_CID_MESH, nmo_enricher_mesh);
-    nmo_summary_register_enricher(NMO_CID_BEHAVIOR, nmo_enricher_behavior);
+    nmo_summary_register_enricher(CKPGUID_MESH, nmo_enricher_mesh);
+    nmo_summary_register_enricher(CKPGUID_BEHAVIOR, nmo_enricher_behavior);
 
     g_enrichers_initialized = true;
 }

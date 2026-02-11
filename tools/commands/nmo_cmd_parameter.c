@@ -13,7 +13,8 @@
 #include "../nmo_tool_session.h"
 
 #include "nmo.h"
-#include "object/nmo_class_ids.h"
+#include "app/nmo_context.h"
+#include "object/nmo_object_types.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -26,25 +27,6 @@ static const char *find_file_arg_last(int argc, char **argv) {
         }
     }
     return last_non_opt;
-}
-
-static bool is_parameter_object(nmo_context_t *ctx, nmo_class_id_t class_id) {
-    if (nmo_cli_class_is_derived_from(ctx, class_id, NMO_CID_PARAMETER)) {
-        return true;
-    }
-    if (nmo_cli_class_is_derived_from(ctx, class_id, NMO_CID_PARAMETERLOCAL)) {
-        return true;
-    }
-    if (nmo_cli_class_is_derived_from(ctx, class_id, NMO_CID_PARAMETERIN)) {
-        return true;
-    }
-    if (nmo_cli_class_is_derived_from(ctx, class_id, NMO_CID_PARAMETEROUT)) {
-        return true;
-    }
-    if (nmo_cli_class_is_derived_from(ctx, class_id, NMO_CID_PARAMETEROPERATION)) {
-        return true;
-    }
-    return false;
 }
 
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -61,6 +43,13 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
     if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    if (!registry) {
+        nmo_tool_close_session(ctx, session);
+        fprintf(stderr, "Error: Type registry unavailable\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     nmo_object_t **objects = NULL;
@@ -91,7 +80,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!is_parameter_object(ctx, class_id)) {
+            if (!nmo_object_class_is_parameter(registry, class_id)) {
                 continue;
             }
 
@@ -133,7 +122,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_parameter_object(ctx, class_id)) {
+            if (!nmo_object_class_is_parameter(registry, class_id)) {
                 continue;
             }
 

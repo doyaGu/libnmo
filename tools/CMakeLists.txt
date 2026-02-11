@@ -14,7 +14,7 @@ add_executable(nmo_cli
     nmo_cli_json.c
     nmo_cli_hex.c
 
-    # Session management (shared)
+    # Session management
     nmo_tool_session.c
     nmo_tool_common.c
 
@@ -36,7 +36,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_behavior.c
     commands/nmo_cmd_parameter.c
 
-    # Semantic summaries (Phase 3)
+    # Semantic summaries
     summaries/nmo_object_summary.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
@@ -44,16 +44,6 @@ target_link_libraries(nmo_cli PRIVATE nmo yyjson)
 
 # Include commands subdirectory
 target_include_directories(nmo_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-# TODO: Implement these tools
-# add_executable(nmo-validate nmo-validate.c)
-# target_link_libraries(nmo-validate PRIVATE nmo)
-
-# add_executable(nmo-convert nmo-convert.c)
-# target_link_libraries(nmo-convert PRIVATE nmo)
-
-# add_executable(nmo-diff nmo-diff.c)
-# target_link_libraries(nmo-diff PRIVATE nmo)
 
 # Installation
 install(TARGETS nmo_cli

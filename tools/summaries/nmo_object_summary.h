@@ -1,6 +1,6 @@
 /**
  * @file nmo_object_summary.h
- * @brief Object semantic summary system for CLI (v2 - Reflection-first design)
+ * @brief Object semantic summary system for CLI (Reflection-first design)
  *
  * This module provides automatic semantic summaries for ALL Virtools object types
  * using the type system's reflection capabilities. Key design principles:
@@ -25,6 +25,7 @@
 #include "format/nmo_object.h"
 #include "app/nmo_context.h"
 #include "nmo_types.h"
+#include "core/nmo_guid.h"
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -104,12 +105,14 @@ typedef bool (*nmo_summary_enricher_fn)(
     nmo_summary_output_t *out);
 
 /**
- * @brief Register an enricher for a class ID
+ * @brief Register an enricher for a base type GUID
  *
- * @param class_id Class ID to register for
+ * Enrichers are applied to objects derived from the base type.
+ *
+ * @param base_guid Base type GUID to register for
  * @param enricher Enricher callback
  */
-void nmo_summary_register_enricher(nmo_class_id_t class_id, nmo_summary_enricher_fn enricher);
+void nmo_summary_register_enricher(nmo_guid_t base_guid, nmo_summary_enricher_fn enricher);
 
 /**
  * @brief Initialize built-in enrichers
@@ -233,7 +236,7 @@ bool nmo_summary_has_reflection(nmo_context_t *ctx, nmo_class_id_t class_id);
  * @param class_id Class ID to check
  * @return true if an enricher is registered
  */
-bool nmo_summary_has_enricher(nmo_class_id_t class_id);
+bool nmo_summary_has_enricher(nmo_guid_t base_guid);
 
 /* ============================================================================
  * Output Helper Functions

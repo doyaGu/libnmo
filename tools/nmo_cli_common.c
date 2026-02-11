@@ -325,7 +325,7 @@ void nmo_cli_close_output_stream(const nmo_cli_global_opts_t *opts, FILE *stream
 
 #include "app/nmo_context.h"
 #include "type/nmo_type_system.h"
-#include "object/nmo_class_hierarchy.h"
+#include "core/nmo_guid.h"
 
 const char *nmo_cli_class_name_from_id(nmo_context_t *ctx, nmo_class_id_t class_id) {
     if (!ctx) {
@@ -335,11 +335,13 @@ const char *nmo_cli_class_name_from_id(nmo_context_t *ctx, nmo_class_id_t class_
     if (!registry) {
         return NULL;
     }
-    nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(registry, (uint32_t)class_id);
-    if (type_id == NMO_TYPE_ID_INVALID) {
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id_inherited(
+        registry, (uint32_t)class_id);
+    if (!type) {
         return NULL;
     }
-    return nmo_type_registry_type_id_to_name(registry, type_id);
+    return type->name;
 }
 
 nmo_class_id_t nmo_cli_class_id_from_name(nmo_context_t *ctx, const char *name) {
@@ -367,7 +369,23 @@ nmo_class_id_t nmo_cli_class_get_parent(nmo_context_t *ctx, nmo_class_id_t class
         return 0;
     }
     nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    return nmo_class_get_parent(registry, class_id);
+    if (!registry) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(
+        registry, (uint32_t)class_id);
+    if (!type || nmo_guid_is_null(type->base_type)) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(
+        registry, type->base_type);
+    if (!base) {
+        return 0;
+    }
+
+    return (nmo_class_id_t)base->class_id;
 }
 
 bool nmo_cli_class_is_derived_from(nmo_context_t *ctx, nmo_class_id_t class_id, nmo_class_id_t base_id) {
@@ -375,5 +393,17 @@ bool nmo_cli_class_is_derived_from(nmo_context_t *ctx, nmo_class_id_t class_id, 
         return false;
     }
     nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    return nmo_class_is_derived_from(registry, class_id, base_id) != 0;
+    if (!registry) {
+        return false;
+    }
+
+    const nmo_type_descriptor_t *child = nmo_type_registry_find_by_class_id_inherited(
+        registry, (uint32_t)class_id);
+    const nmo_type_descriptor_t *base = nmo_type_registry_find_by_class_id_inherited(
+        registry, (uint32_t)base_id);
+    if (!child || !base) {
+        return false;
+    }
+
+    return nmo_type_is_derived_from(registry, child->id, base->id);
 }

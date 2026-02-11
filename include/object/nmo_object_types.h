@@ -206,6 +206,32 @@ NMO_API int nmo_is_object_type(
     nmo_type_registry_t *registry,
     nmo_guid_t type_guid);
 
+/**
+ * @brief Check if an object class is derived from CKBehavior
+ *
+ * Uses the type registry and CKPGUID_BEHAVIOR as the base.
+ *
+ * @param registry Type registry
+ * @param class_id Virtools class ID
+ * @return 1 if derived from CKBehavior, 0 otherwise
+ */
+NMO_API int nmo_object_class_is_behavior(
+    nmo_type_registry_t *registry,
+    nmo_class_id_t class_id);
+
+/**
+ * @brief Check if an object class is derived from CKParameter
+ *
+ * Uses the type registry and CKPGUID_PARAMETER as the base.
+ *
+ * @param registry Type registry
+ * @param class_id Virtools class ID
+ * @return 1 if derived from CKParameter, 0 otherwise
+ */
+NMO_API int nmo_object_class_is_parameter(
+    nmo_type_registry_t *registry,
+    nmo_class_id_t class_id);
+
 #ifdef __cplusplus
 }
 #endif
