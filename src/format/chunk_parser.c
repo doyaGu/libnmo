@@ -20,11 +20,6 @@
 #define NMO_PARSER_RETURN_NOMEM(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_NOMEM, (message))
 
-/* Helper functions for chunk parsing */
-static inline size_t dword_align(size_t bytes) {
-    return nmo_align_dword(bytes);
-}
-
 /**
  * @brief Chunk parser structure
  */

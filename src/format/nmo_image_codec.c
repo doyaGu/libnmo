@@ -190,19 +190,6 @@ static void nmo_image_codec_register_builtin_entry(nmo_image_codec_t codec) {
     g_codec_registered[codec.format] = 1;
 }
 
-static inline const char *nmo_image_codec_extension_or_default(const char *const *extensions) {
-    if (!extensions) {
-        return NULL;
-    }
-
-    for (size_t i = 0; i < NMO_MAX_CODEC_EXTENSIONS; ++i) {
-        if (extensions[i]) {
-            return extensions[i];
-        }
-    }
-    return NULL;
-}
-
 static void nmo_image_codec_register_builtin(void) {
     if (g_codec_defaults_registered) {
         return;

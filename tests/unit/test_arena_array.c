@@ -830,7 +830,7 @@ TEST(buffer, typed_data_macro) {
     
     for (int i = 0; i < 5; i++) {
         uint32_t *val = NMO_ARENA_ARRAY_GET(uint32_t, &buffer, i);
-        ASSERT_EQ(*val, i * i);
+        ASSERT_EQ(*val, (uint32_t)(i * i));
     }
 
     nmo_arena_destroy(arena);
