@@ -226,13 +226,12 @@ static void behavior_stats_usage(FILE *out) {
 }
 
 static void behavior_graph_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior graph <id> <file>\n\n");
-    fprintf(out, "Export a behavior graph summary for a specific behavior object.\n");
-}
-
-static void behavior_links_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior links <id> <file>\n\n");
-    fprintf(out, "Show sub-behavior link details for a specific behavior object.\n");
+    fprintf(out, "Usage: nmo behavior graph [options] <id> <file>\n\n");
+    fprintf(out, "Export a behavior graph with parameter and operation links.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --dot               Include DOT graph output (text format only)\n");
+    fprintf(out, "  --max-nodes <n>      Limit node output (0 = no limit)\n");
+    fprintf(out, "  --max-edges <n>      Limit edge output (0 = no limit)\n");
 }
 
 static void parameter_list_usage(FILE *out) {
@@ -285,14 +284,12 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage},
     {"show", "s", "Show behavior object", nmo_cmd_behavior_show, behavior_show_usage},
     {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage},
-    {"links", "l", "Show behavior links", nmo_cmd_behavior_links, behavior_links_usage},
 };
 
 /* parameter group actions */
 static const nmo_cli_action_t parameter_actions[] = {
     {"list", "ls", "List parameters", nmo_cmd_parameter_list, parameter_list_usage},
     {"show", "s", "Show parameter object", nmo_cmd_parameter_show, parameter_show_usage},
-    {"graph", "g", "Export parameter network", stub_handler, stub_usage},
 };
 
 /* resource group actions */
