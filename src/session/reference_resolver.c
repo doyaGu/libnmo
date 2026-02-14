@@ -240,10 +240,14 @@ nmo_object_ref_t *nmo_reference_resolver_register_reference(
     if (ref->name) {
         size_t name_len = strlen(ref->name) + 1;
         char *name_copy = nmo_arena_alloc(resolver->arena, name_len, alignof(char));
-        if (name_copy) {
-            memcpy(name_copy, ref->name, name_len);
-            ref_copy->name = name_copy;
+        if (!name_copy) {
+            /* OOM: fail registration to avoid dangling borrowed pointer */
+            resolver->pending_count--;
+            resolver->stats.total_count--;
+            return NULL;
         }
+        memcpy(name_copy, ref->name, name_len);
+        ref_copy->name = name_copy;
     }
     
     resolver->pending_refs[resolver->pending_count++] = ref_copy;
@@ -322,17 +326,19 @@ int nmo_reference_resolver_resolve_all(
         if (resolver->pending_count > SIZE_MAX / sizeof(nmo_object_ref_t *)) {
             return NMO_ERR_NOMEM;
         }
-        nmo_allocator_t alloc = nmo_allocator_default();
-        nmo_object_ref_t **new_unresolved = (nmo_object_ref_t **)nmo_alloc(
-            &alloc,
+        /* Use arena allocation (consistent with other resolver arrays) */
+        nmo_object_ref_t **new_unresolved = (nmo_object_ref_t **)nmo_arena_alloc(
+            resolver->arena,
             sizeof(nmo_object_ref_t *) * resolver->pending_count,
             _Alignof(nmo_object_ref_t *));
         if (!new_unresolved) {
             return NMO_ERR_NOMEM;
         }
-        memcpy(new_unresolved, resolver->unresolved_refs,
-               resolver->unresolved_count * sizeof(nmo_object_ref_t *));
-        nmo_free(&alloc, resolver->unresolved_refs);
+        if (resolver->unresolved_refs && resolver->unresolved_count > 0) {
+            memcpy(new_unresolved, resolver->unresolved_refs,
+                   resolver->unresolved_count * sizeof(nmo_object_ref_t *));
+        }
+        /* Old array leaks until arena destroy (same pattern as strategies/pending) */
         resolver->unresolved_refs = new_unresolved;
         resolver->unresolved_capacity = resolver->pending_count;
     }
@@ -405,8 +411,7 @@ void nmo_reference_resolver_destroy(
     nmo_reference_resolver_t *resolver
 ) {
     if (resolver != NULL) {
-        nmo_allocator_t alloc = nmo_allocator_default();
-        nmo_free(&alloc, resolver->unresolved_refs);
+        /* All memory is arena-owned; just reset pointers */
         resolver->unresolved_refs = NULL;
         resolver->unresolved_count = 0;
         resolver->unresolved_capacity = 0;

@@ -148,7 +148,7 @@ TEST(index_perf, class_lookup_performance) {
 
     populate_repository(repo, &allocator, object_count, class_bucket_count, guid_bucket_count);
 
-    nmo_object_index_t *index = nmo_object_index_create(repo, arena);
+    nmo_object_index_t *index = nmo_object_index_create(repo, arena, NULL);
     ASSERT_NOT_NULL(index);
     ASSERT_EQ(NMO_OK, nmo_object_index_build(index, NMO_INDEX_BUILD_CLASS | NMO_INDEX_BUILD_GUID));
 

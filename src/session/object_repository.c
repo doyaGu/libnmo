@@ -383,6 +383,52 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
 }
 
 /**
+ * Rename an object already in the repository.
+ *
+ * Removes the old name-table entry first (while the key pointer is still
+ * valid), then delegates to nmo_object_set_name(), and finally re-inserts
+ * with the new name.  This avoids the use-after-free that would occur if
+ * nmo_object_set_name() were called directly on a repository-owned object.
+ */
+int nmo_object_repository_rename(nmo_object_repository_t *repo,
+                                 nmo_object_id_t id,
+                                 const char *new_name) {
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_t *obj = NULL;
+    if (nmo_indexed_map_get(repo->id_map, &id, &obj) != NMO_OK || obj == NULL) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    /* 1. Remove old name from table (key still valid at this point) */
+    if (obj->name != NULL && obj->name[0] != '\0') {
+        nmo_object_t *mapped = NULL;
+        if (nmo_hash_table_get(repo->name_table, &obj->name, &mapped) == NMO_OK
+            && mapped == obj) {
+            nmo_hash_table_remove(repo->name_table, &obj->name);
+        }
+    }
+
+    /* 2. Update the object's name (frees old, allocates new) */
+    int set_result = nmo_object_set_name(obj, new_name);
+    if (set_result != NMO_OK) {
+        return set_result;
+    }
+
+    /* 3. Re-insert with new name if non-empty */
+    if (new_name != NULL && new_name[0] != '\0') {
+        nmo_status_t ins = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
+        if (ins != NMO_OK) {
+            return ins;
+        }
+    }
+
+    return NMO_OK;
+}
+
+/**
  * Check if object exists
  */
 int nmo_object_repository_contains(const nmo_object_repository_t *repo, nmo_object_id_t id) {

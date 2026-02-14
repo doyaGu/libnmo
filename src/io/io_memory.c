@@ -8,6 +8,7 @@
 #include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 /**
  * @brief Memory IO context structure
@@ -144,8 +145,8 @@ static int memory_write_io_read(void *handle, void *buffer, size_t size, size_t 
 
     nmo_memory_write_handle_t *mh = (nmo_memory_write_handle_t *) handle;
 
-    // Calculate how much can be read from written data
-    size_t available = mh->size - mh->position;
+    // Guard: position may exceed size after seek-beyond-size
+    size_t available = (mh->position < mh->size) ? (mh->size - mh->position) : 0;
     size_t to_read = (size < available) ? size : available;
 
     if (to_read > 0) {
@@ -170,6 +171,11 @@ static int memory_write_io_write(void *handle, const void *buffer, size_t size) 
 
     nmo_memory_write_handle_t *mh = (nmo_memory_write_handle_t *) handle;
 
+    // Overflow guard: position + size
+    if (size > SIZE_MAX - mh->position) {
+        return NMO_ERR_NOMEM;
+    }
+
     // Check if we need to grow the buffer
     size_t required = mh->position + size;
     if (required > mh->capacity) {
@@ -179,7 +185,13 @@ static int memory_write_io_write(void *handle, const void *buffer, size_t size) 
             new_capacity = 64; // Minimum initial capacity
         }
         while (new_capacity < required) {
-            new_capacity *= 2;
+            size_t doubled = new_capacity * 2;
+            if (doubled <= new_capacity) {
+                // Overflow in doubling; clamp to required
+                new_capacity = required;
+                break;
+            }
+            new_capacity = doubled;
         }
 
         // Reallocate buffer
@@ -476,7 +488,9 @@ size_t nmo_io_memory_read(nmo_io_memory_t *io_memory, void *buffer, size_t size)
         return 0;
     }
 
-    size_t available = io_memory->size - io_memory->position;
+    // Guard: position may exceed size after seek-beyond-size
+    size_t available = (io_memory->position < io_memory->size)
+                     ? (io_memory->size - io_memory->position) : 0;
     size_t to_read = (size < available) ? size : available;
 
     if (to_read > 0) {
@@ -495,6 +509,11 @@ size_t nmo_io_memory_write(nmo_io_memory_t *io_memory, const void *buffer, size_
         return 0;
     }
 
+    // Overflow guard: position + size
+    if (size > SIZE_MAX - io_memory->position) {
+        return 0;
+    }
+
     // Check if we need to grow the buffer
     size_t required = io_memory->position + size;
     if (required > io_memory->capacity) {
@@ -509,7 +528,13 @@ size_t nmo_io_memory_write(nmo_io_memory_t *io_memory, const void *buffer, size_
             new_capacity = 64;
         }
         while (new_capacity < required) {
-            new_capacity *= 2;
+            size_t doubled = new_capacity * 2;
+            if (doubled <= new_capacity) {
+                // Overflow in doubling; clamp to required
+                new_capacity = required;
+                break;
+            }
+            new_capacity = doubled;
         }
 
         // Reallocate buffer

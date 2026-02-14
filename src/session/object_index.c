@@ -36,6 +36,7 @@ typedef struct object_array {
 struct nmo_object_index {
     nmo_object_repository_t *repo;
     nmo_arena_t *arena;
+    nmo_allocator_t allocator; /* For dynamic object-array alloc/free */
     
     /* Index flags */
     uint32_t active_indexes;
@@ -58,20 +59,24 @@ struct nmo_object_index {
 /* ==================== Helper Functions ==================== */
 
 static void object_array_dispose(void *element, void *user_data) {
-    (void)user_data;
     object_array_t *arr = *(object_array_t **)element;
     if (arr == NULL) {
         return;
     }
-    nmo_allocator_t alloc = nmo_allocator_default();
-    nmo_free(&alloc, arr->objects);
-    nmo_free(&alloc, arr);
+    nmo_allocator_t *alloc = (nmo_allocator_t *)user_data;
+    nmo_allocator_t fallback;
+    if (alloc == NULL) {
+        fallback = nmo_allocator_default();
+        alloc = &fallback;
+    }
+    nmo_free(alloc, arr->objects);
+    nmo_free(alloc, arr);
 }
 
-static void object_index_prepare_lifecycle(nmo_hash_table_t *table) {
+static void object_index_prepare_lifecycle(nmo_hash_table_t *table, nmo_allocator_t *allocator) {
     nmo_container_lifecycle_t value_lifecycle = {
         .dispose = object_array_dispose,
-        .user_data = NULL
+        .user_data = allocator
     };
     nmo_hash_table_set_lifecycle(table, NULL, &value_lifecycle);
 }
@@ -79,17 +84,16 @@ static void object_index_prepare_lifecycle(nmo_hash_table_t *table) {
 /**
  * Create object array
  */
-static object_array_t *object_array_create(size_t initial_capacity) {
-    nmo_allocator_t alloc = nmo_allocator_default();
-    object_array_t *arr = (object_array_t *)nmo_alloc(&alloc, sizeof(object_array_t), _Alignof(object_array_t));
+static object_array_t *object_array_create(size_t initial_capacity, nmo_allocator_t *alloc) {
+    object_array_t *arr = (object_array_t *)nmo_alloc(alloc, sizeof(object_array_t), _Alignof(object_array_t));
     if (arr == NULL) {
         return NULL;
     }
     
     arr->capacity = initial_capacity > 0 ? initial_capacity : 8;
-    arr->objects = (nmo_object_t **)nmo_alloc(&alloc, arr->capacity * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
+    arr->objects = (nmo_object_t **)nmo_alloc(alloc, arr->capacity * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
     if (arr->objects == NULL) {
-        nmo_free(&alloc, arr);
+        nmo_free(alloc, arr);
         return NULL;
     }
     
@@ -100,12 +104,11 @@ static object_array_t *object_array_create(size_t initial_capacity) {
 /**
  * Add object to array
  */
-static int object_array_add(object_array_t *arr, nmo_object_t *obj) {
+static int object_array_add(object_array_t *arr, nmo_object_t *obj, nmo_allocator_t *alloc) {
     if (arr->count >= arr->capacity) {
         size_t new_capacity = arr->capacity * 2;
-        nmo_allocator_t alloc = nmo_allocator_default();
         nmo_object_t **new_objects = (nmo_object_t **)nmo_alloc(
-            &alloc,
+            alloc,
             new_capacity * sizeof(nmo_object_t *),
             _Alignof(nmo_object_t *)
         );
@@ -113,7 +116,7 @@ static int object_array_add(object_array_t *arr, nmo_object_t *obj) {
             return NMO_ERR_NOMEM;
         }
         memcpy(new_objects, arr->objects, arr->count * sizeof(nmo_object_t *));
-        nmo_free(&alloc, arr->objects);
+        nmo_free(alloc, arr->objects);
         arr->objects = new_objects;
         arr->capacity = new_capacity;
     }
@@ -177,7 +180,7 @@ static int build_class_index(nmo_object_index_t *index) {
     if (index->class_index == NULL) {
         return NMO_ERR_NOMEM;
     }
-    object_index_prepare_lifecycle(index->class_index);
+    object_index_prepare_lifecycle(index->class_index, &index->allocator);
     
     /* Get all objects from repository */
     size_t obj_count;
@@ -192,7 +195,7 @@ static int build_class_index(nmo_object_index_t *index) {
         nmo_status_t lookup_result = nmo_hash_table_get(index->class_index, &obj->class_id, &arr);
         if (lookup_result == NMO_ERR_NOT_FOUND) {
             /* Create new array for this class */
-            arr = object_array_create(8);
+            arr = object_array_create(8, &index->allocator);
             if (arr == NULL) {
                 nmo_hash_table_destroy(index->class_index);
                 index->class_index = NULL;
@@ -200,7 +203,7 @@ static int build_class_index(nmo_object_index_t *index) {
             }
             nmo_status_t insert_result = nmo_hash_table_insert(index->class_index, &obj->class_id, &arr);
             if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, NULL);
+                object_array_dispose(&arr, &index->allocator);
                 nmo_hash_table_destroy(index->class_index);
                 index->class_index = NULL;
                 return insert_result;
@@ -212,7 +215,7 @@ static int build_class_index(nmo_object_index_t *index) {
         }
         
         /* Add object to array */
-        int result = object_array_add(arr, obj);
+        int result = object_array_add(arr, obj, &index->allocator);
         if (result != NMO_OK) {
             nmo_hash_table_destroy(index->class_index);
             index->class_index = NULL;
@@ -245,7 +248,7 @@ static int build_name_index(nmo_object_index_t *index) {
     if (index->name_index == NULL) {
         return NMO_ERR_NOMEM;
     }
-    object_index_prepare_lifecycle(index->name_index);
+    object_index_prepare_lifecycle(index->name_index, &index->allocator);
     
     /* Get all objects from repository */
     size_t obj_count;
@@ -267,7 +270,7 @@ static int build_name_index(nmo_object_index_t *index) {
         nmo_status_t lookup_result = nmo_hash_table_get(index->name_index, &name, &arr);
         if (lookup_result == NMO_ERR_NOT_FOUND) {
             /* Create new array for this name */
-            arr = object_array_create(4); /* Most names are unique */
+            arr = object_array_create(4, &index->allocator); /* Most names are unique */
             if (arr == NULL) {
                 nmo_hash_table_destroy(index->name_index);
                 index->name_index = NULL;
@@ -275,7 +278,7 @@ static int build_name_index(nmo_object_index_t *index) {
             }
             nmo_status_t insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
             if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, NULL);
+                object_array_dispose(&arr, &index->allocator);
                 nmo_hash_table_destroy(index->name_index);
                 index->name_index = NULL;
                 return insert_result;
@@ -287,7 +290,7 @@ static int build_name_index(nmo_object_index_t *index) {
         }
         
         /* Add object to array */
-        int result = object_array_add(arr, obj);
+        int result = object_array_add(arr, obj, &index->allocator);
         if (result != NMO_OK) {
             nmo_hash_table_destroy(index->name_index);
             index->name_index = NULL;
@@ -320,7 +323,7 @@ static int build_guid_index(nmo_object_index_t *index) {
     if (index->guid_index == NULL) {
         return NMO_ERR_NOMEM;
     }
-    object_index_prepare_lifecycle(index->guid_index);
+    object_index_prepare_lifecycle(index->guid_index, &index->allocator);
     
     /* Get all objects from repository */
     size_t obj_count;
@@ -341,7 +344,7 @@ static int build_guid_index(nmo_object_index_t *index) {
         nmo_status_t lookup_result = nmo_hash_table_get(index->guid_index, &obj->type_guid, &arr);
         if (lookup_result == NMO_ERR_NOT_FOUND) {
             /* Create new array for this GUID */
-            arr = object_array_create(4);
+            arr = object_array_create(4, &index->allocator);
             if (arr == NULL) {
                 nmo_hash_table_destroy(index->guid_index);
                 index->guid_index = NULL;
@@ -349,7 +352,7 @@ static int build_guid_index(nmo_object_index_t *index) {
             }
             nmo_status_t insert_result = nmo_hash_table_insert(index->guid_index, &obj->type_guid, &arr);
             if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, NULL);
+                object_array_dispose(&arr, &index->allocator);
                 nmo_hash_table_destroy(index->guid_index);
                 index->guid_index = NULL;
                 return insert_result;
@@ -361,7 +364,7 @@ static int build_guid_index(nmo_object_index_t *index) {
         }
         
         /* Add object to array */
-        int result = object_array_add(arr, obj);
+        int result = object_array_add(arr, obj, &index->allocator);
         if (result != NMO_OK) {
             nmo_hash_table_destroy(index->guid_index);
             index->guid_index = NULL;
@@ -380,13 +383,14 @@ static int build_guid_index(nmo_object_index_t *index) {
  */
 nmo_object_index_t *nmo_object_index_create(
     nmo_object_repository_t *repo,
-    nmo_arena_t *arena
+    nmo_arena_t *arena,
+    const nmo_allocator_t *allocator
 ) {
     if (repo == NULL || arena == NULL) {
         return NULL;
     }
     
-    nmo_allocator_t alloc = nmo_allocator_default();
+    nmo_allocator_t alloc = allocator ? *allocator : nmo_allocator_default();
     nmo_object_index_t *index = (nmo_object_index_t *)nmo_alloc(&alloc, sizeof(nmo_object_index_t), _Alignof(nmo_object_index_t));
     if (index == NULL) {
         return NULL;
@@ -394,6 +398,7 @@ nmo_object_index_t *nmo_object_index_create(
     
     index->repo = repo;
     index->arena = arena;
+    index->allocator = alloc;
     index->active_indexes = 0;
     index->class_index = NULL;
     index->name_index = NULL;
@@ -428,9 +433,8 @@ void nmo_object_index_destroy(nmo_object_index_t *index) {
         nmo_hash_table_destroy(index->guid_index);
     }
     
-    nmo_allocator_t alloc = nmo_allocator_default();
-    nmo_free(&alloc, index->last_query_result);
-    nmo_free(&alloc, index);
+    nmo_free(&index->allocator, index->last_query_result);
+    nmo_free(&index->allocator, index);
 }
 
 /**
@@ -505,20 +509,20 @@ int nmo_object_index_add_object(
 
         nmo_status_t lookup_result = nmo_hash_table_get(index->class_index, &object->class_id, &arr);
         if (lookup_result == NMO_ERR_NOT_FOUND) {
-            arr = object_array_create(8);
+            arr = object_array_create(8, &index->allocator);
             if (arr == NULL) {
                 return NMO_ERR_NOMEM;
             }
             nmo_status_t insert_result = nmo_hash_table_insert(index->class_index, &object->class_id, &arr);
             if (insert_result != NMO_OK) {
-                object_array_dispose(&arr, NULL);
+                object_array_dispose(&arr, &index->allocator);
                 return insert_result;
             }
         } else if (lookup_result != NMO_OK) {
             return lookup_result;
         }
         
-        result = object_array_add(arr, object);
+        result = object_array_add(arr, object, &index->allocator);
         if (result != NMO_OK) {
             return result;
         }
@@ -532,20 +536,20 @@ int nmo_object_index_add_object(
 
             nmo_status_t lookup_result = nmo_hash_table_get(index->name_index, &name, &arr);
             if (lookup_result == NMO_ERR_NOT_FOUND) {
-                arr = object_array_create(4);
+                arr = object_array_create(4, &index->allocator);
                 if (arr == NULL) {
                     return NMO_ERR_NOMEM;
                 }
                 nmo_status_t insert_result = nmo_hash_table_insert(index->name_index, &name, &arr);
                 if (insert_result != NMO_OK) {
-                    object_array_dispose(&arr, NULL);
+                    object_array_dispose(&arr, &index->allocator);
                     return insert_result;
                 }
             } else if (lookup_result != NMO_OK) {
                 return lookup_result;
             }
             
-            result = object_array_add(arr, object);
+            result = object_array_add(arr, object, &index->allocator);
             if (result != NMO_OK) {
                 return result;
             }
@@ -559,20 +563,20 @@ int nmo_object_index_add_object(
 
             nmo_status_t lookup_result = nmo_hash_table_get(index->guid_index, &object->type_guid, &arr);
             if (lookup_result == NMO_ERR_NOT_FOUND) {
-                arr = object_array_create(4);
+                arr = object_array_create(4, &index->allocator);
                 if (arr == NULL) {
                     return NMO_ERR_NOMEM;
                 }
                 nmo_status_t insert_result = nmo_hash_table_insert(index->guid_index, &object->type_guid, &arr);
                 if (insert_result != NMO_OK) {
-                    object_array_dispose(&arr, NULL);
+                    object_array_dispose(&arr, &index->allocator);
                     return insert_result;
                 }
             } else if (lookup_result != NMO_OK) {
                 return lookup_result;
             }
             
-            result = object_array_add(arr, object);
+            result = object_array_add(arr, object, &index->allocator);
             if (result != NMO_OK) {
                 return result;
             }
@@ -795,13 +799,12 @@ nmo_object_t **nmo_object_index_get_by_name_all(
             
             /* Allocate result array (owned by index, freed on next filtered query or destroy) */
             nmo_object_index_t *mutable_index = (nmo_object_index_t *)index;
-            nmo_allocator_t alloc = nmo_allocator_default();
-            nmo_free(&alloc, mutable_index->last_query_result);
+            nmo_free(&mutable_index->allocator, mutable_index->last_query_result);
             mutable_index->last_query_result = NULL;
             mutable_index->last_query_count = 0;
             mutable_index->last_query_class = class_id;
 
-            nmo_object_t **result = (nmo_object_t **)nmo_alloc(&alloc, matching * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
+            nmo_object_t **result = (nmo_object_t **)nmo_alloc(&mutable_index->allocator, matching * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
             if (result == NULL) {
                 return NULL;
             }

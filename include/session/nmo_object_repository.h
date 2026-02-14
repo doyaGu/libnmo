@@ -141,6 +141,25 @@ NMO_API nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_reposi
 NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nmo_object_id_t id);
 
 /**
+ * @brief Rename an object that is already in the repository
+ *
+ * Safely updates the name table so the old key is removed before the
+ * object's name pointer is freed, then re-inserts with the new name.
+ *
+ * @warning Do NOT call nmo_object_set_name() directly on repository-owned
+ *          objects — that frees the name pointer used as a hash key, causing
+ *          a use-after-free in the name table.  Use this function instead.
+ *
+ * @param repository Repository
+ * @param id         Object ID
+ * @param new_name   New name (NULL to clear name; empty string removes from table)
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_repository_rename(nmo_object_repository_t *repository,
+                                         nmo_object_id_t id,
+                                         const char *new_name);
+
+/**
  * @brief Clear all objects
  * @param repository Repository
  * @note All contained objects are destroyed.

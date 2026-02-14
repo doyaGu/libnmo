@@ -681,7 +681,7 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
     
     if (session->object_index == NULL) {
         /* Create index if it doesn't exist */
-        session->object_index = nmo_object_index_create(session->repository, session->arena);
+        session->object_index = nmo_object_index_create(session->repository, session->arena, NULL);
         if (session->object_index == NULL) {
             return NMO_ERR_NOMEM;
         }

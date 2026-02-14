@@ -147,7 +147,7 @@ static int finish_loading_phase_10_build_indexes(nmo_finish_loading_context_t *c
     
     /* Create object index */
     nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
-    ctx->index = nmo_object_index_create(repo, ctx->arena);
+    ctx->index = nmo_object_index_create(repo, ctx->arena, NULL);
     
     if (ctx->index == NULL) {
         nmo_log(ctx->logger, NMO_LOG_ERROR, "  Failed to create object index");

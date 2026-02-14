@@ -119,12 +119,19 @@ static void set_bit(uint32_t *mask, size_t mask_size, nmo_object_id_t id) {
  */
 static int grow_file_objects(nmo_builder_t *builder) {
     size_t new_capacity = builder->object_capacity * 2;
+    if (new_capacity <= builder->object_capacity) {
+        return NMO_ERR_NOMEM; /* Overflow in capacity doubling */
+    }
+    size_t alloc_size = new_capacity * sizeof(nmo_file_object_t);
+    if (alloc_size / sizeof(nmo_file_object_t) != new_capacity) {
+        return NMO_ERR_NOMEM; /* Overflow in byte-size computation */
+    }
     // Use arena allocation instead of realloc to avoid mixed allocation patterns
     // Note: Old array is leaked (arena allocator limitation), but this is acceptable
     // since the arena will be cleaned up when the builder is destroyed.
     nmo_file_object_t *new_objects = (nmo_file_object_t *) nmo_arena_alloc(
         builder->arena,
-        new_capacity * sizeof(nmo_file_object_t),
+        alloc_size,
         _Alignof(nmo_file_object_t)
     );
 

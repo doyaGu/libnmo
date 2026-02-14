@@ -59,6 +59,7 @@ typedef struct nmo_index_stats {
  * 
  * @param repo Object repository to index
  * @param arena Arena for memory allocation
+ * @param allocator Allocator for dynamic internal arrays (NULL = default)
  * @return New index or NULL on error
  * @note Returned index is caller-owned; arena owns internal allocations.
  * 
@@ -66,7 +67,8 @@ typedef struct nmo_index_stats {
  */
 NMO_API nmo_object_index_t *nmo_object_index_create(
     nmo_object_repository_t *repo,
-    nmo_arena_t *arena
+    nmo_arena_t *arena,
+    const nmo_allocator_t *allocator
 );
 
 /**

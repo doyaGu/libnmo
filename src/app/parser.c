@@ -900,6 +900,9 @@ static int nmo_load_file_with_io(
         const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
         if (type_rt == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
+            nmo_load_session_end(load_session);
+            nmo_load_session_destroy(load_session);
+            nmo_io_close(io);
             return NMO_ERR_INVALID_STATE;
         }
 
@@ -917,6 +920,9 @@ static int nmo_load_file_with_io(
 
         if (deser_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "  Repository deserialization failed (code=%d)", deser_result);
+            nmo_load_session_end(load_session);
+            nmo_load_session_destroy(load_session);
+            nmo_io_close(io);
             return deser_result;
         }
 

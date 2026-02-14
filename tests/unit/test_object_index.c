@@ -42,7 +42,7 @@ static test_fixture_t *setup_fixture(void) {
         return NULL;
     }
     
-    fixture->index = nmo_object_index_create(fixture->repo, fixture->arena);
+    fixture->index = nmo_object_index_create(fixture->repo, fixture->arena, NULL);
     if (!fixture->index) {
         nmo_object_repository_destroy(fixture->repo);
         nmo_arena_destroy(fixture->arena);

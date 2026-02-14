@@ -308,8 +308,8 @@ const void *nmo_io_mmap_ptr_at(const nmo_io_mmap_t *mmap_ctx, size_t offset, siz
         return NULL;
     }
     
-    /* Bounds check */
-    if (offset + size > mmap_ctx->size) {
+    /* Overflow-safe bounds check: ensure offset <= total AND size <= total - offset */
+    if (offset > mmap_ctx->size || size > mmap_ctx->size - offset) {
         return NULL;
     }
     

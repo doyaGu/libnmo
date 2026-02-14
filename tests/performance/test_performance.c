@@ -132,7 +132,7 @@ void test_index_lookup(void) {
     double time_without_index = get_time_ms() - start;
     
     /* Test with index */
-    nmo_object_index_t *index = nmo_object_index_create(repo, arena);
+    nmo_object_index_t *index = nmo_object_index_create(repo, arena, NULL);
     nmo_object_index_build(index, NMO_INDEX_BUILD_CLASS);
     
     start = get_time_ms();
