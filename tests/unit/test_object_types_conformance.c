@@ -9,7 +9,7 @@
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_class_hierarchy.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
@@ -49,7 +49,20 @@ static void conformance_setup(void) {
     }
 
     nmo_last_error_clear();
-    nmo_status_t status = nmo_register_object_types(g_registry);
+    nmo_status_t status = nmo_register_builtin_types(g_registry);
+    if (status != NMO_OK) {
+        char chain[1024];
+        nmo_last_error_chain_copy(chain, sizeof(chain));
+
+        char msg[512];
+        test_format_error(msg, sizeof(msg),
+                          "Fixture setup failed: nmo_register_builtin_types: %d (%s)\n  %s",
+                          (int)status, nmo_error_string(status), chain);
+        test_add_result(__func__, __func__, 0, msg, __FILE__, __LINE__);
+        return;
+    }
+
+    status = nmo_register_object_types(g_registry);
     if (status != NMO_OK) {
         char chain[1024];
         nmo_last_error_chain_copy(chain, sizeof(chain));
@@ -533,25 +546,56 @@ TEST(conformance, hierarchy_v2_compatibility) {
     }
 
     /* Test nmo_class_is_derived_from matches type system */
-    ASSERT_TRUE(nmo_class_is_derived_from(g_registry, NMO_CID_CAMERA, NMO_CID_3DENTITY));
-    ASSERT_TRUE(nmo_class_is_derived_from(g_registry, NMO_CID_3DENTITY, NMO_CID_RENDEROBJECT));
-    ASSERT_TRUE(nmo_class_is_derived_from(g_registry, NMO_CID_SPRITE, NMO_CID_2DENTITY));
-    ASSERT_FALSE(nmo_class_is_derived_from(g_registry, NMO_CID_MESH, NMO_CID_3DENTITY));
-    ASSERT_FALSE(nmo_class_is_derived_from(g_registry, NMO_CID_PARAMETER, NMO_CID_BEOBJECT));
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_CAMERA, NMO_CID_3DENTITY));
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_3DENTITY, NMO_CID_RENDEROBJECT));
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_SPRITE, NMO_CID_2DENTITY));
+    ASSERT_FALSE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_MESH, NMO_CID_3DENTITY));
+    ASSERT_FALSE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_PARAMETER, NMO_CID_BEOBJECT));
 
-    /* Test nmo_class_get_parent */
-    ASSERT_EQ(NMO_CID_3DENTITY, nmo_class_get_parent(g_registry, NMO_CID_CAMERA));
-    ASSERT_EQ(NMO_CID_CAMERA, nmo_class_get_parent(g_registry, NMO_CID_TARGETCAMERA));
-    ASSERT_EQ(NMO_CID_PARAMETER, nmo_class_get_parent(g_registry, NMO_CID_PARAMETERLOCAL));
-    ASSERT_EQ(0, nmo_class_get_parent(g_registry, NMO_CID_OBJECT));  /* Root has no parent */
+    /* Test parent lookup via type base chain */
+    ASSERT_EQ(NMO_CID_3DENTITY, nmo_type_registry_get_class_parent(g_registry, NMO_CID_CAMERA));
+    ASSERT_EQ(NMO_CID_CAMERA, nmo_type_registry_get_class_parent(g_registry, NMO_CID_TARGETCAMERA));
+    ASSERT_EQ(NMO_CID_PARAMETER, nmo_type_registry_get_class_parent(g_registry, NMO_CID_PARAMETERLOCAL));
+    ASSERT_EQ(0, nmo_type_registry_get_class_parent(g_registry, NMO_CID_OBJECT));  /* Root has no parent */
 
-    /* Test nmo_class_uses_beobject_deserializer */
-    ASSERT_TRUE(nmo_class_uses_beobject_deserializer(g_registry, NMO_CID_MESH));
-    ASSERT_TRUE(nmo_class_uses_beobject_deserializer(g_registry, NMO_CID_3DENTITY));
-    ASSERT_TRUE(nmo_class_uses_beobject_deserializer(g_registry, NMO_CID_SCENE));
-    ASSERT_FALSE(nmo_class_uses_beobject_deserializer(g_registry, NMO_CID_PARAMETER));
-    ASSERT_FALSE(nmo_class_uses_beobject_deserializer(g_registry, NMO_CID_BEHAVIORIO));
+    /* Test CKBeObject-derivation predicate */
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_MESH, NMO_CID_BEOBJECT));
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_3DENTITY, NMO_CID_BEOBJECT));
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_SCENE, NMO_CID_BEOBJECT));
+    ASSERT_FALSE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_PARAMETER, NMO_CID_BEOBJECT));
+    ASSERT_FALSE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_BEHAVIORIO, NMO_CID_BEOBJECT));
 
+}
+
+TEST(conformance, hierarchy_extended_queries) {
+    conformance_require_fixture();
+    if (!g_fixture_ready) {
+        return;
+    }
+
+    nmo_class_id_t ancestors[8] = {0};
+    int ancestor_count = nmo_type_registry_get_class_ancestors(
+        g_registry, NMO_CID_TARGETCAMERA, (uint32_t *)ancestors, 8);
+
+    ASSERT_TRUE(ancestor_count >= 2);
+    ASSERT_EQ(NMO_CID_CAMERA, ancestors[0]);
+    ASSERT_EQ(NMO_CID_3DENTITY, ancestors[1]);
+
+    nmo_class_id_t common = (nmo_class_id_t)nmo_type_registry_get_common_class_ancestor(
+        g_registry, NMO_CID_TARGETCAMERA, NMO_CID_TARGETLIGHT);
+    ASSERT_EQ(NMO_CID_3DENTITY, common);
+
+    int object_level = nmo_type_registry_get_class_derivation_level(g_registry, NMO_CID_OBJECT);
+    int camera_level = nmo_type_registry_get_class_derivation_level(g_registry, NMO_CID_CAMERA);
+    int target_camera_level = nmo_type_registry_get_class_derivation_level(g_registry, NMO_CID_TARGETCAMERA);
+
+    ASSERT_EQ(0, object_level);
+    ASSERT_TRUE(camera_level > object_level);
+    ASSERT_TRUE(target_camera_level > camera_level);
+
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_CAMERA, NMO_CID_RENDEROBJECT));
+    ASSERT_TRUE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_CAMERA, NMO_CID_3DENTITY));
+    ASSERT_FALSE(nmo_type_registry_is_class_derived_from(g_registry, NMO_CID_CAMERA, NMO_CID_2DENTITY));
 }
 
 TEST_MAIN_BEGIN()
@@ -565,4 +609,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST_WITH_FIXTURE(conformance, inheritance_mesh_variants, conformance_setup, conformance_teardown);
     REGISTER_TEST_WITH_FIXTURE(conformance, all_types_have_vtables, conformance_setup, conformance_teardown);
     REGISTER_TEST_WITH_FIXTURE(conformance, hierarchy_v2_compatibility, conformance_setup, conformance_teardown);
+    REGISTER_TEST_WITH_FIXTURE(conformance, hierarchy_extended_queries, conformance_setup, conformance_teardown);
 TEST_MAIN_END()

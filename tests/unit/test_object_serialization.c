@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -12,6 +13,14 @@
 #include "core/nmo_guid.h"
 #include "object/nmo_serialize_context.h"
 #include <string.h>
+
+static nmo_status_t register_test_object_types(nmo_type_registry_t *registry) {
+    nmo_status_t result = nmo_register_builtin_types(registry);
+    if (result != NMO_OK) {
+        return result;
+    }
+    return nmo_register_object_types(registry);
+}
 
 /* Test: Serialize and deserialize CKObject state */
 TEST(object_serialization, ckobject_roundtrip) {
@@ -24,7 +33,7 @@ TEST(object_serialization, ckobject_roundtrip) {
     /* Setup type registry */
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     ASSERT_NE(NULL, registry);
-    nmo_status_t result = nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
     ASSERT_EQ(NMO_OK, result);
 
     /* Get CKObject type */
@@ -68,7 +77,8 @@ TEST(object_serialization, ckobject_roundtrip) {
 TEST(object_serialization, ckobject_hidden) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_NONE);
@@ -106,7 +116,8 @@ TEST(object_serialization, ckobject_hidden) {
 TEST(object_serialization, ckobject_hierarchical_hidden) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_NONE);
@@ -145,7 +156,8 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
 TEST(object_serialization, null_checks) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_NONE);
@@ -180,7 +192,8 @@ TEST(object_serialization, null_checks) {
 TEST(object_serialization, ck3dentity_roundtrip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_NONE);
@@ -237,7 +250,8 @@ TEST(object_serialization, ck3dentity_roundtrip) {
 TEST(object_serialization, ck3dentity_transform) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_NONE);

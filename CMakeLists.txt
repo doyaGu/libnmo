@@ -193,7 +193,6 @@ set(NMO_FORMAT_SOURCES
 
 # Object layer sources
 set(NMO_OBJECT_SOURCES
-    src/object/class_hierarchy.c
     src/object/object_type_common.c
     src/object/object_enums.c
     src/object/object_structs.c

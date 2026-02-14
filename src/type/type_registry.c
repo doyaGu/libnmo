@@ -10,7 +10,6 @@
  */
 
 #include "type/nmo_type_system.h"
-#include "object/nmo_class_hierarchy.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
@@ -462,6 +461,29 @@ static void ensure_class_id_inherited_cache(nmo_type_registry_t *registry) {
         registry->class_id_inherited_version != registry->registry_version) {
         reset_class_id_inherited_cache(registry);
     }
+}
+
+static uint32_t class_parent_id_from_registry(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id)
+{
+    if (!registry || class_id == 0) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_class_id(registry, class_id);
+    if (!type || nmo_guid_is_null(type->base_type)) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *base_type =
+        nmo_type_registry_find_by_guid(registry, type->base_type);
+    if (!base_type) {
+        return 0;
+    }
+
+    return base_type->class_id;
 }
 
 static nmo_status_t validate_type_descriptor(
@@ -1315,16 +1337,16 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     uint32_t slow = class_id;
     uint32_t fast = class_id;
     while (true) {
-        slow = nmo_class_get_parent(mutable_registry, slow);
+        slow = class_parent_id_from_registry(mutable_registry, slow);
         if (slow == 0) {
             break;
         }
 
-        fast = nmo_class_get_parent(mutable_registry, fast);
+        fast = class_parent_id_from_registry(mutable_registry, fast);
         if (fast == 0) {
             break;
         }
-        fast = nmo_class_get_parent(mutable_registry, fast);
+        fast = class_parent_id_from_registry(mutable_registry, fast);
         if (fast == 0) {
             break;
         }
@@ -1337,7 +1359,7 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     // Walk up class hierarchy to find parent with schema
     uint32_t current_class_id = class_id;
     while (true) {
-        uint32_t parent_id = nmo_class_get_parent(mutable_registry, current_class_id);
+        uint32_t parent_id = class_parent_id_from_registry(mutable_registry, current_class_id);
         if (parent_id == 0) {
             break;
         }
@@ -1355,6 +1377,117 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     }
 
     return NULL;  // No schema found in hierarchy
+}
+
+bool nmo_type_registry_is_class_derived_from(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id,
+    uint32_t base_class_id)
+{
+    if (!registry || class_id == 0 || base_class_id == 0) {
+        return false;
+    }
+
+    const nmo_type_descriptor_t *child =
+        nmo_type_registry_find_by_class_id_inherited(registry, class_id);
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_class_id_inherited(registry, base_class_id);
+    if (!child || !base) {
+        return false;
+    }
+
+    return nmo_type_is_derived_from((nmo_type_registry_t *)registry, child->id, base->id);
+}
+
+uint32_t nmo_type_registry_get_class_parent(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id)
+{
+    return class_parent_id_from_registry(registry, class_id);
+}
+
+int nmo_type_registry_get_class_ancestors(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id,
+    uint32_t *out_ancestors,
+    int max_count)
+{
+    if (!registry || !out_ancestors || max_count <= 0 || class_id == 0) {
+        return 0;
+    }
+
+    int count = 0;
+    uint32_t current = class_parent_id_from_registry(registry, class_id);
+    while (current != 0 && count < max_count) {
+        out_ancestors[count++] = current;
+        current = class_parent_id_from_registry(registry, current);
+    }
+
+    return count;
+}
+
+uint32_t nmo_type_registry_get_common_class_ancestor(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id1,
+    uint32_t class_id2)
+{
+    if (!registry || class_id1 == 0 || class_id2 == 0) {
+        return 0;
+    }
+
+    uint32_t probe = class_id1;
+    while (probe != 0) {
+        if (nmo_type_registry_is_class_derived_from(registry, class_id2, probe)) {
+            return probe;
+        }
+        probe = class_parent_id_from_registry(registry, probe);
+    }
+
+    return 0;
+}
+
+int32_t nmo_type_registry_get_class_derivation_level(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id)
+{
+    if (!registry || class_id == 0) {
+        return -1;
+    }
+
+    uint32_t slow = class_id;
+    uint32_t fast = class_id;
+    while (true) {
+        slow = class_parent_id_from_registry(registry, slow);
+        if (slow == 0) {
+            break;
+        }
+
+        fast = class_parent_id_from_registry(registry, fast);
+        if (fast == 0) {
+            break;
+        }
+        fast = class_parent_id_from_registry(registry, fast);
+        if (fast == 0) {
+            break;
+        }
+
+        if (fast == slow) {
+            return -1;
+        }
+    }
+
+    int32_t level = 0;
+    uint32_t current = class_id;
+    while (current != 0) {
+        uint32_t parent = class_parent_id_from_registry(registry, current);
+        if (parent == 0) {
+            return level;
+        }
+        level++;
+        current = parent;
+    }
+
+    return -1;
 }
 
 const nmo_type_descriptor_t* nmo_type_registry_get_by_id(

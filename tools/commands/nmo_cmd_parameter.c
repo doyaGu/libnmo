@@ -15,6 +15,8 @@
 #include "nmo.h"
 #include "app/nmo_context.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_class_ids.h"
+#include "type/nmo_type_system.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +29,21 @@ static const char *find_file_arg_last(int argc, char **argv) {
         }
     }
     return last_non_opt;
+}
+
+static int is_parameter_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+    if (!registry) {
+        return 0;
+    }
+
+    if (nmo_type_registry_is_class_derived_from(
+            registry, (uint32_t)class_id, (uint32_t)NMO_CID_PARAMETER)) {
+        return 1;
+    }
+
+    return class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETEROPERATION;
 }
 
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -80,7 +97,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!nmo_object_class_is_parameter(registry, class_id)) {
+            if (!is_parameter_class(registry, class_id)) {
                 continue;
             }
 
@@ -122,7 +139,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!nmo_object_class_is_parameter(registry, class_id)) {
+            if (!is_parameter_class(registry, class_id)) {
                 continue;
             }
 

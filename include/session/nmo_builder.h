@@ -9,6 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "format/nmo_object.h"
+#include "type/nmo_type_runtime.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,10 +41,13 @@ typedef enum nmo_build_stage {
 /**
  * Create builder
  * @param output_path Output file path
+ * @param type_runtime Type runtime (required, borrowed)
  * @return Builder or NULL on error
  * @note Returned builder is caller-owned.
  */
-NMO_API nmo_builder_t *nmo_builder_create(const char *output_path);
+NMO_API nmo_builder_t *nmo_builder_create(
+    const char *output_path,
+    const nmo_type_runtime_t *type_runtime);
 
 /**
  * Destroy builder

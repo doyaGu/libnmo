@@ -7,11 +7,39 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_class_ids.h"
+#include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include <string.h>
+
+static nmo_status_t register_test_object_types(nmo_type_registry_t *registry) {
+    nmo_status_t result = nmo_register_builtin_types(registry);
+    if (result != NMO_OK) {
+        return result;
+    }
+    return nmo_register_object_types(registry);
+}
+
+static int is_parameter_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+    if (!registry) {
+        return 0;
+    }
+
+    if (nmo_type_registry_is_class_derived_from(registry, class_id, NMO_CID_PARAMETER)) {
+        return 1;
+    }
+
+    switch (class_id) {
+    case NMO_CID_PARAMETERIN:
+    case NMO_CID_PARAMETEROUT:
+    case NMO_CID_PARAMETEROPERATION:
+        return 1;
+    default:
+        return 0;
+    }
+}
 
 /* Test: Basic registration */
 TEST(object_types, register_base_types) {
@@ -43,7 +71,7 @@ TEST(object_types, register_all_types) {
     ASSERT_NE(NULL, registry);
 
     nmo_last_error_clear();
-    nmo_status_t result = nmo_register_object_types(registry);
+     nmo_status_t result = register_test_object_types(registry);
     if (result != NMO_OK) {
         char chain[1024];
         nmo_last_error_chain_copy(chain, sizeof(chain));
@@ -70,7 +98,8 @@ TEST(object_types, register_all_types) {
 TEST(object_types, lookup_by_class_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Lookup CKMesh (class 32) */
     const nmo_type_descriptor_t *mesh = nmo_get_object_type_by_class_id(registry, 32);
@@ -88,7 +117,8 @@ TEST(object_types, lookup_by_class_id) {
 TEST(object_types, inheritance_check) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* CKSprite (28) should derive from CK2dEntity (27) */
     const nmo_type_descriptor_t *sprite = nmo_type_registry_find_by_class_id(registry, 28);
@@ -120,20 +150,21 @@ TEST(object_types, inheritance_check) {
 TEST(object_types, is_object_type) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* CKMesh is an object type */
-    int result = nmo_is_object_type(registry, CKPGUID_MESH);
-    ASSERT_EQ(1, result);
+    int group_result = nmo_is_object_type(registry, CKPGUID_MESH);
+    ASSERT_EQ(1, group_result);
 
     /* CKObject itself is an object type */
-    result = nmo_is_object_type(registry, CKPGUID_OBJECT);
-    ASSERT_EQ(1, result);
+    group_result = nmo_is_object_type(registry, CKPGUID_OBJECT);
+    ASSERT_EQ(1, group_result);
 
     /* Non-existent type */
     nmo_guid_t fake_guid = {0x12345678, 0xABCDEF00};
-    result = nmo_is_object_type(registry, fake_guid);
-    ASSERT_EQ(0, result);
+    group_result = nmo_is_object_type(registry, fake_guid);
+    ASSERT_EQ(0, group_result);
 
     nmo_arena_destroy(arena);
 }
@@ -142,13 +173,20 @@ TEST(object_types, is_object_type) {
 TEST(object_types, class_group_checks) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
-    ASSERT_EQ(1, nmo_object_class_is_behavior(registry, NMO_CID_BEHAVIOR));
-    ASSERT_EQ(1, nmo_object_class_is_parameter(registry, NMO_CID_PARAMETER));
-    ASSERT_EQ(1, nmo_object_class_is_parameter(registry, NMO_CID_PARAMETERIN));
-    ASSERT_EQ(0, nmo_object_class_is_behavior(registry, NMO_CID_MESH));
-    ASSERT_EQ(0, nmo_object_class_is_parameter(registry, NMO_CID_MESH));
+    int is_behavior = nmo_type_registry_is_class_derived_from(registry, NMO_CID_BEHAVIOR, NMO_CID_BEHAVIOR) ? 1 : 0;
+    int is_parameter = is_parameter_class(registry, NMO_CID_PARAMETER);
+    int is_parameter_in = is_parameter_class(registry, NMO_CID_PARAMETERIN);
+    int mesh_is_behavior = nmo_type_registry_is_class_derived_from(registry, NMO_CID_MESH, NMO_CID_BEHAVIOR) ? 1 : 0;
+    int mesh_is_parameter = is_parameter_class(registry, NMO_CID_MESH);
+
+    ASSERT_EQ(1, is_behavior);
+    ASSERT_EQ(1, is_parameter);
+    ASSERT_EQ(1, is_parameter_in);
+    ASSERT_EQ(0, mesh_is_behavior);
+    ASSERT_EQ(0, mesh_is_parameter);
 
     nmo_arena_destroy(arena);
 }
@@ -157,7 +195,8 @@ TEST(object_types, class_group_checks) {
 TEST(object_types, 3d_entity_hierarchy) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Get types */
     const nmo_type_descriptor_t *ckobject = nmo_type_registry_find_by_class_id(registry, 1);
@@ -185,7 +224,8 @@ TEST(object_types, 3d_entity_hierarchy) {
 TEST(object_types, resource_types) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
-    nmo_register_object_types(registry);
+    nmo_status_t result = register_test_object_types(registry);
+    ASSERT_EQ(NMO_OK, result);
 
     /* Get resource types */
     const nmo_type_descriptor_t *material = nmo_type_registry_find_by_class_id(registry, 30);

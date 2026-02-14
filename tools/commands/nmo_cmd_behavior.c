@@ -44,6 +44,14 @@ static const char *find_file_arg_last(int argc, char **argv) {
     return last_non_opt;
 }
 
+static int is_behavior_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+    if (!registry) {
+        return 0;
+    }
+    return nmo_type_registry_is_class_derived_from(
+        registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEHAVIOR) ? 1 : 0;
+}
+
 typedef struct {
     nmo_object_id_t io_id;
     nmo_object_id_t behavior_id;
@@ -664,7 +672,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!nmo_object_class_is_behavior(registry, class_id)) {
+            if (!is_behavior_class(registry, class_id)) {
                 continue;
             }
 
@@ -706,7 +714,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!nmo_object_class_is_behavior(registry, class_id)) {
+            if (!is_behavior_class(registry, class_id)) {
                 continue;
             }
 
@@ -796,7 +804,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
         nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-        if (!nmo_object_class_is_behavior(registry, class_id)) {
+        if (!is_behavior_class(registry, class_id)) {
             continue;
         }
         total++;
@@ -973,7 +981,7 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
         goto cleanup;
     }
 
-    if (!nmo_object_class_is_behavior(registry, nmo_object_get_class_id(behavior))) {
+    if (!is_behavior_class(registry, nmo_object_get_class_id(behavior))) {
         fprintf(stderr, "Error: Object %u is not a behavior\n", behavior_id);
         exit_code = NMO_CLI_EXIT_ARG_ERROR;
         goto cleanup;

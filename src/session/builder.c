@@ -8,6 +8,8 @@
 
 #include "session/nmo_builder.h"
 #include "format/nmo_object.h"
+#include "object/nmo_class_ids.h"
+#include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include <stdio.h>
@@ -33,6 +35,7 @@ typedef struct {
  */
 struct nmo_builder {
     nmo_arena_t *arena;              /* Memory arena */
+    const nmo_type_runtime_t *type_runtime; /* Borrowed runtime view */
     
     /* File objects list */
     nmo_file_object_t *file_objects; /* Dynamic array of file objects */
@@ -52,6 +55,36 @@ struct nmo_builder {
     char error_msg[256];             /* Last error message */
     nmo_build_stage_t stage;         /* Current build stage */
 };
+
+static int builder_is_scene_or_level(
+    const nmo_builder_t *builder,
+    nmo_class_id_t class_id)
+{
+    if (builder == NULL || builder->type_runtime == NULL || builder->type_runtime->types == NULL) {
+        return 0;
+    }
+
+    nmo_type_registry_t *registry = builder->type_runtime->types;
+    const nmo_type_descriptor_t *child =
+        nmo_type_registry_find_by_class_id_inherited(registry, (uint32_t)class_id);
+    if (child == NULL) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *scene =
+        nmo_type_registry_find_by_class_id(registry, (uint32_t)NMO_CID_SCENE);
+    if (scene != NULL && nmo_type_is_derived_from(registry, child->id, scene->id)) {
+        return 1;
+    }
+
+    const nmo_type_descriptor_t *level =
+        nmo_type_registry_find_by_class_id(registry, (uint32_t)NMO_CID_LEVEL);
+    if (level != NULL && nmo_type_is_derived_from(registry, child->id, level->id)) {
+        return 1;
+    }
+
+    return 0;
+}
 
 /**
  * Helper: Check if bit is set in mask
@@ -118,8 +151,12 @@ static int grow_file_objects(nmo_builder_t *builder) {
 /**
  * Create builder
  */
-nmo_builder_t *nmo_builder_create(const char *output_path) {
+nmo_builder_t *nmo_builder_create(const char *output_path, const nmo_type_runtime_t *type_runtime) {
     (void)output_path;  /* Not used in stub implementation */
+
+    if (type_runtime == NULL || type_runtime->types == NULL || type_runtime->ops == NULL) {
+        return NULL;
+    }
 
     /* Create arena first for all allocations */
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
@@ -137,6 +174,7 @@ nmo_builder_t *nmo_builder_create(const char *output_path) {
 
     memset(builder, 0, sizeof(nmo_builder_t));
     builder->arena = arena;
+    builder->type_runtime = type_runtime;
 
     /* Allocate file objects array from arena */
     builder->file_objects = (nmo_file_object_t *) nmo_arena_alloc(
@@ -253,11 +291,8 @@ nmo_status_t nmo_builder_add_object_as_reference(nmo_builder_t *builder, nmo_obj
     
     builder->object_count++;
     
-    /* Track scene/level objects for save ordering */
-    /* CKFile checks: if (CKIsChildClassOf(obj, CKCID_SCENE) || CKIsChildClassOf(obj, CKCID_LEVEL)) */
-    nmo_class_id_t class_id = file_obj->class_id;
-    if (nmo_class_is_derived_from(NULL, class_id, 10) ||  /* CKCID_SCENE */
-        nmo_class_is_derived_from(NULL, class_id, 21)) {  /* CKCID_LEVEL */
+    /* Track scene/level objects for save ordering via type-runtime hierarchy checks */
+    if (builder_is_scene_or_level(builder, file_obj->class_id)) {
         /* Scene/level object detected - may need special handling in save pipeline */
     }
     

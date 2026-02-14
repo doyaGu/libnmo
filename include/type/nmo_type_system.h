@@ -749,6 +749,74 @@ const nmo_type_descriptor_t* nmo_type_registry_find_by_class_id_inherited(
     uint32_t class_id);
 
 /**
+ * @brief Check whether class A derives from class B using type hierarchy.
+ *
+ * Both class IDs are resolved through inherited lookup, so classes without
+ * direct schemas still map to nearest ancestor schemas.
+ *
+ * @param registry Registry
+ * @param class_id Child class ID
+ * @param base_class_id Base/ancestor class ID
+ * @return true if child derives from base (or same class), false otherwise
+ */
+bool nmo_type_registry_is_class_derived_from(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id,
+    uint32_t base_class_id);
+
+/**
+ * @brief Get direct parent class ID from type base chain.
+ *
+ * @param registry Registry
+ * @param class_id Class ID
+ * @return Parent class ID, or 0 if root/unknown
+ */
+uint32_t nmo_type_registry_get_class_parent(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id);
+
+/**
+ * @brief Get ancestor class IDs from direct parent to root.
+ *
+ * @param registry Registry
+ * @param class_id Class ID
+ * @param out_ancestors Output array of class IDs
+ * @param max_count Max output entries
+ * @return Number of ancestors written
+ */
+int nmo_type_registry_get_class_ancestors(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id,
+    uint32_t *out_ancestors,
+    int max_count);
+
+/**
+ * @brief Find nearest common ancestor class ID for two classes.
+ *
+ * @param registry Registry
+ * @param class_id1 First class ID
+ * @param class_id2 Second class ID
+ * @return Common ancestor class ID, or 0 if none
+ */
+uint32_t nmo_type_registry_get_common_class_ancestor(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id1,
+    uint32_t class_id2);
+
+/**
+ * @brief Get derivation level of class from root.
+ *
+ * Root classes have level 0, direct children level 1, etc.
+ *
+ * @param registry Registry
+ * @param class_id Class ID
+ * @return Derivation level, or -1 on invalid/cycle
+ */
+int32_t nmo_type_registry_get_class_derivation_level(
+    const nmo_type_registry_t *registry,
+    uint32_t class_id);
+
+/**
  * @brief Get type by ID (O(1) runtime fast access)
  * 
  * @param registry Registry
