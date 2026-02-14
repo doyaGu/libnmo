@@ -21,6 +21,8 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_guids.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -29,6 +31,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
+#include "type/nmo_type_guids.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 
@@ -70,6 +73,23 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
 
 /* From CKParameter.cpp */
 #define CK_PARAM_IDENTIFIER  0x00000040
+
+static void nmo_parameter_convert_legacy_guid(nmo_guid_t *guid)
+{
+    if (guid == NULL) {
+        return;
+    }
+
+    if (nmo_guid_equals(*guid, CKPGUID_OLDMESSAGE)) {
+        *guid = CKPGUID_MESSAGE;
+    } else if (nmo_guid_equals(*guid, CKPGUID_OLDATTRIBUTE)) {
+        *guid = CKPGUID_ATTRIBUTE;
+    } else if (nmo_guid_equals(*guid, CKPGUID_ID)) {
+        *guid = CKPGUID_OBJECT;
+    } else if (nmo_guid_equals(*guid, CKPGUID_OLDTIME)) {
+        *guid = CKPGUID_TIME;
+    }
+}
 
 /* =============================================================================
  * CKParameter DESERIALIZATION
@@ -116,6 +136,7 @@ nmo_status_t nmo_parameter_deserialize(
     if (result != NMO_OK) {
         return result;
     }
+    nmo_parameter_convert_legacy_guid(&out_state->type_guid);
 
     /* If no more data after GUID, preserve header-only state */
     {

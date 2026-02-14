@@ -68,10 +68,12 @@ nmo_status_t nmo_parameteroperation_deserialize(
 
             size_t count = 0;
             if (nmo_chunk_read_object_sequence_start(chunk, &count) == NMO_OK) {
-                if (nmo_chunk_get_data_version(chunk) < 5 && count > 3) {
+                if (nmo_chunk_get_data_version(chunk) < 5) {
                     nmo_object_id_t dummy = 0;
                     (void)nmo_chunk_read_object_sequence_item(chunk, &dummy);
-                    count -= 1;
+                    if (count > 0) {
+                        count -= 1;
+                    }
                 }
                 if (count >= 1) {
                     (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->in1_id);

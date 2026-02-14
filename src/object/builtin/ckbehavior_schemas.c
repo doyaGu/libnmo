@@ -560,19 +560,12 @@ nmo_status_t nmo_behavior_serialize(
 {
     (void)type;
     const nmo_behavior_state_t *in_state = (const nmo_behavior_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
-
-    if (!in_state || !out_chunk || !arena) {
+    if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behavior_serialize");
     }
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
     const bool write_file_format = is_file;
-
-    if (write_file_format && !in_state->has_save_flags &&
-        (in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Missing CKBehavior save flags");
-    }
 
     /* Start write mode for behavior chunk */
     nmo_status_t result = nmo_chunk_start_write(out_chunk);
@@ -599,9 +592,6 @@ nmo_status_t nmo_behavior_serialize(
                 if (sub_chunks && i < in_state->sub_behavior_chunks.count) {
                     sub = (nmo_chunk_t *)sub_chunks[i];
                 }
-                if (!sub) {
-                    sub = nmo_chunk_create(arena);
-                }
                 result = nmo_chunk_write_sub_chunk(out_chunk, sub);
                 if (result != NMO_OK) return result;
             }
@@ -627,9 +617,6 @@ nmo_status_t nmo_behavior_serialize(
                     nmo_chunk_t *sub = NULL;
                     if (local_chunks && i < in_state->local_parameter_chunks.count) {
                         sub = (nmo_chunk_t *)local_chunks[i];
-                    }
-                    if (!sub) {
-                        sub = nmo_chunk_create(arena);
                     }
                     result = nmo_chunk_write_sub_chunk(out_chunk, sub);
                     if (result != NMO_OK) return result;

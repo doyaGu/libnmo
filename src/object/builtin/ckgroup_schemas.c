@@ -19,7 +19,6 @@
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
-#include "session/nmo_object_repository.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
@@ -268,7 +267,7 @@ nmo_status_t nmo_group_finish_loading(
     (void)arena;
 
     nmo_group_state_t *group_state = (nmo_group_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    (void)repository;
 
     /* Nothing to do for empty groups */
     if (group_state->object_ids.count == 0 || !group_state->object_ids.data) {
@@ -287,8 +286,7 @@ nmo_status_t nmo_group_finish_loading(
      * deferred to future work. For now, groups->objects direction is sufficient
      * for most use cases.
      */
-    uint32_t resolved_count = 0;
-    uint32_t unresolved_count = 0;
+    uint32_t referenced_count = 0;
 
     const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &group_state->object_ids);
     for (uint32_t i = 0; i < group_state->object_ids.count; i++) {
@@ -298,29 +296,12 @@ nmo_status_t nmo_group_finish_loading(
         if (obj_id == 0) {
             continue;
         }
-        
-        /* Try to resolve the object reference */
-        if (repo != NULL) {
-            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, obj_id);
-            if (obj != NULL) {
-                resolved_count++;
-                /* Object found - bidirectional link would go here:
-                 * nmo_object_add_to_group(obj, group_id);
-                 */
-            } else {
-                unresolved_count++;
-                /* Object not found - may be external reference */
-            }
-        } else {
-            /* No repository - can't resolve, but not an error */
-            unresolved_count++;
-        }
+
+        referenced_count++;
     }
 
-    /* Log resolution statistics if logger available */
-    if (unresolved_count > 0) {
-        nmo_log_debug(NULL, "CKGroup finish_loading: %u resolved, %u unresolved (external refs)",
-                      resolved_count, unresolved_count);
+    if (referenced_count > 0) {
+        nmo_log_debug(NULL, "CKGroup finish_loading: %u referenced members", referenced_count);
     }
 
     NMO_RETURN_OK();

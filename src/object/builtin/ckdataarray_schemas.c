@@ -347,7 +347,7 @@ nmo_status_t nmo_dataarray_serialize(
                 if (nmo_chunk_is_file_mode(out_chunk)) {
                     result = nmo_chunk_write_object_id(out_chunk, cell->parameter_id);
                     if (result != NMO_OK) return result;
-                } else if (cell->parameter_chunk) {
+                } else {
                     result = nmo_chunk_write_sub_chunk(out_chunk, cell->parameter_chunk);
                     if (result != NMO_OK) return result;
                 }

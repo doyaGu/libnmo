@@ -11,6 +11,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -21,6 +22,20 @@
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameterin, nmo_parameterin_state_t)
+
+static void nmo_parameterin_convert_legacy_guid(nmo_guid_t *guid) {
+    if (guid == NULL) {
+        return;
+    }
+
+    if (nmo_guid_equals(*guid, CKPGUID_OLDMESSAGE)) {
+        *guid = CKPGUID_MESSAGE;
+    } else if (nmo_guid_equals(*guid, CKPGUID_OLDATTRIBUTE)) {
+        *guid = CKPGUID_ATTRIBUTE;
+    } else if (nmo_guid_equals(*guid, CKPGUID_OLDTIME)) {
+        *guid = CKPGUID_TIME;
+    }
+}
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -67,6 +82,7 @@ nmo_status_t nmo_parameterin_deserialize(
     if (data_version >= 1) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
             if (data_version < 5) {
                 nmo_object_id_t legacy_id = 0;
                 (void)nmo_chunk_read_object_id(chunk, &legacy_id);
@@ -75,6 +91,7 @@ nmo_status_t nmo_parameterin_deserialize(
             out_state->is_shared = 1;
         } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
             if (data_version < 5) {
                 nmo_object_id_t legacy_id = 0;
                 (void)nmo_chunk_read_object_id(chunk, &legacy_id);
@@ -83,6 +100,7 @@ nmo_status_t nmo_parameterin_deserialize(
             out_state->is_shared = 0;
         } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
 
             nmo_object_id_t owner_id = 0;
             nmo_object_id_t out_source_id = 0;
@@ -93,10 +111,10 @@ nmo_status_t nmo_parameterin_deserialize(
 
             if (out_source_id) {
                 out_state->source_id = out_source_id;
-                out_state->is_shared = 1;
+                out_state->is_shared = 0;
             } else {
                 out_state->source_id = param_id;
-                out_state->is_shared = 0;
+                out_state->is_shared = 1;
             }
         }
 
@@ -104,18 +122,25 @@ nmo_status_t nmo_parameterin_deserialize(
             out_state->is_disabled = 1;
         }
     } else {
-        /* Legacy path: keep minimal support by scanning known identifiers */
+        /* Legacy path: CK2 uses DEFAULTDATA/OWNER/INSHARED/OUTSOURCE */
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
             nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED) == NMO_OK) {
-            nmo_chunk_read_guid(chunk, &out_state->type_guid);
-            nmo_chunk_read_object_id(chunk, &out_state->source_id);
-            out_state->is_shared = 1;
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_OWNER) == NMO_OK) {
+            nmo_object_id_t owner_id = 0;
+            (void)nmo_chunk_read_object_id(chunk, &owner_id);
+        }
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_INSHARED) == NMO_OK) {
+            nmo_object_id_t shared_id = 0;
+            nmo_chunk_read_object_id(chunk, &shared_id);
+            if (shared_id) {
+                out_state->source_id = shared_id;
+                out_state->is_shared = 1;
+            }
         }
         if (!out_state->is_shared &&
-            nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE) == NMO_OK) {
-            nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_OUTSOURCE) == NMO_OK) {
             nmo_chunk_read_object_id(chunk, &out_state->source_id);
         }
     }
