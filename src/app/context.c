@@ -165,8 +165,17 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
-    /* Register built-in object types in type registry */
-    nmo_status_t type_result = nmo_register_object_types(ctx->type_registry);
+    /* Register builtin scalar/math/container types first */
+    nmo_status_t type_result = nmo_register_builtin_types(ctx->type_registry);
+    if (type_result != NMO_OK) {
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    /* Register Virtools object types after builtin types */
+    type_result = nmo_register_object_types(ctx->type_registry);
     if (type_result != NMO_OK) {
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
