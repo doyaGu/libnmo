@@ -53,7 +53,14 @@ nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     nmo_chunk_parser_state_t *state = get_parser_state(chunk);
     if (!state || state->current_pos >= chunk->data.count) {
         *out_id = 0;
-        NMO_RETURN_OK();
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO,
+                         "No identifier available at current position");
+    }
+
+    if (state->current_pos + 1 >= chunk->data.count) {
+        *out_id = 0;
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                         "Truncated identifier entry");
     }
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -98,14 +105,27 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
 
     size_t current_pos = start_pos;
     if (current_pos != 0) {
+        size_t guard = 0;
         while (current_pos < chunk->data.count && data[current_pos] != id) {
+            if (current_pos + 1 >= chunk->data.count) {
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                       "Corrupt identifier chain");
+            }
             current_pos = data[current_pos + 1];
             if (current_pos == 0) {
                 break;
             }
+            if (++guard > chunk->data.count) {
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                                       "Identifier chain cycle detected");
+            }
         }
 
         if (current_pos != 0 && current_pos < chunk->data.count) {
+            if (current_pos + 1 >= chunk->data.count) {
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                       "Truncated identifier entry");
+            }
             state->prev_identifier_pos = current_pos;
             state->current_pos = current_pos + 2;
             NMO_RETURN_OK();
@@ -113,17 +133,31 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     }
 
     current_pos = 0;
+    size_t guard = 0;
     while (current_pos < chunk->data.count && data[current_pos] != id) {
+        if (current_pos + 1 >= chunk->data.count) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                   "Corrupt identifier chain");
+        }
         current_pos = data[current_pos + 1];
         if (current_pos == start_pos) {
             NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
                                    "Identifier not found");
+        }
+        if (++guard > chunk->data.count) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                                   "Identifier chain cycle detected");
         }
     }
 
     if (current_pos >= chunk->data.count) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
                                "Identifier not found");
+    }
+
+    if (current_pos + 1 >= chunk->data.count) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                               "Truncated identifier entry");
     }
 
     state->prev_identifier_pos = current_pos;

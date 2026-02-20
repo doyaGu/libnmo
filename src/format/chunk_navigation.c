@@ -32,6 +32,11 @@ nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
     }
 
+    if (pos > state->data_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Cannot seek beyond chunk bounds");
+    }
+
     state->current_pos = pos;
     NMO_RETURN_OK();
 }
@@ -44,11 +49,32 @@ nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
     }
 
+    if (dwords > SIZE_MAX - state->current_pos) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Skip overflow");
+    }
+
+    size_t new_pos = state->current_pos + dwords;
+
+    if (state->data_size == chunk->data.count) {
+        if (new_pos > chunk->data.count) {
+            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                             "Cannot skip beyond readable data");
+        }
+        state->current_pos = new_pos;
+        NMO_RETURN_OK();
+    }
+
+    if (dwords > SIZE_MAX / sizeof(uint32_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Skip size overflow");
+    }
+
     /* CK2 behavior: Skip calls CheckSize to ensure capacity for writes. */
     nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    state->current_pos += dwords;
+    state->current_pos = new_pos;
     NMO_RETURN_OK();
 }
 

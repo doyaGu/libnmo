@@ -43,7 +43,11 @@ static inline int check_bounds(nmo_chunk_parser_t *p, size_t dwords_needed) {
     if (p == NULL || p->chunk == NULL) {
         return 0;
     }
-    return (p->cursor + dwords_needed) <= NMO_CHUNK_PARSER_DATA_SIZE(p);
+    size_t data_size = NMO_CHUNK_PARSER_DATA_SIZE(p);
+    if (p->cursor > data_size) {
+        return 0;
+    }
+    return dwords_needed <= (data_size - p->cursor);
 }
 
 static inline void consume_subchunk_slot(nmo_chunk_parser_t *p) {

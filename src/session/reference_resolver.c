@@ -242,8 +242,6 @@ nmo_object_ref_t *nmo_reference_resolver_register_reference(
         char *name_copy = nmo_arena_alloc(resolver->arena, name_len, alignof(char));
         if (!name_copy) {
             /* OOM: fail registration to avoid dangling borrowed pointer */
-            resolver->pending_count--;
-            resolver->stats.total_count--;
             return NULL;
         }
         memcpy(name_copy, ref->name, name_len);

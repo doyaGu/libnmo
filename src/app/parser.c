@@ -938,28 +938,6 @@ skip_object_processing:
     /* Update repo_count after potential skip */
     nmo_object_repository_get_all(repo, &repo_count);
 
-    /* Phase 16: Manager Post-Load Hooks */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 16: Executing manager post-load hooks");
-
-    if (manager_reg != NULL) {
-        uint32_t manager_count = nmo_manager_registry_get_count(manager_reg);
-
-        for (uint32_t i = 0; i < manager_count; i++) {
-            uint32_t manager_id = nmo_manager_registry_get_id_at(manager_reg, i);
-            nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
-
-            if (manager != NULL) {
-                int hook_result = nmo_manager_invoke_post_load(manager, session);
-                if (hook_result != NMO_OK) {
-                    nmo_log(logger, NMO_LOG_WARN, "  Manager %u post-load hook failed: %d",
-                            manager_id, hook_result);
-                } else {
-                    nmo_log(logger, NMO_LOG_INFO, "  Manager %u post-load hook executed", manager_id);
-                }
-            }
-        }
-    }
-
     /* Cleanup */
     nmo_load_session_end(load_session);
     nmo_load_session_destroy(load_session);

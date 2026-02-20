@@ -277,6 +277,29 @@ TEST(chunk_api, navigation) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, navigation_read_bounds) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_int(chunk, 10);
+    nmo_chunk_write_int(chunk, 20);
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    nmo_status_t result = nmo_chunk_skip(chunk, 3);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0);
+
+    result = nmo_chunk_goto(chunk, 3);
+    ASSERT_EQ(result, NMO_ERR_INVALID_OFFSET);
+
+    nmo_arena_destroy(arena);
+}
+
 // Test: Auto-expansion
 TEST(chunk_api, auto_expand) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
@@ -343,6 +366,34 @@ TEST(chunk_api, identifiers) {
     result = nmo_chunk_seek_identifier(chunk, 0xCCCC);
     ASSERT_NE(result, NMO_OK);
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, read_identifier_eof) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_identifier(chunk, 0xAAAA);
+    nmo_chunk_write_int(chunk, 1234);
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, 0xAAAA);
+    ASSERT_EQ(result, NMO_OK);
+
+    int32_t value = 0;
+    result = nmo_chunk_read_int(chunk, &value);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(value, 1234);
+
+    uint32_t identifier = 0;
+    result = nmo_chunk_read_identifier(chunk, &identifier);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+
     nmo_arena_destroy(arena);
 }
 
@@ -651,8 +702,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, object_id);
     REGISTER_TEST(chunk_api, sequence);
     REGISTER_TEST(chunk_api, navigation);
+    REGISTER_TEST(chunk_api, navigation_read_bounds);
     REGISTER_TEST(chunk_api, auto_expand);
     REGISTER_TEST(chunk_api, identifiers);
+    REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);
     REGISTER_TEST(chunk_api, sub_chunks);
     REGISTER_TEST(chunk_api, arrays);

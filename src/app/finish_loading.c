@@ -66,11 +66,13 @@ static int finish_loading_phase_9_resolve_references(nmo_finish_loading_context_
         return NMO_OK;
     }
     
-    /* Create reference resolver */
-    nmo_log(ctx->logger, NMO_LOG_INFO, "  Getting repository...");
-    nmo_object_repository_t *repo = nmo_session_get_repository(ctx->session);
-    nmo_log(ctx->logger, NMO_LOG_INFO, "  Creating reference resolver...");
-    ctx->resolver = nmo_reference_resolver_create(repo, ctx->arena);
+    /* Reuse session-owned resolver created during load path, or create on demand */
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Getting session reference resolver...");
+    ctx->resolver = nmo_session_get_reference_resolver(ctx->session);
+    if (ctx->resolver == NULL) {
+        nmo_log(ctx->logger, NMO_LOG_INFO, "  Resolver missing, creating session-owned resolver...");
+        ctx->resolver = nmo_session_ensure_reference_resolver(ctx->session);
+    }
     
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Reference resolver created: %p", (void*)ctx->resolver);
     
