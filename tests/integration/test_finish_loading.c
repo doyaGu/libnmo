@@ -267,6 +267,39 @@ TEST(finish_loading, reference_resolver_initialized) {
     nmo_context_release(ctx);
 }
 
+TEST(finish_loading, object_postload_flag_execution) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    int result = nmo_load_file(session, TEST_FILE, NULL);
+    if (result != NMO_OK) {
+        printf("SKIP: Test file not found\n");
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return;
+    }
+
+    result = nmo_session_finish_loading(
+        session,
+        NMO_FINISH_LOAD_OBJECT_POSTLOAD | NMO_FINISH_LOAD_GATHER_STATS);
+    ASSERT_EQ(NMO_OK, result);
+
+    nmo_finish_loading_stats_t stats = {0};
+    result = nmo_session_get_finish_loading_stats(session, &stats);
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_TRUE((stats.flags & NMO_FINISH_LOAD_OBJECT_POSTLOAD) != 0);
+    ASSERT_TRUE(stats.object_postload.invoked >= stats.object_postload.errors);
+    ASSERT_TRUE(stats.references.unresolved_preview_count <= 8);
+    ASSERT_TRUE(stats.references.unresolved_preview_count <= stats.references.unresolved);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(finish_loading, basic_execution);
     REGISTER_TEST(finish_loading, query_api);
@@ -274,4 +307,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(finish_loading, selective_index_building);
     REGISTER_TEST(finish_loading, query_without_index);
     REGISTER_TEST(finish_loading, reference_resolver_initialized);
+    REGISTER_TEST(finish_loading, object_postload_flag_execution);
 TEST_MAIN_END()

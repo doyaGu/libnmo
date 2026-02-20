@@ -6,6 +6,7 @@
 #include "extension/nmo_extension_host.h"
 #include "extension/nmo_extension_registry.h"
 #include "type/nmo_type_system.h"
+#include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 #include <string.h>
@@ -42,14 +43,26 @@ static nmo_status_t host_register_managers(
     for (size_t i = 0; i < desc_count; i++) {
         const nmo_extension_manager_desc_t *desc = &descs[i];
 
-        /* TODO: Create manager using nmo_manager_create and register it */
-        /* For now, we just track the manager ID for rollback */
+        nmo_manager_t *manager = nmo_manager_create(desc->guid, desc->name, desc->category);
+        if (manager == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to create manager instance");
+        }
+
+        (void)nmo_manager_set_user_data(manager, desc->user_data);
+        (void)nmo_manager_set_pre_load_hook(manager, desc->pre_load);
+        (void)nmo_manager_set_post_load_hook(manager, desc->post_load);
+        (void)nmo_manager_set_load_data_hook(manager, desc->load_data);
+        (void)nmo_manager_set_save_data_hook(manager, desc->save_data);
+        (void)nmo_manager_set_pre_save_hook(manager, desc->pre_save);
+        (void)nmo_manager_set_post_save_hook(manager, desc->post_save);
 
         /* Ensure capacity for tracking */
         if (ctx->manager_id_count >= ctx->manager_id_capacity) {
             size_t new_cap = ctx->manager_id_capacity == 0 ? 8 : ctx->manager_id_capacity * 2;
             uint32_t *new_ids = nmo_arena_alloc(ctx->plugin_arena, new_cap * sizeof(uint32_t), alignof(uint32_t));
             if (new_ids == NULL) {
+                nmo_manager_destroy(manager);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                     "Failed to allocate manager ID tracking");
             }
@@ -62,16 +75,13 @@ static nmo_status_t host_register_managers(
 
         /* Register the manager */
         nmo_manager_registry_t *manager_registry = nmo_extension_registry_get_manager_registry(ctx->registry);
-
-        /* TODO: Create proper manager instance with callbacks
-         * For now, we pass NULL as the manager - this will need to be fixed
-         * when we have a proper nmo_manager_create function that takes the descriptor */
         nmo_status_t status = nmo_manager_registry_register(
             manager_registry,
             desc->manager_id,
-            NULL);  /* TODO: Create manager from descriptor */
+            manager);
 
         if (status != NMO_OK) {
+            nmo_manager_destroy(manager);
             return status;
         }
 

@@ -404,6 +404,11 @@ typedef struct nmo_finish_loading_stats {
         uint32_t resolved;
         uint32_t unresolved;
         uint32_t ambiguous;
+        uint32_t unresolved_preview_count;
+        struct {
+            nmo_object_id_t id;
+            nmo_class_id_t class_id;
+        } unresolved_preview[8];
     } references;
     struct {
         size_t class_entries;
@@ -411,6 +416,10 @@ typedef struct nmo_finish_loading_stats {
         size_t guid_entries;
         size_t memory_usage;
     } indexes;
+    struct {
+        uint32_t invoked;
+        uint32_t errors;
+    } object_postload;
     uint32_t manager_errors;
 } nmo_finish_loading_stats_t;
 

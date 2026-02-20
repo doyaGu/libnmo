@@ -122,14 +122,25 @@ static void collect_memory_stats(
  * @brief Collect reference statistics
  */
 static void collect_reference_stats(
+    nmo_session_t *session,
     nmo_object_repository_t *repo,
     nmo_file_stats_t *stats
 ) {
     (void)repo;
     memset(&stats->references, 0, sizeof(stats->references));
-    
-    /* TODO: Implement when reference system is available */
-    /* For now, set to zero */
+
+    if (session == NULL) {
+        return;
+    }
+
+    nmo_finish_loading_stats_t finish_stats = {0};
+    if (nmo_session_get_finish_loading_stats(session, &finish_stats) != NMO_OK) {
+        return;
+    }
+
+    stats->references.total_references = finish_stats.references.total;
+    stats->references.resolved = finish_stats.references.resolved;
+    stats->references.unresolved = finish_stats.references.unresolved;
 }
 
 int nmo_stats_collect(
@@ -150,7 +161,7 @@ int nmo_stats_collect(
     /* Collect different categories of statistics */
     collect_object_stats(repo, out_stats);
     collect_memory_stats(repo, out_stats);
-    collect_reference_stats(repo, out_stats);
+    collect_reference_stats(session, repo, out_stats);
     
     /* Performance stats would be collected during load/save operations */
     /* For now, leave them at zero */
