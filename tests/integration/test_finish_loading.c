@@ -245,10 +245,33 @@ TEST(finish_loading, query_without_index) {
     nmo_context_release(ctx);
 }
 
+TEST(finish_loading, reference_resolver_initialized) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    int result = nmo_load_file(session, TEST_FILE, NULL);
+    if (result != NMO_OK) {
+        printf("SKIP: Test file not found\n");
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return;
+    }
+
+    ASSERT_NOT_NULL(nmo_session_get_reference_resolver(session));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(finish_loading, basic_execution);
     REGISTER_TEST(finish_loading, query_api);
     REGISTER_TEST(finish_loading, index_rebuild);
     REGISTER_TEST(finish_loading, selective_index_building);
     REGISTER_TEST(finish_loading, query_without_index);
+    REGISTER_TEST(finish_loading, reference_resolver_initialized);
 TEST_MAIN_END()

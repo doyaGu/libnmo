@@ -907,6 +907,16 @@ static int nmo_load_file_with_io(
         }
 
         nmo_object_system_deserialize_stats_t stats = {0};
+        nmo_reference_resolver_t *reference_resolver = NULL;
+
+        if ((flags & NMO_LOAD_SKIP_REFERENCE_RESOLVE) == 0) {
+            reference_resolver = nmo_session_ensure_reference_resolver(session);
+            if (reference_resolver == NULL) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Failed to create session reference resolver; continuing without registration");
+            }
+        }
+
         nmo_status_t deser_result = nmo_object_system_deserialize_loaded_objects(
             repo,
             type_rt,
@@ -914,6 +924,7 @@ static int nmo_load_file_with_io(
             logger,
             shadow_storage,
             NMO_DESER_FLAG_FILE_MODE | NMO_DESER_FLAG_PRESERVE_RAW,
+            reference_resolver,
             load_session,
             hdr1.object_count,
             &stats);

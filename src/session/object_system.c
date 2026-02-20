@@ -10,6 +10,8 @@
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 #include "session/nmo_shadow_storage.h"
+#include "session/nmo_reference_resolver.h"
+#include "session/nmo_ref_enumerate.h"
 
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"
@@ -32,6 +34,63 @@
 
 #include <string.h>
 #include <stdalign.h>
+
+typedef struct object_system_ref_capture_ctx {
+    nmo_reference_resolver_t *resolver;
+    nmo_object_repository_t *repo;
+    nmo_object_t *source;
+    nmo_logger_t *logger;
+} object_system_ref_capture_ctx_t;
+
+static bool object_system_capture_ref(
+    void *user_data,
+    uint32_t target_id,
+    nmo_ref_kind_t kind,
+    const char *field_name,
+    uint32_t index)
+{
+    (void)field_name;
+    (void)index;
+
+    object_system_ref_capture_ctx_t *ctx = (object_system_ref_capture_ctx_t *)user_data;
+    if (ctx == NULL || ctx->resolver == NULL || target_id == 0) {
+        return true;
+    }
+
+    nmo_object_ref_t ref = {0};
+    ref.id = target_id;
+    ref.flags = (uint32_t)kind;
+    ref.file_index = -1;
+
+    nmo_object_t *target = nmo_object_repository_find_by_id(ctx->repo, target_id);
+    if (target != NULL) {
+        ref.class_id = target->class_id;
+        ref.name = (char *)nmo_object_get_name(target);
+        ref.type_guid = nmo_object_get_type_guid(target);
+    } else {
+        ref.class_id = 0;
+        ref.name = NULL;
+        ref.type_guid = (nmo_guid_t){0, 0};
+
+        if (ctx->logger != NULL) {
+            nmo_log(ctx->logger, NMO_LOG_DEBUG,
+                    "  Object ID=%u: unresolved target id=%u queued without metadata",
+                    ctx->source ? ctx->source->id : 0,
+                    target_id);
+        }
+    }
+
+    if (nmo_reference_resolver_register_reference(ctx->resolver, &ref) == NULL) {
+        if (ctx->logger != NULL) {
+            nmo_log(ctx->logger, NMO_LOG_WARN,
+                    "  Object ID=%u: failed to register reference target id=%u",
+                    ctx->source ? ctx->source->id : 0,
+                    target_id);
+        }
+    }
+
+    return true;
+}
 
 static void object_system_rollback_created(
     nmo_object_repository_t *repo,
@@ -722,6 +781,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,
     uint32_t deser_flags,
+    nmo_reference_resolver_t *reference_resolver,
     const nmo_load_session_t *load_session,
     size_t file_object_count,
     nmo_object_system_deserialize_stats_t *out_stats)
@@ -845,6 +905,27 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         if (deser_result == NMO_OK) {
             (void)nmo_object_set_data(obj, state);
             stats.deserialized++;
+
+            if (reference_resolver != NULL) {
+                object_system_ref_capture_ctx_t ref_ctx = {
+                    .resolver = reference_resolver,
+                    .repo = repo,
+                    .source = obj,
+                    .logger = logger
+                };
+
+                nmo_status_t ref_result = nmo_ref_enumerate_object(
+                    type_rt->types,
+                    obj,
+                    object_system_capture_ref,
+                    &ref_ctx);
+
+                if (ref_result != NMO_OK && logger != NULL) {
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Object file_index=%zu (ID=%u): reference enumeration failed: %d",
+                            file_index, obj->id, ref_result);
+                }
+            }
 
             if ((deser_flags & NMO_DESER_FLAG_PRESERVE_RAW) != 0 && shadow_storage != NULL) {
                 size_t data_size = nmo_chunk_get_data_size(obj->chunk);

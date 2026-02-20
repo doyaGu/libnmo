@@ -430,6 +430,14 @@ nmo_object_t *nmo_resolve_strategy_default(
     if (!ref || !repo) {
         return NULL;
     }
+
+    /* Fast path: if runtime ID is available, resolve directly by ID. */
+    if (ref->id != 0 && ref->id != NMO_OBJECT_ID_INVALID) {
+        nmo_object_t *by_id = nmo_object_repository_find_by_id(repo, ref->id);
+        if (by_id != NULL) {
+            return by_id;
+        }
+    }
     
     /* Get all objects of this class */
     size_t count = 0;

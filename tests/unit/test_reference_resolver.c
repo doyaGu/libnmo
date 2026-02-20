@@ -152,6 +152,34 @@ TEST(reference_resolver, default_strategy_no_match) {
 }
 
 /**
+ * Test 2b: Default strategy - direct ID match without metadata
+ */
+TEST(reference_resolver, default_strategy_id_match_without_name) {
+    test_fixture_t *fix = setup();
+    ASSERT_NOT_NULL(fix);
+
+    /* Create target object: ID=100, name/class intentionally not used by ref */
+    create_test_object(fix, 100, "TargetById", 1000);
+
+    /* Reference carries only runtime ID */
+    nmo_object_ref_t ref = {0};
+    ref.id = 100;
+    ref.class_id = 0;
+    ref.name = NULL;
+
+    nmo_object_t *resolved = nmo_reference_resolver_resolve(fix->resolver, &ref);
+    ASSERT_NOT_NULL(resolved);
+    ASSERT_EQ(resolved->id, 100);
+
+    nmo_reference_stats_t stats = {0};
+    nmo_reference_resolver_get_stats(fix->resolver, &stats);
+    ASSERT_EQ(stats.resolved_count, 1);
+    ASSERT_EQ(stats.unresolved_count, 0);
+
+    teardown(fix);
+}
+
+/**
  * Test 3: Parameter strategy - type_guid matching
  */
 TEST(reference_resolver, parameter_strategy_guid_match) {
@@ -389,6 +417,7 @@ TEST(reference_resolver, edge_cases) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(reference_resolver, default_strategy_exact_match);
     REGISTER_TEST(reference_resolver, default_strategy_no_match);
+    REGISTER_TEST(reference_resolver, default_strategy_id_match_without_name);
     REGISTER_TEST(reference_resolver, parameter_strategy_guid_match);
     REGISTER_TEST(reference_resolver, guid_strategy_match);
     REGISTER_TEST(reference_resolver, fuzzy_strategy_case_insensitive);

@@ -31,6 +31,7 @@ typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
 typedef struct nmo_load_session nmo_load_session_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
+typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 
 typedef struct nmo_object_desc nmo_object_desc_t;
 typedef struct nmo_chunk nmo_chunk_t;
@@ -198,6 +199,7 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
  * @param logger Optional logger
  * @param shadow_storage Optional shadow storage for capturing unconsumed chunk tails
  * @param deser_flags Flags forwarded to nmo_deserialize_context_create()
+ * @param reference_resolver Optional resolver for registering discovered references
  * @param load_session Load session providing file_index -> runtime_id mapping
  * @param file_object_count Header1 object table size (max file index + 1)
  * @param out_stats Optional stats output
@@ -210,6 +212,7 @@ NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_logger_t *logger,
     nmo_shadow_storage_t *shadow_storage,
     uint32_t deser_flags,
+    nmo_reference_resolver_t *reference_resolver,
     const nmo_load_session_t *load_session,
     size_t file_object_count,
     nmo_object_system_deserialize_stats_t *out_stats);

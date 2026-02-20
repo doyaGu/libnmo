@@ -131,7 +131,7 @@ NMO_API nmo_object_ref_t *nmo_reference_resolver_register_reference(
  *
  * Resolution process:
  * 1. Try custom strategy for object's class (if registered)
- * 2. Try default strategy (name + type matching)
+ * 2. Try default strategy (runtime ID first, then name/class matching)
  * 3. Try fuzzy matching (name only)
  *
  * @param resolver Resolver instance (required)
@@ -215,9 +215,11 @@ NMO_API void nmo_reference_resolver_destroy(
  * ======================================================================== */
 
 /**
- * @brief Default resolution strategy (name + class matching)
+ * @brief Default resolution strategy (ID-first, then name + class matching)
  *
- * Matches objects by exact name and class ID.
+ * Resolves in the following order:
+ * 1. Direct runtime ID lookup (if ID is valid)
+ * 2. Exact name match within class ID
  * This is the fallback strategy used when no custom strategy is registered.
  *
  * @param context Unused
