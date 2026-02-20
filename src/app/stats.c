@@ -11,6 +11,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "session/nmo_object_repository.h"
+#include "session/nmo_reference_resolver.h"
 #include "yyjson.h"
 #include <string.h>
 #include <time.h>
@@ -134,13 +135,26 @@ static void collect_reference_stats(
     }
 
     nmo_finish_loading_stats_t finish_stats = {0};
-    if (nmo_session_get_finish_loading_stats(session, &finish_stats) != NMO_OK) {
+    if (nmo_session_get_finish_loading_stats(session, &finish_stats) == NMO_OK) {
+        stats->references.total_references = finish_stats.references.total;
+        stats->references.resolved = finish_stats.references.resolved;
+        stats->references.unresolved = finish_stats.references.unresolved;
         return;
     }
 
-    stats->references.total_references = finish_stats.references.total;
-    stats->references.resolved = finish_stats.references.resolved;
-    stats->references.unresolved = finish_stats.references.unresolved;
+    nmo_reference_resolver_t *resolver = nmo_session_get_reference_resolver(session);
+    if (resolver == NULL) {
+        return;
+    }
+
+    nmo_reference_stats_t resolver_stats = {0};
+    if (nmo_reference_resolver_get_stats(resolver, &resolver_stats) != NMO_OK) {
+        return;
+    }
+
+    stats->references.total_references = resolver_stats.total_count;
+    stats->references.resolved = resolver_stats.resolved_count;
+    stats->references.unresolved = resolver_stats.unresolved_count;
 }
 
 int nmo_stats_collect(

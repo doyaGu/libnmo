@@ -141,9 +141,10 @@ nmo_status_t nmo_manager_registry_unregister(nmo_manager_registry_t *registry, u
     /* Get manager before removing */
     nmo_manager_t *manager = NULL;
     if (nmo_indexed_map_get(registry->managers_by_id, &manager_id, &manager) == NMO_OK && manager != NULL) {
+        nmo_guid_t manager_guid = manager->guid;
         nmo_manager_destroy(manager);
         nmo_indexed_map_remove(registry->managers_by_id, &manager_id);
-        nmo_indexed_map_remove(registry->managers_by_guid, &manager->guid);
+        nmo_indexed_map_remove(registry->managers_by_guid, &manager_guid);
         NMO_RETURN_OK();
     }
 

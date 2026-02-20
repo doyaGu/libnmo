@@ -7,6 +7,7 @@
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_extension_abi.h"
 #include "type/nmo_type_system.h"
+#include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 
@@ -42,6 +43,34 @@ static nmo_status_t dummy_init(const nmo_extension_host_t *host, void *host_user
     (void)host;
     (void)host_user;
     return NMO_OK;
+}
+
+static int g_ext_manager_preload_hits = 0;
+
+static int ext_manager_pre_load(void *session, void *user_data) {
+    (void)session;
+    int *hits = (int *)user_data;
+    if (hits != NULL) {
+        (*hits)++;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t register_manager_init(const nmo_extension_host_t *host, void *host_user) {
+    if (host == NULL || host->register_managers == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_extension_manager_desc_t manager_desc = {0};
+    manager_desc.manager_id = 701;
+    manager_desc.guid = NMO_GUID(0x70170170, 0x17017017);
+    manager_desc.name = "ExtRegisteredManager";
+    manager_desc.category = NMO_PLUGIN_MANAGER_DLL;
+    manager_desc.pre_load = ext_manager_pre_load;
+    manager_desc.user_data = &g_ext_manager_preload_hits;
+
+    nmo_guid_t plugin_guid = NMO_GUID(0xABCDEF10, 0x00000001);
+    return host->register_managers(host_user, plugin_guid, &manager_desc, 1);
 }
 
 static void dummy_shutdown(const nmo_extension_host_t *host, void *host_user) {
@@ -216,6 +245,43 @@ TEST(extension, abi_compatibility_check) {
     ASSERT_TRUE(nmo_extension_host_is_compatible(&valid_host));
 }
 
+TEST(extension, host_register_manager_callbacks) {
+    setup_registries();
+
+    nmo_extension_registry_t *registry = nmo_extension_registry_create(
+        NULL, g_type_registry, g_manager_registry);
+    ASSERT_NOT_NULL(registry);
+
+    g_ext_manager_preload_hits = 0;
+
+    nmo_extension_plugin_t plugin = {0};
+    plugin.abi_version = NMO_EXTENSION_ABI_VERSION;
+    plugin.struct_size = sizeof(nmo_extension_plugin_t);
+    plugin.guid = NMO_GUID(0xABCDEF10, 0x00000001);
+    plugin.version = 0x010000;
+    plugin.category = NMO_PLUGIN_CUSTOM_DLL;
+    plugin.name = "ManagerContributionPlugin";
+    plugin.init = register_manager_init;
+    plugin.shutdown = dummy_shutdown;
+
+    nmo_status_t status = nmo_extension_registry_register_static(registry, &plugin, 1);
+    ASSERT_EQ(NMO_OK, status);
+
+    nmo_manager_t *manager = (nmo_manager_t *)nmo_manager_registry_get(g_manager_registry, 701);
+    ASSERT_NOT_NULL(manager);
+
+    status = nmo_manager_invoke_pre_load(manager, NULL);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1, g_ext_manager_preload_hits);
+
+    status = nmo_extension_registry_unload_by_guid(registry, plugin.guid);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_NULL((nmo_manager_t *)nmo_manager_registry_get(g_manager_registry, 701));
+
+    nmo_extension_registry_destroy(registry);
+    teardown_registries();
+}
+
 /* ============================================================================
  * Main
  * ============================================================================ */
@@ -227,4 +293,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(extension, unload_by_guid);
     REGISTER_TEST(extension, abi_version_mismatch);
     REGISTER_TEST(extension, abi_compatibility_check);
+    REGISTER_TEST(extension, host_register_manager_callbacks);
 TEST_MAIN_END()

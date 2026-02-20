@@ -186,6 +186,9 @@ TEST(manager_registry, unregister_manager) {
     int contains = nmo_manager_registry_contains(registry, 42);
     ASSERT_FALSE(contains);
 
+    nmo_manager_t *by_guid = (nmo_manager_t *)nmo_manager_registry_find_by_guid(registry, guid);
+    ASSERT_NULL(by_guid);
+
     destroy_registry_with_arena(registry, arena);
 }
 
