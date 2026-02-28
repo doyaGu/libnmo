@@ -27,7 +27,7 @@ typedef uint32_t nmo_manager_id_t;
 // Special object ID values
 #define NMO_OBJECT_ID_NONE ((nmo_object_id_t)0)
 #define NMO_OBJECT_ID_INVALID ((nmo_object_id_t)0xFFFFFFFF)
-#define NMO_OBJECT_REFERENCE_FLAG (1u << 23)
+#define NMO_OBJECT_REFERENCE_FLAG 0x80000000u
 
 // Special class ID values
 #define NMO_CLASS_ID_INVALID ((nmo_class_id_t)0xFFFFFFFF)

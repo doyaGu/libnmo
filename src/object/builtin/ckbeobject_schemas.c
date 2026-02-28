@@ -155,8 +155,7 @@ static nmo_status_t nmo_beobject_read_object_sequence(
     for (uint32_t i = 0; i < (uint32_t)count; ++i) {
         result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
         if (result != NMO_OK) {
-            out_ids->count = i;
-            NMO_RETURN_OK();
+            return result;
         }
     }
 
@@ -208,13 +207,15 @@ nmo_status_t nmo_beobject_deserialize(
     if (is_file && data_version < 5) {
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORS);
         if (result == NMO_OK) {
-            (void)nmo_beobject_read_object_sequence(chunk, &out_state->script_ids);
+            result = nmo_beobject_read_object_sequence(chunk, &out_state->script_ids);
+            if (result != NMO_OK) return result;
         }
     }
 
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCRIPTS);
     if (result == NMO_OK) {
-        (void)nmo_beobject_read_object_sequence(chunk, &out_state->script_ids);
+        result = nmo_beobject_read_object_sequence(chunk, &out_state->script_ids);
+        if (result != NMO_OK) return result;
     }
 
     /* Load priority data - optional section */
@@ -257,53 +258,62 @@ load_attributes:
         size_t attr_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &attr_count);
         if (result != NMO_OK) {
-            /* Identifier found but sequence start failed - skip section */
-            goto deserialize_done;
+            return result;
         }
+
+        nmo_array_clear(&out_state->attribute_parameter_ids);
+        nmo_array_clear(&out_state->attribute_types);
+        nmo_array_clear(&out_state->attribute_chunks);
 
         if (attr_count > 0) {
             /* Allocate arrays for attributes */
-            nmo_array_clear(&out_state->attribute_parameter_ids);
-            nmo_array_clear(&out_state->attribute_types);
             result = nmo_array_reserve(&out_state->attribute_parameter_ids, attr_count);
-            if (result != NMO_OK) goto deserialize_done;
+            if (result != NMO_OK) return result;
             result = nmo_array_reserve(&out_state->attribute_types, attr_count);
-            if (result != NMO_OK) goto deserialize_done;
+            if (result != NMO_OK) return result;
 
             nmo_object_id_t *attr_ids = NULL;
             uint32_t *attr_types = NULL;
             result = nmo_array_extend(&out_state->attribute_parameter_ids, attr_count,
                                       (void **)&attr_ids);
-            if (result != NMO_OK) goto deserialize_done;
+            if (result != NMO_OK) return result;
             result = nmo_array_extend(&out_state->attribute_types, attr_count,
                                       (void **)&attr_types);
-            if (result != NMO_OK) goto deserialize_done;
+            if (result != NMO_OK) return result;
+            memset(attr_types, 0, attr_count * sizeof(uint32_t));
 
             /* Read attribute parameter object IDs
              * Reference: CKBeObject.cpp lines 542-544 */
             for (size_t i = 0; i < attr_count; i++) {
                 result = nmo_chunk_read_object_sequence_item(chunk, &attr_ids[i]);
                 if (result != NMO_OK) {
-                    out_state->attribute_parameter_ids.count = i;
-                    out_state->attribute_types.count = i;
-                    break;
+                    return result;
                 }
             }
 
             if (!is_file) {
                 size_t sub_count = 0;
                 result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &sub_count);
-                if (result == NMO_OK && sub_count > 0) {
-                    nmo_array_clear(&out_state->attribute_chunks);
-                    result = nmo_array_reserve(&out_state->attribute_chunks, sub_count);
-                    if (result != NMO_OK) goto deserialize_done;
+                if (result != NMO_OK) {
+                    return result;
+                }
+                if (sub_count != attr_count) {
+                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                     "CKBeObject: attribute sub-chunk sequence count mismatch");
+                }
 
-                    nmo_chunk_t **chunks = NULL;
-                    result = nmo_array_extend(&out_state->attribute_chunks, sub_count, (void **)&chunks);
-                    if (result != NMO_OK) goto deserialize_done;
+                nmo_array_clear(&out_state->attribute_chunks);
+                result = nmo_array_reserve(&out_state->attribute_chunks, attr_count);
+                if (result != NMO_OK) return result;
 
-                    for (size_t i = 0; i < sub_count; ++i) {
-                        (void)nmo_chunk_read_sub_chunk(chunk, &chunks[i]);
+                nmo_chunk_t **chunks = NULL;
+                result = nmo_array_extend(&out_state->attribute_chunks, attr_count, (void **)&chunks);
+                if (result != NMO_OK) return result;
+
+                for (size_t i = 0; i < attr_count; ++i) {
+                    result = nmo_chunk_read_sub_chunk(chunk, &chunks[i]);
+                    if (result != NMO_OK) {
+                        return result;
                     }
                 }
             }
@@ -313,31 +323,28 @@ load_attributes:
             nmo_guid_t manager_guid;
             size_t seq_count = 0;
             result = nmo_chunk_start_manager_read_sequence(chunk, &manager_guid, &seq_count);
-            if (result == NMO_OK && seq_count == attr_count) {
-                /* Verify it's the attribute manager GUID 
-                 * Reference: CKBeObject.cpp line 556 checks managerGuid == ATTRIBUTE_MANAGER_GUID */
-                if (nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
-                    /* Read attribute types from manager sequence */
-                    for (size_t i = 0; i < attr_count; i++) {
-                        uint32_t attr_type;
-                        result = nmo_chunk_read_dword(chunk, &attr_type);
-                        if (result == NMO_OK) {
-                            attr_types[i] = attr_type;
-                        } else {
-                            /* Partial read - save what we got */
-                            out_state->attribute_parameter_ids.count = i;
-                            out_state->attribute_types.count = i;
-                            goto deserialize_done;
-                        }
-                    }
-                    out_state->attribute_parameter_ids.count = attr_count;
-                    out_state->attribute_types.count = attr_count;
-                } else {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "CKBeObject: attribute manager GUID mismatch");
-                }
-            } else if (result != NMO_OK || seq_count != attr_count) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "CKBeObject: attribute manager sequence count mismatch");
+            if (result != NMO_OK) {
+                return result;
             }
+            if (seq_count != attr_count) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                 "CKBeObject: attribute manager sequence count mismatch");
+            }
+            /* Verify it's the attribute manager GUID */
+            if (!nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                 "CKBeObject: attribute manager GUID mismatch");
+            }
+
+            /* Read attribute types from manager sequence */
+            for (size_t i = 0; i < attr_count; i++) {
+                result = nmo_chunk_read_dword(chunk, &attr_types[i]);
+                if (result != NMO_OK) {
+                    return result;
+                }
+            }
+            out_state->attribute_parameter_ids.count = attr_count;
+            out_state->attribute_types.count = attr_count;
         }
     } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES) == NMO_OK) {
         /* Legacy attribute payload - preserve raw bytes for round-trip */
@@ -360,7 +367,6 @@ load_attributes:
         (void)nmo_chunk_read_dword(chunk, &out_state->single_activity_flags);
     }
 
-deserialize_done:
     /* Deserialization completed - all sections are optional */
     NMO_RETURN_OK();
 }
@@ -389,7 +395,6 @@ nmo_status_t nmo_beobject_serialize(
 {
     (void)type;
     const nmo_beobject_state_t *in_state = (const nmo_beobject_state_t *)instance;
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
 
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_beobject_serialize");
@@ -400,6 +405,10 @@ nmo_status_t nmo_beobject_serialize(
     if (result != NMO_OK) return result;
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    if (!is_file && (save_flags & CK_STATESAVE_BEOBJECTONLY) == 0) {
+        NMO_RETURN_OK();
+    }
 
     /* Write scripts if present (file mode only) */
     if (is_file && in_state->script_ids.count > 0 && in_state->script_ids.data) {
@@ -442,9 +451,16 @@ nmo_status_t nmo_beobject_serialize(
     }
 
     /* Write attributes if present */
-    if (in_state->attribute_parameter_ids.count > 0 &&
-        in_state->attribute_parameter_ids.data &&
-        in_state->attribute_types.data) {
+    if (in_state->attribute_parameter_ids.count > 0) {
+        if (!in_state->attribute_parameter_ids.data || !in_state->attribute_types.data) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "CKBeObject: attribute arrays missing");
+        }
+        if (in_state->attribute_types.count != in_state->attribute_parameter_ids.count) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "CKBeObject: attribute type count mismatch");
+        }
+
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_NEWATTRIBUTES);
         if (result != NMO_OK) return result;
 
@@ -472,9 +488,6 @@ nmo_status_t nmo_beobject_serialize(
                 nmo_chunk_t *sub = NULL;
                 if (attr_chunks && i < in_state->attribute_chunks.count) {
                     sub = (nmo_chunk_t *)attr_chunks[i];
-                }
-                if (!sub) {
-                    sub = nmo_chunk_create(arena);
                 }
                 result = nmo_chunk_write_sub_chunk_sequence(out_chunk, sub);
                 if (result != NMO_OK) return result;

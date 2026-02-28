@@ -3,7 +3,7 @@
  * @brief Session-level ID sanitization and mapping helpers.
  *
  * Implements the ID "clean-up" pipeline described in IMPROVEMENT_PLAN.md:
- * - Strips the 0x800000 mask used for reference-only objects
+ * - Strips the 0x80000000 mask used for reference-only objects
  * - Tracks negative external references
  * - Maintains File ID (CK_ID, 1-based) <-> Runtime ID mappings
  */
@@ -23,7 +23,7 @@ extern "C" {
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 
 /** Reference-only mask present on some raw IDs. */
-#define NMO_ID_REF_MASK 0x800000u
+#define NMO_ID_REF_MASK NMO_OBJECT_REFERENCE_FLAG
 
 /**
  * @brief Create an ID sanitizer instance.

@@ -54,8 +54,12 @@ static const nmo_type_field_t nmo_dataarray_fields[] = {
     NMO_FIELD(nmo_dataarray_state_t, key_column, CKPGUID_INT)
 };
 
-static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
-    return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
+static int nmo_dataarray_is_file_mode(const nmo_chunk_t *chunk, void *context) {
+    const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
+        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
 }
 
 /* =============================================================================
@@ -92,6 +96,8 @@ nmo_status_t nmo_dataarray_deserialize(
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
+
+    const bool is_file = nmo_dataarray_is_file_mode(chunk, context);
 
     nmo_last_error_clear();
     result = NMO_OK;
@@ -210,7 +216,7 @@ nmo_status_t nmo_dataarray_deserialize(
                             break;
 
                         case CKARRAYTYPE_PARAMETER:
-                            if (nmo_chunk_is_file_mode(chunk)) {
+                            if (is_file) {
                                 result = nmo_chunk_read_object_id(chunk, &cell->parameter_id);
                                 if (result != NMO_OK) return result;
                             } else {
@@ -241,7 +247,7 @@ nmo_status_t nmo_dataarray_deserialize(
         if (result != NMO_OK) return result;
         out_state->column_index = (uint32_t)column_index;
 
-        if (nmo_chunk_is_file_mode(chunk) || nmo_chunk_get_data_version(chunk) >= 5) {
+        if (is_file || nmo_chunk_get_data_version(chunk) >= 5) {
             result = nmo_chunk_read_int(chunk, &out_state->key_column);
             if (result != NMO_OK) return result;
         }
@@ -282,6 +288,8 @@ nmo_status_t nmo_dataarray_serialize(
     /* Write base class (CKBeObject) data */
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
+
+    const bool is_file = nmo_dataarray_is_file_mode(out_chunk, context);
 
     nmo_last_error_clear();
     result = NMO_OK;
@@ -344,7 +352,7 @@ nmo_status_t nmo_dataarray_serialize(
                 break;
 
             case CKARRAYTYPE_PARAMETER:
-                if (nmo_chunk_is_file_mode(out_chunk)) {
+                if (is_file) {
                     result = nmo_chunk_write_object_id(out_chunk, cell->parameter_id);
                     if (result != NMO_OK) return result;
                 } else {

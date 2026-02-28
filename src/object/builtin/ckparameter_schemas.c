@@ -124,6 +124,15 @@ nmo_status_t nmo_parameter_deserialize(
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    /* Reset parameter payload state */
+    out_state->mode = CKPARAM_MODE_NONE;
+    out_state->has_state = false;
+    out_state->object_id = 0;
+    out_state->manager_guid = NMO_GUID_NULL;
+    out_state->manager_value = 0;
+    out_state->subchunk = NULL;
+    nmo_array_clear(&out_state->buffer_data);
+
     /* Seek parameter identifier - optional section */
     result = nmo_chunk_seek_identifier(chunk, CK_PARAM_IDENTIFIER);
     if (result != NMO_OK) {
@@ -166,9 +175,9 @@ nmo_status_t nmo_parameter_deserialize(
         out_state->mode = CKPARAM_MODE_SUBCHUNK;
         result = nmo_chunk_read_sub_chunk(chunk, &out_state->subchunk);
         if (result != NMO_OK) {
-            out_state->subchunk = NULL;
+            return result;
         }
-        NMO_RETURN_OK();
+        return NMO_OK;
     }
 
     if (param_state == 2) {
@@ -182,17 +191,34 @@ nmo_status_t nmo_parameter_deserialize(
 
     if (param_state == 1) {
         out_state->mode = CKPARAM_MODE_BUFFER;
+        if (nmo_guid_equals(out_state->type_guid, CKPGUID_PARAMETERTYPE)) {
+            nmo_guid_t type_guid = NMO_GUID_NULL;
+            result = nmo_chunk_read_guid(chunk, &type_guid);
+            if (result != NMO_OK) {
+                return result;
+            }
+            result = nmo_array_alloc(&out_state->buffer_data, sizeof(uint8_t), sizeof(nmo_guid_t), NULL);
+            if (result != NMO_OK) {
+                return result;
+            }
+            memcpy(out_state->buffer_data.data, &type_guid, sizeof(nmo_guid_t));
+            return NMO_OK;
+        }
+
         void *buffer_ptr = NULL;
         size_t buffer_size = 0;
         result = nmo_chunk_read_buffer(chunk, &buffer_ptr, &buffer_size);
-        if (result == NMO_OK && buffer_size > 0) {
-            nmo_array_clear(&out_state->buffer_data);
-            result = nmo_array_alloc(&out_state->buffer_data, sizeof(uint8_t), buffer_size, NULL);
-            if (result == NMO_OK) {
-                memcpy(out_state->buffer_data.data, buffer_ptr, buffer_size);
-            }
+        if (result != NMO_OK) {
+            return result;
         }
-        NMO_RETURN_OK();
+        if (buffer_size > 0) {
+            result = nmo_array_alloc(&out_state->buffer_data, sizeof(uint8_t), buffer_size, NULL);
+            if (result != NMO_OK) {
+                return result;
+            }
+            memcpy(out_state->buffer_data.data, buffer_ptr, buffer_size);
+        }
+        return NMO_OK;
     }
 
     /* Manager-specific int mode: param_state is manager_guid.d1 */
@@ -303,8 +329,23 @@ nmo_status_t nmo_parameter_serialize(
         default:
             result = nmo_chunk_write_dword(out_chunk, 1);
             if (result != NMO_OK) return result;
-            if (in_state->buffer_data.data && in_state->buffer_data.count > 0) {
-                result = nmo_chunk_write_buffer(out_chunk, in_state->buffer_data.data,
+            if (nmo_guid_equals(in_state->type_guid, CKPGUID_PARAMETERTYPE)) {
+                if (in_state->buffer_data.count != 0 &&
+                    in_state->buffer_data.count != sizeof(nmo_guid_t)) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "CKParameter: invalid PARAMETERTYPE payload size");
+                }
+                nmo_guid_t type_guid = NMO_GUID_NULL;
+                if (in_state->buffer_data.count == sizeof(nmo_guid_t) && in_state->buffer_data.data) {
+                    memcpy(&type_guid, in_state->buffer_data.data, sizeof(nmo_guid_t));
+                }
+                result = nmo_chunk_write_guid(out_chunk, type_guid);
+                if (result != NMO_OK) return result;
+            } else {
+                result = nmo_chunk_write_buffer(out_chunk,
+                    (in_state->buffer_data.data && in_state->buffer_data.count > 0)
+                        ? in_state->buffer_data.data
+                        : NULL,
                     in_state->buffer_data.count);
                 if (result != NMO_OK) return result;
             }

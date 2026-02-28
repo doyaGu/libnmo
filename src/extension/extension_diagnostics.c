@@ -10,6 +10,18 @@
  * Dependency Resolution
  * ============================================================================ */
 
+static int dependency_category_matches(
+    nmo_plugin_category_t required,
+    nmo_plugin_category_t actual)
+{
+    /* Preserve legacy caller behavior: CUSTOM means "any category". */
+    if (required == NMO_PLUGIN_CUSTOM_DLL) {
+        return 1;
+    }
+
+    return required == actual;
+}
+
 int nmo_extension_check_dependency(
     const nmo_extension_registry_t *registry,
     nmo_plugin_category_t category,
@@ -27,18 +39,19 @@ int nmo_extension_check_dependency(
         return 0;
     }
 
-    (void)category;  /* Category check not implemented yet */
-
     const nmo_extension_plugin_info_t *info = nmo_extension_registry_find(registry, guid);
+    int category_ok = (info != NULL) && dependency_category_matches(category, info->category);
+    int version_ok = (info != NULL) && (min_version == 0 || info->version >= min_version);
+    int satisfied = category_ok && version_ok;
 
     if (out_result) {
         out_result->guid = guid;
         out_result->required_version = min_version;
         out_result->found_version = info ? info->version : 0;
-        out_result->satisfied = info && (min_version == 0 || info->version >= min_version);
+        out_result->satisfied = satisfied;
     }
 
-    return info && (min_version == 0 || info->version >= min_version);
+    return satisfied;
 }
 
 size_t nmo_extension_check_dependencies(

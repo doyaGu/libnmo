@@ -15,6 +15,47 @@
 #include <string.h>
 #include <stdio.h>
 
+static int object_is_reference_only(const nmo_object_t *obj) {
+    if (obj == NULL) {
+        return 0;
+    }
+    return ((obj->flags | obj->save_flags) & NMO_OBJECT_REFERENCE_FLAG) != 0;
+}
+
+static void format_object_context(const nmo_object_t *obj, char *buffer, size_t buffer_size) {
+    if (buffer == NULL || buffer_size == 0) {
+        return;
+    }
+    if (obj == NULL) {
+        buffer[0] = '\0';
+        return;
+    }
+    const char *name = obj->name ? obj->name : "";
+    snprintf(buffer, buffer_size,
+             "class=0x%08X file_id=%u index=%u name='%s'",
+             obj->class_id,
+             obj->file_id,
+             obj->file_index,
+             name);
+}
+
+static void format_chunk_context(const nmo_chunk_t *chunk, char *buffer, size_t buffer_size) {
+    if (buffer == NULL || buffer_size == 0) {
+        return;
+    }
+    if (chunk == NULL) {
+        snprintf(buffer, buffer_size, "chunk=NULL");
+        return;
+    }
+    snprintf(buffer, buffer_size,
+             "chunk_class=0x%08X dv=%u cv=%u opts=0x%X dwords=%zu",
+             chunk->class_id,
+             chunk->data_version,
+             chunk->chunk_version,
+             chunk->chunk_options,
+             chunk->data.count);
+}
+
 /* ============================================================================
  * Result Initialization
  * ============================================================================ */
@@ -160,6 +201,8 @@ static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
                                      const nmo_chunk_t *chunk2,
                                      const nmo_id_remap_t *remap,
                                      nmo_arena_t *arena,
+                                     const nmo_object_t *obj1,
+                                     const nmo_object_t *obj2,
                                      nmo_object_id_t object_id,
                                      nmo_comparison_result_t *result) {
     if (chunk1 == NULL && chunk2 == NULL) {
@@ -167,9 +210,12 @@ static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
     }
     if (chunk1 == NULL || chunk2 == NULL) {
         char ctx[NMO_DIFF_CONTEXT_MAX];
-        snprintf(ctx, sizeof(ctx), "chunk: %s vs %s",
+        char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+        format_object_context(obj1 ? obj1 : obj2, obj_ctx, sizeof(obj_ctx));
+        snprintf(ctx, sizeof(ctx), "chunk: %s vs %s (%s)",
                  chunk1 ? "present" : "NULL",
-                 chunk2 ? "present" : "NULL");
+                 chunk2 ? "present" : "NULL",
+                 obj_ctx);
         nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, object_id, ctx);
         return 0;
     }
@@ -188,7 +234,15 @@ static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
     size_t size2 = compare_chunk2->data.count;
     if (size1 != size2) {
         char ctx[NMO_DIFF_CONTEXT_MAX];
-        snprintf(ctx, sizeof(ctx), "chunk data size: %zu vs %zu DWORDs", size1, size2);
+        char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+        char chunk1_ctx[NMO_DIFF_CONTEXT_MAX];
+        char chunk2_ctx[NMO_DIFF_CONTEXT_MAX];
+        format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+        format_chunk_context(chunk1, chunk1_ctx, sizeof(chunk1_ctx));
+        format_chunk_context(compare_chunk2, chunk2_ctx, sizeof(chunk2_ctx));
+        snprintf(ctx, sizeof(ctx),
+                 "chunk size: %zu vs %zu DWORDs (%s; %s vs %s)",
+                 size1, size2, obj_ctx, chunk1_ctx, chunk2_ctx);
         nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_SIZE, object_id, ctx);
         if (result->diff_count > 0) {
             result->diffs[result->diff_count - 1].data.size.expected_size = size1 * sizeof(uint32_t);
@@ -202,7 +256,14 @@ static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
         const uint32_t *data2 = NMO_ARENA_ARRAY_DATA(uint32_t, &compare_chunk2->data);
         if (memcmp(data1, data2, size1 * sizeof(uint32_t)) != 0) {
             char ctx[NMO_DIFF_CONTEXT_MAX];
-            snprintf(ctx, sizeof(ctx), "chunk data differs (%zu DWORDs)", size1);
+            char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+            char chunk1_ctx[NMO_DIFF_CONTEXT_MAX];
+            char chunk2_ctx[NMO_DIFF_CONTEXT_MAX];
+            format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+            format_chunk_context(chunk1, chunk1_ctx, sizeof(chunk1_ctx));
+            format_chunk_context(compare_chunk2, chunk2_ctx, sizeof(chunk2_ctx));
+            snprintf(ctx, sizeof(ctx), "chunk data differs (%zu DWORDs) (%s; %s vs %s)",
+                     size1, obj_ctx, chunk1_ctx, chunk2_ctx);
             nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_DATA, object_id, ctx);
             return 0;
         }
@@ -233,6 +294,18 @@ static int compare_objects(const nmo_object_t *obj1,
         }
     }
     
+    const int ref1 = object_is_reference_only(obj1);
+    const int ref2 = object_is_reference_only(obj2);
+
+    if (ref1 != ref2) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+        format_object_context(obj1 ? obj1 : obj2, obj_ctx, sizeof(obj_ctx));
+        snprintf(ctx, sizeof(ctx), "reference_only: %d vs %d (%s)", ref1, ref2, obj_ctx);
+        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_REFERENCE_FLAG, obj1 ? obj1->id : 0, ctx);
+        match = 0;
+    }
+
     /* Compare names */
     if (flags & NMO_COMPARE_NAMES) {
         const char *name1 = obj1->name ? obj1->name : "";
@@ -240,7 +313,9 @@ static int compare_objects(const nmo_object_t *obj1,
         
         if (strcmp(name1, name2) != 0) {
             char ctx[NMO_DIFF_CONTEXT_MAX];
-            snprintf(ctx, sizeof(ctx), "name: '%s' vs '%s'", name1, name2);
+            char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+            format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+            snprintf(ctx, sizeof(ctx), "name: '%s' vs '%s' (%s)", name1, name2, obj_ctx);
             nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_NAME, obj1->id, ctx);
             match = 0;
         }
@@ -250,8 +325,10 @@ static int compare_objects(const nmo_object_t *obj1,
     if (flags & NMO_COMPARE_CLASS_IDS) {
         if (obj1->class_id != obj2->class_id) {
             char ctx[NMO_DIFF_CONTEXT_MAX];
-            snprintf(ctx, sizeof(ctx), "class_id: 0x%08X vs 0x%08X",
-                     obj1->class_id, obj2->class_id);
+            char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+            format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+            snprintf(ctx, sizeof(ctx), "class_id: 0x%08X vs 0x%08X (%s)",
+                     obj1->class_id, obj2->class_id, obj_ctx);
             nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CLASS_ID, obj1->id, ctx);
             match = 0;
         }
@@ -259,8 +336,10 @@ static int compare_objects(const nmo_object_t *obj1,
     
     /* Compare chunks */
     if (flags & NMO_COMPARE_CHUNKS) {
-        if (!compare_chunks_normalized(obj1->chunk, obj2->chunk, remap, arena, obj1->id, result)) {
-            match = 0;
+        if (!(ref1 || ref2)) {
+            if (!compare_chunks_normalized(obj1->chunk, obj2->chunk, remap, arena, obj1, obj2, obj1->id, result)) {
+                match = 0;
+            }
         }
     }
     
@@ -336,7 +415,9 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
 
             if (match_index == (size_t)-1) {
                 char ctx[NMO_DIFF_CONTEXT_MAX];
-                snprintf(ctx, sizeof(ctx), "object missing in session2: id=%u", obj1->id);
+                char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+                format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+                snprintf(ctx, sizeof(ctx), "object missing in session2: id=%u (%s)", obj1->id, obj_ctx);
                 nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj1->id, ctx);
                 all_match = 0;
                 continue;
@@ -358,7 +439,9 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
             nmo_object_t *obj2 = objects2[j];
             if (obj2 == NULL) continue;
             char ctx[NMO_DIFF_CONTEXT_MAX];
-            snprintf(ctx, sizeof(ctx), "object missing in session1: id=%u", obj2->id);
+            char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+            format_object_context(obj2, obj_ctx, sizeof(obj_ctx));
+            snprintf(ctx, sizeof(ctx), "object missing in session1: id=%u (%s)", obj2->id, obj_ctx);
             nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj2->id, ctx);
             all_match = 0;
         }
@@ -382,8 +465,10 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
     /* Report extra objects in session1 */
     for (size_t i = min_count; i < count1; i++) {
         char ctx[NMO_DIFF_CONTEXT_MAX];
-        snprintf(ctx, sizeof(ctx), "extra object in session1: id=%u",
-                 objects1[i] ? objects1[i]->id : 0);
+        char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+        format_object_context(objects1[i], obj_ctx, sizeof(obj_ctx));
+        snprintf(ctx, sizeof(ctx), "extra object in session1: id=%u (%s)",
+                 objects1[i] ? objects1[i]->id : 0, obj_ctx);
         nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING,
                                 objects1[i] ? objects1[i]->id : 0, ctx);
         all_match = 0;
@@ -392,8 +477,10 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
     /* Report extra objects in session2 */
     for (size_t i = min_count; i < count2; i++) {
         char ctx[NMO_DIFF_CONTEXT_MAX];
-        snprintf(ctx, sizeof(ctx), "extra object in session2: id=%u",
-                 objects2[i] ? objects2[i]->id : 0);
+        char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+        format_object_context(objects2[i], obj_ctx, sizeof(obj_ctx));
+        snprintf(ctx, sizeof(ctx), "extra object in session2: id=%u (%s)",
+                 objects2[i] ? objects2[i]->id : 0, obj_ctx);
         nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING,
                                 objects2[i] ? objects2[i]->id : 0, ctx);
         all_match = 0;
@@ -495,6 +582,7 @@ void nmo_comparison_result_format_report(nmo_comparison_result_t *result) {
                 case NMO_DIFF_OBJECT_ID:        type_str = "OBJECT_ID"; break;
                 case NMO_DIFF_OBJECT_NAME:      type_str = "OBJECT_NAME"; break;
                 case NMO_DIFF_OBJECT_CLASS_ID:  type_str = "OBJECT_CLASS_ID"; break;
+                case NMO_DIFF_OBJECT_REFERENCE_FLAG: type_str = "OBJECT_REFERENCE_FLAG"; break;
                 case NMO_DIFF_OBJECT_CHUNK_SIZE: type_str = "CHUNK_SIZE"; break;
                 case NMO_DIFF_OBJECT_CHUNK_DATA: type_str = "CHUNK_DATA"; break;
                 case NMO_DIFF_FILE_VERSION:     type_str = "FILE_VERSION"; break;

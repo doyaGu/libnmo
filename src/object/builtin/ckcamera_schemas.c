@@ -37,7 +37,35 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(camera, nmo_camera_state_t)
+static void nmo_camera_set_defaults(nmo_camera_state_t *state) {
+    if (state == NULL) {
+        return;
+    }
+
+    /* Mirrors RCKCamera ctor defaults (see CKRenderEngine/src/CKCamera.cpp). */
+    state->projection_type = 1u; /* CK_PERSPECTIVEPROJECTION */
+    state->fov = 0.5f;
+    state->orthographic_zoom = 1.0f;
+    state->width = 4;
+    state->height = 3;
+    state->near_plane = 1.0f;
+    state->far_plane = 4000.0f;
+
+    state->has_cameraonly_chunk = 0;
+    state->has_fov_chunk = 0;
+    state->has_proj_chunk = 0;
+    state->has_ortho_chunk = 0;
+    state->has_aspect_chunk = 0;
+    state->has_planes_chunk = 0;
+}
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    camera,
+    nmo_camera_state_t,
+    do { \
+        nmo_camera_set_defaults(state); \
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -99,39 +127,52 @@ nmo_status_t nmo_camera_deserialize(
         return result;
     }
 
-    if (nmo_chunk_get_data_version(chunk) < 5) {
+    out_state->has_cameraonly_chunk = 0;
+    out_state->has_fov_chunk = 0;
+    out_state->has_proj_chunk = 0;
+    out_state->has_ortho_chunk = 0;
+    out_state->has_aspect_chunk = 0;
+    out_state->has_planes_chunk = 0;
+
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    if (data_version < 5) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAFOV) == NMO_OK) {
+            out_state->has_fov_chunk = 1;
             (void)nmo_chunk_read_float(chunk, &out_state->fov);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPROJTYPE) == NMO_OK) {
+            out_state->has_proj_chunk = 1;
             (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAOTHOZOOM) == NMO_OK) {
+            out_state->has_ortho_chunk = 1;
             (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAASPECT) == NMO_OK) {
+            out_state->has_aspect_chunk = 1;
             (void)nmo_chunk_read_int(chunk, &out_state->width);
             (void)nmo_chunk_read_int(chunk, &out_state->height);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPLANES) == NMO_OK) {
+            out_state->has_planes_chunk = 1;
             (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
             (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
         }
-        NMO_RETURN_OK();
-    }
+    } else {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAONLY) == NMO_OK) {
+            out_state->has_cameraonly_chunk = 1;
+            (void)nmo_chunk_read_int(chunk, (int32_t *)&out_state->projection_type);
+            (void)nmo_chunk_read_float(chunk, &out_state->fov);
+            (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAONLY) == NMO_OK) {
-        (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
-        (void)nmo_chunk_read_float(chunk, &out_state->fov);
-        (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
+            uint32_t packed = 0;
+            (void)nmo_chunk_read_dword(chunk, &packed);
+            out_state->width = (int32_t)(packed & 0xFFFF);
+            out_state->height = (int32_t)((packed >> 16) & 0xFFFF);
 
-        uint32_t packed = 0;
-        (void)nmo_chunk_read_dword(chunk, &packed);
-        out_state->width = (int32_t)(packed & 0xFFFF);
-        out_state->height = (int32_t)((packed >> 16) & 0xFFFF);
-
-        (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
-        (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
+            (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
+            (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
+        }
     }
 
     NMO_RETURN_OK();
@@ -167,6 +208,16 @@ nmo_status_t nmo_camera_serialize(
     nmo_status_t result = nmo_3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
+    }
+
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_CAMERAONLY) == 0) {
+            return NMO_OK;
+        }
     }
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CAMERAONLY);

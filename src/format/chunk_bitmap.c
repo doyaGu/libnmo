@@ -53,7 +53,7 @@ static nmo_status_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
         return make_error(NMO_ERR_INVALID_STATE, "Chunk parser state not initialized");
     }
 
-    if (state->current_pos + 1u > chunk->data.count) {
+    if (!nmo_chunk_has_read_capacity(chunk, 1u)) {
         return make_error(NMO_ERR_EOF, label ? label : "Insufficient chunk data");
     }
 
@@ -67,7 +67,7 @@ static nmo_status_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
     }
 
     size_t dwords = (size + 3u) / 4u;
-    if (state->current_pos + dwords > chunk->data.count) {
+    if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         return make_error(NMO_ERR_EOF, label ? label : "Insufficient chunk data");
     }
 

@@ -9,6 +9,7 @@
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -19,8 +20,16 @@
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(character, nmo_character_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(bodypart, nmo_bodypart_state_t)
 
-static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
-    return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
+static int nmo_character_is_file_mode_deser(const nmo_chunk_t *chunk, void *context) {
+    const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
+    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
+        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+}
+
+static int nmo_character_is_file_mode_ser(const nmo_chunk_t *chunk, void *context) {
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
 }
 
 static nmo_status_t read_object_sequence(
@@ -50,7 +59,7 @@ static nmo_status_t read_object_sequence(
         result = nmo_chunk_read_object_sequence_item(chunk, &(*out_ids)[i]);
         if (result != NMO_OK) {
             *out_count = i;
-            break;
+            return result;
         }
     }
 
@@ -204,60 +213,88 @@ static nmo_status_t nmo_character_deserialize_internal(
     if (result != NMO_OK) return result;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
-
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERBODYPARTS) == NMO_OK) {
-        (void)read_object_sequence(chunk, arena,
-                                   &out_state->body_part_ids,
-                                   &out_state->body_part_count);
-    }
+    const bool is_file = nmo_character_is_file_mode_deser(chunk, context);
+    const uint32_t kMaxSubparts = 10000;
 
     if (data_version < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERANIMATIONS) == NMO_OK) {
-            (void)read_object_sequence(chunk, arena,
-                                       &out_state->animation_ids,
-                                       &out_state->animation_count);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->active_animation_id);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim_dest_id);
-        }
+        if (is_file) {
+            if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERBODYPARTS) == NMO_OK) {
+                result = read_object_sequence(chunk, arena,
+                                              &out_state->body_part_ids,
+                                              &out_state->body_part_count);
+                if (result != NMO_OK) return result;
+            }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERSAVEANIMS) == NMO_OK) {
-            uint32_t unused = 0;
-            (void)nmo_chunk_read_dword(chunk, &unused);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->active_animation_id);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim_dest_id);
-        }
+            if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERANIMATIONS) == NMO_OK) {
+                result = read_object_sequence(chunk, arena,
+                                              &out_state->animation_ids,
+                                              &out_state->animation_count);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_read_object_id(chunk, &out_state->active_animation_id);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_read_object_id(chunk, &out_state->anim_dest_id);
+                if (result != NMO_OK) return result;
+            }
+        } else {
+            if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERSAVEANIMS) == NMO_OK) {
+                uint32_t unused = 0;
+                result = nmo_chunk_read_dword(chunk, &unused);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_read_object_id(chunk, &out_state->active_animation_id);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_read_object_id(chunk, &out_state->anim_dest_id);
+                if (result != NMO_OK) return result;
+            }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERSAVEPARTS) == NMO_OK) {
-            uint32_t count = 0;
-            (void)nmo_chunk_read_dword(chunk, &count);
-            if (count > 0) {
-                out_state->subpart_count = count;
-                out_state->subparts = (nmo_character_subpart_t *)nmo_arena_alloc(
-                    arena, sizeof(nmo_character_subpart_t) * count,
-                    _Alignof(nmo_character_subpart_t));
-                if (!out_state->subparts) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate subpart array");
+            if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERSAVEPARTS) == NMO_OK) {
+                uint32_t count = 0;
+                result = nmo_chunk_read_dword(chunk, &count);
+                if (result != NMO_OK) return result;
+                if (count > kMaxSubparts) {
+                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                     "Subpart count exceeds maximum");
                 }
+                if (count > 0) {
+                    out_state->subpart_count = count;
+                    out_state->subparts = (nmo_character_subpart_t *)nmo_arena_alloc(
+                        arena, sizeof(nmo_character_subpart_t) * count,
+                        _Alignof(nmo_character_subpart_t));
+                    if (!out_state->subparts) {
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate subpart array");
+                    }
 
-                for (uint32_t i = 0; i < count; ++i) {
-                    (void)nmo_chunk_read_object_id(chunk, &out_state->subparts[i].object_id);
-                    (void)nmo_chunk_read_sub_chunk(chunk, &out_state->subparts[i].chunk);
+                    for (uint32_t i = 0; i < count; ++i) {
+                        result = nmo_chunk_read_object_id(chunk, &out_state->subparts[i].object_id);
+                        if (result != NMO_OK) return result;
+                        result = nmo_chunk_read_sub_chunk(chunk, &out_state->subparts[i].chunk);
+                        if (result != NMO_OK) return result;
+                    }
                 }
             }
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERROOT) == NMO_OK) {
-            (void)nmo_chunk_read_object_id(chunk, &out_state->root_body_part_id);
+            result = nmo_chunk_read_object_id(chunk, &out_state->root_body_part_id);
+            if (result != NMO_OK) return result;
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERFLOORREF) == NMO_OK) {
-            (void)nmo_chunk_read_object_id(chunk, &out_state->floor_ref_id);
+            result = nmo_chunk_read_object_id(chunk, &out_state->floor_ref_id);
+            if (result != NMO_OK) return result;
         }
     } else {
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERBODYPARTS) == NMO_OK) {
+            result = read_object_sequence(chunk, arena,
+                                          &out_state->body_part_ids,
+                                          &out_state->body_part_count);
+            if (result != NMO_OK) return result;
+        }
+
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERSAVEPARTS) == NMO_OK) {
             size_t count = 0;
-            (void)nmo_chunk_start_read_sub_chunk_sequence(chunk, &count);
-            if (count > 0) {
+            result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &count);
+            if (result != NMO_OK) return result;
+            if (count > 0 && out_state->body_part_count == (uint32_t)count) {
                 out_state->subpart_count = (uint32_t)count;
                 out_state->subparts = (nmo_character_subpart_t *)nmo_arena_alloc(
                     arena, sizeof(nmo_character_subpart_t) * out_state->subpart_count,
@@ -267,25 +304,38 @@ static nmo_status_t nmo_character_deserialize_internal(
                 }
 
                 for (uint32_t i = 0; i < out_state->subpart_count; ++i) {
-                    out_state->subparts[i].object_id = 0;
-                    (void)nmo_chunk_read_sub_chunk(chunk, &out_state->subparts[i].chunk);
+                    out_state->subparts[i].object_id =
+                        (out_state->body_part_ids && i < out_state->body_part_count)
+                            ? out_state->body_part_ids[i]
+                            : 0;
+                    result = nmo_chunk_read_sub_chunk(chunk, &out_state->subparts[i].chunk);
+                    if (result != NMO_OK) return result;
                 }
             }
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CHARACTERONLY) == NMO_OK) {
-            if (nmo_chunk_is_file_mode(chunk)) {
-                (void)read_object_sequence(chunk, arena,
-                                           &out_state->animation_ids,
-                                           &out_state->animation_count);
+            if (is_file) {
+                result = read_object_sequence(chunk, arena,
+                                              &out_state->animation_ids,
+                                              &out_state->animation_count);
+                if (result != NMO_OK) return result;
             }
             size_t seq_count = 0;
-            if (nmo_chunk_read_object_sequence_start(chunk, &seq_count) == NMO_OK && seq_count >= 4) {
-                (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->active_animation_id);
-                (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->anim_dest_id);
-                (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->root_body_part_id);
-                (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->floor_ref_id);
+            result = nmo_chunk_read_object_sequence_start(chunk, &seq_count);
+            if (result != NMO_OK) return result;
+            if (seq_count < 4) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                 "Character sequence too small");
             }
+            result = nmo_chunk_read_object_sequence_item(chunk, &out_state->active_animation_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_sequence_item(chunk, &out_state->anim_dest_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_sequence_item(chunk, &out_state->root_body_part_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_sequence_item(chunk, &out_state->floor_ref_id);
+            if (result != NMO_OK) return result;
         }
     }
 
@@ -305,41 +355,40 @@ static nmo_status_t nmo_character_serialize_internal(
     nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    if (in_state->body_part_count > 0 && in_state->body_part_ids) {
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CHARACTERBODYPARTS);
-        if (result != NMO_OK) return result;
-        result = write_object_sequence(out_chunk, in_state->body_part_ids, in_state->body_part_count);
-        if (result != NMO_OK) return result;
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    const bool is_file = nmo_character_is_file_mode_ser(out_chunk, context);
+    if (!is_file && (save_flags & CK_STATESAVE_CHARACTERONLY) == 0) {
+        NMO_RETURN_OK();
     }
 
-    if (in_state->subpart_count > 0 && in_state->subparts) {
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CHARACTERBODYPARTS);
+    if (result != NMO_OK) return result;
+    result = write_object_sequence(out_chunk, in_state->body_part_ids, in_state->body_part_count);
+    if (result != NMO_OK) return result;
+
+    if (!is_file && (save_flags & CK_STATESAVE_CHARACTERSAVEPARTS) != 0) {
+        const uint32_t subpart_count = in_state->body_part_count;
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CHARACTERSAVEPARTS);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_start_sub_chunk_sequence(out_chunk, in_state->subpart_count);
+        result = nmo_chunk_start_sub_chunk_sequence(out_chunk, subpart_count);
         if (result != NMO_OK) return result;
-        for (uint32_t i = 0; i < in_state->subpart_count; ++i) {
-            nmo_chunk_t *sub = in_state->subparts[i].chunk;
-            if (!sub) {
-                sub = nmo_chunk_create(arena);
+        for (uint32_t i = 0; i < subpart_count; ++i) {
+            nmo_chunk_t *sub = NULL;
+            if (in_state->subparts && i < in_state->subpart_count) {
+                sub = in_state->subparts[i].chunk;
             }
             result = nmo_chunk_write_sub_chunk_sequence(out_chunk, sub);
             if (result != NMO_OK) return result;
         }
     }
 
-    if (in_state->animation_count > 0 || in_state->active_animation_id ||
-        in_state->anim_dest_id || in_state->root_body_part_id || in_state->floor_ref_id) {
+    if (is_file || (save_flags & CK_STATESAVE_CHARACTERONLY) != 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CHARACTERONLY);
         if (result != NMO_OK) return result;
-        if (nmo_chunk_is_file_mode(out_chunk)) {
-            if (in_state->animation_count > 0 && in_state->animation_ids) {
-                result = write_object_sequence(out_chunk, in_state->animation_ids,
-                                               in_state->animation_count);
-                if (result != NMO_OK) return result;
-            } else {
-                result = nmo_chunk_write_object_sequence_start(out_chunk, 0);
-                if (result != NMO_OK) return result;
-            }
+        if (is_file) {
+            result = write_object_sequence(out_chunk, in_state->animation_ids,
+                                           in_state->animation_count);
+            if (result != NMO_OK) return result;
         }
 
         result = nmo_chunk_write_object_sequence_start(out_chunk, 4);
@@ -376,26 +425,23 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
     if (data_version >= 5) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTCHARACTER) == NMO_OK) {
             out_state->has_character = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->character_id);
+            nmo_status_t result = nmo_chunk_read_object_id(chunk, &out_state->character_id);
+            if (result != NMO_OK) return result;
 
-            size_t remaining_dwords = 0;
-            size_t pos = nmo_chunk_get_position(chunk);
-            size_t total = nmo_chunk_get_data_size(chunk) / 4;
-            if (pos < total) {
-                remaining_dwords = total - pos;
-            }
-            if (remaining_dwords * 4 >= sizeof(nmo_ik_joint_t)) {
+            if ((out_state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) != 0) {
                 out_state->has_rotation_joint = 1;
-                (void)nmo_chunk_read_and_fill_buffer(chunk,
-                                                     &out_state->rotation_joint,
-                                                     sizeof(nmo_ik_joint_t));
+                result = nmo_chunk_read_and_fill_buffer(chunk,
+                                                        &out_state->rotation_joint,
+                                                        sizeof(nmo_ik_joint_t));
+                if (result != NMO_OK) return result;
             }
         }
     } else {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTROTJOINT) == NMO_OK) {
             nmo_vector_t vectors[6];
             memset(vectors, 0, sizeof(vectors));
-            (void)nmo_chunk_read_and_fill_buffer(chunk, vectors, sizeof(vectors));
+            nmo_status_t result = nmo_chunk_read_and_fill_buffer(chunk, vectors, sizeof(vectors));
+            if (result != NMO_OK) return result;
 
             out_state->has_rotation_joint = 1;
             out_state->rotation_joint.flags = 0;
@@ -415,7 +461,8 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTCHARACTER) == NMO_OK) {
             out_state->has_character = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->character_id);
+            nmo_status_t result = nmo_chunk_read_object_id(chunk, &out_state->character_id);
+            if (result != NMO_OK) return result;
         }
     }
 
@@ -436,13 +483,19 @@ static nmo_status_t nmo_bodypart_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_character || in_state->has_rotation_joint) {
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    const bool is_file = nmo_character_is_file_mode_ser(out_chunk, context);
+    if (!is_file && (save_flags & CK_STATESAVE_BODYPARTONLY) == 0) {
+        NMO_RETURN_OK();
+    }
+
+    {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BODYPARTCHARACTER);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->character_id);
         if (result != NMO_OK) return result;
 
-        if (in_state->has_rotation_joint) {
+        if ((in_state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) != 0) {
             result = nmo_chunk_write_buffer_no_size(out_chunk,
                                                     &in_state->rotation_joint,
                                                     sizeof(nmo_ik_joint_t));

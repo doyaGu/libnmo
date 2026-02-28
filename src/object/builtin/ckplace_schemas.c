@@ -161,22 +161,35 @@ static nmo_status_t nmo_place_serialize_internal(
         return result;
     }
 
-    if (in_state->has_camera) {
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+
+    if (!is_file && save_flags == 0) {
+        NMO_RETURN_OK();
+    }
+
+    const bool use_flags = (!is_file) || (save_flags != 0);
+    const bool write_camera = use_flags ? ((save_flags & CK_STATESAVE_PLACECAMERA) != 0) : true;
+    const bool write_level = use_flags ? ((save_flags & CK_STATESAVE_PLACELEVEL) != 0) : true;
+    const bool write_portals = use_flags ? ((save_flags & CK_STATESAVE_PLACEPORTALS) != 0) : true;
+
+    if (write_camera && (in_state->has_camera || in_state->camera_id != 0)) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACECAMERA);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->camera_id);
         if (result != NMO_OK) return result;
     }
 
-    const int file_mode = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
-    if (file_mode && in_state->has_level) {
+    if (is_file && write_level && (in_state->has_level || in_state->level_id != 0)) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACELEVEL);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->level_id);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->portals.count > 0 && in_state->portals.data) {
+    if (write_portals && in_state->portals.count > 0 && in_state->portals.data) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACEPORTALS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->portals.count);

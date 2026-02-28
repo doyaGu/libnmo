@@ -138,7 +138,9 @@ static int test_basic_round_trip(void) {
     };
     nmo_session_set_file_info(save_session, &file_info);
 
-    if (nmo_save_file(save_session, test_file, NULL) != NMO_OK) {
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
+    if (nmo_save_file(save_session, test_file, &save_opts) != NMO_OK) {
         nmo_session_destroy(save_session);
         nmo_context_release(ctx);
         unlink(test_file);
@@ -161,14 +163,13 @@ static int test_basic_round_trip(void) {
         return 1;
     }
 
-    /* Verify load completed without error */
-    /* NOTE: Object serialization not yet implemented, so we can't verify object count */
-    /* For now, just verify the pipeline completed successfully */
+    /* Verify pipeline completed without error.
+       Detailed object/chunk equality is covered by dedicated round-trip tests. */
     nmo_object_repository_t* load_repo = nmo_session_get_repository(load_session);
     size_t loaded_count;
     nmo_object_repository_get_all(load_repo, &loaded_count);
 
-    printf("  (Saved 5 objects, loaded %zu - serialization TODO)\n", loaded_count);
+    printf("  (Saved 5 objects, loaded %zu)\n", loaded_count);
 
     nmo_session_destroy(load_session);
     nmo_context_release(ctx);
@@ -242,7 +243,9 @@ static int test_manager_hooks(void) {
     };
     nmo_session_set_file_info(save_session, &file_info);
 
-    nmo_save_file(save_session, test_file, NULL);
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
+    nmo_save_file(save_session, test_file, &save_opts);
     nmo_session_destroy(save_session);
 
     nmo_session_t* load_session = nmo_session_create(ctx);

@@ -73,8 +73,10 @@ static int test_file_roundtrip(const char* input_file) {
         return 1;
     }
 
-    /* === SAVE: Save to temporary file === */
-    result = nmo_save_file(load1_session, temp_file, NULL);
+    /* === SAVE: Save to temporary file (schema required) === */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
+    result = nmo_save_file(load1_session, temp_file, &save_opts);
     if (result != NMO_OK) {
         printf("  FAILED: Could not save file (error %d)\n", result);
         nmo_session_destroy(load1_session);
@@ -116,18 +118,6 @@ static int test_file_roundtrip(const char* input_file) {
         &compare_result);
 
     int passed = (compare_err == NMO_OK) && compare_result.match;
-    if (!passed && compare_err == NMO_OK) {
-        int only_object_count = (compare_result.diff_count > 0);
-        for (int i = 0; i < compare_result.diff_count; i++) {
-            if (compare_result.diffs[i].type != NMO_DIFF_OBJECT_COUNT) {
-                only_object_count = 0;
-                break;
-            }
-        }
-        if (only_object_count) {
-            passed = 1;
-        }
-    }
 
     if (!passed) {
         if (compare_err != NMO_OK) {
@@ -161,28 +151,32 @@ int main(void) {
     printf("=== Real File Round-Trip Tests ===\n\n");
 
     /* Test with 2D Text.nmo */
-    printf("Test 1/2: 2D Text.nmo\n");
+    printf("Test 1/3: 2D Text.nmo\n");
     if (test_file_roundtrip(NMO_TEST_DATA_FILE("2D Text.nmo")) != 0) {
         failed++;
     }
     printf("\n");
 
     /* Test with Nop.cmo */
-    printf("Test 2/2: Nop.cmo\n");
+    printf("Test 2/3: Nop.cmo\n");
     if (test_file_roundtrip(NMO_TEST_DATA_FILE("Nop.cmo")) != 0) {
         failed++;
     }
     printf("\n");
 
-    /* Note: base.cmo skipped - has edge case with reference objects (ID with high bit set)
-     * This is not a schema serialization bug, but a test comparison issue.
-     * The schema-based serialization works correctly for all regular objects.
-     */
+    /* Test with base.cmo */
+    printf("Test 3/3: base.cmo\n");
+    if (test_file_roundtrip(NMO_TEST_DATA_FILE("base.cmo")) != 0) {
+        failed++;
+    }
+    printf("\n");
+
+    /* base.cmo is included for strict reference-only round-trip validation. */
 
     printf("=== Summary ===\n");
     if (failed == 0) {
         printf("All round-trip tests PASSED!\n");
-        printf("Schema-based serialization verified with %d test files.\n", 2);
+        printf("Schema-based serialization verified with %d test files.\n", 3);
         return 0;
     } else {
         printf("%d test(s) FAILED!\n", failed);

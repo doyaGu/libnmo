@@ -28,15 +28,22 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_kinematicchain_deserialize");
     }
 
+    out_state->has_chain_data = 0;
+    out_state->start_effector_id = 0;
+    out_state->end_effector_id = 0;
+
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KINEMATICCHAINALL) == NMO_OK) {
         out_state->has_chain_data = 1;
         nmo_object_id_t placeholder = 0;
-        (void)nmo_chunk_read_object_id(chunk, &placeholder);
-        (void)nmo_chunk_read_object_id(chunk, &out_state->start_effector_id);
-        (void)nmo_chunk_read_object_id(chunk, &out_state->end_effector_id);
+        result = nmo_chunk_read_object_id(chunk, &placeholder);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_object_id(chunk, &out_state->start_effector_id);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_object_id(chunk, &out_state->end_effector_id);
+        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();
@@ -79,12 +86,23 @@ static nmo_status_t nmo_kinematicchain_serialize_internal(
     nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    if (in_state->has_chain_data) {
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    if (!is_file && (save_flags & CK_STATESAVE_KINEMATICCHAINALL) == 0) {
+        NMO_RETURN_OK();
+    }
+
+    {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KINEMATICCHAINALL);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_object_id(out_chunk, 0);
-        nmo_chunk_write_object_id(out_chunk, in_state->start_effector_id);
-        nmo_chunk_write_object_id(out_chunk, in_state->end_effector_id);
+        result = nmo_chunk_write_object_id(out_chunk, 0);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_object_id(out_chunk, in_state->start_effector_id);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_object_id(out_chunk, in_state->end_effector_id);
+        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();

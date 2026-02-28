@@ -23,6 +23,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
+#include "session/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -48,6 +49,18 @@ static const nmo_type_field_t nmo_group_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF_ARRAY(nmo_group_state_t, object_ids)
 };
+
+static int nmo_group_is_file_mode_ser(const nmo_chunk_t *chunk, void *context)
+{
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    if (chunk && ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0)) {
+        return 1;
+    }
+    if (ser_ctx && ((ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0)) {
+        return 1;
+    }
+    return 0;
+}
 
 /* =============================================================================
  * CKGroup DESERIALIZATION
@@ -97,29 +110,33 @@ nmo_status_t nmo_group_deserialize(
         return result;
     }
 
-    if (count > 0) {
-        /* Sanity check */
-        const uint32_t MAX_GROUP_OBJECTS = 100000;
-        if ((uint32_t)count > MAX_GROUP_OBJECTS) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
-        }
+    if (count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count is negative");
+    }
 
-        nmo_array_clear(&out_state->object_ids);
-        result = nmo_array_reserve(&out_state->object_ids, count);
-        if (result != NMO_OK) return result;
+    /* Sanity check */
+    const uint32_t MAX_GROUP_OBJECTS = 100000;
+    if ((uint32_t)count > MAX_GROUP_OBJECTS) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
+    }
 
-        nmo_object_id_t *ids = NULL;
-        result = nmo_array_extend(&out_state->object_ids, count, (void **)&ids);
-        if (result != NMO_OK) return result;
+    nmo_array_clear(&out_state->object_ids);
+    if (count == 0) {
+        NMO_RETURN_OK();
+    }
 
-        /* Read object IDs */
-        for (int32_t i = 0; i < count; i++) {
-            result = nmo_chunk_read_object_id(chunk, &ids[i]);
-            if (result != NMO_OK) {
-                /* Partial read - save what we got */
-                out_state->object_ids.count = i;
-                NMO_RETURN_OK();
-            }
+    result = nmo_array_reserve(&out_state->object_ids, count);
+    if (result != NMO_OK) return result;
+
+    nmo_object_id_t *ids = NULL;
+    result = nmo_array_extend(&out_state->object_ids, count, (void **)&ids);
+    if (result != NMO_OK) return result;
+
+    /* Read object IDs */
+    for (int32_t i = 0; i < count; i++) {
+        result = nmo_chunk_read_object_id(chunk, &ids[i]);
+        if (result != NMO_OK) {
+            return result;
         }
     }
 
@@ -159,9 +176,23 @@ nmo_status_t nmo_group_serialize(
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    /* Only write data if group is non-empty */
-    if (in_state->object_ids.count == 0 || !in_state->object_ids.data) {
+    const bool is_file = nmo_group_is_file_mode_ser(out_chunk, context);
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    if (!is_file && save_flags == 0) {
         NMO_RETURN_OK();
+    }
+
+    const bool want_group = is_file || ((save_flags & CK_STATESAVE_GROUPALL) != 0);
+    if (!want_group) {
+        NMO_RETURN_OK();
+    }
+
+    /* Only write data if group is non-empty */
+    if (in_state->object_ids.count == 0) {
+        NMO_RETURN_OK();
+    }
+    if (!in_state->object_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Group object IDs missing");
     }
 
     /* Write identifier */
@@ -267,7 +298,6 @@ nmo_status_t nmo_group_finish_loading(
     (void)arena;
 
     nmo_group_state_t *group_state = (nmo_group_state_t *)instance;
-    (void)repository;
 
     /* Nothing to do for empty groups */
     if (group_state->object_ids.count == 0 || !group_state->object_ids.data) {
@@ -287,8 +317,9 @@ nmo_status_t nmo_group_finish_loading(
      * for most use cases.
      */
     uint32_t referenced_count = 0;
+    uint32_t kept_count = 0;
 
-    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &group_state->object_ids);
+    nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &group_state->object_ids);
     for (uint32_t i = 0; i < group_state->object_ids.count; i++) {
         nmo_object_id_t obj_id = ids[i];
         
@@ -298,7 +329,19 @@ nmo_status_t nmo_group_finish_loading(
         }
 
         referenced_count++;
+
+        if (repository) {
+            nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, obj_id);
+            if (obj == NULL) {
+                continue;
+            }
+        }
+
+        ids[kept_count++] = obj_id;
     }
+
+    group_state->object_ids.count = kept_count;
 
     if (referenced_count > 0) {
         nmo_log_debug(NULL, "CKGroup finish_loading: %u referenced members", referenced_count);

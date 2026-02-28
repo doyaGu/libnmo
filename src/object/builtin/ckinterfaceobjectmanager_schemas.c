@@ -7,6 +7,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_object_enum_guids.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
@@ -18,7 +19,16 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(interfaceobjectmanager, nmo_interfaceobjectmanager_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    interfaceobjectmanager,
+    nmo_interfaceobjectmanager_state_t,
+    do {
+        state->base.visibility_flags = NMO_CKOBJECT_VISIBLE;
+        state->chunk_count = 0;
+        state->chunks = NULL;
+        state->guid = NMO_GUID_NULL;
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -47,26 +57,43 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_interfaceobjectmanager_deserialize");
     }
 
-    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
-    if (result != NMO_OK) return result;
+    out_state->base.visibility_flags = NMO_CKOBJECT_VISIBLE;
+    out_state->chunk_count = 0;
+    out_state->chunks = NULL;
+    out_state->guid = NMO_GUID_NULL;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_CHUNKS) == NMO_OK) {
         int32_t count = 0;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
-        if (result == NMO_OK && count > 0) {
-            out_state->chunk_count = count;
+        if (result != NMO_OK) {
+            return result;
+        }
+        if (count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Invalid CKInterfaceObjectManager chunk count");
+        }
+        out_state->chunk_count = count;
+        if (count > 0) {
             out_state->chunks = (nmo_chunk_t **)nmo_arena_alloc(
                 arena, sizeof(nmo_chunk_t *) * (size_t)count, _Alignof(nmo_chunk_t *));
-            if (out_state->chunks) {
-                for (int32_t i = 0; i < count; ++i) {
-                    (void)nmo_chunk_read_sub_chunk(chunk, &out_state->chunks[i]);
+            if (!out_state->chunks) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate CKInterfaceObjectManager chunks");
+            }
+            for (int32_t i = 0; i < count; ++i) {
+                result = nmo_chunk_read_sub_chunk(chunk, &out_state->chunks[i]);
+                if (result != NMO_OK) {
+                    return result;
                 }
             }
         }
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_GUID) == NMO_OK) {
-        (void)nmo_chunk_read_guid(chunk, &out_state->guid);
+        nmo_status_t result = nmo_chunk_read_guid(chunk, &out_state->guid);
+        if (result != NMO_OK) {
+            return result;
+        }
     }
 
     NMO_RETURN_OK();
@@ -117,7 +144,6 @@ static nmo_status_t nmo_interfaceobjectmanager_serialize_internal(
     nmo_chunk_t *out_chunk,
     void *context)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_interfaceobjectmanager_serialize");
     }
@@ -128,16 +154,23 @@ static nmo_status_t nmo_interfaceobjectmanager_serialize_internal(
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_IOM_CHUNKS);
     if (result != NMO_OK) return result;
 
+    if (in_state->chunk_count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid CKInterfaceObjectManager chunk count");
+    }
+
     result = nmo_chunk_write_int(out_chunk, in_state->chunk_count);
     if (result != NMO_OK) return result;
+
+    if (in_state->chunk_count > 0 && in_state->chunks == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "CKInterfaceObjectManager chunks missing");
+    }
 
     for (int32_t i = 0; i < in_state->chunk_count; ++i) {
         nmo_chunk_t *sub = NULL;
         if (in_state->chunks && i >= 0) {
             sub = in_state->chunks[i];
-        }
-        if (!sub) {
-            sub = nmo_chunk_create(arena);
         }
         result = nmo_chunk_write_sub_chunk(out_chunk, sub);
         if (result != NMO_OK) return result;

@@ -287,6 +287,7 @@ set(NMO_SESSION_SOURCES
     src/session/object_repository.c
     src/session/object_index.c
     src/session/object_system.c
+    src/session/builder.c
     src/session/load_session.c
     src/session/id_remap.c
     src/session/id_sanitizer.c

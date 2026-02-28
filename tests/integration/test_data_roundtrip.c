@@ -2,12 +2,8 @@
  * @file test_data_roundtrip.c
  * @brief Test data section serialization round-trip
  * 
- * NOTE: This test currently focuses on testing GUID and structure round-trip
- * without chunk data, since nmo_chunk_serialize() produces a different format
- * than nmo_chunk_parse() expects (new format vs VERSION1 format).
- * 
- * TODO: Implement proper VERSION1 chunk serialization or update parse to use
- * the new format (P0 task).
+ * This suite validates data section round-trip with VERSION1-compatible
+ * chunk serialization, including chunk payload parsing.
  */
 
 #include "../test_framework.h"
@@ -26,6 +22,8 @@ static void test_manager_guid_roundtrip(void);
 static void test_object_metadata_roundtrip(void);
 static void test_mixed_data_roundtrip(void);
 static void test_manager_with_chunk_data(void);
+static void test_manager_with_chunk_data_without_raw_data(void);
+static void test_object_with_chunk_data_without_raw_data(void);
 static void test_parse_with_chunk_pool(void);
 
 static void register_tests(void) {
@@ -34,6 +32,8 @@ static void register_tests(void) {
     test_register("data_roundtrip", "object_metadata_roundtrip", test_object_metadata_roundtrip);
     test_register("data_roundtrip", "mixed_data_roundtrip", test_mixed_data_roundtrip);
     test_register("data_roundtrip", "manager_with_chunk_data", test_manager_with_chunk_data);
+    test_register("data_roundtrip", "manager_with_chunk_data_without_raw_data", test_manager_with_chunk_data_without_raw_data);
+    test_register("data_roundtrip", "object_with_chunk_data_without_raw_data", test_object_with_chunk_data_without_raw_data);
     test_register("data_roundtrip", "parse_with_chunk_pool", test_parse_with_chunk_pool);
 }
 
@@ -314,6 +314,124 @@ static void test_manager_with_chunk_data(void) {
     ASSERT_EQ(read_result, NMO_OK);
     ASSERT_EQ(dword3, 0x12345678);
     
+    nmo_arena_destroy(arena);
+}
+
+static void test_manager_with_chunk_data_without_raw_data(void) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_data_section_t data = {0};
+    data.manager_count = 1;
+    data.managers = (nmo_manager_data_t*)nmo_arena_alloc(arena, sizeof(nmo_manager_data_t), 8);
+    ASSERT_NOT_NULL(data.managers);
+    memset(data.managers, 0, sizeof(nmo_manager_data_t));
+
+    data.managers[0].guid.d1 = 0x11112222;
+    data.managers[0].guid.d2 = 0x33334444;
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x01020304u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xA0B0C0D0u);
+    ASSERT_EQ(result, NMO_OK);
+    nmo_chunk_close(chunk);
+
+    data.managers[0].chunk = chunk;
+    data.managers[0].data_size = 0;
+
+    size_t calc_size = nmo_data_section_calculate_size(&data, 8, arena);
+    ASSERT_GT(calc_size, 12u);
+
+    uint8_t* buffer = (uint8_t*)nmo_arena_alloc(arena, calc_size + 64u, 16);
+    ASSERT_NOT_NULL(buffer);
+    size_t bytes_written = 0;
+    result = nmo_data_section_serialize(&data, 8, buffer, calc_size + 64u, &bytes_written, arena);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_GT(bytes_written, 12u);
+
+    nmo_data_section_t parsed = {0};
+    parsed.manager_count = 1;
+    result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_NOT_NULL(parsed.managers);
+    ASSERT_NOT_NULL(parsed.managers[0].chunk);
+
+    nmo_chunk_t* parsed_chunk = parsed.managers[0].chunk;
+    result = nmo_chunk_start_read(parsed_chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    uint32_t v1 = 0;
+    uint32_t v2 = 0;
+    result = nmo_chunk_read_dword(parsed_chunk, &v1);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_read_dword(parsed_chunk, &v2);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(v1, 0x01020304u);
+    ASSERT_EQ(v2, 0xA0B0C0D0u);
+
+    nmo_arena_destroy(arena);
+}
+
+static void test_object_with_chunk_data_without_raw_data(void) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_data_section_t data = {0};
+    data.object_count = 1;
+    data.objects = (nmo_object_data_t*)nmo_arena_alloc(arena, sizeof(nmo_object_data_t), 8);
+    ASSERT_NOT_NULL(data.objects);
+    memset(data.objects, 0, sizeof(nmo_object_data_t));
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xABCDEF01u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x10203040u);
+    ASSERT_EQ(result, NMO_OK);
+    nmo_chunk_close(chunk);
+
+    data.objects[0].object_id = 7;
+    data.objects[0].chunk = chunk;
+    data.objects[0].data_size = 0;
+
+    size_t calc_size = nmo_data_section_calculate_size(&data, 8, arena);
+    ASSERT_GT(calc_size, 4u);
+
+    uint8_t* buffer = (uint8_t*)nmo_arena_alloc(arena, calc_size + 64u, 16);
+    ASSERT_NOT_NULL(buffer);
+    size_t bytes_written = 0;
+    result = nmo_data_section_serialize(&data, 8, buffer, calc_size + 64u, &bytes_written, arena);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_GT(bytes_written, 4u);
+
+    nmo_data_section_t parsed = {0};
+    parsed.object_count = 1;
+    result = nmo_data_section_parse(buffer, bytes_written, 8, &parsed, NULL, arena);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_NOT_NULL(parsed.objects);
+    ASSERT_NOT_NULL(parsed.objects[0].chunk);
+
+    nmo_chunk_t* parsed_chunk = parsed.objects[0].chunk;
+    result = nmo_chunk_start_read(parsed_chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    uint32_t v1 = 0;
+    uint32_t v2 = 0;
+    result = nmo_chunk_read_dword(parsed_chunk, &v1);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_read_dword(parsed_chunk, &v2);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(v1, 0xABCDEF01u);
+    ASSERT_EQ(v2, 0x10203040u);
+
     nmo_arena_destroy(arena);
 }
 

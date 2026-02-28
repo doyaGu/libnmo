@@ -19,14 +19,14 @@ extern "C" {
  * @brief Object descriptor (from file)
  *
  * Represents an object stored in the NMO file with its metadata.
- * File IDs can have bit 23 (0x800000) set to indicate reference-only objects.
+ * File IDs can have the sign bit (0x80000000) set to indicate reference-only objects.
  */
 typedef struct nmo_object_desc {
-    nmo_object_id_t file_id;    /**< Object ID from file, bit 23 may be set for reference-only */
+    nmo_object_id_t file_id;    /**< Object ID from file, sign bit may be set for reference-only */
     nmo_class_id_t class_id;    /**< Class ID (oit->ObjectCid) */
     nmo_object_id_t file_index; /**< FileIndex offset in uncompressed file buffer (oit->FileIndex) */
     char *name;               /**< Object name (allocated from arena) */
-    uint32_t flags;           /**< Object flags (bit 23 = reference-only) */
+    uint32_t flags;           /**< Object flags (sign bit = reference-only) */
 } nmo_object_desc_t;
 
 /**

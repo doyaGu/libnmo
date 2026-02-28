@@ -1,6 +1,6 @@
 /**
  * @file test_performance.c
- * @brief Performance tests for Phase 5 optimizations
+ * @brief General performance smoke benchmarks
  */
 
 #include "core/nmo_hash_table.h"
@@ -154,12 +154,12 @@ void test_index_lookup(void) {
 }
 
 int main(void) {
-    printf("=== Phase 5 Performance Tests ===\n");
+    printf("=== Performance Benchmark Smoke Tests ===\n");
     
     test_hash_table_reserve();
     test_arena_reserve();
     test_index_lookup();
     
-    printf("\n=== All Performance Tests Complete ===\n");
+    printf("\n=== Performance Benchmark Smoke Tests Complete ===\n");
     return 0;
 }

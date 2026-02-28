@@ -205,39 +205,44 @@ nmo_status_t nmo_parameteroperation_serialize(
         NMO_RETURN_OK();
     }
 
-    if (!nmo_guid_is_null(in_state->operation_guid)) {
+    uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    if (save_flags == 0) {
+        NMO_RETURN_OK();
+    }
+
+    if ((save_flags & CK_STATESAVE_OPERATIONOP) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONOP);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_guid(out_chunk, in_state->operation_guid);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_owner) {
+    if ((save_flags & CK_STATESAVE_OPERATIONDEFAULTDATA) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONDEFAULTDATA);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->owner_id);
+        result = nmo_chunk_write_object_id(out_chunk, in_state->has_owner ? in_state->owner_id : 0);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_in1 || in_state->has_in2) {
+    if ((save_flags & CK_STATESAVE_OPERATIONINPUTS) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONINPUTS);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->in1_id);
+        result = nmo_chunk_write_object_id(out_chunk, in_state->has_in1 ? in_state->in1_id : 0);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->in1_chunk);
+        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->has_in1 ? in_state->in1_chunk : NULL);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->in2_id);
+        result = nmo_chunk_write_object_id(out_chunk, in_state->has_in2 ? in_state->in2_id : 0);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->in2_chunk);
+        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->has_in2 ? in_state->in2_chunk : NULL);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_out) {
+    if ((save_flags & CK_STATESAVE_OPERATIONOUTPUT) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONOUTPUT);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->out_id);
+        result = nmo_chunk_write_object_id(out_chunk, in_state->has_out ? in_state->out_id : 0);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->out_chunk);
+        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->has_out ? in_state->out_chunk : NULL);
         if (result != NMO_OK) return result;
     }
 

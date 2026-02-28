@@ -51,6 +51,7 @@ typedef enum nmo_diff_type {
     NMO_DIFF_OBJECT_ID,             /**< Object ID mismatch */
     NMO_DIFF_OBJECT_NAME,           /**< Object name mismatch */
     NMO_DIFF_OBJECT_CLASS_ID,       /**< Object class ID mismatch */
+    NMO_DIFF_OBJECT_REFERENCE_FLAG, /**< Object reference-only flag mismatch */
     NMO_DIFF_OBJECT_CHUNK_SIZE,     /**< Chunk data size mismatch */
     NMO_DIFF_OBJECT_CHUNK_DATA,     /**< Chunk data content mismatch */
     NMO_DIFF_FILE_VERSION,          /**< File version mismatch */

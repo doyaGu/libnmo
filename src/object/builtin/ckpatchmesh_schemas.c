@@ -19,6 +19,184 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(patchmesh, nmo_patchmesh_state_t)
 
+#ifndef CK_PATCHMESH_UPTODATE
+#define CK_PATCHMESH_UPTODATE          0x00000001u
+#define CK_PATCHMESH_BUILDNORMALS      0x00000002u
+#define CK_PATCHMESH_MATERIALSUPTODATE 0x00000004u
+#define CK_PATCHMESH_AUTOSMOOTH        0x00000008u
+#endif
+
+static inline uint32_t nmo_patchmesh_read_u32_le(const uint8_t *p) {
+    return (uint32_t)p[0]
+        | ((uint32_t)p[1] << 8)
+        | ((uint32_t)p[2] << 16)
+        | ((uint32_t)p[3] << 24);
+}
+
+static inline int16_t nmo_patchmesh_read_i16_le(const uint8_t *p) {
+    return (int16_t)(p[0] | ((uint16_t)p[1] << 8));
+}
+
+static inline uint32_t nmo_patchmesh_apply_flags(uint32_t flags) {
+    flags |= CK_PATCHMESH_BUILDNORMALS;
+    flags &= ~(CK_PATCHMESH_UPTODATE | CK_PATCHMESH_MATERIALSUPTODATE);
+    return flags;
+}
+
+static nmo_status_t nmo_patchmesh_convert_legacy_to_data3(
+    nmo_patchmesh_state_t *out_state,
+    nmo_arena_t *arena)
+{
+    if (!out_state || !arena) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to legacy patchmesh conversion");
+    }
+
+    if (out_state->legacy_patch_count > 0) {
+        size_t expected_bytes = (size_t)out_state->legacy_patch_count * 88u;
+        if (!out_state->legacy_patch_data || out_state->legacy_patch_data_size < expected_bytes) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Legacy patch data size mismatch");
+        }
+        out_state->patch_count = out_state->legacy_patch_count;
+        out_state->patch_material_ids = (nmo_object_id_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_object_id_t) * out_state->patch_count, _Alignof(nmo_object_id_t));
+        out_state->patches = (nmo_patchmesh_patch_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_patchmesh_patch_t) * out_state->patch_count, _Alignof(nmo_patchmesh_patch_t));
+        if (!out_state->patch_material_ids || !out_state->patches) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy patches");
+        }
+
+        memset(out_state->patches, 0, sizeof(nmo_patchmesh_patch_t) * out_state->patch_count);
+
+        const uint8_t *raw = (const uint8_t *)out_state->legacy_patch_data;
+        for (uint32_t i = 0; i < out_state->patch_count; ++i) {
+            const uint8_t *rec = raw + (size_t)i * 88u;
+            nmo_patchmesh_patch_t *patch = &out_state->patches[i];
+            patch->type = nmo_patchmesh_read_u32_le(rec + 0);
+            patch->smoothing_group = 0xFFFFFFFFu;
+            out_state->patch_material_ids[i] = out_state->legacy_default_material_id;
+
+            int16_t data16[20] = {0};
+            data16[0] = nmo_patchmesh_read_i16_le(rec + 4);
+            data16[1] = nmo_patchmesh_read_i16_le(rec + 8);
+            data16[2] = nmo_patchmesh_read_i16_le(rec + 12);
+            data16[3] = nmo_patchmesh_read_i16_le(rec + 16);
+            data16[4] = nmo_patchmesh_read_i16_le(rec + 20);
+            data16[5] = nmo_patchmesh_read_i16_le(rec + 24);
+            data16[6] = nmo_patchmesh_read_i16_le(rec + 28);
+            data16[7] = nmo_patchmesh_read_i16_le(rec + 32);
+            data16[8] = nmo_patchmesh_read_i16_le(rec + 36);
+            data16[9] = nmo_patchmesh_read_i16_le(rec + 40);
+            data16[10] = nmo_patchmesh_read_i16_le(rec + 44);
+            data16[11] = nmo_patchmesh_read_i16_le(rec + 48);
+            data16[12] = nmo_patchmesh_read_i16_le(rec + 52);
+            data16[13] = nmo_patchmesh_read_i16_le(rec + 56);
+            data16[14] = nmo_patchmesh_read_i16_le(rec + 60);
+            data16[15] = nmo_patchmesh_read_i16_le(rec + 64);
+            memcpy(patch->data, data16, sizeof(data16));
+        }
+    }
+
+    if (out_state->legacy_edge_count > 0) {
+        size_t expected_bytes = (size_t)out_state->legacy_edge_count * 24u;
+        if (!out_state->legacy_edge_data || out_state->legacy_edge_data_size < expected_bytes) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Legacy edge data size mismatch");
+        }
+        out_state->edge_count = out_state->legacy_edge_count;
+        out_state->edge_data_size = (size_t)out_state->edge_count * 12u;
+        out_state->edge_data = (uint8_t *)nmo_arena_alloc(arena, out_state->edge_data_size, 1);
+        if (!out_state->edge_data) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate edge data");
+        }
+
+        const uint8_t *raw = (const uint8_t *)out_state->legacy_edge_data;
+        for (uint32_t i = 0; i < out_state->edge_count; ++i) {
+            const uint8_t *rec = raw + (size_t)i * 24u;
+            int16_t edge16[6];
+            edge16[0] = nmo_patchmesh_read_i16_le(rec + 0);
+            edge16[1] = nmo_patchmesh_read_i16_le(rec + 4);
+            edge16[2] = nmo_patchmesh_read_i16_le(rec + 8);
+            edge16[3] = nmo_patchmesh_read_i16_le(rec + 12);
+            edge16[4] = nmo_patchmesh_read_i16_le(rec + 16);
+            edge16[5] = nmo_patchmesh_read_i16_le(rec + 20);
+            memcpy(out_state->edge_data + (size_t)i * 12u, edge16, sizeof(edge16));
+        }
+    }
+
+    out_state->channel_count = 1;
+    out_state->channels = (nmo_patchmesh_channel_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_patchmesh_channel_t) * out_state->channel_count, _Alignof(nmo_patchmesh_channel_t));
+    if (!out_state->channels) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy channels");
+    }
+    memset(out_state->channels, 0, sizeof(nmo_patchmesh_channel_t) * out_state->channel_count);
+
+    nmo_patchmesh_channel_t *channel = &out_state->channels[0];
+    channel->material_id = NMO_OBJECT_ID_NONE;
+    channel->flags = 0;
+    channel->type = 0;
+    channel->subtype = 0;
+
+    if (out_state->legacy_tvpatch_count > 0) {
+        size_t expected_bytes = (size_t)out_state->legacy_tvpatch_count * 16u;
+        if (!out_state->legacy_tvpatch_data || out_state->legacy_tvpatch_data_size < expected_bytes) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Legacy TVPatch data size mismatch");
+        }
+        channel->patch_count = out_state->legacy_tvpatch_count;
+        size_t patches_bytes = (size_t)channel->patch_count * 8u;
+        channel->patches_raw = (uint8_t *)nmo_arena_alloc(arena, patches_bytes, 1);
+        if (!channel->patches_raw) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate TVPatch buffer");
+        }
+
+        const uint8_t *raw = (const uint8_t *)out_state->legacy_tvpatch_data;
+        for (uint32_t i = 0; i < channel->patch_count; ++i) {
+            const uint8_t *rec = raw + (size_t)i * 16u;
+            int16_t tv[4];
+            tv[0] = nmo_patchmesh_read_i16_le(rec + 0);
+            tv[1] = nmo_patchmesh_read_i16_le(rec + 4);
+            tv[2] = nmo_patchmesh_read_i16_le(rec + 8);
+            tv[3] = nmo_patchmesh_read_i16_le(rec + 12);
+            memcpy(channel->patches_raw + (size_t)i * 8u, tv, sizeof(tv));
+        }
+    }
+
+    if (out_state->legacy_uv_count > 0) {
+        size_t expected_bytes = (size_t)out_state->legacy_uv_count * sizeof(nmo_vector2_t);
+        if (!out_state->legacy_uv_data || out_state->legacy_uv_data_size < expected_bytes) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Legacy UV data size mismatch");
+        }
+        channel->uv_count = out_state->legacy_uv_count;
+        channel->uvs = (nmo_vector2_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_vector2_t) * channel->uv_count, _Alignof(nmo_vector2_t));
+        if (!channel->uvs) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate UV buffer");
+        }
+        memcpy(channel->uvs, out_state->legacy_uv_data,
+               (size_t)channel->uv_count * sizeof(nmo_vector2_t));
+    }
+
+    if (out_state->legacy_smoothing_count > 0 && out_state->legacy_smoothing_groups &&
+        out_state->patches) {
+        uint32_t apply = out_state->legacy_smoothing_count;
+        if (out_state->patch_count < apply) apply = out_state->patch_count;
+        for (uint32_t i = 0; i < apply; ++i) {
+            out_state->patches[i].smoothing_group = out_state->legacy_smoothing_groups[i];
+        }
+    }
+
+    if (out_state->legacy_material_count > 0 && out_state->legacy_material_ids &&
+        out_state->patch_material_ids) {
+        uint32_t apply = out_state->legacy_material_count;
+        if (out_state->patch_count < apply) apply = out_state->patch_count;
+        for (uint32_t i = 0; i < apply; ++i) {
+            out_state->patch_material_ids[i] = out_state->legacy_material_ids[i];
+        }
+    }
+
+    out_state->format = CKPATCHMESH_FORMAT_DATA3;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -80,7 +258,9 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PATCHMESHDATA3) == NMO_OK) {
         out_state->format = CKPATCHMESH_FORMAT_DATA3;
 
-        (void)nmo_chunk_read_dword(chunk, &out_state->patch_flags);
+        uint32_t patch_flags = 0;
+        (void)nmo_chunk_read_dword(chunk, &patch_flags);
+        out_state->patch_flags = nmo_patchmesh_apply_flags(patch_flags);
         (void)nmo_chunk_read_int(chunk, &out_state->iteration_count);
         (void)nmo_chunk_read_int(chunk, &out_state->vec_count);
 
@@ -96,7 +276,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->vectors) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate patchmesh vectors");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->vectors, buffer_size);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->vectors, buffer_size);
         }
 
         size_t patch_count = 0;
@@ -120,7 +300,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             for (uint32_t i = 0; i < out_state->patch_count; ++i) {
                 (void)nmo_chunk_read_dword(chunk, &out_state->patches[i].type);
                 (void)nmo_chunk_read_dword(chunk, &out_state->patches[i].smoothing_group);
-                (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->patches[i].data, sizeof(out_state->patches[i].data));
+                (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->patches[i].data, sizeof(out_state->patches[i].data));
             }
         }
 
@@ -135,7 +315,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->edge_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate patchmesh edge buffer");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->edge_data, edge_bytes);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->edge_data, edge_bytes);
         }
 
         size_t channel_count = 0;
@@ -169,7 +349,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
                     if (!channel->patches_raw) {
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate TVPatch buffer");
                     }
-                    (void)nmo_chunk_read_and_fill_buffer(chunk, channel->patches_raw, patches_bytes);
+                    (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, channel->patches_raw, patches_bytes);
                 }
 
                 uint32_t uv_bytes = 0;
@@ -183,7 +363,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
                     if (!channel->uvs) {
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate UV buffer");
                     }
-                    (void)nmo_chunk_read_and_fill_buffer(chunk, channel->uvs, uv_bytes);
+                    (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, channel->uvs, uv_bytes);
                 }
             }
         }
@@ -194,7 +374,9 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PATCHMESHDATA2) == NMO_OK) {
         out_state->format = CKPATCHMESH_FORMAT_DATA2;
 
-        (void)nmo_chunk_read_dword(chunk, &out_state->patch_flags);
+        uint32_t patch_flags = 0;
+        (void)nmo_chunk_read_dword(chunk, &patch_flags);
+        out_state->patch_flags = nmo_patchmesh_apply_flags(patch_flags);
         (void)nmo_chunk_read_object_id(chunk, &out_state->legacy_default_material_id);
         (void)nmo_chunk_read_int(chunk, &out_state->iteration_count);
         (void)nmo_chunk_read_int(chunk, &out_state->vec_count);
@@ -211,7 +393,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->vectors) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate patchmesh vectors");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->vectors, buffer_size);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->vectors, buffer_size);
         }
 
         uint32_t patch_bytes = 0;
@@ -225,7 +407,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->legacy_patch_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy patch buffer");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->legacy_patch_data, patch_bytes);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->legacy_patch_data, patch_bytes);
         }
 
         uint32_t edge_bytes = 0;
@@ -239,7 +421,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->legacy_edge_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy edge buffer");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->legacy_edge_data, edge_bytes);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->legacy_edge_data, edge_bytes);
         }
 
         uint32_t tv_bytes = 0;
@@ -253,7 +435,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->legacy_tvpatch_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy TVPatch buffer");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->legacy_tvpatch_data, tv_bytes);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->legacy_tvpatch_data, tv_bytes);
         }
 
         uint32_t uv_bytes = 0;
@@ -267,7 +449,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             if (!out_state->legacy_uv_data) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy UV buffer");
             }
-            (void)nmo_chunk_read_and_fill_buffer(chunk, out_state->legacy_uv_data, uv_bytes);
+            (void)nmo_chunk_read_and_fill_buffer_nosize(chunk, out_state->legacy_uv_data, uv_bytes);
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PATCHMESHSMOOTH) == NMO_OK) {
@@ -282,7 +464,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
                 if (!out_state->legacy_smoothing_groups) {
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate smoothing groups");
                 }
-                (void)nmo_chunk_read_and_fill_buffer(chunk,
+                (void)nmo_chunk_read_and_fill_buffer_nosize(chunk,
                                                      out_state->legacy_smoothing_groups,
                                                      smooth_bytes);
             }
@@ -305,7 +487,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
             }
         }
 
-        NMO_RETURN_OK();
+        return nmo_patchmesh_convert_legacy_to_data3(out_state, arena);
     }
 
     NMO_RETURN_OK();
@@ -370,7 +552,7 @@ static nmo_status_t nmo_patchmesh_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->base.pm_data, s->base.pm_data, s->base.pm_data_size));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vectors,
-                                              s->vectors, sizeof(nmo_vector_t), (uint32_t)s->vec_count));
+                                              s->vectors, sizeof(nmo_vector_t), s->total_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->patch_material_ids,
                                               s->patch_material_ids, sizeof(nmo_object_id_t), s->patch_count));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->patches,
@@ -380,7 +562,7 @@ static nmo_status_t nmo_patchmesh_copy(
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->channels,
                                               s->channels, sizeof(nmo_patchmesh_channel_t), s->channel_count));
     for (uint32_t i = 0; i < s->channel_count; ++i) {
-        size_t patch_bytes = (size_t)s->channels[i].patch_count * sizeof(nmo_patchmesh_patch_t);
+        size_t patch_bytes = (size_t)s->channels[i].patch_count * 8u;
         NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->channels[i].patches_raw,
                                                   s->channels[i].patches_raw, patch_bytes));
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->channels[i].uvs,
@@ -412,16 +594,21 @@ static nmo_status_t nmo_patchmesh_validate(
     (void)type;
     (void)context;
     const nmo_patchmesh_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->vectors, (uint32_t)s->vec_count, "vectors");
+    NMO_VALIDATE_COUNT(s->vectors, s->total_count, "vectors");
     NMO_VALIDATE_COUNT(s->patch_material_ids, s->patch_count, "patch_material_ids");
     NMO_VALIDATE_COUNT(s->patches, s->patch_count, "patches");
-    NMO_VALIDATE_BYTES(s->edge_data, s->edge_data_size, "edge_data");
+    if (s->edge_count > 0) {
+        size_t expected = (size_t)s->edge_count * 12u;
+        if (!s->edge_data || s->edge_data_size < expected) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "edge_data too small");
+        }
+    }
     NMO_VALIDATE_COUNT(s->channels, s->channel_count, "channels");
     if (s->channels) {
         for (uint32_t i = 0; i < s->channel_count; ++i) {
             if (s->channels[i].patch_count > 0) {
                 NMO_VALIDATE_BYTES(s->channels[i].patches_raw,
-                                   (size_t)s->channels[i].patch_count * sizeof(nmo_patchmesh_patch_t),
+                                   (size_t)s->channels[i].patch_count * 8u,
                                    "channels.patches_raw");
             }
             if (s->channels[i].uv_count > 0) {
@@ -463,19 +650,30 @@ static nmo_status_t nmo_patchmesh_serialize_internal(
     void *context)
 {
     nmo_status_t result;
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = ser_ctx ? ser_ctx->save_flags : 0;
 
     if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_patchmesh_serialize");
     }
 
     {
-        nmo_status_t result = nmo_mesh_serialize(&in_state->base, out_chunk, NULL, context);
+        nmo_status_t result = nmo_mesh_serialize_ex(&in_state->base, out_chunk, NULL, context, true);
         if (result != NMO_OK) {
             return result;
         }
     }
 
-    if (in_state->format == CKPATCHMESH_FORMAT_DATA3) {
+    if (!is_file && (save_flags & CK_STATESAVE_PATCHMESHONLY) == 0) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_patchmesh_format_t format = in_state->format;
+    if (format != CKPATCHMESH_FORMAT_DATA3) {
+        format = CKPATCHMESH_FORMAT_DATA3;
+    }
+    if (format == CKPATCHMESH_FORMAT_DATA3) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PATCHMESHDATA3);
         if (result != NMO_OK) return result;
 
@@ -513,12 +711,16 @@ static nmo_status_t nmo_patchmesh_serialize_internal(
             if (result != NMO_OK) return result;
         }
 
-        result = nmo_chunk_write_dword(out_chunk, (uint32_t)in_state->edge_data_size);
+        uint32_t edge_bytes = in_state->edge_count * 12u;
+        result = nmo_chunk_write_dword(out_chunk, edge_bytes);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->edge_count);
         if (result != NMO_OK) return result;
-        if (in_state->edge_data_size > 0 && in_state->edge_data) {
-            result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->edge_data, in_state->edge_data_size);
+        if (edge_bytes > 0) {
+            if (!in_state->edge_data || in_state->edge_data_size < edge_bytes) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Edge data buffer too small");
+            }
+            result = nmo_chunk_write_buffer_no_size(out_chunk, in_state->edge_data, edge_bytes);
             if (result != NMO_OK) return result;
         }
 
@@ -562,7 +764,7 @@ static nmo_status_t nmo_patchmesh_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (in_state->format == CKPATCHMESH_FORMAT_DATA2) {
+    if (format == CKPATCHMESH_FORMAT_DATA2) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PATCHMESHDATA2);
         if (result != NMO_OK) return result;
 
@@ -682,4 +884,5 @@ nmo_status_t nmo_patchmesh_serialize(
     const nmo_patchmesh_state_t *in_state = (const nmo_patchmesh_state_t *)instance;
     return nmo_patchmesh_serialize_internal(in_state, out_chunk, context);
 }
+
 

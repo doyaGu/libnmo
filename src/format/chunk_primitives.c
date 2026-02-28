@@ -449,6 +449,31 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
     return size;
 }
 
+size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
+                                             void *buffer,
+                                             size_t buffer_size) {
+    if (!chunk || !buffer) {
+        return 0;
+    }
+
+    if (buffer_size == 0) {
+        return 0;
+    }
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    uint32_t *data_dwords = get_data_u32(chunk);
+
+    size_t dwords = (buffer_size + 3) / 4;
+    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
+        return 0;
+    });
+
+    memcpy(buffer, &data_dwords[state->current_pos], buffer_size);
+    state->current_pos += dwords;
+
+    return buffer_size;
+}
+
 // =============================================================================
 // Object References
 // =============================================================================

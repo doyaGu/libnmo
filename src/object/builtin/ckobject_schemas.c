@@ -133,6 +133,7 @@ nmo_status_t nmo_object_deserialize(
     }
 
     /* No special identifiers found -> object is visible (default already set) */
+    out_state->visibility_flags = NMO_CKOBJECT_VISIBLE;
     NMO_RETURN_OK();
 }
 
@@ -169,14 +170,12 @@ nmo_status_t nmo_object_serialize(
     }
 
     /* Write appropriate identifier based on visibility state */
-    if ((in_state->visibility_flags & NMO_CKOBJECT_VISIBLE) == 0) {
-        if (in_state->visibility_flags & NMO_CKOBJECT_HIERARCHICAL) {
-            /* Hierarchically hidden */
-            nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJECTHIERAHIDDEN);
-        } else {
-            /* Completely hidden */
-            nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJECTHIDDEN);
-        }
+    if (in_state->visibility_flags & NMO_CKOBJECT_HIERARCHICAL) {
+        /* Hierarchically hidden */
+        nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJECTHIERAHIDDEN);
+    } else if ((in_state->visibility_flags & NMO_CKOBJECT_VISIBLE) == 0) {
+        /* Completely hidden */
+        nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJECTHIDDEN);
     }
     /* If visible (default), no identifier is written */
 

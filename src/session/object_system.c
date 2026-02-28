@@ -42,6 +42,12 @@ typedef struct object_system_ref_capture_ctx {
     nmo_logger_t *logger;
 } object_system_ref_capture_ctx_t;
 
+static const char *object_system_name_or_default(const nmo_object_t *obj) {
+    return (obj != NULL && obj->name != NULL && obj->name[0] != '\0')
+        ? obj->name
+        : "(null)";
+}
+
 static bool object_system_capture_ref(
     void *user_data,
     uint32_t target_id,
@@ -143,33 +149,8 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
     for (size_t i = 0; i < desc_count; i++) {
         const nmo_object_desc_t *desc = &descs[i];
 
-        uint32_t raw_id = desc->file_id;
-        if (desc->flags & NMO_OBJECT_REFERENCE_FLAG) {
-            raw_id |= NMO_ID_REF_MASK;
-        }
-
-        const int32_t signed_raw_id = (int32_t)raw_id;
         const int is_reference_only = (desc->flags & NMO_OBJECT_REFERENCE_FLAG) != 0;
-        const int is_external_ref = (signed_raw_id < 0);
-
-        if (id_sanitizer != NULL && is_external_ref) {
-            int32_t runtime_ext = nmo_id_register_external(id_sanitizer, signed_raw_id);
-            if (runtime_ext != (int32_t)NMO_OBJECT_ID_INVALID) {
-                if (logger) {
-                    nmo_log(logger, NMO_LOG_INFO,
-                            "  Object %zu: external reference %d registered as runtime %d",
-                            i, signed_raw_id, runtime_ext);
-                }
-            } else {
-                if (logger) {
-                    nmo_log(logger, NMO_LOG_WARN,
-                            "  Object %zu: failed to register external reference %d",
-                            i, signed_raw_id);
-                }
-            }
-        }
-
-        const uint32_t sanitized_id = nmo_id_sanitize(raw_id);
+        const uint32_t sanitized_id = nmo_id_sanitize(desc->file_id);
 
         nmo_object_t *obj = nmo_object_create(object_allocator, NMO_OBJECT_ID_NONE, desc->class_id);
         if (obj == NULL) {
@@ -181,9 +162,7 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
         }
 
         obj->flags = desc->flags;
-        if (is_external_ref && (obj->flags & NMO_OBJECT_REFERENCE_FLAG) == 0) {
-            obj->flags |= NMO_OBJECT_REFERENCE_FLAG;
-        }
+        obj->save_flags = desc->flags;
         obj->file_id = desc->file_id;
 
         if (desc->name != NULL && desc->name[0] != '\0') {
@@ -232,7 +211,7 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
             return reg_result;
         }
 
-        if (id_sanitizer != NULL && signed_raw_id >= 0 && sanitized_id != 0) {
+        if (id_sanitizer != NULL && sanitized_id != 0) {
             int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, sanitized_id, obj->id);
             if (sanitize_result != NMO_OK && logger) {
                 nmo_log(logger, NMO_LOG_WARN,
@@ -246,10 +225,6 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
                 nmo_log(logger, NMO_LOG_INFO,
                         "  Created reference-only object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
                         i, sanitized_id, (uint32_t)i, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
-            } else if (is_external_ref) {
-                nmo_log(logger, NMO_LOG_INFO,
-                        "  Created external reference object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
-                        i, raw_id, (uint32_t)i, obj->id, obj->class_id, obj->name ? obj->name : "(null)");
             } else {
                 nmo_log(logger, NMO_LOG_INFO,
                         "  Created object %zu: file_id=%u, file_object_index=%u, runtime_id=%u, class=0x%08X, name='%s'",
@@ -302,25 +277,14 @@ nmo_status_t nmo_object_system_deserialize_repository(
 
         size_t chunk_buffer_size = 0;
         const void *chunk_buffer = nmo_chunk_get_data(obj->chunk, &chunk_buffer_size);
-        if (chunk_buffer == NULL || chunk_buffer_size == 0) {
+        const bool has_chunk_data = (chunk_buffer != NULL && chunk_buffer_size > 0);
+        if (!has_chunk_data) {
             stats.skipped_empty_chunk++;
             if (logger) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "  Object %zu (ID=%u): chunk has no data buffer, skipping",
-                        i, obj->id);
+                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): chunk has no data buffer, deserializing defaults",
+                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj));
             }
-            continue;
-        }
-
-        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
-        if (read_result != NMO_OK) {
-            stats.errors++;
-            if (logger) {
-                nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object %zu (ID=%u): failed to start chunk read: %d",
-                        i, obj->id, read_result);
-            }
-            continue;
         }
 
         const nmo_type_descriptor_t *schema_type =
@@ -331,8 +295,8 @@ nmo_status_t nmo_object_system_deserialize_repository(
             stats.no_schema++;
             if (logger) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "  Object %zu (ID=%u, class=0x%08X): no readable schema found",
-                        i, obj->id, obj->class_id);
+                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): no readable schema found",
+                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj));
             }
             nmo_chunk_close(obj->chunk);
             continue;
@@ -348,8 +312,8 @@ nmo_status_t nmo_object_system_deserialize_repository(
             stats.errors++;
             if (logger) {
                 nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object %zu (ID=%u): failed to allocate %u bytes for state",
-                        i, obj->id, state_size);
+                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to allocate %u bytes for state",
+                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), state_size);
             }
             nmo_chunk_close(obj->chunk);
             continue;
@@ -367,8 +331,9 @@ nmo_status_t nmo_object_system_deserialize_repository(
                     char error_msg[1024];
                     nmo_last_error_message_copy(error_msg, sizeof(error_msg));
                     nmo_log(logger, NMO_LOG_ERROR,
-                            "  Object %zu (ID=%u, class=0x%08X, schema=%s): create failed: %s",
-                            i, obj->id, obj->class_id, schema_type->name ? schema_type->name : "<unnamed>",
+                            "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): create failed: %s",
+                            i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
+                            schema_type->name ? schema_type->name : "<unnamed>",
                             error_msg);
                 }
 
@@ -379,6 +344,24 @@ nmo_status_t nmo_object_system_deserialize_repository(
                 nmo_chunk_close(obj->chunk);
                 continue;
             }
+        }
+
+        if (!has_chunk_data) {
+            (void)nmo_object_set_data(obj, state);
+            stats.deserialized++;
+            nmo_chunk_close(obj->chunk);
+            continue;
+        }
+
+        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
+        if (read_result != NMO_OK) {
+            stats.errors++;
+            if (logger) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to start chunk read: %d",
+                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), read_result);
+            }
+            continue;
         }
 
         nmo_status_t deser_result = schema_type->vtable->deserialize(
@@ -403,8 +386,8 @@ nmo_status_t nmo_object_system_deserialize_repository(
                             shadow_storage, obj->id, data + pos_bytes, tail_size);
                         if (tail_result != NMO_OK && logger) {
                             nmo_log(logger, NMO_LOG_WARN,
-                                    "  Object %zu (ID=%u): failed to capture chunk tail in shadow (code=%d)",
-                                    i, obj->id, tail_result);
+                                    "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to capture chunk tail in shadow (code=%d)",
+                                    i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), tail_result);
                         }
                     }
                 }
@@ -417,8 +400,9 @@ nmo_status_t nmo_object_system_deserialize_repository(
                 char error_msg[1024];
                 nmo_last_error_message_copy(error_msg, sizeof(error_msg));
                 nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object %zu (ID=%u, class=0x%08X, schema=%s): deserialization failed: %s",
-                        i, obj->id, obj->class_id, schema_type->name ? schema_type->name : "<unnamed>",
+                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): deserialization failed: %s",
+                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
+                        schema_type->name ? schema_type->name : "<unnamed>",
                         error_msg);
             }
 
@@ -537,15 +521,20 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     }
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE);
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
 
     result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);
 
     if (result != NMO_OK) {
         if (logger) {
+            char error_msg[1024];
+            nmo_last_error_message_copy(error_msg, sizeof(error_msg));
             nmo_log(logger, NMO_LOG_ERROR,
-                    "    Failed to serialize object %u with schema '%s'",
-                    obj->id, schema_type->name ? schema_type->name : "<unnamed>");
+                    "    Failed to serialize object %u (class=0x%08X) with schema '%s': %s",
+                    obj->id,
+                    obj->class_id,
+                    schema_type->name ? schema_type->name : "<unnamed>",
+                    error_msg[0] ? error_msg : "<no error>");
         }
         return obj->chunk;
     }
@@ -819,25 +808,14 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
 
         size_t chunk_buffer_size = 0;
         const void *chunk_buffer = nmo_chunk_get_data(obj->chunk, &chunk_buffer_size);
-        if (chunk_buffer == NULL || chunk_buffer_size == 0) {
+        const bool has_chunk_data = (chunk_buffer != NULL && chunk_buffer_size > 0);
+        if (!has_chunk_data) {
             stats.skipped_empty_chunk++;
             if (logger) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "  Object file_index=%zu (ID=%u): chunk has no data buffer, skipping",
-                        file_index, obj->id);
+                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): chunk has no data buffer, deserializing defaults",
+                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj));
             }
-            continue;
-        }
-
-        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
-        if (read_result != NMO_OK) {
-            stats.errors++;
-            if (logger) {
-                nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object file_index=%zu (ID=%u): failed to start chunk read: %d",
-                        file_index, obj->id, read_result);
-            }
-            continue;
         }
 
         const nmo_type_descriptor_t *schema_type =
@@ -848,8 +826,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             stats.no_schema++;
             if (logger) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "  Object file_index=%zu (ID=%u, class=0x%08X): no readable schema found",
-                        file_index, obj->id, obj->class_id);
+                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): no readable schema found",
+                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj));
             }
             nmo_chunk_close(obj->chunk);
             continue;
@@ -865,8 +843,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             stats.errors++;
             if (logger) {
                 nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object file_index=%zu (ID=%u): failed to allocate %u bytes for state",
-                        file_index, obj->id, state_size);
+                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to allocate %u bytes for state",
+                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), state_size);
             }
             nmo_chunk_close(obj->chunk);
             continue;
@@ -884,8 +862,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                     char error_msg[1024];
                     nmo_last_error_message_copy(error_msg, sizeof(error_msg));
                     nmo_log(logger, NMO_LOG_ERROR,
-                            "  Object file_index=%zu (ID=%u, class=0x%08X, schema=%s): create failed: %s",
-                            file_index, obj->id, obj->class_id,
+                            "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): create failed: %s",
+                            file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
                             schema_type->name ? schema_type->name : "<unnamed>",
                             error_msg);
                 }
@@ -897,6 +875,46 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                 nmo_chunk_close(obj->chunk);
                 continue;
             }
+        }
+
+        if (!has_chunk_data) {
+            (void)nmo_object_set_data(obj, state);
+            stats.deserialized++;
+
+            if (reference_resolver != NULL) {
+                object_system_ref_capture_ctx_t ref_ctx = {
+                    .resolver = reference_resolver,
+                    .repo = repo,
+                    .source = obj,
+                    .logger = logger
+                };
+
+                nmo_status_t ref_result = nmo_ref_enumerate_object(
+                    type_rt->types,
+                    obj,
+                    object_system_capture_ref,
+                    &ref_ctx);
+
+                if (ref_result != NMO_OK && logger != NULL) {
+                    nmo_log(logger, NMO_LOG_WARN,
+                            "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): reference enumeration failed: %d",
+                            file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), ref_result);
+                }
+            }
+
+            nmo_chunk_close(obj->chunk);
+            continue;
+        }
+
+        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
+        if (read_result != NMO_OK) {
+            stats.errors++;
+            if (logger) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to start chunk read: %d",
+                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), read_result);
+            }
+            continue;
         }
 
         nmo_status_t deser_result = schema_type->vtable->deserialize(
@@ -922,8 +940,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
 
                 if (ref_result != NMO_OK && logger != NULL) {
                     nmo_log(logger, NMO_LOG_WARN,
-                            "  Object file_index=%zu (ID=%u): reference enumeration failed: %d",
-                            file_index, obj->id, ref_result);
+                            "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): reference enumeration failed: %d",
+                            file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), ref_result);
                 }
             }
 
@@ -942,8 +960,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                             shadow_storage, obj->id, data + pos_bytes, tail_size);
                         if (tail_result != NMO_OK && logger) {
                             nmo_log(logger, NMO_LOG_WARN,
-                                    "  Object file_index=%zu (ID=%u): failed to capture chunk tail in shadow (code=%d)",
-                                    file_index, obj->id, tail_result);
+                                    "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to capture chunk tail in shadow (code=%d)",
+                                    file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), tail_result);
                         }
                     }
                 }
@@ -956,8 +974,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                 char error_msg[1024];
                 nmo_last_error_message_copy(error_msg, sizeof(error_msg));
                 nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object file_index=%zu (ID=%u, class=0x%08X, schema=%s): deserialization failed: %s",
-                        file_index, obj->id, obj->class_id,
+                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): deserialization failed: %s",
+                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
                         schema_type->name ? schema_type->name : "<unnamed>",
                         error_msg);
             }

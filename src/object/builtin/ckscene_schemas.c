@@ -100,6 +100,12 @@ nmo_status_t nmo_scene_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_scene_deserialize");
     }
 
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    if (data_version < 1) {
+        NMO_RETURN_ERROR(NMO_ERR_UNSUPPORTED_VERSION, NMO_SEVERITY_ERROR,
+                         "CKScene data_version < 1 is not supported");
+    }
+
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
@@ -115,6 +121,10 @@ nmo_status_t nmo_scene_deserialize(
         int32_t desc_count;
         result = nmo_chunk_read_int(chunk, &desc_count);
         if (result != NMO_OK) return result;
+        if (desc_count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Scene object count is negative");
+        }
 
         nmo_array_clear(&out_state->object_descs);
         if (desc_count > 0) {
@@ -138,14 +148,25 @@ nmo_status_t nmo_scene_deserialize(
             }
 
             /* Read object ID sequence */
-            result = nmo_chunk_read_object_sequence_start(chunk, NULL);
+            size_t sequence_count = 0;
+            result = nmo_chunk_read_object_sequence_start(chunk, &sequence_count);
             if (result != NMO_OK) return result;
 
-            for (int32_t i = 0; i < desc_count; i++) {
+            if (sequence_count != (size_t)desc_count) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Scene object sequence count mismatch");
+            }
+
+            if (sequence_count > MAX_SCENE_OBJECTS) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                 "Scene object sequence count exceeds maximum");
+            }
+
+            for (size_t i = 0; i < (size_t)desc_count; i++) {
                 result = nmo_chunk_read_object_sequence_item(chunk,
                     &descs[i].object_id);
                 if (result != NMO_OK) {
-                    out_state->object_descs.count = (size_t)i;
+                    out_state->object_descs.count = i;
                     break;
                 }
             }
@@ -153,24 +174,23 @@ nmo_status_t nmo_scene_deserialize(
             /* Read sub-chunk sequence (initial values + reserved) */
             size_t sub_chunk_count;
             result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &sub_chunk_count);
-            if (result != NMO_OK) {
-                /* Sub-chunk sequence missing - objects have no initial state */
-            } else {
-                /* Read pairs of chunks: initial value + reserved (NULL) */
-                for (int32_t i = 0; i < desc_count && (size_t)(i * 2) < sub_chunk_count; i++) {
-                    /* Read initial value chunk */
-                    result = nmo_chunk_read_sub_chunk(chunk, &descs[i].initial_value);
-                    if (result != NMO_OK) {
-                        descs[i].initial_value = NULL;
-                        /* Continue reading - missing initial value is valid */
-                    }
+            if (result != NMO_OK) return result;
+            if (sub_chunk_count != (size_t)desc_count * 2u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Scene initial value sub-chunk count mismatch");
+            }
 
-                    /* Read reserved chunk (always NULL, discard) */
-                    nmo_chunk_t *reserved_chunk = NULL;
-                    result = nmo_chunk_read_sub_chunk(chunk, &reserved_chunk);
-                    /* Ignore result - reserved chunk is expected to be NULL */
-                    (void)reserved_chunk;
-                }
+            /* Read pairs of chunks: initial value + reserved (NULL) */
+            for (int32_t i = 0; i < desc_count; i++) {
+                /* Read initial value chunk */
+                result = nmo_chunk_read_sub_chunk(chunk, &descs[i].initial_value);
+                if (result != NMO_OK) return result;
+
+                /* Read reserved chunk (always NULL, discard) */
+                nmo_chunk_t *reserved_chunk = NULL;
+                result = nmo_chunk_read_sub_chunk(chunk, &reserved_chunk);
+                if (result != NMO_OK) return result;
+                (void)reserved_chunk;
             }
 
             /* Read object flags */
@@ -180,7 +200,7 @@ nmo_status_t nmo_scene_deserialize(
                 if (result != NMO_OK) {
                     break;
                 }
-                if (nmo_chunk_get_data_version(chunk) >= 8) {
+                if (data_version >= 8) {
                     descs[i].flags = flags;
                 } else {
                     uint32_t converted = flags & CK_SCENEOBJECT_ACTIVE;

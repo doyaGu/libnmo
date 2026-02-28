@@ -47,6 +47,9 @@ typedef struct nmo_light_state {
     
     // Power multiplier (4 bytes at 0x214)
     float light_power;               ///< Intensity multiplier (default 1.0)
+
+    /* Chunk presence tracking */
+    uint8_t has_light_power_chunk;
 } nmo_light_state_t;
 
 NMO_API nmo_status_t nmo_light_deserialize(

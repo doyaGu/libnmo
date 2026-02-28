@@ -32,6 +32,7 @@ typedef struct nmo_grid_state {
     int32_t priority;
     uint32_t orientation_mode;
 
+    uint8_t has_grid_data;
     uint8_t has_file_flag;
     int32_t file_flag;
 

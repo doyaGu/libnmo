@@ -86,6 +86,7 @@ static void nmo_light_set_defaults(nmo_light_state_t *state) {
 
     state->light_data.inner_spot_cone = 0.69813174f;
     state->light_data.outer_spot_cone = 0.78539819f;
+    state->has_light_power_chunk = 0;
 }
 
 static void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state) {
@@ -138,81 +139,80 @@ static nmo_status_t nmo_light_deserialize_modern(
     
     // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing light data identifier CK_STATESAVE_LIGHTDATA");
-    }
-    
-    // Read Type|Flags packed DWORD
-    uint32_t packed_type_flags;
-    result = nmo_chunk_read_dword(chunk, &packed_type_flags);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read Type|Flags");
-    }
-    
-    // Unpack: Type in low 8 bits, Flags in high 24 bits
-    out_state->light_data.type = (VXLIGHT_TYPE)(packed_type_flags & 0xFFu);
-    out_state->flags = packed_type_flags & ~0xFFu;
-    
-    // Validate type
+    if (result == NMO_OK) {
+        // Read Type|Flags packed DWORD
+        uint32_t packed_type_flags;
+        result = nmo_chunk_read_dword(chunk, &packed_type_flags);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read Type|Flags");
+        }
+
+        // Unpack: Type in low 8 bits, Flags in high 24 bits
+        out_state->light_data.type = (VXLIGHT_TYPE)(packed_type_flags & 0xFFu);
+        out_state->flags = packed_type_flags & ~0xFFu;
+
+        // Validate type
         if (out_state->light_data.type < VX_LIGHTPOINT ||
-            out_state->light_data.type > VX_LIGHTPARA) {
-        out_state->light_data.type = VX_LIGHTPOINT;  // Default to point light
-    }
-    
-    // Read Diffuse color (packed ARGB)
-    uint32_t diffuse_argb;
-    result = nmo_chunk_read_dword(chunk, &diffuse_argb);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse color");
-    }
-    nmo_color_from_argb32(diffuse_argb, &out_state->light_data.diffuse);
-    
-    // Read attenuation parameters
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation0);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation0");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation1);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation1");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation2);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation2");
-    }
-    
-    // Read range
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.range);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read range");
-    }
-    
-    // Conditional: spotlight parameters (only if Type == VX_LIGHTSPOT)
-    if (out_state->light_data.type == VX_LIGHTSPOT) {
-        result = nmo_chunk_read_float(chunk, &out_state->light_data.outer_spot_cone);
-        if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read outer spot cone");
+            out_state->light_data.type > VX_LIGHTDIREC) {
+            out_state->light_data.type = VX_LIGHTPOINT;  // Default to point light
         }
-        
-        result = nmo_chunk_read_float(chunk, &out_state->light_data.inner_spot_cone);
+
+        // Read Diffuse color (packed ARGB)
+        uint32_t diffuse_argb;
+        result = nmo_chunk_read_dword(chunk, &diffuse_argb);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read inner spot cone");
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse color");
         }
-        
-        result = nmo_chunk_read_float(chunk, &out_state->light_data.falloff);
+        nmo_color_from_argb32(diffuse_argb, &out_state->light_data.diffuse);
+
+        // Read attenuation parameters
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation0);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read falloff");
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation0");
         }
-    } else {
-        // Default spotlight parameters for non-spotlights
-        nmo_light_apply_nonspot_defaults(out_state);
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation1);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation1");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation2);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation2");
+        }
+
+        // Read range
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.range);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read range");
+        }
+
+        // Conditional: spotlight parameters (only if Type == VX_LIGHTSPOT)
+        if (out_state->light_data.type == VX_LIGHTSPOT) {
+            result = nmo_chunk_read_float(chunk, &out_state->light_data.outer_spot_cone);
+            if (result != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read outer spot cone");
+            }
+
+            result = nmo_chunk_read_float(chunk, &out_state->light_data.inner_spot_cone);
+            if (result != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read inner spot cone");
+            }
+
+            result = nmo_chunk_read_float(chunk, &out_state->light_data.falloff);
+            if (result != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read falloff");
+            }
+        } else {
+            // Default spotlight parameters for non-spotlights
+            nmo_light_apply_nonspot_defaults(out_state);
+        }
     }
-    
+
     // Optional: light power (CK_STATESAVE_LIGHTDATA2)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
     if (result == NMO_OK) {
+        out_state->has_light_power_chunk = 1;
         result = nmo_chunk_read_float(chunk, &out_state->light_power);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read light power");
@@ -220,6 +220,7 @@ static nmo_status_t nmo_light_deserialize_modern(
     } else {
         // Default to 1.0 if not present
         out_state->light_power = 1.0f;
+        out_state->has_light_power_chunk = 0;
     }
     
     NMO_RETURN_OK();
@@ -238,113 +239,112 @@ static nmo_status_t nmo_light_deserialize_legacy(
     
     // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing light data identifier CK_STATESAVE_LIGHTDATA");
-    }
-    
-    // Read Type
-    uint32_t type;
-    result = nmo_chunk_read_dword(chunk, &type);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read type");
-    }
-    out_state->light_data.type = (VXLIGHT_TYPE)type;
-    
-    // Validate type
+    if (result == NMO_OK) {
+        // Read Type
+        uint32_t type;
+        result = nmo_chunk_read_dword(chunk, &type);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read type");
+        }
+        out_state->light_data.type = (VXLIGHT_TYPE)type;
+
+        // Validate type
         if (out_state->light_data.type < VX_LIGHTPOINT ||
-            out_state->light_data.type > VX_LIGHTPARA) {
-        out_state->light_data.type = VX_LIGHTPOINT;
+            out_state->light_data.type > VX_LIGHTDIREC) {
+            out_state->light_data.type = VX_LIGHTPOINT;
+        }
+
+        // Read Diffuse.rgb (3 floats)
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.r);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse.r");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.g);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse.g");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.b);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse.b");
+        }
+
+        // Skip alpha
+        float skip_alpha;
+        result = nmo_chunk_read_float(chunk, &skip_alpha);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to skip alpha");
+        }
+        out_state->light_data.diffuse.a = 1.0f;  // Default alpha
+
+        // Read Active state (stored in flags)
+        int32_t active;
+        result = nmo_chunk_read_int(chunk, &active);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read active state");
+        }
+        // Store active in flags (bit mapping matches engine: 0x100)
+        if (active) {
+            out_state->flags |= 0x100u;
+        } else {
+            out_state->flags &= ~0x100u;
+        }
+
+        // Read Specular flag
+        int32_t specular;
+        result = nmo_chunk_read_int(chunk, &specular);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read specular flag");
+        }
+        if (specular) {
+            out_state->flags |= 0x200u;
+        } else {
+            out_state->flags &= ~0x200u;
+        }
+
+        // Read attenuation parameters
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation0);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation0");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation1);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation1");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation2);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation2");
+        }
+
+        // Read range
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.range);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read range");
+        }
+
+        // Read spotlight parameters (always present in legacy format)
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.outer_spot_cone);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read outer spot cone");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.inner_spot_cone);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read inner spot cone");
+        }
+
+        result = nmo_chunk_read_float(chunk, &out_state->light_data.falloff);
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read falloff");
+        }
+
+        // Legacy format always has power = 1.0
+        out_state->light_power = 1.0f;
+        out_state->has_light_power_chunk = 0;
     }
-    
-    // Read Diffuse.rgb (3 floats)
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.r);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse.r");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.g);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse.g");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.b);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read diffuse.b");
-    }
-    
-    // Skip alpha
-    float skip_alpha;
-    result = nmo_chunk_read_float(chunk, &skip_alpha);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to skip alpha");
-    }
-    out_state->light_data.diffuse.a = 1.0f;  // Default alpha
-    
-    // Read Active state (stored in flags)
-    int32_t active;
-    result = nmo_chunk_read_int(chunk, &active);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read active state");
-    }
-    // Store active in flags (bit mapping matches engine: 0x100)
-    if (active) {
-        out_state->flags |= 0x100u;
-    } else {
-        out_state->flags &= ~0x100u;
-    }
-    
-    // Read Specular flag
-    int32_t specular;
-    result = nmo_chunk_read_int(chunk, &specular);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read specular flag");
-    }
-    if (specular) {
-        out_state->flags |= 0x200u;
-    } else {
-        out_state->flags &= ~0x200u;
-    }
-    
-    // Read attenuation parameters
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation0);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation0");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation1);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation1");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation2);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read attenuation2");
-    }
-    
-    // Read range
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.range);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read range");
-    }
-    
-    // Read spotlight parameters (always present in legacy format)
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.outer_spot_cone);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read outer spot cone");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.inner_spot_cone);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read inner spot cone");
-    }
-    
-    result = nmo_chunk_read_float(chunk, &out_state->light_data.falloff);
-    if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read falloff");
-    }
-    
-    // Legacy format always has power = 1.0
-    out_state->light_power = 1.0f;
     
     NMO_RETURN_OK();
 }
@@ -371,6 +371,8 @@ nmo_status_t nmo_light_deserialize(
     if (result != NMO_OK) {
         return result;
     }
+
+    out_state->has_light_power_chunk = 0;
 
     // Check data version to dispatch to modern or legacy deserializer
     uint32_t version = nmo_chunk_get_data_version(chunk);
@@ -407,6 +409,16 @@ nmo_status_t nmo_light_serialize(
     nmo_status_t result = nmo_3dentity_serialize(&state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
+    }
+
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_LIGHTONLY) == 0) {
+            return NMO_OK;
+        }
     }
 
     // Write identifier (CK_STATESAVE_LIGHTDATA)
@@ -469,7 +481,7 @@ nmo_status_t nmo_light_serialize(
         }
     }
 
-    // Optional: light power (only if != 1.0)
+    // Optional: light power
     if (state->light_power != 1.0f) {
         result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
         if (result != NMO_OK) {
@@ -526,23 +538,7 @@ nmo_status_t nmo_light_finish_loading(
         return result;
     }
 
-    // Validate light type
-        if (light_state->light_data.type < VX_LIGHTPOINT ||
-            light_state->light_data.type > VX_LIGHTPARA) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid light type");
-    }
-
-    // Validate attenuation parameters (should be non-negative)
-    if (light_state->light_data.attenuation0 < 0.0f ||
-        light_state->light_data.attenuation1 < 0.0f ||
-        light_state->light_data.attenuation2 < 0.0f) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Negative attenuation parameters");
-    }
-
-    // Validate range
-    if (light_state->light_data.range < 0.0f) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Negative light range");
-    }
+    (void)light_state;
 
     NMO_RETURN_OK();
 }

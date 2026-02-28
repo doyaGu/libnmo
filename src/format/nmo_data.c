@@ -287,7 +287,7 @@ nmo_status_t nmo_data_section_serialize(
                     chunk_data = mgr->chunk->raw_data;
                     chunk_size = mgr->chunk->raw_size;
                 } else {
-                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize(mgr->chunk, &serialized_data, &chunk_size, arena),
+                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize_version1(mgr->chunk, &serialized_data, &chunk_size, arena),
                                             "Failed to serialize manager chunk (index=%u)",
                                             (unsigned)i);
                     chunk_data = serialized_data;
@@ -336,7 +336,7 @@ nmo_status_t nmo_data_section_serialize(
                     chunk_data = obj->chunk->raw_data;
                     chunk_size = obj->chunk->raw_size;
                 } else {
-                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize(obj->chunk, &serialized_data, &chunk_size, arena),
+                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize_version1(obj->chunk, &serialized_data, &chunk_size, arena),
                                             "Failed to serialize object chunk (index=%u)",
                                             (unsigned)i);
                     chunk_data = serialized_data;
@@ -391,7 +391,7 @@ size_t nmo_data_section_calculate_size(
                     void *chunk_data = NULL;
                     size_t chunk_size = 0;
                     // This is inefficient, but necessary to get the size.
-                    nmo_chunk_serialize(mgr->chunk, &chunk_data, &chunk_size, arena);
+                    nmo_chunk_serialize_version1(mgr->chunk, &chunk_data, &chunk_size, arena);
                     total_size += chunk_size;
                 }
             }
@@ -419,7 +419,7 @@ size_t nmo_data_section_calculate_size(
                     void *chunk_data = NULL;
                     size_t chunk_size = 0;
                     // This is inefficient, but necessary to get the size.
-                    nmo_chunk_serialize(obj->chunk, &chunk_data, &chunk_size, arena);
+                    nmo_chunk_serialize_version1(obj->chunk, &chunk_data, &chunk_size, arena);
                     total_size += chunk_size;
                 }
             }

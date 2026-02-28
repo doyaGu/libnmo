@@ -53,17 +53,36 @@ typedef struct nmo_chunk_parser_state {
     size_t data_size;           /**< Total data size in DWORDs */
 } nmo_chunk_parser_state_t;
 
+static inline int nmo_chunk_has_read_capacity(const nmo_chunk_t *chunk, size_t dwords) {
+    if (chunk == NULL || chunk->parser_state == NULL) {
+        return 0;
+    }
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *) chunk->parser_state;
+    size_t readable_dwords = chunk->data.count;
+
+    /* Keep parser state authoritative when it has tighter bounds. */
+    if (state->data_size < readable_dwords) {
+        readable_dwords = state->data_size;
+    }
+
+    if (state->current_pos > readable_dwords) {
+        return 0;
+    }
+
+    return dwords <= (readable_dwords - state->current_pos);
+}
+
 // =============================================================================
 // BOUNDS CHECKING
 // =============================================================================
 
 #define NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, on_fail) \
     do { \
-        nmo_chunk_t *chunk__ = (chunk); \
+        const nmo_chunk_t *chunk__ = (const nmo_chunk_t *)(chunk); \
         size_t dwords__ = (dwords); \
-        nmo_chunk_parser_state_t *state__ = \
-            chunk__ ? (nmo_chunk_parser_state_t *)chunk__->parser_state : NULL; \
-        if (!state__ || (state__->current_pos + dwords__ > chunk__->data.count)) { \
+        if (!nmo_chunk_has_read_capacity(chunk__, dwords__)) { \
             on_fail; \
         } \
     } while (0)
@@ -506,6 +525,21 @@ NMO_API nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
 NMO_API size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
                                               void *buffer,
                                               size_t buffer_size);
+
+/**
+ * @brief Read buffer into existing buffer (no size prefix)
+ *
+ * Copies exactly buffer_size bytes from the chunk without reading a size dword.
+ * Advances by ceil(buffer_size / 4) dwords.
+ *
+ * @param chunk Chunk (required)
+ * @param buffer Pre-allocated buffer (required)
+ * @param buffer_size Buffer size in bytes
+ * @return Number of bytes read, 0 on error
+ */
+NMO_API size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
+                                                     void *buffer,
+                                                     size_t buffer_size);
 
 /**
  * @brief Read object ID

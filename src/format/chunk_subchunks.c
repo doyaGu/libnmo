@@ -187,12 +187,9 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
         NMO_RETURN_OK();
     }
 
-    {
-        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
-        if (state && (size_t)total_size + state->current_pos > chunk->data.count) {
-            *out_sub = NULL;
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk out of bounds");
-        }
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t) total_size)) {
+        *out_sub = NULL;
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk out of bounds");
     }
 
     // CK2 reads class_id as full DWORD, not WORD

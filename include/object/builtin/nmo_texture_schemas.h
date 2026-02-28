@@ -89,6 +89,11 @@ typedef struct nmo_texture_state {
     uint32_t slot_count;
     char **slot_filenames;
 
+    /* Reader bitmap dimensions (CK_STATESAVE_TEXREADER) */
+    int32_t reader_width;
+    int32_t reader_height;
+    int32_t reader_bpp;
+
     /* Bitmap payloads */
     CKTEXTURE_BITMAP_KIND bitmap_kind;
     nmo_texture_reader_slot_t *reader_slots;

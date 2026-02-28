@@ -42,9 +42,15 @@ static nmo_status_t nmo_targetlight_deserialize_internal(
         return result;
     }
 
+    out_state->has_target = 0;
+    out_state->target_id = 0;
+
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TLIGHTTARGET) == NMO_OK) {
-        out_state->has_target = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->target_id);
+        result = nmo_chunk_read_object_id(chunk, &out_state->target_id);
+        if (result != NMO_OK) {
+            return result;
+        }
+        out_state->has_target = (out_state->target_id != 0);
     }
 
     NMO_RETURN_OK();
@@ -80,12 +86,20 @@ static nmo_status_t nmo_targetlight_serialize_internal(
         return result;
     }
 
-    if (in_state->has_target) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_TLIGHTTARGET);
-        if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->target_id);
-        if (result != NMO_OK) return result;
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_TLIGHTONLY) == 0) {
+            return NMO_OK;
+        }
     }
+
+    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_TLIGHTTARGET);
+    if (result != NMO_OK) return result;
+    result = nmo_chunk_write_object_id(out_chunk, in_state->target_id);
+    if (result != NMO_OK) return result;
 
     NMO_RETURN_OK();
 }

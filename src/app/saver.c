@@ -48,6 +48,7 @@
 #include <string.h>
 #include <stdalign.h>
 #include <limits.h>
+#include <stdio.h>
 #include "miniz.h"
 
 #define DEFAULT_COMPRESSION_LEVEL 6
@@ -156,7 +157,8 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
-    const nmo_chunk_file_context_t *file_ctx);
+    const nmo_chunk_file_context_t *file_ctx,
+    int require_schema);
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
 
@@ -165,6 +167,9 @@ static nmo_status_t save_report_progress(nmo_save_context_t *ctx,
                                          nmo_save_phase_t phase,
                                          float progress,
                                          const char *status);
+static void save_log_require_schema_failure(nmo_logger_t *logger,
+                                             const nmo_object_t *obj,
+                                             const char *reason);
 
 /* ============================================================================
  * Public API Implementation
@@ -202,6 +207,23 @@ static const char *nmo_basename(const char *path) {
     }
 
     return base;
+}
+
+static void save_log_require_schema_failure(nmo_logger_t *logger,
+                                             const nmo_object_t *obj,
+                                             const char *reason) {
+    uint32_t obj_id = obj ? obj->id : 0;
+    uint32_t class_id = obj ? obj->class_id : 0;
+    uint32_t file_id = obj ? obj->file_id : 0;
+    const char *name = (obj && obj->name) ? obj->name : "(null)";
+    if (logger != NULL) {
+        nmo_log(logger, NMO_LOG_ERROR,
+                "%s (object %u file_id=%u class 0x%08X name='%s')",
+                reason, obj_id, file_id, class_id, name);
+    } else {
+        fprintf(stderr, "[ERROR] %s (object %u file_id=%u class 0x%08X name='%s')\n",
+                reason, obj_id, file_id, class_id, name);
+    }
 }
 
 static nmo_status_t save_report_progress(nmo_save_context_t *ctx,
@@ -811,6 +833,9 @@ static nmo_status_t save_serialize_objects(nmo_save_context_t *ctx) {
     const nmo_shadow_storage_t *shadow_storage = nmo_session_get_shadow_storage(ctx->session);
 
     nmo_id_remap_table_t *remap_table = ctx->file_index_remap;
+    const int require_schema = (ctx->options.flags & NMO_SAVE_REQUIRE_SCHEMA) != 0;
+    nmo_class_id_t first_require_fail_class = 0;
+    nmo_object_id_t first_require_fail_id = 0;
 
     for (size_t i = 0; i < ctx->object_count; i++) {
         nmo_object_t *obj = ctx->objects[i];
@@ -825,11 +850,29 @@ static nmo_status_t save_serialize_objects(nmo_save_context_t *ctx) {
             continue;
         }
 
+        if (require_schema && obj != NULL && obj->data == NULL) {
+            save_log_require_schema_failure(
+                ctx->logger, obj, "Schema required but object has no deserialized data");
+            if (first_require_fail_id == 0) {
+                first_require_fail_id = obj->id;
+                first_require_fail_class = obj->class_id;
+            }
+            return SAVE_ERR(NMO_ERR_INTERNAL, "Schema serialization required but object has no data");
+        }
+
         nmo_chunk_t *old_chunk = obj->chunk;
         obj->chunk = serialize_object_with_schema(
-            obj, ctx->type_rt, ctx->arena, ctx->logger, shadow_storage, ctx->chunk_file_ctx);
+            obj, ctx->type_rt, ctx->arena, ctx->logger, shadow_storage, ctx->chunk_file_ctx, require_schema);
 
         if (obj->chunk == NULL) {
+            if (require_schema) {
+                save_log_require_schema_failure(
+                    ctx->logger, obj, "Schema required but serialization returned NULL");
+            }
+            if (require_schema && first_require_fail_id == 0 && obj != NULL) {
+                first_require_fail_id = obj->id;
+                first_require_fail_class = obj->class_id;
+            }
             nmo_log(ctx->logger, NMO_LOG_ERROR,
                     "Failed to serialize object %u ('%s')",
                     obj->id, obj->name ? obj->name : "<unnamed>");
@@ -837,6 +880,16 @@ static nmo_status_t save_serialize_objects(nmo_save_context_t *ctx) {
         }
 
         if (obj->chunk == old_chunk) {
+            if (require_schema) {
+                nmo_log(ctx->logger, NMO_LOG_ERROR,
+                        "Object %u reused raw chunk with schema requirement enabled",
+                        obj->id);
+                if (first_require_fail_id == 0 && obj != NULL) {
+                    first_require_fail_id = obj->id;
+                    first_require_fail_class = obj->class_id;
+                }
+                return SAVE_ERR(NMO_ERR_INTERNAL, "Schema serialization required but chunk reused");
+            }
             reused_count++;
         } else {
             if (obj->chunk != NULL && obj->chunk->raw_data == NULL && remap_table != NULL) {
@@ -857,6 +910,12 @@ static nmo_status_t save_serialize_objects(nmo_save_context_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO,
             "  Serialization: %zu new, %zu reused, %zu skipped",
             serialized_count, reused_count, skipped_count);
+
+    if (require_schema && first_require_fail_id != 0) {
+        nmo_log(ctx->logger, NMO_LOG_ERROR,
+                "  First schema requirement failure: object %u class 0x%08X",
+                first_require_fail_id, first_require_fail_class);
+    }
 
     NMO_RETURN_OK();
 }
@@ -980,11 +1039,7 @@ static nmo_status_t save_build_header1(nmo_save_context_t *ctx) {
         ctx->obj_descs[i].name = (char *)obj->name;
         ctx->obj_descs[i].file_index = 0;
 
-        uint32_t descriptor_flags = obj->flags;
-        if (ctx->reference_map[i]) {
-            descriptor_flags |= NMO_OBJECT_REFERENCE_FLAG;
-        }
-        ctx->obj_descs[i].flags = descriptor_flags;
+        ctx->obj_descs[i].flags = ctx->reference_map[i] ? NMO_OBJECT_REFERENCE_FLAG : 0u;
     }
 
     /* Build plugin dependencies */
@@ -1056,29 +1111,7 @@ static nmo_status_t save_build_header1(nmo_save_context_t *ctx) {
 
     if (!strip_included && session_included_files != NULL && session_included_count > 0) {
         hdr1.included_file_count = session_included_count;
-        hdr1.included_files = (nmo_included_file_desc_t *)nmo_arena_alloc(
-            ctx->arena,
-            sizeof(nmo_included_file_desc_t) * session_included_count,
-            sizeof(void *));
-
-        if (hdr1.included_files == NULL) {
-            return SAVE_ERR(NMO_ERR_NOMEM, "Included file descriptors allocation failed");
-        }
-
-        for (uint32_t i = 0; i < session_included_count; i++) {
-            const nmo_included_file_t *entry = &session_included_files[i];
-            const char *base_name = nmo_basename(entry->name);
-            const char *name_copy = nmo_arena_strdup(ctx->arena, base_name);
-            if (name_copy == NULL) {
-                return SAVE_ERR(NMO_ERR_NOMEM, "Included file name allocation failed");
-            }
-
-            const int metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
-            uint32_t data_size = (entry->data != NULL && !metadata_only) ? entry->size : 0u;
-
-            hdr1.included_files[i].name = (char *)name_copy;
-            hdr1.included_files[i].data_size = data_size;
-        }
+        hdr1.included_files = NULL;
     }
 
     /* First pass: serialize to get Header1 unpack size */
@@ -1452,10 +1485,33 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_arena_t *arena,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
-    const nmo_chunk_file_context_t *file_ctx)
+    const nmo_chunk_file_context_t *file_ctx,
+    int require_schema)
 {
-    return nmo_object_system_serialize_object_chunk(
+    nmo_chunk_t *chunk = nmo_object_system_serialize_object_chunk(
         obj, type_rt, arena, logger, shadow_storage, file_ctx);
+
+    if (!require_schema) {
+        return chunk;
+    }
+
+    if (chunk == NULL) {
+        return NULL;
+    }
+
+    if (obj != NULL && chunk == obj->chunk) {
+        save_log_require_schema_failure(
+            logger, obj, "Schema required but raw chunk reuse occurred");
+        return NULL;
+    }
+
+    if (chunk->raw_data != NULL && chunk->raw_size > 0) {
+        save_log_require_schema_failure(
+            logger, obj, "Schema required but raw chunk data remains");
+        return NULL;
+    }
+
+    return chunk;
 
 #if 0
     if (!obj || !arena || !type_reg) {
@@ -1532,7 +1588,7 @@ static nmo_chunk_t *serialize_object_with_schema(
     }
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE);
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
 
     /* Call vtable serialize function */
     result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);

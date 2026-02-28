@@ -6,6 +6,7 @@
 #include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -16,7 +17,32 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sprite3d, nmo_sprite3d_state_t)
+static void nmo_sprite3d_set_defaults(nmo_sprite3d_state_t *state) {
+    if (state == NULL) {
+        return;
+    }
+
+    /* Mirrors RCKSprite3D ctor defaults (see CKRenderEngine/src/CKSprite3d.cpp). */
+    state->has_data = 1;
+    state->mode = VXSPRITE3D_BILLBOARD;
+    state->half_width = 1.0f;
+    state->half_height = 1.0f;
+    state->offset.x = 0.0f;
+    state->offset.y = 0.0f;
+    state->uv_rect.left = 0.0f;
+    state->uv_rect.top = 0.0f;
+    state->uv_rect.right = 1.0f;
+    state->uv_rect.bottom = 1.0f;
+    state->material_id = 0;
+}
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    sprite3d,
+    nmo_sprite3d_state_t,
+    do { \
+        nmo_sprite3d_set_defaults(state); \
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -48,6 +74,8 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
     if (result != NMO_OK) {
         return result;
     }
+
+    out_state->has_data = 0;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITE3DDATA) == NMO_OK) {
         out_state->has_data = 1;
@@ -94,6 +122,16 @@ static nmo_status_t nmo_sprite3d_serialize_internal(
     nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
+    }
+
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_SPRITE3DONLY) == 0) {
+            return NMO_OK;
+        }
     }
 
     if (in_state->has_data) {

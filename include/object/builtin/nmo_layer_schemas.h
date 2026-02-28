@@ -35,10 +35,13 @@ typedef struct nmo_layer_state {
     nmo_guid_t param_guid;
     uint32_t flags;
 
+    uint8_t has_layer_data;
     uint8_t has_type;
     uint8_t has_version;
     uint8_t has_color;
     uint8_t has_param_guid;
+    uint8_t has_flags;
+    uint8_t has_square_data;
 
     void *square_data;
     size_t square_data_size;

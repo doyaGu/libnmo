@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "format/nmo_header.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_runtime.h"
 
@@ -50,6 +51,40 @@ NMO_API nmo_builder_t *nmo_builder_create(
     const nmo_type_runtime_t *type_runtime);
 
 /**
+ * Set file format version for builder output
+ * @param builder Builder
+ * @param file_version File format version (2-9)
+ * @param file_version2 Secondary version field (usually 0)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_builder_set_file_version(
+    nmo_builder_t *builder,
+    uint32_t file_version,
+    uint32_t file_version2);
+
+/**
+ * Set file write mode flags (compression bits)
+ * @param builder Builder
+ * @param write_mode Write mode flags (NMO_FILE_WRITE_COMPRESS_*)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_builder_set_write_mode(
+    nmo_builder_t *builder,
+    uint32_t write_mode);
+
+/**
+ * Set compression behavior for Header1/Data sections
+ * @param builder Builder
+ * @param compress_header Non-zero to compress Header1
+ * @param compress_data Non-zero to compress Data section
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_builder_set_compression(
+    nmo_builder_t *builder,
+    int compress_header,
+    int compress_data);
+
+/**
  * Destroy builder
  * @param builder Builder to destroy
  */
@@ -87,6 +122,30 @@ NMO_API nmo_build_stage_t nmo_builder_get_current_stage(const nmo_builder_t *bui
  */
 NMO_API nmo_status_t nmo_builder_add_object(
     nmo_builder_t *builder, uint32_t object_id, uint32_t manager_id, const void *data, size_t size);
+
+/**
+ * Add object to build with explicit class ID and name
+ * @param builder Builder
+ * @param object_id Object ID
+ * @param manager_id Manager ID
+ * @param class_id Class ID (use NMO_CLASS_ID_INVALID if unknown)
+ * @param name Optional object name (copied, can be NULL)
+ * @param type_guid Optional type GUID metadata (stored in builder, not serialized by default)
+ * @param flags Object flags (reference bit is honored for Header1)
+ * @param data Object data
+ * @param size Data size
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_builder_add_object_ex(
+    nmo_builder_t *builder,
+    uint32_t object_id,
+    uint32_t manager_id,
+    uint32_t class_id,
+    const char *name,
+    nmo_guid_t type_guid,
+    uint32_t flags,
+    const void *data,
+    size_t size);
 
 /**
  * Add object as reference (without full chunk data)

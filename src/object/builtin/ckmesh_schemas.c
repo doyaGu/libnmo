@@ -259,6 +259,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     if (!out_state->vertices) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate vertex array");
     }
+    memset(out_state->vertices, 0, sizeof(nmo_vertex_t) * (size_t)vertex_count);
     
     // Allocate color arrays
     out_state->vertex_colors = (uint32_t *)nmo_arena_alloc(
@@ -270,12 +271,16 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate color arrays");
     }
     
-    // Read buffer size in DWORDs (CKStateChunk-style vertex buffer)
+    // Read buffer size in DWORDs (CKStateChunk-style vertex buffer, includes size dword)
     uint32_t buffer_dwords = 0;
     result = nmo_chunk_read_dword(chunk, &buffer_dwords);
     if (result != NMO_OK) {
         return result;
     }
+    if (buffer_dwords == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Vertex buffer size is zero");
+    }
+    size_t buffer_payload_dwords = (buffer_dwords > 0u) ? (size_t)(buffer_dwords - 1u) : 0u;
 
     // Read positions (if not external)
     if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
@@ -368,12 +373,12 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     }
     expected_dwords += (save_flags & NMO_VERTEX_UV_UNIFORM) ? 2u : (2u * out_state->vertex_count);
 
-    if (buffer_dwords < expected_dwords) {
+    if (buffer_payload_dwords < expected_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Vertex buffer shorter than expected");
     }
 
-    if (buffer_dwords > expected_dwords) {
-        result = nmo_chunk_skip(chunk, buffer_dwords - expected_dwords);
+    if (buffer_payload_dwords > expected_dwords) {
+        result = nmo_chunk_skip(chunk, buffer_payload_dwords - expected_dwords);
         if (result != NMO_OK) {
             return result;
         }
@@ -391,6 +396,8 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     nmo_mesh_state_t *out_state)
 {
     nmo_status_t result;
+    uint32_t *group_map = NULL;
+    uint32_t group_map_count = 0;
 
     // Load parent CKBeObject
     result = nmo_beobject_deserialize(&out_state->beobject, chunk, NULL, arena);
@@ -420,24 +427,39 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         }
         
         if (group_count > 0 && group_count < 10000) {
-            out_state->material_group_count = (uint32_t)group_count;
             out_state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_material_group_t) * group_count,
+                arena, sizeof(nmo_material_group_t) * (uint32_t)group_count,
                 alignof(nmo_material_group_t));
+            group_map = (uint32_t *)nmo_arena_alloc(
+                arena, sizeof(uint32_t) * (uint32_t)group_count, alignof(uint32_t));
             
-            if (!out_state->material_groups) {
+            if (!out_state->material_groups || !group_map) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate material groups");
             }
-            
-            for (uint32_t i = 0; i < out_state->material_group_count; i++) {
-                result = nmo_chunk_read_object_id(chunk, &out_state->material_groups[i].material_id);
+
+            uint32_t kept = 0;
+            for (uint32_t i = 0; i < (uint32_t)group_count; i++) {
+                nmo_object_id_t material_id = NMO_OBJECT_ID_NONE;
+                result = nmo_chunk_read_object_id(chunk, &material_id);
                 if (result != NMO_OK) return result;
                 
                 // Skip padding
                 int32_t padding;
                 result = nmo_chunk_read_int(chunk, &padding);
                 if (result != NMO_OK) return result;
+
+                if (i > 0 && material_id == NMO_OBJECT_ID_NONE) {
+                    group_map[i] = 0;
+                    continue;
+                }
+
+                out_state->material_groups[kept].material_id = material_id;
+                group_map[i] = kept;
+                kept++;
             }
+
+            out_state->material_group_count = kept;
+            group_map_count = (uint32_t)group_count;
         }
     }
     
@@ -469,6 +491,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             
             // Read packed face data
             for (uint32_t i = 0; i < out_state->face_count; i++) {
+                out_state->faces[i].channel_mask = 0xFFFFu;
                 // Read vertex indices 0,1 (packed as DWORD)
                 uint32_t packed01;
                 result = nmo_chunk_read_dword(chunk, &packed01);
@@ -481,9 +504,15 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 uint32_t packed2mat;
                 result = nmo_chunk_read_dword(chunk, &packed2mat);
                 if (result != NMO_OK) return result;
-                nmo_unpack_dword_to_words(packed2mat,
-                    &out_state->face_vertex_indices[i * 3 + 2],
-                    &out_state->faces[i].material_group_idx);
+                uint16_t idx2;
+                uint16_t mat_idx;
+                nmo_unpack_dword_to_words(packed2mat, &idx2, &mat_idx);
+                out_state->face_vertex_indices[i * 3 + 2] = idx2;
+                if (group_map && mat_idx < group_map_count) {
+                    out_state->faces[i].material_group_idx = (uint16_t)group_map[mat_idx];
+                } else {
+                    out_state->faces[i].material_group_idx = mat_idx;
+                }
             }
         }
     }
@@ -521,6 +550,8 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 alignof(nmo_material_channel_t));
             
             if (out_state->material_channels) {
+                memset(out_state->material_channels, 0,
+                       sizeof(nmo_material_channel_t) * out_state->material_channel_count);
                 for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
                     nmo_material_channel_t *ch = &out_state->material_channels[i];
                     
@@ -537,22 +568,30 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                     result = nmo_chunk_read_int(chunk, &uv_count);
                     if (result != NMO_OK) break;
                     
-                    ch->uv_count = (uint32_t)uv_count;
                     if (uv_count > 0 && uv_count < 1000000) {
+                        uint32_t alloc_uv_count = (out_state->vertex_count > 0)
+                            ? out_state->vertex_count
+                            : (uint32_t)uv_count;
+                        ch->uv_count = alloc_uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
-                            arena, sizeof(nmo_vector2_t) * uv_count,
+                            arena, sizeof(nmo_vector2_t) * alloc_uv_count,
                             alignof(nmo_vector2_t));
                         
                         if (ch->uv_coords) {
-                            for (uint32_t j = 0; j < ch->uv_count; j++) {
+                            for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
                                 result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].x);
                                 if (result != NMO_OK) break;
                                 result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].y);
                                 if (result != NMO_OK) break;
                             }
+                            for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
+                                ch->uv_coords[j].x = 0.0f;
+                                ch->uv_coords[j].y = 0.0f;
+                            }
                         }
                     } else {
                         ch->uv_coords = NULL;
+                        ch->uv_count = 0;
                     }
                 }
             }
@@ -723,6 +762,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             if (!out_state->vertices || !out_state->vertex_colors || !out_state->vertex_specular) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy vertex arrays");
             }
+            memset(out_state->vertices, 0, sizeof(nmo_vertex_t) * out_state->vertex_count);
 
             for (uint32_t i = 0; i < out_state->vertex_count; ++i) {
                 result = nmo_chunk_read_float(chunk, &out_state->vertices[i].position.x);
@@ -778,6 +818,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             }
 
             for (uint32_t i = 0; i < out_state->face_count; ++i) {
+                out_state->faces[i].channel_mask = 0xFFFFu;
                 uint16_t idx0, idx1, idx2;
                 uint32_t mat_idx;
                 result = nmo_chunk_read_word(chunk, &idx0);
@@ -833,6 +874,8 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                 alignof(nmo_material_channel_t));
 
             if (out_state->material_channels) {
+                memset(out_state->material_channels, 0,
+                       sizeof(nmo_material_channel_t) * out_state->material_channel_count);
                 for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
                     nmo_material_channel_t *ch = &out_state->material_channels[i];
 
@@ -849,22 +892,30 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                     result = nmo_chunk_read_int(chunk, &uv_count);
                     if (result != NMO_OK) break;
 
-                    ch->uv_count = (uint32_t)uv_count;
                     if (uv_count > 0 && uv_count < 1000000) {
+                        uint32_t alloc_uv_count = (out_state->vertex_count > 0)
+                            ? out_state->vertex_count
+                            : (uint32_t)uv_count;
+                        ch->uv_count = alloc_uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
-                            arena, sizeof(nmo_vector2_t) * uv_count,
+                            arena, sizeof(nmo_vector2_t) * alloc_uv_count,
                             alignof(nmo_vector2_t));
 
                         if (ch->uv_coords) {
-                            for (uint32_t j = 0; j < ch->uv_count; j++) {
+                            for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
                                 result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].x);
                                 if (result != NMO_OK) break;
                                 result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].y);
                                 if (result != NMO_OK) break;
                             }
+                            for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
+                                ch->uv_coords[j].x = 0.0f;
+                                ch->uv_coords[j].y = 0.0f;
+                            }
                         }
                     } else {
                         ch->uv_coords = NULL;
+                        ch->uv_count = 0;
                     }
                 }
             }
@@ -1156,15 +1207,19 @@ static uint32_t nmo_mesh_compute_save_flags(
  * @param arena     Arena for temporary allocations (must not be NULL)
  * @return Result indicating success or error
  */
-nmo_status_t nmo_mesh_serialize(
+nmo_status_t nmo_mesh_serialize_ex(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
-    void *context)
+    void *context,
+    bool skip_geometry)
 {
     (void)type;
     const nmo_mesh_state_t *in_state = (const nmo_mesh_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = ser_ctx ? ser_ctx->save_flags : 0;
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to serialize");
@@ -1175,12 +1230,16 @@ nmo_status_t nmo_mesh_serialize(
         return result;
     }
 
+    if (!is_file && (save_flags & CK_STATESAVE_MESHONLY) == 0) {
+        NMO_RETURN_OK();
+    }
+
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHFLAGS);
     if (result != NMO_OK) return result;
-    result = nmo_chunk_write_dword(out_chunk, in_state->flags);
+    result = nmo_chunk_write_dword(out_chunk, in_state->flags & NMO_MESH_ALLOWED_FLAGS_MASK);
     if (result != NMO_OK) return result;
 
-    if (in_state->material_group_count > 0 && in_state->material_groups) {
+    if (!skip_geometry && in_state->material_group_count > 0 && in_state->material_groups) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHMATERIALS);
         if (result != NMO_OK) return result;
 
@@ -1195,7 +1254,7 @@ nmo_status_t nmo_mesh_serialize(
         }
     }
 
-    if (in_state->face_count > 0 && in_state->faces && in_state->face_vertex_indices) {
+    if (!skip_geometry && in_state->face_count > 0 && in_state->faces && in_state->face_vertex_indices) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHFACES);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->face_count);
@@ -1217,7 +1276,7 @@ nmo_status_t nmo_mesh_serialize(
         }
     }
 
-    if (in_state->line_count > 0 && in_state->line_indices) {
+    if (!skip_geometry && in_state->line_count > 0 && in_state->line_indices) {
         size_t line_bytes = (size_t)in_state->line_count * 2u * sizeof(uint16_t);
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHLINES);
         if (result != NMO_OK) return result;
@@ -1227,26 +1286,26 @@ nmo_status_t nmo_mesh_serialize(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->vertex_count > 0 && in_state->vertices) {
-        uint32_t save_flags = nmo_mesh_compute_save_flags(in_state, arena);
+    if (!skip_geometry && in_state->vertex_count > 0 && in_state->vertices) {
+        uint32_t vertex_save_flags = nmo_mesh_compute_save_flags(in_state, arena);
 
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHVERTICES);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->vertex_count);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, save_flags);
+        result = nmo_chunk_write_dword(out_chunk, vertex_save_flags);
         if (result != NMO_OK) return result;
 
         size_t buffer_dwords = 0;
-        if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
+        if (!(vertex_save_flags & NMO_VERTEX_POS_EXTERNAL)) {
             buffer_dwords += 3u * in_state->vertex_count;
         }
-        buffer_dwords += (save_flags & NMO_VERTEX_COLOR1_UNIFORM) ? 1u : in_state->vertex_count;
-        buffer_dwords += (save_flags & NMO_VERTEX_SPECULAR_UNIFORM) ? 1u : in_state->vertex_count;
-        if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) {
+        buffer_dwords += (vertex_save_flags & NMO_VERTEX_COLOR1_UNIFORM) ? 1u : in_state->vertex_count;
+        buffer_dwords += (vertex_save_flags & NMO_VERTEX_SPECULAR_UNIFORM) ? 1u : in_state->vertex_count;
+        if (!(vertex_save_flags & NMO_VERTEX_NORMALS_MISSING)) {
             buffer_dwords += 3u * in_state->vertex_count;
         }
-        buffer_dwords += (save_flags & NMO_VERTEX_UV_UNIFORM) ? 2u : (2u * in_state->vertex_count);
+        buffer_dwords += (vertex_save_flags & NMO_VERTEX_UV_UNIFORM) ? 2u : (2u * in_state->vertex_count);
 
         uint32_t *buffer = (uint32_t *)nmo_arena_alloc(
             arena, buffer_dwords * sizeof(uint32_t), alignof(uint32_t));
@@ -1255,7 +1314,7 @@ nmo_status_t nmo_mesh_serialize(
         }
 
         size_t offset = 0;
-        if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
+        if (!(vertex_save_flags & NMO_VERTEX_POS_EXTERNAL)) {
             for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
                 memcpy(&buffer[offset++], &in_state->vertices[i].position.x, sizeof(float));
                 memcpy(&buffer[offset++], &in_state->vertices[i].position.y, sizeof(float));
@@ -1265,7 +1324,7 @@ nmo_status_t nmo_mesh_serialize(
 
         if (in_state->vertex_colors && in_state->vertex_count > 0) {
             buffer[offset++] = in_state->vertex_colors[0];
-            if (!(save_flags & NMO_VERTEX_COLOR1_UNIFORM)) {
+            if (!(vertex_save_flags & NMO_VERTEX_COLOR1_UNIFORM)) {
                 for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
                     buffer[offset++] = in_state->vertex_colors[i];
                 }
@@ -1276,7 +1335,7 @@ nmo_status_t nmo_mesh_serialize(
 
         if (in_state->vertex_specular && in_state->vertex_count > 0) {
             buffer[offset++] = in_state->vertex_specular[0];
-            if (!(save_flags & NMO_VERTEX_SPECULAR_UNIFORM)) {
+            if (!(vertex_save_flags & NMO_VERTEX_SPECULAR_UNIFORM)) {
                 for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
                     buffer[offset++] = in_state->vertex_specular[i];
                 }
@@ -1285,7 +1344,7 @@ nmo_status_t nmo_mesh_serialize(
             buffer[offset++] = 0;
         }
 
-        if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) {
+        if (!(vertex_save_flags & NMO_VERTEX_NORMALS_MISSING)) {
             for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
                 memcpy(&buffer[offset++], &in_state->vertices[i].normal.x, sizeof(float));
                 memcpy(&buffer[offset++], &in_state->vertices[i].normal.y, sizeof(float));
@@ -1296,7 +1355,7 @@ nmo_status_t nmo_mesh_serialize(
         if (in_state->vertex_count > 0) {
             memcpy(&buffer[offset++], &in_state->vertices[0].uv.x, sizeof(float));
             memcpy(&buffer[offset++], &in_state->vertices[0].uv.y, sizeof(float));
-            if (!(save_flags & NMO_VERTEX_UV_UNIFORM)) {
+            if (!(vertex_save_flags & NMO_VERTEX_UV_UNIFORM)) {
                 for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
                     memcpy(&buffer[offset++], &in_state->vertices[i].uv.x, sizeof(float));
                     memcpy(&buffer[offset++], &in_state->vertices[i].uv.y, sizeof(float));
@@ -1304,13 +1363,13 @@ nmo_status_t nmo_mesh_serialize(
             }
         }
 
-        result = nmo_chunk_write_dword(out_chunk, (uint32_t)buffer_dwords);
+        result = nmo_chunk_write_dword(out_chunk, (uint32_t)(buffer_dwords + 1u));
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_buffer_no_size(out_chunk, buffer, buffer_dwords * sizeof(uint32_t));
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->material_channel_count > 0 && in_state->material_channels) {
+    if (!skip_geometry && in_state->material_channel_count > 0 && in_state->material_channels) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHCHANNELS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->material_channel_count);
@@ -1327,8 +1386,14 @@ nmo_status_t nmo_mesh_serialize(
             result = nmo_chunk_write_dword(out_chunk, channel->dest_blend);
             if (result != NMO_OK) return result;
 
-            uint32_t uv_count = (channel->uv_coords && channel->uv_count > 0)
-                ? channel->uv_count
+            if (channel->uv_coords && channel->uv_count > 0 &&
+                channel->uv_count < in_state->vertex_count) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                 "Material channel UV count less than vertex count");
+            }
+
+            uint32_t uv_count = (channel->uv_coords && in_state->vertex_count > 0)
+                ? in_state->vertex_count
                 : 0u;
             result = nmo_chunk_write_int(out_chunk, (int32_t)uv_count);
             if (result != NMO_OK) return result;
@@ -1421,6 +1486,15 @@ nmo_status_t nmo_mesh_serialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_mesh_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_mesh_serialize_ex(instance, out_chunk, type, context, false);
+}
+
 static nmo_status_t nmo_mesh_copy(
     const void *src,
     void *dst,
@@ -1507,6 +1581,11 @@ static nmo_status_t nmo_mesh_validate(
                 NMO_VALIDATE_COUNT(s->material_channels[i].uv_coords,
                                    s->material_channels[i].uv_count,
                                    "material_channels.uv_coords");
+                if (s->vertex_count > 0 &&
+                    s->material_channels[i].uv_count < s->vertex_count) {
+                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                     "material channel UV count less than vertex count");
+                }
             }
         }
     }

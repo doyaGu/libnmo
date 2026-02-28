@@ -26,6 +26,13 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         result = nmo_array_init(&state->layer_chunks, sizeof(nmo_chunk_t *), 0, NULL);
         if (result != NMO_OK) return result;
         nmo_object_array_set_chunk_lifecycle(&state->layer_chunks);
+        state->width = 0;
+        state->length = 0;
+        state->priority = 0;
+        state->orientation_mode = 0;
+        state->has_grid_data = 1;
+        state->has_file_flag = 0;
+        state->file_flag = 0;
     } while (0),
     ((void)0))
 
@@ -48,9 +55,14 @@ nmo_status_t nmo_grid_deserialize(
     nmo_status_t result = nmo_3dentity_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    out_state->has_grid_data = 0;
+    out_state->has_file_flag = 0;
+    out_state->file_flag = 0;
+
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GRIDDATA) != NMO_OK) {
         NMO_RETURN_OK();
     }
+    out_state->has_grid_data = 1;
 
     nmo_chunk_read_int(chunk, &out_state->width);
     nmo_chunk_read_int(chunk, &out_state->length);
@@ -118,6 +130,20 @@ nmo_status_t nmo_grid_serialize(
     nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const int is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_GRIDONLY) == 0) {
+            return NMO_OK;
+        }
+    }
+
+    if (!in_state->has_grid_data) {
+        return NMO_OK;
+    }
+
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GRIDDATA);
     if (result != NMO_OK) return result;
 
@@ -127,7 +153,7 @@ nmo_status_t nmo_grid_serialize(
     nmo_chunk_write_int(out_chunk, in_state->priority);
     nmo_chunk_write_dword(out_chunk, in_state->orientation_mode);
 
-    if (nmo_chunk_is_file_mode(out_chunk)) {
+    if (is_file) {
         nmo_chunk_write_int(out_chunk, in_state->has_file_flag ? in_state->file_flag : 1);
     }
 
@@ -139,7 +165,7 @@ nmo_status_t nmo_grid_serialize(
         nmo_chunk_write_object_sequence_item(out_chunk, layer_ids[i]);
     }
 
-    if (!nmo_chunk_is_file_mode(out_chunk) && in_state->layer_ids.count > 0) {
+    if (!is_file && in_state->layer_ids.count > 0) {
         const nmo_chunk_t *const *chunks = NMO_ARRAY_DATA(const nmo_chunk_t *, &in_state->layer_chunks);
         for (uint32_t i = 0; i < in_state->layer_ids.count; ++i) {
             nmo_chunk_t *sub = NULL;

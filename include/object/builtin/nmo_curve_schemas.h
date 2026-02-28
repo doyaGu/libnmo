@@ -38,6 +38,14 @@ typedef struct nmo_curve_state {
 
     uint32_t sub_point_count;
     nmo_curve_point_subchunk_t *sub_points;
+
+    uint8_t has_curveonly_chunk;
+    uint8_t has_controlpoints_chunk;
+    uint8_t has_fitting_chunk;
+    uint8_t has_steps_chunk;
+    uint8_t has_open_chunk;
+    uint8_t has_savepoints_chunk;
+    uint8_t savepoints_in_file;
 } nmo_curve_state_t;
 
 /**
@@ -47,6 +55,7 @@ typedef struct nmo_curvepoint_state {
     nmo_3dentity_state_t base;
 
     uint8_t has_default_data;
+    uint8_t defaultdata_is_modern;
     nmo_object_id_t curve_id;
     int32_t use_tcb;
     int32_t linear;
@@ -58,6 +67,11 @@ typedef struct nmo_curvepoint_state {
 
     uint8_t has_reserved_vector;
     nmo_vector_t reserved_vector;
+
+    uint8_t has_tcb_chunk;
+    uint8_t has_tangents_chunk;
+    uint8_t has_legacy_position;
+    nmo_vector_t legacy_position;
 } nmo_curvepoint_state_t;
 
 NMO_API nmo_status_t nmo_curve_deserialize(

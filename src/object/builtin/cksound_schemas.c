@@ -10,6 +10,7 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -17,9 +18,32 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sound, nmo_sound_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(wavesound, nmo_wavesound_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(midisound, nmo_midisound_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    sound,
+    nmo_sound_state_t,
+    do {
+        state->save_options = CKSOUND_USEGLOBAL;
+        state->file_name = NULL;
+    } while (0),
+    ((void)0))
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    wavesound,
+    nmo_wavesound_state_t,
+    do {
+        state->base.save_options = CKSOUND_USEGLOBAL;
+        state->base.file_name = NULL;
+    } while (0),
+    ((void)0))
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    midisound,
+    nmo_midisound_state_t,
+    do {
+        state->base.save_options = CKSOUND_USEGLOBAL;
+        state->base.file_name = NULL;
+    } while (0),
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -70,6 +94,21 @@ static const nmo_type_field_t nmo_midisound_fields[] = {
     NMO_FIELD_OPT(nmo_midisound_state_t, midi_file_name, CKPGUID_STRING)
 };
 
+static const char *nmo_sound_basename(const char *path)
+{
+    if (!path) {
+        return NULL;
+    }
+
+    const char *last = path;
+    for (const char *p = path; *p != '\0'; ++p) {
+        if (*p == '/' || *p == '\\') {
+            last = p + 1;
+        }
+    }
+    return last;
+}
+
 /* =============================================================================
  * CKSound
  * ============================================================================= */
@@ -91,6 +130,9 @@ nmo_status_t nmo_sound_deserialize(
     if (result != NMO_OK) {
         return result;
     }
+
+    out_state->file_name = NULL;
+    out_state->save_options = CKSOUND_USEGLOBAL;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SOUNDFILENAME) == NMO_OK) {
         nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->save_options);
@@ -127,7 +169,8 @@ nmo_status_t nmo_sound_serialize(
     result = nmo_chunk_write_dword(out_chunk, in_state->save_options);
     if (result != NMO_OK) return result;
 
-    return nmo_chunk_write_string(out_chunk, in_state->file_name ? in_state->file_name : "");
+    const char *base_name = nmo_sound_basename(in_state->file_name);
+    return nmo_chunk_write_string(out_chunk, base_name ? base_name : "");
 }
 
 /* =============================================================================
@@ -151,6 +194,12 @@ nmo_status_t nmo_wavesound_deserialize(
     if (result != NMO_OK) {
         return result;
     }
+
+    out_state->has_wave_file_name = 0;
+    out_state->wave_file_name = NULL;
+    out_state->has_duration = 0;
+    out_state->duration = 0;
+    out_state->has_data2 = 0;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDFILE) == NMO_OK) {
         out_state->has_wave_file_name = 1;
@@ -272,14 +321,25 @@ nmo_status_t nmo_wavesound_serialize(
         return result;
     }
 
-    if (in_state->has_duration) {
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+
+    if (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDONLY) == 0) {
+        NMO_RETURN_OK();
+    }
+
+    if ((is_file && in_state->has_duration) ||
+        (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDDURATION) != 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDDURATION);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->duration);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_data2) {
+    if ((is_file && in_state->has_data2) ||
+        (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDDATA2) != 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDDATA2);
         if (result != NMO_OK) return result;
 
@@ -332,6 +392,9 @@ nmo_status_t nmo_midisound_deserialize(
     if (result != NMO_OK) {
         return result;
     }
+
+    out_state->has_midi_file_name = 0;
+    out_state->midi_file_name = NULL;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MIDISOUNDFILE) == NMO_OK) {
         out_state->has_midi_file_name = 1;

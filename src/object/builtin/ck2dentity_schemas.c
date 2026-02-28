@@ -20,6 +20,7 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -102,6 +103,23 @@ static nmo_status_t write_rect(nmo_chunk_t *chunk, const nmo_rect_t *rect)
     NMO_RETURN_OK();
 }
 
+static void nmo_2dentity_set_default_source_rect(
+    nmo_2dentity_state_t *state,
+    nmo_class_id_t class_id)
+{
+    if (class_id == NMO_CID_2DENTITY) {
+        state->source_rect.left = 0.0f;
+        state->source_rect.top = 0.0f;
+        state->source_rect.right = 1.0f;
+        state->source_rect.bottom = 1.0f;
+    } else {
+        state->source_rect.left = 0.0f;
+        state->source_rect.top = 0.0f;
+        state->source_rect.right = 0.0f;
+        state->source_rect.bottom = 0.0f;
+    }
+}
+
 /* =============================================================================
  * CK2dEntity DESERIALIZATION
  * ============================================================================= */
@@ -125,6 +143,7 @@ static nmo_status_t deserialize_modern(
 {
     (void)arena;
     nmo_status_t result;
+    const nmo_class_id_t class_id = nmo_chunk_get_class_id(chunk);
     
     /* Read flags */
     uint32_t raw_flags;
@@ -135,6 +154,12 @@ static nmo_status_t deserialize_modern(
     
     /* Sanitize flags (mask applied by RCK2dEntity::Load) */
     out_state->flags = raw_flags & NMO_CK2DENTITY_FLAGS_MASK;
+    out_state->has_source_rect = false;
+    out_state->has_z_order = false;
+    out_state->has_parent = false;
+    out_state->parent_id = 0;
+    out_state->z_order = 0;
+    nmo_2dentity_set_default_source_rect(out_state, class_id);
     
     /* Read rectangle (homogeneous or regular based on flag 0x200) */
     if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
@@ -202,6 +227,15 @@ static nmo_status_t deserialize_legacy(
 {
     (void)arena;
     nmo_status_t result;
+    const nmo_class_id_t class_id = nmo_chunk_get_class_id(chunk);
+    bool has_flags = false;
+
+    out_state->has_source_rect = false;
+    out_state->has_z_order = false;
+    out_state->has_parent = false;
+    out_state->parent_id = 0;
+    out_state->z_order = 0;
+    nmo_2dentity_set_default_source_rect(out_state, class_id);
     
     /* Read flags (identifier 0x4000) */
     nmo_status_t seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYFLAGS);
@@ -211,7 +245,16 @@ static nmo_status_t deserialize_legacy(
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read legacy flags");
         }
-        out_state->flags = raw_flags & NMO_CK2DENTITY_FLAGS_MASK;
+        out_state->flags = raw_flags;
+        has_flags = true;
+    }
+    if (has_flags) {
+        if ((out_state->flags & CK_2DENTITY_RESERVED3) == 0) {
+            out_state->flags |= CK_2DENTITY_RESERVED3;
+            out_state->base.base.base.base.visibility_flags = 0;
+        }
+        out_state->flags &= ~CK_2DENTITY_UPDATEHOMOGENEOUSCOORD;
+        out_state->flags |= CK_2DENTITY_STICKTOP | CK_2DENTITY_STICKLEFT;
     }
     
     /* Read origin (identifier 0x8000) */
@@ -336,6 +379,9 @@ nmo_status_t nmo_2dentity_deserialize(
     if (result != NMO_OK) {
         return result;
     }
+
+    out_state->has_material = false;
+    out_state->material_id = 0;
     
     /* Check chunk version to choose format */
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -390,15 +436,18 @@ static nmo_status_t serialize_modern(
     
     /* Build flags with optional block indicators */
     uint32_t flags = state->flags;
-    if (state->has_source_rect ||
+    const bool write_source = state->has_source_rect ||
         state->source_rect.left != 0.0f || state->source_rect.top != 0.0f ||
-        state->source_rect.right != 0.0f || state->source_rect.bottom != 0.0f) {
+        state->source_rect.right != 0.0f || state->source_rect.bottom != 0.0f;
+    if (write_source) {
         flags |= NMO_CK2DENTITY_FLAG_SOURCE_RECT;
     }
-    if (state->has_z_order || state->z_order != 0) {
+    const bool write_z_order = state->has_z_order || state->z_order != 0;
+    if (write_z_order) {
         flags |= NMO_CK2DENTITY_FLAG_Z_ORDER;
     }
-    if (state->has_parent || state->parent_id != 0) {
+    const bool write_parent = state->has_parent || state->parent_id != 0;
+    if (write_parent) {
         flags |= NMO_CK2DENTITY_FLAG_PARENT;
     }
     
@@ -415,17 +464,17 @@ static nmo_status_t serialize_modern(
     if (result != NMO_OK) return result;
     
     /* Optional blocks */
-    if (state->has_source_rect) {
+    if (write_source) {
         result = write_rect(chunk, &state->source_rect);
         if (result != NMO_OK) return result;
     }
     
-    if (state->has_z_order || state->z_order != 0) {
+    if (write_z_order) {
         result = nmo_chunk_write_int(chunk, state->z_order);
         if (result != NMO_OK) return result;
     }
     
-    if (state->has_parent || state->parent_id != 0) {
+    if (write_parent) {
         result = nmo_chunk_write_object_id(chunk, state->parent_id);
         if (result != NMO_OK) return result;
     }

@@ -50,6 +50,7 @@ typedef struct nmo_serialize_context {
     nmo_arena_t *arena;           /**< Arena for allocations */
     void *repository;             /**< Object repository for reference resolution */
     uint32_t flags;               /**< Operation flags */
+    uint32_t save_flags;          /**< Optional CK_STATESAVE_* flags for non-file saves */
 } nmo_serialize_context_t;
 
 /* Context flags */
@@ -122,20 +123,42 @@ typedef nmo_status_t (*nmo_object_finish_loading_fn)(
  * @param arena Arena for allocations
  * @param repository Object repository (may be NULL)
  * @param flags Operation flags
+ * @param save_flags Optional CK_STATESAVE_* flags for non-file serialization
  * @return Initialized context
  */
 static inline nmo_serialize_context_t nmo_serialize_context_create(
     nmo_arena_t *arena,
     void *repository,
-    uint32_t flags)
+    uint32_t flags,
+    uint32_t save_flags)
 {
     nmo_serialize_context_t ctx = {
         .magic = NMO_SERIALIZE_CONTEXT_MAGIC,
         .arena = arena,
         .repository = repository,
-        .flags = flags
+        .flags = flags,
+        .save_flags = save_flags
     };
     return ctx;
+}
+
+/**
+ * @brief Create serialization context for non-file serialization
+ *
+ * Enforces that save_flags are explicitly provided for non-file subchunks.
+ *
+ * @param arena Arena for allocations
+ * @param repository Object repository (may be NULL)
+ * @param save_flags CK_STATESAVE_* bitmask (must be explicit)
+ * @return Initialized context with file mode disabled
+ */
+static inline nmo_serialize_context_t nmo_serialize_context_create_nonfile(
+    nmo_arena_t *arena,
+    void *repository,
+    uint32_t save_flags)
+{
+    return nmo_serialize_context_create(arena, repository,
+                                        NMO_SERIALIZE_FLAG_NONE, save_flags);
 }
 
 static inline const nmo_serialize_context_t *nmo_serialize_context_try(void *context)
@@ -169,6 +192,12 @@ static inline uint32_t nmo_serialize_context_get_flags(void *context)
 {
     const nmo_serialize_context_t *ctx = nmo_serialize_context_try(context);
     return ctx ? ctx->flags : NMO_SERIALIZE_FLAG_NONE;
+}
+
+static inline uint32_t nmo_serialize_context_get_save_flags(void *context)
+{
+    const nmo_serialize_context_t *ctx = nmo_serialize_context_try(context);
+    return ctx ? ctx->save_flags : 0;
 }
 
 #ifdef __cplusplus

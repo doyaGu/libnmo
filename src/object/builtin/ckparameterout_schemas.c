@@ -11,11 +11,15 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_serialize_context.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "format/nmo_object.h"
+#include "session/nmo_object_repository.h"
+#include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stdalign.h>
@@ -31,9 +35,65 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_parameterout_state_t, base),
                     sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_REF(nmo_parameterout_state_t, owner_id),
     NMO_FIELD_REF_ARRAY(nmo_parameterout_state_t, destination_ids),
     NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32)
 };
+
+static bool nmo_parameterout_is_valid_target(
+    void *context,
+    nmo_object_id_t object_id)
+{
+    if (object_id == 0) {
+        return false;
+    }
+
+    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)
+        nmo_deserialize_context_get_repository(context);
+
+    if (repo == NULL || registry == NULL) {
+        return true;
+    }
+
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
+    if (obj == NULL) {
+        return false;
+    }
+
+    return nmo_type_registry_is_class_derived_from(
+        registry,
+        (uint32_t)nmo_object_get_class_id(obj),
+        (uint32_t)NMO_CID_PARAMETER);
+}
+
+static bool nmo_parameterout_is_valid_owner(
+    void *context,
+    nmo_object_id_t object_id)
+{
+    if (object_id == 0) {
+        return false;
+    }
+
+    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)
+        nmo_deserialize_context_get_repository(context);
+
+    if (repo == NULL || registry == NULL) {
+        return true;
+    }
+
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
+    if (obj == NULL) {
+        return false;
+    }
+
+    const uint32_t class_id = (uint32_t)nmo_object_get_class_id(obj);
+    return nmo_type_registry_is_class_derived_from(
+        registry, class_id, (uint32_t)NMO_CID_BEHAVIOR) ||
+        nmo_type_registry_is_class_derived_from(
+            registry, class_id, (uint32_t)NMO_CID_PARAMETEROPERATION);
+}
 
 /* =============================================================================
  * CKParameterOut DESERIALIZATION/SERIALIZATION
@@ -62,19 +122,42 @@ nmo_status_t nmo_parameterout_deserialize(
     nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_OWNER) == NMO_OK) {
+        nmo_object_id_t owner_id = 0;
+        nmo_chunk_read_object_id(chunk, &owner_id);
+        if (nmo_parameterout_is_valid_owner(context, owner_id)) {
+            out_state->owner_id = owner_id;
+        } else {
+            out_state->owner_id = 0;
+        }
+    }
+
     /* Read destinations if present */
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS) == NMO_OK) {
         int32_t count;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
         if (result == NMO_OK && count > 0) {
-            out_state->destination_count = (uint32_t)count;
-            out_state->destination_ids = (nmo_object_id_t *)nmo_arena_alloc(
+            nmo_object_id_t *dest_ids = (nmo_object_id_t *)nmo_arena_alloc(
                 arena, count * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
 
-            if (out_state->destination_ids) {
-                for (int32_t i = 0; i < count; i++) {
-                    nmo_chunk_read_object_id(chunk, &out_state->destination_ids[i]);
+            uint32_t actual = 0;
+            for (int32_t i = 0; i < count; i++) {
+                nmo_object_id_t dest_id = 0;
+                nmo_chunk_read_object_id(chunk, &dest_id);
+                if (nmo_parameterout_is_valid_target(context, dest_id)) {
+                    if (dest_ids) {
+                        dest_ids[actual] = dest_id;
+                    }
+                    actual++;
                 }
+            }
+
+            if (actual > 0 && dest_ids != NULL) {
+                out_state->destination_ids = dest_ids;
+                out_state->destination_count = actual;
+            } else {
+                out_state->destination_ids = NULL;
+                out_state->destination_count = 0;
             }
         }
     }
@@ -101,12 +184,38 @@ nmo_status_t nmo_parameterout_serialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
 
-    /* Write base CKParameter state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_parameter_serialize(&in_state->base, out_chunk, NULL, context);
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = is_file
+        ? CK_STATESAVE_PARAMETEROUT_ALL
+        : nmo_serialize_context_get_save_flags(context);
+    const bool want_value = is_file || ((save_flags & CK_STATESAVE_PARAMETEROUT_VAL) != 0);
+
+    /* Write base state (CKParameter when saving value, otherwise CKObject) */
+    if (want_value) {
+        result = nmo_parameter_serialize(&in_state->base, out_chunk, NULL, context);
+    } else {
+        result = nmo_object_serialize(&in_state->base.base, out_chunk, NULL, context);
+    }
     if (result != NMO_OK) return result;
 
+    if (!is_file && save_flags == 0) {
+        return NMO_OK;
+    }
+
+    if (!is_file &&
+        (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0 &&
+        in_state->owner_id != 0) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_object_id(out_chunk, in_state->owner_id);
+        if (result != NMO_OK) return result;
+    }
+
     /* Write destinations if any */
-    if (in_state->destination_count > 0 && in_state->destination_ids) {
+    if ((is_file || ((save_flags & CK_STATESAVE_PARAMETEROUT_DESTINATIONS) != 0)) &&
+        in_state->destination_count > 0 && in_state->destination_ids) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
         if (result != NMO_OK) return result;
 

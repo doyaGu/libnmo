@@ -26,6 +26,9 @@ add_integration_test(test_all_reference_files)
 # Phase 5+: Real file roundtrip with schema-based serialization
 add_integration_test(test_real_file_roundtrip)
 
+# Phase 4: CKBehavior historical regression fixtures (Nop1/Nop2)
+add_integration_test(test_behavior_roundtrip_regression)
+
 # Phase 3: Declarative registration system integration test (OLD SCHEMA - DISABLED)
 # This test uses the old schema system which has been removed
 # add_integration_test(test_macro_integration)

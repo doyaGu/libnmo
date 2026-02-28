@@ -74,6 +74,9 @@ nmo_status_t nmo_messagemanager_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_messagemanager_deserialize");
     }
 
+    out_state->message_type_count = 0;
+    out_state->message_type_names = NULL;
+
     /* Seek identifier */
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESSAGEMANAGER);
     if (result != NMO_OK) {

@@ -41,6 +41,9 @@ typedef struct nmo_parameterout_state {
     /* Base CKParameter state */
     nmo_parameter_state_t base;
 
+    /* Legacy owner reference (obsolete in CK2 but present in old files) */
+    nmo_object_id_t owner_id;          /**< Owner object ID (legacy formats) */
+
     /* Destination parameters */
     nmo_object_id_t *destination_ids;  /**< Array of destination parameter IDs */
     uint32_t destination_count;        /**< Number of destinations */

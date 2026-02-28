@@ -35,7 +35,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(spritetext, nmo_spritetext_state_t)
 
 static const nmo_type_field_t nmo_spritetext_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_spritetext_state_t, base),
-                    sizeof(nmo_2dentity_state_t), CKPGUID_NONE,
+                    sizeof(nmo_sprite_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_OPT(nmo_spritetext_state_t, text_content, CKPGUID_STRING),
     NMO_FIELD_NAMED("font", offsetof(nmo_spritetext_state_t, font),
@@ -52,28 +52,20 @@ static const nmo_type_field_t nmo_spritetext_fields[] = {
  * Helper Functions
  * ======================================================================== */
 
-/**
- * @brief Clamp an integer value to a specified range
- */
-static int32_t clamp_int32(int32_t value, int32_t min_val, int32_t max_val) {
-    if (value < min_val) return min_val;
-    if (value > max_val) return max_val;
-    return value;
-}
-
 static void ckspritetext_init_defaults(
     nmo_spritetext_state_t *state,
     nmo_arena_t *arena)
 {
-    state->text_content = nmo_arena_strdup(arena, "");
-    state->font.font_name = nmo_arena_strdup(arena, "Arial");
-    state->font.size = 12;
-    state->font.weight = NMO_FONT_WEIGHT_NORMAL;
+    (void)arena;
+    state->text_content = NULL;
+    state->font.font_name = NULL;
+    state->font.size = 0;
+    state->font.weight = 0;
     state->font.italic = 0;
     state->font.underline = 0;
     state->font_color = 0xFFFFFFFF;
     state->background_color = 0x00000000;
-    state->needs_redraw = true;
+    state->needs_redraw = false;
 }
 
 /* ========================================================================
@@ -91,8 +83,8 @@ static nmo_status_t deserialize_text_content(
     char *text_str = NULL;
     size_t len = nmo_chunk_read_string(chunk, &text_str);
     (void)len;  /* String length not needed */
-    
-    state->text_content = text_str ? text_str : nmo_arena_strdup(arena, "");
+    (void)arena;
+    state->text_content = text_str;
     
     NMO_RETURN_OK();
 }
@@ -128,7 +120,8 @@ static nmo_status_t deserialize_font_properties(
     size_t len = nmo_chunk_read_string(chunk, &font_name);
     (void)len;  /* String length not needed */
     
-    state->font.font_name = font_name ? font_name : nmo_arena_strdup(arena, "Arial");
+    (void)arena;
+    state->font.font_name = font_name;
     
     /* Read font size */
     result = nmo_chunk_read_int(chunk, &state->font.size);
@@ -206,7 +199,7 @@ static nmo_status_t ckspritetext_deserialize_modern(
 ) {
     nmo_status_t result;
     
-    /* Initialize text/font defaults (base handled separately) */
+    /* Initialize defaults (base handled separately) */
     ckspritetext_init_defaults(out_state, arena);
     
     /* Process identifier 0x01000000: Text string */
@@ -214,9 +207,6 @@ static nmo_status_t ckspritetext_deserialize_modern(
     if (result == NMO_OK) {
         result = deserialize_text_content(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
-    } else {
-        /* Default to empty string */
-        out_state->text_content = nmo_arena_strdup(arena, "");
     }
     
     /* Process identifier 0x02000000: Font properties */
@@ -224,13 +214,6 @@ static nmo_status_t ckspritetext_deserialize_modern(
     if (result == NMO_OK) {
         result = deserialize_font_properties(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
-    } else {
-        /* Default font */
-        out_state->font.font_name = nmo_arena_strdup(arena, "Arial");
-        out_state->font.size = 12;
-        out_state->font.weight = NMO_FONT_WEIGHT_NORMAL;
-        out_state->font.italic = 0;
-        out_state->font.underline = 0;
     }
     
     /* Process identifier 0x04000000: Colors */
@@ -266,12 +249,6 @@ static nmo_status_t ckspritetext_serialize_modern(
 ) {
     (void)arena;
     nmo_status_t result;
-    
-    /* Validate font name before serialization */
-    if (!state->font.font_name || state->font.font_name[0] == '\0') {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "CKSpriteText: Cannot serialize with NULL or empty font name");
-    }
     
     /* Write identifier 0x01000000: Text string */
     result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITETEXT);
@@ -339,40 +316,9 @@ static nmo_status_t ckspritetext_finish_loading(
     void *context,
     nmo_arena_t *arena
 ) {
-    (void)context;  /* Unused */
-    
-    /* Validate and normalize font name */
-    if (!state->font.font_name || state->font.font_name[0] == '\0') {
-        state->font.font_name = nmo_arena_strdup(arena, "Arial");
-        if (!state->font.font_name) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                "Failed to allocate fallback font name");
-        }
-    }
-    
-    /* Clamp font size to reasonable range [6, 128] */
-    if (state->font.size < 6 || state->font.size > 128) {
-        state->font.size = clamp_int32(state->font.size, 6, 128);
-    }
-    
-    /* Clamp font weight to standard range [100, 900] */
-    if (state->font.weight < 100 || state->font.weight > 900) {
-        state->font.weight = clamp_int32(state->font.weight, 100, 900);
-    }
-    
-    /* Normalize italic flag to 0 or 1 */
-    if (state->font.italic != 0 && state->font.italic != 1) {
-        state->font.italic = state->font.italic ? 1 : 0;
-    }
-    
-    /* Normalize underline flag to 0 or 1 */
-    if (state->font.underline != 0 && state->font.underline != 1) {
-        state->font.underline = state->font.underline ? 1 : 0;
-    }
-
-    /* Clear redraw flag */
+    (void)context;
+    (void)arena;
     state->needs_redraw = false;
-    
     NMO_RETURN_OK();
 }
 
@@ -395,7 +341,7 @@ nmo_status_t nmo_spritetext_deserialize(
             "Invalid arguments to nmo_spritetext_deserialize");
     }
 
-    nmo_status_t result = nmo_2dentity_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_sprite_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -423,7 +369,7 @@ nmo_status_t nmo_spritetext_serialize(
             "Invalid arguments to nmo_spritetext_serialize");
     }
 
-    nmo_status_t result = nmo_2dentity_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_sprite_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }

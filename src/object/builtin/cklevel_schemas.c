@@ -34,6 +34,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     level,
     nmo_level_state_t,
     do {
+        state->has_inactive_manager_section = 0;
         nmo_status_t result = nmo_array_init(&state->scene_ids, sizeof(nmo_object_id_t), 0, NULL);
         if (result != NMO_OK) return result;
         result = nmo_array_init(&state->inactive_manager_guids, sizeof(nmo_guid_t), 0, NULL);
@@ -43,6 +44,38 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_object_array_set_string_lifecycle(&state->duplicate_manager_names);
     } while (0),
     ((void)0))
+
+static nmo_status_t nmo_chunk_identifier_payload_size_bytes(nmo_chunk_t *chunk, size_t *out_size) {
+    if (chunk == NULL || out_size == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to identifier size helper");
+    }
+
+    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
+    if (state == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Chunk parser state not initialized");
+    }
+
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const size_t data_count = chunk->data.count;
+    const size_t start_pos = state->current_pos;
+    size_t end_pos = data_count;
+
+    if (state->prev_identifier_pos + 1 < data_count) {
+        const uint32_t next_pos = data[state->prev_identifier_pos + 1];
+        if (next_pos != 0 && next_pos < data_count) {
+            end_pos = next_pos;
+        }
+    }
+
+    if (end_pos < start_pos) {
+        end_pos = start_pos;
+    }
+
+    *out_size = (end_pos - start_pos) * sizeof(uint32_t);
+    return NMO_OK;
+}
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -56,6 +89,7 @@ static const nmo_type_field_t nmo_level_fields[] = {
     NMO_FIELD_REF(nmo_level_state_t, current_scene_id),
     NMO_FIELD_REF(nmo_level_state_t, level_scene_id),
     NMO_FIELD_OPT(nmo_level_state_t, level_scene_chunk, CKPGUID_STATECHUNK),
+    NMO_FIELD(nmo_level_state_t, has_inactive_manager_section, CKPGUID_UINT8),
     NMO_FIELD_ARRAY(nmo_level_state_t, inactive_manager_guids, CKPGUID_GUID),
     NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING)
 };
@@ -92,6 +126,15 @@ nmo_status_t nmo_level_deserialize(
     /* Deserialize base CKBeObject state first */
     nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
+
+    nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
+    const bool is_file = ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        NMO_RETURN_OK();
+    }
+
+    out_state->has_inactive_manager_section = 0;
 
     /* Section 1: LEVELDEFAULTDATA - Legacy arrays + scene list */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
@@ -164,21 +207,14 @@ nmo_status_t nmo_level_deserialize(
     /* Section 3: LEVELINACTIVEMAN (optional) - Inactive manager GUIDs */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELINACTIVEMAN);
     if (result == NMO_OK) {
-        /* Read the identifier size to calculate GUID count */
-        /* Note: SeekIdentifierAndReturnSize is not available in chunk API,
-         * so we read GUIDs until we hit the next identifier or end of chunk */
-        size_t start_pos = nmo_chunk_get_position(chunk);
+        out_state->has_inactive_manager_section = 1;
+        size_t section_size_bytes = 0;
+        result = nmo_chunk_identifier_payload_size_bytes(chunk, &section_size_bytes);
+        if (result != NMO_OK) return result;
+
         uint32_t guid_count = 0;
-        
-        /* Count GUIDs by reading them until we fail */
-        nmo_guid_t temp_guid;
-        nmo_status_t guid_result;
-        for (;;) {
-            guid_result = nmo_chunk_read_guid(chunk, &temp_guid);
-            if (guid_result != NMO_OK) break;
-            guid_count++;
-            /* Safety limit */
-            if (guid_count > 1000) break;
+        if (section_size_bytes > 0) {
+            guid_count = (uint32_t)(section_size_bytes / sizeof(nmo_guid_t));
         }
 
         nmo_array_clear(&out_state->inactive_manager_guids);
@@ -188,10 +224,6 @@ nmo_status_t nmo_level_deserialize(
 
             nmo_guid_t *guids = NULL;
             result = nmo_array_extend(&out_state->inactive_manager_guids, guid_count, (void **)&guids);
-            if (result != NMO_OK) return result;
-
-            /* Re-read GUIDs from start position */
-            result = nmo_chunk_goto(chunk, start_pos);
             if (result != NMO_OK) return result;
 
             for (uint32_t i = 0; i < guid_count; i++) {
@@ -206,39 +238,18 @@ nmo_status_t nmo_level_deserialize(
         /* Section 4: LEVELDUPLICATEMAN (optional) - Duplicate manager names */
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
         if (result == NMO_OK) {
-            /* Count strings first (NULL-terminated list) */
-            size_t str_start_pos = nmo_chunk_get_position(chunk);
-            uint32_t name_count = 0;
-            
-            char *temp_name;
-            for (;;) {
-                size_t len = nmo_chunk_read_string(chunk, &temp_name);
-                if (len == 0 || !temp_name) break;
-                name_count++;
-                /* Safety limit */
-                if (name_count > 1000) break;
-            }
-
             nmo_array_clear(&out_state->duplicate_manager_names);
-            if (name_count > 0) {
-                result = nmo_array_reserve(&out_state->duplicate_manager_names, name_count);
-                if (result != NMO_OK) return result;
-
-                char **names = NULL;
-                result = nmo_array_extend(&out_state->duplicate_manager_names, name_count, (void **)&names);
-                if (result != NMO_OK) return result;
-
-                /* Re-read strings */
-                result = nmo_chunk_goto(chunk, str_start_pos);
-                if (result != NMO_OK) return result;
-
-                for (uint32_t i = 0; i < name_count; i++) {
-                    size_t len = nmo_chunk_read_string(chunk, &names[i]);
-                    if (len == 0 || !names[i]) {
-                        out_state->duplicate_manager_names.count = i;
-                        break;
-                    }
+            for (;;) {
+                char *name = NULL;
+                size_t len = nmo_chunk_read_string(chunk, &name);
+                if (len == 0 || name == NULL) {
+                    break;
                 }
+
+                char **slot = NULL;
+                result = nmo_array_extend(&out_state->duplicate_manager_names, 1, (void **)&slot);
+                if (result != NMO_OK) return result;
+                *slot = name;
             }
         }
     }
@@ -279,6 +290,13 @@ nmo_status_t nmo_level_serialize(
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        NMO_RETURN_OK();
+    }
+
     /* Section 1: LEVELDEFAULTDATA */
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result != NMO_OK) return result;
@@ -311,14 +329,17 @@ nmo_status_t nmo_level_serialize(
     result = nmo_chunk_write_object_id(out_chunk, in_state->level_scene_id);
     if (result != NMO_OK) return result;
 
-    /* Write level scene sub-chunk */
-    if (in_state->level_scene_chunk) {
-        result = nmo_chunk_write_sub_chunk(out_chunk, in_state->level_scene_chunk);
-        if (result != NMO_OK) return result;
-    }
+    /* Write level scene sub-chunk (may be NULL) */
+    result = nmo_chunk_write_sub_chunk(out_chunk, in_state->level_scene_chunk);
+    if (result != NMO_OK) return result;
 
     /* Section 3: LEVELINACTIVEMAN (optional) */
-    if (in_state->inactive_manager_guids.count > 0 && in_state->inactive_manager_guids.data) {
+    const bool write_inactive_manager_section =
+        (in_state->has_inactive_manager_section != 0) ||
+        (in_state->inactive_manager_guids.count > 0 && in_state->inactive_manager_guids.data) ||
+        (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data);
+
+    if (write_inactive_manager_section) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELINACTIVEMAN);
         if (result != NMO_OK) return result;
 
@@ -329,20 +350,20 @@ nmo_status_t nmo_level_serialize(
         }
 
         /* Section 4: LEVELDUPLICATEMAN (optional) */
-        if (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) {
-            result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
-            if (result != NMO_OK) return result;
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
+        if (result != NMO_OK) return result;
 
+        if (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) {
             const char *const *dup_names = NMO_ARRAY_DATA(const char *, &in_state->duplicate_manager_names);
             for (uint32_t i = 0; i < in_state->duplicate_manager_names.count; i++) {
                 result = nmo_chunk_write_string(out_chunk, dup_names[i]);
                 if (result != NMO_OK) return result;
             }
-
-            /* Write NULL terminator */
-            result = nmo_chunk_write_string(out_chunk, NULL);
-            if (result != NMO_OK) return result;
         }
+
+        /* Write NULL terminator */
+        result = nmo_chunk_write_string(out_chunk, NULL);
+        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();

@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 /**
  * Find first non-option argument (the file path)
@@ -313,6 +314,152 @@ int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     nmo_tool_close_session(ctx, session);
     nmo_cli_close_output_stream(global, out);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+/* ============================================================================
+ * file classes
+ * ============================================================================ */
+
+typedef struct nmo_class_count_entry {
+    uint32_t class_id;
+    size_t count;
+} nmo_class_count_entry_t;
+
+static int compare_class_count_entry(const void *a, const void *b) {
+    const nmo_class_count_entry_t *ea = (const nmo_class_count_entry_t *)a;
+    const nmo_class_count_entry_t *eb = (const nmo_class_count_entry_t *)b;
+    if (ea->class_id < eb->class_id) return -1;
+    if (ea->class_id > eb->class_id) return 1;
+    return 0;
+}
+
+int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    const char *file_path = find_file_arg(argc, argv);
+    if (!file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        fprintf(stderr, "Usage: nmo file classes <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Open session */
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256];
+
+    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    size_t object_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+
+    nmo_class_count_entry_t *entries = NULL;
+    size_t entry_count = 0;
+    size_t entry_capacity = 0;
+
+    for (size_t i = 0; i < object_count; i++) {
+        nmo_object_t *obj = objects[i];
+        if (obj == NULL) {
+            continue;
+        }
+
+        uint32_t class_id = obj->class_id;
+        size_t found = (size_t)-1;
+        for (size_t j = 0; j < entry_count; j++) {
+            if (entries[j].class_id == class_id) {
+                found = j;
+                break;
+            }
+        }
+
+        if (found == (size_t)-1) {
+            if (entry_count == entry_capacity) {
+                size_t new_capacity = (entry_capacity == 0) ? 16 : entry_capacity * 2;
+                nmo_class_count_entry_t *new_entries =
+                    (nmo_class_count_entry_t *)realloc(entries, new_capacity * sizeof(nmo_class_count_entry_t));
+                if (new_entries == NULL) {
+                    nmo_tool_close_session(ctx, session);
+                    free(entries);
+                    fprintf(stderr, "Error: Out of memory\n");
+                    return NMO_CLI_EXIT_INTERNAL_ERROR;
+                }
+                entries = new_entries;
+                entry_capacity = new_capacity;
+            }
+            entries[entry_count].class_id = class_id;
+            entries[entry_count].count = 1;
+            entry_count++;
+        } else {
+            entries[found].count++;
+        }
+    }
+
+    if (entry_count > 1) {
+        qsort(entries, entry_count, sizeof(nmo_class_count_entry_t), compare_class_count_entry);
+    }
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+
+    /* Output */
+    char out_err[128];
+    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!out) {
+        nmo_tool_close_session(ctx, session);
+        free(entries);
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    bool colorize = nmo_cli_should_colorize(global, out);
+
+    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
+        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *classes = yyjson_mut_arr(doc);
+
+        for (size_t i = 0; i < entry_count; i++) {
+            const nmo_class_count_entry_t *entry = &entries[i];
+            const nmo_type_descriptor_t *type_desc =
+                (registry != NULL)
+                    ? nmo_type_registry_find_by_class_id(registry, entry->class_id)
+                    : NULL;
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "class_id", entry->class_id);
+            yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)entry->count);
+            if (type_desc != NULL && type_desc->name != NULL) {
+                yyjson_mut_obj_add_str(doc, item, "name", type_desc->name);
+            }
+            yyjson_mut_arr_append(classes, item);
+        }
+
+        yyjson_mut_obj_add_val(doc, data, "classes", classes);
+        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.classes", file_path);
+        yyjson_mut_doc_set_root(doc, root);
+        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_free_doc(doc);
+    } else {
+        nmo_cli_print_heading(out, "File Class IDs", colorize);
+        nmo_cli_print_kv(out, "File", file_path, 8, colorize);
+        fprintf(out, "\n");
+
+        fprintf(out, "%-12s %-8s %s\n", "Class ID", "Count", "Name");
+        fprintf(out, "----------------------------------------\n");
+        for (size_t i = 0; i < entry_count; i++) {
+            const nmo_class_count_entry_t *entry = &entries[i];
+            const nmo_type_descriptor_t *type_desc =
+                (registry != NULL)
+                    ? nmo_type_registry_find_by_class_id(registry, entry->class_id)
+                    : NULL;
+            const char *name = (type_desc != NULL && type_desc->name != NULL) ? type_desc->name : "";
+            fprintf(out, "0x%08X %-8zu %s\n", entry->class_id, entry->count, name);
+        }
+    }
+
+    nmo_tool_close_session(ctx, session);
+    nmo_cli_close_output_stream(global, out);
+    free(entries);
     return NMO_CLI_EXIT_SUCCESS;
 }
 

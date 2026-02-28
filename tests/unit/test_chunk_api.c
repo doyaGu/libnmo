@@ -128,6 +128,33 @@ TEST(chunk_api, buffer) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, buffer_truncated_payload) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    /* Declared byte size is 8, but only 4 bytes are written. */
+    result = nmo_chunk_write_dword(chunk, 8);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xAABBCCDDu);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    void* out_data = NULL;
+    size_t out_size = 0;
+    result = nmo_chunk_read_buffer(chunk, &out_data, &out_size);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+
+    nmo_arena_destroy(arena);
+}
+
 // Test: GUID write/read
 TEST(chunk_api, guid) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
@@ -512,6 +539,31 @@ TEST(chunk_api, sub_chunks) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, sub_chunk_truncated_header) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    /* total_size says 5 DWORD payload follows, but it is absent. */
+    result = nmo_chunk_write_dword(chunk, 5u);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_chunk_t* sub = (nmo_chunk_t*)1;
+    result = nmo_chunk_read_sub_chunk(chunk, &sub);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_NULL(sub);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, arrays) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -698,6 +750,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, primitives);
     REGISTER_TEST(chunk_api, string);
     REGISTER_TEST(chunk_api, buffer);
+    REGISTER_TEST(chunk_api, buffer_truncated_payload);
     REGISTER_TEST(chunk_api, guid);
     REGISTER_TEST(chunk_api, object_id);
     REGISTER_TEST(chunk_api, sequence);
@@ -708,6 +761,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);
     REGISTER_TEST(chunk_api, sub_chunks);
+    REGISTER_TEST(chunk_api, sub_chunk_truncated_header);
     REGISTER_TEST(chunk_api, arrays);
     REGISTER_TEST(chunk_api, compression);
     REGISTER_TEST(chunk_api, compression_new_api);

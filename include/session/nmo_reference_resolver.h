@@ -291,14 +291,14 @@ NMO_API nmo_object_t *nmo_resolve_strategy_fuzzy(
 /**
  * @brief Check if object ID has reference flag
  *
- * In Virtools files, referenced objects have their ID's high bit (0x800000)
+ * In Virtools files, referenced objects have their ID's high bit (0x80000000)
  * set. This function checks for that flag.
  *
  * @param id Object ID from file
  * @return 1 if ID has reference flag, 0 otherwise
  */
 static inline int nmo_object_id_is_reference(nmo_object_id_t id) {
-    return (id & 0x00800000) != 0;
+    return (id & NMO_OBJECT_REFERENCE_FLAG) != 0;
 }
 
 /**
@@ -308,7 +308,7 @@ static inline int nmo_object_id_is_reference(nmo_object_id_t id) {
  * @return ID with reference flag cleared
  */
 static inline nmo_object_id_t nmo_object_id_clear_reference_flag(nmo_object_id_t id) {
-    return id & ~0x00800000;
+    return id & ~NMO_OBJECT_REFERENCE_FLAG;
 }
 
 /**
@@ -318,7 +318,7 @@ static inline nmo_object_id_t nmo_object_id_clear_reference_flag(nmo_object_id_t
  * @return ID with reference flag set
  */
 static inline nmo_object_id_t nmo_object_id_set_reference_flag(nmo_object_id_t id) {
-    return id | 0x00800000;
+    return id | NMO_OBJECT_REFERENCE_FLAG;
 }
 
 #ifdef __cplusplus

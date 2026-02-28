@@ -6,6 +6,7 @@
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
@@ -19,9 +20,37 @@
 #include <string.h>
 #include <stddef.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(animation, nmo_animation_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(keyedanimation, nmo_keyedanimation_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(objectanimation, nmo_objectanimation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    animation,
+    nmo_animation_state_t,
+    do {
+        state->flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
+        state->frame_rate = 30.0f;
+        state->length = 100.0f;
+        state->current_step = 0.0f;
+    } while (0),
+    ((void)0))
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    keyedanimation,
+    nmo_keyedanimation_state_t,
+    do {
+        state->base.flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
+        state->base.frame_rate = 30.0f;
+        state->base.length = 100.0f;
+        state->base.current_step = 0.0f;
+        state->merge_factor = 0.5f;
+    } while (0),
+    ((void)0))
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    objectanimation,
+    nmo_objectanimation_state_t,
+    do {
+        state->format = CKOBJANIM_FORMAT_NONE;
+        state->merge_factor = 0.5f;
+    } while (0),
+    ((void)0))
 
 /* CKAnimation flag bits (subset used during legacy load) */
 #define CKANIMATION_LINKTOFRAMERATE       0x00000001u
@@ -112,6 +141,20 @@ static size_t nmo_animation_identifier_remaining_dwords(nmo_chunk_t *chunk)
     }
 
     return next_pos - state->current_pos;
+}
+
+static int nmo_animation_is_file_mode_deser(const nmo_chunk_t *chunk, void *context)
+{
+    const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
+    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
+        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+}
+
+static int nmo_animation_is_file_mode_ser(const nmo_chunk_t *chunk, void *context)
+{
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
 }
 
 static nmo_status_t read_object_id_array(
@@ -257,8 +300,8 @@ static nmo_status_t write_object_id_array(
     return nmo_chunk_write_object_id_array(chunk, ids, count);
 }
 
-static void read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
-                          void **out_data, size_t *out_size)
+static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
+                                  void **out_data, size_t *out_size)
 {
     size_t pos = nmo_chunk_get_position(chunk);
     size_t total_bytes = nmo_chunk_get_data_size(chunk);
@@ -267,26 +310,23 @@ static void read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
     if (pos >= total_dwords) {
         *out_data = NULL;
         *out_size = 0;
-        return;
+        NMO_RETURN_OK();
     }
 
     size_t remaining_bytes = (total_dwords - pos) * 4;
     void *data = nmo_arena_alloc(arena, remaining_bytes, 1);
     if (!data) {
-        *out_data = NULL;
-        *out_size = 0;
-        return;
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw tail buffer");
     }
 
     size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk, data, remaining_bytes);
     if (bytes_read != remaining_bytes) {
-        *out_data = NULL;
-        *out_size = 0;
-        return;
+        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read raw tail buffer");
     }
 
     *out_data = data;
     *out_size = remaining_bytes;
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t nmo_animation_deserialize_internal(
@@ -303,6 +343,18 @@ static nmo_status_t nmo_animation_deserialize_internal(
         if (result != NMO_OK) return result;
     }
 
+    out_state->has_data = 0;
+    out_state->flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
+    out_state->frame_rate = 30.0f;
+    out_state->has_length = 0;
+    out_state->length = 100.0f;
+    out_state->has_root_entity = 0;
+    out_state->root_entity_id = 0;
+    out_state->has_character = 0;
+    out_state->character_id = 0;
+    out_state->has_current_step = 0;
+    out_state->current_step = 0.0f;
+
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONDATA) == NMO_OK) {
         out_state->has_data = 1;
 
@@ -312,9 +364,12 @@ static nmo_status_t nmo_animation_deserialize_internal(
             int32_t linked_to_framerate = 0;
             float frame_rate = 0.0f;
 
-            (void)nmo_chunk_read_int(chunk, &can_interrupt);
-            (void)nmo_chunk_read_int(chunk, &linked_to_framerate);
-            (void)nmo_chunk_read_float(chunk, &frame_rate);
+            nmo_status_t result = nmo_chunk_read_int(chunk, &can_interrupt);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_int(chunk, &linked_to_framerate);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_float(chunk, &frame_rate);
+            if (result != NMO_OK) return result;
 
             out_state->flags = 0;
             if (linked_to_framerate) {
@@ -325,43 +380,56 @@ static nmo_status_t nmo_animation_deserialize_internal(
             }
             out_state->frame_rate = frame_rate;
         } else if (remaining_dwords >= 2) {
-            (void)nmo_chunk_read_dword(chunk, &out_state->flags);
-            (void)nmo_chunk_read_float(chunk, &out_state->frame_rate);
+            nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->flags);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_float(chunk, &out_state->frame_rate);
+            if (result != NMO_OK) return result;
 
             for (size_t i = 2; i < remaining_dwords; ++i) {
                 uint32_t tmp = 0;
-                (void)nmo_chunk_read_dword(chunk, &tmp);
+                result = nmo_chunk_read_dword(chunk, &tmp);
+                if (result != NMO_OK) return result;
             }
         } else if (remaining_dwords == 1) {
-            (void)nmo_chunk_read_dword(chunk, &out_state->flags);
+            nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->flags);
+            if (result != NMO_OK) return result;
         }
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONLENGTH) == NMO_OK) {
         out_state->has_length = 1;
-        (void)nmo_chunk_read_float(chunk, &out_state->length);
+        nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->length);
+        if (result != NMO_OK) return result;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONBODYPARTS) == NMO_OK) {
         out_state->has_root_entity = 1;
         /* Legacy list of body parts (ignored) */
         int32_t count = 0;
-        (void)nmo_chunk_read_int(chunk, &count);
+        nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+        if (result != NMO_OK) return result;
+        if (count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid body part count");
+        }
         for (int32_t i = 0; i < count; ++i) {
             nmo_object_id_t tmp = 0;
-            (void)nmo_chunk_read_object_id(chunk, &tmp);
+            result = nmo_chunk_read_object_id(chunk, &tmp);
+            if (result != NMO_OK) return result;
         }
-        (void)nmo_chunk_read_object_id(chunk, &out_state->root_entity_id);
+        result = nmo_chunk_read_object_id(chunk, &out_state->root_entity_id);
+        if (result != NMO_OK) return result;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONCHARACTER) == NMO_OK) {
         out_state->has_character = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->character_id);
+        nmo_status_t result = nmo_chunk_read_object_id(chunk, &out_state->character_id);
+        if (result != NMO_OK) return result;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONCURRENTSTEP) == NMO_OK) {
         out_state->has_current_step = 1;
-        (void)nmo_chunk_read_float(chunk, &out_state->current_step);
+        nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->current_step);
+        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();
@@ -381,7 +449,13 @@ static nmo_status_t nmo_animation_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_data) {
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
+    if (!is_file && save_flags == 0) {
+        NMO_RETURN_OK();
+    }
+
+    if (is_file || (save_flags & CK_STATESAVE_ANIMATIONDATA) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONDATA);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->flags);
@@ -390,14 +464,14 @@ static nmo_status_t nmo_animation_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_length) {
+    if (is_file || (save_flags & CK_STATESAVE_ANIMATIONLENGTH) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONLENGTH);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->length);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_root_entity) {
+    if (is_file || (save_flags & CK_STATESAVE_ANIMATIONBODYPARTS) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONBODYPARTS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, 0);
@@ -406,14 +480,14 @@ static nmo_status_t nmo_animation_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_character) {
+    if (is_file || (save_flags & CK_STATESAVE_ANIMATIONCHARACTER) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONCHARACTER);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->character_id);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_current_step) {
+    if (is_file || (save_flags & CK_STATESAVE_ANIMATIONCURRENTSTEP) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONCURRENTSTEP);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->current_step);
@@ -439,21 +513,29 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMANIMLIST) == NMO_OK) {
-        (void)read_object_id_array(chunk, arena,
-                                   &out_state->animation_ids,
-                                   &out_state->animation_count);
+        result = read_object_id_array(chunk, arena,
+                                      &out_state->animation_ids,
+                                      &out_state->animation_count);
+        if (result != NMO_OK) return result;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMMERGE) == NMO_OK) {
         out_state->has_merge = 1;
-        (void)nmo_chunk_read_int(chunk, &out_state->merged);
-        (void)nmo_chunk_read_float(chunk, &out_state->merge_factor);
+        result = nmo_chunk_read_int(chunk, &out_state->merged);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_float(chunk, &out_state->merge_factor);
+        if (result != NMO_OK) return result;
     }
 
-    const int file_mode = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
-    if (!file_mode && nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMSUBANIMS) == NMO_OK) {
+    const bool is_file = nmo_animation_is_file_mode_deser(chunk, context);
+    if (!is_file && nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMSUBANIMS) == NMO_OK) {
         uint32_t count = 0;
-        (void)nmo_chunk_read_dword(chunk, &count);
+        result = nmo_chunk_read_dword(chunk, &count);
+        if (result != NMO_OK) return result;
+        if (count > 10000u) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Subanim count exceeds maximum");
+        }
         if (count > 0) {
             out_state->subanim_count = count;
             out_state->subanims = (nmo_keyedanimation_subanim_t *)nmo_arena_alloc(
@@ -464,8 +546,10 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
             }
 
             for (uint32_t i = 0; i < count; ++i) {
-                (void)nmo_chunk_read_object_id(chunk, &out_state->subanims[i].object_id);
-                (void)nmo_chunk_read_sub_chunk(chunk, &out_state->subanims[i].chunk);
+                result = nmo_chunk_read_object_id(chunk, &out_state->subanims[i].object_id);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_read_sub_chunk(chunk, &out_state->subanims[i].chunk);
+                if (result != NMO_OK) return result;
             }
         }
     }
@@ -478,7 +562,6 @@ static nmo_status_t nmo_keyedanimation_serialize_internal(
     nmo_chunk_t *out_chunk,
     void *context)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_keyedanimation_serialize");
     }
@@ -486,14 +569,17 @@ static nmo_status_t nmo_keyedanimation_serialize_internal(
     nmo_status_t result = nmo_animation_serialize_internal(&in_state->base, out_chunk, context);
     if (result != NMO_OK) return result;
 
-    if (in_state->animation_count > 0 && in_state->animation_ids) {
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
+
+    if (is_file || (save_flags & CK_STATESAVE_KEYEDANIMANIMLIST) != 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KEYEDANIMANIMLIST);
         if (result != NMO_OK) return result;
         result = write_object_id_array(out_chunk, in_state->animation_ids, in_state->animation_count);
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_merge) {
+    if (is_file || (save_flags & CK_STATESAVE_KEYEDANIMMERGE) != 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KEYEDANIMMERGE);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->merged);
@@ -502,18 +588,24 @@ static nmo_status_t nmo_keyedanimation_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    const int file_mode = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
-    if (!file_mode && in_state->subanim_count > 0 && in_state->subanims) {
+    if (!is_file && (save_flags & CK_STATESAVE_KEYEDANIMSUBANIMS) != 0) {
+        const uint32_t count = in_state->animation_count;
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KEYEDANIMSUBANIMS);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, in_state->subanim_count);
+        result = nmo_chunk_write_dword(out_chunk, count);
         if (result != NMO_OK) return result;
-        for (uint32_t i = 0; i < in_state->subanim_count; ++i) {
-            nmo_chunk_t *sub = in_state->subanims[i].chunk;
-            if (!sub) {
-                sub = nmo_chunk_create(arena);
+        for (uint32_t i = 0; i < count; ++i) {
+            nmo_chunk_t *sub = NULL;
+            nmo_object_id_t object_id = 0;
+            if (in_state->animation_ids && i < in_state->animation_count) {
+                object_id = in_state->animation_ids[i];
+            } else if (in_state->subanims && i < in_state->subanim_count) {
+                object_id = in_state->subanims[i].object_id;
             }
-            result = nmo_chunk_write_object_id(out_chunk, in_state->subanims[i].object_id);
+            if (in_state->subanims && i < in_state->subanim_count) {
+                sub = in_state->subanims[i].chunk;
+            }
+            result = nmo_chunk_write_object_id(out_chunk, object_id);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_sub_chunk(out_chunk, sub);
             if (result != NMO_OK) return result;
@@ -540,74 +632,124 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         if (result != NMO_OK) return result;
     }
 
+    out_state->format = CKOBJANIM_FORMAT_NONE;
+    out_state->has_root_pos = 0;
+    out_state->root_pos.x = 0.0f;
+    out_state->root_pos.y = 0.0f;
+    out_state->root_pos.z = 0.0f;
+    out_state->flags = 0;
+    out_state->entity_id = 0;
+    out_state->has_length = 0;
+    out_state->length = 0.0f;
+    out_state->has_merge = 0;
+    out_state->merge_factor = 0.5f;
+    out_state->anim1_id = 0;
+    out_state->anim2_id = 0;
+    out_state->has_shared_anim = 0;
+    out_state->shared_anim_id = 0;
+    out_state->has_morph_counts = 0;
+    out_state->morph_vertex_count = 0;
+    out_state->morph_key_count = 0;
+    out_state->raw_tail = NULL;
+    out_state->raw_tail_size = 0;
+
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMSHARED) == NMO_OK) {
         out_state->format = CKOBJANIM_FORMAT_SHARED;
         out_state->has_shared_anim = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->shared_anim_id);
+        nmo_status_t result = nmo_chunk_read_object_id(chunk, &out_state->shared_anim_id);
+        if (result != NMO_OK) return result;
         out_state->has_root_pos = 1;
-        (void)nmo_chunk_read_vector3(chunk, &out_state->root_pos);
+        result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
+        if (result != NMO_OK) return result;
         for (int i = 0; i < 4; ++i) {
             float tmp = 0.0f;
-            (void)nmo_chunk_read_float(chunk, &tmp);
+            result = nmo_chunk_read_float(chunk, &tmp);
+            if (result != NMO_OK) return result;
         }
-        (void)nmo_chunk_read_dword(chunk, &out_state->flags);
-        (void)nmo_chunk_read_object_id(chunk, &out_state->entity_id);
+        result = nmo_chunk_read_dword(chunk, &out_state->flags);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_object_id(chunk, &out_state->entity_id);
+        if (result != NMO_OK) return result;
         if (out_state->flags & 0x80u) {
             out_state->has_merge = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->merge_factor);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim1_id);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
+            result = nmo_chunk_read_float(chunk, &out_state->merge_factor);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_id(chunk, &out_state->anim1_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
+            if (result != NMO_OK) return result;
         }
-        read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        if (result != NMO_OK) return result;
         NMO_RETURN_OK();
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMCONTROLLERS) == NMO_OK) {
         out_state->format = CKOBJANIM_FORMAT_CONTROLLERS;
         out_state->has_root_pos = 1;
-        (void)nmo_chunk_read_vector3(chunk, &out_state->root_pos);
+        nmo_status_t result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
+        if (result != NMO_OK) return result;
         for (int i = 0; i < 4; ++i) {
             float tmp = 0.0f;
-            (void)nmo_chunk_read_float(chunk, &tmp);
+            result = nmo_chunk_read_float(chunk, &tmp);
+            if (result != NMO_OK) return result;
         }
-        (void)nmo_chunk_read_dword(chunk, &out_state->flags);
-        (void)nmo_chunk_read_object_id(chunk, &out_state->entity_id);
+        result = nmo_chunk_read_dword(chunk, &out_state->flags);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_object_id(chunk, &out_state->entity_id);
+        if (result != NMO_OK) return result;
         out_state->has_length = 1;
-        (void)nmo_chunk_read_float(chunk, &out_state->length);
+        result = nmo_chunk_read_float(chunk, &out_state->length);
+        if (result != NMO_OK) return result;
         if (out_state->flags & 0x80u) {
             out_state->has_merge = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->merge_factor);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim1_id);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
+            result = nmo_chunk_read_float(chunk, &out_state->merge_factor);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_id(chunk, &out_state->anim1_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
+            if (result != NMO_OK) return result;
         }
-        read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        if (result != NMO_OK) return result;
         NMO_RETURN_OK();
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMNEWDATA) == NMO_OK) {
         out_state->format = CKOBJANIM_FORMAT_NEWDATA;
         out_state->has_root_pos = 1;
-        (void)nmo_chunk_read_vector3(chunk, &out_state->root_pos);
+        nmo_status_t result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
+        if (result != NMO_OK) return result;
         for (int i = 0; i < 4; ++i) {
             float tmp = 0.0f;
-            (void)nmo_chunk_read_float(chunk, &tmp);
+            result = nmo_chunk_read_float(chunk, &tmp);
+            if (result != NMO_OK) return result;
         }
         out_state->has_morph_counts = 1;
-        (void)nmo_chunk_read_int(chunk, &out_state->morph_vertex_count);
-        (void)nmo_chunk_read_int(chunk, &out_state->morph_key_count);
-        (void)nmo_chunk_read_dword(chunk, &out_state->flags);
-        (void)nmo_chunk_read_object_id(chunk, &out_state->entity_id);
+        result = nmo_chunk_read_int(chunk, &out_state->morph_vertex_count);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_int(chunk, &out_state->morph_key_count);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_dword(chunk, &out_state->flags);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_read_object_id(chunk, &out_state->entity_id);
+        if (result != NMO_OK) return result;
         out_state->has_length = 1;
-        (void)nmo_chunk_read_float(chunk, &out_state->length);
+        result = nmo_chunk_read_float(chunk, &out_state->length);
+        if (result != NMO_OK) return result;
         if (out_state->flags & 0x80u) {
             out_state->has_merge = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->merge_factor);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim1_id);
-            (void)nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
+            result = nmo_chunk_read_float(chunk, &out_state->merge_factor);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_id(chunk, &out_state->anim1_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
+            if (result != NMO_OK) return result;
         }
-        read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        if (result != NMO_OK) return result;
         NMO_RETURN_OK();
     }
 
@@ -615,7 +757,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         if (data_version < 1) {
             out_state->format = CKOBJANIM_FORMAT_LEGACY;
         }
-        read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        nmo_status_t result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();
@@ -635,6 +778,12 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
+    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+    const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
+    if (!is_file && (save_flags & CK_STATESAVE_OBJANIMALL) == 0) {
+        NMO_RETURN_OK();
+    }
+
     switch (in_state->format) {
     case CKOBJANIM_FORMAT_SHARED: {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMSHARED);
@@ -651,7 +800,7 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->entity_id);
         if (result != NMO_OK) return result;
-        if (in_state->has_merge && (in_state->flags & 0x80u)) {
+        if ((in_state->flags & 0x80u) != 0) {
             result = nmo_chunk_write_float(out_chunk, in_state->merge_factor);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_object_id(out_chunk, in_state->anim1_id);
@@ -674,9 +823,9 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->entity_id);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_float(out_chunk, in_state->has_length ? in_state->length : 0.0f);
+        result = nmo_chunk_write_float(out_chunk, in_state->length);
         if (result != NMO_OK) return result;
-        if (in_state->has_merge && (in_state->flags & 0x80u)) {
+        if ((in_state->flags & 0x80u) != 0) {
             result = nmo_chunk_write_float(out_chunk, in_state->merge_factor);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_object_id(out_chunk, in_state->anim1_id);
@@ -695,17 +844,17 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             result = nmo_chunk_write_float(out_chunk, 0.0f);
             if (result != NMO_OK) return result;
         }
-        result = nmo_chunk_write_int(out_chunk, in_state->has_morph_counts ? in_state->morph_vertex_count : 0);
+        result = nmo_chunk_write_int(out_chunk, in_state->morph_vertex_count);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_int(out_chunk, in_state->has_morph_counts ? in_state->morph_key_count : 0);
+        result = nmo_chunk_write_int(out_chunk, in_state->morph_key_count);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->flags);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->entity_id);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_float(out_chunk, in_state->has_length ? in_state->length : 0.0f);
+        result = nmo_chunk_write_float(out_chunk, in_state->length);
         if (result != NMO_OK) return result;
-        if (in_state->has_merge && (in_state->flags & 0x80u)) {
+        if ((in_state->flags & 0x80u) != 0) {
             result = nmo_chunk_write_float(out_chunk, in_state->merge_factor);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_object_id(out_chunk, in_state->anim1_id);

@@ -7,7 +7,7 @@
 #define NMO_CKSPRITETEXT_SCHEMAS_H
 
 #include "nmo_types.h"
-#include "object/builtin/nmo_2dentity_schemas.h"
+#include "object/builtin/nmo_sprite_schemas.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_statesave_ids.h"
@@ -34,9 +34,9 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 #define NMO_FONT_WEIGHT_EXTRABOLD   800
 #define NMO_FONT_WEIGHT_HEAVY       900
 
-/** CKSpriteText state (uses CK2dEntity base, matches Save/Load) */
+/** CKSpriteText state (uses CKSprite base for Load/Save) */
 typedef struct nmo_spritetext_state {
-    nmo_2dentity_state_t base;
+    nmo_sprite_state_t base;
 
     const char *text_content;
     nmo_font_info_t font;

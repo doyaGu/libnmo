@@ -576,7 +576,10 @@ nmo_status_t nmo_behavior_serialize(
     if (result != NMO_OK) return result;
 
     if (!write_file_format) {
-        if (in_state->sub_behaviors.count > 0 && in_state->sub_behaviors.data) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+
+        if ((save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) != 0 &&
+            in_state->sub_behaviors.count > 0 && in_state->sub_behaviors.data) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORSUBBEHAV);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->sub_behaviors.count);
@@ -597,31 +600,35 @@ nmo_status_t nmo_behavior_serialize(
             }
         }
 
-        if ((in_state->flags & CKBEHAVIOR_BUILDINGBLOCK)) {
+        if ((in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) ||
+            (save_flags & CK_STATESAVE_BEHAVIORLOCALPARAMS) == 0) {
             NMO_RETURN_OK();
         }
 
-        if (in_state->local_parameters.count > 0 || in_state->local_parameter_chunks.count > 0) {
-            result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS);
-            if (result != NMO_OK) return result;
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS);
+        if (result != NMO_OK) return result;
+
+        if (in_state->local_parameters.count > 0) {
             result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->local_parameters.count);
             if (result != NMO_OK) return result;
-            if (in_state->local_parameters.count > 0) {
-                const nmo_object_id_t *local_parameters = NMO_ARRAY_DATA(
-                    nmo_object_id_t, &in_state->local_parameters);
-                const nmo_chunk_t *const *local_chunks = NMO_ARRAY_DATA(
-                    const nmo_chunk_t *, &in_state->local_parameter_chunks);
-                for (uint32_t i = 0; i < in_state->local_parameters.count; ++i) {
-                    result = nmo_chunk_write_object_id(out_chunk, local_parameters[i]);
-                    if (result != NMO_OK) return result;
-                    nmo_chunk_t *sub = NULL;
-                    if (local_chunks && i < in_state->local_parameter_chunks.count) {
-                        sub = (nmo_chunk_t *)local_chunks[i];
-                    }
-                    result = nmo_chunk_write_sub_chunk(out_chunk, sub);
-                    if (result != NMO_OK) return result;
+
+            const nmo_object_id_t *local_parameters = NMO_ARRAY_DATA(
+                nmo_object_id_t, &in_state->local_parameters);
+            const nmo_chunk_t *const *local_chunks = NMO_ARRAY_DATA(
+                const nmo_chunk_t *, &in_state->local_parameter_chunks);
+            for (uint32_t i = 0; i < in_state->local_parameters.count; ++i) {
+                result = nmo_chunk_write_object_id(out_chunk, local_parameters[i]);
+                if (result != NMO_OK) return result;
+                nmo_chunk_t *sub = NULL;
+                if (local_chunks && i < in_state->local_parameter_chunks.count) {
+                    sub = (nmo_chunk_t *)local_chunks[i];
                 }
+                result = nmo_chunk_write_sub_chunk(out_chunk, sub);
+                if (result != NMO_OK) return result;
             }
+        } else {
+            result = nmo_chunk_write_dword(out_chunk, 0);
+            if (result != NMO_OK) return result;
         }
 
         NMO_RETURN_OK();

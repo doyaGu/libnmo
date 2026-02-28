@@ -22,6 +22,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
+#include "format/nmo_image.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <string.h>
@@ -46,6 +47,10 @@ static const nmo_type_field_t nmo_texture_fields[] = {
     NMO_FIELD(nmo_texture_state_t, has_slot_filenames, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, slot_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY(nmo_texture_state_t, slot_filenames, CKPGUID_STRING),
+    /* Reader dimensions */
+    NMO_FIELD(nmo_texture_state_t, reader_width, CKPGUID_INT),
+    NMO_FIELD(nmo_texture_state_t, reader_height, CKPGUID_INT),
+    NMO_FIELD(nmo_texture_state_t, reader_bpp, CKPGUID_INT),
     /* Bitmap kind and data */
     NMO_FIELD(nmo_texture_state_t, bitmap_kind, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_texture_state_t, reader_slots, CKPGUID_POINTER),
@@ -353,6 +358,125 @@ static nmo_status_t nmo_texture_read_slot_filenames(
     NMO_RETURN_OK();
 }
 
+static uint32_t nmo_texture_pixel_format_from_desc(const nmo_image_desc_t *desc) {
+    if (!desc) return UNKNOWN_PF;
+
+    if (desc->format >= NMO_PIXEL_FORMAT_DXT1 && desc->format <= NMO_PIXEL_FORMAT_32_X8L8V8U8) {
+        return (uint32_t)desc->format;
+    }
+
+    const uint32_t bpp = (uint32_t)desc->bits_per_pixel;
+    const uint32_t r = desc->red_mask;
+    const uint32_t g = desc->green_mask;
+    const uint32_t b = desc->blue_mask;
+    const uint32_t a = desc->alpha_mask;
+
+    if (bpp == 32) {
+        if (r == 0x00FF0000 && g == 0x0000FF00 && b == 0x000000FF && a == 0xFF000000)
+            return _32_ARGB8888;
+        if (r == 0x00FF0000 && g == 0x0000FF00 && b == 0x000000FF && a == 0x00000000)
+            return _32_RGB888;
+        if (r == 0x000000FF && g == 0x0000FF00 && b == 0x00FF0000 && a == 0xFF000000)
+            return _32_ABGR8888;
+        if (r == 0xFF000000 && g == 0x00FF0000 && b == 0x0000FF00 && a == 0x000000FF)
+            return _32_RGBA8888;
+        if (r == 0x0000FF00 && g == 0x00FF0000 && b == 0xFF000000 && a == 0x000000FF)
+            return _32_BGRA8888;
+        if (r == 0x0000FF00 && g == 0x00FF0000 && b == 0xFF000000 && a == 0x00000000)
+            return _32_BGR888;
+        if (r == 0x0000FFFF && g == 0xFFFF0000 && b == 0x00000000)
+            return _32_V16U16;
+        if (r == 0x000000FF && g == 0x0000FF00 && b == 0x00FF0000 && a == 0xFF000000)
+            return _32_X8L8V8U8;
+    }
+
+    if (bpp == 24) {
+        if (r == 0x00FF0000 && g == 0x0000FF00 && b == 0x000000FF)
+            return _24_RGB888;
+        if (r == 0x0000FF00 && g == 0x00FF0000 && b == 0xFF000000)
+            return _24_BGR888;
+    }
+
+    if (bpp == 16) {
+        if (r == 0xF800 && g == 0x07E0 && b == 0x001F)
+            return _16_RGB565;
+        if (r == 0x7C00 && g == 0x03E0 && b == 0x001F && a == 0x8000)
+            return _16_ARGB1555;
+        if (r == 0x7C00 && g == 0x03E0 && b == 0x001F && a == 0x0000)
+            return _16_RGB555;
+        if (r == 0x0F00 && g == 0x00F0 && b == 0x000F && a == 0xF000)
+            return _16_ARGB4444;
+        if (r == 0x001F && g == 0x07E0 && b == 0xF800)
+            return _16_BGR565;
+        if (r == 0x001F && g == 0x03E0 && b == 0x7C00 && a == 0x8000)
+            return _16_ABGR1555;
+        if (r == 0x001F && g == 0x03E0 && b == 0x7C00 && a == 0x0000)
+            return _16_BGR555;
+        if (r == 0x000F && g == 0x00F0 && b == 0x0F00 && a == 0xF000)
+            return _16_ABGR4444;
+        if (r == 0x00FF && g == 0xFF00 && b == 0x0000)
+            return _16_V8U8;
+        if (r == 0x001F && g == 0x07E0 && b == 0xF800)
+            return _16_L6V5U5;
+    }
+
+    if (bpp == 8) {
+        if (r == 0xE0 && g == 0x1C && b == 0x03)
+            return _8_RGB332;
+        if (r == 0xC0 && g == 0x30 && b == 0x0C && a == 0x03)
+            return _8_ARGB2222;
+    }
+
+    return UNKNOWN_PF;
+}
+
+static size_t nmo_texture_apply_legacy_format(nmo_texture_state_t *state, nmo_chunk_t *chunk, size_t payload) {
+    if (!state || !chunk || payload <= sizeof(uint32_t)) {
+        return 0;
+    }
+
+    size_t buffer_size = payload - sizeof(uint32_t);
+    if (buffer_size < 40u) {
+        return 0;
+    }
+
+    nmo_image_desc_t desc = {0};
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t bytes_per_line = 0;
+    int32_t bits_per_pixel = 0;
+    uint32_t red_mask = 0;
+    uint32_t green_mask = 0;
+    uint32_t blue_mask = 0;
+    uint32_t alpha_mask = 0;
+    int16_t bytes_per_entry = 0;
+    int16_t color_map_entries = 0;
+
+    nmo_chunk_read_int(chunk, &width);
+    nmo_chunk_read_int(chunk, &height);
+    nmo_chunk_read_int(chunk, &bytes_per_line);
+    nmo_chunk_read_int(chunk, &bits_per_pixel);
+    nmo_chunk_read_dword(chunk, &red_mask);
+    nmo_chunk_read_dword(chunk, &green_mask);
+    nmo_chunk_read_dword(chunk, &blue_mask);
+    nmo_chunk_read_dword(chunk, &alpha_mask);
+    nmo_chunk_read_word(chunk, (uint16_t *)&bytes_per_entry);
+    nmo_chunk_read_word(chunk, (uint16_t *)&color_map_entries);
+
+    desc.width = width;
+    desc.height = height;
+    desc.bits_per_pixel = bits_per_pixel;
+    desc.bytes_per_line = bytes_per_line;
+    desc.red_mask = red_mask;
+    desc.green_mask = green_mask;
+    desc.blue_mask = blue_mask;
+    desc.alpha_mask = alpha_mask;
+
+    state->desired_video_format = nmo_texture_pixel_format_from_desc(&desc);
+    state->has_desired_video_format = (state->desired_video_format != UNKNOWN_PF);
+    return 40u;
+}
+
 nmo_status_t nmo_texture_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
@@ -376,6 +500,19 @@ nmo_status_t nmo_texture_deserialize(
         int32_t count = 0;
         nmo_chunk_read_int(chunk, &count);
         if (count < 0) count = 0;
+
+        int32_t width = 0;
+        int32_t height = 0;
+        int32_t bpp = 0;
+        nmo_status_t header_result = nmo_chunk_read_int(chunk, &width);
+        if (header_result != NMO_OK) return header_result;
+        header_result = nmo_chunk_read_int(chunk, &height);
+        if (header_result != NMO_OK) return header_result;
+        header_result = nmo_chunk_read_int(chunk, &bpp);
+        if (header_result != NMO_OK) return header_result;
+        out_state->reader_width = width;
+        out_state->reader_height = height;
+        out_state->reader_bpp = bpp;
 
         if (count > 0) {
             nmo_texture_reader_slot_t *slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
@@ -474,8 +611,11 @@ nmo_status_t nmo_texture_deserialize(
             int32_t use_mipmap = 0;
             nmo_chunk_read_int(chunk, &use_mipmap);
             if (payload > sizeof(int32_t)) {
+                size_t consumed = nmo_texture_apply_legacy_format(out_state, chunk, payload);
                 size_t remaining = payload - sizeof(int32_t);
-                nmo_chunk_skip(chunk, (remaining + 3) / 4);
+                if (remaining > consumed) {
+                    nmo_chunk_skip(chunk, (remaining - consumed + 3) / 4);
+                }
             }
         }
 
@@ -490,6 +630,11 @@ nmo_status_t nmo_texture_deserialize(
             nmo_chunk_read_buffer(chunk, &format, &size);
             out_state->save_format_data = format;
             out_state->save_format_size = size;
+        }
+
+        if (out_state->has_desired_video_format &&
+            out_state->desired_video_format > _32_X8L8V8U8) {
+            out_state->desired_video_format = _16_ARGB1555;
         }
 
         NMO_RETURN_OK();
@@ -541,6 +686,11 @@ nmo_status_t nmo_texture_deserialize(
                 out_state->has_current_slot = 1;
             }
         }
+    }
+
+    if (out_state->has_desired_video_format &&
+        out_state->desired_video_format > _32_X8L8V8U8) {
+        out_state->desired_video_format = _16_ARGB1555;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP) == NMO_OK) {
@@ -722,6 +872,9 @@ nmo_status_t nmo_texture_serialize(
 {
     (void)type;
     const nmo_texture_state_t *state = (const nmo_texture_state_t *)instance;
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags = ser_ctx ? ser_ctx->save_flags : 0;
 
     if (!state || !chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_texture_serialize");
@@ -732,10 +885,17 @@ nmo_status_t nmo_texture_serialize(
         if (result != NMO_OK) return result;
     }
 
+    if (!is_file && (save_flags & CK_STATESAVE_OLDTEXONLY) == 0) {
+        NMO_RETURN_OK();
+    }
+
     if (state->bitmap_kind == CKTEXTURE_BITMAP_READER && state->reader_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
         if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
+        nmo_chunk_write_int(chunk, state->reader_width);
+        nmo_chunk_write_int(chunk, state->reader_height);
+        nmo_chunk_write_int(chunk, state->reader_bpp);
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_texture_write_reader_slot(chunk, &state->reader_slots[i]);
             if (result != NMO_OK) return result;
@@ -773,13 +933,13 @@ nmo_status_t nmo_texture_serialize(
         nmo_chunk_write_string(chunk, state->movie_filename);
     }
 
-    if (state->has_pick_threshold && state->pick_threshold != 0) {
+    if (state->pick_threshold != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD);
         if (result != NMO_OK) return result;
         nmo_chunk_write_int(chunk, state->pick_threshold);
     }
 
-    if (state->has_oldtexonly) {
+    {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY);
         if (result != NMO_OK) return result;
 
@@ -787,19 +947,16 @@ nmo_status_t nmo_texture_serialize(
         dword |= ((uint32_t)(state->save_options & 0xFF) << 16);
         if (state->is_transparent) dword |= 0x100;
         if (state->is_cubemap) dword |= 0x400;
-        if (state->has_desired_video_format) dword |= 0x200;
+        if (state->has_desired_video_format && state->desired_video_format != UNKNOWN_PF) dword |= 0x200;
 
         nmo_chunk_write_dword(chunk, dword);
+        nmo_chunk_write_dword(chunk, state->transparent_color);
 
-        if (state->has_transparent_color) {
-            nmo_chunk_write_dword(chunk, state->transparent_color);
-        }
-
-        if (state->has_current_slot && state->slot_count > 1) {
+        if (state->slot_count > 1) {
             nmo_chunk_write_int(chunk, state->current_slot);
         }
 
-        if (state->has_desired_video_format) {
+        if (state->has_desired_video_format && state->desired_video_format != UNKNOWN_PF) {
             nmo_chunk_write_dword(chunk, state->desired_video_format);
         }
     }

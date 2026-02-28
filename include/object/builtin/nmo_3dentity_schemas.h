@@ -51,6 +51,14 @@ typedef struct nmo_3dentity_state {
 
     /* Skin data (optional) */
     nmo_3dentity_skin_t *skin;
+
+    /* Chunk presence tracking for strict round-trip */
+    uint8_t has_mesh_chunk;
+    uint8_t has_animation_chunk;
+    uint8_t has_entityndata_chunk;
+    uint8_t has_parent_chunk;
+    uint8_t has_flags_chunk;
+    uint8_t has_matrix_chunk;
 } nmo_3dentity_state_t;
 
 NMO_API nmo_status_t nmo_3dentity_deserialize(

@@ -16,7 +16,39 @@
 #include "core/nmo_arena.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(layer, nmo_layer_state_t)
+static void nmo_layer_set_defaults(nmo_layer_state_t *state) {
+    if (state == NULL) {
+        return;
+    }
+
+    /* Mirrors RCKLayer ctor defaults (see CKRenderEngine/src/CKLayer.cpp). */
+    state->grid_id = 0;
+    state->type = 1;
+    state->format = 0;
+    state->version = 0;
+    state->color_rgba = 0;
+    state->param_guid = (nmo_guid_t){0, 0};
+    state->flags = 1;
+
+    state->has_layer_data = 1;
+    state->has_type = 1;
+    state->has_version = 0;
+    state->has_color = 0;
+    state->has_param_guid = 0;
+    state->has_flags = 1;
+    state->has_square_data = 0;
+
+    state->square_data = NULL;
+    state->square_data_size = 0;
+}
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    layer,
+    nmo_layer_state_t,
+    do { \
+        nmo_layer_set_defaults(state); \
+    } while (0),
+    ((void)0))
 
 nmo_status_t nmo_layer_deserialize(
     void *instance,
@@ -34,9 +66,20 @@ nmo_status_t nmo_layer_deserialize(
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    out_state->has_layer_data = 0;
+    out_state->has_type = 0;
+    out_state->has_version = 0;
+    out_state->has_color = 0;
+    out_state->has_param_guid = 0;
+    out_state->has_flags = 0;
+    out_state->has_square_data = 0;
+    out_state->square_data = NULL;
+    out_state->square_data_size = 0;
+
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA) != NMO_OK) {
         NMO_RETURN_OK();
     }
+    out_state->has_layer_data = 1;
 
     nmo_chunk_read_object_id(chunk, &out_state->grid_id);
 
@@ -58,12 +101,18 @@ nmo_status_t nmo_layer_deserialize(
                 out_state->color_rgba = color;
                 out_state->has_color = 1;
             }
-            if (out_state->version >= 3) {
-                if (nmo_chunk_read_guid(chunk, &out_state->param_guid) == NMO_OK) {
-                    out_state->has_param_guid = 1;
+            if (out_state->version >= 2) {
+                if (out_state->version >= 3) {
+                    if (nmo_chunk_read_guid(chunk, &out_state->param_guid) == NMO_OK) {
+                        out_state->has_param_guid = 1;
+                    }
                 }
+                if (nmo_chunk_read_int(chunk, (int32_t *)&out_state->flags) == NMO_OK) {
+                    out_state->has_flags = 1;
+                }
+            } else {
+                out_state->flags = 1;
             }
-            nmo_chunk_read_int(chunk, (int32_t *)&out_state->flags);
         }
     } else {
         int32_t type = 0;
@@ -72,7 +121,9 @@ nmo_status_t nmo_layer_deserialize(
             out_state->has_type = 1;
         }
         nmo_chunk_read_int(chunk, &out_state->format);
-        nmo_chunk_read_int(chunk, (int32_t *)&out_state->flags);
+        if (nmo_chunk_read_int(chunk, (int32_t *)&out_state->flags) == NMO_OK) {
+            out_state->has_flags = 1;
+        }
     }
 
     if (out_state->format == 0) {
@@ -81,6 +132,7 @@ nmo_status_t nmo_layer_deserialize(
         if (nmo_chunk_read_buffer(chunk, &raw, &raw_size) == NMO_OK) {
             out_state->square_data = raw;
             out_state->square_data_size = raw_size;
+            out_state->has_square_data = 1;
         }
     }
 
@@ -103,29 +155,46 @@ nmo_status_t nmo_layer_serialize(
     nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const int is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_LAYERDATA) == 0) {
+            return NMO_OK;
+        }
+    }
+
+    if (!in_state->has_layer_data) {
+        return NMO_OK;
+    }
+
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LAYERDATA);
     if (result != NMO_OK) return result;
 
     nmo_chunk_write_object_id(out_chunk, in_state->grid_id);
 
-    const int file_mode = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
-    if (file_mode) {
+    if (is_file) {
         const int32_t version = in_state->has_version ? in_state->version : 3;
         nmo_chunk_write_int(out_chunk, in_state->format);
         nmo_chunk_write_int(out_chunk, version);
-        nmo_chunk_write_dword(out_chunk, in_state->has_color ? in_state->color_rgba : 0);
+        if (version >= 1) {
+            nmo_chunk_write_dword(out_chunk, in_state->has_color ? in_state->color_rgba : 0);
+        }
         if (version >= 3) {
             nmo_chunk_write_guid(out_chunk,
                                  in_state->has_param_guid ? in_state->param_guid : (nmo_guid_t){0, 0});
         }
-        nmo_chunk_write_int(out_chunk, (int32_t)in_state->flags);
+        if (version >= 2) {
+            nmo_chunk_write_int(out_chunk, (int32_t)(in_state->has_flags ? in_state->flags : 1));
+        }
     } else {
         nmo_chunk_write_int(out_chunk, in_state->has_type ? in_state->type : 0);
         nmo_chunk_write_int(out_chunk, in_state->format);
-        nmo_chunk_write_int(out_chunk, (int32_t)in_state->flags);
+        nmo_chunk_write_int(out_chunk, (int32_t)(in_state->has_flags ? in_state->flags : 1));
     }
 
-    if (in_state->format == 0 && in_state->square_data && in_state->square_data_size > 0) {
+    if (in_state->format == 0 && in_state->has_square_data) {
         return nmo_chunk_write_buffer(out_chunk, in_state->square_data, in_state->square_data_size);
     }
 

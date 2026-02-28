@@ -37,6 +37,14 @@ typedef struct nmo_camera_state {
     int32_t height;            ///< Viewport height
     float near_plane;          ///< Near clipping plane distance
     float far_plane;           ///< Far clipping plane distance
+
+    /* Chunk presence tracking */
+    uint8_t has_cameraonly_chunk;
+    uint8_t has_fov_chunk;
+    uint8_t has_proj_chunk;
+    uint8_t has_ortho_chunk;
+    uint8_t has_aspect_chunk;
+    uint8_t has_planes_chunk;
 } nmo_camera_state_t;
 
 NMO_API nmo_status_t nmo_camera_deserialize(

@@ -62,6 +62,7 @@ typedef struct nmo_level_state {
     nmo_chunk_t *level_scene_chunk;      /**< Embedded chunk for level scene */
     
     /* Manager state (optional, rarely used) */
+    uint8_t has_inactive_manager_section; /**< Presence of LEVELINACTIVEMAN section */
     nmo_array_t inactive_manager_guids;  /**< Inactive manager GUIDs (nmo_guid_t) */
     
     nmo_array_t duplicate_manager_names; /**< Duplicate manager names (char *) */

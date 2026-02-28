@@ -169,6 +169,24 @@ static inline nmo_arena_t *nmo_deserialize_context_get_arena(void *context)
 }
 
 /**
+ * @brief Get repository from deserialize context
+ */
+static inline void *nmo_deserialize_context_get_repository(void *context)
+{
+    nmo_deserialize_context_t *ctx = nmo_deserialize_context_get(context);
+    return ctx != NULL ? ctx->repository : NULL;
+}
+
+/**
+ * @brief Get type registry from deserialize context
+ */
+static inline const nmo_type_registry_t *nmo_deserialize_context_get_type_registry(void *context)
+{
+    nmo_deserialize_context_t *ctx = nmo_deserialize_context_get(context);
+    return ctx != NULL ? ctx->type_registry : NULL;
+}
+
+/**
  * @brief Set object being deserialized
  * 
  * Called by parser before invoking deserialize function.

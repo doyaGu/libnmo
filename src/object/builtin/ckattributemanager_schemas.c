@@ -78,6 +78,11 @@ nmo_status_t nmo_attributemanager_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_attributemanager_deserialize");
     }
 
+    out_state->category_count = 0;
+    out_state->attribute_count = 0;
+    out_state->categories = NULL;
+    out_state->attributes = NULL;
+
     /* Seek identifier */
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
     if (result != NMO_OK) {

@@ -96,6 +96,13 @@ NMO_API nmo_status_t nmo_mesh_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_mesh_serialize_ex(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context,
+    bool skip_geometry);
+
 NMO_DECLARE_OBJECT_SCHEMA(nmo_mesh_vtable, nmo_register_mesh_type)
 
 NMO_API nmo_status_t nmo_mesh_finish_loading(

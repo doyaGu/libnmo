@@ -27,8 +27,8 @@ TEST(object_serialization, ckobject_roundtrip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NE(NULL, arena);
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_nonfile(
+        arena, NULL, 0);
 
     /* Setup type registry */
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
@@ -80,8 +80,8 @@ TEST(object_serialization, ckobject_hidden) {
     nmo_status_t result = register_test_object_types(registry);
     ASSERT_EQ(NMO_OK, result);
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_nonfile(
+        arena, NULL, 0);
 
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CKOBJECT);
@@ -119,8 +119,8 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
     nmo_status_t result = register_test_object_types(registry);
     ASSERT_EQ(NMO_OK, result);
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_nonfile(
+        arena, NULL, 0);
 
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CKOBJECT);
@@ -159,8 +159,8 @@ TEST(object_serialization, null_checks) {
     nmo_status_t result = register_test_object_types(registry);
     ASSERT_EQ(NMO_OK, result);
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_nonfile(
+        arena, NULL, 0);
 
     const nmo_type_descriptor_t *ckobject_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CKOBJECT);
@@ -195,8 +195,8 @@ TEST(object_serialization, ck3dentity_roundtrip) {
     nmo_status_t result = register_test_object_types(registry);
     ASSERT_EQ(NMO_OK, result);
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_nonfile(
+        arena, NULL, 0);
 
     const nmo_type_descriptor_t *entity3d_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CK3DENTITY);
@@ -253,8 +253,8 @@ TEST(object_serialization, ck3dentity_transform) {
     nmo_status_t result = register_test_object_types(registry);
     ASSERT_EQ(NMO_OK, result);
 
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_NONE);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create_nonfile(
+        arena, NULL, 0);
 
     const nmo_type_descriptor_t *entity3d_type = nmo_type_registry_find_by_guid(
         registry, NMO_GUID_CK3DENTITY);

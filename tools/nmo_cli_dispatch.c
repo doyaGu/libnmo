@@ -57,6 +57,11 @@ static void file_stats_usage(FILE *out) {
     fprintf(out, "chunk statistics, and unique class counts.\n");
 }
 
+static void file_classes_usage(FILE *out) {
+    fprintf(out, "Usage: nmo file classes <file>\n\n");
+    fprintf(out, "Show class ID distribution with counts and type names.\n");
+}
+
 static void file_plugins_usage(FILE *out) {
     fprintf(out, "Usage: nmo file plugins <file>\n\n");
     fprintf(out, "Show plugin dependencies and their status.\n");
@@ -258,6 +263,7 @@ static const nmo_cli_action_t file_actions[] = {
     {"info", "i", "Show file summary", nmo_cmd_file_info, file_info_usage},
     {"header", "hdr", "Show file header fields", nmo_cmd_file_header, file_header_usage},
     {"stats", "st", "Show file statistics", nmo_cmd_file_stats, file_stats_usage},
+    {"classes", "cls", "Show class ID distribution", nmo_cmd_file_classes, file_classes_usage},
     {"plugins", "pl", "Show plugin dependencies", nmo_cmd_file_plugins, file_plugins_usage},
 };
 

@@ -37,6 +37,7 @@
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
+#include <stdint.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(3dentity, nmo_3dentity_state_t)
 
@@ -102,6 +103,38 @@ static nmo_status_t nmo_3dentity_read_raw_bytes(nmo_chunk_t *chunk, void *buffer
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_3dentity_identifier_payload_size_bytes(nmo_chunk_t *chunk, size_t *out_size) {
+    if (chunk == NULL || out_size == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to identifier payload size helper");
+    }
+
+    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
+    if (state == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Chunk parser state not initialized");
+    }
+
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const size_t data_count = chunk->data.count;
+    const size_t start_pos = state->current_pos;
+    size_t end_pos = data_count;
+
+    if (state->prev_identifier_pos + 1 < data_count) {
+        const uint32_t next_pos = data[state->prev_identifier_pos + 1];
+        if (next_pos != 0 && next_pos < data_count) {
+            end_pos = next_pos;
+        }
+    }
+
+    if (end_pos < start_pos) {
+        end_pos = start_pos;
+    }
+
+    *out_size = (end_pos - start_pos) * sizeof(uint32_t);
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CK3dEntity DESERIALIZATION
  * ============================================================================= */
@@ -148,11 +181,38 @@ nmo_status_t nmo_3dentity_deserialize(
         return result;
     }
 
+    out_state->entity_flags = 0;
+    out_state->moveable_flags = 0;
+    out_state->parent_id = 0;
+    out_state->place_id = 0;
+    out_state->z_order = 0;
+    out_state->current_mesh_id = 0;
+    out_state->mesh_count = 0;
+    out_state->mesh_ids = NULL;
+    out_state->animation_count = 0;
+    out_state->animation_ids = NULL;
+    out_state->skin = NULL;
+    out_state->has_mesh_chunk = 0;
+    out_state->has_animation_chunk = 0;
+    out_state->has_entityndata_chunk = 0;
+    out_state->has_parent_chunk = 0;
+    out_state->has_flags_chunk = 0;
+    out_state->has_matrix_chunk = 0;
+
+    for (int i = 0; i < 16; ++i) {
+        out_state->world_matrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+    }
+
     // Load object animations (identifier CK_STATESAVE_ANIMATION)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATION) == NMO_OK) {
+        out_state->has_animation_chunk = 1;
         size_t anim_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &anim_count);
         if (result == NMO_OK && anim_count > 0) {
+            if (anim_count > UINT32_MAX) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Animation count exceeds limits");
+            }
             out_state->animation_count = (uint32_t)anim_count;
             out_state->animation_ids = (nmo_object_id_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_object_id_t) * out_state->animation_count,
@@ -168,6 +228,7 @@ nmo_status_t nmo_3dentity_deserialize(
 
     // Load meshes (identifier CK_STATESAVE_MESHS)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHS) == NMO_OK) {
+        out_state->has_mesh_chunk = 1;
         result = nmo_chunk_read_object_id(chunk, &out_state->current_mesh_id);
         if (result != NMO_OK) {
             return result;
@@ -176,6 +237,10 @@ nmo_status_t nmo_3dentity_deserialize(
         size_t mesh_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &mesh_count);
         if (result == NMO_OK && mesh_count > 0) {
+            if (mesh_count > UINT32_MAX) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Mesh count exceeds limits");
+            }
             out_state->mesh_count = (uint32_t)mesh_count;
             out_state->mesh_ids = (nmo_object_id_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_object_id_t) * out_state->mesh_count,
@@ -191,6 +256,7 @@ nmo_status_t nmo_3dentity_deserialize(
 
     // Load new-format entity data (identifier CK_STATESAVE_3DENTITYNDATA)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYNDATA) == NMO_OK) {
+        out_state->has_entityndata_chunk = 1;
         result = nmo_chunk_read_dword(chunk, &out_state->entity_flags);
         if (result != NMO_OK) return result;
 
@@ -226,30 +292,39 @@ nmo_status_t nmo_3dentity_deserialize(
 
         if (out_state->entity_flags & CK_3DENTITY_PLACEVALID) {
             (void)nmo_chunk_read_object_id(chunk, &out_state->place_id);
+        } else {
+            out_state->place_id = 0;
         }
 
         if (out_state->entity_flags & CK_3DENTITY_PARENTVALID) {
             (void)nmo_chunk_read_object_id(chunk, &out_state->parent_id);
+        } else {
+            out_state->parent_id = 0;
         }
 
         if (out_state->entity_flags & CK_3DENTITY_ZORDERVALID) {
             (void)nmo_chunk_read_int(chunk, &out_state->z_order);
+        } else {
+            out_state->z_order = 0;
         }
     }
 
     // Legacy parent chunk
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARENT) == NMO_OK) {
+        out_state->has_parent_chunk = 1;
         (void)nmo_chunk_read_object_id(chunk, &out_state->parent_id);
     }
 
     // Legacy flags chunk
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYFLAGS) == NMO_OK) {
+        out_state->has_flags_chunk = 1;
         (void)nmo_chunk_read_dword(chunk, &out_state->entity_flags);
         (void)nmo_chunk_read_dword(chunk, &out_state->moveable_flags);
     }
 
     // Legacy matrix chunk
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYMATRIX) == NMO_OK) {
+        out_state->has_matrix_chunk = 1;
         (void)nmo_chunk_skip(chunk, 1);
         nmo_matrix_t mat;
         result = nmo_chunk_read_matrix(chunk, &mat);
@@ -282,6 +357,10 @@ nmo_status_t nmo_3dentity_deserialize(
         size_t bone_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &bone_count);
         if (result != NMO_OK) return result;
+        if (bone_count > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Bone count exceeds limits");
+        }
 
         out_state->skin->bone_count = (uint32_t)bone_count;
         if (bone_count > 0) {
@@ -309,6 +388,10 @@ nmo_status_t nmo_3dentity_deserialize(
         int32_t vertex_count = 0;
         result = nmo_chunk_read_int(chunk, &vertex_count);
         if (result != NMO_OK) return result;
+        if (vertex_count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid vertex count in skin data");
+        }
 
         if (vertex_count > 0) {
             out_state->skin->vertex_count = (uint32_t)vertex_count;
@@ -371,20 +454,32 @@ nmo_status_t nmo_3dentity_deserialize(
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYSKINDATANORMALS) == NMO_OK) {
-            size_t total_bytes = nmo_chunk_get_data_size(chunk);
-            size_t current_bytes = nmo_chunk_get_position(chunk) * 4u;
-            size_t remaining_bytes = (total_bytes > current_bytes) ? (total_bytes - current_bytes) : 0u;
-            uint32_t expected_bytes = out_state->skin->vertex_count * (uint32_t)sizeof(nmo_vector_t);
+            out_state->skin->normals_present = 1;
+            size_t payload_bytes = 0;
+            result = nmo_3dentity_identifier_payload_size_bytes(chunk, &payload_bytes);
+            if (result != NMO_OK) return result;
 
-            if (remaining_bytes >= expected_bytes + sizeof(uint32_t)) {
-                uint32_t normal_count = 0;
+            const uint32_t vertex_count_u = out_state->skin->vertex_count;
+            const size_t expected_bytes = (size_t)vertex_count_u * sizeof(nmo_vector_t);
+            uint32_t normal_count = vertex_count_u;
+
+            if (payload_bytes == expected_bytes + sizeof(uint32_t)) {
                 (void)nmo_chunk_read_dword(chunk, &normal_count);
-                (void)normal_count;
-                remaining_bytes -= sizeof(uint32_t);
+                out_state->skin->normals_have_count = 1;
+            } else if (payload_bytes == expected_bytes) {
+                out_state->skin->normals_have_count = 0;
+            } else {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Unexpected skin normals payload size");
             }
 
-            out_state->skin->normal_count = out_state->skin->vertex_count;
-            if (expected_bytes > 0) {
+            if (normal_count != vertex_count_u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Skin normal count mismatch");
+            }
+
+            out_state->skin->normal_count = normal_count;
+            if (expected_bytes > 0 && normal_count > 0) {
                 out_state->skin->normals = (nmo_vector_t *)nmo_arena_alloc(
                     arena, expected_bytes, _Alignof(nmo_vector_t));
                 if (!out_state->skin->normals) {
@@ -425,6 +520,7 @@ nmo_status_t nmo_3dentity_serialize(
     (void)type;
     const nmo_3dentity_state_t *in_state = (const nmo_3dentity_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dEntity serialize");
@@ -436,8 +532,23 @@ nmo_status_t nmo_3dentity_serialize(
         return result;
     }
 
-    // Save mesh list
-    if (in_state->current_mesh_id || (in_state->mesh_count > 0 && in_state->mesh_ids)) {
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    if (!is_file) {
+        const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
+        if ((save_flags & CK_STATESAVE_3DENTITYONLY) == 0) {
+            return NMO_OK;
+        }
+    }
+
+    const bool want_mesh_chunk = in_state->has_mesh_chunk ||
+        in_state->current_mesh_id ||
+        (in_state->mesh_count > 0 && in_state->mesh_ids);
+    if (want_mesh_chunk) {
+        if (in_state->mesh_count > 0 && in_state->mesh_ids == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Missing mesh IDs for CK3dEntity");
+        }
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHS);
         if (result != NMO_OK) return result;
 
@@ -452,8 +563,13 @@ nmo_status_t nmo_3dentity_serialize(
         }
     }
 
-    // Save animations list
-    if (in_state->animation_count > 0 && in_state->animation_ids) {
+    const bool want_anim_chunk = in_state->has_animation_chunk ||
+        (in_state->animation_count > 0 && in_state->animation_ids);
+    if (want_anim_chunk) {
+        if (in_state->animation_count > 0 && in_state->animation_ids == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Missing animation IDs for CK3dEntity");
+        }
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATION);
         if (result != NMO_OK) return result;
 
@@ -465,64 +581,91 @@ nmo_status_t nmo_3dentity_serialize(
         }
     }
 
-    // Save main entity data
-    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYNDATA);
-    if (result != NMO_OK) return result;
-
-    uint32_t flags = in_state->entity_flags;
-    if (in_state->place_id) {
-        flags |= CK_3DENTITY_PLACEVALID;
-    } else {
-        flags &= ~CK_3DENTITY_PLACEVALID;
-    }
-    if (in_state->parent_id) {
-        flags |= CK_3DENTITY_PARENTVALID;
-    } else {
-        flags &= ~CK_3DENTITY_PARENTVALID;
-    }
-    if (in_state->z_order != 0) {
-        flags |= CK_3DENTITY_ZORDERVALID;
-    } else {
-        flags &= ~CK_3DENTITY_ZORDERVALID;
-    }
-
-    result = nmo_chunk_write_dword(out_chunk, flags);
-    if (result != NMO_OK) return result;
-    result = nmo_chunk_write_dword(out_chunk, in_state->moveable_flags);
-    if (result != NMO_OK) return result;
-
-    nmo_vector_t row0 = { in_state->world_matrix[0], in_state->world_matrix[1], in_state->world_matrix[2] };
-    nmo_vector_t row1 = { in_state->world_matrix[4], in_state->world_matrix[5], in_state->world_matrix[6] };
-    nmo_vector_t row2 = { in_state->world_matrix[8], in_state->world_matrix[9], in_state->world_matrix[10] };
-    nmo_vector_t row3 = { in_state->world_matrix[12], in_state->world_matrix[13], in_state->world_matrix[14] };
-
-    result = nmo_chunk_write_vector3(out_chunk, &row0);
-    if (result != NMO_OK) return result;
-    result = nmo_chunk_write_vector3(out_chunk, &row1);
-    if (result != NMO_OK) return result;
-    result = nmo_chunk_write_vector3(out_chunk, &row2);
-    if (result != NMO_OK) return result;
-    result = nmo_chunk_write_vector3(out_chunk, &row3);
-    if (result != NMO_OK) return result;
-
-    if (in_state->place_id) {
-        result = nmo_chunk_write_object_id(out_chunk, in_state->place_id);
+    const bool has_legacy_chunks = in_state->has_parent_chunk ||
+        in_state->has_flags_chunk || in_state->has_matrix_chunk;
+    const bool write_entityndata = in_state->has_entityndata_chunk || !has_legacy_chunks;
+    if (write_entityndata) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYNDATA);
         if (result != NMO_OK) return result;
+
+        uint32_t flags = in_state->entity_flags;
+
+        result = nmo_chunk_write_dword(out_chunk, flags);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_dword(out_chunk, in_state->moveable_flags);
+        if (result != NMO_OK) return result;
+
+        nmo_vector_t row0 = { in_state->world_matrix[0], in_state->world_matrix[1], in_state->world_matrix[2] };
+        nmo_vector_t row1 = { in_state->world_matrix[4], in_state->world_matrix[5], in_state->world_matrix[6] };
+        nmo_vector_t row2 = { in_state->world_matrix[8], in_state->world_matrix[9], in_state->world_matrix[10] };
+        nmo_vector_t row3 = { in_state->world_matrix[12], in_state->world_matrix[13], in_state->world_matrix[14] };
+
+        result = nmo_chunk_write_vector3(out_chunk, &row0);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_vector3(out_chunk, &row1);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_vector3(out_chunk, &row2);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_vector3(out_chunk, &row3);
+        if (result != NMO_OK) return result;
+
+        if (flags & CK_3DENTITY_PLACEVALID) {
+            result = nmo_chunk_write_object_id(out_chunk, in_state->place_id);
+            if (result != NMO_OK) return result;
+        }
+        if (flags & CK_3DENTITY_PARENTVALID) {
+            result = nmo_chunk_write_object_id(out_chunk, in_state->parent_id);
+            if (result != NMO_OK) return result;
+        }
+        if (flags & CK_3DENTITY_ZORDERVALID) {
+            result = nmo_chunk_write_int(out_chunk, in_state->z_order);
+            if (result != NMO_OK) return result;
+        }
     }
-    if (in_state->parent_id) {
+
+    if (in_state->has_parent_chunk) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARENT);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, in_state->parent_id);
         if (result != NMO_OK) return result;
     }
-    if (in_state->z_order != 0) {
-        result = nmo_chunk_write_int(out_chunk, in_state->z_order);
+
+    if (in_state->has_flags_chunk) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYFLAGS);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_dword(out_chunk, in_state->entity_flags);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_dword(out_chunk, in_state->moveable_flags);
+        if (result != NMO_OK) return result;
+    }
+
+    if (in_state->has_matrix_chunk) {
+        nmo_matrix_t mat;
+        for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) {
+                mat.m[r][c] = in_state->world_matrix[r * 4 + c];
+            }
+        }
+
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYMATRIX);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_dword(out_chunk, 0);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_matrix(out_chunk, &mat);
         if (result != NMO_OK) return result;
     }
 
     // Save skin data
     if (in_state->skin) {
         const nmo_3dentity_skin_t *skin = in_state->skin;
+        const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYSKINDATA);
         if (result != NMO_OK) return result;
+
+        if (data_version < 6) {
+            result = nmo_chunk_write_dword(out_chunk, 0);
+            if (result != NMO_OK) return result;
+        }
 
         result = nmo_chunk_write_matrix(out_chunk, &skin->object_init_matrix);
         if (result != NMO_OK) return result;
@@ -537,6 +680,10 @@ nmo_status_t nmo_3dentity_serialize(
         for (uint32_t i = 0; i < skin->bone_count; ++i) {
             result = nmo_chunk_write_dword(out_chunk, skin->bones[i].bone_flags);
             if (result != NMO_OK) return result;
+            if (data_version < 6) {
+                result = nmo_chunk_write_dword(out_chunk, 0);
+                if (result != NMO_OK) return result;
+            }
             result = nmo_chunk_write_matrix(out_chunk, &skin->bones[i].inverse_bind_matrix);
             if (result != NMO_OK) return result;
         }
@@ -549,14 +696,35 @@ nmo_status_t nmo_3dentity_serialize(
             result = nmo_chunk_write_int(out_chunk, (int32_t)vertex->bone_count);
             if (result != NMO_OK) return result;
 
+            if (data_version < 6) {
+                result = nmo_chunk_write_dword(out_chunk, 0);
+                if (result != NMO_OK) return result;
+            }
+
             result = nmo_chunk_write_vector3(out_chunk, &vertex->initial_pos);
             if (result != NMO_OK) return result;
+
+            if (data_version < 6) {
+                result = nmo_chunk_write_dword(out_chunk, 0);
+                if (result != NMO_OK) return result;
+            }
 
             if (vertex->bone_count > 0 && vertex->bone_indices && vertex->bone_weights) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk,
                                                         vertex->bone_indices,
                                                         sizeof(uint32_t) * vertex->bone_count);
                 if (result != NMO_OK) return result;
+            } else if (vertex->bone_count > 0) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Missing skin bone data for vertex");
+            }
+
+            if (data_version < 6) {
+                result = nmo_chunk_write_dword(out_chunk, 0);
+                if (result != NMO_OK) return result;
+            }
+
+            if (vertex->bone_count > 0) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk,
                                                         vertex->bone_weights,
                                                         sizeof(float) * vertex->bone_count);
@@ -564,14 +732,29 @@ nmo_status_t nmo_3dentity_serialize(
             }
         }
 
-        if (skin->normal_count > 0 && skin->normals) {
+        const bool want_normals_chunk = skin->normals_present ||
+            (skin->normal_count > 0 && skin->normals);
+        if (want_normals_chunk) {
+            if (skin->normal_count != skin->vertex_count) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Skin normal count mismatch");
+            }
+            if (skin->normal_count > 0 && skin->normals == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "Missing skin normals data");
+            }
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYSKINDATANORMALS);
             if (result != NMO_OK) return result;
 
-            result = nmo_chunk_write_int(out_chunk, (int32_t)skin->normal_count);
-            if (result != NMO_OK) return result;
-            for (uint32_t i = 0; i < skin->normal_count; ++i) {
-                result = nmo_chunk_write_vector3(out_chunk, &skin->normals[i]);
+            if (skin->normals_have_count) {
+                result = nmo_chunk_write_int(out_chunk, (int32_t)skin->normal_count);
+                if (result != NMO_OK) return result;
+            }
+
+            if (skin->normal_count > 0) {
+                result = nmo_chunk_write_buffer_no_size(out_chunk,
+                                                        skin->normals,
+                                                        (size_t)skin->normal_count * sizeof(nmo_vector_t));
                 if (result != NMO_OK) return result;
             }
         }

@@ -28,6 +28,11 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
 int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 /**
+ * @brief nmo file classes - Show class ID distribution
+ */
+int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
  * @brief nmo file plugins - Show plugin dependencies
  */
 int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *global);

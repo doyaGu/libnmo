@@ -13,6 +13,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
+#include "session/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -93,12 +94,18 @@ nmo_status_t nmo_synchro_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
-        nmo_chunk_read_int(chunk, &out_state->max_waiters);
+        result = nmo_chunk_read_int(chunk, &out_state->max_waiters);
+        if (result != NMO_OK) {
+            return result;
+        }
 
         size_t count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &count);
-        if (result == NMO_OK && count > 0) {
-            nmo_array_clear(&out_state->arrived_ids);
+        if (result != NMO_OK) {
+            return result;
+        }
+        nmo_array_clear(&out_state->arrived_ids);
+        if (count > 0) {
             result = nmo_array_reserve(&out_state->arrived_ids, count);
             if (result != NMO_OK) return result;
 
@@ -107,14 +114,20 @@ nmo_status_t nmo_synchro_deserialize(
             if (result != NMO_OK) return result;
 
             for (size_t i = 0; i < count; ++i) {
-                nmo_chunk_read_object_sequence_item(chunk, &arrived_ids[i]);
+                result = nmo_chunk_read_object_sequence_item(chunk, &arrived_ids[i]);
+                if (result != NMO_OK) {
+                    return result;
+                }
             }
         }
 
         count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &count);
-        if (result == NMO_OK && count > 0) {
-            nmo_array_clear(&out_state->passed_ids);
+        if (result != NMO_OK) {
+            return result;
+        }
+        nmo_array_clear(&out_state->passed_ids);
+        if (count > 0) {
             result = nmo_array_reserve(&out_state->passed_ids, count);
             if (result != NMO_OK) return result;
 
@@ -123,7 +136,10 @@ nmo_status_t nmo_synchro_deserialize(
             if (result != NMO_OK) return result;
 
             for (size_t i = 0; i < count; ++i) {
-                nmo_chunk_read_object_sequence_item(chunk, &passed_ids[i]);
+                result = nmo_chunk_read_object_sequence_item(chunk, &passed_ids[i]);
+                if (result != NMO_OK) {
+                    return result;
+                }
             }
         }
     }
@@ -135,11 +151,12 @@ nmo_status_t nmo_synchro_deserialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     synchro,
     nmo_synchro_state_t,
     nmo_synchro_serialize,
     nmo_synchro_deserialize,
+    nmo_synchro_finish_loading,
     nmo_synchro_fields,
     CKPGUID_SYNCHRO,
     "CKSynchroObject",
@@ -195,17 +212,86 @@ nmo_status_t nmo_synchro_serialize(
 
     result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->arrived_ids.count);
     if (result != NMO_OK) return result;
+    if (in_state->arrived_ids.count > 0 && !in_state->arrived_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
+    }
     const nmo_object_id_t *arrived_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->arrived_ids);
     for (uint32_t i = 0; i < in_state->arrived_ids.count; ++i) {
-        nmo_chunk_write_object_sequence_item(out_chunk, arrived_ids[i]);
+        result = nmo_chunk_write_object_sequence_item(out_chunk, arrived_ids[i]);
+        if (result != NMO_OK) return result;
     }
 
     result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->passed_ids.count);
     if (result != NMO_OK) return result;
+    if (in_state->passed_ids.count > 0 && !in_state->passed_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: passed_ids missing");
+    }
     const nmo_object_id_t *passed_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->passed_ids);
     for (uint32_t i = 0; i < in_state->passed_ids.count; ++i) {
-        nmo_chunk_write_object_sequence_item(out_chunk, passed_ids[i]);
+        result = nmo_chunk_write_object_sequence_item(out_chunk, passed_ids[i]);
+        if (result != NMO_OK) return result;
     }
+
+    NMO_RETURN_OK();
+}
+
+/* =============================================================================
+ * CKSynchroObject FINISH LOADING (PostLoad equivalent)
+ * ============================================================================= */
+
+static uint32_t nmo_synchro_prune_ids(
+    nmo_array_t *array,
+    nmo_object_repository_t *repo)
+{
+    if (!array || array->count == 0) {
+        return 0;
+    }
+    if (!array->data) {
+        return 0;
+    }
+
+    nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, array);
+    uint32_t kept = 0;
+    for (uint32_t i = 0; i < array->count; ++i) {
+        nmo_object_id_t id = ids[i];
+        if (id == 0) {
+            continue;
+        }
+        if (repo) {
+            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
+            if (obj == NULL) {
+                continue;
+            }
+        }
+        ids[kept++] = id;
+    }
+    array->count = kept;
+    return kept;
+}
+
+nmo_status_t nmo_synchro_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_finish_loading");
+    }
+
+    nmo_synchro_state_t *state = (nmo_synchro_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (state->arrived_ids.count > 0 && !state->arrived_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
+    }
+    if (state->passed_ids.count > 0 && !state->passed_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: passed_ids missing");
+    }
+
+    (void)nmo_synchro_prune_ids(&state->arrived_ids, repo);
+    (void)nmo_synchro_prune_ids(&state->passed_ids, repo);
 
     NMO_RETURN_OK();
 }
@@ -231,7 +317,10 @@ nmo_status_t nmo_state_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
-        nmo_chunk_read_int(chunk, &out_state->event_flag);
+        result = nmo_chunk_read_int(chunk, &out_state->event_flag);
+        if (result != NMO_OK) {
+            return result;
+        }
     }
 
     NMO_RETURN_OK();
@@ -280,7 +369,10 @@ nmo_status_t nmo_criticalsection_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
-        nmo_chunk_read_object_id(chunk, &out_state->object_in_section_id);
+        result = nmo_chunk_read_object_id(chunk, &out_state->object_in_section_id);
+        if (result != NMO_OK) {
+            return result;
+        }
     }
 
     NMO_RETURN_OK();
