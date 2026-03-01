@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
@@ -219,15 +220,76 @@ static nmo_status_t nmo_grid_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_grid_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_grid_finish_loading");
+    }
+
+    nmo_grid_state_t *state = (nmo_grid_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    nmo_status_t result = nmo_3dentity_finish_loading(&state->base, arena, repository);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (state->layer_ids.count > 0 && state->layer_ids.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Grid layer_ids missing");
+    }
+    if (state->layer_chunks.count > 0 && state->layer_chunks.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Grid layer_chunks missing");
+    }
+
+    if (state->layer_ids.count > 0) {
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->layer_ids);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->layer_ids.count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->layer_ids.count = kept;
+
+        if (state->layer_chunks.count > kept) {
+            state->layer_chunks.count = kept;
+        }
+    } else {
+        state->layer_chunks.count = 0;
+    }
+
+    return nmo_grid_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     grid,
     nmo_grid_state_t,
     nmo_grid_serialize,
     nmo_grid_deserialize,
+    nmo_grid_finish_loading,
     nmo_grid_fields,
     CKPGUID_GRID,
     "CKGrid",

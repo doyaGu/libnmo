@@ -9,7 +9,7 @@
  */
 
 #include "session/nmo_reference_resolver.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_allocator.h"

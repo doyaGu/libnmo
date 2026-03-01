@@ -12,6 +12,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -61,11 +62,40 @@ static nmo_status_t nmo_targetcamera_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+nmo_status_t nmo_targetcamera_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_targetcamera_finish_loading");
+    }
+
+    nmo_targetcamera_state_t *state = (nmo_targetcamera_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_camera_finish_loading(&state->base, arena, repository));
+
+    if (state->target_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->target_id) == NULL) {
+        state->target_id = 0;
+    }
+
+    state->has_target = (state->target_id != 0);
+    if (!state->has_target) {
+        state->target_id = 0;
+    }
+
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     targetcamera,
     nmo_targetcamera_state_t,
     nmo_targetcamera_serialize,
     nmo_targetcamera_deserialize,
+    nmo_targetcamera_finish_loading,
     nmo_targetcamera_fields,
     CKPGUID_TARGETCAMERA,
     "CKTargetCamera",

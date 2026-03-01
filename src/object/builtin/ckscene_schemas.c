@@ -23,6 +23,7 @@
 #include "object/nmo_object_enum_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "object/nmo_object_repository.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "type/nmo_reflection.h"
@@ -450,15 +451,69 @@ static nmo_status_t nmo_scene_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_scene_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_scene_finish_loading");
+    }
+
+    nmo_scene_state_t *state = (nmo_scene_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (state->object_descs.count > 0 && state->object_descs.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Scene object_descs missing");
+    }
+
+    if (repo) {
+        if (state->level_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->level_id) == NULL) {
+            state->level_id = 0;
+        }
+        if (state->background_texture_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->background_texture_id) == NULL) {
+            state->background_texture_id = 0;
+        }
+        if (state->starting_camera_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->starting_camera_id) == NULL) {
+            state->starting_camera_id = 0;
+        }
+    }
+
+    if (state->object_descs.count > 0) {
+        nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t, &state->object_descs);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->object_descs.count; ++i) {
+            nmo_scene_object_desc_t desc = descs[i];
+            if (desc.object_id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, desc.object_id) == NULL) {
+                continue;
+            }
+            descs[kept++] = desc;
+        }
+        state->object_descs.count = kept;
+    }
+
+    return nmo_scene_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     scene,
     nmo_scene_state_t,
     nmo_scene_serialize,
     nmo_scene_deserialize,
+    nmo_scene_finish_loading,
     nmo_scene_fields,
     CKPGUID_SCENE,
     "CKScene",

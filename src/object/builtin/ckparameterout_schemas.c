@@ -13,12 +13,13 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_serialize_context.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
@@ -262,15 +263,76 @@ static nmo_status_t nmo_parameterout_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_parameterout_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameterout_finish_loading");
+    }
+
+    nmo_parameterout_state_t *state = (nmo_parameterout_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base.base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_parameter_finish_loading(&state->base, arena, repository));
+
+    if (state->owner_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
+        state->owner_id = 0;
+    }
+
+    if (state->destination_count > 0 && state->destination_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "ParameterOut destination_ids missing");
+    }
+
+    if (state->destination_count > 0 && state->destination_ids) {
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->destination_count; ++i) {
+            nmo_object_id_t id = state->destination_ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (state->destination_ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            state->destination_ids[kept++] = id;
+        }
+        state->destination_count = kept;
+        if (state->destination_count == 0) {
+            state->destination_ids = NULL;
+        }
+    } else {
+        state->destination_count = 0;
+        state->destination_ids = NULL;
+    }
+
+    return nmo_parameterout_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     parameterout,
     nmo_parameterout_state_t,
     nmo_parameterout_serialize,
     nmo_parameterout_deserialize,
+    nmo_parameterout_finish_loading,
     nmo_parameterout_fields,
     CKPGUID_PARAMETEROUT,
     "CKParameterOut",

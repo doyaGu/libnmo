@@ -10,7 +10,8 @@
  * - reference/src/CKFile.cpp line 800-900: Index usage
  */
 
-#include "session/nmo_object_index.h"
+#include "object/nmo_object_index.h"
+#include "object/nmo_object_repository.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_allocator.h"

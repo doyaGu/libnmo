@@ -22,6 +22,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
@@ -445,15 +446,85 @@ static nmo_status_t nmo_dataarray_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_dataarray_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_dataarray_finish_loading");
+    }
+
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (state->column_count > 0 && state->column_formats == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray column_formats missing");
+    }
+    if (state->row_count > 0 && state->rows == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray rows missing");
+    }
+
+    if (state->key_column < -1) {
+        state->key_column = -1;
+    }
+    if (state->column_count == 0) {
+        state->key_column = -1;
+        state->column_index = 0;
+    } else {
+        if ((uint32_t)state->key_column >= state->column_count) {
+            state->key_column = -1;
+        }
+        if (state->column_index >= state->column_count) {
+            state->column_index = 0;
+        }
+    }
+
+    for (uint32_t r = 0; r < state->row_count; ++r) {
+        nmo_dataarray_row_t *row = &state->rows[r];
+        if (state->column_count > 0 && row->cells == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray row cells missing");
+        }
+        row->column_count = state->column_count;
+
+        if (!repo || row->cells == NULL || state->column_formats == NULL) {
+            continue;
+        }
+
+        for (uint32_t c = 0; c < state->column_count; ++c) {
+            const nmo_dataarray_column_format_t *fmt = &state->column_formats[c];
+            nmo_dataarray_cell_t *cell = &row->cells[c];
+
+            if (fmt->type == CKARRAYTYPE_OBJECT) {
+                if (cell->object_id != 0 &&
+                    nmo_object_repository_find_by_id(repo, cell->object_id) == NULL) {
+                    cell->object_id = 0;
+                }
+            } else if (fmt->type == CKARRAYTYPE_PARAMETER) {
+                if (cell->parameter_chunk == NULL && cell->parameter_id != 0 &&
+                    nmo_object_repository_find_by_id(repo, cell->parameter_id) == NULL) {
+                    cell->parameter_id = 0;
+                }
+            }
+        }
+    }
+
+    return nmo_dataarray_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     dataarray,
     nmo_dataarray_state_t,
     nmo_dataarray_serialize,
     nmo_dataarray_deserialize,
+    nmo_dataarray_finish_loading,
     nmo_dataarray_fields,
     CKPGUID_DATAARRAY,
     "CKDataArray",

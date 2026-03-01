@@ -28,6 +28,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -558,15 +559,138 @@ static nmo_status_t nmo_beobject_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_beobject_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_beobject_finish_loading");
+    }
+
+    nmo_beobject_state_t *state = (nmo_beobject_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+
+    if (state->script_ids.count > 0 && state->script_ids.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "BeObject script_ids missing");
+    }
+
+    if (state->script_ids.count > 0) {
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->script_ids);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->script_ids.count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->script_ids.count = kept;
+    }
+
+    if (state->attribute_parameter_ids.count > 0 && state->attribute_parameter_ids.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "BeObject attribute_parameter_ids missing");
+    }
+    if (state->attribute_types.count > 0 && state->attribute_types.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "BeObject attribute_types missing");
+    }
+    if (state->attribute_chunks.count > 0 && state->attribute_chunks.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "BeObject attribute_chunks missing");
+    }
+
+    uint32_t attr_count = (uint32_t)state->attribute_parameter_ids.count;
+    if (state->attribute_types.count < attr_count) {
+        attr_count = (uint32_t)state->attribute_types.count;
+    }
+
+    if (attr_count == 0) {
+        state->attribute_parameter_ids.count = 0;
+        state->attribute_types.count = 0;
+        state->attribute_chunks.count = 0;
+    } else {
+        if (state->attribute_types.count != attr_count) {
+            state->attribute_types.count = attr_count;
+        }
+        if (state->attribute_parameter_ids.count != attr_count) {
+            state->attribute_parameter_ids.count = attr_count;
+        }
+        if (state->attribute_chunks.count > attr_count) {
+            state->attribute_chunks.count = attr_count;
+        }
+
+        nmo_object_id_t *attr_ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->attribute_parameter_ids);
+        uint32_t *attr_types = NMO_ARRAY_DATA(uint32_t, &state->attribute_types);
+        nmo_chunk_t **attr_chunks = NULL;
+        if (state->attribute_chunks.count > 0 && state->attribute_chunks.data) {
+            attr_chunks = NMO_ARRAY_DATA(nmo_chunk_t *, &state->attribute_chunks);
+        }
+
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < attr_count; ++i) {
+            nmo_object_id_t id = attr_ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            attr_ids[kept] = id;
+            attr_types[kept] = attr_types[i];
+            if (attr_chunks && i < state->attribute_chunks.count) {
+                attr_chunks[kept] = attr_chunks[i];
+            }
+            kept++;
+        }
+
+        state->attribute_parameter_ids.count = kept;
+        state->attribute_types.count = kept;
+        if (state->attribute_chunks.count > kept) {
+            state->attribute_chunks.count = kept;
+        }
+    }
+
+    if (state->attribute_parameter_ids.count > 0) {
+        nmo_array_clear(&state->legacy_attributes_raw);
+    }
+
+    if (!state->has_single_activity) {
+        state->single_activity_flags = 0;
+    } else {
+        state->has_single_activity = 1;
+    }
+
+    return nmo_beobject_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     beobject,
     nmo_beobject_state_t,
     nmo_beobject_serialize,
     nmo_beobject_deserialize,
+    nmo_beobject_finish_loading,
     nmo_beobject_fields,
     CKPGUID_BEOBJECT,
     "CKBeObject",

@@ -20,6 +20,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -146,16 +147,38 @@ nmo_status_t nmo_behaviorio_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     behaviorio,
     nmo_behaviorio_state_t,
     nmo_behaviorio_serialize,
     nmo_behaviorio_deserialize,
+    nmo_behaviorio_finish_loading,
     nmo_behaviorio_fields,
     CKPGUID_BEHAVIORIO,
     "CKBehaviorIO",
     NMO_CID_BEHAVIORIO,
     CKPGUID_OBJECT
 )
+
+nmo_status_t nmo_behaviorio_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behaviorio_finish_loading");
+    }
+
+    nmo_behaviorio_state_t *state = (nmo_behaviorio_state_t *)instance;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+
+    if (!state->has_flags) {
+        state->old_flags = 0;
+    }
+
+    return NMO_OK;
+}
 
 

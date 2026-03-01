@@ -113,6 +113,11 @@ NMO_API nmo_status_t nmo_animation_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_animation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
 NMO_API nmo_status_t nmo_keyedanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
@@ -125,6 +130,11 @@ NMO_API nmo_status_t nmo_keyedanimation_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_keyedanimation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
 NMO_API nmo_status_t nmo_objectanimation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
@@ -136,6 +146,11 @@ NMO_API nmo_status_t nmo_objectanimation_serialize(
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_API nmo_status_t nmo_objectanimation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_animation_vtable, nmo_register_animation_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_keyedanimation_vtable, nmo_register_keyedanimation_type)

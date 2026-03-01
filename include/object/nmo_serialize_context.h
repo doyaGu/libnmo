@@ -106,12 +106,14 @@ typedef nmo_status_t (*nmo_object_deserialize_fn)(
  * Equivalent to CKObject::PostLoad() in Virtools SDK.
  * 
  * @param instance Pointer to object state structure
- * @param context Serialization context with repository for reference resolution
+ * @param arena Arena for allocations (may be NULL)
+ * @param repository Object repository for reference resolution (may be NULL)
  * @return nmo_ok() on success, error on failure
  */
 typedef nmo_status_t (*nmo_object_finish_loading_fn)(
     void *instance,
-    void *context);
+    nmo_arena_t *arena,
+    void *repository);
 
 /* ============================================================================
  * Context Helper Functions

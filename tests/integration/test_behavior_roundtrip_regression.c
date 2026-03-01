@@ -7,7 +7,7 @@
 #include "nmo.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_comparison.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +19,62 @@ static int file_exists(const char *path) {
     }
     fclose(f);
     return 1;
+}
+
+static int collect_finish_loading_stats(const nmo_session_t *session,
+                                        const char *path,
+                                        nmo_finish_loading_stats_t *out_stats) {
+    if (session == NULL || out_stats == NULL) {
+        return 1;
+    }
+
+    memset(out_stats, 0, sizeof(*out_stats));
+    int stats_result = nmo_session_get_finish_loading_stats(session, out_stats);
+    if (stats_result != NMO_OK) {
+        printf("FAILED: finish_loading stats unavailable (%s, error %d)\n",
+               path, stats_result);
+        return 1;
+    }
+
+    return 0;
+}
+
+static int validate_finish_loading_no_regression(
+    const nmo_finish_loading_stats_t *baseline,
+    const nmo_finish_loading_stats_t *current,
+    const char *baseline_path,
+    const char *current_path) {
+    if (baseline == NULL || current == NULL) {
+        return 1;
+    }
+
+    int failed = 0;
+    if (current->references.unresolved > baseline->references.unresolved) {
+        failed = 1;
+    }
+    if (current->object_postload.errors > baseline->object_postload.errors) {
+        failed = 1;
+    }
+    if (current->manager_errors > baseline->manager_errors) {
+        failed = 1;
+    }
+
+    if (failed) {
+        printf("FAILED: finish_loading regression after round-trip\n");
+        printf("  baseline=%s\n", baseline_path);
+        printf("    unresolved_refs=%u object_errors=%u manager_errors=%u\n",
+               baseline->references.unresolved,
+               baseline->object_postload.errors,
+               baseline->manager_errors);
+        printf("  current=%s\n", current_path);
+        printf("    unresolved_refs=%u object_errors=%u manager_errors=%u\n",
+               current->references.unresolved,
+               current->object_postload.errors,
+               current->manager_errors);
+        return 1;
+    }
+
+    return 0;
 }
 
 static uint32_t find_object_class_id(const nmo_session_t *session, uint32_t object_id) {
@@ -113,6 +169,11 @@ static int run_behavior_roundtrip(const char *input_file) {
         failed = 1;
         goto cleanup;
     }
+    nmo_finish_loading_stats_t baseline_stats;
+    if (collect_finish_loading_stats(load1, input_file, &baseline_stats) != 0) {
+        failed = 1;
+        goto cleanup;
+    }
 
     nmo_save_options_t save_opts = nmo_save_options_default();
     save_opts.flags |= NMO_SAVE_REQUIRE_SCHEMA;
@@ -134,14 +195,23 @@ static int run_behavior_roundtrip(const char *input_file) {
         failed = 1;
         goto cleanup;
     }
+    nmo_finish_loading_stats_t roundtrip_stats;
+    if (collect_finish_loading_stats(load2, temp_file, &roundtrip_stats) != 0) {
+        failed = 1;
+        goto cleanup;
+    }
+    if (validate_finish_loading_no_regression(
+            &baseline_stats, &roundtrip_stats, input_file, temp_file) != 0) {
+        failed = 1;
+        goto cleanup;
+    }
 
     nmo_comparison_result_t cmp;
     nmo_comparison_result_init(&cmp);
     int compare_err = nmo_session_compare(
         load1,
         load2,
-        NMO_COMPARE_FILE_INFO | NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS |
-            NMO_COMPARE_CHUNKS | NMO_COMPARE_IGNORE_ORDER | NMO_COMPARE_VERBOSE,
+        NMO_COMPARE_STRICT | NMO_COMPARE_VERBOSE,
         &cmp);
 
     if (compare_err != NMO_OK) {

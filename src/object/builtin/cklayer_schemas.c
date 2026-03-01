@@ -14,6 +14,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 static void nmo_layer_set_defaults(nmo_layer_state_t *state) {
@@ -247,15 +248,58 @@ static nmo_status_t nmo_layer_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_layer_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_layer_finish_loading");
+    }
+
+    nmo_layer_state_t *state = (nmo_layer_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (repo && state->grid_id != 0 &&
+        nmo_object_repository_find_by_id(repo, state->grid_id) == NULL) {
+        state->grid_id = 0;
+    }
+
+    if (!state->has_layer_data) {
+        state->has_type = 0;
+        state->has_version = 0;
+        state->has_color = 0;
+        state->has_param_guid = 0;
+        state->has_flags = 0;
+        state->has_square_data = 0;
+        state->square_data = NULL;
+        state->square_data_size = 0;
+    }
+
+    if (!state->has_square_data) {
+        state->square_data = NULL;
+        state->square_data_size = 0;
+    } else if (state->square_data == NULL) {
+        state->square_data_size = 0;
+        state->has_square_data = 0;
+    }
+
+    return nmo_layer_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     layer,
     nmo_layer_state_t,
     nmo_layer_serialize,
     nmo_layer_deserialize,
+    nmo_layer_finish_loading,
     nmo_layer_fields,
     CKPGUID_LAYER,
     "CKLayer",

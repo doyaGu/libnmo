@@ -18,7 +18,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "app/nmo_session.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>

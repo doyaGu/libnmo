@@ -13,12 +13,14 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_serialize_context.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_array.h"
 #include "format/nmo_object.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
@@ -181,15 +183,53 @@ nmo_status_t nmo_parameterlocal_serialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_parameterlocal_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameterlocal_finish_loading");
+    }
+
+    nmo_parameterlocal_state_t *state = (nmo_parameterlocal_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base.base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_parameter_finish_loading(&state->base, arena, repository));
+
+    if (state->owner_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
+        state->owner_id = 0;
+    }
+
+    state->is_myself = state->is_myself ? 1 : 0;
+    state->is_setting = state->is_setting ? 1 : 0;
+
+    if (state->is_myself) {
+        state->base.mode = CKPARAM_MODE_NONE;
+        state->base.has_state = false;
+        state->base.object_id = 0;
+        state->base.manager_guid = NMO_GUID_NULL;
+        state->base.manager_value = 0;
+        state->base.subchunk = NULL;
+        nmo_array_clear(&state->base.buffer_data);
+    }
+
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     parameterlocal,
     nmo_parameterlocal_state_t,
     nmo_parameterlocal_serialize,
     nmo_parameterlocal_deserialize,
+    nmo_parameterlocal_finish_loading,
     nmo_parameterlocal_fields,
     CKPGUID_PARAMETERLOCAL,
     "CKParameterLocal",

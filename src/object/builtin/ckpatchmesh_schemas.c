@@ -12,6 +12,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_object_struct_guids.h"
@@ -628,15 +629,85 @@ static nmo_status_t nmo_patchmesh_validate(
     NMO_RETURN_OK();
 }
 
+/* =============================================================================
+ * FINISH LOADING
+ * ============================================================================= */
+
+nmo_status_t nmo_patchmesh_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance || !arena) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_patchmesh_finish_loading");
+    }
+
+    nmo_patchmesh_state_t *state = (nmo_patchmesh_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_mesh_finish_loading(&state->base, arena, repository));
+
+    if (state->patch_count > 0 && state->patch_material_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing patch material IDs");
+    }
+    if (state->channel_count > 0 && state->channels == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing patch channels");
+    }
+    if (state->legacy_material_count > 0 && state->legacy_material_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing legacy material IDs");
+    }
+
+    if (repo) {
+        for (uint32_t i = 0; i < state->patch_count; ++i) {
+            nmo_object_id_t id = state->patch_material_ids[i];
+            if (id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            if (nmo_object_repository_find_by_id(repo, id) == NULL) {
+                state->patch_material_ids[i] = NMO_OBJECT_ID_NONE;
+            }
+        }
+
+        for (uint32_t i = 0; i < state->channel_count; ++i) {
+            nmo_patchmesh_channel_t *channel = &state->channels[i];
+            if (channel->material_id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            if (nmo_object_repository_find_by_id(repo, channel->material_id) == NULL) {
+                channel->material_id = NMO_OBJECT_ID_NONE;
+            }
+        }
+
+        if (state->legacy_default_material_id != NMO_OBJECT_ID_NONE) {
+            if (nmo_object_repository_find_by_id(repo, state->legacy_default_material_id) == NULL) {
+                state->legacy_default_material_id = NMO_OBJECT_ID_NONE;
+            }
+        }
+
+        for (uint32_t i = 0; i < state->legacy_material_count; ++i) {
+            nmo_object_id_t id = state->legacy_material_ids[i];
+            if (id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            if (nmo_object_repository_find_by_id(repo, id) == NULL) {
+                state->legacy_material_ids[i] = NMO_OBJECT_ID_NONE;
+            }
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     patchmesh,
     nmo_patchmesh_state_t,
     nmo_patchmesh_serialize,
     nmo_patchmesh_deserialize,
+    nmo_patchmesh_finish_loading,
     nmo_patchmesh_fields,
     CKPGUID_PATCHMESH,
     "CKPatchMesh",

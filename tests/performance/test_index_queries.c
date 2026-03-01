@@ -1,6 +1,6 @@
 #include "test_framework.h"
 #include "nmo.h"
-#include "session/nmo_object_index.h"
+#include "object/nmo_object_index.h"
 
 #include <stdio.h>
 

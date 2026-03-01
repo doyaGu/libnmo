@@ -32,6 +32,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -797,10 +798,128 @@ nmo_status_t nmo_3dentity_finish_loading(
     nmo_arena_t *arena,
     void *repository)
 {
-    /* Base implementation does nothing special beyond RenderObject */
-    (void)instance;
-    (void)arena;
-    (void)repository;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to CK3dEntity finish_loading");
+    }
+
+    nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (state->mesh_count > 0 && state->mesh_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "CK3dEntity: mesh_ids missing");
+    }
+    if (state->animation_count > 0 && state->animation_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "CK3dEntity: animation_ids missing");
+    }
+
+    const bool has_repo = (repo != NULL);
+
+    if (state->parent_id != 0) {
+        if (has_repo && nmo_object_repository_find_by_id(repo, state->parent_id) == NULL) {
+            state->parent_id = 0;
+            state->entity_flags &= ~CK_3DENTITY_PARENTVALID;
+        }
+    } else {
+        state->entity_flags &= ~CK_3DENTITY_PARENTVALID;
+    }
+
+    if (state->place_id != 0) {
+        if (has_repo && nmo_object_repository_find_by_id(repo, state->place_id) == NULL) {
+            state->place_id = 0;
+            state->entity_flags &= ~CK_3DENTITY_PLACEVALID;
+        }
+    } else {
+        state->entity_flags &= ~CK_3DENTITY_PLACEVALID;
+    }
+
+    if (state->mesh_count > 0) {
+        uint32_t out = 0;
+        for (uint32_t i = 0; i < state->mesh_count; ++i) {
+            nmo_object_id_t id = state->mesh_ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (has_repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < out; ++j) {
+                if (state->mesh_ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            state->mesh_ids[out++] = id;
+        }
+        state->mesh_count = out;
+    }
+
+    if (state->animation_count > 0) {
+        uint32_t out = 0;
+        for (uint32_t i = 0; i < state->animation_count; ++i) {
+            nmo_object_id_t id = state->animation_ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (has_repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < out; ++j) {
+                if (state->animation_ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            state->animation_ids[out++] = id;
+        }
+        state->animation_count = out;
+    }
+
+    if (state->current_mesh_id != 0) {
+        if (has_repo && nmo_object_repository_find_by_id(repo, state->current_mesh_id) == NULL) {
+            state->current_mesh_id = 0;
+        }
+    }
+
+    if (state->current_mesh_id != 0) {
+        bool found = false;
+        for (uint32_t i = 0; i < state->mesh_count; ++i) {
+            if (state->mesh_ids[i] == state->current_mesh_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            if (!arena) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                 "CK3dEntity: arena required to add current mesh");
+            }
+            nmo_object_id_t *expanded = (nmo_object_id_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_object_id_t) * (state->mesh_count + 1),
+                _Alignof(nmo_object_id_t));
+            if (!expanded) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to grow mesh ID list");
+            }
+            for (uint32_t i = 0; i < state->mesh_count; ++i) {
+                expanded[i] = state->mesh_ids[i];
+            }
+            expanded[state->mesh_count] = state->current_mesh_id;
+            state->mesh_ids = expanded;
+            state->mesh_count += 1;
+        }
+    }
+
     NMO_RETURN_OK();
 }
 

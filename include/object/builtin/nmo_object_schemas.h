@@ -111,7 +111,8 @@ NMO_DECLARE_OBJECT_SCHEMA(nmo_object_vtable, nmo_register_object_type)
  */
 NMO_API nmo_status_t nmo_object_finish_loading(
     void *state,
-    void *context);
+    nmo_arena_t *arena,
+    void *repository);
 
 #ifdef __cplusplus
 }

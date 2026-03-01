@@ -13,7 +13,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -56,6 +56,16 @@ static const nmo_type_field_t nmo_criticalsection_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section_id)
 };
+
+nmo_status_t nmo_state_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
+nmo_status_t nmo_criticalsection_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
 
 static nmo_status_t deserialize_ckobject_base(
     nmo_object_state_t *out_base,
@@ -164,11 +174,12 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     CKPGUID_OBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     state,
     nmo_state_state_t,
     nmo_state_serialize,
     nmo_state_deserialize,
+    nmo_state_finish_loading,
     nmo_state_fields,
     CKPGUID_STATE,
     "CKStateObject",
@@ -176,11 +187,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
     CKPGUID_OBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     criticalsection,
     nmo_criticalsection_state_t,
     nmo_criticalsection_serialize,
     nmo_criticalsection_deserialize,
+    nmo_criticalsection_finish_loading,
     nmo_criticalsection_fields,
     CKPGUID_CRITICALSECTION,
     "CKCriticalSectionObject",
@@ -398,6 +410,54 @@ nmo_status_t nmo_criticalsection_serialize(
     if (result != NMO_OK) return result;
 
     return nmo_chunk_write_object_id(out_chunk, in_state->object_in_section_id);
+}
+
+/* =============================================================================
+ * CKStateObject FINISH LOADING
+ * ============================================================================= */
+
+nmo_status_t nmo_state_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+    (void)repository;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_state_finish_loading");
+    }
+
+    nmo_state_state_t *state = (nmo_state_state_t *)instance;
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
+/* =============================================================================
+ * CKCriticalSectionObject FINISH LOADING
+ * ============================================================================= */
+
+nmo_status_t nmo_criticalsection_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_criticalsection_finish_loading");
+    }
+
+    nmo_criticalsection_state_t *state = (nmo_criticalsection_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (state->object_in_section_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->object_in_section_id) == NULL) {
+        state->object_in_section_id = 0;
+    }
+
+    return nmo_object_default_validate(state, NULL, NULL);
 }
 
 

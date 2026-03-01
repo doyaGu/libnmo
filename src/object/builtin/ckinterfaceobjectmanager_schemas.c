@@ -4,6 +4,7 @@
  */
 
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
@@ -123,15 +124,44 @@ static nmo_status_t nmo_interfaceobjectmanager_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_interfaceobjectmanager_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_interfaceobjectmanager_finish_loading");
+    }
+
+    nmo_interfaceobjectmanager_state_t *state = (nmo_interfaceobjectmanager_state_t *)instance;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+
+    if (state->chunk_count < 0) {
+        state->chunk_count = 0;
+    }
+
+    if (state->chunk_count == 0) {
+        state->chunks = NULL;
+    } else if (state->chunks == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "CKInterfaceObjectManager chunks missing");
+    }
+
+    return nmo_interfaceobjectmanager_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     interfaceobjectmanager,
     nmo_interfaceobjectmanager_state_t,
     nmo_interfaceobjectmanager_serialize,
     nmo_interfaceobjectmanager_deserialize,
+    nmo_interfaceobjectmanager_finish_loading,
     nmo_interfaceobjectmanager_fields,
     CKPGUID_INTERFACEOBJECTMANAGER,
     "CKInterfaceObjectManager",

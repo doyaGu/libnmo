@@ -155,15 +155,31 @@ static nmo_status_t nmo_sceneobject_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_sceneobject_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sceneobject_finish_loading");
+    }
+
+    nmo_sceneobject_state_t *state = (nmo_sceneobject_state_t *)instance;
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+    return nmo_sceneobject_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     sceneobject,
     nmo_sceneobject_state_t,
     nmo_sceneobject_serialize,
     nmo_sceneobject_deserialize,
+    nmo_sceneobject_finish_loading,
     nmo_sceneobject_fields,
     CKPGUID_SCENEOBJECT,
     "CKSceneObject",

@@ -18,6 +18,7 @@
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "object/nmo_object_repository.h"
 #include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
@@ -277,9 +278,51 @@ nmo_status_t nmo_material_finish_loading(
     nmo_arena_t *arena,
     void *repository)
 {
-    (void)instance;
     (void)arena;
-    (void)repository;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_material_finish_loading");
+    }
+
+    nmo_material_state_t *state = (nmo_material_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (repo) {
+        for (uint32_t i = 0; i < 4; ++i) {
+            nmo_object_id_t id = state->texture_ids[i];
+            if (id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            if (nmo_object_repository_find_by_id(repo, id) == NULL) {
+                state->texture_ids[i] = NMO_OBJECT_ID_NONE;
+            }
+        }
+
+        if (state->has_effect_param && state->effect_parameter_id != NMO_OBJECT_ID_NONE) {
+            if (nmo_object_repository_find_by_id(repo, state->effect_parameter_id) == NULL) {
+                state->effect_parameter_id = NMO_OBJECT_ID_NONE;
+                state->has_effect_param = 0;
+            }
+        }
+    }
+
+    if (state->effect == 0) {
+        state->has_effect = 0;
+        state->has_effect_param = 0;
+        state->effect_parameter_id = NMO_OBJECT_ID_NONE;
+    } else if (state->has_effect_param && state->effect_parameter_id == NMO_OBJECT_ID_NONE) {
+        state->has_effect_param = 0;
+    }
+
+    if (state->texture_ids[1] == NMO_OBJECT_ID_NONE &&
+        state->texture_ids[2] == NMO_OBJECT_ID_NONE &&
+        state->texture_ids[3] == NMO_OBJECT_ID_NONE) {
+        state->has_additional_textures = 0;
+    } else {
+        state->has_additional_textures = 1;
+    }
+
     NMO_RETURN_OK();
 }
 

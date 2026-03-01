@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(character, nmo_character_state_t)
@@ -154,16 +155,195 @@ static nmo_status_t nmo_bodypart_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_character_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_character_finish_loading");
+    }
+
+    nmo_character_state_t *state = (nmo_character_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    nmo_status_t result = nmo_3dentity_finish_loading(&state->base, arena, repository);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (state->body_part_count > 0 && state->body_part_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Character body_part_ids missing");
+    }
+    if (state->animation_count > 0 && state->animation_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Character animation_ids missing");
+    }
+    if (state->subpart_count > 0 && state->subparts == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Character subparts missing");
+    }
+
+    if (state->body_part_count > 0) {
+        nmo_object_id_t *ids = state->body_part_ids;
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->body_part_count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->body_part_count = kept;
+    }
+
+    if (state->animation_count > 0) {
+        nmo_object_id_t *ids = state->animation_ids;
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->animation_count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->animation_count = kept;
+    }
+
+    if (repo) {
+        if (state->active_animation_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->active_animation_id) == NULL) {
+            state->active_animation_id = 0;
+        }
+        if (state->anim_dest_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->anim_dest_id) == NULL) {
+            state->anim_dest_id = 0;
+        }
+        if (state->root_body_part_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->root_body_part_id) == NULL) {
+            state->root_body_part_id = 0;
+        }
+        if (state->floor_ref_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->floor_ref_id) == NULL) {
+            state->floor_ref_id = 0;
+        }
+    }
+
+    if (state->active_animation_id != 0) {
+        bool found = false;
+        for (uint32_t i = 0; i < state->animation_count; ++i) {
+            if (state->animation_ids[i] == state->active_animation_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            state->active_animation_id = 0;
+        }
+    }
+
+    if (state->root_body_part_id != 0) {
+        bool found = false;
+        for (uint32_t i = 0; i < state->body_part_count; ++i) {
+            if (state->body_part_ids[i] == state->root_body_part_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            state->root_body_part_id = 0;
+        }
+    }
+
+    if (state->subpart_count > 0) {
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->subpart_count; ++i) {
+            nmo_character_subpart_t sub = state->subparts[i];
+            if (sub.object_id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, sub.object_id) == NULL) {
+                continue;
+            }
+            state->subparts[kept++] = sub;
+        }
+        state->subpart_count = kept;
+    }
+
+    return nmo_character_validate(state, NULL, NULL);
+}
+
+nmo_status_t nmo_bodypart_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_bodypart_finish_loading");
+    }
+
+    nmo_bodypart_state_t *state = (nmo_bodypart_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    nmo_status_t result = nmo_3dobject_finish_loading(&state->base, arena, repository);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (repo && state->has_character && state->character_id != 0) {
+        if (nmo_object_repository_find_by_id(repo, state->character_id) == NULL) {
+            state->character_id = 0;
+            state->has_character = 0;
+        }
+    } else if (state->character_id == 0) {
+        state->has_character = 0;
+    }
+
+    if ((state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) == 0) {
+        state->has_rotation_joint = 0;
+        memset(&state->rotation_joint, 0, sizeof(state->rotation_joint));
+    }
+
+    return nmo_bodypart_validate(state, NULL, NULL);
+}
+
 
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     character,
     nmo_character_state_t,
     nmo_character_serialize,
     nmo_character_deserialize,
+    nmo_character_finish_loading,
     nmo_character_fields,
     CKPGUID_CHARACTER,
     "CKCharacter",
@@ -171,11 +351,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     CKPGUID_3DENTITY
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     bodypart,
     nmo_bodypart_state_t,
     nmo_bodypart_serialize,
     nmo_bodypart_deserialize,
+    nmo_bodypart_finish_loading,
     nmo_bodypart_fields,
     CKPGUID_BODYPART,
     "CKBodyPart",
@@ -347,7 +528,6 @@ static nmo_status_t nmo_character_serialize_internal(
     nmo_chunk_t *out_chunk,
     void *context)
 {
-    nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
     if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_character_serialize");
     }

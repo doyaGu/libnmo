@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file object_vtables.c
  * @brief CKObject-derived vtable definitions and copy/validate helpers
  */

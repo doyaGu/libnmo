@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "session/nmo_load_session.h"
 #include "session/nmo_id_remap.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include <stdio.h>
 #include <stdlib.h>

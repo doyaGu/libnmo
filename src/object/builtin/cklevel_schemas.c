@@ -24,6 +24,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -418,15 +419,93 @@ static nmo_status_t nmo_level_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_level_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_level_finish_loading");
+    }
+
+    nmo_level_state_t *state = (nmo_level_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (state->scene_ids.count > 0 && state->scene_ids.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Level scene_ids missing");
+    }
+
+    if (repo) {
+        if (state->current_scene_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->current_scene_id) == NULL) {
+            state->current_scene_id = 0;
+        }
+        if (state->level_scene_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->level_scene_id) == NULL) {
+            state->level_scene_id = 0;
+        }
+    }
+
+    if (state->scene_ids.count > 0) {
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->scene_ids);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->scene_ids.count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->scene_ids.count = kept;
+    }
+
+    if (state->current_scene_id != 0) {
+        bool found = false;
+        for (uint32_t i = 0; i < state->scene_ids.count; ++i) {
+            nmo_object_id_t id = NMO_ARRAY_DATA(nmo_object_id_t, &state->scene_ids)[i];
+            if (id == state->current_scene_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            state->current_scene_id = 0;
+        }
+    }
+
+    if (state->level_scene_id != 0) {
+        bool found = false;
+        for (uint32_t i = 0; i < state->scene_ids.count; ++i) {
+            nmo_object_id_t id = NMO_ARRAY_DATA(nmo_object_id_t, &state->scene_ids)[i];
+            if (id == state->level_scene_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            state->level_scene_id = 0;
+        }
+    }
+
+    return nmo_level_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     level,
     nmo_level_state_t,
     nmo_level_serialize,
     nmo_level_deserialize,
+    nmo_level_finish_loading,
     nmo_level_fields,
     CKPGUID_LEVEL,
     "CKLevel",

@@ -5,11 +5,11 @@
 
 #include "session/nmo_object_system.h"
 
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "session/nmo_load_session.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
-#include "session/nmo_shadow_storage.h"
+#include "object/nmo_shadow_storage.h"
 #include "session/nmo_reference_resolver.h"
 #include "session/nmo_ref_enumerate.h"
 
@@ -41,6 +41,13 @@ typedef struct object_system_ref_capture_ctx {
     nmo_object_t *source;
     nmo_logger_t *logger;
 } object_system_ref_capture_ctx_t;
+
+typedef struct object_system_created_layer {
+    const nmo_type_descriptor_t *type;
+    uint32_t offset;
+} object_system_created_layer_t;
+
+#define OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH 64u
 
 static const char *object_system_name_or_default(const nmo_object_t *obj) {
     return (obj != NULL && obj->name != NULL && obj->name[0] != '\0')
@@ -112,6 +119,117 @@ static void object_system_rollback_created(
             (void)nmo_object_repository_remove(repo, created[i]->id);
             created[i] = NULL;
         }
+    }
+}
+
+static size_t object_system_build_create_plan(
+    const nmo_type_descriptor_t *schema_type,
+    object_system_created_layer_t *layers,
+    size_t layer_cap)
+{
+    if (schema_type == NULL || layers == NULL || layer_cap == 0) {
+        return 0;
+    }
+
+    if (schema_type->ext == NULL ||
+        schema_type->ext->hierarchy == NULL ||
+        schema_type->ext->hierarchy_depth == 0 ||
+        schema_type->ext->hierarchy_depth > layer_cap) {
+        layers[0].type = schema_type;
+        layers[0].offset = 0;
+        return 1;
+    }
+
+    size_t count = 0;
+    for (size_t idx = schema_type->ext->hierarchy_depth; idx > 0; --idx) {
+        const size_t i = idx - 1;
+        const nmo_type_descriptor_t *layer_type = schema_type->ext->hierarchy[i];
+        if (layer_type == NULL) {
+            continue;
+        }
+
+        uint32_t offset = 0;
+        if (schema_type->ext->state_offsets != NULL) {
+            offset = schema_type->ext->state_offsets[i];
+        }
+
+        if (count < layer_cap) {
+            layers[count].type = layer_type;
+            layers[count].offset = offset;
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        layers[0].type = schema_type;
+        layers[0].offset = 0;
+        return 1;
+    }
+
+    return count;
+}
+
+static nmo_status_t object_system_create_state_layers(
+    void *state,
+    nmo_deserialize_context_t *deser_ctx,
+    const object_system_created_layer_t *plan,
+    size_t plan_count,
+    object_system_created_layer_t *out_created_layers,
+    size_t out_created_cap,
+    size_t *out_created_count)
+{
+    if (state == NULL || deser_ctx == NULL || plan == NULL || plan_count == 0 ||
+        out_created_layers == NULL || out_created_cap == 0 || out_created_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_created_count = 0;
+
+    for (size_t i = 0; i < plan_count; ++i) {
+        const nmo_type_descriptor_t *layer_type = plan[i].type;
+        if (layer_type == NULL || layer_type->vtable == NULL ||
+            layer_type->vtable->create == NULL) {
+            continue;
+        }
+
+        uint8_t *layer_state = (uint8_t *)state + plan[i].offset;
+        nmo_status_t result = layer_type->vtable->create(
+            layer_state, layer_type, deser_ctx);
+        if (result != NMO_OK) {
+            return result;
+        }
+
+        if (*out_created_count < out_created_cap) {
+            out_created_layers[*out_created_count] = plan[i];
+            (*out_created_count)++;
+        } else {
+            return NMO_ERR_INTERNAL;
+        }
+    }
+
+    return NMO_OK;
+}
+
+static void object_system_destroy_state_layers(
+    void *state,
+    nmo_deserialize_context_t *deser_ctx,
+    const object_system_created_layer_t *plan,
+    size_t created_count)
+{
+    if (state == NULL || deser_ctx == NULL || plan == NULL || created_count == 0) {
+        return;
+    }
+
+    for (size_t idx = created_count; idx > 0; --idx) {
+        const size_t i = idx - 1;
+        const nmo_type_descriptor_t *layer_type = plan[i].type;
+        if (layer_type == NULL || layer_type->vtable == NULL ||
+            layer_type->vtable->destroy == NULL) {
+            continue;
+        }
+
+        uint8_t *layer_state = (uint8_t *)state + plan[i].offset;
+        layer_type->vtable->destroy(layer_state, layer_type, deser_ctx);
     }
 }
 
@@ -235,342 +353,6 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
 
     *out_created_objects = created;
     return NMO_OK;
-}
-
-nmo_status_t nmo_object_system_deserialize_repository(
-    nmo_object_repository_t *repo,
-    const nmo_type_runtime_t *type_rt,
-    nmo_arena_t *arena,
-    nmo_logger_t *logger,
-    nmo_shadow_storage_t *shadow_storage,
-    uint32_t deser_flags,
-    nmo_object_system_deserialize_stats_t *out_stats)
-{
-    if (repo == NULL || type_rt == NULL || type_rt->types == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_object_system_deserialize_stats_t stats = {0};
-
-    size_t repo_count = 0;
-    nmo_object_t **objects = nmo_object_repository_get_all(repo, &repo_count);
-
-    if (repo_count > 0 && objects == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    nmo_deserialize_context_t deser_ctx = nmo_deserialize_context_create(
-        arena, repo, type_rt, deser_flags);
-
-    for (size_t i = 0; i < repo_count; i++) {
-        nmo_object_t *obj = objects[i];
-
-        if (obj == NULL) {
-            stats.skipped_null++;
-            continue;
-        }
-
-        if (obj->chunk == NULL) {
-            stats.skipped_no_chunk++;
-            continue;
-        }
-
-        size_t chunk_buffer_size = 0;
-        const void *chunk_buffer = nmo_chunk_get_data(obj->chunk, &chunk_buffer_size);
-        const bool has_chunk_data = (chunk_buffer != NULL && chunk_buffer_size > 0);
-        if (!has_chunk_data) {
-            stats.skipped_empty_chunk++;
-            if (logger) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): chunk has no data buffer, deserializing defaults",
-                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj));
-            }
-        }
-
-        const nmo_type_descriptor_t *schema_type =
-            nmo_type_registry_find_by_class_id_inherited(type_rt->types, obj->class_id);
-
-        if (schema_type == NULL || schema_type->vtable == NULL ||
-            schema_type->vtable->deserialize == NULL) {
-            stats.no_schema++;
-            if (logger) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): no readable schema found",
-                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj));
-            }
-            nmo_chunk_close(obj->chunk);
-            continue;
-        }
-
-        uint32_t state_size = schema_type->size;
-        if (schema_type->ext && schema_type->ext->total_state_size > 0) {
-            state_size = schema_type->ext->total_state_size;
-        }
-
-        nmo_status_t alloc_result = nmo_object_alloc_state(obj, state_size);
-        if (alloc_result != NMO_OK) {
-            stats.errors++;
-            if (logger) {
-                nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to allocate %u bytes for state",
-                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), state_size);
-            }
-            nmo_chunk_close(obj->chunk);
-            continue;
-        }
-
-        void *state = nmo_object_get_state(obj);
-        nmo_deserialize_context_set_object(&deser_ctx, obj);
-        deser_ctx.chunk_version = nmo_chunk_get_data_version(obj->chunk);
-
-        if (schema_type->vtable->create != NULL) {
-            nmo_status_t create_result = schema_type->vtable->create(state, schema_type, &deser_ctx);
-            if (create_result != NMO_OK) {
-                stats.errors++;
-                if (logger) {
-                    char error_msg[1024];
-                    nmo_last_error_message_copy(error_msg, sizeof(error_msg));
-                    nmo_log(logger, NMO_LOG_ERROR,
-                            "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): create failed: %s",
-                            i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
-                            schema_type->name ? schema_type->name : "<unnamed>",
-                            error_msg);
-                }
-
-                if (schema_type->vtable->destroy != NULL) {
-                    schema_type->vtable->destroy(state, schema_type, &deser_ctx);
-                }
-
-                nmo_chunk_close(obj->chunk);
-                continue;
-            }
-        }
-
-        if (!has_chunk_data) {
-            (void)nmo_object_set_data(obj, state);
-            stats.deserialized++;
-            nmo_chunk_close(obj->chunk);
-            continue;
-        }
-
-        nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
-        if (read_result != NMO_OK) {
-            stats.errors++;
-            if (logger) {
-                nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to start chunk read: %d",
-                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), read_result);
-            }
-            continue;
-        }
-
-        nmo_status_t deser_result = schema_type->vtable->deserialize(
-            state, obj->chunk, schema_type, &deser_ctx);
-
-        if (deser_result == NMO_OK) {
-            (void)nmo_object_set_data(obj, state);
-            stats.deserialized++;
-
-            if ((deser_flags & NMO_DESER_FLAG_PRESERVE_RAW) != 0 && shadow_storage != NULL) {
-                size_t data_size = nmo_chunk_get_data_size(obj->chunk);
-                size_t pos_dwords = nmo_chunk_get_position(obj->chunk);
-                size_t pos_bytes = pos_dwords * sizeof(uint32_t);
-
-                if (pos_bytes < data_size) {
-                    size_t tail_size = data_size - pos_bytes;
-                    size_t buffer_size = 0;
-                    const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(obj->chunk, &buffer_size);
-
-                    if (data != NULL && pos_bytes + tail_size <= buffer_size) {
-                        int tail_result = nmo_shadow_capture_chunk_tail(
-                            shadow_storage, obj->id, data + pos_bytes, tail_size);
-                        if (tail_result != NMO_OK && logger) {
-                            nmo_log(logger, NMO_LOG_WARN,
-                                    "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to capture chunk tail in shadow (code=%d)",
-                                    i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), tail_result);
-                        }
-                    }
-                }
-            }
-
-            nmo_chunk_close(obj->chunk);
-        } else {
-            stats.errors++;
-            if (logger) {
-                char error_msg[1024];
-                nmo_last_error_message_copy(error_msg, sizeof(error_msg));
-                nmo_log(logger, NMO_LOG_ERROR,
-                        "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): deserialization failed: %s",
-                        i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
-                        schema_type->name ? schema_type->name : "<unnamed>",
-                        error_msg);
-            }
-
-            if (schema_type->vtable->destroy != NULL) {
-                schema_type->vtable->destroy(state, schema_type, &deser_ctx);
-            }
-
-            nmo_chunk_close(obj->chunk);
-        }
-    }
-
-    if (out_stats != NULL) {
-        *out_stats = stats;
-    }
-
-    return NMO_OK;
-}
-
-nmo_chunk_t *nmo_object_system_serialize_object_chunk(
-    nmo_object_t *obj,
-    const nmo_type_runtime_t *type_rt,
-    nmo_arena_t *arena,
-    nmo_logger_t *logger,
-    const nmo_shadow_storage_t *shadow_storage,
-    const nmo_chunk_file_context_t *file_ctx)
-{
-    if (obj == NULL || arena == NULL || type_rt == NULL || type_rt->types == NULL) {
-        return NULL;
-    }
-
-    if (obj->chunk != NULL && obj->data == NULL) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_DEBUG,
-                    "    Reusing existing chunk for object %u (unmodified)", obj->id);
-        }
-        return obj->chunk;
-    }
-
-    const nmo_type_descriptor_t *schema_type =
-        nmo_type_registry_find_by_class_id_inherited(type_rt->types, obj->class_id);
-
-    if (schema_type == NULL) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "    No schema found for class 0x%08X, preserving raw chunk", obj->class_id);
-        }
-        return obj->chunk;
-    }
-
-    if (schema_type->vtable == NULL || schema_type->vtable->serialize == NULL) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "    Schema '%s' has no write vtable, preserving raw chunk",
-                    schema_type->name ? schema_type->name : "<unnamed>");
-        }
-        return obj->chunk;
-    }
-
-    if (obj->data == NULL) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "    Object %u has no data to serialize", obj->id);
-        }
-
-        if (obj->chunk == NULL) {
-            nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
-            if (empty_chunk != NULL) {
-                empty_chunk->class_id = obj->class_id;
-                empty_chunk->chunk_version = 7;
-                empty_chunk->data_version = 7;
-                empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-                if (file_ctx != NULL) {
-                    nmo_chunk_set_file_context(empty_chunk, file_ctx);
-                }
-                nmo_chunk_start_write(empty_chunk);
-                nmo_chunk_close(empty_chunk);
-                return empty_chunk;
-            }
-        }
-
-        return obj->chunk;
-    }
-
-    nmo_chunk_t *new_chunk = nmo_chunk_create(arena);
-    if (new_chunk == NULL) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_ERROR,
-                    "    Failed to create chunk for object %u", obj->id);
-        }
-        return NULL;
-    }
-
-    const nmo_chunk_t *old_chunk = obj->chunk;
-
-    new_chunk->class_id = obj->class_id;
-    if (old_chunk != NULL) {
-        new_chunk->chunk_version = old_chunk->chunk_version;
-        new_chunk->data_version = old_chunk->data_version;
-        new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    } else {
-        new_chunk->chunk_version = 7;
-        new_chunk->data_version = 7;
-        new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    }
-    if (file_ctx != NULL) {
-        nmo_chunk_set_file_context(new_chunk, file_ctx);
-    }
-
-    nmo_status_t result = nmo_chunk_start_write(new_chunk);
-    if (result != NMO_OK) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_ERROR,
-                    "    Failed to start chunk write for object %u", obj->id);
-        }
-        return NULL;
-    }
-
-    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
-
-    result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);
-
-    if (result != NMO_OK) {
-        if (logger) {
-            char error_msg[1024];
-            nmo_last_error_message_copy(error_msg, sizeof(error_msg));
-            nmo_log(logger, NMO_LOG_ERROR,
-                    "    Failed to serialize object %u (class=0x%08X) with schema '%s': %s",
-                    obj->id,
-                    obj->class_id,
-                    schema_type->name ? schema_type->name : "<unnamed>",
-                    error_msg[0] ? error_msg : "<no error>");
-        }
-        return obj->chunk;
-    }
-
-    if (shadow_storage != NULL) {
-        size_t tail_size = 0;
-        const void *tail = nmo_shadow_get_chunk_tail(shadow_storage, obj->id, &tail_size);
-        if (tail != NULL && tail_size > 0) {
-            nmo_status_t tail_result = nmo_chunk_write_buffer_no_size(new_chunk, tail, tail_size);
-            if (tail_result != NMO_OK && logger) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "    Failed to append shadow tail for object %u (code=%d)",
-                        obj->id, tail_result);
-            }
-        }
-    }
-
-    nmo_chunk_close(new_chunk);
-
-    if (old_chunk != NULL && new_chunk->data.count == 0) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "    Serialized object %u is empty; preserving original chunk", obj->id);
-        }
-        return (nmo_chunk_t *)old_chunk;
-    }
-
-    if (logger) {
-        nmo_log(logger, NMO_LOG_DEBUG,
-                "    Serialized object %u using schema '%s' (%zu bytes)",
-                obj->id,
-                schema_type->name ? schema_type->name : "<unnamed>",
-                new_chunk->data.count * 4);
-    }
-
-    return new_chunk;
 }
 
 nmo_status_t nmo_object_system_prepare_loaded_objects(
@@ -854,27 +636,31 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         nmo_deserialize_context_set_object(&deser_ctx, obj);
         deser_ctx.chunk_version = nmo_chunk_get_data_version(obj->chunk);
 
-        if (schema_type->vtable->create != NULL) {
-            nmo_status_t create_result = schema_type->vtable->create(state, schema_type, &deser_ctx);
-            if (create_result != NMO_OK) {
-                stats.errors++;
-                if (logger) {
-                    char error_msg[1024];
-                    nmo_last_error_message_copy(error_msg, sizeof(error_msg));
-                    nmo_log(logger, NMO_LOG_ERROR,
-                            "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): create failed: %s",
-                            file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
-                            schema_type->name ? schema_type->name : "<unnamed>",
-                            error_msg);
-                }
+        object_system_created_layer_t create_plan[OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH];
+        object_system_created_layer_t created_layers[OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH];
+        size_t plan_count = object_system_build_create_plan(
+            schema_type, create_plan, OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH);
+        size_t created_count = 0;
 
-                if (schema_type->vtable->destroy != NULL) {
-                    schema_type->vtable->destroy(state, schema_type, &deser_ctx);
-                }
-
-                nmo_chunk_close(obj->chunk);
-                continue;
+        nmo_status_t create_result = object_system_create_state_layers(
+            state, &deser_ctx, create_plan, plan_count,
+            created_layers, OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH, &created_count);
+        if (create_result != NMO_OK) {
+            stats.errors++;
+            if (logger) {
+                char error_msg[1024];
+                nmo_last_error_message_copy(error_msg, sizeof(error_msg));
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s', schema=%s): create failed: %s",
+                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj),
+                        schema_type->name ? schema_type->name : "<unnamed>",
+                        error_msg);
             }
+
+            object_system_destroy_state_layers(
+                state, &deser_ctx, created_layers, created_count);
+            nmo_chunk_close(obj->chunk);
+            continue;
         }
 
         if (!has_chunk_data) {
@@ -980,9 +766,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                         error_msg);
             }
 
-            if (schema_type->vtable->destroy != NULL) {
-                schema_type->vtable->destroy(state, schema_type, &deser_ctx);
-            }
+            object_system_destroy_state_layers(
+                state, &deser_ctx, created_layers, created_count);
 
             nmo_chunk_close(obj->chunk);
         }

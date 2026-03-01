@@ -3,7 +3,7 @@
  * @brief Unit tests for the shadow blob preservation mechanism (Phase 1.2)
  */
 
-#include "session/nmo_shadow_storage.h"
+#include "object/nmo_shadow_storage.h"
 #include "core/nmo_arena.h"
 #include "test_framework.h"
 #include <string.h>

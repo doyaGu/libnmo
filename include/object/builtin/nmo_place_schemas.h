@@ -6,7 +6,7 @@
 #ifndef NMO_CKPLACE_SCHEMAS_H
 #define NMO_CKPLACE_SCHEMAS_H
 
-#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_array.h"
@@ -26,7 +26,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * @brief CKPlace state
  */
 typedef struct nmo_place_state {
-    nmo_beobject_state_t base;
+    nmo_3dentity_state_t base;
 
     uint8_t has_camera;
     nmo_object_id_t camera_id;
@@ -49,6 +49,11 @@ NMO_API nmo_status_t nmo_place_serialize(
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_API nmo_status_t nmo_place_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_place_vtable, nmo_register_place_type)
 

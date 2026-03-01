@@ -5,8 +5,8 @@
 
 #include "core/nmo_hash_table.h"
 #include "core/nmo_arena.h"
-#include "session/nmo_object_index.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_index.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include <stdio.h>
 #include <stdlib.h>

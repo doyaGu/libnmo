@@ -12,6 +12,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
@@ -19,6 +20,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -242,16 +244,53 @@ nmo_status_t nmo_behaviorlink_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     behaviorlink,
     nmo_behaviorlink_state_t,
     nmo_behaviorlink_serialize,
     nmo_behaviorlink_deserialize,
+    nmo_behaviorlink_finish_loading,
     nmo_behaviorlink_fields,
     CKPGUID_BEHAVIORLINK,
     "CKBehaviorLink",
     NMO_CID_BEHAVIORLINK,
     CKPGUID_OBJECT
 )
+
+nmo_status_t nmo_behaviorlink_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behaviorlink_finish_loading");
+    }
+
+    nmo_behaviorlink_state_t *state = (nmo_behaviorlink_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+
+    if (repo) {
+        if (state->in_io_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->in_io_id) == NULL) {
+            state->in_io_id = 0;
+        }
+        if (state->out_io_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->out_io_id) == NULL) {
+            state->out_io_id = 0;
+        }
+    }
+
+    if (state->activation_delay < 0) {
+        state->activation_delay = 0;
+    }
+    if (state->initial_activation_delay < 0) {
+        state->initial_activation_delay = 0;
+    }
+
+    NMO_RETURN_OK();
+}
 
 

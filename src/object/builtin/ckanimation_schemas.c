@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include <string.h>
@@ -252,15 +253,213 @@ static nmo_status_t nmo_objectanimation_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_animation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_animation_finish_loading");
+    }
+
+    nmo_animation_state_t *state = (nmo_animation_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+
+    if (state->frame_rate <= 0.0f) {
+        state->frame_rate = 30.0f;
+    }
+    if (state->length < 0.0f) {
+        state->length = 0.0f;
+    }
+    if (state->current_step < 0.0f) {
+        state->current_step = 0.0f;
+    }
+
+    if (repo) {
+        if (state->has_root_entity && state->root_entity_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->root_entity_id) == NULL) {
+            state->root_entity_id = 0;
+            state->has_root_entity = 0;
+        }
+        if (state->has_character && state->character_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->character_id) == NULL) {
+            state->character_id = 0;
+            state->has_character = 0;
+        }
+    } else {
+        if (state->root_entity_id == 0) {
+            state->has_root_entity = 0;
+        }
+        if (state->character_id == 0) {
+            state->has_character = 0;
+        }
+    }
+
+    if (!state->has_length) {
+        state->length = 0.0f;
+    }
+    if (!state->has_current_step) {
+        state->current_step = 0.0f;
+    }
+
+    return nmo_animation_validate(state, NULL, NULL);
+}
+
+nmo_status_t nmo_keyedanimation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_keyedanimation_finish_loading");
+    }
+
+    nmo_keyedanimation_state_t *state = (nmo_keyedanimation_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_animation_finish_loading(&state->base, arena, repository));
+
+    if (state->animation_count > 0 && state->animation_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "KeyedAnimation animation_ids missing");
+    }
+    if (state->subanim_count > 0 && state->subanims == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "KeyedAnimation subanims missing");
+    }
+
+    if (state->animation_count > 0) {
+        nmo_object_id_t *ids = state->animation_ids;
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->animation_count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->animation_count = kept;
+    }
+
+    if (state->subanim_count > 0) {
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->subanim_count; ++i) {
+            nmo_keyedanimation_subanim_t sub = state->subanims[i];
+            if (sub.object_id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, sub.object_id) == NULL) {
+                continue;
+            }
+            state->subanims[kept++] = sub;
+        }
+        state->subanim_count = kept;
+    }
+
+    return nmo_keyedanimation_validate(state, NULL, NULL);
+}
+
+nmo_status_t nmo_objectanimation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_objectanimation_finish_loading");
+    }
+
+    nmo_objectanimation_state_t *state = (nmo_objectanimation_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+
+    if (state->format < CKOBJANIM_FORMAT_NONE || state->format > CKOBJANIM_FORMAT_NEWDATA) {
+        state->format = CKOBJANIM_FORMAT_NONE;
+    }
+
+    if (state->has_length && state->length < 0.0f) {
+        state->length = 0.0f;
+    }
+    if (state->has_merge && state->merge_factor < 0.0f) {
+        state->merge_factor = 0.0f;
+    }
+
+    if (state->has_morph_counts) {
+        if (state->morph_vertex_count < 0) {
+            state->morph_vertex_count = 0;
+        }
+        if (state->morph_key_count < 0) {
+            state->morph_key_count = 0;
+        }
+    } else {
+        state->morph_vertex_count = 0;
+        state->morph_key_count = 0;
+    }
+
+    if (repo) {
+        if (state->entity_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->entity_id) == NULL) {
+            state->entity_id = 0;
+        }
+        if (state->anim1_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->anim1_id) == NULL) {
+            state->anim1_id = 0;
+        }
+        if (state->anim2_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->anim2_id) == NULL) {
+            state->anim2_id = 0;
+        }
+        if (state->has_shared_anim && state->shared_anim_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->shared_anim_id) == NULL) {
+            state->shared_anim_id = 0;
+            state->has_shared_anim = 0;
+        }
+    } else {
+        if (state->entity_id == 0) {
+            state->flags &= ~0x80u;
+        }
+    }
+
+    if ((state->flags & 0x80u) == 0) {
+        state->has_merge = 0;
+        state->anim1_id = 0;
+        state->anim2_id = 0;
+    } else if (state->anim1_id == 0 || state->anim2_id == 0) {
+        state->has_merge = 0;
+        state->flags &= ~0x80u;
+    }
+
+    return nmo_objectanimation_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     animation,
     nmo_animation_state_t,
     nmo_animation_serialize,
     nmo_animation_deserialize,
+    nmo_animation_finish_loading,
     nmo_animation_fields,
     CKPGUID_ANIMATION,
     "CKAnimation",
@@ -268,11 +467,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     CKPGUID_SCENEOBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     keyedanimation,
     nmo_keyedanimation_state_t,
     nmo_keyedanimation_serialize,
     nmo_keyedanimation_deserialize,
+    nmo_keyedanimation_finish_loading,
     nmo_keyedanimation_fields,
     CKPGUID_KEYEDANIMATION,
     "CKKeyedAnimation",
@@ -280,11 +480,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     CKPGUID_ANIMATION
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     objectanimation,
     nmo_objectanimation_state_t,
     nmo_objectanimation_serialize,
     nmo_objectanimation_deserialize,
+    nmo_objectanimation_finish_loading,
     nmo_objectanimation_fields,
     CKPGUID_OBJECTANIMATION,
     "CKObjectAnimation",
@@ -319,7 +520,7 @@ static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw tail buffer");
     }
 
-    size_t bytes_read = nmo_chunk_read_and_fill_buffer(chunk, data, remaining_bytes);
+    size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, remaining_bytes);
     if (bytes_read != remaining_bytes) {
         NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read raw tail buffer");
     }

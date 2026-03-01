@@ -8,9 +8,7 @@
 
 #include "session/nmo_ref_graph.h"
 #include "session/nmo_ref_enumerate.h"
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 
 #include <string.h>
@@ -41,7 +39,7 @@ static const char *ref_kind_names[] = {
  */
 struct nmo_ref_graph {
     nmo_arena_t *arena;
-    nmo_session_t *session;
+    nmo_object_repository_t *repo;
     const nmo_type_registry_t *type_registry;
     
     /* Edge storage */
@@ -146,8 +144,12 @@ static bool ref_graph_visitor(
  * Public API
  * ============================================================================ */
 
-nmo_ref_graph_t *nmo_ref_graph_create(nmo_session_t *session, nmo_arena_t *arena) {
-    if (!session || !arena) {
+nmo_ref_graph_t *nmo_ref_graph_create(
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *type_registry,
+    nmo_arena_t *arena)
+{
+    if (!repo || !type_registry || !arena) {
         return NULL;
     }
     
@@ -159,23 +161,15 @@ nmo_ref_graph_t *nmo_ref_graph_create(nmo_session_t *session, nmo_arena_t *arena
     
     memset(graph, 0, sizeof(nmo_ref_graph_t));
     graph->arena = arena;
-    graph->session = session;
-    
-    nmo_context_t *ctx = nmo_session_get_context(session);
-    if (!ctx) {
-        return NULL;
-    }
-
-    graph->type_registry = nmo_context_get_type_registry(ctx);
-    if (!graph->type_registry) {
-        return NULL;
-    }
+    graph->repo = repo;
+    graph->type_registry = type_registry;
     
     /* Get all objects and enumerate references using the registry */
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
     
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+    objects = nmo_object_repository_get_all(repo, &object_count);
+    if (object_count > 0 && objects == NULL) {
         return NULL;
     }
     
@@ -281,19 +275,18 @@ nmo_status_t nmo_ref_graph_validate(nmo_ref_graph_t *graph,
     }
     
     if (!graph->validated) {
-        /* Get repository for ID lookups */
-        nmo_object_repository_t *repo = nmo_session_get_repository(graph->session);
+        nmo_object_repository_t *repo = graph->repo;
         if (!repo) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                             "session has no repository");
+                             "graph has no repository");
         }
         
         /* Check all edges for broken references */
         size_t broken = 0;
         
         for (size_t i = 0; i < graph->edge_count; ++i) {
-            nmo_object_t *target = nmo_object_repository_find_by_id(
-                repo, graph->edges[i].to);
+        nmo_object_t *target = nmo_object_repository_find_by_id(
+            repo, graph->edges[i].to);
             if (!target) {
                 broken++;
             }

@@ -1,18 +1,19 @@
 /**
  * @file nmo_object_system.h
- * @brief High-level object lifecycle orchestration (create/deserialize/serialize)
+ * @brief Session-level object load orchestration.
  *
- * This module centralizes object lifecycle logic that would otherwise be duplicated
- * across the load parser and save pipeline.
+ * This module centralizes load-session orchestration logic that coordinates
+ * object creation, file-index remapping, and load-scoped deserialization.
  *
  * Layering: Session -> Object -> Type -> Format -> IO -> Core
  */
 
-#ifndef NMO_OBJECT_SYSTEM_H
-#define NMO_OBJECT_SYSTEM_H
+#ifndef NMO_SESSION_OBJECT_SYSTEM_H
+#define NMO_SESSION_OBJECT_SYSTEM_H
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "object/nmo_object_system.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,23 +36,9 @@ typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 
 typedef struct nmo_object_desc nmo_object_desc_t;
 typedef struct nmo_chunk nmo_chunk_t;
-typedef struct nmo_chunk_file_context nmo_chunk_file_context_t;
-
 typedef struct nmo_object_data nmo_object_data_t;
 typedef struct nmo_manager_data nmo_manager_data_t;
 typedef struct nmo_type_runtime nmo_type_runtime_t;
-
-/**
- * @brief Stats produced by repository deserialization.
- */
-typedef struct nmo_object_system_deserialize_stats {
-    size_t deserialized;
-    size_t skipped_null;
-    size_t skipped_no_chunk;
-    size_t skipped_empty_chunk;
-    size_t no_schema;
-    size_t errors;
-} nmo_object_system_deserialize_stats_t;
 
 /**
  * @brief Create and register objects from Header1 object descriptors.
@@ -88,56 +75,6 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
     size_t desc_count,
     nmo_logger_t *logger,
     nmo_object_t ***out_created_objects);
-
-/**
- * @brief Deserialize all objects in a repository using the type runtime.
- *
- * This function handles per-object lifecycle correctly:
- * - alloc_state (combined inherited state)
- * - vtable create() before deserialize()
- * - vtable destroy() on create/deserialize failure
- * - chunk start_read()/close() always paired
- * OWNERSHIP:
- * - arena: owns deserialize context scratch data
- * - shadow_storage: captures tails/bytes it owns
- *
- * @param repo Repository to iterate
- * @param type_rt Type runtime for schema dispatch and operation hooks
- * @param arena Arena used by deserialize context / schema allocations
- * @param logger Optional logger
- * @param shadow_storage Optional shadow storage for capturing unconsumed chunk tails
- * @param deser_flags Flags forwarded to nmo_deserialize_context_create()
- * @param out_stats Optional stats output
- * @return NMO_OK (errors are reported in stats; fatal errors return code)
- */
-NMO_API nmo_status_t nmo_object_system_deserialize_repository(
-    nmo_object_repository_t *repo,
-    const nmo_type_runtime_t *type_rt,
-    nmo_arena_t *arena,
-    nmo_logger_t *logger,
-    nmo_shadow_storage_t *shadow_storage,
-    uint32_t deser_flags,
-    nmo_object_system_deserialize_stats_t *out_stats);
-
-/**
- * @brief Serialize an object's chunk using schema dispatch.
- *
- * Returns either:
- * - a reused existing chunk (if unmodified), or
- * - a newly generated chunk in the provided arena, or
- * - NULL on allocation/parameter errors.
- * OWNERSHIP:
- * - arena: owns any newly generated chunk
- *
- * @param file_ctx Optional file context for CKFile-style ID remap during write
- */
-NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
-    nmo_object_t *obj,
-    const nmo_type_runtime_t *type_rt,
-    nmo_arena_t *arena,
-    nmo_logger_t *logger,
-    const nmo_shadow_storage_t *shadow_storage,
-    const nmo_chunk_file_context_t *file_ctx);
 
 /**
  * @brief Prepare loaded objects for manager dispatch.
@@ -221,4 +158,4 @@ NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
 }
 #endif
 
-#endif /* NMO_OBJECT_SYSTEM_H */
+#endif /* NMO_SESSION_OBJECT_SYSTEM_H */

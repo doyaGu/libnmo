@@ -3,8 +3,8 @@
  * @brief Object repository implementation with generic hash tables
  */
 
-#include "session/nmo_object_repository.h"
-#include "session/nmo_object_index.h"
+#include "object/nmo_object_repository.h"
+#include "object/nmo_object_index.h"
 #include "format/nmo_object.h"
 #include "core/nmo_indexed_map.h"
 #include "core/nmo_hash_table.h"

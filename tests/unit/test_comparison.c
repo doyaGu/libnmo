@@ -7,8 +7,10 @@
 #include "app/nmo_comparison.h"
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
+#include "format/nmo_data.h"
+#include "core/nmo_guid.h"
 #include <string.h>
 
 /* ============================================================================
@@ -39,6 +41,18 @@ static nmo_object_t* create_test_object(const nmo_allocator_t *allocator,
     }
 
     return obj;
+}
+
+static int has_diff_type(const nmo_comparison_result_t *result, nmo_diff_type_t type) {
+    if (result == NULL) {
+        return 0;
+    }
+    for (int i = 0; i < result->diff_count; i++) {
+        if (result->diffs[i].type == type) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* ============================================================================
@@ -255,6 +269,139 @@ TEST(comparison, different_object_names) {
     nmo_context_release(ctx);
 }
 
+TEST(comparison, ignore_order_matches_by_file_id) {
+    nmo_context_t *ctx = create_test_context();
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session1 = nmo_session_create(ctx);
+    nmo_session_t *session2 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session1);
+    ASSERT_NOT_NULL(session2);
+
+    nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
+    nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
+
+    nmo_object_t *a1 = create_test_object(allocator, 100, 0x10000001, "A");
+    nmo_object_t *b1 = create_test_object(allocator, 101, 0x10000001, "B");
+    nmo_object_t *b2 = create_test_object(allocator, 201, 0x10000001, "B");
+    nmo_object_t *a2 = create_test_object(allocator, 200, 0x10000001, "A");
+    ASSERT_NOT_NULL(a1);
+    ASSERT_NOT_NULL(b1);
+    ASSERT_NOT_NULL(a2);
+    ASSERT_NOT_NULL(b2);
+
+    a1->file_id = 10; b1->file_id = 11;
+    a2->file_id = 10; b2->file_id = 11;
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, &a1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, &b1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, &b2)); /* reversed order */
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, &a2));
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+
+    int err = nmo_session_compare(
+        session1,
+        session2,
+        NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS | NMO_COMPARE_CHUNKS | NMO_COMPARE_IGNORE_ORDER,
+        &result);
+
+    ASSERT_EQ(err, NMO_OK);
+    ASSERT_EQ(result.match, 1);
+    ASSERT_EQ(result.diff_count, 0);
+    ASSERT_EQ(result.objects_matched, 2u);
+
+    nmo_session_destroy(session1);
+    nmo_session_destroy(session2);
+    nmo_context_release(ctx);
+}
+
+TEST(comparison, order_mismatch_reported_without_ignore_order) {
+    nmo_context_t *ctx = create_test_context();
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session1 = nmo_session_create(ctx);
+    nmo_session_t *session2 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session1);
+    ASSERT_NOT_NULL(session2);
+
+    nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
+    nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
+
+    nmo_object_t *a1 = create_test_object(allocator, 10, 0x10000001, "A");
+    nmo_object_t *b1 = create_test_object(allocator, 11, 0x10000001, "B");
+    nmo_object_t *b2 = create_test_object(allocator, 20, 0x10000001, "B");
+    nmo_object_t *a2 = create_test_object(allocator, 21, 0x10000001, "A");
+    ASSERT_NOT_NULL(a1);
+    ASSERT_NOT_NULL(b1);
+    ASSERT_NOT_NULL(a2);
+    ASSERT_NOT_NULL(b2);
+
+    a1->file_id = 100; b1->file_id = 101;
+    a2->file_id = 100; b2->file_id = 101;
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, &a1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo1, &b1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, &b2)); /* reversed order */
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo2, &a2));
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+
+    int err = nmo_session_compare(
+        session1,
+        session2,
+        NMO_COMPARE_NAMES | NMO_COMPARE_CLASS_IDS,
+        &result);
+
+    ASSERT_EQ(err, NMO_OK);
+    ASSERT_EQ(result.match, 0);
+    ASSERT_TRUE(has_diff_type(&result, NMO_DIFF_OBJECT_ORDER));
+
+    nmo_session_destroy(session1);
+    nmo_session_destroy(session2);
+    nmo_context_release(ctx);
+}
+
+TEST(comparison, managers_match_by_guid_independent_of_order) {
+    nmo_context_t *ctx = create_test_context();
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session1 = nmo_session_create(ctx);
+    nmo_session_t *session2 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session1);
+    ASSERT_NOT_NULL(session2);
+
+    nmo_manager_data_t mgrs1[2];
+    nmo_manager_data_t mgrs2[2];
+    memset(mgrs1, 0, sizeof(mgrs1));
+    memset(mgrs2, 0, sizeof(mgrs2));
+
+    mgrs1[0].guid = NMO_GUID(0x11111111u, 0x22222222u);
+    mgrs1[1].guid = NMO_GUID(0x33333333u, 0x44444444u);
+    mgrs2[0].guid = mgrs1[1].guid; /* reversed order */
+    mgrs2[1].guid = mgrs1[0].guid;
+
+    nmo_session_set_manager_data(session1, mgrs1, 2);
+    nmo_session_set_manager_data(session2, mgrs2, 2);
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+
+    int err = nmo_session_compare(session1, session2, NMO_COMPARE_MANAGERS, &result);
+    ASSERT_EQ(err, NMO_OK);
+    ASSERT_EQ(result.match, 1);
+    ASSERT_EQ(result.diff_count, 0);
+    ASSERT_EQ(result.managers_matched, 2u);
+
+    nmo_session_destroy(session1);
+    nmo_session_destroy(session2);
+    nmo_context_release(ctx);
+}
+
 /* ============================================================================
  * Report Generation Tests
  * ============================================================================ */
@@ -324,6 +471,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(comparison, different_object_counts);
     REGISTER_TEST(comparison, sessions_with_objects);
     REGISTER_TEST(comparison, different_object_names);
+    REGISTER_TEST(comparison, ignore_order_matches_by_file_id);
+    REGISTER_TEST(comparison, order_mismatch_reported_without_ignore_order);
+    REGISTER_TEST(comparison, managers_match_by_guid_independent_of_order);
     
     /* Report generation */
     REGISTER_TEST(comparison, format_report_match);

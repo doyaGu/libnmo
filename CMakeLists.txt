@@ -197,6 +197,10 @@ set(NMO_OBJECT_SOURCES
     src/object/object_enums.c
     src/object/object_structs.c
     src/object/object_types.c
+    src/object/object_repository.c
+    src/object/object_index.c
+    src/object/object_system.c
+    src/object/shadow_storage.c
     src/object/deserialize_context.c
     src/object/builtin/object_vtables.c
     src/object/builtin/ckobject_schemas.c
@@ -284,14 +288,11 @@ set(NMO_EXTENSION_SOURCES
 
 # Session layer sources
 set(NMO_SESSION_SOURCES
-    src/session/object_repository.c
-    src/session/object_index.c
     src/session/object_system.c
     src/session/builder.c
     src/session/load_session.c
     src/session/id_remap.c
     src/session/id_sanitizer.c
-    src/session/shadow_storage.c
     src/session/reference_resolver.c
     src/session/nmo_ref_graph.c
     src/session/nmo_ref_enumerate.c

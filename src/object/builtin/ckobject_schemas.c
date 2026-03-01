@@ -196,13 +196,20 @@ nmo_status_t nmo_object_serialize(
  * @param context Serialization context (unused in base implementation)
  * @return Always NMO_OK
  */
-nmo_status_t nmo_object_finish_loading(
+ nmo_status_t nmo_object_finish_loading(
     void *state,
-    void *context)
+    nmo_arena_t *arena,
+    void *repository)
 {
-    /* Base implementation does nothing */
-    (void)state;
-    (void)context;
+    (void)arena;
+    (void)repository;
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_object_finish_loading");
+    }
+
+    nmo_object_state_t *obj_state = (nmo_object_state_t *)state;
+    obj_state->visibility_flags &= (NMO_CKOBJECT_VISIBLE | NMO_CKOBJECT_HIERARCHICAL);
     NMO_RETURN_OK();
 }
 
@@ -225,7 +232,7 @@ nmo_type_vtable_t nmo_object_vtable = {
         nmo_object_state_hash)
 };
 
-NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(
+NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(
     nmo_register_object_type,
     CKPGUID_OBJECT,
     "CKObject",
@@ -233,5 +240,6 @@ NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(
     (nmo_guid_t){0},
     nmo_object_state_t,
     &nmo_object_vtable,
+    nmo_object_finish_loading,
     nmo_object_fields)
 

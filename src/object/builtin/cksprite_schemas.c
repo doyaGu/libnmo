@@ -23,7 +23,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -126,8 +126,12 @@ static nmo_status_t nmo_sprite_copy_bitmapdata(
     nmo_arena_t *arena,
     nmo_bitmapdata_t *dst,
     const nmo_bitmapdata_t *src);
+static nmo_status_t nmo_sprite_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-static nmo_status_t nmo_sprite_finish_loading(
+nmo_status_t nmo_sprite_finish_loading(
     void *instance,
     nmo_arena_t *arena,
     void *repository)
@@ -138,55 +142,86 @@ static nmo_status_t nmo_sprite_finish_loading(
     }
 
     nmo_sprite_state_t *state = (nmo_sprite_state_t *)instance;
-    if (!state->has_sprite_ref || state->sprite_ref_id == 0 || repository == NULL) {
-        NMO_RETURN_OK();
+
+    NMO_RETURN_IF_ERROR(nmo_2dentity_finish_loading(&state->entity, arena, repository));
+
+    if (state->has_sprite_ref) {
+        if (state->sprite_ref_id == 0) {
+            state->has_sprite_ref = false;
+        } else if (repository != NULL) {
+            nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+            nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, state->sprite_ref_id);
+            if (src_obj && src_obj->state &&
+                nmo_object_get_class_id(src_obj) == NMO_CID_SPRITE) {
+                const nmo_sprite_state_t *src = (const nmo_sprite_state_t *)src_obj->state;
+
+                state->has_transparency = src->has_transparency;
+                state->is_transparent = src->is_transparent;
+                state->transparent_color = src->transparent_color;
+                state->has_slot = src->has_slot;
+                state->current_slot = src->current_slot;
+                state->has_save_options = src->has_save_options;
+                state->save_options = src->save_options;
+
+                if (src->has_bitmap_data) {
+                    NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &state->bitmap_data, &src->bitmap_data));
+                    state->has_bitmap_data = true;
+                } else {
+                    state->bitmap_data.pixel_data = NULL;
+                    state->bitmap_data.palette_data = NULL;
+                    state->bitmap_data.system_copy_data = NULL;
+                    state->bitmap_data.video_backup_data = NULL;
+                    state->bitmap_data.pixels_data = NULL;
+                    state->bitmap_data.raw_chunk_data = NULL;
+                    state->has_bitmap_data = false;
+                }
+
+                state->bitmap_properties_size = src->bitmap_properties_size;
+                if (src->bitmap_properties_size > 0 && src->bitmap_properties) {
+                    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(
+                        arena, (void **)&state->bitmap_properties,
+                        src->bitmap_properties, src->bitmap_properties_size));
+                } else {
+                    state->bitmap_properties = NULL;
+                }
+            }
+
+            state->has_sprite_ref = false;
+            state->sprite_ref_id = 0;
+        }
     }
 
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
-    nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, state->sprite_ref_id);
-    if (src_obj == NULL || src_obj->state == NULL) {
-        NMO_RETURN_OK();
-    }
-
-    if (nmo_object_get_class_id(src_obj) != NMO_CID_SPRITE) {
-        NMO_RETURN_OK();
-    }
-
-    const nmo_sprite_state_t *src = (const nmo_sprite_state_t *)src_obj->state;
-
-    state->has_transparency = src->has_transparency;
-    state->is_transparent = src->is_transparent;
-    state->transparent_color = src->transparent_color;
-    state->has_slot = src->has_slot;
-    state->current_slot = src->current_slot;
-    state->has_save_options = src->has_save_options;
-    state->save_options = src->save_options;
-
-    if (src->has_bitmap_data) {
-        NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &state->bitmap_data, &src->bitmap_data));
-        state->has_bitmap_data = true;
-    } else {
+    if (!state->has_bitmap_data) {
         state->bitmap_data.pixel_data = NULL;
+        state->bitmap_data.pixel_data_size = 0;
         state->bitmap_data.palette_data = NULL;
+        state->bitmap_data.palette_size = 0;
         state->bitmap_data.system_copy_data = NULL;
+        state->bitmap_data.system_copy_size = 0;
         state->bitmap_data.video_backup_data = NULL;
+        state->bitmap_data.video_backup_size = 0;
         state->bitmap_data.pixels_data = NULL;
+        state->bitmap_data.pixels_size = 0;
         state->bitmap_data.raw_chunk_data = NULL;
-        state->has_bitmap_data = false;
+        state->bitmap_data.raw_chunk_size = 0;
     }
 
-    state->bitmap_properties_size = src->bitmap_properties_size;
-    if (src->bitmap_properties_size > 0 && src->bitmap_properties) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(
-            arena, (void **)&state->bitmap_properties,
-            src->bitmap_properties, src->bitmap_properties_size));
-    } else {
+    if (!state->has_transparency) {
+        state->is_transparent = false;
+    }
+
+    if (!state->has_slot) {
+        state->current_slot = 0;
+    }
+
+    if (!state->has_save_options) {
         state->bitmap_properties = NULL;
+        state->bitmap_properties_size = 0;
+    } else if (state->bitmap_properties_size > 0 && state->bitmap_properties == NULL) {
+        state->bitmap_properties_size = 0;
     }
 
-    state->has_sprite_ref = false;
-    state->sprite_ref_id = 0;
-    NMO_RETURN_OK();
+    return nmo_sprite_validate(state, NULL, NULL);
 }
 
 /* =============================================================================

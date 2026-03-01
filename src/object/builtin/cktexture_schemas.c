@@ -852,11 +852,12 @@ static nmo_status_t nmo_texture_validate(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     texture,
     nmo_texture_state_t,
     nmo_texture_serialize,
     nmo_texture_deserialize,
+    nmo_texture_finish_loading,
     nmo_texture_fields,
     CKPGUID_TEXTURE,
     "CKTexture",
@@ -987,9 +988,72 @@ nmo_status_t nmo_texture_finish_loading(
     nmo_arena_t *arena,
     void *repository)
 {
-    (void)instance;
     (void)arena;
     (void)repository;
-    NMO_RETURN_OK();
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_texture_finish_loading");
+    }
+
+    nmo_texture_state_t *state = (nmo_texture_state_t *)instance;
+
+    if (state->slot_count == 0) {
+        state->reader_slots = NULL;
+        state->raw_slots = NULL;
+        state->bitmap2_slots = NULL;
+    } else {
+        if (state->bitmap_kind == CKTEXTURE_BITMAP_READER && state->reader_slots == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing reader slots");
+        }
+        if (state->bitmap_kind == CKTEXTURE_BITMAP_RAW && state->raw_slots == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing raw slots");
+        }
+        if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing bitmap2 slots");
+        }
+        if (state->bitmap_kind == CKTEXTURE_BITMAP_NONE) {
+            state->reader_slots = NULL;
+            state->raw_slots = NULL;
+            state->bitmap2_slots = NULL;
+            state->slot_count = 0;
+        }
+    }
+
+    if (state->has_slot_filenames) {
+        if (!state->slot_filenames || state->slot_count == 0) {
+            state->has_slot_filenames = 0;
+        }
+    }
+
+    if (state->has_movie_filename && !state->movie_filename) {
+        state->has_movie_filename = 0;
+    }
+
+    if (state->has_desired_video_format &&
+        state->desired_video_format > _32_X8L8V8U8) {
+        state->desired_video_format = _16_ARGB1555;
+    }
+
+    if (state->has_current_slot) {
+        if (state->slot_count == 0 || state->current_slot < 0 ||
+            (uint32_t)state->current_slot >= state->slot_count) {
+            state->has_current_slot = 0;
+            state->current_slot = 0;
+        }
+    }
+
+    if (state->has_user_mipmaps && state->user_mipmap_count == 0) {
+        state->has_user_mipmaps = 0;
+        state->user_mipmaps = NULL;
+    }
+
+    if (state->has_save_format && (state->save_format_size == 0 || !state->save_format_data)) {
+        state->has_save_format = 0;
+        state->save_format_data = NULL;
+        state->save_format_size = 0;
+    }
+
+    return nmo_texture_validate(state, NULL, NULL);
 }
 

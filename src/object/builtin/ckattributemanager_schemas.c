@@ -280,11 +280,82 @@ nmo_status_t nmo_attributemanager_serialize(
  * Vtable + registration
  * ============================================================================= */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+nmo_status_t nmo_attributemanager_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+    (void)repository;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_attributemanager_finish_loading");
+    }
+
+    nmo_attributemanager_state_t *state = (nmo_attributemanager_state_t *)instance;
+
+    if (state->category_count == 0) {
+        state->categories = NULL;
+    } else if (state->categories == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Attribute categories missing");
+    }
+
+    if (state->attribute_count == 0) {
+        state->attributes = NULL;
+    } else if (state->attributes == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Attribute descriptors missing");
+    }
+
+    if (state->categories) {
+        for (uint32_t i = 0; i < state->category_count; ++i) {
+            nmo_attribute_category_t *cat = &state->categories[i];
+            if (cat->present && (!cat->name || cat->name[0] == '\0')) {
+                cat->present = false;
+                cat->name = NULL;
+                cat->flags = 0;
+            }
+        }
+    }
+
+    if (state->attributes) {
+        for (uint32_t i = 0; i < state->attribute_count; ++i) {
+            nmo_attribute_descriptor_t *attr = &state->attributes[i];
+            if (attr->present && (!attr->name || attr->name[0] == '\0')) {
+                attr->present = false;
+                attr->name = NULL;
+                attr->parameter_type_guid = NMO_GUID_NULL;
+                attr->category_index = -1;
+                attr->compatible_class_id = 0;
+                attr->flags = 0;
+                continue;
+            }
+            if (attr->present) {
+                if (attr->category_index < -1 ||
+                    (state->category_count > 0 &&
+                     attr->category_index >= (int32_t)state->category_count)) {
+                    attr->category_index = -1;
+                }
+            } else {
+                attr->parameter_type_guid = NMO_GUID_NULL;
+                attr->category_index = -1;
+                attr->compatible_class_id = 0;
+                attr->flags = 0;
+            }
+        }
+    }
+
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     attributemanager,
     nmo_attributemanager_state_t,
     nmo_attributemanager_serialize,
     nmo_attributemanager_deserialize,
+    nmo_attributemanager_finish_loading,
     nmo_attributemanager_fields,
     NMO_MANAGER_GUID_ATTRIBUTE,
     "CKAttributeManager",

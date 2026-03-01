@@ -86,6 +86,11 @@ NMO_API nmo_status_t nmo_curve_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_curve_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
 NMO_API nmo_status_t nmo_curvepoint_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
@@ -97,6 +102,11 @@ NMO_API nmo_status_t nmo_curvepoint_serialize(
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_API nmo_status_t nmo_curvepoint_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_curve_vtable, nmo_register_curve_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_curvepoint_vtable, nmo_register_curvepoint_type)

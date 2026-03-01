@@ -48,12 +48,17 @@ typedef enum nmo_diff_type {
     NMO_DIFF_OBJECT_COUNT,          /**< Different number of objects */
     NMO_DIFF_MANAGER_COUNT,         /**< Different number of managers */
     NMO_DIFF_OBJECT_MISSING,        /**< Object exists in one but not other */
+    NMO_DIFF_OBJECT_ORDER,          /**< Object order differs between sessions */
     NMO_DIFF_OBJECT_ID,             /**< Object ID mismatch */
     NMO_DIFF_OBJECT_NAME,           /**< Object name mismatch */
     NMO_DIFF_OBJECT_CLASS_ID,       /**< Object class ID mismatch */
     NMO_DIFF_OBJECT_REFERENCE_FLAG, /**< Object reference-only flag mismatch */
     NMO_DIFF_OBJECT_CHUNK_SIZE,     /**< Chunk data size mismatch */
     NMO_DIFF_OBJECT_CHUNK_DATA,     /**< Chunk data content mismatch */
+    NMO_DIFF_MANAGER_MISSING,       /**< Manager exists in one session but not the other */
+    NMO_DIFF_MANAGER_GUID,          /**< Manager GUID mismatch */
+    NMO_DIFF_MANAGER_CHUNK_SIZE,    /**< Manager chunk size mismatch */
+    NMO_DIFF_MANAGER_CHUNK_DATA,    /**< Manager chunk data mismatch */
     NMO_DIFF_FILE_VERSION,          /**< File version mismatch */
     NMO_DIFF_CK_VERSION,            /**< CK version mismatch */
     NMO_DIFF_SHADOW_DATA,           /**< Shadow blob mismatch */

@@ -12,7 +12,7 @@
 
 #include "nmo.h"
 #include "app/nmo_session.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 
 #include <stdio.h>
 #include <string.h>

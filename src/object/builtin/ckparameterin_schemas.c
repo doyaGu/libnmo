@@ -14,12 +14,13 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"
 #include "object/nmo_serialize_context.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
@@ -333,15 +334,49 @@ nmo_status_t nmo_parameterin_serialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_parameterin_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameterin_finish_loading");
+    }
+
+    nmo_parameterin_state_t *state = (nmo_parameterin_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+
+    nmo_parameterin_convert_legacy_guid(&state->type_guid);
+
+    if (state->source_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->source_id) == NULL) {
+        state->source_id = 0;
+    }
+
+    if (state->owner_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
+        state->owner_id = 0;
+    }
+
+    state->is_shared = state->source_id != 0 ? (state->is_shared ? 1 : 0) : 0;
+    state->is_disabled = state->is_disabled ? 1 : 0;
+
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     parameterin,
     nmo_parameterin_state_t,
     nmo_parameterin_serialize,
     nmo_parameterin_deserialize,
+    nmo_parameterin_finish_loading,
     nmo_parameterin_fields,
     CKPGUID_PARAMETERIN,
     "CKParameterIn",

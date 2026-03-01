@@ -65,6 +65,11 @@ NMO_API nmo_status_t nmo_parameterlocal_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_parameterlocal_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
 NMO_DECLARE_OBJECT_SCHEMA(nmo_parameterlocal_vtable, nmo_register_parameterlocal_type)
 
 #ifdef __cplusplus

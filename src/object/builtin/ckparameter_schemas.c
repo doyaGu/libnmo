@@ -26,6 +26,7 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
@@ -33,6 +34,7 @@
 #include "core/nmo_arena.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_reflection.h"
+#include "object/nmo_object_repository.h"
 #include "nmo_types.h"
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
@@ -380,15 +382,121 @@ static nmo_status_t nmo_parameter_validate(
     NMO_RETURN_OK();
 }
 
+static bool nmo_parameter_has_payload(const nmo_parameter_state_t *state)
+{
+    if (!state) {
+        return false;
+    }
+
+    if (state->mode != CKPARAM_MODE_NONE) {
+        return true;
+    }
+
+    if (state->buffer_data.count > 0) {
+        return true;
+    }
+
+    if (state->object_id != 0) {
+        return true;
+    }
+
+    if (state->subchunk != NULL) {
+        return true;
+    }
+
+    if (state->manager_guid.d1 != 0 ||
+        state->manager_guid.d2 != 0 ||
+        state->manager_value != 0) {
+        return true;
+    }
+
+    return false;
+}
+
+nmo_status_t nmo_parameter_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameter_finish_loading");
+    }
+
+    nmo_parameter_state_t *state = (nmo_parameter_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+
+    if (state->mode < CKPARAM_MODE_SUBCHUNK || state->mode > CKPARAM_MODE_MANAGER) {
+        state->mode = CKPARAM_MODE_NONE;
+    }
+
+    switch (state->mode) {
+        case CKPARAM_MODE_SUBCHUNK:
+            nmo_array_clear(&state->buffer_data);
+            state->object_id = 0;
+            state->manager_guid = NMO_GUID_NULL;
+            state->manager_value = 0;
+            if (state->subchunk == NULL) {
+                state->mode = CKPARAM_MODE_NONE;
+            }
+            break;
+
+        case CKPARAM_MODE_BUFFER:
+            state->subchunk = NULL;
+            state->object_id = 0;
+            state->manager_guid = NMO_GUID_NULL;
+            state->manager_value = 0;
+            if (nmo_guid_equals(state->type_guid, CKPGUID_PARAMETERTYPE) &&
+                state->buffer_data.count != 0 &&
+                state->buffer_data.count != sizeof(nmo_guid_t)) {
+                nmo_array_clear(&state->buffer_data);
+            }
+            break;
+
+        case CKPARAM_MODE_OBJECT:
+            nmo_array_clear(&state->buffer_data);
+            state->subchunk = NULL;
+            state->manager_guid = NMO_GUID_NULL;
+            state->manager_value = 0;
+            if (state->object_id != 0 && repo != NULL &&
+                nmo_object_repository_find_by_id(repo, state->object_id) == NULL) {
+                state->object_id = 0;
+            }
+            break;
+
+        case CKPARAM_MODE_MANAGER:
+            nmo_array_clear(&state->buffer_data);
+            state->subchunk = NULL;
+            state->object_id = 0;
+            break;
+
+        case CKPARAM_MODE_NONE:
+        default:
+            nmo_array_clear(&state->buffer_data);
+            state->subchunk = NULL;
+            state->object_id = 0;
+            state->manager_guid = NMO_GUID_NULL;
+            state->manager_value = 0;
+            break;
+    }
+
+    state->has_state = nmo_parameter_has_payload(state);
+
+    return nmo_parameter_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     parameter,
     nmo_parameter_state_t,
     nmo_parameter_serialize,
     nmo_parameter_deserialize,
+    nmo_parameter_finish_loading,
     nmo_parameter_fields,
     CKPGUID_PARAMETER,
     "CKParameter",

@@ -11,7 +11,7 @@
 
 #include "nmo_types.h"
 #include "format/nmo_object.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 

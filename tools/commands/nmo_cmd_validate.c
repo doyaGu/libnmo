@@ -15,7 +15,7 @@
 #include "nmo.h"
 #include "app/nmo_inspector.h"
 #include "core/nmo_arena.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "session/nmo_ref_graph.h"
 
 #include <stdio.h>
@@ -324,7 +324,9 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(session, arena);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    const nmo_type_registry_t *type_registry = nmo_context_get_type_registry(ctx);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, type_registry, arena);
     if (!graph) {
         nmo_arena_destroy(arena);
         nmo_tool_close_session(ctx, session);
@@ -341,7 +343,6 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
     nmo_ref_graph_stats_t stats;
     nmo_ref_graph_get_stats(graph, &stats);
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     char out_err[128];
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {

@@ -5,7 +5,7 @@
 
 #include "test_framework.h"
 #include "nmo.h"
-#include "session/nmo_object_index.h"
+#include "object/nmo_object_index.h"
 
 static nmo_object_t *create_session_object(
     nmo_session_t *session,

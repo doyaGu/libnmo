@@ -526,7 +526,7 @@ nmo_status_t nmo_light_finish_loading(
     nmo_arena_t *arena,
     void *repository)
 {
-    if (!instance || !arena || !repository) {
+    if (!instance || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKLight finish_loading");
     }
 
@@ -538,7 +538,50 @@ nmo_status_t nmo_light_finish_loading(
         return result;
     }
 
-    (void)light_state;
+    if (light_state->light_data.type < VX_LIGHTPOINT ||
+        light_state->light_data.type > VX_LIGHTPARA) {
+        light_state->light_data.type = VX_LIGHTPOINT;
+    }
+
+    if (light_state->light_data.type != VX_LIGHTSPOT) {
+        nmo_light_apply_nonspot_defaults(light_state);
+    } else {
+        if (light_state->light_data.outer_spot_cone <= 0.0f) {
+            light_state->light_data.outer_spot_cone = 0.78539819f;
+        }
+        if (light_state->light_data.inner_spot_cone <= 0.0f) {
+            light_state->light_data.inner_spot_cone = 0.69813174f;
+        }
+        if (light_state->light_data.inner_spot_cone > light_state->light_data.outer_spot_cone) {
+            light_state->light_data.inner_spot_cone = light_state->light_data.outer_spot_cone;
+        }
+        if (light_state->light_data.falloff <= 0.0f) {
+            light_state->light_data.falloff = 1.0f;
+        }
+    }
+
+    if (light_state->light_data.range < 0.0f) {
+        light_state->light_data.range = 0.0f;
+    }
+    if (light_state->light_data.attenuation0 < 0.0f) {
+        light_state->light_data.attenuation0 = 0.0f;
+    }
+    if (light_state->light_data.attenuation1 < 0.0f) {
+        light_state->light_data.attenuation1 = 0.0f;
+    }
+    if (light_state->light_data.attenuation2 < 0.0f) {
+        light_state->light_data.attenuation2 = 0.0f;
+    }
+    if (light_state->light_data.attenuation0 == 0.0f &&
+        light_state->light_data.attenuation1 == 0.0f &&
+        light_state->light_data.attenuation2 == 0.0f) {
+        light_state->light_data.attenuation0 = 1.0f;
+    }
+
+    if (light_state->light_power <= 0.0f) {
+        light_state->light_power = 1.0f;
+        light_state->has_light_power_chunk = 0;
+    }
 
     NMO_RETURN_OK();
 }

@@ -23,9 +23,10 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_session nmo_session_t;
 typedef struct nmo_object nmo_object_t;
+typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_ref_graph nmo_ref_graph_t;
+typedef struct nmo_type_registry nmo_type_registry_t;
 
 /**
  * @brief Reference kind enumeration (Session layer semantic definition)
@@ -105,17 +106,19 @@ typedef struct nmo_ref_graph_stats {
 } nmo_ref_graph_stats_t;
 
 /**
- * @brief Create reference graph from session
+ * @brief Create reference graph from repository + type registry
  *
- * Enumerates all reference edges across all objects in the session.
+ * Enumerates all reference edges across all objects in the repository.
  *
- * @param session Session with loaded objects (required)
+ * @param repo Object repository (required)
+ * @param type_registry Type registry for ref enumeration (required)
  * @param arena Arena for edge allocations (required)
  * @return Reference graph or NULL on failure
  * @note Returned graph is caller-owned; arena owns edge storage.
  */
 NMO_API nmo_ref_graph_t *nmo_ref_graph_create(
-    nmo_session_t *session,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *type_registry,
     nmo_arena_t *arena
 );
 

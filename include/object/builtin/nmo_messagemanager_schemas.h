@@ -72,6 +72,11 @@ NMO_API nmo_status_t nmo_messagemanager_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_messagemanager_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
 #ifdef __cplusplus
 }
 #endif

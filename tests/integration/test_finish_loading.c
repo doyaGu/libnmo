@@ -14,8 +14,8 @@
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_finish_loading.h"
-#include "session/nmo_object_index.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_index.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_logger.h"
 

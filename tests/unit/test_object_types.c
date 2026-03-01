@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_object_type_common.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_operations.h"
@@ -246,6 +247,17 @@ TEST(object_types, resource_types) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_types, default_validate_allows_null_type) {
+    uint32_t dummy = 0;
+    nmo_status_t result = nmo_object_default_validate(&dummy, NULL, NULL);
+    ASSERT_EQ(NMO_OK, result);
+}
+
+TEST(object_types, default_validate_rejects_null_instance) {
+    nmo_status_t result = nmo_object_default_validate(NULL, NULL, NULL);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_types, register_base_types);
     REGISTER_TEST(object_types, register_all_types);
@@ -255,4 +267,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_types, class_group_checks);
     REGISTER_TEST(object_types, 3d_entity_hierarchy);
     REGISTER_TEST(object_types, resource_types);
+    REGISTER_TEST(object_types, default_validate_allows_null_type);
+    REGISTER_TEST(object_types, default_validate_rejects_null_instance);
 TEST_MAIN_END()

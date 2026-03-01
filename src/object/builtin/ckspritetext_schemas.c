@@ -93,11 +93,12 @@ static nmo_status_t deserialize_text_content(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     spritetext,
     nmo_spritetext_state_t,
     nmo_spritetext_serialize,
     nmo_spritetext_deserialize,
+    nmo_spritetext_finish_loading,
     nmo_spritetext_fields,
     CKPGUID_SPRITETEXT,
     "CKSpriteText",
@@ -320,6 +321,21 @@ static nmo_status_t ckspritetext_finish_loading(
     (void)arena;
     state->needs_redraw = false;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_spritetext_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_spritetext_finish_loading");
+    }
+
+    nmo_spritetext_state_t *state = (nmo_spritetext_state_t *)instance;
+    NMO_RETURN_IF_ERROR(nmo_sprite_finish_loading(&state->base, arena, repository));
+    return ckspritetext_finish_loading(state, NULL, arena);
 }
 
 /* ========================================================================

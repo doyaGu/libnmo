@@ -171,15 +171,31 @@ static nmo_status_t nmo_renderobject_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_renderobject_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_renderobject_finish_loading");
+    }
+
+    nmo_renderobject_state_t *state = (nmo_renderobject_state_t *)instance;
+    NMO_RETURN_IF_ERROR(nmo_beobject_finish_loading(&state->base, arena, repository));
+    return nmo_renderobject_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     renderobject,
     nmo_renderobject_state_t,
     nmo_renderobject_serialize,
     nmo_renderobject_deserialize,
+    nmo_renderobject_finish_loading,
     nmo_renderobject_fields,
     CKPGUID_RENDEROBJECT,
     "CKRenderObject",

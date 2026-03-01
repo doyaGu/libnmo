@@ -3,7 +3,7 @@
  * @brief Shadow blob preservation implementation (Phase 1.2)
  */
 
-#include "session/nmo_shadow_storage.h"
+#include "object/nmo_shadow_storage.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_allocator.h"

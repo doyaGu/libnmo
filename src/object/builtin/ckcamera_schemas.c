@@ -279,10 +279,48 @@ nmo_status_t nmo_camera_finish_loading(
     nmo_arena_t *arena,
     void *repository)
 {
-    /* Camera-specific initialization could go here */
-    (void)instance;
-    (void)arena;
-    (void)repository;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to CKCamera finish_loading");
+    }
+
+    nmo_camera_state_t *state = (nmo_camera_state_t *)instance;
+    nmo_status_t result = nmo_3dentity_finish_loading(&state->entity, arena, repository);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    if (state->projection_type != 1u && state->projection_type != 2u) {
+        state->projection_type = 1u;
+    }
+
+    if (state->fov <= 0.0f) {
+        state->fov = 0.5f;
+    }
+    if (state->orthographic_zoom <= 0.0f) {
+        state->orthographic_zoom = 1.0f;
+    }
+
+    if (state->width <= 0) {
+        state->width = 4;
+    }
+    if (state->height <= 0) {
+        state->height = 3;
+    }
+    if (state->width > 65535) {
+        state->width = 65535;
+    }
+    if (state->height > 65535) {
+        state->height = 65535;
+    }
+
+    if (state->near_plane <= 0.0f) {
+        state->near_plane = 1.0f;
+    }
+    if (state->far_plane <= state->near_plane) {
+        state->far_plane = 4000.0f;
+    }
+
     NMO_RETURN_OK();
 }
 

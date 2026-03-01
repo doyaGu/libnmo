@@ -84,6 +84,11 @@ NMO_API nmo_status_t nmo_level_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
+NMO_API nmo_status_t nmo_level_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository);
+
 NMO_DECLARE_OBJECT_SCHEMA(nmo_level_vtable, nmo_register_level_type)
 
 #ifdef __cplusplus

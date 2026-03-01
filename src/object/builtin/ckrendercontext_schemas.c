@@ -44,15 +44,31 @@ static nmo_status_t nmo_rendercontext_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_rendercontext_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_rendercontext_finish_loading");
+    }
+
+    nmo_rendercontext_state_t *state = (nmo_rendercontext_state_t *)instance;
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     rendercontext,
     nmo_rendercontext_state_t,
     nmo_rendercontext_serialize,
     nmo_rendercontext_deserialize,
+    nmo_rendercontext_finish_loading,
     nmo_rendercontext_fields,
     CKPGUID_RENDERCONTEXT,
     "CKRenderContext",

@@ -68,6 +68,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
@@ -1597,11 +1598,17 @@ static nmo_status_t nmo_mesh_validate(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+nmo_status_t nmo_mesh_finish_loading(
+    void *state,
+    nmo_arena_t *arena,
+    void *repository);
+
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     mesh,
     nmo_mesh_state_t,
     nmo_mesh_serialize,
     nmo_mesh_deserialize,
+    nmo_mesh_finish_loading,
     nmo_mesh_fields,
     CKPGUID_MESH,
     "CKMesh",
@@ -1624,22 +1631,47 @@ nmo_status_t nmo_mesh_finish_loading(
     if (!state || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to finish_loading");
     }
-    
-    // Cast state
+
     nmo_mesh_state_t *mesh_state = (nmo_mesh_state_t *)state;
-    
-    // Mesh-specific finish loading tasks would go here:
-    // - Build face normals if missing
-    // - Resolve material group references
-    // - Initialize progressive mesh
-    // - Create hardware buffers
-    
-    // Note: CKBeObject doesn't have finish_loading, only CKObject does.
-    // Mesh doesn't need to chain to parent finish_loading.
-    
-    (void)mesh_state;  // Suppress unused warning
-    (void)repository;  // Suppress unused warning
-    
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    if (mesh_state->material_group_count > 0 && mesh_state->material_groups == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing material groups");
+    }
+    if (mesh_state->material_channel_count > 0 && mesh_state->material_channels == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing material channels");
+    }
+
+    if (repo) {
+        for (uint32_t i = 0; i < mesh_state->material_group_count; ++i) {
+            nmo_object_id_t id = mesh_state->material_groups[i].material_id;
+            if (id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            if (nmo_object_repository_find_by_id(repo, id) == NULL) {
+                mesh_state->material_groups[i].material_id = NMO_OBJECT_ID_NONE;
+            }
+        }
+
+        for (uint32_t i = 0; i < mesh_state->material_channel_count; ++i) {
+            nmo_material_channel_t *channel = &mesh_state->material_channels[i];
+            if (channel->material_id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            if (nmo_object_repository_find_by_id(repo, channel->material_id) == NULL) {
+                channel->material_id = NMO_OBJECT_ID_NONE;
+            }
+        }
+    }
+
+    if (mesh_state->faces && mesh_state->face_count > 0 && mesh_state->material_group_count > 0) {
+        for (uint32_t i = 0; i < mesh_state->face_count; ++i) {
+            if (mesh_state->faces[i].material_group_idx >= mesh_state->material_group_count) {
+                mesh_state->faces[i].material_group_idx = 0;
+            }
+        }
+    }
+
     NMO_RETURN_OK();
 }
 

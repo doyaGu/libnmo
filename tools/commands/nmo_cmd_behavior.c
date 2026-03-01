@@ -26,7 +26,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_types.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>

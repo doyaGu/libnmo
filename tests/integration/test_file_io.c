@@ -3,7 +3,7 @@
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h" // Include for nmo_object_t definition
 #include "core/nmo_error.h"
 #include <stdio.h>

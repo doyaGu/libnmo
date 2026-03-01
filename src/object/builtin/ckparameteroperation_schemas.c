@@ -9,10 +9,12 @@
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -165,6 +167,67 @@ static nmo_status_t nmo_parameteroperation_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_parameteroperation_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameteroperation_finish_loading");
+    }
+
+    nmo_parameteroperation_state_t *state = (nmo_parameteroperation_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+
+    if (state->owner_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
+        state->owner_id = 0;
+    }
+
+    if (state->in1_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->in1_id) == NULL &&
+        state->in1_chunk == NULL) {
+        state->in1_id = 0;
+    }
+    if (state->in2_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->in2_id) == NULL &&
+        state->in2_chunk == NULL) {
+        state->in2_id = 0;
+    }
+    if (state->out_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->out_id) == NULL &&
+        state->out_chunk == NULL) {
+        state->out_id = 0;
+    }
+
+    state->has_owner = (state->owner_id != 0);
+    state->has_in1 = (state->in1_id != 0 || state->in1_chunk != NULL);
+    state->has_in2 = (state->in2_id != 0 || state->in2_chunk != NULL);
+    state->has_out = (state->out_id != 0 || state->out_chunk != NULL);
+
+    if (!state->has_in1) {
+        state->in1_id = 0;
+        state->in1_chunk = NULL;
+    }
+    if (!state->has_in2) {
+        state->in2_id = 0;
+        state->in2_chunk = NULL;
+    }
+    if (!state->has_out) {
+        state->out_id = 0;
+        state->out_chunk = NULL;
+    }
+
+    if (!state->has_owner) {
+        state->owner_id = 0;
+    }
+
+    return nmo_parameteroperation_validate(state, NULL, NULL);
+}
+
 nmo_status_t nmo_parameteroperation_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -253,11 +316,12 @@ nmo_status_t nmo_parameteroperation_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     parameteroperation,
     nmo_parameteroperation_state_t,
     nmo_parameteroperation_serialize,
     nmo_parameteroperation_deserialize,
+    nmo_parameteroperation_finish_loading,
     nmo_parameteroperation_fields,
     CKPGUID_PARAMETEROPERATION,
     "CKParameterOperation",

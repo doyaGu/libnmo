@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -449,6 +450,30 @@ static nmo_status_t nmo_sound_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_sound_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sound_finish_loading");
+    }
+
+    nmo_sound_state_t *state = (nmo_sound_state_t *)instance;
+    NMO_RETURN_IF_ERROR(nmo_beobject_finish_loading(&state->base, arena, repository));
+
+    if (state->save_options > CKSOUND_USEGLOBAL) {
+        state->save_options = CKSOUND_USEGLOBAL;
+    }
+
+    if (state->file_name && state->file_name[0] == '\0') {
+        state->file_name = NULL;
+    }
+
+    return nmo_sound_validate(state, NULL, NULL);
+}
+
 static nmo_status_t nmo_wavesound_copy(
     const void *src,
     void *dst,
@@ -471,6 +496,56 @@ static nmo_status_t nmo_wavesound_validate(
     (void)type;
     (void)context;
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_wavesound_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_wavesound_finish_loading");
+    }
+
+    nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_sound_finish_loading(&state->base, arena, repository));
+
+    if (state->has_wave_file_name) {
+        if (!state->wave_file_name || state->wave_file_name[0] == '\0') {
+            state->has_wave_file_name = 0;
+            state->wave_file_name = NULL;
+        }
+    } else {
+        state->wave_file_name = NULL;
+    }
+
+    if (state->has_duration) {
+        if (state->duration < 0) {
+            state->duration = 0;
+        }
+    } else {
+        state->duration = 0;
+    }
+
+    if (state->has_data2) {
+        if (state->min_distance < 0.0f) {
+            state->min_distance = 0.0f;
+        }
+        if (state->max_distance < state->min_distance) {
+            state->max_distance = state->min_distance;
+        }
+        if (state->attached_object_id != 0 && repo &&
+            nmo_object_repository_find_by_id(repo, state->attached_object_id) == NULL) {
+            state->attached_object_id = 0;
+        }
+    } else {
+        state->attached_object_id = 0;
+    }
+
+    return nmo_wavesound_validate(state, NULL, NULL);
 }
 
 static nmo_status_t nmo_midisound_copy(
@@ -497,15 +572,44 @@ static nmo_status_t nmo_midisound_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_midisound_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)repository;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_midisound_finish_loading");
+    }
+
+    nmo_midisound_state_t *state = (nmo_midisound_state_t *)instance;
+
+    NMO_RETURN_IF_ERROR(nmo_sound_finish_loading(&state->base, arena, repository));
+
+    if (state->has_midi_file_name) {
+        if (!state->midi_file_name || state->midi_file_name[0] == '\0') {
+            state->has_midi_file_name = 0;
+            state->midi_file_name = NULL;
+        }
+    } else {
+        state->midi_file_name = NULL;
+    }
+
+    return nmo_midisound_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     sound,
     nmo_sound_state_t,
     nmo_sound_serialize,
     nmo_sound_deserialize,
+    nmo_sound_finish_loading,
     nmo_sound_fields,
     CKPGUID_SOUND,
     "CKSound",
@@ -513,11 +617,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     CKPGUID_BEOBJECT
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     wavesound,
     nmo_wavesound_state_t,
     nmo_wavesound_serialize,
     nmo_wavesound_deserialize,
+    nmo_wavesound_finish_loading,
     nmo_wavesound_fields,
     CKPGUID_WAVESOUND,
     "CKWaveSound",
@@ -525,11 +630,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     CKPGUID_SOUND
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     midisound,
     nmo_midisound_state_t,
     nmo_midisound_serialize,
     nmo_midisound_deserialize,
+    nmo_midisound_finish_loading,
     nmo_midisound_fields,
     CKPGUID_MIDISOUND,
     "CKMidiSound",

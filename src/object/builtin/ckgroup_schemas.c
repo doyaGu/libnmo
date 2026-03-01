@@ -23,7 +23,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -187,11 +187,11 @@ nmo_status_t nmo_group_serialize(
         NMO_RETURN_OK();
     }
 
-    /* Only write data if group is non-empty */
-    if (in_state->object_ids.count == 0) {
+    /* In file mode, emit explicit empty group payload to avoid schema fallbacks. */
+    if (!is_file && in_state->object_ids.count == 0) {
         NMO_RETURN_OK();
     }
-    if (!in_state->object_ids.data) {
+    if (in_state->object_ids.count > 0 && !in_state->object_ids.data) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Group object IDs missing");
     }
 
@@ -204,10 +204,12 @@ nmo_status_t nmo_group_serialize(
     if (result != NMO_OK) return result;
 
     /* Write object IDs */
-    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->object_ids);
-    for (uint32_t i = 0; i < in_state->object_ids.count; i++) {
-        result = nmo_chunk_write_object_id(out_chunk, ids[i]);
-        if (result != NMO_OK) return result;
+    if (in_state->object_ids.count > 0) {
+        const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->object_ids);
+        for (uint32_t i = 0; i < in_state->object_ids.count; i++) {
+            result = nmo_chunk_write_object_id(out_chunk, ids[i]);
+            if (result != NMO_OK) return result;
+        }
     }
 
     NMO_RETURN_OK();

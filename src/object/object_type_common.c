@@ -114,9 +114,10 @@ nmo_status_t nmo_object_default_validate(
     void *context)
 {
     (void)context;
-    if (!instance || !type) {
+    (void)type;
+    if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "NULL instance/type in validate");
+                                "NULL instance in validate");
     }
     NMO_RETURN_OK();
 }

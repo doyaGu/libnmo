@@ -111,11 +111,13 @@ nmo_status_t nmo_3dobject_finish_loading(
     nmo_arena_t *arena,
     void *repository)
 {
-    /* Mesh reference resolution would go here */
-    (void)instance;
-    (void)arena;
-    (void)repository;
-    NMO_RETURN_OK();
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to CK3dObject finish_loading");
+    }
+
+    nmo_3dobject_state_t *state = (nmo_3dobject_state_t *)instance;
+    return nmo_3dentity_finish_loading(&state->entity, arena, repository);
 }
 
 /* ============================================================================

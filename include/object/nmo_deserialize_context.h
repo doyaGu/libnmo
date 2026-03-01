@@ -60,7 +60,7 @@ typedef struct nmo_object nmo_object_t;
  * Passed to deserialize functions, provides access to:
  * - Object being deserialized
  * - Arena for any allocations needed
- * - Repository for reference resolution
+ * - Object repository for reference resolution
  * - Type registry for hierarchy lookups
  */
 typedef struct nmo_deserialize_context {
@@ -73,7 +73,7 @@ typedef struct nmo_deserialize_context {
     /** Arena for allocations */
     nmo_arena_t *arena;
     
-    /** Object repository for reference resolution */
+    /** Object repository for reference resolution (nmo_object_repository_t*) */
     void *repository;
     
     /** Object being deserialized */
@@ -112,7 +112,7 @@ typedef struct nmo_deserialize_context {
  * @brief Create deserialization context
  * 
  * @param arena Arena for allocations
- * @param repository Object repository
+ * @param repository Repository pointer (nmo_object_repository_t*)
  * @param type_runtime Type runtime aggregate
  * @param flags Context flags
  * @return Initialized context

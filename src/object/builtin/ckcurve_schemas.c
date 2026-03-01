@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 static void nmo_curve_set_defaults(nmo_curve_state_t *state) {
@@ -205,11 +206,176 @@ static nmo_status_t nmo_curvepoint_validate(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+nmo_status_t nmo_curve_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_curve_finish_loading");
+    }
+
+    nmo_curve_state_t *state = (nmo_curve_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_3dentity_finish_loading(&state->base, arena, repository));
+
+    state->has_curve_data = state->has_curve_data ? 1 : 0;
+    state->has_curveonly_chunk = state->has_curveonly_chunk ? 1 : 0;
+    state->has_controlpoints_chunk = state->has_controlpoints_chunk ? 1 : 0;
+    state->has_fitting_chunk = state->has_fitting_chunk ? 1 : 0;
+    state->has_steps_chunk = state->has_steps_chunk ? 1 : 0;
+    state->has_open_chunk = state->has_open_chunk ? 1 : 0;
+    state->has_savepoints_chunk = state->has_savepoints_chunk ? 1 : 0;
+    state->savepoints_in_file = state->savepoints_in_file ? 1 : 0;
+
+    if (!state->has_curve_data) {
+        state->control_point_count = 0;
+        state->control_point_ids = NULL;
+        state->fitting_coeff = 0.0f;
+        state->step_count = 0;
+        state->opened = 0;
+        state->has_curveonly_chunk = 0;
+        state->has_controlpoints_chunk = 0;
+        state->has_fitting_chunk = 0;
+        state->has_steps_chunk = 0;
+        state->has_open_chunk = 0;
+    }
+
+    if (state->control_point_count > 0 && state->control_point_ids == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Curve control_point_ids missing");
+    }
+
+    if (state->control_point_count > 0 && state->control_point_ids) {
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->control_point_count; ++i) {
+            nmo_object_id_t id = state->control_point_ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (state->control_point_ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            state->control_point_ids[kept++] = id;
+        }
+        state->control_point_count = kept;
+        if (state->control_point_count == 0) {
+            state->control_point_ids = NULL;
+        }
+    } else {
+        state->control_point_count = 0;
+        state->control_point_ids = NULL;
+    }
+
+    if (state->sub_point_count > 0 && state->sub_points == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Curve sub_points missing");
+    }
+
+    if (state->sub_point_count > 0 && state->sub_points) {
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->sub_point_count; ++i) {
+            nmo_object_id_t id = state->sub_points[i].point_id;
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            state->sub_points[kept] = state->sub_points[i];
+            kept++;
+        }
+        state->sub_point_count = kept;
+        if (state->sub_point_count == 0) {
+            state->sub_points = NULL;
+        }
+    } else {
+        state->sub_point_count = 0;
+        state->sub_points = NULL;
+    }
+
+    if (!state->has_savepoints_chunk || state->sub_point_count == 0) {
+        state->has_savepoints_chunk = 0;
+        state->savepoints_in_file = 0;
+        state->sub_point_count = 0;
+        state->sub_points = NULL;
+    }
+
+    return nmo_curve_validate(state, NULL, NULL);
+}
+
+nmo_status_t nmo_curvepoint_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_curvepoint_finish_loading");
+    }
+
+    nmo_curvepoint_state_t *state = (nmo_curvepoint_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_3dentity_finish_loading(&state->base, arena, repository));
+
+    state->has_default_data = state->has_default_data ? 1 : 0;
+    state->defaultdata_is_modern = state->defaultdata_is_modern ? 1 : 0;
+    state->has_reserved_vector = state->has_reserved_vector ? 1 : 0;
+    state->has_tcb_chunk = state->has_tcb_chunk ? 1 : 0;
+    state->has_tangents_chunk = state->has_tangents_chunk ? 1 : 0;
+    state->has_legacy_position = state->has_legacy_position ? 1 : 0;
+
+    if (state->curve_id != 0 && repo &&
+        nmo_object_repository_find_by_id(repo, state->curve_id) == NULL) {
+        state->curve_id = 0;
+    }
+
+    if (!state->has_default_data) {
+        state->curve_id = 0;
+        state->use_tcb = 0;
+        state->linear = 0;
+        state->tension = 0.0f;
+        state->continuity = 0.0f;
+        state->bias = 0.0f;
+        state->tangent_in = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        state->tangent_out = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        state->has_reserved_vector = 0;
+        state->reserved_vector = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        state->has_tcb_chunk = 0;
+        state->has_tangents_chunk = 0;
+        state->has_legacy_position = 0;
+        state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+    } else {
+        if (!state->has_reserved_vector) {
+            state->reserved_vector = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        }
+        if (!state->has_legacy_position) {
+            state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+        }
+    }
+
+    return nmo_curvepoint_validate(state, NULL, NULL);
+}
+
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     curve,
     nmo_curve_state_t,
     nmo_curve_serialize,
     nmo_curve_deserialize,
+    nmo_curve_finish_loading,
     nmo_curve_fields,
     CKPGUID_CURVE,
     "CKCurve",
@@ -217,11 +383,12 @@ NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
     CKPGUID_3DENTITY
 )
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     curvepoint,
     nmo_curvepoint_state_t,
     nmo_curvepoint_serialize,
     nmo_curvepoint_deserialize,
+    nmo_curvepoint_finish_loading,
     nmo_curvepoint_fields,
     CKPGUID_CURVEPOINT,
     "CKCurvePoint",

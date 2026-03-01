@@ -8,14 +8,15 @@
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
-#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_enum_defs.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
@@ -39,7 +40,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_place_deserialize");
     }
 
-    nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_deserialize(&out_state->base.base, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -95,7 +96,7 @@ static nmo_status_t nmo_place_deserialize_internal(
 
 static const nmo_type_field_t nmo_place_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_place_state_t, base),
-                    sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
+                    sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_place_state_t, has_camera, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_place_state_t, camera_id),
@@ -131,15 +132,107 @@ static nmo_status_t nmo_place_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_place_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_place_finish_loading");
+    }
+
+    nmo_place_state_t *state = (nmo_place_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_status_t result = nmo_beobject_finish_loading(&state->base.base, arena, repository);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    const uint32_t visibility_flags = state->base.base.base.base.base.visibility_flags;
+    if ((visibility_flags & NMO_CKOBJECT_VISIBLE) != 0) {
+        state->base.moveable_flags |= VX_MOVEABLE_VISIBLE;
+    } else {
+        state->base.moveable_flags &= ~VX_MOVEABLE_VISIBLE;
+    }
+
+    if ((visibility_flags & NMO_CKOBJECT_HIERARCHICAL) != 0) {
+        state->base.moveable_flags |= VX_MOVEABLE_HIERARCHICALHIDE;
+    } else {
+        state->base.moveable_flags &= ~VX_MOVEABLE_HIERARCHICALHIDE;
+    }
+
+    if (state->portals.count > 0 && state->portals.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Place portals missing");
+    }
+    if (state->reference_ids.count > 0 && state->reference_ids.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Place reference_ids missing");
+    }
+
+    if (repo) {
+        if (state->has_camera && state->camera_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->camera_id) == NULL) {
+            state->camera_id = 0;
+            state->has_camera = 0;
+        }
+        if (state->has_level && state->level_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->level_id) == NULL) {
+            state->level_id = 0;
+            state->has_level = 0;
+        }
+
+        if (state->portals.count > 0) {
+            nmo_place_portal_entry_t *portals = NMO_ARRAY_DATA(
+                nmo_place_portal_entry_t, &state->portals);
+            uint32_t kept = 0;
+            for (uint32_t i = 0; i < state->portals.count; ++i) {
+                nmo_place_portal_entry_t entry = portals[i];
+                if (entry.place_id == 0 || entry.portal_id == 0) {
+                    continue;
+                }
+                if (nmo_object_repository_find_by_id(repo, entry.place_id) == NULL) {
+                    continue;
+                }
+                if (nmo_object_repository_find_by_id(repo, entry.portal_id) == NULL) {
+                    continue;
+                }
+                portals[kept++] = entry;
+            }
+            state->portals.count = kept;
+        }
+
+        if (state->reference_ids.count > 0) {
+            nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->reference_ids);
+            uint32_t kept = 0;
+            for (uint32_t i = 0; i < state->reference_ids.count; ++i) {
+                nmo_object_id_t id = ids[i];
+                if (id == 0) {
+                    continue;
+                }
+                if (nmo_object_repository_find_by_id(repo, id) == NULL) {
+                    continue;
+                }
+                ids[kept++] = id;
+            }
+            state->reference_ids.count = kept;
+        }
+    }
+
+    return nmo_place_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     place,
     nmo_place_state_t,
     nmo_place_serialize,
     nmo_place_deserialize,
+    nmo_place_finish_loading,
     nmo_place_fields,
     CKPGUID_PLACE,
     "CKPlace",
@@ -156,7 +249,7 @@ static nmo_status_t nmo_place_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_place_serialize");
     }
 
-    nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
+    nmo_status_t result = nmo_beobject_serialize(&in_state->base.base, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }

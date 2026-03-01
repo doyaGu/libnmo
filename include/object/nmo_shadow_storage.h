@@ -1,6 +1,6 @@
 /**
  * @file nmo_shadow_storage.h
- * @brief Session-level shadow blob preservation for round-trip fidelity.
+ * @brief Object-layer shadow blob preservation for round-trip fidelity.
  *
  * Implements the Shadow Blob mechanism described in IMPROVEMENT_PLAN.md Phase 1.2:
  * - Preserves Included Files blob verbatim from nmo_file_chunk_t::included_files

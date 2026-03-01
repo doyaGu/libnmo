@@ -14,6 +14,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -98,11 +99,12 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     sprite3d,
     nmo_sprite3d_state_t,
     nmo_sprite3d_serialize,
     nmo_sprite3d_deserialize,
+    nmo_sprite3d_finish_loading,
     nmo_sprite3d_fields,
     CKPGUID_SPRITE3D,
     "CKSprite3D",
@@ -182,5 +184,29 @@ nmo_status_t nmo_sprite3d_serialize(
     (void)type;
     const nmo_sprite3d_state_t *in_state = (const nmo_sprite3d_state_t *)instance;
     return nmo_sprite3d_serialize_internal(in_state, out_chunk, context);
+}
+
+nmo_status_t nmo_sprite3d_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sprite3d_finish_loading");
+    }
+
+    nmo_sprite3d_state_t *state = (nmo_sprite3d_state_t *)instance;
+
+    NMO_RETURN_IF_ERROR(nmo_3dentity_finish_loading(&state->base, arena, repository));
+
+    if (repository && state->material_id != 0) {
+        nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+        if (nmo_object_repository_find_by_id(repo, state->material_id) == NULL) {
+            state->material_id = 0;
+        }
+    }
+
+    NMO_RETURN_OK();
 }
 

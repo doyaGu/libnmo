@@ -192,11 +192,46 @@ nmo_status_t nmo_messagemanager_serialize(
  * Vtable + registration
  * ============================================================================= */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+nmo_status_t nmo_messagemanager_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+    (void)repository;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_messagemanager_finish_loading");
+    }
+
+    nmo_messagemanager_state_t *state = (nmo_messagemanager_state_t *)instance;
+
+    if (state->message_type_count == 0) {
+        state->message_type_names = NULL;
+        return nmo_object_default_validate(state, NULL, NULL);
+    }
+
+    if (state->message_type_names == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Message type names missing");
+    }
+
+    for (uint32_t i = 0; i < state->message_type_count; ++i) {
+        if (state->message_type_names[i] == NULL) {
+            state->message_type_names[i] = "";
+        }
+    }
+
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     messagemanager,
     nmo_messagemanager_state_t,
     nmo_messagemanager_serialize,
     nmo_messagemanager_deserialize,
+    nmo_messagemanager_finish_loading,
     nmo_messagemanager_fields,
     NMO_MANAGER_GUID_MESSAGE,
     "CKMessageManager",

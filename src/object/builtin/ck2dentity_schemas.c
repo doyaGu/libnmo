@@ -26,6 +26,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -528,11 +529,66 @@ nmo_status_t nmo_2dentity_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS(
+nmo_status_t nmo_2dentity_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_2dentity_finish_loading");
+    }
+
+    nmo_2dentity_state_t *state = (nmo_2dentity_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_renderobject_finish_loading(&state->base, arena, repository));
+
+    state->flags &= NMO_CK2DENTITY_FLAGS_MASK;
+
+    if (state->has_homogeneous_rect) {
+        state->flags |= NMO_CK2DENTITY_FLAG_HOMOGENEOUS;
+    } else {
+        state->flags &= ~NMO_CK2DENTITY_FLAG_HOMOGENEOUS;
+    }
+
+    if (!state->has_source_rect) {
+        state->has_source_rect = false;
+    }
+
+    if (!state->has_z_order) {
+        state->z_order = 0;
+    }
+
+    if (state->has_parent) {
+        if (state->parent_id == 0 ||
+            (repo && nmo_object_repository_find_by_id(repo, state->parent_id) == NULL)) {
+            state->has_parent = false;
+            state->parent_id = 0;
+        }
+    } else {
+        state->parent_id = 0;
+    }
+
+    if (state->has_material) {
+        if (state->material_id == 0 ||
+            (repo && nmo_object_repository_find_by_id(repo, state->material_id) == NULL)) {
+            state->has_material = false;
+            state->material_id = 0;
+        }
+    } else {
+        state->material_id = 0;
+    }
+
+    return nmo_object_default_validate(state, NULL, NULL);
+}
+
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
     2dentity,
     nmo_2dentity_state_t,
     nmo_2dentity_serialize,
     nmo_2dentity_deserialize,
+    nmo_2dentity_finish_loading,
     nmo_2dentity_fields,
     CKPGUID_2DENTITY,
     "CK2dEntity",

@@ -92,6 +92,10 @@
 // Object layer
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
+#include "object/nmo_object_repository.h"
+#include "object/nmo_object_index.h"
+#include "object/nmo_shadow_storage.h"
+#include "object/nmo_object_system.h"
 
 // Type layer
 #include "type/nmo_type_system.h"
@@ -109,13 +113,11 @@
 #include "extension/nmo_extension_diagnostics.h"
 
 // Session layer
-#include "session/nmo_object_repository.h"
 #include "session/nmo_load_session.h"
 #include "format/nmo_id_remap.h"
 #include "session/nmo_parser.h"
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
-#include "session/nmo_object_index.h"
 #include "session/nmo_ref_graph.h"
 
 // App layer

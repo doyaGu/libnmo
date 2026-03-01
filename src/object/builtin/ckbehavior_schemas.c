@@ -31,6 +31,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
+#include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -844,15 +845,210 @@ static nmo_status_t nmo_behavior_validate(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_behavior_finish_loading(
+    void *instance,
+    nmo_arena_t *arena,
+    void *repository)
+{
+    (void)arena;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behavior_finish_loading");
+    }
+
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+
+    if (state->sub_behaviors.count > 0 && state->sub_behaviors.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior sub_behaviors missing");
+    }
+    if (state->sub_behavior_chunks.count > 0 && state->sub_behavior_chunks.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior sub_behavior_chunks missing");
+    }
+    if (state->sub_behavior_links.count > 0 && state->sub_behavior_links.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior sub_behavior_links missing");
+    }
+    if (state->operations.count > 0 && state->operations.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior operations missing");
+    }
+    if (state->in_parameters.count > 0 && state->in_parameters.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior in_parameters missing");
+    }
+    if (state->out_parameters.count > 0 && state->out_parameters.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior out_parameters missing");
+    }
+    if (state->local_parameters.count > 0 && state->local_parameters.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior local_parameters missing");
+    }
+    if (state->local_parameter_chunks.count > 0 && state->local_parameter_chunks.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior local_parameter_chunks missing");
+    }
+    if (state->inputs.count > 0 && state->inputs.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior inputs missing");
+    }
+    if (state->outputs.count > 0 && state->outputs.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior outputs missing");
+    }
+
+    if (repo) {
+        if (state->owner_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
+            state->owner_id = 0;
+        }
+        if (state->target_parameter_id != 0 &&
+            nmo_object_repository_find_by_id(repo, state->target_parameter_id) == NULL) {
+            state->target_parameter_id = 0;
+        }
+    }
+
+    if ((state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0) {
+        state->sub_behaviors.count = 0;
+        state->sub_behavior_chunks.count = 0;
+        state->sub_behavior_links.count = 0;
+        state->operations.count = 0;
+    }
+
+    if (state->sub_behaviors.count > 0) {
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->sub_behaviors);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->sub_behaviors.count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->sub_behaviors.count = kept;
+        if (state->sub_behavior_chunks.count > kept) {
+            state->sub_behavior_chunks.count = kept;
+        }
+    } else {
+        state->sub_behavior_chunks.count = 0;
+    }
+
+    if (state->sub_behavior_links.count > 0) {
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->sub_behavior_links);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->sub_behavior_links.count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->sub_behavior_links.count = kept;
+    }
+
+    if (state->operations.count > 0) {
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->operations);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < state->operations.count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        state->operations.count = kept;
+    }
+
+    nmo_array_t *arrays[] = {
+        &state->in_parameters,
+        &state->out_parameters,
+        &state->local_parameters,
+        &state->inputs,
+        &state->outputs
+    };
+    for (size_t ai = 0; ai < sizeof(arrays) / sizeof(arrays[0]); ++ai) {
+        nmo_array_t *arr = arrays[ai];
+        if (arr->count == 0 || !arr->data) {
+            continue;
+        }
+        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, arr);
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < arr->count; ++i) {
+            nmo_object_id_t id = ids[i];
+            if (id == 0) {
+                continue;
+            }
+            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
+                continue;
+            }
+            bool seen = false;
+            for (uint32_t j = 0; j < kept; ++j) {
+                if (ids[j] == id) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen) {
+                continue;
+            }
+            ids[kept++] = id;
+        }
+        arr->count = kept;
+    }
+
+    if (state->local_parameters.count > 0 &&
+        state->local_parameter_chunks.count > state->local_parameters.count) {
+        state->local_parameter_chunks.count = state->local_parameters.count;
+    }
+
+    return nmo_behavior_validate(state, NULL, NULL);
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_FIELDS_CUSTOM(
+NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
     behavior,
     nmo_behavior_state_t,
     nmo_behavior_serialize,
     nmo_behavior_deserialize,
+    nmo_behavior_finish_loading,
     nmo_behavior_fields,
     CKPGUID_BEHAVIOR,
     "CKBehavior",

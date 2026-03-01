@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_error.h"

@@ -5,15 +5,18 @@
 
 #include "app/nmo_comparison.h"
 #include "app/nmo_session.h"
-#include "session/nmo_object_repository.h"
+#include "object/nmo_object_repository.h"
+#include "object/nmo_shadow_storage.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_id_remap.h"
-#include "format/nmo_chunk_api.h"
+#include "format/nmo_data.h"
+#include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static int object_is_reference_only(const nmo_object_t *obj) {
     if (obj == NULL) {
@@ -54,6 +57,93 @@ static void format_chunk_context(const nmo_chunk_t *chunk, char *buffer, size_t 
              chunk->chunk_version,
              chunk->chunk_options,
              chunk->data.count);
+}
+
+static void format_guid_context(nmo_guid_t guid, char *buffer, size_t buffer_size) {
+    if (buffer == NULL || buffer_size == 0) {
+        return;
+    }
+    if (nmo_guid_format(guid, buffer, buffer_size) <= 0) {
+        snprintf(buffer, buffer_size, "{%08X-%08X}", guid.d1, guid.d2);
+    }
+}
+
+static nmo_object_id_t remap_or_identity(const nmo_id_remap_t *remap, nmo_object_id_t id) {
+    if (remap == NULL || id == 0) {
+        return id;
+    }
+
+    nmo_object_id_t mapped = id;
+    if (nmo_id_remap_lookup_id(remap, id, &mapped) == NMO_OK) {
+        return mapped;
+    }
+    return id;
+}
+
+static int object_match_score(const nmo_object_t *obj1, const nmo_object_t *obj2) {
+    if (obj1 == NULL || obj2 == NULL) {
+        return 0;
+    }
+
+    if (obj1->file_id != 0 && obj2->file_id != 0 && obj1->file_id == obj2->file_id) {
+        int score = (obj1->class_id == obj2->class_id) ? 6 : 5;
+        if (obj1->file_index != 0 && obj2->file_index != 0 && obj1->file_index == obj2->file_index) {
+            score++;
+        }
+        return score;
+    }
+
+    if (obj1->id != 0 && obj2->id != 0 && obj1->id == obj2->id) {
+        return (obj1->class_id == obj2->class_id) ? 4 : 3;
+    }
+
+    const char *name1 = obj1->name ? obj1->name : "";
+    const char *name2 = obj2->name ? obj2->name : "";
+    if (obj1->class_id == obj2->class_id && name1[0] != '\0' && strcmp(name1, name2) == 0) {
+        return 2;
+    }
+
+    return 0;
+}
+
+static int find_best_object_match(const nmo_object_t *obj1,
+                                  nmo_object_t **objects2,
+                                  size_t count2,
+                                  const uint8_t *used2) {
+    int best_index = -1;
+    int best_score = 0;
+    int best_ambiguous = 0;
+
+    for (size_t j = 0; j < count2; j++) {
+        if (used2 != NULL && used2[j]) {
+            continue;
+        }
+        nmo_object_t *obj2 = objects2[j];
+        if (obj2 == NULL) {
+            continue;
+        }
+
+        int score = object_match_score(obj1, obj2);
+        if (score == 0) {
+            continue;
+        }
+
+        if (score > best_score) {
+            best_score = score;
+            best_index = (int)j;
+            best_ambiguous = 0;
+        } else if (score == best_score) {
+            best_ambiguous = 1;
+        }
+    }
+
+    if (best_index < 0) {
+        return -1;
+    }
+    if (best_ambiguous) {
+        return -2;
+    }
+    return best_index;
 }
 
 /* ============================================================================
@@ -173,26 +263,37 @@ static nmo_id_remap_t *build_id_remap_by_file_id(nmo_object_t **objects1,
         return NULL;
     }
 
-    for (size_t i = 0; i < count2; i++) {
-        nmo_object_t *obj2 = objects2[i];
-        if (obj2 == NULL) continue;
-
-        nmo_object_id_t key2 = obj2->file_id;
-        if (key2 == 0) continue;
-
-        for (size_t j = 0; j < count1; j++) {
-            nmo_object_t *obj1 = objects1[j];
-            if (obj1 == NULL) continue;
-
-            nmo_object_id_t key1 = obj1->file_id;
-            if (key1 == 0) continue;
-
-            if (key1 == key2 && obj1->class_id == obj2->class_id) {
-                (void)nmo_id_remap_add(remap, obj2->id, obj1->id);
-                break;
-            }
+    uint8_t *used1 = NULL;
+    if (count1 > 0) {
+        used1 = (uint8_t *)calloc(count1, sizeof(uint8_t));
+        if (used1 == NULL) {
+            return remap;
         }
     }
+
+    for (size_t i = 0; i < count2; i++) {
+        nmo_object_t *obj2 = objects2[i];
+        if (obj2 == NULL || obj2->id == 0) {
+            continue;
+        }
+
+        int best_index = find_best_object_match(obj2, objects1, count1, used1);
+        if (best_index < 0) {
+            continue;
+        }
+
+        nmo_object_t *obj1 = objects1[(size_t)best_index];
+        if (obj1 == NULL || obj1->id == 0) {
+            continue;
+        }
+
+        (void)nmo_id_remap_add(remap, obj2->id, obj1->id);
+        if (used1 != NULL) {
+            used1[(size_t)best_index] = 1;
+        }
+    }
+
+    free(used1);
 
     return remap;
 }
@@ -381,112 +482,465 @@ int nmo_session_compare_objects(const nmo_session_t *session1,
         remap = build_id_remap_by_file_id(objects1, count1, objects2, count2, arena);
     }
 
-    /* Compare objects in order (or by ID if NMO_COMPARE_IGNORE_ORDER) */
+    /* Compare objects by semantic identity first, then optionally enforce order. */
     int all_match = 1;
 
-    if (flags & NMO_COMPARE_IGNORE_ORDER) {
-        if (count2 > 0 && arena == NULL) {
+    uint8_t *used2 = NULL;
+    if (count2 > 0) {
+        used2 = (uint8_t *)calloc(count2, sizeof(uint8_t));
+        if (used2 == NULL) {
+            if (arena) {
+                nmo_arena_destroy(arena);
+            }
             return 0;
         }
-        uint8_t *used = NULL;
-        if (count2 > 0) {
-            used = (uint8_t *)nmo_arena_alloc(arena, count2 * sizeof(uint8_t), 1);
-            if (used == NULL) {
-                if (arena) nmo_arena_destroy(arena);
-                return 0;
-            }
-            memset(used, 0, count2 * sizeof(uint8_t));
+    }
+
+    for (size_t i = 0; i < count1; i++) {
+        nmo_object_t *obj1 = objects1[i];
+        if (obj1 == NULL) {
+            continue;
         }
 
-        for (size_t i = 0; i < count1; i++) {
-            nmo_object_t *obj1 = objects1[i];
-            if (obj1 == NULL) continue;
-
-            size_t match_index = (size_t)-1;
-            for (size_t j = 0; j < count2; j++) {
-                if (used != NULL && used[j]) continue;
-                nmo_object_t *obj2 = objects2[j];
-                if (obj2 == NULL) continue;
-                if (obj2->id == obj1->id) {
-                    match_index = j;
-                    break;
-                }
-            }
-
-            if (match_index == (size_t)-1) {
-                char ctx[NMO_DIFF_CONTEXT_MAX];
-                char obj_ctx[NMO_DIFF_CONTEXT_MAX];
-                format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
-                snprintf(ctx, sizeof(ctx), "object missing in session2: id=%u (%s)", obj1->id, obj_ctx);
-                nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj1->id, ctx);
-                all_match = 0;
-                continue;
-            }
-
-            if (used != NULL) {
-                used[match_index] = 1;
-            }
-
-            if (compare_objects(obj1, objects2[match_index], flags, remap, arena, result)) {
-                result->objects_matched++;
-            } else {
-                all_match = 0;
-            }
-        }
-
-        for (size_t j = 0; j < count2; j++) {
-            if (used != NULL && used[j]) continue;
-            nmo_object_t *obj2 = objects2[j];
-            if (obj2 == NULL) continue;
+        int match_index = find_best_object_match(obj1, objects2, count2, used2);
+        if (match_index == -2) {
             char ctx[NMO_DIFF_CONTEXT_MAX];
             char obj_ctx[NMO_DIFF_CONTEXT_MAX];
-            format_object_context(obj2, obj_ctx, sizeof(obj_ctx));
-            snprintf(ctx, sizeof(ctx), "object missing in session1: id=%u (%s)", obj2->id, obj_ctx);
-            nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj2->id, ctx);
+            format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+            snprintf(ctx, sizeof(ctx), "ambiguous object match in session2 (%s)", obj_ctx);
+            nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj1->id, ctx);
+            all_match = 0;
+            continue;
+        }
+
+        if (match_index < 0) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            char obj_ctx[NMO_DIFF_CONTEXT_MAX];
+            format_object_context(obj1, obj_ctx, sizeof(obj_ctx));
+            snprintf(ctx, sizeof(ctx), "object missing in session2: id=%u (%s)", obj1->id, obj_ctx);
+            nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj1->id, ctx);
+            all_match = 0;
+            continue;
+        }
+
+        size_t matched_index = (size_t)match_index;
+        used2[matched_index] = 1;
+
+        if ((flags & NMO_COMPARE_IGNORE_ORDER) == 0 && matched_index != i) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            snprintf(ctx, sizeof(ctx), "object order mismatch: session1[%zu] -> session2[%zu]", i, matched_index);
+            nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_ORDER, obj1->id, ctx);
             all_match = 0;
         }
 
-        if (arena) nmo_arena_destroy(arena);
-        return all_match;
-    }
-
-    size_t min_count = count1 < count2 ? count1 : count2;
-    for (size_t i = 0; i < min_count; i++) {
-        nmo_object_t *obj1 = objects1[i];
-        nmo_object_t *obj2 = objects2[i];
-
-        if (compare_objects(obj1, obj2, flags, remap, arena, result)) {
+        if (compare_objects(obj1, objects2[matched_index], flags, remap, arena, result)) {
             result->objects_matched++;
         } else {
             all_match = 0;
         }
     }
 
-    /* Report extra objects in session1 */
-    for (size_t i = min_count; i < count1; i++) {
+    for (size_t j = 0; j < count2; j++) {
+        if (used2 != NULL && used2[j]) {
+            continue;
+        }
+
+        nmo_object_t *obj2 = objects2[j];
+        if (obj2 == NULL) {
+            continue;
+        }
+
         char ctx[NMO_DIFF_CONTEXT_MAX];
         char obj_ctx[NMO_DIFF_CONTEXT_MAX];
-        format_object_context(objects1[i], obj_ctx, sizeof(obj_ctx));
-        snprintf(ctx, sizeof(ctx), "extra object in session1: id=%u (%s)",
-                 objects1[i] ? objects1[i]->id : 0, obj_ctx);
-        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING,
-                                objects1[i] ? objects1[i]->id : 0, ctx);
+        format_object_context(obj2, obj_ctx, sizeof(obj_ctx));
+        snprintf(ctx, sizeof(ctx), "object missing in session1: id=%u (%s)", obj2->id, obj_ctx);
+        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING, obj2->id, ctx);
         all_match = 0;
     }
 
-    /* Report extra objects in session2 */
-    for (size_t i = min_count; i < count2; i++) {
-        char ctx[NMO_DIFF_CONTEXT_MAX];
-        char obj_ctx[NMO_DIFF_CONTEXT_MAX];
-        format_object_context(objects2[i], obj_ctx, sizeof(obj_ctx));
-        snprintf(ctx, sizeof(ctx), "extra object in session2: id=%u (%s)",
-                 objects2[i] ? objects2[i]->id : 0, obj_ctx);
-        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_MISSING,
-                                objects2[i] ? objects2[i]->id : 0, ctx);
-        all_match = 0;
-    }
+    free(used2);
 
     if (arena) nmo_arena_destroy(arena);
+    return all_match;
+}
+
+static int compare_manager_chunks(const nmo_manager_data_t *mgr1,
+                                  const nmo_manager_data_t *mgr2,
+                                  const nmo_id_remap_t *remap2to1,
+                                  nmo_arena_t *arena,
+                                  nmo_comparison_result_t *result) {
+    if (mgr1 == NULL || mgr2 == NULL || result == NULL) {
+        return 0;
+    }
+
+    const nmo_chunk_t *chunk1 = mgr1->chunk;
+    const nmo_chunk_t *chunk2 = mgr2->chunk;
+
+    if (chunk1 == NULL && chunk2 == NULL) {
+        return 1;
+    }
+
+    char guid_ctx[NMO_DIFF_CONTEXT_MAX];
+    format_guid_context(mgr1->guid, guid_ctx, sizeof(guid_ctx));
+
+    if (chunk1 == NULL || chunk2 == NULL) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx),
+                 "manager chunk presence mismatch guid=%s (%s vs %s)",
+                 guid_ctx,
+                 chunk1 ? "present" : "NULL",
+                 chunk2 ? "present" : "NULL");
+        nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_CHUNK_SIZE, 0, ctx);
+        return 0;
+    }
+
+    const nmo_chunk_t *compare_chunk2 = chunk2;
+    nmo_chunk_t *remapped_chunk2 = NULL;
+    if (remap2to1 != NULL && arena != NULL) {
+        remapped_chunk2 = nmo_chunk_clone(chunk2, arena);
+        if (remapped_chunk2 != NULL) {
+            (void)nmo_chunk_remap_object_ids(remapped_chunk2, remap2to1);
+            compare_chunk2 = remapped_chunk2;
+        }
+    }
+
+    if (chunk1->data.count != compare_chunk2->data.count) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx),
+                 "manager chunk size guid=%s: %zu vs %zu DWORDs",
+                 guid_ctx,
+                 chunk1->data.count,
+                 compare_chunk2->data.count);
+        nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_CHUNK_SIZE, 0, ctx);
+        if (result->diff_count > 0) {
+            result->diffs[result->diff_count - 1].data.size.expected_size =
+                chunk1->data.count * sizeof(uint32_t);
+            result->diffs[result->diff_count - 1].data.size.actual_size =
+                compare_chunk2->data.count * sizeof(uint32_t);
+        }
+        return 0;
+    }
+
+    if (chunk1->data.count > 0) {
+        const uint32_t *data1 = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk1->data);
+        const uint32_t *data2 = NMO_ARENA_ARRAY_DATA(uint32_t, &compare_chunk2->data);
+        if (memcmp(data1, data2, chunk1->data.count * sizeof(uint32_t)) != 0) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            snprintf(ctx, sizeof(ctx),
+                     "manager chunk data mismatch guid=%s (%zu DWORDs)",
+                     guid_ctx,
+                     chunk1->data.count);
+            nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_CHUNK_DATA, 0, ctx);
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static int nmo_session_compare_managers(const nmo_session_t *session1,
+                                        const nmo_session_t *session2,
+                                        nmo_compare_flags_t flags,
+                                        nmo_comparison_result_t *result) {
+    (void)flags;
+    if (session1 == NULL || session2 == NULL || result == NULL) {
+        return 0;
+    }
+
+    uint32_t count1 = 0;
+    uint32_t count2 = 0;
+    nmo_manager_data_t *managers1 = nmo_session_get_manager_data(session1, &count1);
+    nmo_manager_data_t *managers2 = nmo_session_get_manager_data(session2, &count2);
+
+    result->managers_compared = (count1 > count2) ? count1 : count2;
+
+    if (count1 != count2) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx), "manager data count: %u vs %u", count1, count2);
+        nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_COUNT, 0, ctx);
+        if (result->diff_count > 0) {
+            result->diffs[result->diff_count - 1].data.count.expected = count1;
+            result->diffs[result->diff_count - 1].data.count.actual = count2;
+        }
+    }
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    nmo_id_remap_t *remap2to1 = NULL;
+    if (arena != NULL) {
+        nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
+        nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+        if (repo1 != NULL && repo2 != NULL) {
+            size_t object_count1 = 0;
+            size_t object_count2 = 0;
+            nmo_object_t **objects1 = nmo_object_repository_get_all(repo1, &object_count1);
+            nmo_object_t **objects2 = nmo_object_repository_get_all(repo2, &object_count2);
+            remap2to1 = build_id_remap_by_file_id(objects1, object_count1, objects2, object_count2, arena);
+        }
+    }
+
+    int all_match = 1;
+    uint8_t *used2 = NULL;
+    if (count2 > 0) {
+        used2 = (uint8_t *)calloc(count2, sizeof(uint8_t));
+        if (used2 == NULL) {
+            if (arena != NULL) {
+                nmo_arena_destroy(arena);
+            }
+            return 0;
+        }
+    }
+
+    for (uint32_t i = 0; i < count1; i++) {
+        const nmo_manager_data_t *mgr1 = (managers1 != NULL) ? &managers1[i] : NULL;
+        if (mgr1 == NULL) {
+            continue;
+        }
+
+        int match_index = -1;
+        int ambiguous = 0;
+        for (uint32_t j = 0; j < count2; j++) {
+            if (used2 != NULL && used2[j]) {
+                continue;
+            }
+            const nmo_manager_data_t *mgr2 = (managers2 != NULL) ? &managers2[j] : NULL;
+            if (mgr2 == NULL) {
+                continue;
+            }
+            if (!nmo_guid_equals(mgr1->guid, mgr2->guid)) {
+                continue;
+            }
+            if (match_index < 0) {
+                match_index = (int)j;
+            } else {
+                ambiguous = 1;
+                break;
+            }
+        }
+
+        char guid_ctx[NMO_DIFF_CONTEXT_MAX];
+        format_guid_context(mgr1->guid, guid_ctx, sizeof(guid_ctx));
+
+        if (ambiguous) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            snprintf(ctx, sizeof(ctx), "ambiguous manager match in session2 guid=%s", guid_ctx);
+            nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_GUID, 0, ctx);
+            all_match = 0;
+            continue;
+        }
+
+        if (match_index < 0) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            snprintf(ctx, sizeof(ctx), "manager missing in session2 guid=%s", guid_ctx);
+            nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_MISSING, 0, ctx);
+            all_match = 0;
+            continue;
+        }
+
+        if (used2 != NULL) {
+            used2[(size_t)match_index] = 1;
+        }
+
+        if (compare_manager_chunks(mgr1, &managers2[match_index], remap2to1, arena, result)) {
+            result->managers_matched++;
+        } else {
+            all_match = 0;
+        }
+    }
+
+    for (uint32_t j = 0; j < count2; j++) {
+        if (used2 != NULL && used2[j]) {
+            continue;
+        }
+        const nmo_manager_data_t *mgr2 = (managers2 != NULL) ? &managers2[j] : NULL;
+        if (mgr2 == NULL) {
+            continue;
+        }
+
+        char guid_ctx[NMO_DIFF_CONTEXT_MAX];
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        format_guid_context(mgr2->guid, guid_ctx, sizeof(guid_ctx));
+        snprintf(ctx, sizeof(ctx), "manager missing in session1 guid=%s", guid_ctx);
+        nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_MISSING, 0, ctx);
+        all_match = 0;
+    }
+
+    free(used2);
+
+    if (arena != NULL) {
+        nmo_arena_destroy(arena);
+    }
+    return all_match;
+}
+
+typedef struct nmo_shadow_compare_iter_ctx {
+    const nmo_shadow_storage_t *other;
+    const nmo_id_remap_t *key_remap;
+    nmo_comparison_result_t *result;
+    int all_match;
+    const char *missing_label;
+} nmo_shadow_compare_iter_ctx_t;
+
+static bool nmo_shadow_compare_iter(uint32_t chunk_id,
+                                    const void *data,
+                                    size_t size,
+                                    void *user) {
+    nmo_shadow_compare_iter_ctx_t *ctx = (nmo_shadow_compare_iter_ctx_t *)user;
+    if (ctx == NULL || ctx->other == NULL || ctx->result == NULL) {
+        return true;
+    }
+
+    nmo_object_id_t mapped_id = remap_or_identity(ctx->key_remap, chunk_id);
+    size_t other_size = 0;
+    const void *other_data = nmo_shadow_get_chunk_tail(ctx->other, mapped_id, &other_size);
+
+    if (other_data == NULL) {
+        char diff_ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(diff_ctx, sizeof(diff_ctx),
+                 "shadow chunk tail missing (%s): id=%u mapped=%u size=%zu",
+                 ctx->missing_label ? ctx->missing_label : "unknown",
+                 chunk_id,
+                 mapped_id,
+                 size);
+        nmo_comparison_add_diff(ctx->result, NMO_DIFF_SHADOW_DATA, chunk_id, diff_ctx);
+        ctx->all_match = 0;
+        return true;
+    }
+
+    if (size != other_size) {
+        char diff_ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(diff_ctx, sizeof(diff_ctx),
+                 "shadow chunk tail size mismatch: id=%u mapped=%u %zu vs %zu",
+                 chunk_id,
+                 mapped_id,
+                 size,
+                 other_size);
+        nmo_comparison_add_diff(ctx->result, NMO_DIFF_SHADOW_DATA, chunk_id, diff_ctx);
+        if (ctx->result->diff_count > 0) {
+            ctx->result->diffs[ctx->result->diff_count - 1].data.size.expected_size = size;
+            ctx->result->diffs[ctx->result->diff_count - 1].data.size.actual_size = other_size;
+        }
+        ctx->all_match = 0;
+        return true;
+    }
+
+    if (size > 0 && data != NULL && memcmp(data, other_data, size) != 0) {
+        char diff_ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(diff_ctx, sizeof(diff_ctx),
+                 "shadow chunk tail payload mismatch: id=%u mapped=%u size=%zu",
+                 chunk_id,
+                 mapped_id,
+                 size);
+        nmo_comparison_add_diff(ctx->result, NMO_DIFF_SHADOW_DATA, chunk_id, diff_ctx);
+        ctx->all_match = 0;
+    }
+
+    return true;
+}
+
+static int nmo_session_compare_shadow(const nmo_session_t *session1,
+                                      const nmo_session_t *session2,
+                                      nmo_comparison_result_t *result) {
+    if (session1 == NULL || session2 == NULL || result == NULL) {
+        return 0;
+    }
+
+    const nmo_shadow_storage_t *shadow1 = nmo_session_get_shadow_storage(session1);
+    const nmo_shadow_storage_t *shadow2 = nmo_session_get_shadow_storage(session2);
+
+    if (shadow1 == NULL && shadow2 == NULL) {
+        return 1;
+    }
+
+    if (shadow1 == NULL || shadow2 == NULL) {
+        nmo_comparison_add_diff(result, NMO_DIFF_SHADOW_DATA, 0,
+                                "shadow storage missing in one session");
+        return 0;
+    }
+
+    int all_match = 1;
+
+    size_t included_size1 = 0;
+    size_t included_size2 = 0;
+    const void *included1 = nmo_shadow_get_included_files(shadow1, &included_size1);
+    const void *included2 = nmo_shadow_get_included_files(shadow2, &included_size2);
+
+    if ((included1 == NULL) != (included2 == NULL)) {
+        nmo_comparison_add_diff(result, NMO_DIFF_SHADOW_DATA, 0,
+                                "included-files shadow presence mismatch");
+        all_match = 0;
+    } else if (included1 != NULL) {
+        if (included_size1 != included_size2) {
+            char ctx[NMO_DIFF_CONTEXT_MAX];
+            snprintf(ctx, sizeof(ctx),
+                     "included-files shadow size mismatch: %zu vs %zu",
+                     included_size1,
+                     included_size2);
+            nmo_comparison_add_diff(result, NMO_DIFF_SHADOW_DATA, 0, ctx);
+            if (result->diff_count > 0) {
+                result->diffs[result->diff_count - 1].data.size.expected_size = included_size1;
+                result->diffs[result->diff_count - 1].data.size.actual_size = included_size2;
+            }
+            all_match = 0;
+        } else if (included_size1 > 0 && memcmp(included1, included2, included_size1) != 0) {
+            nmo_comparison_add_diff(result, NMO_DIFF_SHADOW_DATA, 0,
+                                    "included-files shadow payload mismatch");
+            all_match = 0;
+        }
+    }
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    const nmo_id_remap_t *remap1to2 = NULL;
+    const nmo_id_remap_t *remap2to1 = NULL;
+    if (arena != NULL) {
+        nmo_object_repository_t *repo1 = nmo_session_get_repository(session1);
+        nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+        if (repo1 != NULL && repo2 != NULL) {
+            size_t object_count1 = 0;
+            size_t object_count2 = 0;
+            nmo_object_t **objects1 = nmo_object_repository_get_all(repo1, &object_count1);
+            nmo_object_t **objects2 = nmo_object_repository_get_all(repo2, &object_count2);
+            remap2to1 = build_id_remap_by_file_id(objects1, object_count1, objects2, object_count2, arena);
+            remap1to2 = build_id_remap_by_file_id(objects2, object_count2, objects1, object_count1, arena);
+        }
+    }
+
+    size_t tails1 = nmo_shadow_chunk_tail_count(shadow1);
+    size_t tails2 = nmo_shadow_chunk_tail_count(shadow2);
+    if (tails1 != tails2) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx), "shadow chunk tail count mismatch: %zu vs %zu", tails1, tails2);
+        nmo_comparison_add_diff(result, NMO_DIFF_SHADOW_DATA, 0, ctx);
+        all_match = 0;
+    }
+
+    nmo_shadow_compare_iter_ctx_t ctx12 = {
+        .other = shadow2,
+        .key_remap = remap1to2,
+        .result = result,
+        .all_match = 1,
+        .missing_label = "session2",
+    };
+    nmo_shadow_iterate_chunk_tails(shadow1, nmo_shadow_compare_iter, &ctx12);
+    if (!ctx12.all_match) {
+        all_match = 0;
+    }
+
+    nmo_shadow_compare_iter_ctx_t ctx21 = {
+        .other = shadow1,
+        .key_remap = remap2to1,
+        .result = result,
+        .all_match = 1,
+        .missing_label = "session1",
+    };
+    nmo_shadow_iterate_chunk_tails(shadow2, nmo_shadow_compare_iter, &ctx21);
+    if (!ctx21.all_match) {
+        all_match = 0;
+    }
+
+    if (arena != NULL) {
+        nmo_arena_destroy(arena);
+    }
+
     return all_match;
 }
 
@@ -514,9 +968,19 @@ int nmo_session_compare(const nmo_session_t *session1,
     }
     
     /* Compare objects */
-    if (flags & (NMO_COMPARE_STRUCTURE | NMO_COMPARE_NAMES | 
+    if (flags & (NMO_COMPARE_STRUCTURE | NMO_COMPARE_IDS | NMO_COMPARE_NAMES |
                  NMO_COMPARE_CLASS_IDS | NMO_COMPARE_CHUNKS)) {
         nmo_session_compare_objects(session1, session2, flags, result);
+    }
+
+    /* Compare manager chunks */
+    if (flags & NMO_COMPARE_MANAGERS) {
+        nmo_session_compare_managers(session1, session2, flags, result);
+    }
+
+    /* Compare shadow preservation data */
+    if (flags & NMO_COMPARE_SHADOW) {
+        nmo_session_compare_shadow(session1, session2, result);
     }
     
     /* Generate report if verbose */
@@ -579,12 +1043,17 @@ void nmo_comparison_result_format_report(nmo_comparison_result_t *result) {
                 case NMO_DIFF_OBJECT_COUNT:     type_str = "OBJECT_COUNT"; break;
                 case NMO_DIFF_MANAGER_COUNT:    type_str = "MANAGER_COUNT"; break;
                 case NMO_DIFF_OBJECT_MISSING:   type_str = "OBJECT_MISSING"; break;
+                case NMO_DIFF_OBJECT_ORDER:     type_str = "OBJECT_ORDER"; break;
                 case NMO_DIFF_OBJECT_ID:        type_str = "OBJECT_ID"; break;
                 case NMO_DIFF_OBJECT_NAME:      type_str = "OBJECT_NAME"; break;
                 case NMO_DIFF_OBJECT_CLASS_ID:  type_str = "OBJECT_CLASS_ID"; break;
                 case NMO_DIFF_OBJECT_REFERENCE_FLAG: type_str = "OBJECT_REFERENCE_FLAG"; break;
                 case NMO_DIFF_OBJECT_CHUNK_SIZE: type_str = "CHUNK_SIZE"; break;
                 case NMO_DIFF_OBJECT_CHUNK_DATA: type_str = "CHUNK_DATA"; break;
+                case NMO_DIFF_MANAGER_MISSING:  type_str = "MANAGER_MISSING"; break;
+                case NMO_DIFF_MANAGER_GUID:     type_str = "MANAGER_GUID"; break;
+                case NMO_DIFF_MANAGER_CHUNK_SIZE: type_str = "MANAGER_CHUNK_SIZE"; break;
+                case NMO_DIFF_MANAGER_CHUNK_DATA: type_str = "MANAGER_CHUNK_DATA"; break;
                 case NMO_DIFF_FILE_VERSION:     type_str = "FILE_VERSION"; break;
                 case NMO_DIFF_CK_VERSION:       type_str = "CK_VERSION"; break;
                 case NMO_DIFF_SHADOW_DATA:      type_str = "SHADOW_DATA"; break;
