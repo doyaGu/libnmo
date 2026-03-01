@@ -1,6 +1,7 @@
 # Contributing to libnmo
 
-Thank you for your interest in contributing to libnmo! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to libnmo!  This document describes
+the development workflow, code standards, and review process.
 
 ## Code of Conduct
 
@@ -14,95 +15,108 @@ Thank you for your interest in contributing to libnmo! This document provides gu
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/libnmo.git`
 3. Create a branch: `git checkout -b my-feature`
-4. Make your changes
-5. Test your changes
-6. Commit and push
-7. Open a pull request
+4. Make your changes and run tests
+5. Commit, push, and open a pull request
 
 ## Development Setup
 
 ### Prerequisites
 
 - CMake 3.15+
-- C17-compatible compiler
-- zlib development library
+- C17-compatible compiler (GCC, Clang, MSVC)
 - Git
+- miniz or system zlib (bundled fallback is included)
+- yyjson (bundled; only required for JSON export features)
 
-### Building
+### Building (Ninja recommended)
 
-```bash
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Debug ..
-cmake --build .
+```
+cmake -B cmake-build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build cmake-build-debug
 ```
 
 ### Running Tests
 
-```bash
-cd build
-ctest --verbose
+```
+ctest --test-dir cmake-build-debug -j4 --output-on-failure
 ```
 
 ## Coding Standards
 
 ### Style
 
-- **Indentation**: 4 spaces (no tabs)
-- **Line length**: 100 characters max
-- **Braces**: K&R style (opening brace on same line)
-- **Naming**:
-  - Functions: `nmo_module_function_name`
-  - Types: `nmo_type_name`
+- Indentation: 4 spaces (no tabs)
+- Line length: 100 characters maximum
+- Braces: K&R style (opening brace on same line)
+- Naming:
+  - Functions: `nmo_module_function_name()`
+  - Types: `nmo_type_name_t`
   - Enums: `NMO_ENUM_VALUE`
   - Macros: `NMO_MACRO_NAME`
-- **Comments**: Use `/* */` for multi-line, `//` for single-line
+- Comments: `/* */` for multi-line, `//` for single-line
+- Documentation: Doxygen for all public APIs (see below)
 
 ### Example
 
 ```c
 /**
- * @brief Allocate memory from arena
+ * @brief Allocate memory from an arena.
  * @param arena Arena allocator
- * @param size Size in bytes
- * @param alignment Alignment requirement
- * @return Pointer to allocated memory or NULL on failure
+ * @param size  Size in bytes
+ * @param align Alignment requirement (must be power of two)
+ * @return Pointer to allocated memory, or NULL on failure
  */
-void* nmo_arena_alloc(nmo_arena* arena, size_t size, size_t alignment) {
+void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t align) {
     if (!arena || size == 0) {
         return NULL;
     }
 
-    // Align pointer
-    uintptr_t aligned = (arena->cursor + alignment - 1) & ~(alignment - 1);
-
-    // Check bounds
-    if (aligned + size > arena->end) {
-        return NULL;
+    /* Compute aligned start address */
+    uintptr_t start = (arena->cursor + align - 1) & ~(align - 1);
+    if (start + size > arena->end) {
+        return NULL;  /* would overflow current block */
     }
 
-    void* ptr = (void*)aligned;
-    arena->cursor = aligned + size;
-    return ptr;
+    arena->cursor = start + size;
+    return (void *)start;
 }
 ```
 
 ### Architecture Rules
 
-1. **No circular dependencies**: Always depend downward in the layer hierarchy
-2. **Explicit ownership**: Use arena allocation, reference counting, or clear ownership
-3. **Error handling**: Always check return values and propagate errors
-4. **Memory safety**: Bounds-check all array accesses
-5. **Platform independence**: Use portable types and abstractions
-
-### Layer Dependencies
+The layer stack is (strict -- no upward dependencies):
 
 ```
-Core → IO → Format → Schema → Session → App
-  ↑      ↑      ↑       ↑        ↑       ↑
-  └──────┴──────┴───────┴────────┴───────┘
-       (no upward dependencies)
+App -> Session -> Object -> Extension -> Type -> Format -> IO -> Core
 ```
+
+Lower layers NEVER include headers from higher layers.
+
+1. No circular dependencies: always depend downward in the layer hierarchy
+2. Both `serialize` AND `deserialize` vtable methods are required for every new object type
+3. Explicit ownership: use arena allocation, reference counting, or clear ownership transfer
+4. Error handling: return `nmo_result_t`; check `.code != NMO_OK`; propagate `.error`
+5. Memory safety: bounds-check all array and buffer accesses
+6. Platform independence: use portable types (`uint32_t`, not `unsigned int`), portable abstractions
+
+### Directory Reference
+
+| Directory      | Layer     | Notes                                      |
+|----------------|-----------|---------------------------------------------|
+| src/core/      | Core      | No dependencies on any other nmo layer      |
+| src/io/        | IO        | Depends only on Core                        |
+| src/format/    | Format    | Depends on Core, IO                         |
+| src/type/      | Type      | Depends on Core, IO, Format                 |
+| src/extension/ | Extension | Depends on Core through Type                |
+| src/object/    | Object    | Depends on Core through Extension           |
+| src/session/   | Session   | Depends on Core through Object              |
+| src/app/       | App       | Depends on all lower layers                 |
+
+### Chunk API Notes
+
+All chunk positions and sizes are in **DWORDs (4 bytes)**, not bytes.  Use
+`nmo_chunk_read_dword()` / `nmo_chunk_write_dword()` etc.  Object IDs embedded
+in a chunk require `StartObjectIDSequence` / `StopObjectIDSequence` guards.
 
 ## Testing
 
@@ -110,20 +124,18 @@ Core → IO → Format → Schema → Session → App
 
 - Test each function in isolation
 - Use the test framework in `tests/test_framework.h`
-- Aim for >80% code coverage
-- Test edge cases and error conditions
-
-Example:
+- Macros: `TEST()`, `ASSERT_EQ()`, `ASSERT_NE()`, `ASSERT_TRUE()`, `ASSERT_FALSE()`
+- Test edge cases and error conditions (invalid input, truncated buffers, NULL pointers)
 
 ```c
 #include "test_framework.h"
 #include "core/nmo_arena.h"
 
 TEST(arena, basic_allocation) {
-    nmo_arena* arena = nmo_arena_create(NULL, 1024);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024);
     ASSERT_NE(NULL, arena);
 
-    void* ptr = nmo_arena_alloc(arena, 100, 8);
+    void *ptr = nmo_arena_alloc(arena, 100, 8);
     ASSERT_NE(NULL, ptr);
 
     nmo_arena_destroy(arena);
@@ -133,62 +145,58 @@ TEST(arena, basic_allocation) {
 ### Integration Tests
 
 - Test complete workflows
-- Test interactions between components
-- Test with real or realistic data
+- Test with real files from `data/` (use the `NMO_TEST_DATA_DIR` macro to locate them)
+- All 23 core CK classes and 2 manager schemas must survive a round-trip test
 
 ### Fuzz Tests
 
-- Test parsers with malformed input
-- Test for crashes and memory corruption
-- Use AFL or libFuzzer
+- Test parsers with malformed / truncated input
+- Crash and memory-corruption free is a hard requirement
+- AFL or libFuzzer are both accepted
 
-## Pull Request Process
+## Documenting Code
 
-1. **Before submitting**:
-   - Run all tests and ensure they pass
-   - Run static analysis (cppcheck, clang-tidy)
-   - Check for memory leaks (valgrind)
-   - Update documentation if needed
-   - Add tests for new functionality
-
-2. **PR description should include**:
-   - What changes were made and why
-   - Which issue(s) this addresses (if any)
-   - Testing performed
-   - Screenshots (if UI changes)
-
-3. **Review process**:
-   - At least one maintainer approval required
-   - All CI checks must pass
-   - Address all review comments
-   - Squash commits before merge (if requested)
-
-## Documentation
-
-- Add Doxygen comments to public APIs
-- Update README.md if user-facing changes
-- Add examples for new features
-- Update CHANGELOG.md
-
-### Doxygen Format
+Add Doxygen comments to every public API:
 
 ```c
 /**
- * @brief Short description
+ * @brief Short one-line summary.
  *
- * Longer description with more details.
+ * Longer description with more detail.
  *
  * @param param1 Description of param1
  * @param param2 Description of param2
  * @return Description of return value
- * @retval NMO_OK Success
- * @retval NMO_ERR_NOMEM Out of memory
+ * @retval NMO_OK   Success
+ * @retval NMO_ERR_NOMEM  Out of memory
  */
 ```
+
+Update `README.md` for user-facing changes and `CHANGELOG.md` for every release or
+significant internal change.
+
+## Pull Request Process
+
+1. Before submitting:
+   - All tests must pass (`ctest --output-on-failure`)
+   - Run static analysis: cppcheck, clang-tidy
+   - Check for memory leaks: valgrind (Linux) or DrMemory (Windows)
+   - Update `CHANGELOG.md` under `[Unreleased]`
+
+2. PR description should include:
+   - What changed and why
+   - Which issue(s) this addresses (if any)
+   - Testing performed
+
+3. Review process:
+   - At least one maintainer approval required
+   - All CI checks must pass
+   - Address all review comments before merge
 
 ## Commit Messages
 
 Format:
+
 ```
 <type>(<scope>): <subject>
 
@@ -197,23 +205,27 @@ Format:
 <footer>
 ```
 
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation only
-- `style`: Code style changes (formatting)
-- `refactor`: Code refactoring
-- `test`: Adding tests
-- `chore`: Build/tooling changes
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
-Example:
+Examples:
+
 ```
 feat(io): add memory-mapped file support
 
-Implement memory-mapped IO for better performance with large files.
+Implement zero-copy mmap IO for better performance on large files.
 Uses mmap on POSIX and CreateFileMapping on Windows.
 
 Closes #42
+```
+
+```
+fix(chunk): return NMO_ERR_TRUNCATED_CHUNK on short reads
+
+Previously a read past the end of the chunk buffer would dereference
+out-of-bounds memory.  Now all nmo_chunk_read_* entry points check the
+remaining DWORD count before advancing the cursor.
+
+Fixes #91
 ```
 
 ## Reporting Issues
@@ -221,26 +233,23 @@ Closes #42
 ### Bug Reports
 
 Include:
-- libnmo version
-- Operating system and version
-- Compiler and version
+- libnmo version (output of `nmo file info --version` or git tag)
+- Operating system and compiler version
 - Steps to reproduce
 - Expected vs actual behavior
 - Error messages or logs
-- Minimal test case (if possible)
+- Minimal reproducer file or source snippet if possible
 
 ### Feature Requests
 
 Include:
 - Use case description
-- Proposed API (if applicable)
+- Proposed API sketch (if applicable)
 - Alternative solutions considered
-- Impact on existing code
+- Impact on the existing layer boundaries
 
-## Questions?
+## Questions
 
-- Open an issue for general questions
-- Check existing documentation first
-- Be specific and provide context
-
-Thank you for contributing to libnmo!
+- Check existing documentation under `docs/` and `plans/` first
+- Check `claude_doc/` for deep-dive implementation notes per module
+- Open a GitHub issue for questions not answered there
