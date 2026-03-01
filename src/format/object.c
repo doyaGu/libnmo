@@ -194,6 +194,14 @@ nmo_class_id_t nmo_object_get_class_id(const nmo_object_t *object) {
     return object ? object->class_id : 0;
 }
 
+uint32_t nmo_object_get_flags(const nmo_object_t *object) {
+    return object ? object->flags : 0;
+}
+
+nmo_object_t *nmo_object_get_parent(const nmo_object_t *object) {
+    return object ? object->parent : NULL;
+}
+
 int nmo_object_set_data(nmo_object_t *object, void *data) {
     if (object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;

@@ -13,6 +13,7 @@ extern "C" {
 
 #define NMO_REPL_MAX_CMD_LEN 256
 #define NMO_REPL_MAX_ARGS 16
+#define NMO_REPL_HISTORY_SIZE 64
 
 typedef struct {
     nmo_context_t *ctx;
@@ -25,6 +26,11 @@ typedef struct {
     bool has_selection;
     size_t page_size;
     bool regex_icase;
+
+    /* Command history (ring buffer) */
+    char *history[NMO_REPL_HISTORY_SIZE];
+    size_t history_count;         /**< Total entries stored */
+    size_t history_start;         /**< Oldest entry index */
 } nmo_repl_context_t;
 
 typedef int (*nmo_repl_command_handler_t)(nmo_repl_context_t *repl, int argc, char **argv);

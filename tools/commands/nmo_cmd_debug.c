@@ -20,25 +20,12 @@
 #include <string.h>
 #include <stdlib.h>
 
-/**
- * Find file path (last non-option argument)
- */
-static const char *find_file_arg(int argc, char **argv) {
-    const char *last = NULL;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            last = argv[i];
-        }
-    }
-    return last;
-}
-
 /* ============================================================================
  * debug load-phases
  * ============================================================================ */
 
 int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo debug load-phases <file>\n");
@@ -148,7 +135,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
  * ============================================================================ */
 
 int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo debug chunks <file>\n");
@@ -286,7 +273,7 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * ============================================================================ */
 
 int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo debug objects <file>\n");
@@ -334,7 +321,7 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
             yyjson_mut_obj_add_uint(doc, o, "index", (uint64_t)i);
             yyjson_mut_obj_add_uint(doc, o, "id", nmo_object_get_id(obj));
             yyjson_mut_obj_add_uint(doc, o, "class_id", nmo_object_get_class_id(obj));
-            yyjson_mut_obj_add_uint(doc, o, "flags", obj->flags);
+            yyjson_mut_obj_add_uint(doc, o, "flags", nmo_object_get_flags(obj));
 
             const char *name = nmo_object_get_name(obj);
             if (name && name[0]) {
@@ -382,7 +369,7 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
             char idx[24], id[16], flags[16], chunk_sz[24];
             snprintf(idx, sizeof(idx), "%zu", i);
             snprintf(id, sizeof(id), "%u", nmo_object_get_id(obj));
-            snprintf(flags, sizeof(flags), "0x%08X", obj->flags);
+            snprintf(flags, sizeof(flags), "0x%08X", nmo_object_get_flags(obj));
 
             nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
             if (chunk) {
@@ -417,7 +404,7 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo debug export <file>\n");
@@ -482,7 +469,7 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
         yyjson_mut_obj_add_uint(doc, o, "index", (uint64_t)i);
         yyjson_mut_obj_add_uint(doc, o, "id", nmo_object_get_id(obj));
         yyjson_mut_obj_add_uint(doc, o, "class_id", nmo_object_get_class_id(obj));
-        yyjson_mut_obj_add_uint(doc, o, "flags", obj->flags);
+        yyjson_mut_obj_add_uint(doc, o, "flags", nmo_object_get_flags(obj));
 
         const char *name = nmo_object_get_name(obj);
         if (name && name[0]) {

@@ -12,26 +12,15 @@
 #include "../nmo_repl_repl.h"
 #include "../nmo_repl_commands.h"
 #include "../nmo_tool_session.h"
+#include "../nmo_tool_common.h"
 
 #include "nmo.h"
 
 #include <stdio.h>
 #include <string.h>
 
-/**
- * Find file path
- */
-static const char *find_file_arg(int argc, char **argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            return argv[i];
-        }
-    }
-    return NULL;
-}
-
 int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo repl start <file>\n");

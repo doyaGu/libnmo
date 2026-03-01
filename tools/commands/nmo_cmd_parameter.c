@@ -11,6 +11,7 @@
 #include "../nmo_cli_output.h"
 #include "../nmo_cli_json.h"
 #include "../nmo_tool_session.h"
+#include "../nmo_tool_common.h"
 
 #include "nmo.h"
 #include "app/nmo_context.h"
@@ -20,16 +21,6 @@
 
 #include <stdio.h>
 #include <string.h>
-
-static const char *find_file_arg_last(int argc, char **argv) {
-    const char *last_non_opt = NULL;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            last_non_opt = argv[i];
-        }
-    }
-    return last_non_opt;
-}
 
 static int is_parameter_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
@@ -47,7 +38,7 @@ static int is_parameter_class(nmo_type_registry_t *registry, nmo_class_id_t clas
 }
 
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo parameter list <file>\n");

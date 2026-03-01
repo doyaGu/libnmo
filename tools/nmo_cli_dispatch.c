@@ -18,25 +18,13 @@
 #include "commands/nmo_cmd_resource.h"
 #include "commands/nmo_cmd_behavior.h"
 #include "commands/nmo_cmd_parameter.h"
+#include "commands/nmo_cmd_convert.h"
+#include "commands/nmo_cmd_diff.h"
+#include "commands/nmo_cmd_query.h"
+#include "commands/nmo_cmd_extension.h"
 
 #include <stdio.h>
 #include <string.h>
-
-/* ============================================================================
- * Stub handler (returns "not implemented")
- * ============================================================================ */
-
-static int stub_handler(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    (void)argc;
-    (void)argv;
-    (void)global;
-    fprintf(stderr, "Error: This command is not yet implemented\n");
-    return NMO_CLI_EXIT_INTERNAL_ERROR;
-}
-
-static void stub_usage(FILE *out) {
-    fprintf(out, "  (No detailed usage available yet)\n");
-}
 
 /* Usage printers for implemented commands */
 static void file_info_usage(FILE *out) {
@@ -94,10 +82,11 @@ static void chunk_find_usage(FILE *out) {
 }
 
 static void object_list_usage(FILE *out) {
-    fprintf(out, "Usage: nmo object list [--class <name>] <file>\n\n");
+    fprintf(out, "Usage: nmo object list [--class <name>] [--filter <expr>] <file>\n\n");
     fprintf(out, "List all objects in the file.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  --class, -c <name>  Filter by class (includes derived classes)\n");
+    fprintf(out, "  --class, -c <name>    Filter by class (includes derived classes)\n");
+    fprintf(out, "  --filter, -f <expr>   Filter by DSL expression (truthy = include)\n");
 }
 
 static void object_show_usage(FILE *out) {
@@ -165,17 +154,19 @@ static void validate_all_usage(FILE *out) {
 }
 
 static void validate_structure_usage(FILE *out) {
-    fprintf(out, "Usage: nmo validate structure <file>\n\n");
+    fprintf(out, "Usage: nmo validate structure [--fix] <file>\n\n");
     fprintf(out, "Validate basic file/chunk structure and report issues.\n\n");
-    fprintf(out, "Global options:\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --fix               Show suggested fixes for each issue\n");
     fprintf(out, "  --strict            Exit with code 3 if errors exist\n");
     fprintf(out, "  --fail-on-warning   Exit with code 4 if warnings exist\n");
 }
 
 static void validate_references_usage(FILE *out) {
-    fprintf(out, "Usage: nmo validate references <file>\n\n");
+    fprintf(out, "Usage: nmo validate references [--fix] <file>\n\n");
     fprintf(out, "Validate object reference graph (broken/self references, etc).\n\n");
-    fprintf(out, "Global options:\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --fix               Show suggested fixes for each issue\n");
     fprintf(out, "  --strict            Exit with code 3 if errors exist\n");
     fprintf(out, "  --fail-on-warning   Exit with code 4 if warnings exist\n");
 }
@@ -254,6 +245,110 @@ static void type_class_tree_usage(FILE *out) {
     fprintf(out, "Show the registered class hierarchy as a tree.\n");
 }
 
+/* Convert command usage */
+static void convert_copy_usage(FILE *out) {
+    fprintf(out, "Usage: nmo convert copy -o <output> [options] <file>\n\n");
+    fprintf(out, "Round-trip copy of a file with configurable save options.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  --compress <level>     Compression level (0-9)\n");
+    fprintf(out, "  --sequential-ids       Use sequential file IDs\n");
+    fprintf(out, "  --no-managers          Exclude manager state\n");
+    fprintf(out, "  --strip-resources      Strip included files/resources\n");
+    fprintf(out, "  --validate             Validate before writing\n");
+}
+
+static void convert_version_usage(FILE *out) {
+    fprintf(out, "Usage: nmo convert version <file>\n");
+    fprintf(out, "       nmo convert version -o <output> <file>\n\n");
+    fprintf(out, "Show file version metadata, or copy with version info.\n");
+}
+
+static void convert_strip_usage(FILE *out) {
+    fprintf(out, "Usage: nmo convert strip -o <output> [options] <file>\n\n");
+    fprintf(out, "Remove objects by class or name pattern and save.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  --class, -c <name>     Strip objects of this class\n");
+    fprintf(out, "  --name <pattern>       Strip objects matching name pattern\n");
+}
+
+static void convert_merge_usage(FILE *out) {
+    fprintf(out, "Usage: nmo convert merge -o <output> <source> <target>\n\n");
+    fprintf(out, "Merge objects from source file into target file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+}
+
+/* Diff command usage */
+static void diff_summary_usage(FILE *out) {
+    fprintf(out, "Usage: nmo diff summary <file1> <file2>\n\n");
+    fprintf(out, "Show a high-level diff summary between two files.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --ignore-order    Ignore object order differences\n");
+}
+
+static void diff_objects_usage(FILE *out) {
+    fprintf(out, "Usage: nmo diff objects <file1> <file2>\n\n");
+    fprintf(out, "Compare objects between two files.\n");
+}
+
+static void diff_chunks_usage(FILE *out) {
+    fprintf(out, "Usage: nmo diff chunks <file1> <file2>\n\n");
+    fprintf(out, "Compare chunks between two files.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --object <id>    Compare a specific object's chunks\n");
+}
+
+static void diff_full_usage(FILE *out) {
+    fprintf(out, "Usage: nmo diff full <file1> <file2>\n\n");
+    fprintf(out, "Comprehensive comparison of two files.\n");
+}
+
+/* Query command usage */
+static void query_eval_usage(FILE *out) {
+    fprintf(out, "Usage: nmo query eval \"<expression>\" <file>\n\n");
+    fprintf(out, "Evaluate a single DSL expression against a file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --expr <expression>    Expression (alternative to positional)\n");
+}
+
+static void query_script_usage(FILE *out) {
+    fprintf(out, "Usage: nmo query script <script.nmodsl> <file> [-o <output>]\n\n");
+    fprintf(out, "Execute a DSL script file. Use -o to save mutated session.\n");
+}
+
+static void query_schema_usage(FILE *out) {
+    fprintf(out, "Usage: nmo query schema <schema.nmodsl>\n\n");
+    fprintf(out, "Apply DSL schema declarations to the type registry.\n");
+}
+
+static void query_module_usage(FILE *out) {
+    fprintf(out, "Usage: nmo query module <module.nmodsl> <file> [-o <output>]\n\n");
+    fprintf(out, "Run a complete DSL module (schema + script).\n");
+}
+
+/* Extension command usage */
+static void extension_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo extension list\n\n");
+    fprintf(out, "List all registered extensions.\n");
+}
+
+static void extension_load_usage(FILE *out) {
+    fprintf(out, "Usage: nmo extension load <path>\n\n");
+    fprintf(out, "Load an extension plugin from a shared library.\n");
+}
+
+static void extension_info_usage(FILE *out) {
+    fprintf(out, "Usage: nmo extension info <file>\n\n");
+    fprintf(out, "Show extension/plugin information for a file.\n");
+}
+
+static void extension_check_usage(FILE *out) {
+    fprintf(out, "Usage: nmo extension check <file>\n\n");
+    fprintf(out, "Check plugin dependencies for a file.\n");
+}
+
 /* ============================================================================
  * Action definitions for each group
  * ============================================================================ */
@@ -322,15 +417,34 @@ static const nmo_cli_action_t validate_actions[] = {
 
 /* convert group actions */
 static const nmo_cli_action_t convert_actions[] = {
-    {"version", "v", "Convert to different file version", stub_handler, stub_usage},
-    {"format", "f", "Convert to different format", stub_handler, stub_usage},
+    {"copy", "cp", "Round-trip copy with save options", nmo_cmd_convert_copy, convert_copy_usage},
+    {"version", "v", "Show/modify file version metadata", nmo_cmd_convert_version, convert_version_usage},
+    {"strip", "st", "Remove objects by class/name pattern", nmo_cmd_convert_strip, convert_strip_usage},
+    {"merge", "m", "Merge objects from source into target", nmo_cmd_convert_merge, convert_merge_usage},
 };
 
 /* diff group actions */
 static const nmo_cli_action_t diff_actions[] = {
-    {"summary", "s", "Show diff summary", stub_handler, stub_usage},
-    {"objects", "obj", "Diff objects between files", stub_handler, stub_usage},
-    {"chunks", "ch", "Diff chunks between files", stub_handler, stub_usage},
+    {"summary", "s", "Show diff summary", nmo_cmd_diff_summary, diff_summary_usage},
+    {"objects", "obj", "Diff objects between files", nmo_cmd_diff_objects, diff_objects_usage},
+    {"chunks", "ch", "Diff chunks between files", nmo_cmd_diff_chunks, diff_chunks_usage},
+    {"full", "f", "Full comparison", nmo_cmd_diff_full, diff_full_usage},
+};
+
+/* query group actions */
+static const nmo_cli_action_t query_actions[] = {
+    {"eval", "e", "Evaluate DSL expression", nmo_cmd_query_eval, query_eval_usage},
+    {"script", "s", "Execute DSL script", nmo_cmd_query_script, query_script_usage},
+    {"schema", "sc", "Apply DSL schema", nmo_cmd_query_schema, query_schema_usage},
+    {"module", "m", "Run DSL module", nmo_cmd_query_module, query_module_usage},
+};
+
+/* extension group actions */
+static const nmo_cli_action_t extension_actions[] = {
+    {"list", "ls", "List registered extensions", nmo_cmd_extension_list, extension_list_usage},
+    {"load", "ld", "Load extension DLL", nmo_cmd_extension_load, extension_load_usage},
+    {"info", "i", "Query extension metadata", nmo_cmd_extension_info, extension_info_usage},
+    {"check", "ch", "Check plugin dependencies", nmo_cmd_extension_check, extension_check_usage},
 };
 
 /* debug group actions */
@@ -363,6 +477,8 @@ static const nmo_cli_group_t groups[] = {
     {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions)},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions)},
     {"diff", "d", "File comparison", diff_actions, ARRAY_SIZE(diff_actions)},
+    {"query", "q", "DSL query engine", query_actions, ARRAY_SIZE(query_actions)},
+    {"extension", "ext", "Extension management", extension_actions, ARRAY_SIZE(extension_actions)},
     {"debug", "dbg", "Debugging tools", debug_actions, ARRAY_SIZE(debug_actions)},
     {"repl", NULL, "Interactive debugger", repl_actions, ARRAY_SIZE(repl_actions)},
 };
@@ -429,6 +545,9 @@ void nmo_cli_print_usage(FILE *out) {
     fprintf(out, "  --no-pager              Disable pager for long output\n");
     fprintf(out, "  --strict                Enable strict validation mode\n");
     fprintf(out, "  --fail-on-warning       Exit with code 4 on warnings\n");
+    fprintf(out, "  --plugin <path>         Load extension plugin (repeatable)\n");
+    fprintf(out, "  -F, --filter <pattern>  Filter objects by name pattern\n");
+    fprintf(out, "  --batch                 Process multiple files\n");
     fprintf(out, "\n");
     fprintf(out, "Command Groups:\n");
     for (size_t i = 0; i < group_count; ++i) {

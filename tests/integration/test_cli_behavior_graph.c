@@ -12,7 +12,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifdef _WIN32
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#define NMO_POPEN popen
+#define NMO_PCLOSE pclose
+#elif defined(_WIN32)
 #define NMO_POPEN _popen
 #define NMO_PCLOSE _pclose
 #else
@@ -87,7 +90,7 @@ TEST(cli, behavior_graph_json) {
     const char *file_path = NMO_TEST_DATA_FILE("base.cmo");
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "\"%s\" -f json behavior list \"%s\"", NMO_CLI_PATH, file_path);
+    snprintf(cmd, sizeof(cmd), "%s -f json behavior list \"%s\"", NMO_CLI_PATH, file_path);
     char *list_output = read_command_output(cmd);
     ASSERT_NOT_NULL(list_output);
 
@@ -123,7 +126,7 @@ TEST(cli, behavior_graph_json) {
     yyjson_doc_free(list_doc);
 
     snprintf(cmd, sizeof(cmd),
-             "\"%s\" -f json behavior graph --max-nodes 5 --max-edges 5 %u \"%s\"",
+             "%s -f json behavior graph --max-nodes 5 --max-edges 5 %u \"%s\"",
              NMO_CLI_PATH, behavior_id, file_path);
     char *graph_output = read_command_output(cmd);
     ASSERT_NOT_NULL(graph_output);
@@ -167,7 +170,7 @@ TEST(cli, behavior_graph_dot) {
     const char *file_path = NMO_TEST_DATA_FILE("base.cmo");
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "\"%s\" -f json behavior list \"%s\"", NMO_CLI_PATH, file_path);
+    snprintf(cmd, sizeof(cmd), "%s -f json behavior list \"%s\"", NMO_CLI_PATH, file_path);
     char *list_output = read_command_output(cmd);
     ASSERT_NOT_NULL(list_output);
 
@@ -196,7 +199,7 @@ TEST(cli, behavior_graph_dot) {
 
     yyjson_doc_free(list_doc);
 
-    snprintf(cmd, sizeof(cmd), "\"%s\" behavior graph --dot %u \"%s\"", NMO_CLI_PATH, behavior_id, file_path);
+    snprintf(cmd, sizeof(cmd), "%s behavior graph --dot %u \"%s\"", NMO_CLI_PATH, behavior_id, file_path);
     char *dot_output = read_command_output(cmd);
     ASSERT_NOT_NULL(dot_output);
 

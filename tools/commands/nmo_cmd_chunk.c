@@ -24,17 +24,6 @@
 
 #include <stdlib.h>
 
-/**
- * Find first non-option argument (the file path)
- */
-static const char *find_file_arg(int argc, char **argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            return argv[i];
-        }
-    }
-    return NULL;
-}
 
 typedef struct nmo_cli_chunk_entry {
     nmo_chunk_t *chunk;
@@ -359,7 +348,7 @@ static bool collect_all_chunk_entries(nmo_session_t *session,
  * ============================================================================ */
 
 int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo chunk list <file>\n");
@@ -524,7 +513,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * ============================================================================ */
 
 int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo chunk tree <file>\n");

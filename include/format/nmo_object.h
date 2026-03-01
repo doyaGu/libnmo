@@ -122,6 +122,22 @@ NMO_API nmo_object_id_t nmo_object_get_id(const nmo_object_t *object);
 NMO_API nmo_class_id_t nmo_object_get_class_id(const nmo_object_t *object);
 
 /**
+ * @brief Get object flags
+ *
+ * @param object Object (required)
+ * @return Object flags
+ */
+NMO_API uint32_t nmo_object_get_flags(const nmo_object_t *object);
+
+/**
+ * @brief Get parent object
+ *
+ * @param object Object (required)
+ * @return Parent object or NULL if root
+ */
+NMO_API nmo_object_t *nmo_object_get_parent(const nmo_object_t *object);
+
+/**
  * @brief Add child object
  *
  * @param parent Parent object (required)

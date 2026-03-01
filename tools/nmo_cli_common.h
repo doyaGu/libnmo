@@ -62,6 +62,16 @@ typedef struct nmo_cli_global_opts {
     const char *encoding;             /**< Encoding override (NULL = UTF-8) */
     bool show_help;                   /**< --help was specified */
     bool show_version;                /**< --version was specified */
+
+    /* Extension loading */
+    const char *plugin_paths[16];     /**< --plugin paths (up to 16) */
+    size_t plugin_count;              /**< Number of --plugin paths */
+
+    /* Object filtering */
+    const char *filter_pattern;       /**< --filter / -F pattern for listing commands */
+
+    /* Batch processing */
+    bool batch_mode;                  /**< --batch: process multiple files */
 } nmo_cli_global_opts_t;
 
 /**

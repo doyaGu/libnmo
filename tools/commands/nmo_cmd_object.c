@@ -15,6 +15,7 @@
 #include "nmo.h"
 #include "app/nmo_context.h"
 #include "core/nmo_arena.h"
+#include "dsl/nmo_dsl.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_ref_graph.h"
 
@@ -32,21 +33,6 @@
 #endif
 
 /**
- * Find file path (last non-option argument)
- */
-static const char *find_file_arg_last(int argc, char **argv) {
-    const char *last_non_opt = NULL;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            last_non_opt = argv[i];
-        }
-    }
-    return last_non_opt;
-}
-
-
-
-/**
  * Parse --class filter
  */
 static const char *parse_class_filter(int argc, char **argv) {
@@ -58,19 +44,87 @@ static const char *parse_class_filter(int argc, char **argv) {
     return NULL;
 }
 
+/**
+ * Parse --filter expression
+ */
+static const char *parse_filter_expr(int argc, char **argv) {
+    for (int i = 1; i < argc - 1; ++i) {
+        if (strcmp(argv[i], "--filter") == 0 || strcmp(argv[i], "-f") == 0) {
+            return argv[i + 1];
+        }
+    }
+    return NULL;
+}
+
+/**
+ * Evaluate a DSL value as truthy/falsy.
+ */
+static bool dsl_value_is_truthy(const nmo_dsl_value_t *val) {
+    switch (val->kind) {
+        case NMO_DSL_VALUE_BOOL:   return val->as.b;
+        case NMO_DSL_VALUE_INT:    return val->as.i != 0;
+        case NMO_DSL_VALUE_UINT:   return val->as.u != 0;
+        case NMO_DSL_VALUE_REAL:   return val->as.r != 0.0;
+        case NMO_DSL_VALUE_STRING: return val->as.s != NULL && val->as.s[0] != '\0';
+        case NMO_DSL_VALUE_NULL:   return false;
+        default:                   return true;
+    }
+}
+
+/**
+ * Evaluate a DSL filter expression against a single object.
+ * Returns true if the object matches (expression is truthy).
+ */
+static bool object_matches_filter(
+    nmo_object_t *obj,
+    const nmo_type_registry_t *registry,
+    nmo_dsl_program_t *program)
+{
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    if (!chunk) {
+        return false;
+    }
+
+    nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(
+        registry, (uint32_t)nmo_object_get_class_id(obj));
+    const nmo_type_descriptor_t *type_desc = NULL;
+    if (type_id != NMO_TYPE_ID_INVALID) {
+        type_desc = nmo_type_registry_get_by_id(registry, type_id);
+    }
+
+    size_t data_size = 0;
+    const void *instance = nmo_chunk_get_data(chunk, &data_size);
+
+    nmo_dsl_eval_context_t eval_ctx;
+    memset(&eval_ctx, 0, sizeof(eval_ctx));
+    eval_ctx.registry = registry;
+    eval_ctx.root_type = type_desc;
+    eval_ctx.root_instance = (void *)instance;
+    eval_ctx.current_type = type_desc;
+    eval_ctx.current_instance = instance;
+
+    nmo_dsl_value_t result = {0};
+    nmo_status_t st = nmo_dsl_eval_expr(program, &eval_ctx, &result);
+
+    bool match = (st == NMO_OK) && dsl_value_is_truthy(&result);
+    nmo_dsl_value_destroy(&result);
+    return match;
+}
+
 /* ============================================================================
  * object list
  * ============================================================================ */
 
 int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo object list [--class <name>] <file>\n");
+        fprintf(stderr, "Usage: nmo object list [--class <name>] [--filter <expr>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
     const char *class_filter = parse_class_filter(argc, argv);
+    const char *filter_expr = parse_filter_expr(argc, argv);
 
     /* Open session */
     nmo_context_t *ctx = NULL;
@@ -102,6 +156,19 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
+    /* Compile DSL filter if specified */
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_dsl_program_t *filter_program = NULL;
+    if (filter_expr) {
+        nmo_dsl_compile_options_t opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+        nmo_status_t st = nmo_dsl_compile(registry, NULL, filter_expr, &opts, &filter_program);
+        if (st != NMO_OK) {
+            nmo_tool_close_session(ctx, session);
+            fprintf(stderr, "Error: Failed to compile filter expression: %s\n", filter_expr);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+
     char out_err[128];
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {
@@ -124,6 +191,11 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
             /* Apply class filter */
             if (filter_class_id && !nmo_cli_class_is_derived_from(ctx, class_id, filter_class_id)) {
+                continue;
+            }
+
+            /* Apply DSL filter */
+            if (filter_program && !object_matches_filter(obj, registry, filter_program)) {
                 continue;
             }
 
@@ -173,6 +245,11 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 continue;
             }
 
+            /* Apply DSL filter */
+            if (filter_program && !object_matches_filter(obj, registry, filter_program)) {
+                continue;
+            }
+
             char id_buf[16];
             snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
 
@@ -192,12 +269,18 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         if (class_filter) {
             fprintf(out, " (filtered by class: %s)", class_filter);
         }
+        if (filter_expr) {
+            fprintf(out, " (filtered by: %s)", filter_expr);
+        }
         fprintf(out, "\n\n");
 
         nmo_cli_table_print(&table, out, colorize);
         nmo_cli_table_free(&table);
     }
 
+    if (filter_program) {
+        nmo_dsl_program_destroy(filter_program);
+    }
     nmo_tool_close_session(ctx, session);
     nmo_cli_close_output_stream(global, out);
     return NMO_CLI_EXIT_SUCCESS;
@@ -304,7 +387,7 @@ static void object_tree_render(FILE *out, const nmo_cli_tree_node_t *node, bool 
 }
 
 int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo object tree <file>\n");
@@ -342,7 +425,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     /* Find root objects (those without parents) */
     size_t root_count = 0;
     for (size_t i = 0; i < object_count; ++i) {
-        if (objects[i]->parent == NULL) {
+        if (nmo_object_get_parent(objects[i]) == NULL) {
             root_count++;
         }
     }
@@ -356,7 +439,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         yyjson_mut_val *roots = yyjson_mut_arr(doc);
         for (size_t i = 0; i < object_count; ++i) {
-            if (objects[i]->parent == NULL) {
+            if (nmo_object_get_parent(objects[i]) == NULL) {
                 yyjson_mut_val *obj_node = build_object_json_tree(doc, ctx, objects[i]);
                 yyjson_mut_arr_add_val(roots, obj_node);
             }
@@ -373,7 +456,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Build and print tree for each root */
         nmo_arena_t *tree_arena = nmo_session_get_arena(session);
         for (size_t i = 0; i < object_count; ++i) {
-            if (objects[i]->parent == NULL) {
+            if (nmo_object_get_parent(objects[i]) == NULL) {
                 nmo_cli_tree_node_t *tree = build_object_tree_node(ctx, objects[i], tree_arena);
                 if (tree) {
                     nmo_cli_print_tree(tree, out, colorize, object_tree_render);
@@ -501,7 +584,7 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_class_id_t class_id = nmo_object_get_class_id(target);
     const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
     const char *name = nmo_object_get_name(target);
-    uint32_t flags = target->flags;
+    uint32_t flags = nmo_object_get_flags(target);
 
     if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
         yyjson_mut_doc *doc = nmo_cli_json_create_doc();
@@ -662,7 +745,7 @@ static bool simple_pattern_match(const char *pattern, const char *str) {
 }
 
 int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo object find [--name <pattern>] [--class <name>] <file>\n");
@@ -855,7 +938,7 @@ static nmo_object_id_t parse_object_id(int argc, char **argv) {
  * ============================================================================ */
 
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo object refs <id> <file>\n");

@@ -256,10 +256,11 @@ static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
     const nmo_type_registry_t *registry, nmo_object_t *obj)
 {
     if (!registry || !obj) return NULL;
-    if (!nmo_guid_is_null(obj->type_guid)) {
-        return nmo_type_registry_find_by_guid(registry, obj->type_guid);
+    nmo_guid_t type_guid = nmo_object_get_type_guid(obj);
+    if (!nmo_guid_is_null(type_guid)) {
+        return nmo_type_registry_find_by_guid(registry, type_guid);
     }
-    return nmo_type_registry_find_by_class_id_inherited(registry, obj->class_id);
+    return nmo_type_registry_find_by_class_id_inherited(registry, nmo_object_get_class_id(obj));
 }
 
 static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field) {

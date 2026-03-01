@@ -35,6 +35,10 @@ add_executable(nmo_cli
     commands/nmo_cmd_resource.c
     commands/nmo_cmd_behavior.c
     commands/nmo_cmd_parameter.c
+    commands/nmo_cmd_convert.c
+    commands/nmo_cmd_diff.c
+    commands/nmo_cmd_query.c
+    commands/nmo_cmd_extension.c
 
     # Semantic summaries
     summaries/nmo_object_summary.c

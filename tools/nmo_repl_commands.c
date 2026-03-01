@@ -5,7 +5,13 @@
 #include "nmo_repl_session.h"
 
 #include "app/nmo_inspector.h"
+#include "app/nmo_saver.h"
 #include "app/nmo_stats.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_error.h"
+#include "dsl/nmo_dsl.h"
+#include "object/nmo_object_repository.h"
+#include "session/nmo_ref_graph.h"
 
 #include "nmo_cli_hex.h"
 #include "nmo_cli_json.h"
@@ -28,6 +34,9 @@ static int cmd_show(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_dump(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_meta(nmo_repl_context_t *repl, int argc, char **argv);
@@ -35,6 +44,7 @@ static int cmd_export(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_set(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_open(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv);
+static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv);
 static int cmd_quit(nmo_repl_context_t *repl, int argc, char **argv);
 
@@ -46,12 +56,16 @@ static const nmo_repl_command_t commands[] = {
     {"show", "s", "Show object details", "show [selector]", cmd_show},
     {"dump", "d", "Dump chunk", "dump [selector] [level]", cmd_dump},
     {"find", "f", "Find objects by name/class/id/regex", "find <substr>|/<regex>/ | class <id|name> | id <id>", cmd_find},
-    {"trace", "t", "Trace references (placeholder)", "trace <index>", cmd_trace},
+    {"trace", "t", "Trace object references", "trace [selector] [--incoming|--outgoing|--both]", cmd_trace},
+    {"eval", "e", "Evaluate DSL expression on selected object", "eval <expression>", cmd_eval},
+    {"query", "", "Filter objects by DSL predicate", "query <expression>", cmd_query},
+    {"save", "", "Save session to file", "save <path> [--compress] [--sequential-ids]", cmd_save},
     {"verify", "v", "Verify chunks", "verify [all|selector]", cmd_verify},
     {"stats", "st", "Show file statistics", "stats", cmd_stats},
     {"meta", "m", "Show chunk metadata", "meta [selector]", cmd_meta},
     {"export", "x", "Export chunk(s) to JSON", "export <path> [selector|all] [data]", cmd_export},
     {"set", "", "Set options", "set color on|off | set level 0-3 | set page <n> | set regex-icase on|off", cmd_set},
+    {"history", "", "Show command history (use !N to recall)", "history", cmd_history},
     {"open", "o", "Open a different file (reloads session)", "open <path>", cmd_open},
     {"reload", "r", "Reload the current file", "reload", cmd_reload},
     {"clear", "cls", "Clear the screen", "clear", cmd_clear},
@@ -188,7 +202,7 @@ void nmo_repl_print_banner(const nmo_repl_context_t *repl) {
         nmo_session_get_objects(repl->session, &objects, &object_count);
     }
 
-    printf("\nNMO REPL (nmo repl)\n");
+    printf("\nnmo interactive shell\n");
     printf("File: %s\n", label);
     if (object_count) {
         printf("Objects: %zu\n", object_count);
@@ -564,11 +578,346 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
 }
 
 static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv) {
-    (void)repl;
-    (void)argc;
-    (void)argv;
-    fprintf(stderr, "Trace not implemented yet.\n");
-    return -1;
+    size_t index = 0;
+    if (nmo_repl_resolve_object_index(repl, argc > 1 ? argv[1] : NULL, &index, true) != 0) {
+        return -1;
+    }
+
+    /* Parse direction flag (default: show both) */
+    bool show_outgoing = true;
+    bool show_incoming = true;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--incoming") == 0 || strcmp(argv[i], "-i") == 0) {
+            show_outgoing = false;
+            show_incoming = true;
+        } else if (strcmp(argv[i], "--outgoing") == 0 || strcmp(argv[i], "-o") == 0) {
+            show_outgoing = true;
+            show_incoming = false;
+        } else if (strcmp(argv[i], "--both") == 0 || strcmp(argv[i], "-b") == 0) {
+            show_outgoing = true;
+            show_incoming = true;
+        }
+    }
+
+    size_t object_count = 0;
+    nmo_object_t **objects = NULL;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+
+    if (index >= object_count) {
+        fprintf(stderr, "Error: Index %zu out of range\n", index);
+        return -1;
+    }
+
+    nmo_object_t *obj = objects[index];
+    nmo_object_id_t obj_id = nmo_object_get_id(obj);
+    const char *obj_name = nmo_object_get_name(obj);
+
+    /* Build reference graph */
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    nmo_type_registry_t *type_reg = nmo_context_get_type_registry(repl->ctx);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        fprintf(stderr, "Error: Failed to create arena\n");
+        return -1;
+    }
+
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, type_reg, arena);
+    if (!graph) {
+        nmo_arena_destroy(arena);
+        fprintf(stderr, "Error: Failed to create reference graph\n");
+        return -1;
+    }
+
+    printf("\nReferences for [%zu] ID=%u %s:\n", index, obj_id,
+           (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
+
+    size_t total_displayed = 0;
+
+    /* Show outgoing references */
+    if (show_outgoing) {
+        nmo_ref_edge_t *out_edges = NULL;
+        size_t out_count = 0;
+        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_OUTGOING, &out_edges, &out_count);
+
+        if (out_count > 0) {
+            printf("\n  Outgoing (%zu):\n", out_count);
+            for (size_t i = 0; i < out_count; ++i) {
+                const nmo_ref_edge_t *e = &out_edges[i];
+                /* Find peer name */
+                const char *peer_name = "(unknown)";
+                for (size_t j = 0; j < object_count; ++j) {
+                    if (nmo_object_get_id(objects[j]) == e->to) {
+                        const char *n = nmo_object_get_name(objects[j]);
+                        if (n && n[0]) {
+                            peer_name = n;
+                        }
+                        break;
+                    }
+                }
+                printf("    -> ID=%u %s", e->to, peer_name);
+                if (e->field_path && e->field_path[0]) {
+                    printf(" (via %s)", e->field_path);
+                }
+                printf("\n");
+                total_displayed++;
+            }
+        }
+    }
+
+    /* Show incoming references */
+    if (show_incoming) {
+        nmo_ref_edge_t *in_edges = NULL;
+        size_t in_count = 0;
+        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_INCOMING, &in_edges, &in_count);
+
+        if (in_count > 0) {
+            printf("\n  Incoming (%zu):\n", in_count);
+            for (size_t i = 0; i < in_count; ++i) {
+                const nmo_ref_edge_t *e = &in_edges[i];
+                const char *peer_name = "(unknown)";
+                for (size_t j = 0; j < object_count; ++j) {
+                    if (nmo_object_get_id(objects[j]) == e->from) {
+                        const char *n = nmo_object_get_name(objects[j]);
+                        if (n && n[0]) {
+                            peer_name = n;
+                        }
+                        break;
+                    }
+                }
+                printf("    <- ID=%u %s", e->from, peer_name);
+                if (e->field_path && e->field_path[0]) {
+                    printf(" (via %s)", e->field_path);
+                }
+                printf("\n");
+                total_displayed++;
+            }
+        }
+    }
+
+    if (total_displayed == 0) {
+        printf("  (no references found)\n");
+    }
+
+    nmo_arena_destroy(arena);
+    printf("\n");
+    return 0;
+}
+
+static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: eval <expression>\n");
+        fprintf(stderr, "Evaluates a DSL expression in the context of the selected object.\n");
+        return -1;
+    }
+
+    if (!repl->has_selection) {
+        fprintf(stderr, "No object selected. Use 'select <index>' first.\n");
+        return -1;
+    }
+
+    size_t object_count = 0;
+    nmo_object_t **objects = NULL;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+
+    if (repl->selected_index >= object_count) {
+        fprintf(stderr, "Error: Selected index out of range\n");
+        return -1;
+    }
+
+    /* Reconstruct expression from remaining args (handles spaces in quoted strings) */
+    char expr_buf[NMO_REPL_MAX_CMD_LEN];
+    size_t pos = 0;
+    for (int i = 1; i < argc && pos < sizeof(expr_buf) - 1; ++i) {
+        if (i > 1 && pos < sizeof(expr_buf) - 1) {
+            expr_buf[pos++] = ' ';
+        }
+        size_t len = strlen(argv[i]);
+        if (pos + len >= sizeof(expr_buf)) {
+            len = sizeof(expr_buf) - pos - 1;
+        }
+        memcpy(expr_buf + pos, argv[i], len);
+        pos += len;
+    }
+    expr_buf[pos] = '\0';
+
+    nmo_object_t *obj = objects[repl->selected_index];
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
+
+    /* Look up the type descriptor for the object's class */
+    nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(
+        registry, (uint32_t)nmo_object_get_class_id(obj));
+    const nmo_type_descriptor_t *type_desc = NULL;
+    if (type_id != NMO_TYPE_ID_INVALID) {
+        type_desc = nmo_type_registry_get_by_id(registry, type_id);
+    }
+
+    /* Set up DSL eval context */
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    const void *instance = NULL;
+    size_t data_size = 0;
+    if (chunk) {
+        instance = nmo_chunk_get_data(chunk, &data_size);
+    }
+
+    nmo_dsl_eval_context_t eval_ctx;
+    memset(&eval_ctx, 0, sizeof(eval_ctx));
+    eval_ctx.registry = registry;
+    eval_ctx.root_type = type_desc;
+    eval_ctx.root_instance = (void *)instance;
+    eval_ctx.current_type = type_desc;
+    eval_ctx.current_instance = instance;
+
+    nmo_dsl_value_t result = {0};
+    nmo_status_t st = nmo_dsl_eval_one(registry, &eval_ctx, expr_buf, &result);
+
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: DSL evaluation failed: %s\n", nmo_error_string(st));
+        return -1;
+    }
+
+    /* Format and display result */
+    printf("=> ");
+    switch (result.kind) {
+        case NMO_DSL_VALUE_NULL:    printf("null\n"); break;
+        case NMO_DSL_VALUE_BOOL:    printf("%s\n", result.as.b ? "true" : "false"); break;
+        case NMO_DSL_VALUE_INT:     printf("%lld\n", (long long)result.as.i); break;
+        case NMO_DSL_VALUE_UINT:    printf("%llu\n", (unsigned long long)result.as.u); break;
+        case NMO_DSL_VALUE_REAL:    printf("%g\n", result.as.r); break;
+        case NMO_DSL_VALUE_STRING:  printf("\"%s\"\n", result.as.s ? result.as.s : ""); break;
+        default:                    printf("<value kind=%d>\n", result.kind); break;
+    }
+
+    nmo_dsl_value_destroy(&result);
+    return 0;
+}
+
+static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: query <expression>\n");
+        fprintf(stderr, "Filters objects: evaluates expression for each, shows matches.\n");
+        return -1;
+    }
+
+    /* Reconstruct expression */
+    char expr_buf[NMO_REPL_MAX_CMD_LEN];
+    size_t pos = 0;
+    for (int i = 1; i < argc && pos < sizeof(expr_buf) - 1; ++i) {
+        if (i > 1 && pos < sizeof(expr_buf) - 1) {
+            expr_buf[pos++] = ' ';
+        }
+        size_t len = strlen(argv[i]);
+        if (pos + len >= sizeof(expr_buf)) {
+            len = sizeof(expr_buf) - pos - 1;
+        }
+        memcpy(expr_buf + pos, argv[i], len);
+        pos += len;
+    }
+    expr_buf[pos] = '\0';
+
+    size_t object_count = 0;
+    nmo_object_t **objects = NULL;
+    nmo_repl_get_objects(repl, &objects, &object_count);
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
+
+    printf("\nQuery matches:\n");
+    size_t found = 0;
+
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *obj = objects[i];
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        if (!chunk) {
+            continue;
+        }
+
+        /* Set up per-object DSL context */
+        nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(
+            registry, (uint32_t)nmo_object_get_class_id(obj));
+        const nmo_type_descriptor_t *type_desc = NULL;
+        if (type_id != NMO_TYPE_ID_INVALID) {
+            type_desc = nmo_type_registry_get_by_id(registry, type_id);
+        }
+
+        size_t data_size = 0;
+        const void *instance = nmo_chunk_get_data(chunk, &data_size);
+
+        nmo_dsl_eval_context_t eval_ctx;
+        memset(&eval_ctx, 0, sizeof(eval_ctx));
+        eval_ctx.registry = registry;
+        eval_ctx.root_type = type_desc;
+        eval_ctx.root_instance = (void *)instance;
+        eval_ctx.current_type = type_desc;
+        eval_ctx.current_instance = instance;
+
+        nmo_dsl_value_t result = {0};
+        nmo_status_t st = nmo_dsl_eval_one(registry, &eval_ctx, expr_buf, &result);
+
+        /* Check if result is truthy */
+        bool is_match = false;
+        if (st == NMO_OK) {
+            switch (result.kind) {
+                case NMO_DSL_VALUE_BOOL: is_match = result.as.b; break;
+                case NMO_DSL_VALUE_INT:  is_match = result.as.i != 0; break;
+                case NMO_DSL_VALUE_UINT: is_match = result.as.u != 0; break;
+                case NMO_DSL_VALUE_REAL: is_match = result.as.r != 0.0; break;
+                case NMO_DSL_VALUE_STRING: is_match = (result.as.s != NULL && result.as.s[0] != '\0'); break;
+                case NMO_DSL_VALUE_NULL: is_match = false; break;
+                default: is_match = true; break;
+            }
+        }
+
+        nmo_dsl_value_destroy(&result);
+
+        if (is_match) {
+            nmo_repl_print_object_summary(repl, i, obj);
+            found++;
+            if (!nmo_repl_paginate_if_needed(repl, found)) {
+                break;
+            }
+        }
+    }
+
+    if (!found) {
+        printf("No matches.\n");
+    } else {
+        printf("\n%zu match(es)\n", found);
+    }
+    printf("\n");
+    return 0;
+}
+
+static int cmd_save(nmo_repl_context_t *repl, int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: save <path> [--compress] [--sequential-ids]\n");
+        return -1;
+    }
+
+    if (!repl->session) {
+        fprintf(stderr, "No session loaded.\n");
+        return -1;
+    }
+
+    const char *output_path = argv[1];
+    nmo_save_options_t opts = nmo_save_options_default();
+
+    /* Parse optional flags */
+    for (int i = 2; i < argc; ++i) {
+        if (strcmp(argv[i], "--compress") == 0) {
+            opts.flags |= NMO_SAVE_COMPRESSED;
+        } else if (strcmp(argv[i], "--sequential-ids") == 0) {
+            opts.flags |= NMO_SAVE_SEQUENTIAL_IDS;
+        }
+    }
+
+    int rc = nmo_save_file(repl->session, output_path, &opts);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to save to '%s': %s\n",
+                output_path, nmo_error_string(rc));
+        return -1;
+    }
+
+    printf("Saved to %s\n", output_path);
+    return 0;
 }
 
 static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv) {
@@ -870,6 +1219,24 @@ static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv) {
     }
 
     printf("Reloaded %s\n", repl->filename);
+    return 0;
+}
+
+static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    if (repl->history_count == 0) {
+        printf("No history.\n");
+        return 0;
+    }
+
+    printf("\nCommand History:\n");
+    for (size_t i = 0; i < repl->history_count; ++i) {
+        size_t idx = (repl->history_start + i) % NMO_REPL_HISTORY_SIZE;
+        printf("  %3zu  %s\n", i + 1, repl->history[idx] ? repl->history[idx] : "");
+    }
+    printf("\nTip: use !N to recall command N, !! to recall last.\n\n");
     return 0;
 }
 

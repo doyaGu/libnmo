@@ -8,6 +8,7 @@
 #include "../nmo_cli_common.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_cli_json.h"
+#include "../nmo_tool_common.h"
 #include "../nmo_tool_session.h"
 
 #include "nmo.h"
@@ -18,31 +19,18 @@
 #include <string.h>
 #include <stdlib.h>
 
-/**
- * Find first non-option argument (the file path)
- */
-static const char *find_file_arg(int argc, char **argv) {
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            return argv[i];
-        }
-    }
-    return NULL;
-}
-
 /* ============================================================================
- * file info
+ * file info (single-file core + batch support)
  * ============================================================================ */
 
-int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo file info <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+static int file_info_single(const char *file_path,
+                             const nmo_cli_global_opts_t *global,
+                             void *user_data,
+                             yyjson_mut_doc *doc,
+                             yyjson_mut_val *data)
+{
+    (void)user_data;
 
-    /* Open session */
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256];
@@ -52,50 +40,85 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    /* Get file info */
     nmo_file_info_t info = nmo_session_get_file_info(session);
 
-    /* Output */
+    if (doc && data) {
+        yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);
+        yyjson_mut_obj_add_uint(doc, data, "manager_count", info.manager_count);
+        yyjson_mut_obj_add_uint(doc, data, "ck_version", info.ck_version);
+    } else {
+        bool colorize = nmo_cli_should_colorize(global, stdout);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%u", info.object_count);
+        nmo_cli_print_kv(stdout, "Objects", buf, 14, colorize);
+        snprintf(buf, sizeof(buf), "%u", info.manager_count);
+        nmo_cli_print_kv(stdout, "Managers", buf, 14, colorize);
+        snprintf(buf, sizeof(buf), "0x%08X", info.ck_version);
+        nmo_cli_print_kv(stdout, "CK Version", buf, 14, colorize);
+    }
+
+    nmo_tool_close_session(ctx, session);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Batch mode */
+    if (global->batch_mode) {
+        const char *paths[64];
+        size_t count = nmo_tool_find_file_args(argc, argv, paths, 64);
+        if (count == 0) {
+            fprintf(stderr, "Error: No files specified\n");
+            fprintf(stderr, "Usage: nmo --batch file info <file1> <file2> ...\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return nmo_tool_batch_run(paths, count, global, "file.info",
+                                   file_info_single, NULL);
+    }
+
+    /* Single file mode */
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
+    if (!file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        fprintf(stderr, "Usage: nmo file info <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+
+    if (is_json) {
+        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        int rc = file_info_single(file_path, global, NULL, doc, data);
+
+        yyjson_mut_obj_add_str(doc, data, "file", file_path);
+        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.info", file_path);
+        yyjson_mut_doc_set_root(doc, root);
+
+        char out_err[128];
+        FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+        if (out) {
+            nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            nmo_cli_close_output_stream(global, out);
+        }
+        nmo_cli_json_free_doc(doc);
+        return rc;
+    }
+
+    /* Text mode */
     char out_err[128];
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {
-        nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: %s\n", out_err);
         return NMO_CLI_EXIT_IO_ERROR;
     }
     bool colorize = nmo_cli_should_colorize(global, out);
-
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file", file_path);
-        yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);
-        yyjson_mut_obj_add_uint(doc, data, "manager_count", info.manager_count);
-        yyjson_mut_obj_add_uint(doc, data, "ck_version", info.ck_version);
-
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.info", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
-    } else {
-        nmo_cli_print_heading(out, "File Info", colorize);
-        nmo_cli_print_kv(out, "File", file_path, 14, colorize);
-
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%u", info.object_count);
-        nmo_cli_print_kv(out, "Objects", buf, 14, colorize);
-
-        snprintf(buf, sizeof(buf), "%u", info.manager_count);
-        nmo_cli_print_kv(out, "Managers", buf, 14, colorize);
-
-        snprintf(buf, sizeof(buf), "0x%08X", info.ck_version);
-        nmo_cli_print_kv(out, "CK Version", buf, 14, colorize);
-    }
-
-    nmo_tool_close_session(ctx, session);
+    nmo_cli_print_heading(out, "File Info", colorize);
+    nmo_cli_print_kv(out, "File", file_path, 14, colorize);
     nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+
+    return file_info_single(file_path, global, NULL, NULL, NULL);
 }
 
 /* ============================================================================
@@ -103,7 +126,7 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
  * ============================================================================ */
 
 int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo file header <file>\n");
@@ -222,7 +245,7 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo file stats <file>\n");
@@ -277,8 +300,26 @@ int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *globa
         /* Memory stats */
         yyjson_mut_val *mem_stats = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, mem_stats, "total_size", stats.memory.total_size);
+        yyjson_mut_obj_add_uint(doc, mem_stats, "header_size", stats.memory.header_size);
+        yyjson_mut_obj_add_uint(doc, mem_stats, "data_size", stats.memory.data_size);
         yyjson_mut_obj_add_uint(doc, mem_stats, "chunk_data_size", stats.memory.chunk_data_size);
+        yyjson_mut_obj_add_uint(doc, mem_stats, "chunk_overhead", stats.memory.chunk_overhead);
+        yyjson_mut_obj_add_uint(doc, mem_stats, "compression_ratio", stats.memory.compression_ratio);
         yyjson_mut_obj_add_val(doc, data, "memory", mem_stats);
+
+        /* Reference stats */
+        yyjson_mut_val *ref_stats = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, ref_stats, "total", stats.references.total_references);
+        yyjson_mut_obj_add_uint(doc, ref_stats, "resolved", stats.references.resolved);
+        yyjson_mut_obj_add_uint(doc, ref_stats, "unresolved", stats.references.unresolved);
+        yyjson_mut_obj_add_val(doc, data, "references", ref_stats);
+
+        /* Performance stats */
+        yyjson_mut_val *perf_stats = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_real(doc, perf_stats, "load_time_ms", stats.performance.load_time_ms);
+        yyjson_mut_obj_add_real(doc, perf_stats, "parse_time_ms", stats.performance.parse_time_ms);
+        yyjson_mut_obj_add_real(doc, perf_stats, "remap_time_ms", stats.performance.remap_time_ms);
+        yyjson_mut_obj_add_val(doc, data, "performance", perf_stats);
 
         yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.stats", file_path);
         yyjson_mut_doc_set_root(doc, root);
@@ -291,25 +332,53 @@ int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *globa
         nmo_cli_print_heading(out, "Objects", colorize);
         char buf[64];
         snprintf(buf, sizeof(buf), "%zu", stats.objects.total_count);
-        nmo_cli_print_kv(out, "Total", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Total", buf, 20, colorize);
         snprintf(buf, sizeof(buf), "%zu", stats.objects.unique_classes);
-        nmo_cli_print_kv(out, "Unique Classes", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Unique Classes", buf, 20, colorize);
         fprintf(out, "\n");
 
         nmo_cli_print_heading(out, "Chunks", colorize);
         snprintf(buf, sizeof(buf), "%zu", stats.chunks.total_chunks);
-        nmo_cli_print_kv(out, "Total", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Total", buf, 20, colorize);
         snprintf(buf, sizeof(buf), "%zu", stats.chunks.compressed_chunks);
-        nmo_cli_print_kv(out, "Compressed", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Compressed", buf, 20, colorize);
         snprintf(buf, sizeof(buf), "%zu", stats.chunks.max_chunk_size);
-        nmo_cli_print_kv(out, "Max Size", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Max Size", buf, 20, colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.chunks.avg_chunk_size);
+        nmo_cli_print_kv(out, "Avg Size", buf, 20, colorize);
         fprintf(out, "\n");
 
         nmo_cli_print_heading(out, "Memory", colorize);
         snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.total_size);
-        nmo_cli_print_kv(out, "Total Size", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Total Size", buf, 20, colorize);
+        snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.header_size);
+        nmo_cli_print_kv(out, "Header Size", buf, 20, colorize);
+        snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.data_size);
+        nmo_cli_print_kv(out, "Data Size", buf, 20, colorize);
         snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.chunk_data_size);
-        nmo_cli_print_kv(out, "Chunk Data", buf, 16, colorize);
+        nmo_cli_print_kv(out, "Chunk Data", buf, 20, colorize);
+        snprintf(buf, sizeof(buf), "%zu%%", stats.memory.compression_ratio);
+        nmo_cli_print_kv(out, "Compression", buf, 20, colorize);
+        fprintf(out, "\n");
+
+        nmo_cli_print_heading(out, "References", colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.references.total_references);
+        nmo_cli_print_kv(out, "Total", buf, 20, colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.references.resolved);
+        nmo_cli_print_kv(out, "Resolved", buf, 20, colorize);
+        snprintf(buf, sizeof(buf), "%zu", stats.references.unresolved);
+        nmo_cli_print_kv(out, "Unresolved", buf, 20, colorize);
+
+        if (global->verbosity > 0) {
+            fprintf(out, "\n");
+            nmo_cli_print_heading(out, "Performance", colorize);
+            snprintf(buf, sizeof(buf), "%.2f ms", stats.performance.load_time_ms);
+            nmo_cli_print_kv(out, "Load Time", buf, 20, colorize);
+            snprintf(buf, sizeof(buf), "%.2f ms", stats.performance.parse_time_ms);
+            nmo_cli_print_kv(out, "Parse Time", buf, 20, colorize);
+            snprintf(buf, sizeof(buf), "%.2f ms", stats.performance.remap_time_ms);
+            nmo_cli_print_kv(out, "Remap Time", buf, 20, colorize);
+        }
     }
 
     nmo_tool_close_session(ctx, session);
@@ -335,7 +404,7 @@ static int compare_class_count_entry(const void *a, const void *b) {
 }
 
 int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo file classes <file>\n");
@@ -366,7 +435,7 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
             continue;
         }
 
-        uint32_t class_id = obj->class_id;
+        uint32_t class_id = nmo_object_get_class_id(obj);
         size_t found = (size_t)-1;
         for (size_t j = 0; j < entry_count; j++) {
             if (entries[j].class_id == class_id) {
@@ -468,7 +537,7 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * ============================================================================ */
 
 int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo file plugins <file>\n");

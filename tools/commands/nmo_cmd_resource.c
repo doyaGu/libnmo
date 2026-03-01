@@ -9,6 +9,7 @@
 #include "../nmo_cli_output.h"
 #include "../nmo_cli_json.h"
 #include "../nmo_tool_session.h"
+#include "../nmo_tool_common.h"
 
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -28,16 +29,6 @@
 #define NMO_PATH_SEP '/'
 #endif
 
-static const char *find_file_arg_last(int argc, char **argv) {
-    const char *last_non_opt = NULL;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            last_non_opt = argv[i];
-        }
-    }
-    return last_non_opt;
-}
-
 static const char *find_positional_arg_excluding_file(int argc, char **argv, const char *file_path) {
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] == '-') {
@@ -56,69 +47,6 @@ static const char *find_positional_arg_excluding_file(int argc, char **argv, con
         return argv[i];
     }
     return NULL;
-}
-
-static bool parse_uint32(const char *s, uint32_t *out) {
-    if (!s || !*s || !out) {
-        return false;
-    }
-    char *end = NULL;
-    unsigned long v = strtoul(s, &end, 10);
-    if (end == s || *end != '\0' || v > UINT32_MAX) {
-        return false;
-    }
-    *out = (uint32_t)v;
-    return true;
-}
-
-static const char *parse_opt_value(int argc, char **argv, const char *opt1, const char *opt2) {
-    for (int i = 1; i < argc - 1; ++i) {
-        if ((opt1 && strcmp(argv[i], opt1) == 0) || (opt2 && strcmp(argv[i], opt2) == 0)) {
-            return argv[i + 1];
-        }
-    }
-    return NULL;
-}
-
-static bool has_flag(int argc, char **argv, const char *flag) {
-    if (!flag) {
-        return false;
-    }
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], flag) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void sanitize_filename(char *dst, size_t dst_size, const char *name, uint32_t index) {
-    if (!dst || dst_size == 0) {
-        return;
-    }
-
-    if (!name || !*name) {
-        snprintf(dst, dst_size, "resource_%u.bin", index);
-        return;
-    }
-
-    size_t pos = 0;
-    for (const unsigned char *p = (const unsigned char *)name; *p && pos + 1 < dst_size; ++p) {
-        unsigned char c = *p;
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' ||
-            c == '<' || c == '>' || c == '|') {
-            dst[pos++] = '_';
-        } else if (c < 0x20) {
-            dst[pos++] = '_';
-        } else {
-            dst[pos++] = (char)c;
-        }
-    }
-    dst[pos] = '\0';
-
-    if (dst[0] == '\0') {
-        snprintf(dst, dst_size, "resource_%u.bin", index);
-    }
 }
 
 static int ensure_dir_exists(const char *dir_path, char *errbuf, size_t errbuf_size) {
@@ -224,7 +152,7 @@ static nmo_object_t *find_object_by_id(nmo_object_t **objects, size_t object_cou
  * ============================================================================ */
 
 int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo resource list <file>\n");
@@ -329,20 +257,20 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo resource show [--index <n> | --name <name>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *index_str = parse_opt_value(argc, argv, "--index", "-i");
-    const char *name_str = parse_opt_value(argc, argv, "--name", "-n");
+    const char *index_str = nmo_tool_find_opt_value(argc, argv, "--index", "-i");
+    const char *name_str = nmo_tool_find_opt_value(argc, argv, "--name", "-n");
 
     const char *pos = find_positional_arg_excluding_file(argc, argv, file_path);
     if (!index_str && !name_str && pos) {
         uint32_t idx_tmp;
-        if (parse_uint32(pos, &idx_tmp)) {
+        if (nmo_tool_parse_u32_dec(pos, &idx_tmp)) {
             index_str = pos;
         } else {
             name_str = pos;
@@ -364,7 +292,7 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     uint32_t res_index = 0;
     if (index_str) {
         uint32_t idx;
-        if (!parse_uint32(index_str, &idx)) {
+        if (!nmo_tool_parse_u32_dec(index_str, &idx)) {
             nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Invalid index '%s'\n", index_str);
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -496,23 +424,23 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg_last(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo resource extract --out-dir <dir> [--index <n> | --name <name>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *out_dir = parse_opt_value(argc, argv, "--out-dir", "-d");
+    const char *out_dir = nmo_tool_find_opt_value(argc, argv, "--out-dir", "-d");
     if (!out_dir || !*out_dir) {
         fprintf(stderr, "Error: Missing --out-dir\n");
         fprintf(stderr, "Usage: nmo resource extract --out-dir <dir> [--index <n> | --name <name>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *index_str = parse_opt_value(argc, argv, "--index", "-i");
-    const char *name_str = parse_opt_value(argc, argv, "--name", "-n");
-    const bool overwrite = has_flag(argc, argv, "--overwrite");
+    const char *index_str = nmo_tool_find_opt_value(argc, argv, "--index", "-i");
+    const char *name_str = nmo_tool_find_opt_value(argc, argv, "--name", "-n");
+    const bool overwrite = nmo_tool_has_flag(argc, argv, "--overwrite", NULL);
 
     char dir_err[256];
     if (ensure_dir_exists(out_dir, dir_err, sizeof(dir_err)) != 0) {
@@ -535,7 +463,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     uint32_t end = count;
     if (index_str) {
         uint32_t idx;
-        if (!parse_uint32(index_str, &idx) || idx >= count) {
+        if (!nmo_tool_parse_u32_dec(index_str, &idx) || idx >= count) {
             nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Invalid --index '%s'\n", index_str ? index_str : "");
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -590,7 +518,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
         const bool has_payload = (res->data != NULL && res->size > 0);
 
         char safe_name[260];
-        sanitize_filename(safe_name, sizeof(safe_name), res->name, i);
+        nmo_tool_sanitize_filename(safe_name, sizeof(safe_name), res->name, i);
         char *path = join_path(out_dir, safe_name);
         if (!path) {
             errors++;

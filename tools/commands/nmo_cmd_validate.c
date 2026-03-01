@@ -18,34 +18,40 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_ref_graph.h"
 
+#include "../nmo_tool_common.h"
+
 #include <stdio.h>
 #include <string.h>
 
 /**
- * Find file path
+ * Check if --fix or --suggest-fixes flag is present.
  */
-static const char *find_file_arg(int argc, char **argv) {
+static bool parse_fix_flag(int argc, char **argv) {
     for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            return argv[i];
+        if (strcmp(argv[i], "--fix") == 0 || strcmp(argv[i], "--suggest-fixes") == 0) {
+            return true;
         }
     }
-    return NULL;
+    return false;
 }
 
 /* ============================================================================
- * validate all
+ * validate all (single-file core + batch support)
  * ============================================================================ */
 
-int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo validate all <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+/**
+ * Core validation logic for a single file.
+ * When doc/data are non-NULL (JSON batch mode), populates data.
+ * When NULL (text mode), prints directly to stdout.
+ */
+static int validate_all_single(const char *file_path,
+                                const nmo_cli_global_opts_t *global,
+                                void *user_data,
+                                yyjson_mut_doc *doc,
+                                yyjson_mut_val *data)
+{
+    (void)user_data;
 
-    /* Open session */
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256];
@@ -55,7 +61,6 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    /* Basic structure validation - validate all chunks */
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
     if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
@@ -66,32 +71,15 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     size_t error_count = 0;
     size_t warning_count = 0;
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
 
-    if (global->format != NMO_CLI_FORMAT_JSON && global->format != NMO_CLI_FORMAT_JSON_PRETTY) {
-        nmo_cli_print_heading(out, "Validation Results", colorize);
-        nmo_cli_print_kv(out, "File", file_path, 12, colorize);
-        fprintf(out, "\n");
-    }
-
-    /* Validate each object's chunk */
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
         nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
 
         if (!chunk) {
             warning_count++;
-            if (global->format != NMO_CLI_FORMAT_JSON && global->format != NMO_CLI_FORMAT_JSON_PRETTY) {
-                if (global->verbosity > 0) {
-                    fprintf(out, "Warning: Object %u has no chunk\n", nmo_object_get_id(obj));
-                }
+            if (!doc && global->verbosity > 0) {
+                printf("Warning: Object %u has no chunk\n", nmo_object_get_id(obj));
             }
             continue;
         }
@@ -100,10 +88,10 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         int rc = nmo_inspector_validate_chunk(chunk, &result);
         if (rc != 0 || !result.is_valid) {
             error_count++;
-            if (global->format != NMO_CLI_FORMAT_JSON && global->format != NMO_CLI_FORMAT_JSON_PRETTY) {
-                fprintf(out, "Error: Object %u chunk validation failed: %s\n",
-                        nmo_object_get_id(obj),
-                        result.error_message[0] ? result.error_message : "unknown");
+            if (!doc) {
+                printf("Error: Object %u chunk validation failed: %s\n",
+                       nmo_object_get_id(obj),
+                       result.error_message[0] ? result.error_message : "unknown");
             }
         }
     }
@@ -116,36 +104,89 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         exit_code = NMO_CLI_EXIT_WARNING;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file", file_path);
+    if (doc && data) {
+        /* JSON batch mode: populate data object */
         yyjson_mut_obj_add_bool(doc, data, "valid", error_count == 0);
         yyjson_mut_obj_add_uint(doc, data, "error_count", (uint64_t)error_count);
         yyjson_mut_obj_add_uint(doc, data, "warning_count", (uint64_t)warning_count);
         yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
-
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "validate.all", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
     } else {
-        fprintf(out, "\nSummary:\n");
+        /* Text mode: output summary */
+        bool colorize = nmo_cli_should_colorize(global, stdout);
         char buf[32];
         snprintf(buf, sizeof(buf), "%zu", object_count);
-        nmo_cli_print_kv(out, "Objects", buf, 12, colorize);
+        nmo_cli_print_kv(stdout, "Objects", buf, 12, colorize);
         snprintf(buf, sizeof(buf), "%zu", error_count);
-        nmo_cli_print_kv(out, "Errors", buf, 12, colorize);
+        nmo_cli_print_kv(stdout, "Errors", buf, 12, colorize);
         snprintf(buf, sizeof(buf), "%zu", warning_count);
-        nmo_cli_print_kv(out, "Warnings", buf, 12, colorize);
-
-        fprintf(out, "\nResult: %s\n", error_count == 0 ? "VALID" : "INVALID");
+        nmo_cli_print_kv(stdout, "Warnings", buf, 12, colorize);
+        printf("Result: %s\n", error_count == 0 ? "VALID" : "INVALID");
     }
 
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
     return exit_code;
+}
+
+int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Batch mode: process multiple files */
+    if (global->batch_mode) {
+        const char *paths[64];
+        size_t count = nmo_tool_find_file_args(argc, argv, paths, 64);
+        if (count == 0) {
+            fprintf(stderr, "Error: No files specified\n");
+            fprintf(stderr, "Usage: nmo --batch validate all <file1> <file2> ...\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return nmo_tool_batch_run(paths, count, global, "validate.all",
+                                   validate_all_single, NULL);
+    }
+
+    /* Single file mode */
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
+    if (!file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        fprintf(stderr, "Usage: nmo validate all <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+
+    if (is_json) {
+        /* Single-file JSON: use the batch handler to populate, then wrap */
+        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        int rc = validate_all_single(file_path, global, NULL, doc, data);
+
+        yyjson_mut_obj_add_str(doc, data, "file", file_path);
+        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "validate.all", file_path);
+        yyjson_mut_doc_set_root(doc, root);
+
+        char out_err[128];
+        FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+        if (out) {
+            nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            nmo_cli_close_output_stream(global, out);
+        }
+        nmo_cli_json_free_doc(doc);
+        return rc;
+    }
+
+    /* Single-file text mode */
+    char out_err[128];
+    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!out) {
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    bool colorize = nmo_cli_should_colorize(global, out);
+    nmo_cli_print_heading(out, "Validation Results", colorize);
+    nmo_cli_print_kv(out, "File", file_path, 12, colorize);
+    fprintf(out, "\n");
+    nmo_cli_close_output_stream(global, out);
+
+    return validate_all_single(file_path, global, NULL, NULL, NULL);
 }
 
 /* ============================================================================
@@ -153,12 +194,13 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
  * ============================================================================ */
 
 int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo validate structure <file>\n");
+        fprintf(stderr, "Usage: nmo validate structure [--fix] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    bool suggest_fixes = parse_fix_flag(argc, argv);
 
     /* Open session */
     nmo_context_t *ctx = NULL;
@@ -223,14 +265,28 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
                     yyjson_mut_obj_add_str(doc, issue, "class_name", class_name);
                 }
                 yyjson_mut_obj_add_str(doc, issue, "message", "missing chunk");
+                if (suggest_fixes) {
+                    yyjson_mut_obj_add_str(doc, issue, "fix", "re-save file to regenerate chunks");
+                }
                 yyjson_mut_arr_add_val(issues, issue);
             } else if (global->verbosity > 0) {
                 fprintf(out, "Warning: Object %u has no chunk\n", obj_id);
+                if (suggest_fixes) {
+                    fprintf(out, "  Fix: Re-save file to regenerate chunks\n");
+                }
             }
             continue;
         }
 
         checked_count++;
+
+        /* -vv: Show per-object chunk details */
+        if (!is_json && global->verbosity >= 2) {
+            size_t ds = 0;
+            (void)nmo_chunk_get_data(chunk, &ds);
+            fprintf(out, "  Object %u: chunk %zu bytes\n", obj_id, ds);
+        }
+
         nmo_chunk_validation_t result;
         int rc = nmo_inspector_validate_chunk(chunk, &result);
         if (rc != 0 || !result.is_valid) {
@@ -246,11 +302,18 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
                 }
                 yyjson_mut_obj_add_str(doc, issue, "message",
                                        result.error_message[0] ? result.error_message : "validation failed");
+                if (suggest_fixes) {
+                    yyjson_mut_obj_add_str(doc, issue, "fix",
+                                           "re-save with nmo convert to regenerate chunk data");
+                }
                 yyjson_mut_arr_add_val(issues, issue);
             } else {
                 fprintf(out, "Error: Object %u chunk invalid: %s\n",
                         obj_id,
                         result.error_message[0] ? result.error_message : "validation failed");
+                if (suggest_fixes) {
+                    fprintf(out, "  Fix: Re-save with 'nmo convert' to regenerate chunk data\n");
+                }
             }
         }
     }
@@ -299,12 +362,13 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
  * ============================================================================ */
 
 int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo validate references <file>\n");
+        fprintf(stderr, "Usage: nmo validate references [--fix] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    bool suggest_fixes = parse_fix_flag(argc, argv);
 
     /* Open session */
     nmo_context_t *ctx = NULL;
@@ -354,7 +418,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
     bool colorize = nmo_cli_should_colorize(global, out);
 
     int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (status != NMO_OK) {
+    if (status != NMO_OK && global->strict_mode) {
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
 
@@ -405,6 +469,10 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
                     }
                 }
 
+                if (suggest_fixes) {
+                    yyjson_mut_obj_add_str(doc, edge, "fix",
+                                           "null the reference field or re-save to strip dangling refs");
+                }
                 yyjson_mut_arr_add_val(broken_arr, edge);
             }
             yyjson_mut_obj_add_val(doc, data, "broken_references", broken_arr);
@@ -487,6 +555,12 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
 
             nmo_cli_table_print(&table, out, colorize);
             nmo_cli_table_free(&table);
+
+            if (suggest_fixes) {
+                fprintf(out, "\nSuggested fixes:\n");
+                fprintf(out, "  - Re-save file with 'nmo convert' to strip dangling references\n");
+                fprintf(out, "  - Or null specific reference fields via DSL script mode\n");
+            }
         }
     }
 
@@ -501,7 +575,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
  * ============================================================================ */
 
 int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = find_file_arg(argc, argv);
+    const char *file_path = nmo_tool_find_file_arg(argc, argv);
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
         fprintf(stderr, "Usage: nmo validate resources <file>\n");

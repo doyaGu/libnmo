@@ -53,6 +53,12 @@ if(TARGET nmo_cli)
     add_dependencies(test_cli_behavior_graph nmo_cli)
     target_compile_definitions(test_cli_behavior_graph PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_behavior_graph COMMAND test_cli_behavior_graph)
+
+    add_executable(test_cli_commands test_cli_commands.c)
+    target_link_libraries(test_cli_commands PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_cli_commands nmo_cli)
+    target_compile_definitions(test_cli_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_cli_commands COMMAND test_cli_commands)
 endif()
 
 # Temporarily disabled - test_phase6_integration uses deprecated API

@@ -380,15 +380,15 @@ install(DIRECTORY include/
     PATTERN "session/nmo_ref_enumerate.h" EXCLUDE
 )
 
+# Build tools (before tests so CLI tests can depend on nmo_cli target)
+if(NMO_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
+
 # Build tests
 if(NMO_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
-endif()
-
-# Build tools
-if(NMO_BUILD_TOOLS)
-    add_subdirectory(tools)
 endif()
 
 # Build examples

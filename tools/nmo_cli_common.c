@@ -269,6 +269,51 @@ int nmo_cli_parse_global_opts(int argc, char **argv, nmo_cli_global_opts_t *opts
             continue;
         }
 
+        /* Plugin: --plugin path (repeatable) */
+        const char *plugin_val = get_long_opt_value(arg, "--plugin");
+        if (plugin_val) {
+            if (opts->plugin_count < 16) {
+                opts->plugin_paths[opts->plugin_count++] = plugin_val;
+            }
+            i++;
+            continue;
+        }
+        if (strcmp(arg, "--plugin") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --plugin requires a path\n");
+                return -1;
+            }
+            if (opts->plugin_count < 16) {
+                opts->plugin_paths[opts->plugin_count++] = argv[i + 1];
+            }
+            i += 2;
+            continue;
+        }
+
+        /* Batch mode */
+        if (strcmp(arg, "--batch") == 0) {
+            opts->batch_mode = true;
+            i++;
+            continue;
+        }
+
+        /* Filter: --filter/-F pattern */
+        const char *filter_val = get_long_opt_value(arg, "--filter");
+        if (filter_val) {
+            opts->filter_pattern = filter_val;
+            i++;
+            continue;
+        }
+        if (strcmp(arg, "--filter") == 0 || strcmp(arg, "-F") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: %s requires a pattern\n", arg);
+                return -1;
+            }
+            opts->filter_pattern = argv[i + 1];
+            i += 2;
+            continue;
+        }
+
         /* Unknown option - stop parsing, let subcommand handle it */
         return i;
     }
