@@ -682,7 +682,12 @@ static nmo_status_t save_execute_pre_hooks(nmo_save_context_t *ctx) {
             ctx->manager_reg, manager_id);
 
         if (manager != NULL) {
-            int hook_result = nmo_manager_invoke_pre_save(manager, ctx->session);
+            nmo_runtime_event_ctx_t event_ctx = {
+                .event = NMO_RUNTIME_EVENT_PRE_SAVE,
+                .manager_id = manager_id,
+                .manager_guid = manager->guid
+            };
+            int hook_result = nmo_manager_invoke_event(manager, ctx->session, &event_ctx);
             if (hook_result != NMO_OK) {
                 nmo_log(ctx->logger, NMO_LOG_WARN,
                         "  Manager %u pre-save hook failed: %d", manager_id, hook_result);
@@ -782,7 +787,21 @@ static nmo_status_t save_serialize_managers(nmo_save_context_t *ctx) {
 
             if (manager == NULL) continue;
 
-            nmo_chunk_t *chunk = nmo_manager_invoke_save_data(manager, ctx->session);
+            nmo_chunk_t *chunk = NULL;
+            nmo_runtime_event_ctx_t event_ctx = {
+                .event = NMO_RUNTIME_EVENT_PRE_SAVE,
+                .manager_id = manager_id,
+                .manager_guid = manager->guid,
+                .manager_chunk_out = &chunk
+            };
+            int save_event_result = nmo_manager_invoke_event(manager, ctx->session, &event_ctx);
+            if (save_event_result != NMO_OK) {
+                nmo_log(ctx->logger, NMO_LOG_WARN,
+                        "  Manager %s pre-save event failed (code=%d)",
+                        manager->name ? manager->name : "<unnamed>",
+                        save_event_result);
+                continue;
+            }
             if (chunk == NULL) continue;
 
             nmo_manager_data_t *entry = &ctx->manager_entries[ctx->manager_entry_count++];
@@ -1444,7 +1463,12 @@ static nmo_status_t save_execute_post_hooks(nmo_save_context_t *ctx) {
             ctx->manager_reg, manager_id);
 
         if (manager != NULL) {
-            int hook_result = nmo_manager_invoke_post_save(manager, ctx->session);
+            nmo_runtime_event_ctx_t event_ctx = {
+                .event = NMO_RUNTIME_EVENT_POST_SAVE,
+                .manager_id = manager_id,
+                .manager_guid = manager->guid
+            };
+            int hook_result = nmo_manager_invoke_event(manager, ctx->session, &event_ctx);
             if (hook_result != NMO_OK) {
                 nmo_log(ctx->logger, NMO_LOG_WARN,
                         "  Manager %u post-save hook failed: %d", manager_id, hook_result);

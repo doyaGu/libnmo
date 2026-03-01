@@ -141,6 +141,19 @@ NMO_API nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_reposi
 NMO_API int nmo_object_repository_remove(nmo_object_repository_t *repository, nmo_object_id_t id);
 
 /**
+ * @brief Remove object from repository without destroying it
+ * @param repository Repository
+ * @param id Object ID
+ * @param out_object Output pointer receiving removed object (caller owns on success)
+ * @note On success, object is detached from repository/index/name tables and
+ *       ownership transfers to caller. Caller must eventually destroy it.
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_object_repository_take(nmo_object_repository_t *repository,
+                                       nmo_object_id_t id,
+                                       nmo_object_t **out_object);
+
+/**
  * @brief Rename an object that is already in the repository
  *
  * Safely updates the name table so the old key is removed before the

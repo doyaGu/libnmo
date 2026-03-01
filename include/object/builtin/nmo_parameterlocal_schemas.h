@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_parameterlocal_schemas.h
  * @brief Public API for CKParameterLocal schema-based serialization
  *
@@ -65,10 +65,15 @@ NMO_API nmo_status_t nmo_parameterlocal_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_parameterlocal_finish_loading(
+NMO_API nmo_status_t nmo_parameterlocal_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_parameterlocal_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_parameterlocal_vtable, nmo_register_parameterlocal_type)
 

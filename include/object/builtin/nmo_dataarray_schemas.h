@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_dataarray_schemas.h
  * @brief CKDataArray schema definitions
  *
@@ -140,10 +140,15 @@ NMO_API nmo_status_t nmo_dataarray_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_dataarray_finish_loading(
+NMO_API nmo_status_t nmo_dataarray_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_dataarray_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_dataarray_vtable, nmo_register_dataarray_type)
 

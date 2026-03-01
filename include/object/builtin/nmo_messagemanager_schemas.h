@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_messagemanager_schemas.h
  * @brief CKMessageManager schema definitions
  *
@@ -72,10 +72,15 @@ NMO_API nmo_status_t nmo_messagemanager_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_messagemanager_finish_loading(
+NMO_API nmo_status_t nmo_messagemanager_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_messagemanager_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

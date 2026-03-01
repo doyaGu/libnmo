@@ -69,11 +69,8 @@ TEST(header1, round_trip) {
     ASSERT_NULL(parsed_header.objects);
     ASSERT_EQ(parsed_header.plugin_dep_count, 0);
     ASSERT_EQ(parsed_header.included_file_count, 2u);
-    ASSERT_NOT_NULL(parsed_header.included_files);
-    ASSERT_STR_EQ(parsed_header.included_files[0].name, "a.txt");
-    ASSERT_EQ(parsed_header.included_files[0].data_size, 10u);
-    ASSERT_STR_EQ(parsed_header.included_files[1].name, "b.bin");
-    ASSERT_EQ(parsed_header.included_files[1].data_size, 20u);
+    /* Header1 only stores included-file count in clean-break runtime. */
+    ASSERT_NULL(parsed_header.included_files);
     
     nmo_arena_destroy(arena);
 }
@@ -123,11 +120,7 @@ TEST(header1, included_metadata_only) {
     nmo_status_t result = nmo_header1_parse(buffer, pos, &header, arena);
     ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(2u, header.included_file_count);
-    ASSERT_NOT_NULL(header.included_files);
-    ASSERT_STR_EQ(header.included_files[0].name, "a.txt");
-    ASSERT_EQ(header.included_files[0].data_size, 10u);
-    ASSERT_STR_EQ(header.included_files[1].name, "b.bin");
-    ASSERT_EQ(header.included_files[1].data_size, 20u);
+    ASSERT_NULL(header.included_files);
 
     nmo_arena_destroy(arena);
 }

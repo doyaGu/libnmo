@@ -5,7 +5,7 @@
  * @date 2025
  *
  * Implementation of CKSpriteText (ClassID 29) deserialization, serialization,
- * and finish loading handlers.
+ * and runtime dependency hooks.
  *
  * Reference: docs/CK2_3D_reverse_notes_extended.md lines 470-850
  */
@@ -88,23 +88,6 @@ static nmo_status_t deserialize_text_content(
     
     NMO_RETURN_OK();
 }
-
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    spritetext,
-    nmo_spritetext_state_t,
-    nmo_spritetext_serialize,
-    nmo_spritetext_deserialize,
-    nmo_spritetext_finish_loading,
-    nmo_spritetext_fields,
-    CKPGUID_SPRITETEXT,
-    "CKSpriteText",
-    NMO_CID_SPRITETEXT,
-    CKPGUID_SPRITE
-)
 
 /**
  * @brief Deserialize identifier 0x02000000 (font properties)
@@ -312,7 +295,7 @@ static nmo_status_t ckspritetext_serialize_modern(
  * - Ensures font name is not empty (sets "Arial" as fallback)
  * - Clears needs_redraw flag
  */
-static nmo_status_t ckspritetext_finish_loading(
+static nmo_status_t ckspritetext_normalize_state(
     nmo_spritetext_state_t *state,
     void *context,
     nmo_arena_t *arena
@@ -323,19 +306,63 @@ static nmo_status_t ckspritetext_finish_loading(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_spritetext_finish_loading(
+nmo_status_t nmo_spritetext_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_spritetext_finish_loading");
+                         "Invalid arguments to nmo_spritetext_remap_dependencies");
     }
 
     nmo_spritetext_state_t *state = (nmo_spritetext_state_t *)instance;
-    NMO_RETURN_IF_ERROR(nmo_sprite_finish_loading(&state->base, arena, repository));
-    return ckspritetext_finish_loading(state, NULL, arena);
+    NMO_RETURN_IF_ERROR(nmo_sprite_remap_dependencies(&state->base, NULL, context));
+    return ckspritetext_normalize_state(state, NULL, NULL);
+}
+
+nmo_status_t nmo_spritetext_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_spritetext_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_spritetext_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_spritetext_pre_delete");
+    }
+    nmo_spritetext_state_t *state = (nmo_spritetext_state_t *)instance;
+    state->needs_redraw = false;
+    state->text_content = NULL;
+    state->font.font_name = NULL;
+    NMO_RETURN_OK();
+}
+
+static void nmo_spritetext_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
 }
 
 /* ========================================================================
@@ -367,7 +394,7 @@ nmo_status_t nmo_spritetext_deserialize(
         return result;
     }
 
-    return ckspritetext_finish_loading(out_state, NULL, arena);
+    return ckspritetext_normalize_state(out_state, NULL, arena);
 }
 
 nmo_status_t nmo_spritetext_serialize(
@@ -392,5 +419,41 @@ nmo_status_t nmo_spritetext_serialize(
 
     return ckspritetext_serialize_modern(in_state, out_chunk, arena);
 }
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(spritetext, nmo_spritetext_state_t)
+
+nmo_type_vtable_t nmo_spritetext_vtable = {
+    .prepare_dependencies = nmo_spritetext_prepare_dependencies,
+    .remap_dependencies = nmo_spritetext_remap_dependencies,
+    .pre_delete = nmo_spritetext_pre_delete,
+    .post_delete = nmo_spritetext_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_spritetext_create,
+        nmo_spritetext_destroy,
+        nmo_spritetext_serialize,
+        nmo_spritetext_deserialize,
+        nmo_spritetext_copy,
+        nmo_spritetext_validate,
+        nmo_spritetext_equals,
+        nmo_spritetext_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_spritetext_type,
+    CKPGUID_SPRITETEXT,
+    "CKSpriteText",
+    NMO_CID_SPRITETEXT,
+    CKPGUID_SPRITE,
+    nmo_spritetext_state_t,
+    &nmo_spritetext_vtable,
+    nmo_spritetext_fields)
+
+
+
+
 
 

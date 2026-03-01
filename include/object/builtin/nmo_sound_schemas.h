@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_sound_schemas.h
  * @brief CKSound/CKWaveSound/CKMidiSound schema definitions
  *
@@ -89,10 +89,15 @@ NMO_API nmo_status_t nmo_sound_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_sound_finish_loading(
+NMO_API nmo_status_t nmo_sound_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_sound_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_wavesound_deserialize(
     void *instance,
@@ -106,10 +111,15 @@ NMO_API nmo_status_t nmo_wavesound_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_wavesound_finish_loading(
+NMO_API nmo_status_t nmo_wavesound_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_wavesound_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_midisound_deserialize(
     void *instance,
@@ -123,10 +133,15 @@ NMO_API nmo_status_t nmo_midisound_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_midisound_finish_loading(
+NMO_API nmo_status_t nmo_midisound_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_midisound_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_sound_vtable, nmo_register_sound_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_wavesound_vtable, nmo_register_wavesound_type)

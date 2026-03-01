@@ -95,23 +95,6 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    sprite3d,
-    nmo_sprite3d_state_t,
-    nmo_sprite3d_serialize,
-    nmo_sprite3d_deserialize,
-    nmo_sprite3d_finish_loading,
-    nmo_sprite3d_fields,
-    CKPGUID_SPRITE3D,
-    "CKSprite3D",
-    NMO_CID_SPRITE3D,
-    CKPGUID_3DENTITY
-)
-
 static nmo_status_t nmo_sprite3d_serialize_internal(
     const nmo_sprite3d_state_t *in_state,
     nmo_chunk_t *out_chunk,
@@ -186,22 +169,32 @@ nmo_status_t nmo_sprite3d_serialize(
     return nmo_sprite3d_serialize_internal(in_state, out_chunk, context);
 }
 
-nmo_status_t nmo_sprite3d_finish_loading(
+nmo_status_t nmo_sprite3d_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_sprite3d_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_sprite3d_finish_loading");
+                         "Invalid arguments to nmo_sprite3d_remap_dependencies");
     }
 
     nmo_sprite3d_state_t *state = (nmo_sprite3d_state_t *)instance;
 
-    NMO_RETURN_IF_ERROR(nmo_3dentity_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_3dentity_remap_dependencies(&state->base, NULL, context));
 
-    if (repository && state->material_id != 0) {
-        nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    if (context && state->material_id != 0) {
+        nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
         if (nmo_object_repository_find_by_id(repo, state->material_id) == NULL) {
             state->material_id = 0;
         }
@@ -210,3 +203,58 @@ nmo_status_t nmo_sprite3d_finish_loading(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_sprite3d_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sprite3d_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_sprite3d_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(sprite3d, nmo_sprite3d_state_t)
+
+nmo_type_vtable_t nmo_sprite3d_vtable = {
+    .prepare_dependencies = nmo_sprite3d_prepare_dependencies,
+    .remap_dependencies = nmo_sprite3d_remap_dependencies,
+    .pre_delete = nmo_sprite3d_pre_delete,
+    .post_delete = nmo_sprite3d_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_sprite3d_create,
+        nmo_sprite3d_destroy,
+        nmo_sprite3d_serialize,
+        nmo_sprite3d_deserialize,
+        nmo_sprite3d_copy,
+        nmo_sprite3d_validate,
+        nmo_sprite3d_equals,
+        nmo_sprite3d_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_sprite3d_type,
+    CKPGUID_SPRITE3D,
+    "CKSprite3D",
+    NMO_CID_SPRITE3D,
+    CKPGUID_3DENTITY,
+    nmo_sprite3d_state_t,
+    &nmo_sprite3d_vtable,
+    nmo_sprite3d_fields)

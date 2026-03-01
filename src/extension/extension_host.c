@@ -50,12 +50,7 @@ static nmo_status_t host_register_managers(
         }
 
         (void)nmo_manager_set_user_data(manager, desc->user_data);
-        (void)nmo_manager_set_pre_load_hook(manager, desc->pre_load);
-        (void)nmo_manager_set_post_load_hook(manager, desc->post_load);
-        (void)nmo_manager_set_load_data_hook(manager, desc->load_data);
-        (void)nmo_manager_set_save_data_hook(manager, desc->save_data);
-        (void)nmo_manager_set_pre_save_hook(manager, desc->pre_save);
-        (void)nmo_manager_set_post_save_hook(manager, desc->post_save);
+        (void)nmo_manager_set_on_event_hook(manager, desc->on_event);
 
         /* Ensure capacity for tracking */
         if (ctx->manager_id_count >= ctx->manager_id_capacity) {

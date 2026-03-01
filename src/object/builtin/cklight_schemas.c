@@ -497,43 +497,28 @@ nmo_status_t nmo_light_serialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    light,
-    nmo_light_state_t,
-    nmo_light_serialize,
-    nmo_light_deserialize,
-    nmo_light_finish_loading,
-    nmo_light_fields,
-    CKPGUID_LIGHT,
-    "CKLight",
-    NMO_CID_LIGHT,
-    CKPGUID_3DENTITY
-)
-
-/* =============================================================================
- * CKLight FINISH LOADING
- * ============================================================================= */
-
-/**
- * @brief Finish loading CKLight (resolve references, validate data)
- */
-nmo_status_t nmo_light_finish_loading(
+nmo_status_t nmo_light_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    if (!instance || !arena) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKLight finish_loading");
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_light_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_light_remap_dependencies");
     }
 
     nmo_light_state_t *light_state = (nmo_light_state_t *)instance;
 
-    // First finish loading parent CK3dEntity
-    nmo_status_t result = nmo_3dentity_finish_loading(&light_state->entity, arena, repository);
+    nmo_status_t result = nmo_3dentity_remap_dependencies(&light_state->entity, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -586,5 +571,58 @@ nmo_status_t nmo_light_finish_loading(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_light_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_light_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
 
+static void nmo_light_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
 
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(light, nmo_light_state_t)
+
+nmo_type_vtable_t nmo_light_vtable = {
+    .prepare_dependencies = nmo_light_prepare_dependencies,
+    .remap_dependencies = nmo_light_remap_dependencies,
+    .pre_delete = nmo_light_pre_delete,
+    .post_delete = nmo_light_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_light_create,
+        nmo_light_destroy,
+        nmo_light_serialize,
+        nmo_light_deserialize,
+        nmo_light_copy,
+        nmo_light_validate,
+        nmo_light_equals,
+        nmo_light_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_light_type,
+    CKPGUID_LIGHT,
+    "CKLight",
+    NMO_CID_LIGHT,
+    CKPGUID_3DENTITY,
+    nmo_light_state_t,
+    &nmo_light_vtable,
+    nmo_light_fields)

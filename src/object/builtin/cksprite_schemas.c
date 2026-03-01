@@ -131,25 +131,27 @@ static nmo_status_t nmo_sprite_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-nmo_status_t nmo_sprite_finish_loading(
+nmo_status_t nmo_sprite_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    if (!instance || !arena) {
+    (void)type;
+
+    if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to CKSprite finish_loading");
+                         "Invalid arguments to nmo_sprite_remap_dependencies");
     }
 
     nmo_sprite_state_t *state = (nmo_sprite_state_t *)instance;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_2dentity_finish_loading(&state->entity, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_2dentity_remap_dependencies(&state->entity, NULL, context));
 
     if (state->has_sprite_ref) {
         if (state->sprite_ref_id == 0) {
             state->has_sprite_ref = false;
-        } else if (repository != NULL) {
-            nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+        } else if (repo != NULL) {
             nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, state->sprite_ref_id);
             if (src_obj && src_obj->state &&
                 nmo_object_get_class_id(src_obj) == NMO_CID_SPRITE) {
@@ -162,28 +164,9 @@ nmo_status_t nmo_sprite_finish_loading(
                 state->current_slot = src->current_slot;
                 state->has_save_options = src->has_save_options;
                 state->save_options = src->save_options;
-
-                if (src->has_bitmap_data) {
-                    NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &state->bitmap_data, &src->bitmap_data));
-                    state->has_bitmap_data = true;
-                } else {
-                    state->bitmap_data.pixel_data = NULL;
-                    state->bitmap_data.palette_data = NULL;
-                    state->bitmap_data.system_copy_data = NULL;
-                    state->bitmap_data.video_backup_data = NULL;
-                    state->bitmap_data.pixels_data = NULL;
-                    state->bitmap_data.raw_chunk_data = NULL;
-                    state->has_bitmap_data = false;
-                }
-
-                state->bitmap_properties_size = src->bitmap_properties_size;
-                if (src->bitmap_properties_size > 0 && src->bitmap_properties) {
-                    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(
-                        arena, (void **)&state->bitmap_properties,
-                        src->bitmap_properties, src->bitmap_properties_size));
-                } else {
-                    state->bitmap_properties = NULL;
-                }
+                state->has_bitmap_data = false;
+                state->bitmap_properties = NULL;
+                state->bitmap_properties_size = 0;
             }
 
             state->has_sprite_ref = false;
@@ -222,6 +205,44 @@ nmo_status_t nmo_sprite_finish_loading(
     }
 
     return nmo_sprite_validate(state, NULL, NULL);
+}
+
+nmo_status_t nmo_sprite_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_sprite_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_sprite_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sprite_pre_delete");
+    }
+    nmo_sprite_state_t *state = (nmo_sprite_state_t *)instance;
+    state->has_sprite_ref = false;
+    state->sprite_ref_id = 0;
+    state->has_bitmap_data = false;
+    state->bitmap_properties = NULL;
+    state->bitmap_properties_size = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_sprite_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
 }
 
 /* =============================================================================
@@ -630,17 +651,36 @@ static nmo_status_t nmo_sprite_validate(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    sprite,
-    nmo_sprite_state_t,
-    nmo_sprite_serialize,
-    nmo_sprite_deserialize,
-    nmo_sprite_finish_loading,
-    nmo_sprite_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(sprite, nmo_sprite_state_t)
+
+nmo_type_vtable_t nmo_sprite_vtable = {
+    .prepare_dependencies = nmo_sprite_prepare_dependencies,
+    .remap_dependencies = nmo_sprite_remap_dependencies,
+    .pre_delete = nmo_sprite_pre_delete,
+    .post_delete = nmo_sprite_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_sprite_create,
+        nmo_sprite_destroy,
+        nmo_sprite_serialize,
+        nmo_sprite_deserialize,
+        nmo_sprite_copy,
+        nmo_sprite_validate,
+        nmo_sprite_equals,
+        nmo_sprite_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_sprite_type,
     CKPGUID_SPRITE,
     "CKSprite",
     NMO_CID_SPRITE,
-    CKPGUID_2DENTITY
-)
+    CKPGUID_2DENTITY,
+    nmo_sprite_state_t,
+    &nmo_sprite_vtable,
+    nmo_sprite_fields)
+
+
+
+
 
 

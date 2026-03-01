@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_patchmesh_schemas.h
  * @brief CKPatchMesh schema definitions
  */
@@ -85,10 +85,15 @@ NMO_API nmo_status_t nmo_patchmesh_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_patchmesh_finish_loading(
+NMO_API nmo_status_t nmo_patchmesh_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_patchmesh_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_patchmesh_vtable, nmo_register_patchmesh_type)
 

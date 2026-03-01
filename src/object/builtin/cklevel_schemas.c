@@ -419,20 +419,20 @@ static nmo_status_t nmo_level_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_level_finish_loading(
+nmo_status_t nmo_level_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_level_finish_loading");
+                         "Invalid arguments to nmo_level_remap_dependencies");
     }
 
     nmo_level_state_t *state = (nmo_level_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (state->scene_ids.count > 0 && state->scene_ids.data == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Level scene_ids missing");
@@ -496,21 +496,80 @@ nmo_status_t nmo_level_finish_loading(
     return nmo_level_validate(state, NULL, NULL);
 }
 
+nmo_status_t nmo_level_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_level_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_level_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_level_pre_delete");
+    }
+    nmo_level_state_t *state = (nmo_level_state_t *)instance;
+    state->scene_ids.count = 0;
+    state->current_scene_id = 0;
+    state->level_scene_id = 0;
+    state->level_scene_chunk = NULL;
+    state->inactive_manager_guids.count = 0;
+    state->duplicate_manager_names.count = 0;
+    state->has_inactive_manager_section = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_level_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    level,
-    nmo_level_state_t,
-    nmo_level_serialize,
-    nmo_level_deserialize,
-    nmo_level_finish_loading,
-    nmo_level_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(level, nmo_level_state_t)
+
+nmo_type_vtable_t nmo_level_vtable = {
+    .prepare_dependencies = nmo_level_prepare_dependencies,
+    .remap_dependencies = nmo_level_remap_dependencies,
+    .pre_delete = nmo_level_pre_delete,
+    .post_delete = nmo_level_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_level_create,
+        nmo_level_destroy,
+        nmo_level_serialize,
+        nmo_level_deserialize,
+        nmo_level_copy,
+        nmo_level_validate,
+        nmo_level_equals,
+        nmo_level_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_level_type,
     CKPGUID_LEVEL,
     "CKLevel",
     NMO_CID_LEVEL,
-    CKPGUID_BEOBJECT
-)
+    CKPGUID_BEOBJECT,
+    nmo_level_state_t,
+    &nmo_level_vtable,
+    nmo_level_fields)
+
+
+
+
 
 

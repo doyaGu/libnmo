@@ -155,6 +155,40 @@ static int nmo_object_repository_notify_remove(
     return nmo_object_index_remove_object(repo->attached_index, id, flags);
 }
 
+static void nmo_object_repository_unlink_name(
+    nmo_object_repository_t *repo,
+    nmo_object_t *obj
+) {
+    if (repo == NULL || obj == NULL || obj->name == NULL || obj->name[0] == '\0') {
+        return;
+    }
+
+    nmo_object_t *mapped = NULL;
+    if (nmo_hash_table_get(repo->name_table, &obj->name, &mapped) != NMO_OK ||
+        mapped != obj) {
+        return;
+    }
+
+    nmo_object_t *replacement = NULL;
+    size_t total_count = nmo_indexed_map_get_count(repo->id_map);
+    for (size_t i = 0; i < total_count; i++) {
+        nmo_object_t *candidate = NULL;
+        if (nmo_indexed_map_get_value_at(repo->id_map, i, &candidate) &&
+            candidate != obj &&
+            candidate->name != NULL &&
+            strcmp(candidate->name, obj->name) == 0) {
+            replacement = candidate;
+            break;
+        }
+    }
+
+    if (replacement != NULL) {
+        nmo_hash_table_insert(repo->name_table, &replacement->name, &replacement);
+    } else {
+        nmo_hash_table_remove(repo->name_table, &obj->name);
+    }
+}
+
 /**
  * Create object repository
  */
@@ -335,14 +369,20 @@ nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_repository_t *
 /**
  * Remove object
  */
-int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t id) {
-    if (repo == NULL) {
+int nmo_object_repository_take(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t id,
+    nmo_object_t **out_object
+) {
+    if (repo == NULL || out_object == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    *out_object = NULL;
+
     /* Get object before removing */
     nmo_object_t *obj = NULL;
-    if (nmo_indexed_map_get(repo->id_map, &id, &obj) != NMO_OK) {
+    if (nmo_indexed_map_get(repo->id_map, &id, &obj) != NMO_OK || obj == NULL) {
         return NMO_ERR_INVALID_ARGUMENT; /* Not found */
     }
 
@@ -351,34 +391,25 @@ int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t 
         return result;
     }
 
-    /* Remove from name table if has name */
-    if (obj != NULL && obj->name != NULL && obj->name[0] != '\0') {
-        nmo_object_t *mapped = NULL;
-        if (nmo_hash_table_get(repo->name_table, &obj->name, &mapped) == NMO_OK
-            && mapped == obj) {
-            nmo_object_t *replacement = NULL;
-            size_t total_count = nmo_indexed_map_get_count(repo->id_map);
-            for (size_t i = 0; i < total_count; i++) {
-                nmo_object_t *candidate = NULL;
-                if (nmo_indexed_map_get_value_at(repo->id_map, i, &candidate)
-                    && candidate != obj
-                    && candidate->name != NULL
-                    && strcmp(candidate->name, obj->name) == 0) {
-                    replacement = candidate;
-                    break;
-                }
-            }
-            if (replacement != NULL) {
-                nmo_hash_table_insert(repo->name_table, &replacement->name, &replacement);
-            } else {
-                nmo_hash_table_remove(repo->name_table, &obj->name);
-            }
-        }
+    nmo_object_repository_unlink_name(repo, obj);
+
+    result = nmo_object_repository_remove_without_dispose(repo, id);
+    if (result != NMO_OK) {
+        return result;
     }
 
-    /* Remove from ID map */
-    nmo_indexed_map_remove(repo->id_map, &id);
+    *out_object = obj;
+    return NMO_OK;
+}
 
+int nmo_object_repository_remove(nmo_object_repository_t *repo, nmo_object_id_t id) {
+    nmo_object_t *obj = NULL;
+    int result = nmo_object_repository_take(repo, id, &obj);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    nmo_object_destroy(obj);
     return NMO_OK;
 }
 

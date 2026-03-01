@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_2dentity_schemas.h
  * @brief Public API for CK2dEntity schema-based serialization
  *
@@ -107,10 +107,15 @@ NMO_API nmo_status_t nmo_2dentity_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_2dentity_finish_loading(
+NMO_API nmo_status_t nmo_2dentity_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_2dentity_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_2dentity_vtable, nmo_register_2dentity_type)
 

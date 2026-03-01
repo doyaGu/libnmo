@@ -1598,42 +1598,27 @@ static nmo_status_t nmo_mesh_validate(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_mesh_finish_loading(
-    void *state,
-    nmo_arena_t *arena,
-    void *repository);
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    mesh,
-    nmo_mesh_state_t,
-    nmo_mesh_serialize,
-    nmo_mesh_deserialize,
-    nmo_mesh_finish_loading,
-    nmo_mesh_fields,
-    CKPGUID_MESH,
-    "CKMesh",
-    NMO_CID_MESH,
-    CKPGUID_BEOBJECT
-)
-
-/* =============================================================================
- * FINISH LOADING
- * ============================================================================= */
-
-/**
- * @brief Finish loading (resolve references, build normals if needed)
- */
-nmo_status_t nmo_mesh_finish_loading(
-    void *state,
-    nmo_arena_t *arena,
-    void *repository)
+nmo_status_t nmo_mesh_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    if (!state || !arena) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to finish_loading");
+    return nmo_mesh_validate(instance, type, context);
+}
+
+nmo_status_t nmo_mesh_remap_dependencies(
+    void *state,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_mesh_remap_dependencies");
     }
 
     nmo_mesh_state_t *mesh_state = (nmo_mesh_state_t *)state;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (mesh_state->material_group_count > 0 && mesh_state->material_groups == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing material groups");
@@ -1675,8 +1660,58 @@ nmo_status_t nmo_mesh_finish_loading(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_mesh_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_mesh_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_mesh_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(mesh, nmo_mesh_state_t)
+
+nmo_type_vtable_t nmo_mesh_vtable = {
+    .prepare_dependencies = nmo_mesh_prepare_dependencies,
+    .remap_dependencies = nmo_mesh_remap_dependencies,
+    .pre_delete = nmo_mesh_pre_delete,
+    .post_delete = nmo_mesh_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_mesh_create,
+        nmo_mesh_destroy,
+        nmo_mesh_serialize,
+        nmo_mesh_deserialize,
+        nmo_mesh_copy,
+        nmo_mesh_validate,
+        nmo_mesh_equals,
+        nmo_mesh_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_mesh_type,
+    CKPGUID_MESH,
+    "CKMesh",
+    NMO_CID_MESH,
+    CKPGUID_BEOBJECT,
+    nmo_mesh_state_t,
+    &nmo_mesh_vtable,
+    nmo_mesh_fields)
+
 /* =============================================================================
  * PUBLIC API
  * ============================================================================= */
-
-

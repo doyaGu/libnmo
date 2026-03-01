@@ -5,7 +5,7 @@
  * @date 2025
  *
  * Implementation of CKMaterial (ClassID 30) deserialization, serialization,
- * and finish loading handlers.
+ * and runtime dependency hooks.
  *
  * Reference: reference/include/CKMaterial.h
  */
@@ -256,37 +256,28 @@ nmo_status_t nmo_material_deserialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    material,
-    nmo_material_state_t,
-    nmo_material_serialize,
-    nmo_material_deserialize,
-    nmo_material_finish_loading,
-    nmo_material_fields,
-    CKPGUID_MATERIAL,
-    "CKMaterial",
-    NMO_CID_MATERIAL,
-    CKPGUID_BEOBJECT
-)
-
-nmo_status_t nmo_material_finish_loading(
+nmo_status_t nmo_material_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_material_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_material_finish_loading");
+                         "Invalid arguments to nmo_material_remap_dependencies");
     }
 
     nmo_material_state_t *state = (nmo_material_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (repo) {
         for (uint32_t i = 0; i < 4; ++i) {
@@ -325,6 +316,62 @@ nmo_status_t nmo_material_finish_loading(
 
     NMO_RETURN_OK();
 }
+
+static nmo_status_t nmo_material_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_material_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_material_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(material, nmo_material_state_t)
+
+nmo_type_vtable_t nmo_material_vtable = {
+    .prepare_dependencies = nmo_material_prepare_dependencies,
+    .remap_dependencies = nmo_material_remap_dependencies,
+    .pre_delete = nmo_material_pre_delete,
+    .post_delete = nmo_material_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_material_create,
+        nmo_material_destroy,
+        nmo_material_serialize,
+        nmo_material_deserialize,
+        nmo_material_copy,
+        nmo_material_validate,
+        nmo_material_equals,
+        nmo_material_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_material_type,
+    CKPGUID_MATERIAL,
+    "CKMaterial",
+    NMO_CID_MATERIAL,
+    CKPGUID_BEOBJECT,
+    nmo_material_state_t,
+    &nmo_material_vtable,
+    nmo_material_fields)
 
 nmo_status_t nmo_material_serialize(
     const void *instance,
@@ -389,5 +436,3 @@ nmo_status_t nmo_material_serialize(
 
     NMO_RETURN_OK();
 }
-
-

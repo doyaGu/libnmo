@@ -72,7 +72,7 @@ typedef enum nmo_diff_type {
 /**
  * @brief Maximum length of diff context string
  */
-#define NMO_DIFF_CONTEXT_MAX 128
+#define NMO_DIFF_CONTEXT_MAX 512
 
 /**
  * @brief Single difference entry

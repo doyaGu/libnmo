@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_parameterout_schemas.h
  * @brief Public API for CKParameterOut schema-based serialization
  *
@@ -65,10 +65,15 @@ NMO_API nmo_status_t nmo_parameterout_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_parameterout_finish_loading(
+NMO_API nmo_status_t nmo_parameterout_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_parameterout_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_parameterout_vtable, nmo_register_parameterout_type)
 

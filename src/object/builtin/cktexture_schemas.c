@@ -5,7 +5,7 @@
  * @date 2025
  *
  * Implementation of CKTexture (ClassID 31) deserialization, serialization,
- * and finish loading handlers.
+ * and runtime dependency hooks.
  *
  * Reference: docs/CK2_3D_reverse_notes.md lines 341-348
  */
@@ -848,23 +848,6 @@ static nmo_status_t nmo_texture_validate(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    texture,
-    nmo_texture_state_t,
-    nmo_texture_serialize,
-    nmo_texture_deserialize,
-    nmo_texture_finish_loading,
-    nmo_texture_fields,
-    CKPGUID_TEXTURE,
-    "CKTexture",
-    NMO_CID_TEXTURE,
-    CKPGUID_BEOBJECT
-)
-
 nmo_status_t nmo_texture_serialize(
     const void *instance,
     nmo_chunk_t *chunk,
@@ -983,17 +966,25 @@ nmo_status_t nmo_texture_serialize(
 }
 
  
-nmo_status_t nmo_texture_finish_loading(
+nmo_status_t nmo_texture_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
-    (void)repository;
+    return nmo_texture_validate(instance, type, context);
+}
+
+nmo_status_t nmo_texture_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_texture_finish_loading");
+                         "Invalid arguments to nmo_texture_remap_dependencies");
     }
 
     nmo_texture_state_t *state = (nmo_texture_state_t *)instance;
@@ -1057,3 +1048,58 @@ nmo_status_t nmo_texture_finish_loading(
     return nmo_texture_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_texture_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_texture_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_texture_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(texture, nmo_texture_state_t)
+
+nmo_type_vtable_t nmo_texture_vtable = {
+    .prepare_dependencies = nmo_texture_prepare_dependencies,
+    .remap_dependencies = nmo_texture_remap_dependencies,
+    .pre_delete = nmo_texture_pre_delete,
+    .post_delete = nmo_texture_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_texture_create,
+        nmo_texture_destroy,
+        nmo_texture_serialize,
+        nmo_texture_deserialize,
+        nmo_texture_copy,
+        nmo_texture_validate,
+        nmo_texture_equals,
+        nmo_texture_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_texture_type,
+    CKPGUID_TEXTURE,
+    "CKTexture",
+    NMO_CID_TEXTURE,
+    CKPGUID_BEOBJECT,
+    nmo_texture_state_t,
+    &nmo_texture_vtable,
+    nmo_texture_fields)

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_object_schemas.h
  * @brief Public API for CKObject schema-based serialization
  *
@@ -91,11 +91,11 @@ NMO_API nmo_status_t nmo_object_serialize(
 NMO_DECLARE_OBJECT_SCHEMA(nmo_object_vtable, nmo_register_object_type)
 
 /* =============================================================================
- * FINISH LOADING FUNCTIONS (Phase 15 - PostLoad equivalent)
+ * RUNTIME DEPENDENCY HOOKS
  * ============================================================================= */
 
 /**
- * @brief Object-level finish loading function
+ * @brief Object-level runtime dependency hook
  * 
  * Called after deserialization to resolve references and initialize runtime state.
  * Equivalent to CKObject::PostLoad() in Virtools SDK.
@@ -105,14 +105,19 @@ NMO_DECLARE_OBJECT_SCHEMA(nmo_object_vtable, nmo_register_object_type)
  * @return Result indicating success or error
  */
 /**
- * @brief Finish loading CKObject (base implementation)
+ * @brief Runtime prepare hook for CKObject (base implementation)
  * 
  * Base class implementation does nothing - derived classes override.
  */
-NMO_API nmo_status_t nmo_object_finish_loading(
-    void *state,
-    nmo_arena_t *arena,
-    void *repository);
+NMO_API nmo_status_t nmo_object_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_object_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

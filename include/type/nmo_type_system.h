@@ -305,13 +305,13 @@ typedef void (*nmo_type_destroy_fn)(void *instance, const nmo_type_descriptor_t 
 typedef nmo_status_t (*nmo_type_copy_fn)(const void *src, void *dst, const nmo_type_descriptor_t *type, nmo_arena_t *arena);
 typedef nmo_status_t (*nmo_type_serialize_fn)(const void *instance, struct nmo_chunk *chunk, const nmo_type_descriptor_t *type, void *context);
 typedef nmo_status_t (*nmo_type_deserialize_fn)(void *instance, struct nmo_chunk *chunk, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_prepare_dependencies_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_remap_dependencies_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
+typedef nmo_status_t (*nmo_type_pre_delete_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
+typedef void (*nmo_type_post_delete_fn)(void *instance, const nmo_type_descriptor_t *type, void *context);
 typedef nmo_status_t (*nmo_type_validate_fn)(const void *instance, const nmo_type_descriptor_t *type, void *context);
 typedef bool (*nmo_type_equals_fn)(const void *a, const void *b);
 typedef uint32_t (*nmo_type_hash_fn)(const void *instance);
-
-/* Finish-loading hook (CKObject::PostLoad equivalent for object types).
- * Kept in type layer so app/session can dispatch without depending on object layer. */
-typedef nmo_status_t (*nmo_type_finish_loading_fn)(void *instance, nmo_arena_t *arena, void *repository);
 
 /* Phase 6.4: String conversion function pointers */
 typedef nmo_status_t (*nmo_type_to_string_fn)(const void *value, const nmo_type_descriptor_t *type, char *buffer, size_t buffer_size, void *context);
@@ -380,6 +380,10 @@ typedef struct nmo_type_vtable {
     nmo_type_copy_fn copy;              /* Deep copy */
     nmo_type_serialize_fn serialize;    /* Custom serialization */
     nmo_type_deserialize_fn deserialize;/* Custom deserialization */
+    nmo_type_prepare_dependencies_fn prepare_dependencies; /* Prepare dependency slots before remap */
+    nmo_type_remap_dependencies_fn remap_dependencies;     /* Resolve/remap dependencies after deserialize/copy */
+    nmo_type_pre_delete_fn pre_delete;  /* Called before object removal */
+    nmo_type_post_delete_fn post_delete;/* Called after object removal */
     nmo_type_validate_fn validate;      /* Validation */
     
     /* Comparison */
@@ -490,7 +494,6 @@ typedef struct nmo_type_descriptor {
 
     /* === Extension Points (8 bytes) === */
     const nmo_type_vtable_t *vtable;    /* Virtual function table */
-    nmo_type_finish_loading_fn finish_loading; /* Optional post-deserialize hook */
 
     /* === Plugin Tracking (16 bytes) === */
     nmo_guid_t creator_plugin_guid;     /* Extension plugin GUID that registered this type */

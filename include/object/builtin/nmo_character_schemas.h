@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_character_schemas.h
  * @brief CKCharacter and CKBodyPart schema definitions
  */
@@ -69,10 +69,15 @@ NMO_API nmo_status_t nmo_character_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_character_finish_loading(
+NMO_API nmo_status_t nmo_character_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_character_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_bodypart_deserialize(
     void *instance,
@@ -86,10 +91,15 @@ NMO_API nmo_status_t nmo_bodypart_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_bodypart_finish_loading(
+NMO_API nmo_status_t nmo_bodypart_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_bodypart_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_character_vtable, nmo_register_character_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_bodypart_vtable, nmo_register_bodypart_type)

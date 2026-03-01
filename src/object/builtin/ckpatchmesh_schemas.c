@@ -629,23 +629,29 @@ static nmo_status_t nmo_patchmesh_validate(
     NMO_RETURN_OK();
 }
 
-/* =============================================================================
- * FINISH LOADING
- * ============================================================================= */
-
-nmo_status_t nmo_patchmesh_finish_loading(
+nmo_status_t nmo_patchmesh_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    if (!instance || !arena) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_patchmesh_finish_loading");
+    return nmo_patchmesh_validate(instance, type, context);
+}
+
+nmo_status_t nmo_patchmesh_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_patchmesh_remap_dependencies");
     }
 
     nmo_patchmesh_state_t *state = (nmo_patchmesh_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_mesh_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_mesh_remap_dependencies(&state->base, NULL, context));
 
     if (state->patch_count > 0 && state->patch_material_ids == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing patch material IDs");
@@ -698,22 +704,61 @@ nmo_status_t nmo_patchmesh_finish_loading(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_patchmesh_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_patchmesh_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_patchmesh_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    patchmesh,
-    nmo_patchmesh_state_t,
-    nmo_patchmesh_serialize,
-    nmo_patchmesh_deserialize,
-    nmo_patchmesh_finish_loading,
-    nmo_patchmesh_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(patchmesh, nmo_patchmesh_state_t)
+
+nmo_type_vtable_t nmo_patchmesh_vtable = {
+    .prepare_dependencies = nmo_patchmesh_prepare_dependencies,
+    .remap_dependencies = nmo_patchmesh_remap_dependencies,
+    .pre_delete = nmo_patchmesh_pre_delete,
+    .post_delete = nmo_patchmesh_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_patchmesh_create,
+        nmo_patchmesh_destroy,
+        nmo_patchmesh_serialize,
+        nmo_patchmesh_deserialize,
+        nmo_patchmesh_copy,
+        nmo_patchmesh_validate,
+        nmo_patchmesh_equals,
+        nmo_patchmesh_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_patchmesh_type,
     CKPGUID_PATCHMESH,
     "CKPatchMesh",
     NMO_CID_PATCHMESH,
-    CKPGUID_MESH
-)
+    CKPGUID_MESH,
+    nmo_patchmesh_state_t,
+    &nmo_patchmesh_vtable,
+    nmo_patchmesh_fields)
 
 static nmo_status_t nmo_patchmesh_serialize_internal(
     const nmo_patchmesh_state_t *in_state,
@@ -955,5 +1000,3 @@ nmo_status_t nmo_patchmesh_serialize(
     const nmo_patchmesh_state_t *in_state = (const nmo_patchmesh_state_t *)instance;
     return nmo_patchmesh_serialize_internal(in_state, out_chunk, context);
 }
-
-

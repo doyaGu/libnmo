@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 // Version information
-#define NMO_VERSION_MAJOR 1
+#define NMO_VERSION_MAJOR 2
 #define NMO_VERSION_MINOR 0
 #define NMO_VERSION_PATCH 0
 

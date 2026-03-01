@@ -248,20 +248,28 @@ static nmo_status_t nmo_layer_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_layer_finish_loading(
+nmo_status_t nmo_layer_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    return nmo_layer_validate(instance, type, context);
+}
+
+nmo_status_t nmo_layer_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_layer_finish_loading");
+                         "Invalid arguments to nmo_layer_remap_dependencies");
     }
 
     nmo_layer_state_t *state = (nmo_layer_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (repo && state->grid_id != 0 &&
         nmo_object_repository_find_by_id(repo, state->grid_id) == NULL) {
@@ -290,21 +298,58 @@ nmo_status_t nmo_layer_finish_loading(
     return nmo_layer_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_layer_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_layer_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_layer_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    layer,
-    nmo_layer_state_t,
-    nmo_layer_serialize,
-    nmo_layer_deserialize,
-    nmo_layer_finish_loading,
-    nmo_layer_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(layer, nmo_layer_state_t)
+
+nmo_type_vtable_t nmo_layer_vtable = {
+    .prepare_dependencies = nmo_layer_prepare_dependencies,
+    .remap_dependencies = nmo_layer_remap_dependencies,
+    .pre_delete = nmo_layer_pre_delete,
+    .post_delete = nmo_layer_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_layer_create,
+        nmo_layer_destroy,
+        nmo_layer_serialize,
+        nmo_layer_deserialize,
+        nmo_layer_copy,
+        nmo_layer_validate,
+        nmo_layer_equals,
+        nmo_layer_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_layer_type,
     CKPGUID_LAYER,
     "CKLayer",
     NMO_CID_LAYER,
-    CKPGUID_OBJECT
-)
-
-
+    CKPGUID_OBJECT,
+    nmo_layer_state_t,
+    &nmo_layer_vtable,
+    nmo_layer_fields)

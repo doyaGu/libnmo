@@ -253,22 +253,30 @@ static nmo_status_t nmo_objectanimation_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_animation_finish_loading(
+nmo_status_t nmo_animation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    return nmo_animation_validate(instance, type, context);
+}
+
+nmo_status_t nmo_animation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_animation_finish_loading");
+                         "Invalid arguments to nmo_animation_remap_dependencies");
     }
 
     nmo_animation_state_t *state = (nmo_animation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
 
     if (state->frame_rate <= 0.0f) {
         state->frame_rate = 30.0f;
@@ -310,20 +318,30 @@ nmo_status_t nmo_animation_finish_loading(
     return nmo_animation_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_keyedanimation_finish_loading(
+nmo_status_t nmo_keyedanimation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_keyedanimation_validate(instance, type, context);
+}
+
+nmo_status_t nmo_keyedanimation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_keyedanimation_finish_loading");
+                         "Invalid arguments to nmo_keyedanimation_remap_dependencies");
     }
 
     nmo_keyedanimation_state_t *state = (nmo_keyedanimation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_animation_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_animation_remap_dependencies(&state->base, NULL, context));
 
     if (state->animation_count > 0 && state->animation_ids == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "KeyedAnimation animation_ids missing");
@@ -376,20 +394,30 @@ nmo_status_t nmo_keyedanimation_finish_loading(
     return nmo_keyedanimation_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_objectanimation_finish_loading(
+nmo_status_t nmo_objectanimation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_objectanimation_validate(instance, type, context);
+}
+
+nmo_status_t nmo_objectanimation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_objectanimation_finish_loading");
+                         "Invalid arguments to nmo_objectanimation_remap_dependencies");
     }
 
     nmo_objectanimation_state_t *state = (nmo_objectanimation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
 
     if (state->format < CKOBJANIM_FORMAT_NONE || state->format > CKOBJANIM_FORMAT_NEWDATA) {
         state->format = CKOBJANIM_FORMAT_NONE;
@@ -450,48 +478,163 @@ nmo_status_t nmo_objectanimation_finish_loading(
     return nmo_objectanimation_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_animation_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_animation_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_animation_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_keyedanimation_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_keyedanimation_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_keyedanimation_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_objectanimation_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_objectanimation_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_objectanimation_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    animation,
-    nmo_animation_state_t,
-    nmo_animation_serialize,
-    nmo_animation_deserialize,
-    nmo_animation_finish_loading,
-    nmo_animation_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(animation, nmo_animation_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(keyedanimation, nmo_keyedanimation_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(objectanimation, nmo_objectanimation_state_t)
+
+nmo_type_vtable_t nmo_animation_vtable = {
+    .prepare_dependencies = nmo_animation_prepare_dependencies,
+    .remap_dependencies = nmo_animation_remap_dependencies,
+    .pre_delete = nmo_animation_pre_delete,
+    .post_delete = nmo_animation_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_animation_create,
+        nmo_animation_destroy,
+        nmo_animation_serialize,
+        nmo_animation_deserialize,
+        nmo_animation_copy,
+        nmo_animation_validate,
+        nmo_animation_equals,
+        nmo_animation_hash)
+};
+
+nmo_type_vtable_t nmo_keyedanimation_vtable = {
+    .prepare_dependencies = nmo_keyedanimation_prepare_dependencies,
+    .remap_dependencies = nmo_keyedanimation_remap_dependencies,
+    .pre_delete = nmo_keyedanimation_pre_delete,
+    .post_delete = nmo_keyedanimation_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_keyedanimation_create,
+        nmo_keyedanimation_destroy,
+        nmo_keyedanimation_serialize,
+        nmo_keyedanimation_deserialize,
+        nmo_keyedanimation_copy,
+        nmo_keyedanimation_validate,
+        nmo_keyedanimation_equals,
+        nmo_keyedanimation_hash)
+};
+
+nmo_type_vtable_t nmo_objectanimation_vtable = {
+    .prepare_dependencies = nmo_objectanimation_prepare_dependencies,
+    .remap_dependencies = nmo_objectanimation_remap_dependencies,
+    .pre_delete = nmo_objectanimation_pre_delete,
+    .post_delete = nmo_objectanimation_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_objectanimation_create,
+        nmo_objectanimation_destroy,
+        nmo_objectanimation_serialize,
+        nmo_objectanimation_deserialize,
+        nmo_objectanimation_copy,
+        nmo_objectanimation_validate,
+        nmo_objectanimation_equals,
+        nmo_objectanimation_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_animation_type,
     CKPGUID_ANIMATION,
     "CKAnimation",
     NMO_CID_ANIMATION,
-    CKPGUID_SCENEOBJECT
-)
+    CKPGUID_SCENEOBJECT,
+    nmo_animation_state_t,
+    &nmo_animation_vtable,
+    nmo_animation_fields)
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    keyedanimation,
-    nmo_keyedanimation_state_t,
-    nmo_keyedanimation_serialize,
-    nmo_keyedanimation_deserialize,
-    nmo_keyedanimation_finish_loading,
-    nmo_keyedanimation_fields,
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_keyedanimation_type,
     CKPGUID_KEYEDANIMATION,
     "CKKeyedAnimation",
     NMO_CID_KEYEDANIMATION,
-    CKPGUID_ANIMATION
-)
+    CKPGUID_ANIMATION,
+    nmo_keyedanimation_state_t,
+    &nmo_keyedanimation_vtable,
+    nmo_keyedanimation_fields)
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    objectanimation,
-    nmo_objectanimation_state_t,
-    nmo_objectanimation_serialize,
-    nmo_objectanimation_deserialize,
-    nmo_objectanimation_finish_loading,
-    nmo_objectanimation_fields,
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_objectanimation_type,
     CKPGUID_OBJECTANIMATION,
     "CKObjectAnimation",
     NMO_CID_OBJECTANIMATION,
-    CKPGUID_ANIMATION
-)
+    CKPGUID_ANIMATION,
+    nmo_objectanimation_state_t,
+    &nmo_objectanimation_vtable,
+    nmo_objectanimation_fields)
 
 static nmo_status_t write_object_id_array(
     nmo_chunk_t *chunk,
@@ -1146,4 +1289,3 @@ nmo_status_t nmo_objectanimation_serialize(
         (const nmo_objectanimation_state_t *)instance;
     return nmo_objectanimation_serialize_internal(in_state, out_chunk, context);
 }
-

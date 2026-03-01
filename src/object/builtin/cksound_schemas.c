@@ -450,18 +450,28 @@ static nmo_status_t nmo_sound_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_sound_finish_loading(
+nmo_status_t nmo_sound_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_sound_validate(instance, type, context);
+}
+
+nmo_status_t nmo_sound_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_sound_finish_loading");
+                         "Invalid arguments to nmo_sound_remap_dependencies");
     }
 
     nmo_sound_state_t *state = (nmo_sound_state_t *)instance;
-    NMO_RETURN_IF_ERROR(nmo_beobject_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_beobject_remap_dependencies(&state->base, NULL, context));
 
     if (state->save_options > CKSOUND_USEGLOBAL) {
         state->save_options = CKSOUND_USEGLOBAL;
@@ -498,20 +508,30 @@ static nmo_status_t nmo_wavesound_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_wavesound_finish_loading(
+nmo_status_t nmo_wavesound_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_wavesound_validate(instance, type, context);
+}
+
+nmo_status_t nmo_wavesound_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_wavesound_finish_loading");
+                         "Invalid arguments to nmo_wavesound_remap_dependencies");
     }
 
     nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_sound_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_sound_remap_dependencies(&state->base, NULL, context));
 
     if (state->has_wave_file_name) {
         if (!state->wave_file_name || state->wave_file_name[0] == '\0') {
@@ -572,21 +592,30 @@ static nmo_status_t nmo_midisound_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_midisound_finish_loading(
+nmo_status_t nmo_midisound_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)repository;
+    return nmo_midisound_validate(instance, type, context);
+}
+
+nmo_status_t nmo_midisound_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_midisound_finish_loading");
+                         "Invalid arguments to nmo_midisound_remap_dependencies");
     }
 
     nmo_midisound_state_t *state = (nmo_midisound_state_t *)instance;
 
-    NMO_RETURN_IF_ERROR(nmo_sound_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_sound_remap_dependencies(&state->base, NULL, context));
 
     if (state->has_midi_file_name) {
         if (!state->midi_file_name || state->midi_file_name[0] == '\0') {
@@ -600,47 +629,160 @@ nmo_status_t nmo_midisound_finish_loading(
     return nmo_midisound_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_sound_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sound_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_sound_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_wavesound_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_wavesound_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_wavesound_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_midisound_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_midisound_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_midisound_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    sound,
-    nmo_sound_state_t,
-    nmo_sound_serialize,
-    nmo_sound_deserialize,
-    nmo_sound_finish_loading,
-    nmo_sound_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(sound, nmo_sound_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(wavesound, nmo_wavesound_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(midisound, nmo_midisound_state_t)
+
+nmo_type_vtable_t nmo_sound_vtable = {
+    .prepare_dependencies = nmo_sound_prepare_dependencies,
+    .remap_dependencies = nmo_sound_remap_dependencies,
+    .pre_delete = nmo_sound_pre_delete,
+    .post_delete = nmo_sound_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_sound_create,
+        nmo_sound_destroy,
+        nmo_sound_serialize,
+        nmo_sound_deserialize,
+        nmo_sound_copy,
+        nmo_sound_validate,
+        nmo_sound_equals,
+        nmo_sound_hash)
+};
+
+nmo_type_vtable_t nmo_wavesound_vtable = {
+    .prepare_dependencies = nmo_wavesound_prepare_dependencies,
+    .remap_dependencies = nmo_wavesound_remap_dependencies,
+    .pre_delete = nmo_wavesound_pre_delete,
+    .post_delete = nmo_wavesound_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_wavesound_create,
+        nmo_wavesound_destroy,
+        nmo_wavesound_serialize,
+        nmo_wavesound_deserialize,
+        nmo_wavesound_copy,
+        nmo_wavesound_validate,
+        nmo_wavesound_equals,
+        nmo_wavesound_hash)
+};
+
+nmo_type_vtable_t nmo_midisound_vtable = {
+    .prepare_dependencies = nmo_midisound_prepare_dependencies,
+    .remap_dependencies = nmo_midisound_remap_dependencies,
+    .pre_delete = nmo_midisound_pre_delete,
+    .post_delete = nmo_midisound_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_midisound_create,
+        nmo_midisound_destroy,
+        nmo_midisound_serialize,
+        nmo_midisound_deserialize,
+        nmo_midisound_copy,
+        nmo_midisound_validate,
+        nmo_midisound_equals,
+        nmo_midisound_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_sound_type,
     CKPGUID_SOUND,
     "CKSound",
     NMO_CID_SOUND,
-    CKPGUID_BEOBJECT
-)
+    CKPGUID_BEOBJECT,
+    nmo_sound_state_t,
+    &nmo_sound_vtable,
+    nmo_sound_fields)
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    wavesound,
-    nmo_wavesound_state_t,
-    nmo_wavesound_serialize,
-    nmo_wavesound_deserialize,
-    nmo_wavesound_finish_loading,
-    nmo_wavesound_fields,
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_wavesound_type,
     CKPGUID_WAVESOUND,
     "CKWaveSound",
     NMO_CID_WAVESOUND,
-    CKPGUID_SOUND
-)
+    CKPGUID_SOUND,
+    nmo_wavesound_state_t,
+    &nmo_wavesound_vtable,
+    nmo_wavesound_fields)
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    midisound,
-    nmo_midisound_state_t,
-    nmo_midisound_serialize,
-    nmo_midisound_deserialize,
-    nmo_midisound_finish_loading,
-    nmo_midisound_fields,
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_midisound_type,
     CKPGUID_MIDISOUND,
     "CKMidiSound",
     NMO_CID_MIDISOUND,
-    CKPGUID_SOUND
-)
-
-
+    CKPGUID_SOUND,
+    nmo_midisound_state_t,
+    &nmo_midisound_vtable,
+    nmo_midisound_fields)

@@ -246,46 +246,34 @@ nmo_status_t nmo_camera_serialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    camera,
-    nmo_camera_state_t,
-    nmo_camera_serialize,
-    nmo_camera_deserialize,
-    nmo_camera_finish_loading,
-    nmo_camera_fields,
-    CKPGUID_CAMERA,
-    "CKCamera",
-    NMO_CID_CAMERA,
-    CKPGUID_3DENTITY
-)
-
+/**
+ * @brief Runtime dependency preparation for CKCamera.
+ */
+nmo_status_t nmo_camera_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_object_default_validate(instance, type, context);
+}
 
 /**
- * @brief Finish loading CKCamera
- * 
- * Performs reference resolution and runtime initialization for cameras.
- * 
- * @param state Camera state
- * @param arena Arena for allocations
- * @param repository Object repository for reference resolution
- * @return Result indicating success or error
+ * @brief Runtime dependency remap for CKCamera.
  */
-nmo_status_t nmo_camera_finish_loading(
+nmo_status_t nmo_camera_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to CKCamera finish_loading");
+                         "Invalid arguments to nmo_camera_remap_dependencies");
     }
 
     nmo_camera_state_t *state = (nmo_camera_state_t *)instance;
-    nmo_status_t result = nmo_3dentity_finish_loading(&state->entity, arena, repository);
+    nmo_status_t result = nmo_3dentity_remap_dependencies(&state->entity, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -324,5 +312,58 @@ nmo_status_t nmo_camera_finish_loading(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_camera_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_camera_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
 
+static void nmo_camera_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
 
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(camera, nmo_camera_state_t)
+
+nmo_type_vtable_t nmo_camera_vtable = {
+    .prepare_dependencies = nmo_camera_prepare_dependencies,
+    .remap_dependencies = nmo_camera_remap_dependencies,
+    .pre_delete = nmo_camera_pre_delete,
+    .post_delete = nmo_camera_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_camera_create,
+        nmo_camera_destroy,
+        nmo_camera_serialize,
+        nmo_camera_deserialize,
+        nmo_camera_copy,
+        nmo_camera_validate,
+        nmo_camera_equals,
+        nmo_camera_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_camera_type,
+    CKPGUID_CAMERA,
+    "CKCamera",
+    NMO_CID_CAMERA,
+    CKPGUID_3DENTITY,
+    nmo_camera_state_t,
+    &nmo_camera_vtable,
+    nmo_camera_fields)

@@ -64,165 +64,33 @@ int nmo_manager_set_user_data(nmo_manager_t *manager, void *user_data) {
 }
 
 /**
- * Set pre-load hook
+ * Set event hook
  */
-int nmo_manager_set_pre_load_hook(nmo_manager_t *manager, int (*hook)(void *, void *)) {
+int nmo_manager_set_on_event_hook(nmo_manager_t *manager, nmo_manager_on_event_fn hook) {
     if (manager == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    manager->pre_load = hook;
+    manager->on_event = hook;
     return NMO_OK;
 }
 
 /**
- * Set post-load hook
+ * Dispatch event
  */
-int nmo_manager_set_post_load_hook(nmo_manager_t *manager, int (*hook)(void *, void *)) {
-    if (manager == NULL) {
+int nmo_manager_invoke_event(
+    nmo_manager_t *manager,
+    void *session,
+    const nmo_runtime_event_ctx_t *ctx) {
+    if (manager == NULL || ctx == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    manager->post_load = hook;
-    return NMO_OK;
-}
-
-/**
- * Set load-data hook
- */
-int nmo_manager_set_load_data_hook(nmo_manager_t *manager, int (*hook)(void *, const nmo_chunk_t *, void *)) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    manager->load_data = hook;
-    return NMO_OK;
-}
-
-/**
- * Set save-data hook
- */
-int nmo_manager_set_save_data_hook(nmo_manager_t *manager, nmo_chunk_t * (*hook)(void *, void *)) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    manager->save_data = hook;
-    return NMO_OK;
-}
-
-/**
- * Set pre-save hook
- */
-int nmo_manager_set_pre_save_hook(nmo_manager_t *manager, int (*hook)(void *, void *)) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    manager->pre_save = hook;
-    return NMO_OK;
-}
-
-/**
- * Set post-save hook
- */
-int nmo_manager_set_post_save_hook(nmo_manager_t *manager, int (*hook)(void *, void *)) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    manager->post_save = hook;
-    return NMO_OK;
-}
-
-/**
- * Invoke pre-load hook
- */
-int nmo_manager_invoke_pre_load(nmo_manager_t *manager, void *session) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (manager->pre_load == NULL) {
+    if (manager->on_event == NULL) {
         return NMO_OK; // No hook registered, success
     }
 
-    return manager->pre_load(session, manager->user_data);
-}
-
-/**
- * Invoke post-load hook
- */
-int nmo_manager_invoke_post_load(nmo_manager_t *manager, void *session) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (manager->post_load == NULL) {
-        return NMO_OK; // No hook registered, success
-    }
-
-    return manager->post_load(session, manager->user_data);
-}
-
-/**
- * Invoke load-data hook
- */
-int nmo_manager_invoke_load_data(nmo_manager_t *manager, void *session, const nmo_chunk_t *chunk) {
-    if (manager == NULL || chunk == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (manager->load_data == NULL) {
-        return NMO_OK; // No hook registered, success
-    }
-
-    return manager->load_data(session, chunk, manager->user_data);
-}
-
-/**
- * Invoke save-data hook
- */
-nmo_chunk_t *nmo_manager_invoke_save_data(nmo_manager_t *manager, void *session) {
-    if (manager == NULL) {
-        return NULL;
-    }
-
-    if (manager->save_data == NULL) {
-        return NULL; // No hook registered
-    }
-
-    return manager->save_data(session, manager->user_data);
-}
-
-/**
- * Invoke pre-save hook
- */
-int nmo_manager_invoke_pre_save(nmo_manager_t *manager, void *session) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (manager->pre_save == NULL) {
-        return NMO_OK; // No hook registered, success
-    }
-
-    return manager->pre_save(session, manager->user_data);
-}
-
-/**
- * Invoke post-save hook
- */
-int nmo_manager_invoke_post_save(nmo_manager_t *manager, void *session) {
-    if (manager == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (manager->post_save == NULL) {
-        return NMO_OK; // No hook registered, success
-    }
-
-    return manager->post_save(session, manager->user_data);
+    return manager->on_event(session, ctx, manager->user_data);
 }
 
 /**

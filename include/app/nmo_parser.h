@@ -39,10 +39,6 @@ typedef enum nmo_load_flags {
     NMO_LOAD_ONLYBEHAVIORS      = 0x0010,
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
     NMO_LOAD_PRESERVE_SHADOW    = 0x0080,
-
-    /* Phase 5 flags */
-    NMO_LOAD_SKIP_INDEX_BUILD       = 0x0100,  /* Skip object index building */
-    NMO_LOAD_SKIP_REFERENCE_RESOLVE = 0x0200,  /* Skip reference resolution */
 } nmo_load_flags_t;
 
 /**

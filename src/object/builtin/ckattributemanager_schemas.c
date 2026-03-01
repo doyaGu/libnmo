@@ -280,17 +280,25 @@ nmo_status_t nmo_attributemanager_serialize(
  * Vtable + registration
  * ============================================================================= */
 
-nmo_status_t nmo_attributemanager_finish_loading(
+nmo_status_t nmo_attributemanager_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
-    (void)repository;
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_attributemanager_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_attributemanager_finish_loading");
+                         "Invalid arguments to nmo_attributemanager_remap_dependencies");
     }
 
     nmo_attributemanager_state_t *state = (nmo_attributemanager_state_t *)instance;
@@ -350,17 +358,60 @@ nmo_status_t nmo_attributemanager_finish_loading(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    attributemanager,
-    nmo_attributemanager_state_t,
-    nmo_attributemanager_serialize,
-    nmo_attributemanager_deserialize,
-    nmo_attributemanager_finish_loading,
-    nmo_attributemanager_fields,
+static nmo_status_t nmo_attributemanager_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_attributemanager_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_attributemanager_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+NMO_DEFINE_OBJECT_STATE_OPS(attributemanager, nmo_attributemanager_state_t)
+
+nmo_type_vtable_t nmo_attributemanager_vtable = {
+    .prepare_dependencies = nmo_attributemanager_prepare_dependencies,
+    .remap_dependencies = nmo_attributemanager_remap_dependencies,
+    .pre_delete = nmo_attributemanager_pre_delete,
+    .post_delete = nmo_attributemanager_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_attributemanager_create,
+        nmo_attributemanager_destroy,
+        nmo_attributemanager_serialize,
+        nmo_attributemanager_deserialize,
+        nmo_attributemanager_copy,
+        nmo_attributemanager_validate,
+        nmo_attributemanager_equals,
+        nmo_attributemanager_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_attributemanager_type,
     NMO_MANAGER_GUID_ATTRIBUTE,
     "CKAttributeManager",
     0,
-    NMO_GUID_NULL
-)
+    NMO_GUID_NULL,
+    nmo_attributemanager_state_t,
+    &nmo_attributemanager_vtable,
+    nmo_attributemanager_fields)
+
+
+
+
 
 

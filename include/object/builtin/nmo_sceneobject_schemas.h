@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_sceneobject_schemas.h
  * @brief CKSceneObject schema declarations
  */
@@ -65,10 +65,15 @@ NMO_API nmo_status_t nmo_sceneobject_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_sceneobject_finish_loading(
+NMO_API nmo_status_t nmo_sceneobject_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_sceneobject_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_sceneobject_vtable, nmo_register_sceneobject_type)
 #ifdef __cplusplus

@@ -183,21 +183,36 @@ nmo_status_t nmo_parameterlocal_serialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_parameterlocal_finish_loading(
+nmo_status_t nmo_parameterlocal_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameterlocal_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_parameterlocal_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_parameterlocal_finish_loading");
+                         "Invalid arguments to nmo_parameterlocal_remap_dependencies");
     }
 
     nmo_parameterlocal_state_t *state = (nmo_parameterlocal_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base.base, arena, repository));
-    NMO_RETURN_IF_ERROR(nmo_parameter_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base.base, NULL, context));
+    NMO_RETURN_IF_ERROR(nmo_parameter_remap_dependencies(&state->base, NULL, context));
 
     if (state->owner_id != 0 && repo &&
         nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
@@ -220,21 +235,64 @@ nmo_status_t nmo_parameterlocal_finish_loading(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_parameterlocal_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameterlocal_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_parameterlocal_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    parameterlocal,
-    nmo_parameterlocal_state_t,
-    nmo_parameterlocal_serialize,
-    nmo_parameterlocal_deserialize,
-    nmo_parameterlocal_finish_loading,
-    nmo_parameterlocal_fields,
+NMO_DEFINE_OBJECT_STATE_OPS(parameterlocal, nmo_parameterlocal_state_t)
+
+nmo_type_vtable_t nmo_parameterlocal_vtable = {
+    .prepare_dependencies = nmo_parameterlocal_prepare_dependencies,
+    .remap_dependencies = nmo_parameterlocal_remap_dependencies,
+    .pre_delete = nmo_parameterlocal_pre_delete,
+    .post_delete = nmo_parameterlocal_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_parameterlocal_create,
+        nmo_parameterlocal_destroy,
+        nmo_parameterlocal_serialize,
+        nmo_parameterlocal_deserialize,
+        nmo_parameterlocal_copy,
+        nmo_parameterlocal_validate,
+        nmo_parameterlocal_equals,
+        nmo_parameterlocal_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_parameterlocal_type,
     CKPGUID_PARAMETERLOCAL,
     "CKParameterLocal",
     NMO_CID_PARAMETERLOCAL,
-    CKPGUID_PARAMETER
-)
+    CKPGUID_PARAMETER,
+    nmo_parameterlocal_state_t,
+    &nmo_parameterlocal_vtable,
+    nmo_parameterlocal_fields)
+
+
+
+
 
 

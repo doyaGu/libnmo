@@ -930,7 +930,6 @@ TEST(type_string, type_value_to_string_object_ref_with_fields) {
         .fields = fields,
         .field_count = sizeof(fields) / sizeof(fields[0]),
         .vtable = NULL,
-        .finish_loading = NULL,
         .creator_plugin_guid = NMO_NULL_GUID,
         .saver_manager = 0,
         .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,

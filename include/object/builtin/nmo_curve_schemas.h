@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_curve_schemas.h
  * @brief CKCurve and CKCurvePoint schema definitions
  */
@@ -86,10 +86,15 @@ NMO_API nmo_status_t nmo_curve_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_curve_finish_loading(
+NMO_API nmo_status_t nmo_curve_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_curve_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_curvepoint_deserialize(
     void *instance,
@@ -103,10 +108,15 @@ NMO_API nmo_status_t nmo_curvepoint_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_curvepoint_finish_loading(
+NMO_API nmo_status_t nmo_curvepoint_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_curvepoint_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_curve_vtable, nmo_register_curve_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_curvepoint_vtable, nmo_register_curvepoint_type)

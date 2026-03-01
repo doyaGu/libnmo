@@ -40,7 +40,7 @@ if(MSVC)
         add_compile_options(/O2)
     endif()
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror -Wno-format-truncation)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         add_compile_options(-O3)
     endif()
@@ -296,6 +296,8 @@ set(NMO_SESSION_SOURCES
     src/session/reference_resolver.c
     src/session/nmo_ref_graph.c
     src/session/nmo_ref_enumerate.c
+    src/session/runtime_graph.c
+    src/session/runtime_kernel.c
 )
 
 # App layer sources
@@ -305,7 +307,6 @@ set(NMO_APP_SOURCES
     src/app/parser.c
     src/app/saver.c
     src/app/save_buffer.c
-    src/app/finish_loading.c
     src/app/comparison.c
     src/app/stats.c
     src/app/inspector.c
@@ -354,7 +355,7 @@ endif()
 # Set library properties
 set_target_properties(nmo PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 1
+    SOVERSION 2
     PUBLIC_HEADER "include/nmo.h"
 )
 
@@ -369,7 +370,13 @@ install(TARGETS nmo
 
 install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h" PATTERN "schema" EXCLUDE
+    FILES_MATCHING
+    PATTERN "*.h"
+    PATTERN "schema" EXCLUDE
+    PATTERN "session/nmo_session_internal.h" EXCLUDE
+    PATTERN "session/nmo_reference_resolver.h" EXCLUDE
+    PATTERN "session/nmo_ref_graph.h" EXCLUDE
+    PATTERN "session/nmo_ref_enumerate.h" EXCLUDE
 )
 
 # Build tests

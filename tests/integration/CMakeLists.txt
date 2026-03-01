@@ -17,9 +17,6 @@ add_integration_test(test_data_roundtrip)
 add_integration_test(test_file_io)
 add_integration_test(test_chunk_special_cases)
 
-# Phase 5: FinishLoading and object index tests
-add_integration_test(test_finish_loading)
-
 # Phase 3A: Reference file compatibility test (ALL real Virtools files)
 add_integration_test(test_all_reference_files)
 
@@ -40,6 +37,14 @@ add_integration_test(test_type_invalidation)
 
 # Phase 6.7: Complete Type System Integration Test
 add_integration_test(test_type_system_complete)
+
+# Runtime clean-break integration tests
+add_integration_test(test_runtime_load_pipeline)
+add_integration_test(test_runtime_copy_behavior_graph)
+add_integration_test(test_runtime_delete_scene_group_consistency)
+add_integration_test(test_extension_abi_v3)
+add_integration_test(test_reference_alignment_matrix)
+add_integration_test(test_manager_lane_runtime_events)
 
 # CLI tests
 if(TARGET nmo_cli)

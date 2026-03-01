@@ -143,36 +143,21 @@ nmo_status_t nmo_behaviorio_serialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    behaviorio,
-    nmo_behaviorio_state_t,
-    nmo_behaviorio_serialize,
-    nmo_behaviorio_deserialize,
-    nmo_behaviorio_finish_loading,
-    nmo_behaviorio_fields,
-    CKPGUID_BEHAVIORIO,
-    "CKBehaviorIO",
-    NMO_CID_BEHAVIORIO,
-    CKPGUID_OBJECT
-)
-
-nmo_status_t nmo_behaviorio_finish_loading(
+nmo_status_t nmo_behaviorio_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_behaviorio_finish_loading");
+                         "Invalid arguments to nmo_behaviorio_remap_dependencies");
     }
 
     nmo_behaviorio_state_t *state = (nmo_behaviorio_state_t *)instance;
 
-    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
     if (!state->has_flags) {
         state->old_flags = 0;
@@ -180,5 +165,84 @@ nmo_status_t nmo_behaviorio_finish_loading(
 
     return NMO_OK;
 }
+
+nmo_status_t nmo_behaviorio_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behaviorio_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_behaviorio_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behaviorio_pre_delete");
+    }
+
+    nmo_behaviorio_state_t *state = (nmo_behaviorio_state_t *)instance;
+    state->old_flags = 0;
+    state->has_flags = false;
+    NMO_RETURN_OK();
+}
+
+static void nmo_behaviorio_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(behaviorio, nmo_behaviorio_state_t)
+
+nmo_type_vtable_t nmo_behaviorio_vtable = {
+    .prepare_dependencies = nmo_behaviorio_prepare_dependencies,
+    .remap_dependencies = nmo_behaviorio_remap_dependencies,
+    .pre_delete = nmo_behaviorio_pre_delete,
+    .post_delete = nmo_behaviorio_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_behaviorio_create,
+        nmo_behaviorio_destroy,
+        nmo_behaviorio_serialize,
+        nmo_behaviorio_deserialize,
+        nmo_behaviorio_copy,
+        nmo_behaviorio_validate,
+        nmo_behaviorio_equals,
+        nmo_behaviorio_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_behaviorio_type,
+    CKPGUID_BEHAVIORIO,
+    "CKBehaviorIO",
+    NMO_CID_BEHAVIORIO,
+    CKPGUID_OBJECT,
+    nmo_behaviorio_state_t,
+    &nmo_behaviorio_vtable,
+    nmo_behaviorio_fields)
+
+
+
+
+
 
 

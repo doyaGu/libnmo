@@ -57,15 +57,25 @@ static const nmo_type_field_t nmo_criticalsection_fields[] = {
     NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section_id)
 };
 
-nmo_status_t nmo_state_finish_loading(
+nmo_status_t nmo_state_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-nmo_status_t nmo_criticalsection_finish_loading(
+nmo_status_t nmo_state_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+nmo_status_t nmo_criticalsection_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+nmo_status_t nmo_criticalsection_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 static nmo_status_t deserialize_ckobject_base(
     nmo_object_state_t *out_base,
@@ -157,49 +167,6 @@ nmo_status_t nmo_synchro_deserialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    synchro,
-    nmo_synchro_state_t,
-    nmo_synchro_serialize,
-    nmo_synchro_deserialize,
-    nmo_synchro_finish_loading,
-    nmo_synchro_fields,
-    CKPGUID_SYNCHRO,
-    "CKSynchroObject",
-    NMO_CID_SYNCHRO,
-    CKPGUID_OBJECT
-)
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    state,
-    nmo_state_state_t,
-    nmo_state_serialize,
-    nmo_state_deserialize,
-    nmo_state_finish_loading,
-    nmo_state_fields,
-    CKPGUID_STATE,
-    "CKStateObject",
-    NMO_CID_STATE,
-    CKPGUID_OBJECT
-)
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    criticalsection,
-    nmo_criticalsection_state_t,
-    nmo_criticalsection_serialize,
-    nmo_criticalsection_deserialize,
-    nmo_criticalsection_finish_loading,
-    nmo_criticalsection_fields,
-    CKPGUID_CRITICALSECTION,
-    "CKCriticalSectionObject",
-    NMO_CID_CRITICALSECTION,
-    CKPGUID_OBJECT
-)
-
 nmo_status_t nmo_synchro_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -281,19 +248,40 @@ static uint32_t nmo_synchro_prune_ids(
     return kept;
 }
 
-nmo_status_t nmo_synchro_finish_loading(
+nmo_status_t nmo_synchro_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_synchro_prepare_dependencies");
+    }
+    nmo_synchro_state_t *state = (nmo_synchro_state_t *)instance;
+    if (state->arrived_ids.count > 0 && !state->arrived_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
+    }
+    if (state->passed_ids.count > 0 && !state->passed_ids.data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: passed_ids missing");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_synchro_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
 
     if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_finish_loading");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_remap_dependencies");
     }
 
     nmo_synchro_state_t *state = (nmo_synchro_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (state->arrived_ids.count > 0 && !state->arrived_ids.data) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
@@ -416,17 +404,25 @@ nmo_status_t nmo_criticalsection_serialize(
  * CKStateObject FINISH LOADING
  * ============================================================================= */
 
-nmo_status_t nmo_state_finish_loading(
+nmo_status_t nmo_state_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
-    (void)repository;
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_state_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_state_finish_loading");
+                         "Invalid arguments to nmo_state_remap_dependencies");
     }
 
     nmo_state_state_t *state = (nmo_state_state_t *)instance;
@@ -437,20 +433,28 @@ nmo_status_t nmo_state_finish_loading(
  * CKCriticalSectionObject FINISH LOADING
  * ============================================================================= */
 
-nmo_status_t nmo_criticalsection_finish_loading(
+nmo_status_t nmo_criticalsection_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_criticalsection_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_criticalsection_finish_loading");
+                         "Invalid arguments to nmo_criticalsection_remap_dependencies");
     }
 
     nmo_criticalsection_state_t *state = (nmo_criticalsection_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (state->object_in_section_id != 0 && repo &&
         nmo_object_repository_find_by_id(repo, state->object_in_section_id) == NULL) {
@@ -460,4 +464,163 @@ nmo_status_t nmo_criticalsection_finish_loading(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_synchro_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_synchro_pre_delete");
+    }
+    nmo_synchro_state_t *state = (nmo_synchro_state_t *)instance;
+    state->arrived_ids.count = 0;
+    state->passed_ids.count = 0;
+    NMO_RETURN_OK();
+}
 
+static void nmo_synchro_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_state_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_state_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_state_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_criticalsection_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_criticalsection_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_criticalsection_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(synchro, nmo_synchro_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS(state, nmo_state_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS(criticalsection, nmo_criticalsection_state_t)
+
+nmo_type_vtable_t nmo_synchro_vtable = {
+    .prepare_dependencies = nmo_synchro_prepare_dependencies,
+    .remap_dependencies = nmo_synchro_remap_dependencies,
+    .pre_delete = nmo_synchro_pre_delete,
+    .post_delete = nmo_synchro_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_synchro_create,
+        nmo_synchro_destroy,
+        nmo_synchro_serialize,
+        nmo_synchro_deserialize,
+        nmo_synchro_copy,
+        nmo_synchro_validate,
+        nmo_synchro_equals,
+        nmo_synchro_hash)
+};
+
+nmo_type_vtable_t nmo_state_vtable = {
+    .prepare_dependencies = nmo_state_prepare_dependencies,
+    .remap_dependencies = nmo_state_remap_dependencies,
+    .pre_delete = nmo_state_pre_delete,
+    .post_delete = nmo_state_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_state_create,
+        nmo_state_destroy,
+        nmo_state_serialize,
+        nmo_state_deserialize,
+        nmo_state_copy,
+        nmo_state_validate,
+        nmo_state_equals,
+        nmo_state_hash)
+};
+
+nmo_type_vtable_t nmo_criticalsection_vtable = {
+    .prepare_dependencies = nmo_criticalsection_prepare_dependencies,
+    .remap_dependencies = nmo_criticalsection_remap_dependencies,
+    .pre_delete = nmo_criticalsection_pre_delete,
+    .post_delete = nmo_criticalsection_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_criticalsection_create,
+        nmo_criticalsection_destroy,
+        nmo_criticalsection_serialize,
+        nmo_criticalsection_deserialize,
+        nmo_criticalsection_copy,
+        nmo_criticalsection_validate,
+        nmo_criticalsection_equals,
+        nmo_criticalsection_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_synchro_type,
+    CKPGUID_SYNCHRO,
+    "CKSynchroObject",
+    NMO_CID_SYNCHRO,
+    CKPGUID_OBJECT,
+    nmo_synchro_state_t,
+    &nmo_synchro_vtable,
+    nmo_synchro_fields)
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_state_type,
+    CKPGUID_STATE,
+    "CKStateObject",
+    NMO_CID_STATE,
+    CKPGUID_OBJECT,
+    nmo_state_state_t,
+    &nmo_state_vtable,
+    nmo_state_fields)
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_criticalsection_type,
+    CKPGUID_CRITICALSECTION,
+    "CKCriticalSectionObject",
+    NMO_CID_CRITICALSECTION,
+    CKPGUID_OBJECT,
+    nmo_criticalsection_state_t,
+    &nmo_criticalsection_vtable,
+    nmo_criticalsection_fields)

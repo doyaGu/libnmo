@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_behaviorlink_schemas.h
  * @brief CKBehaviorLink schema definitions
  *
@@ -113,10 +113,15 @@ NMO_API nmo_status_t nmo_behaviorlink_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_behaviorlink_finish_loading(
+NMO_API nmo_status_t nmo_behaviorlink_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_behaviorlink_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_behaviorlink_vtable, nmo_register_behaviorlink_type)
 

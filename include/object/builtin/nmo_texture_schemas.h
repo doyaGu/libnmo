@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_texture_schemas.h
  * @brief CKTexture schema definitions for Virtools texture objects
  * @author libnmo
@@ -144,10 +144,15 @@ NMO_API nmo_status_t nmo_texture_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_texture_vtable, nmo_register_texture_type)
 
-NMO_API nmo_status_t nmo_texture_finish_loading(
+NMO_API nmo_status_t nmo_texture_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_texture_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /**
  * @}

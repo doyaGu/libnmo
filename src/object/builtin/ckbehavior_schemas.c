@@ -845,22 +845,22 @@ static nmo_status_t nmo_behavior_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_behavior_finish_loading(
+nmo_status_t nmo_behavior_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_behavior_finish_loading");
+                         "Invalid arguments to nmo_behavior_remap_dependencies");
     }
 
     nmo_behavior_state_t *state = (nmo_behavior_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
 
     if (state->sub_behaviors.count > 0 && state->sub_behaviors.data == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Behavior sub_behaviors missing");
@@ -1039,21 +1039,85 @@ nmo_status_t nmo_behavior_finish_loading(
     return nmo_behavior_validate(state, NULL, NULL);
 }
 
+nmo_status_t nmo_behavior_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_behavior_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_behavior_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behavior_pre_delete");
+    }
+
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)instance;
+    state->owner_id = 0;
+    state->target_parameter_id = 0;
+    state->sub_behaviors.count = 0;
+    state->sub_behavior_chunks.count = 0;
+    state->sub_behavior_links.count = 0;
+    state->operations.count = 0;
+    state->in_parameters.count = 0;
+    state->out_parameters.count = 0;
+    state->local_parameters.count = 0;
+    state->local_parameter_chunks.count = 0;
+    state->inputs.count = 0;
+    state->outputs.count = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_behavior_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    behavior,
-    nmo_behavior_state_t,
-    nmo_behavior_serialize,
-    nmo_behavior_deserialize,
-    nmo_behavior_finish_loading,
-    nmo_behavior_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(behavior, nmo_behavior_state_t)
+
+nmo_type_vtable_t nmo_behavior_vtable = {
+    .prepare_dependencies = nmo_behavior_prepare_dependencies,
+    .remap_dependencies = nmo_behavior_remap_dependencies,
+    .pre_delete = nmo_behavior_pre_delete,
+    .post_delete = nmo_behavior_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_behavior_create,
+        nmo_behavior_destroy,
+        nmo_behavior_serialize,
+        nmo_behavior_deserialize,
+        nmo_behavior_copy,
+        nmo_behavior_validate,
+        nmo_behavior_equals,
+        nmo_behavior_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_behavior_type,
     CKPGUID_BEHAVIOR,
     "CKBehavior",
     NMO_CID_BEHAVIOR,
-    CKPGUID_SCENEOBJECT
-)
+    CKPGUID_SCENEOBJECT,
+    nmo_behavior_state_t,
+    &nmo_behavior_vtable,
+    nmo_behavior_fields)
+
+
+
 
 

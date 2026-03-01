@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_targetlight_schemas.h
  * @brief CKTargetLight schema definitions
  */
@@ -41,10 +41,15 @@ NMO_API nmo_status_t nmo_targetlight_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_targetlight_finish_loading(
+NMO_API nmo_status_t nmo_targetlight_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_targetlight_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_targetlight_vtable, nmo_register_targetlight_type)
 

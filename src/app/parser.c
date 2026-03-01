@@ -9,11 +9,12 @@
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
 #include "app/nmo_session.h"
+#include "session/nmo_session_internal.h"
 #include "extension/nmo_extension_registry.h"
 #include "app/nmo_context.h"
-#include "app/nmo_finish_loading.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_object_system.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
@@ -32,7 +33,6 @@
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_reference_resolver.h"
 #include "object/nmo_shadow_storage.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
@@ -642,7 +642,12 @@ static int nmo_load_file_with_io(
             nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_get(manager_reg, manager_id);
 
             if (manager != NULL) {
-                int hook_result = nmo_manager_invoke_pre_load(manager, session);
+                nmo_runtime_event_ctx_t event_ctx = {
+                    .event = NMO_RUNTIME_EVENT_PRE_LOAD,
+                    .manager_id = manager_id,
+                    .manager_guid = manager->guid
+                };
+                int hook_result = nmo_manager_invoke_event(manager, session, &event_ctx);
                 if (hook_result != NMO_OK) {
                     nmo_log(logger, NMO_LOG_WARN, "  Manager %u pre-load hook failed: %d",
                             manager_id, hook_result);
@@ -858,13 +863,6 @@ static int nmo_load_file_with_io(
                     continue;
                 }
 
-                if (manager->load_data == NULL) {
-                    nmo_log(logger, NMO_LOG_WARN,
-                            "  Manager %s (GUID=%s) has no load_data hook; data preserved",
-                            manager->name ? manager->name : "<unnamed>", guid_buffer);
-                    continue;
-                }
-
                 const nmo_chunk_t *chunk = mgr_data->chunk;
                 if (chunk == NULL) {
                     nmo_log(logger, NMO_LOG_INFO,
@@ -873,7 +871,13 @@ static int nmo_load_file_with_io(
                     continue;
                 }
 
-                int load_result = nmo_manager_invoke_load_data(manager, session, chunk);
+                nmo_runtime_event_ctx_t event_ctx = {
+                    .event = NMO_RUNTIME_EVENT_POST_LOAD,
+                    .manager_id = 0,
+                    .manager_guid = mgr_data->guid,
+                    .manager_chunk_in = chunk
+                };
+                int load_result = nmo_manager_invoke_event(manager, session, &event_ctx);
                 if (load_result == NMO_OK) {
                     mgr_data->flags |= NMO_MANAGER_DATA_FLAG_DISPATCHED;
                     nmo_log(logger, NMO_LOG_INFO,
@@ -907,14 +911,10 @@ static int nmo_load_file_with_io(
         }
 
         nmo_object_system_deserialize_stats_t stats = {0};
-        nmo_reference_resolver_t *reference_resolver = NULL;
-
-        if ((flags & NMO_LOAD_SKIP_REFERENCE_RESOLVE) == 0) {
-            reference_resolver = nmo_session_ensure_reference_resolver(session);
-            if (reference_resolver == NULL) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Failed to create session reference resolver; continuing without registration");
-            }
+        nmo_reference_resolver_t *reference_resolver = nmo_session_ensure_reference_resolver(session);
+        if (reference_resolver == NULL) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "  Failed to create session reference resolver; continuing without registration");
         }
 
         nmo_status_t deser_result = nmo_object_system_deserialize_loaded_objects(
@@ -956,27 +956,19 @@ skip_object_processing:
 
     nmo_log(logger, NMO_LOG_INFO, "Load complete: %zu objects loaded", repo_count);
 
-    /* Phase 17: Session-Level FinishLoading (Reference Resolution & Indexing) */
-    nmo_log(logger, NMO_LOG_INFO, "Phase 17: Executing session-level finish loading");
-    
-    /* Determine finish loading flags based on load flags */
-    uint32_t finish_flags = NMO_FINISH_LOAD_DEFAULT;
-    
-    if (flags & NMO_LOAD_SKIP_INDEX_BUILD) {
-        /* Disable index building if requested */
-        finish_flags &= ~NMO_FINISH_LOAD_BUILD_INDEXES;
-    }
-    
-    if (flags & NMO_LOAD_SKIP_REFERENCE_RESOLVE) {
-        /* Disable reference resolution if requested */
-        finish_flags &= ~NMO_FINISH_LOAD_RESOLVE_REFERENCES;
-    }
-    
-    /* Execute finish loading */
-    int finish_result = nmo_session_finish_loading(session, finish_flags);
-    if (finish_result != NMO_OK) {
-        nmo_log(logger, NMO_LOG_WARN, "FinishLoading phase failed: %d (continuing anyway)", finish_result);
-        /* Don't fail the entire load for finish loading issues */
+    /* Runtime kernel finalizes load semantics (dependency remap, post-hooks, indexing). */
+    {
+        nmo_runtime_request_t request = {
+            .kind = NMO_RUNTIME_OP_LOAD,
+            .flags = NMO_RUNTIME_REQUEST_DEFAULT
+        };
+        nmo_runtime_report_t report;
+        memset(&report, 0, sizeof(report));
+        int runtime_result = nmo_runtime_kernel_finalize_load(session, &request, &report);
+        if (runtime_result != NMO_OK) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "Runtime load finalization failed: %d (continuing)", runtime_result);
+        }
     }
 
     return NMO_OK;

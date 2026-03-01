@@ -220,20 +220,30 @@ static nmo_status_t nmo_grid_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_grid_finish_loading(
+nmo_status_t nmo_grid_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_grid_validate(instance, type, context);
+}
+
+nmo_status_t nmo_grid_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_grid_finish_loading");
+                         "Invalid arguments to nmo_grid_remap_dependencies");
     }
 
     nmo_grid_state_t *state = (nmo_grid_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    nmo_status_t result = nmo_3dentity_finish_loading(&state->base, arena, repository);
+    nmo_status_t result = nmo_3dentity_remap_dependencies(&state->base, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -280,21 +290,58 @@ nmo_status_t nmo_grid_finish_loading(
     return nmo_grid_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_grid_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_grid_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_grid_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    grid,
-    nmo_grid_state_t,
-    nmo_grid_serialize,
-    nmo_grid_deserialize,
-    nmo_grid_finish_loading,
-    nmo_grid_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(grid, nmo_grid_state_t)
+
+nmo_type_vtable_t nmo_grid_vtable = {
+    .prepare_dependencies = nmo_grid_prepare_dependencies,
+    .remap_dependencies = nmo_grid_remap_dependencies,
+    .pre_delete = nmo_grid_pre_delete,
+    .post_delete = nmo_grid_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_grid_create,
+        nmo_grid_destroy,
+        nmo_grid_serialize,
+        nmo_grid_deserialize,
+        nmo_grid_copy,
+        nmo_grid_validate,
+        nmo_grid_equals,
+        nmo_grid_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_grid_type,
     CKPGUID_GRID,
     "CKGrid",
     NMO_CID_GRID,
-    CKPGUID_3DENTITY
-)
-
-
+    CKPGUID_3DENTITY,
+    nmo_grid_state_t,
+    &nmo_grid_vtable,
+    nmo_grid_fields)

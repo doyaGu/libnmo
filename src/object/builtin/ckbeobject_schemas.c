@@ -559,20 +559,35 @@ static nmo_status_t nmo_beobject_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_beobject_finish_loading(
+nmo_status_t nmo_beobject_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_beobject_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_beobject_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_beobject_finish_loading");
+                         "Invalid arguments to nmo_beobject_remap_dependencies");
     }
 
     nmo_beobject_state_t *state = (nmo_beobject_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_sceneobject_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
 
     if (state->script_ids.count > 0 && state->script_ids.data == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "BeObject script_ids missing");
@@ -681,21 +696,64 @@ nmo_status_t nmo_beobject_finish_loading(
     return nmo_beobject_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_beobject_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_beobject_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_beobject_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    beobject,
-    nmo_beobject_state_t,
-    nmo_beobject_serialize,
-    nmo_beobject_deserialize,
-    nmo_beobject_finish_loading,
-    nmo_beobject_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(beobject, nmo_beobject_state_t)
+
+nmo_type_vtable_t nmo_beobject_vtable = {
+    .prepare_dependencies = nmo_beobject_prepare_dependencies,
+    .remap_dependencies = nmo_beobject_remap_dependencies,
+    .pre_delete = nmo_beobject_pre_delete,
+    .post_delete = nmo_beobject_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_beobject_create,
+        nmo_beobject_destroy,
+        nmo_beobject_serialize,
+        nmo_beobject_deserialize,
+        nmo_beobject_copy,
+        nmo_beobject_validate,
+        nmo_beobject_equals,
+        nmo_beobject_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_beobject_type,
     CKPGUID_BEOBJECT,
     "CKBeObject",
     NMO_CID_BEOBJECT,
-    CKPGUID_SCENEOBJECT
-)
+    CKPGUID_SCENEOBJECT,
+    nmo_beobject_state_t,
+    &nmo_beobject_vtable,
+    nmo_beobject_fields)
+
+
+
+
 
 

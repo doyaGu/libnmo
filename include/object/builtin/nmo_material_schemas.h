@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_material_schemas.h
  * @brief CKMaterial schema definitions
  * @author libnmo
@@ -181,10 +181,15 @@ NMO_API nmo_status_t nmo_material_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_material_vtable, nmo_register_material_type)
 
-NMO_API nmo_status_t nmo_material_finish_loading(
+NMO_API nmo_status_t nmo_material_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_material_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_camera_schemas.h
  * @brief CKCamera schema definitions header
  */
@@ -61,10 +61,15 @@ NMO_API nmo_status_t nmo_camera_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_camera_vtable, nmo_register_camera_type)
 
-NMO_API nmo_status_t nmo_camera_finish_loading(
+NMO_API nmo_status_t nmo_camera_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_camera_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

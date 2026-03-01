@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_mesh_schemas.h
  * @brief CKMesh schema definitions header
  * 
@@ -105,10 +105,15 @@ NMO_API nmo_status_t nmo_mesh_serialize_ex(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_mesh_vtable, nmo_register_mesh_type)
 
-NMO_API nmo_status_t nmo_mesh_finish_loading(
+NMO_API nmo_status_t nmo_mesh_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_mesh_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

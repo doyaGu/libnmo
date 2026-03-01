@@ -764,47 +764,28 @@ nmo_status_t nmo_3dentity_serialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    3dentity,
-    nmo_3dentity_state_t,
-    nmo_3dentity_serialize,
-    nmo_3dentity_deserialize,
-    nmo_3dentity_finish_loading,
-    nmo_3dentity_fields,
-    CKPGUID_3DENTITY,
-    "CK3dEntity",
-    NMO_CID_3DENTITY,
-    CKPGUID_RENDEROBJECT
-)
-
-
-/**
- * @brief Finish loading CK3dEntity
- * 
- * Performs reference resolution and runtime initialization.
- * Base implementation for 3D entities - derived classes may extend.
- * 
- * @param state Entity state
- * @param arena Arena for allocations
- * @param repository Object repository for reference resolution
- * @return Result indicating success or error
- */
-nmo_status_t nmo_3dentity_finish_loading(
+nmo_status_t nmo_3dentity_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_3dentity_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to CK3dEntity finish_loading");
+                         "Invalid arguments to nmo_3dentity_remap_dependencies");
     }
 
     nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (state->mesh_count > 0 && state->mesh_ids == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -900,27 +881,65 @@ nmo_status_t nmo_3dentity_finish_loading(
             }
         }
         if (!found) {
-            if (!arena) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                 "CK3dEntity: arena required to add current mesh");
-            }
-            nmo_object_id_t *expanded = (nmo_object_id_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_object_id_t) * (state->mesh_count + 1),
-                _Alignof(nmo_object_id_t));
-            if (!expanded) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                 "Failed to grow mesh ID list");
-            }
-            for (uint32_t i = 0; i < state->mesh_count; ++i) {
-                expanded[i] = state->mesh_ids[i];
-            }
-            expanded[state->mesh_count] = state->current_mesh_id;
-            state->mesh_ids = expanded;
-            state->mesh_count += 1;
+            state->current_mesh_id = 0;
         }
     }
 
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_3dentity_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_3dentity_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
 
+static void nmo_3dentity_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(3dentity, nmo_3dentity_state_t)
+
+nmo_type_vtable_t nmo_3dentity_vtable = {
+    .prepare_dependencies = nmo_3dentity_prepare_dependencies,
+    .remap_dependencies = nmo_3dentity_remap_dependencies,
+    .pre_delete = nmo_3dentity_pre_delete,
+    .post_delete = nmo_3dentity_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_3dentity_create,
+        nmo_3dentity_destroy,
+        nmo_3dentity_serialize,
+        nmo_3dentity_deserialize,
+        nmo_3dentity_copy,
+        nmo_3dentity_validate,
+        nmo_3dentity_equals,
+        nmo_3dentity_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_3dentity_type,
+    CKPGUID_3DENTITY,
+    "CK3dEntity",
+    NMO_CID_3DENTITY,
+    CKPGUID_RENDEROBJECT,
+    nmo_3dentity_state_t,
+    &nmo_3dentity_vtable,
+    nmo_3dentity_fields)

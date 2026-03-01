@@ -446,20 +446,20 @@ static nmo_status_t nmo_dataarray_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_dataarray_finish_loading(
+nmo_status_t nmo_dataarray_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_dataarray_finish_loading");
+                         "Invalid arguments to nmo_dataarray_remap_dependencies");
     }
 
     nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (state->column_count > 0 && state->column_formats == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray column_formats missing");
@@ -515,21 +515,80 @@ nmo_status_t nmo_dataarray_finish_loading(
     return nmo_dataarray_validate(state, NULL, NULL);
 }
 
+nmo_status_t nmo_dataarray_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_dataarray_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_dataarray_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_dataarray_pre_delete");
+    }
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)instance;
+    state->column_count = 0;
+    state->row_count = 0;
+    state->column_formats = NULL;
+    state->rows = NULL;
+    state->order = 0;
+    state->column_index = 0;
+    state->key_column = -1;
+    NMO_RETURN_OK();
+}
+
+static void nmo_dataarray_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    dataarray,
-    nmo_dataarray_state_t,
-    nmo_dataarray_serialize,
-    nmo_dataarray_deserialize,
-    nmo_dataarray_finish_loading,
-    nmo_dataarray_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(dataarray, nmo_dataarray_state_t)
+
+nmo_type_vtable_t nmo_dataarray_vtable = {
+    .prepare_dependencies = nmo_dataarray_prepare_dependencies,
+    .remap_dependencies = nmo_dataarray_remap_dependencies,
+    .pre_delete = nmo_dataarray_pre_delete,
+    .post_delete = nmo_dataarray_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_dataarray_create,
+        nmo_dataarray_destroy,
+        nmo_dataarray_serialize,
+        nmo_dataarray_deserialize,
+        nmo_dataarray_copy,
+        nmo_dataarray_validate,
+        nmo_dataarray_equals,
+        nmo_dataarray_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_dataarray_type,
     CKPGUID_DATAARRAY,
     "CKDataArray",
     NMO_CID_DATAARRAY,
-    CKPGUID_BEOBJECT
-)
+    CKPGUID_BEOBJECT,
+    nmo_dataarray_state_t,
+    &nmo_dataarray_vtable,
+    nmo_dataarray_fields)
+
+
+
+
 
 

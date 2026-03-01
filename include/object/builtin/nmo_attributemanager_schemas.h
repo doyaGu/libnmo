@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_attributemanager_schemas.h
  * @brief CKAttributeManager schema definitions
  *
@@ -86,10 +86,15 @@ NMO_API nmo_status_t nmo_attributemanager_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_attributemanager_finish_loading(
+NMO_API nmo_status_t nmo_attributemanager_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_attributemanager_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

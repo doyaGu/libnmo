@@ -237,6 +237,35 @@ TEST(object_repository, remove_object) {
     nmo_object_repository_destroy(repo);
 }
 
+TEST(object_repository, take_object) {
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *obj = create_test_object(&allocator, 77, "TakeMe", 701);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+    ASSERT_NULL(obj);
+
+    nmo_object_t *taken = NULL;
+    int result = nmo_object_repository_take(repo, 77, &taken);
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_NOT_NULL(taken);
+    ASSERT_EQ(77, taken->id);
+    ASSERT_EQ(0, nmo_object_repository_get_count(repo));
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, 77));
+    ASSERT_NULL(nmo_object_repository_find_by_name(repo, "TakeMe"));
+
+    nmo_object_destroy(taken);
+
+    taken = (nmo_object_t *)0x1;
+    result = nmo_object_repository_take(repo, 999, &taken);
+    ASSERT_NE(NMO_OK, result);
+    ASSERT_NULL(taken);
+
+    nmo_object_repository_destroy(repo);
+}
+
 TEST(object_repository, clear_repository) {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
@@ -425,6 +454,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_repository, find_by_name);
     REGISTER_TEST(object_repository, find_by_class);
     REGISTER_TEST(object_repository, remove_object);
+    REGISTER_TEST(object_repository, take_object);
     REGISTER_TEST(object_repository, clear_repository);
     REGISTER_TEST(object_repository, get_all_objects);
     REGISTER_TEST(object_repository, auto_assign_skips_existing_ids);

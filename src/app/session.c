@@ -7,6 +7,7 @@
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
+#include "session/nmo_runtime_kernel.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -76,7 +77,7 @@ typedef struct nmo_session {
     size_t chunk_pool_capacity;
 
     /* Finish loading diagnostics */
-    nmo_finish_loading_stats_t finish_stats;
+    nmo_runtime_load_stats_t finish_stats;
     int finish_stats_valid;
 
     /* Plugin dependency diagnostics */
@@ -607,7 +608,7 @@ nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename) {
     }
 
     /* Load file using high-level API */
-    int result = nmo_load_file(session, filename, NULL);
+    int result = nmo_session_load_file(session, filename, NULL, NULL);
     if (result != NMO_OK) {
         nmo_session_destroy(session);
         return NULL;
@@ -624,8 +625,116 @@ int nmo_session_save(nmo_session_t *session, const char *filename) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Use high-level save API */
-    return nmo_save_file(session, filename, NULL);
+    return nmo_session_save_file(session, filename, NULL, NULL);
+}
+
+int nmo_session_execute(
+    nmo_session_t *session,
+    const nmo_runtime_request_t *request,
+    nmo_runtime_report_t *out_report
+) {
+    return nmo_runtime_kernel_execute(session, request, out_report);
+}
+
+int nmo_session_load_file(
+    nmo_session_t *session,
+    const char *filename,
+    const nmo_load_options_t *options,
+    nmo_runtime_report_t *out_report
+) {
+    if (session == NULL || filename == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_LOAD;
+    request.flags = NMO_RUNTIME_REQUEST_DEFAULT;
+    request.payload.load.path = filename;
+    request.payload.load.options = options;
+    return nmo_session_execute(session, &request, out_report);
+}
+
+int nmo_session_save_file(
+    nmo_session_t *session,
+    const char *filename,
+    const nmo_save_options_t *options,
+    nmo_runtime_report_t *out_report
+) {
+    if (session == NULL || filename == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_SAVE;
+    request.flags = NMO_RUNTIME_REQUEST_DEFAULT;
+    request.payload.save.path = filename;
+    request.payload.save.options = options;
+    return nmo_session_execute(session, &request, out_report);
+}
+
+int nmo_session_create_object(
+    nmo_session_t *session,
+    nmo_class_id_t class_id,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_created_id,
+    nmo_runtime_report_t *out_report
+) {
+    if (session == NULL || class_id == NMO_CLASS_ID_INVALID) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_CREATE;
+    request.flags = NMO_RUNTIME_REQUEST_DEFAULT;
+    request.payload.create.class_id = class_id;
+    request.payload.create.name = name;
+    request.payload.create.type_guid = type_guid;
+    request.payload.create.out_created_id = out_created_id;
+    return nmo_session_execute(session, &request, out_report);
+}
+
+int nmo_session_copy_objects(
+    nmo_session_t *session,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_runtime_report_t *out_report
+) {
+    if (session == NULL || object_ids == NULL || object_count == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_COPY;
+    request.flags = flags;
+    request.payload.copy.ids = object_ids;
+    request.payload.copy.count = object_count;
+    return nmo_session_execute(session, &request, out_report);
+}
+
+int nmo_session_destroy_objects(
+    nmo_session_t *session,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_runtime_report_t *out_report
+) {
+    if (session == NULL || object_ids == NULL || object_count == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_DELETE;
+    request.flags = flags;
+    request.payload.destroy.ids = object_ids;
+    request.payload.destroy.count = object_count;
+    return nmo_session_execute(session, &request, out_report);
 }
 
 /**
@@ -715,9 +824,9 @@ int nmo_session_get_object_index_stats(
     return nmo_object_index_get_stats(session->object_index, stats);
 }
 
-int nmo_session_get_finish_loading_stats(
+int nmo_session_get_runtime_load_stats(
     const nmo_session_t *session,
-    nmo_finish_loading_stats_t *out_stats
+    nmo_runtime_load_stats_t *out_stats
 ) {
     if (session == NULL || out_stats == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -732,9 +841,9 @@ int nmo_session_get_finish_loading_stats(
     return NMO_OK;
 }
 
-void nmo_session_set_finish_loading_stats(
+void nmo_session_set_runtime_load_stats(
     nmo_session_t *session,
-    const nmo_finish_loading_stats_t *stats
+    const nmo_runtime_load_stats_t *stats
 ) {
     if (session == NULL || stats == NULL) {
         return;

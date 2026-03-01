@@ -99,22 +99,6 @@ typedef nmo_status_t (*nmo_object_deserialize_fn)(
     const nmo_type_descriptor_t *type,
     void *context);
 
-/**
- * @brief Finish loading function signature
- * 
- * Called after deserialization to resolve references and initialize runtime state.
- * Equivalent to CKObject::PostLoad() in Virtools SDK.
- * 
- * @param instance Pointer to object state structure
- * @param arena Arena for allocations (may be NULL)
- * @param repository Object repository for reference resolution (may be NULL)
- * @return nmo_ok() on success, error on failure
- */
-typedef nmo_status_t (*nmo_object_finish_loading_fn)(
-    void *instance,
-    nmo_arena_t *arena,
-    void *repository);
-
 /* ============================================================================
  * Context Helper Functions
  * ============================================================================ */

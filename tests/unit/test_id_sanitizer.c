@@ -8,7 +8,7 @@
 #include "test_framework.h"
 
 TEST(id_sanitizer, strips_mask_and_passthrough) {
-    ASSERT_EQ(nmo_id_sanitize(0x00800042u), 0x42u);
+    ASSERT_EQ(nmo_id_sanitize(NMO_ID_REF_MASK | 0x42u), 0x42u);
     ASSERT_EQ(nmo_id_sanitize(0x00001234u), 0x00001234u);
     ASSERT_EQ(nmo_id_sanitize(0u), 0u);
 }
@@ -71,9 +71,9 @@ TEST(id_sanitizer, mask_handling_on_registration) {
     ASSERT_NOT_NULL(s);
 
     /* Runtime ID carries mask; lookup should strip it */
-    ASSERT_EQ(nmo_id_sanitizer_register(s, 7, 0x00800021u), NMO_OK);
+    ASSERT_EQ(nmo_id_sanitizer_register(s, 7, NMO_ID_REF_MASK | 0x21u), NMO_OK);
     ASSERT_EQ(nmo_id_file_to_runtime(s, 7), 0x21u);
-    ASSERT_EQ(nmo_id_runtime_to_file(s, 0x00800021u), 7u);
+    ASSERT_EQ(nmo_id_runtime_to_file(s, NMO_ID_REF_MASK | 0x21u), 7u);
 
     nmo_id_sanitizer_destroy(s);
     nmo_arena_destroy(arena);
@@ -110,7 +110,7 @@ TEST(id_sanitizer, tracks_external_negative_ids) {
     ASSERT_EQ(nmo_id_original_external(s, 5), -5);
 
     /* Masked negatives still resolve to the same runtime key */
-    ASSERT_EQ(nmo_id_original_external(s, 0x00800005u), -5);
+    ASSERT_EQ(nmo_id_original_external(s, NMO_ID_REF_MASK | 5u), -5);
 
     /* Non-negative inputs are passed through without tracking */
     ASSERT_EQ(nmo_id_register_external(s, 15), 15);

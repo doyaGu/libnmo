@@ -61,20 +61,30 @@ static nmo_status_t nmo_targetlight_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_targetlight_finish_loading(
+nmo_status_t nmo_targetlight_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_targetlight_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_targetlight_finish_loading");
+                         "Invalid arguments to nmo_targetlight_remap_dependencies");
     }
 
     nmo_targetlight_state_t *state = (nmo_targetlight_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_light_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_light_remap_dependencies(&state->base, NULL, context));
 
     if (state->target_id != 0 && repo &&
         nmo_object_repository_find_by_id(repo, state->target_id) == NULL) {
@@ -89,18 +99,57 @@ nmo_status_t nmo_targetlight_finish_loading(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    targetlight,
-    nmo_targetlight_state_t,
-    nmo_targetlight_serialize,
-    nmo_targetlight_deserialize,
-    nmo_targetlight_finish_loading,
-    nmo_targetlight_fields,
+static nmo_status_t nmo_targetlight_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_targetlight_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_targetlight_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+NMO_DEFINE_OBJECT_STATE_OPS(targetlight, nmo_targetlight_state_t)
+
+nmo_type_vtable_t nmo_targetlight_vtable = {
+    .prepare_dependencies = nmo_targetlight_prepare_dependencies,
+    .remap_dependencies = nmo_targetlight_remap_dependencies,
+    .pre_delete = nmo_targetlight_pre_delete,
+    .post_delete = nmo_targetlight_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_targetlight_create,
+        nmo_targetlight_destroy,
+        nmo_targetlight_serialize,
+        nmo_targetlight_deserialize,
+        nmo_targetlight_copy,
+        nmo_targetlight_validate,
+        nmo_targetlight_equals,
+        nmo_targetlight_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_targetlight_type,
     CKPGUID_TARGETLIGHT,
     "CKTargetLight",
     NMO_CID_TARGETLIGHT,
-    CKPGUID_LIGHT
-)
+    CKPGUID_LIGHT,
+    nmo_targetlight_state_t,
+    &nmo_targetlight_vtable,
+    nmo_targetlight_fields)
 
 static nmo_status_t nmo_targetlight_serialize_internal(
     const nmo_targetlight_state_t *in_state,
@@ -155,4 +204,3 @@ nmo_status_t nmo_targetlight_serialize(
     const nmo_targetlight_state_t *in_state = (const nmo_targetlight_state_t *)instance;
     return nmo_targetlight_serialize_internal(in_state, out_chunk, context);
 }
-

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_parameteroperation_schemas.h
  * @brief CKParameterOperation schema definitions
  */
@@ -52,10 +52,15 @@ NMO_API nmo_status_t nmo_parameteroperation_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_parameteroperation_finish_loading(
+NMO_API nmo_status_t nmo_parameteroperation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_parameteroperation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_parameteroperation_vtable, nmo_register_parameteroperation_type)
 

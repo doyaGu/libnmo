@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_synchro_schemas.h
  * @brief CKSynchroObject/CKStateObject/CKCriticalSectionObject schemas
  */
@@ -59,10 +59,15 @@ NMO_API nmo_status_t nmo_synchro_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_synchro_finish_loading(
+NMO_API nmo_status_t nmo_synchro_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_synchro_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_state_deserialize(
     void *instance,
@@ -76,10 +81,15 @@ NMO_API nmo_status_t nmo_state_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_state_finish_loading(
+NMO_API nmo_status_t nmo_state_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_state_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_criticalsection_deserialize(
     void *instance,
@@ -93,10 +103,15 @@ NMO_API nmo_status_t nmo_criticalsection_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_criticalsection_finish_loading(
+NMO_API nmo_status_t nmo_criticalsection_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_criticalsection_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_synchro_vtable, nmo_register_synchro_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_state_vtable, nmo_register_state_type)

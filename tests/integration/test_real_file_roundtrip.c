@@ -24,17 +24,17 @@ static int file_exists(const char *path) {
     return 1;
 }
 
-static int collect_finish_loading_stats(const nmo_session_t *session,
-                                        const char *path,
-                                        nmo_finish_loading_stats_t *out_stats) {
+static int collect_runtime_load_stats(const nmo_session_t *session,
+                                      const char *path,
+                                      nmo_runtime_load_stats_t *out_stats) {
     if (session == NULL || out_stats == NULL) {
         return 1;
     }
 
     memset(out_stats, 0, sizeof(*out_stats));
-    int stats_result = nmo_session_get_finish_loading_stats(session, out_stats);
+    int stats_result = nmo_session_get_runtime_load_stats(session, out_stats);
     if (stats_result != NMO_OK) {
-        printf("  FAILED: finish_loading stats unavailable for %s (error %d)\n",
+        printf("  FAILED: runtime load stats unavailable for %s (error %d)\n",
                path, stats_result);
         return 1;
     }
@@ -42,9 +42,9 @@ static int collect_finish_loading_stats(const nmo_session_t *session,
     return 0;
 }
 
-static int validate_finish_loading_no_regression(
-    const nmo_finish_loading_stats_t *baseline,
-    const nmo_finish_loading_stats_t *current,
+static int validate_runtime_load_no_regression(
+    const nmo_runtime_load_stats_t *baseline,
+    const nmo_runtime_load_stats_t *current,
     const char *baseline_path,
     const char *current_path) {
     if (baseline == NULL || current == NULL) {
@@ -63,7 +63,7 @@ static int validate_finish_loading_no_regression(
     }
 
     if (failed) {
-        printf("  FAILED: finish_loading regression after round-trip\n");
+        printf("  FAILED: runtime load regression after round-trip\n");
         printf("    baseline=%s\n", baseline_path);
         printf("      unresolved_refs=%u object_errors=%u manager_errors=%u\n",
                baseline->references.unresolved,
@@ -128,8 +128,8 @@ static int test_file_roundtrip(const char* input_file) {
         nmo_context_release(ctx);
         return 1;
     }
-    nmo_finish_loading_stats_t baseline_stats;
-    if (collect_finish_loading_stats(load1_session, input_file, &baseline_stats) != 0) {
+    nmo_runtime_load_stats_t baseline_stats;
+    if (collect_runtime_load_stats(load1_session, input_file, &baseline_stats) != 0) {
         nmo_session_destroy(load1_session);
         nmo_context_release(ctx);
         return 1;
@@ -168,15 +168,15 @@ static int test_file_roundtrip(const char* input_file) {
         remove(temp_file);
         return 1;
     }
-    nmo_finish_loading_stats_t roundtrip_stats;
-    if (collect_finish_loading_stats(load2_session, temp_file, &roundtrip_stats) != 0) {
+    nmo_runtime_load_stats_t roundtrip_stats;
+    if (collect_runtime_load_stats(load2_session, temp_file, &roundtrip_stats) != 0) {
         nmo_session_destroy(load2_session);
         nmo_session_destroy(load1_session);
         nmo_context_release(ctx);
         remove(temp_file);
         return 1;
     }
-    if (validate_finish_loading_no_regression(
+    if (validate_runtime_load_no_regression(
             &baseline_stats, &roundtrip_stats, input_file, temp_file) != 0) {
         nmo_session_destroy(load2_session);
         nmo_session_destroy(load1_session);

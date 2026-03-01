@@ -66,11 +66,11 @@ TEST(load_options, custom_options) {
 
 TEST(load_options, custom_flags) {
     nmo_load_options_t opts = nmo_load_options_default();
-    opts.flags = NMO_LOAD_CHECK_DEPENDENCIES | NMO_LOAD_SKIP_INDEX_BUILD;
+    opts.flags = NMO_LOAD_CHECK_DEPENDENCIES | NMO_LOAD_PRESERVE_SHADOW;
     
     ASSERT_TRUE((opts.flags & NMO_LOAD_CHECK_DEPENDENCIES) != 0);
-    ASSERT_TRUE((opts.flags & NMO_LOAD_SKIP_INDEX_BUILD) != 0);
-    ASSERT_TRUE((opts.flags & NMO_LOAD_SKIP_REFERENCE_RESOLVE) == 0);
+    ASSERT_TRUE((opts.flags & NMO_LOAD_PRESERVE_SHADOW) != 0);
+    ASSERT_TRUE((opts.flags & NMO_LOAD_ONLYBEHAVIORS) == 0);
 }
 
 TEST(load_options, preserve_shadow_enable) {

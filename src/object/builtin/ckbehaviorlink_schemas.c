@@ -240,37 +240,22 @@ nmo_status_t nmo_behaviorlink_serialize(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    behaviorlink,
-    nmo_behaviorlink_state_t,
-    nmo_behaviorlink_serialize,
-    nmo_behaviorlink_deserialize,
-    nmo_behaviorlink_finish_loading,
-    nmo_behaviorlink_fields,
-    CKPGUID_BEHAVIORLINK,
-    "CKBehaviorLink",
-    NMO_CID_BEHAVIORLINK,
-    CKPGUID_OBJECT
-)
-
-nmo_status_t nmo_behaviorlink_finish_loading(
+nmo_status_t nmo_behaviorlink_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_behaviorlink_finish_loading");
+                         "Invalid arguments to nmo_behaviorlink_remap_dependencies");
     }
 
     nmo_behaviorlink_state_t *state = (nmo_behaviorlink_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
     if (repo) {
         if (state->in_io_id != 0 &&
@@ -292,5 +277,84 @@ nmo_status_t nmo_behaviorlink_finish_loading(
 
     NMO_RETURN_OK();
 }
+
+nmo_status_t nmo_behaviorlink_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behaviorlink_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_behaviorlink_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_behaviorlink_pre_delete");
+    }
+
+    nmo_behaviorlink_state_t *state = (nmo_behaviorlink_state_t *)instance;
+    state->in_io_id = 0;
+    state->out_io_id = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_behaviorlink_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS(behaviorlink, nmo_behaviorlink_state_t)
+
+nmo_type_vtable_t nmo_behaviorlink_vtable = {
+    .prepare_dependencies = nmo_behaviorlink_prepare_dependencies,
+    .remap_dependencies = nmo_behaviorlink_remap_dependencies,
+    .pre_delete = nmo_behaviorlink_pre_delete,
+    .post_delete = nmo_behaviorlink_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_behaviorlink_create,
+        nmo_behaviorlink_destroy,
+        nmo_behaviorlink_serialize,
+        nmo_behaviorlink_deserialize,
+        nmo_behaviorlink_copy,
+        nmo_behaviorlink_validate,
+        nmo_behaviorlink_equals,
+        nmo_behaviorlink_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_behaviorlink_type,
+    CKPGUID_BEHAVIORLINK,
+    "CKBehaviorLink",
+    NMO_CID_BEHAVIORLINK,
+    CKPGUID_OBJECT,
+    nmo_behaviorlink_state_t,
+    &nmo_behaviorlink_vtable,
+    nmo_behaviorlink_fields)
+
+
+
+
+
 
 

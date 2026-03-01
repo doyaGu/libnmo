@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_spritetext_schemas.h
  * @brief CKSpriteText schema definitions
  */
@@ -58,10 +58,15 @@ NMO_API nmo_status_t nmo_spritetext_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_spritetext_finish_loading(
+NMO_API nmo_status_t nmo_spritetext_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_spritetext_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_spritetext_vtable, nmo_register_spritetext_type)
 

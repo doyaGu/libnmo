@@ -15,7 +15,7 @@
  * - Object Layer: class IDs, object types, schemas
  * - Type Layer: type system, dynamic types, operation system, builtin operations, string conversion
  * - Session Layer: repository, ID remapping, object system, object index, parser, builder
- * - App Layer: context, session, plugin, comparison, finish loading, inspector, save pipeline, stats
+ * - App Layer: context, session, plugin, comparison, runtime load, inspector, save pipeline, stats
  *
  * Basic usage:
  * @code
@@ -118,13 +118,13 @@
 #include "session/nmo_parser.h"
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
-#include "session/nmo_ref_graph.h"
+#include "session/nmo_runtime_graph.h"
+#include "session/nmo_runtime_kernel.h"
 
 // App layer
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "app/nmo_comparison.h"
-#include "app/nmo_finish_loading.h"
 #include "app/nmo_inspector.h"
 #include "app/nmo_saver.h"
 #include "app/nmo_stats.h"

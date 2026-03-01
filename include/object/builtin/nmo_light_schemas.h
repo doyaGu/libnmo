@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_light_schemas.h
  * @brief CKLight schema definitions header
  * 
@@ -66,10 +66,15 @@ NMO_API nmo_status_t nmo_light_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_light_vtable, nmo_register_light_type)
 
-NMO_API nmo_status_t nmo_light_finish_loading(
+NMO_API nmo_status_t nmo_light_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_light_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

@@ -529,20 +529,22 @@ nmo_status_t nmo_2dentity_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_2dentity_finish_loading(
+nmo_status_t nmo_2dentity_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_2dentity_finish_loading");
+                         "Invalid arguments to nmo_2dentity_remap_dependencies");
     }
 
     nmo_2dentity_state_t *state = (nmo_2dentity_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_renderobject_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_renderobject_remap_dependencies(&state->base, NULL, context));
 
     state->flags &= NMO_CK2DENTITY_FLAGS_MASK;
 
@@ -583,17 +585,73 @@ nmo_status_t nmo_2dentity_finish_loading(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    2dentity,
-    nmo_2dentity_state_t,
-    nmo_2dentity_serialize,
-    nmo_2dentity_deserialize,
-    nmo_2dentity_finish_loading,
-    nmo_2dentity_fields,
+nmo_status_t nmo_2dentity_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_object_default_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_2dentity_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_2dentity_pre_delete");
+    }
+    nmo_2dentity_state_t *state = (nmo_2dentity_state_t *)instance;
+    state->has_parent = false;
+    state->parent_id = 0;
+    state->has_material = false;
+    state->material_id = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_2dentity_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+NMO_DEFINE_OBJECT_STATE_OPS(2dentity, nmo_2dentity_state_t)
+
+nmo_type_vtable_t nmo_2dentity_vtable = {
+    .prepare_dependencies = nmo_2dentity_prepare_dependencies,
+    .remap_dependencies = nmo_2dentity_remap_dependencies,
+    .pre_delete = nmo_2dentity_pre_delete,
+    .post_delete = nmo_2dentity_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_2dentity_create,
+        nmo_2dentity_destroy,
+        nmo_2dentity_serialize,
+        nmo_2dentity_deserialize,
+        nmo_2dentity_copy,
+        nmo_2dentity_validate,
+        nmo_2dentity_equals,
+        nmo_2dentity_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_2dentity_type,
     CKPGUID_2DENTITY,
     "CK2dEntity",
     NMO_CID_2DENTITY,
-    CKPGUID_RENDEROBJECT
-)
+    CKPGUID_RENDEROBJECT,
+    nmo_2dentity_state_t,
+    &nmo_2dentity_vtable,
+    nmo_2dentity_fields)
+
+
+
+
 
 

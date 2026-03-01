@@ -167,20 +167,35 @@ static nmo_status_t nmo_parameteroperation_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_parameteroperation_finish_loading(
+nmo_status_t nmo_parameteroperation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameteroperation_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_parameteroperation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_parameteroperation_finish_loading");
+                         "Invalid arguments to nmo_parameteroperation_remap_dependencies");
     }
 
     nmo_parameteroperation_state_t *state = (nmo_parameteroperation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
     if (state->owner_id != 0 && repo &&
         nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
@@ -226,6 +241,30 @@ nmo_status_t nmo_parameteroperation_finish_loading(
     }
 
     return nmo_parameteroperation_validate(state, NULL, NULL);
+}
+
+static nmo_status_t nmo_parameteroperation_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_parameteroperation_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_parameteroperation_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
 }
 
 nmo_status_t nmo_parameteroperation_serialize(
@@ -316,17 +355,36 @@ nmo_status_t nmo_parameteroperation_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    parameteroperation,
-    nmo_parameteroperation_state_t,
-    nmo_parameteroperation_serialize,
-    nmo_parameteroperation_deserialize,
-    nmo_parameteroperation_finish_loading,
-    nmo_parameteroperation_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(parameteroperation, nmo_parameteroperation_state_t)
+
+nmo_type_vtable_t nmo_parameteroperation_vtable = {
+    .prepare_dependencies = nmo_parameteroperation_prepare_dependencies,
+    .remap_dependencies = nmo_parameteroperation_remap_dependencies,
+    .pre_delete = nmo_parameteroperation_pre_delete,
+    .post_delete = nmo_parameteroperation_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_parameteroperation_create,
+        nmo_parameteroperation_destroy,
+        nmo_parameteroperation_serialize,
+        nmo_parameteroperation_deserialize,
+        nmo_parameteroperation_copy,
+        nmo_parameteroperation_validate,
+        nmo_parameteroperation_equals,
+        nmo_parameteroperation_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_parameteroperation_type,
     CKPGUID_PARAMETEROPERATION,
     "CKParameterOperation",
     NMO_CID_PARAMETEROPERATION,
-    CKPGUID_OBJECT
-)
+    CKPGUID_OBJECT,
+    nmo_parameteroperation_state_t,
+    &nmo_parameteroperation_vtable,
+    nmo_parameteroperation_fields)
+
+
+
+
 
 

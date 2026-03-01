@@ -343,53 +343,12 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     return nmo_type_registry_register(registry, &type_desc); \
 }
 
-/* Same as NMO_DEFINE_OBJECT_REGISTRATION, but attaches an optional finish_loading hook. */
-#define NMO_DEFINE_OBJECT_REGISTRATION_EX(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable, _finish_loading) \
-NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
-    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
-               "NULL type registry"); \
-    nmo_type_descriptor_t type_desc = { \
-        .guid = (_guid), \
-        .name = (_name), \
-        .size = (uint32_t)sizeof(_state_t), \
-        .alignment = (uint32_t)alignof(_state_t), \
-        .class_id = (_class_id), \
-        .base_type = (_base_guid), \
-        .category = NMO_TYPE_CATEGORY_OBJECT_REF, \
-        .flags = NMO_TYPE_FLAG_SERIALIZABLE, \
-        .id = NMO_TYPE_ID_INVALID, \
-        .description = NULL, \
-        .fields = NULL, \
-        .field_count = 0, \
-        .vtable = (_vtable), \
-        .finish_loading = (_finish_loading) \
-    }; \
-    return nmo_type_registry_register(registry, &type_desc); \
-}
+/* Runtime registration helper aliases used by migrated schema files. */
+#define NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable) \
+    NMO_DEFINE_OBJECT_REGISTRATION(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable)
 
-/* Registration with both finish_loading hook and reflection fields */
-#define NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable, _finish_loading, _fields) \
-NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
-    NMO_ENSURE(registry != NULL, NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
-               "NULL type registry"); \
-    nmo_type_descriptor_t type_desc = { \
-        .guid = (_guid), \
-        .name = (_name), \
-        .size = (uint32_t)sizeof(_state_t), \
-        .alignment = (uint32_t)alignof(_state_t), \
-        .class_id = (_class_id), \
-        .base_type = (_base_guid), \
-        .category = NMO_TYPE_CATEGORY_OBJECT_REF, \
-        .flags = NMO_TYPE_FLAG_SERIALIZABLE, \
-        .id = NMO_TYPE_ID_INVALID, \
-        .description = NULL, \
-        .fields = (_fields), \
-        .field_count = sizeof(_fields) / sizeof((_fields)[0]), \
-        .vtable = (_vtable), \
-        .finish_loading = (_finish_loading) \
-    }; \
-    return nmo_type_registry_register(registry, &type_desc); \
-}
+#define NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable, _fields) \
+    NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(_func, _guid, _name, _class_id, _base_guid, _state_t, _vtable, _fields)
 
 /* ============================================================================
  * Schema Declarations
@@ -454,46 +413,6 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                           _base_guid, _state_t, &nmo_##_prefix##_vtable, _fields)
 
-/* Extended schema definition with optional finish_loading hook. */
-#define NMO_DEFINE_OBJECT_SCHEMA_EX(_prefix, _state_t, _serialize, _deserialize, _finish_loading, _guid, _name, _class_id, _base_guid) \
-    NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
-    nmo_type_vtable_t nmo_##_prefix##_vtable = { \
-        NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
-    }; \
-    NMO_DEFINE_OBJECT_REGISTRATION_EX(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
-                                      _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading)
-
-/* Extended schema with finish_loading and reflection fields */
-#define NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(_prefix, _state_t, _serialize, _deserialize, _finish_loading, _fields, _guid, _name, _class_id, _base_guid) \
-    NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
-    nmo_type_vtable_t nmo_##_prefix##_vtable = { \
-        NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
-    }; \
-    NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
-                                             _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading, _fields)
-
-/* Full schema definition with both enumerate_refs and finish_loading */
-#define NMO_DEFINE_OBJECT_SCHEMA_FULL(_prefix, _state_t, _serialize, _deserialize, _enumerate_refs, _finish_loading, _guid, _name, _class_id, _base_guid) \
-    NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
-    nmo_type_vtable_t nmo_##_prefix##_vtable = { \
-        NMO_OBJECT_VTABLE_EX(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash, _enumerate_refs) \
-    }; \
-    NMO_DEFINE_OBJECT_REGISTRATION_EX(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
-                                      _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading)
-
-/* Full schema with enumerate_refs, finish_loading, and reflection fields */
-#define NMO_DEFINE_OBJECT_SCHEMA_FULL_FIELDS(_prefix, _state_t, _serialize, _deserialize, _enumerate_refs, _finish_loading, _fields, _guid, _name, _class_id, _base_guid) \
-    NMO_DEFINE_OBJECT_STATE_OPS(_prefix, _state_t) \
-    nmo_type_vtable_t nmo_##_prefix##_vtable = { \
-        NMO_OBJECT_VTABLE_EX(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash, _enumerate_refs) \
-    }; \
-    NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
-                                             _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading, _fields)
-
 /* ============================================================================
  * Custom Schema Macros (expect _prefix##_copy/_prefix##_validate to be defined)
  * ============================================================================ */
@@ -516,15 +435,6 @@ NMO_API nmo_status_t _func(nmo_type_registry_t *registry) { \
     }; \
     NMO_DEFINE_OBJECT_REGISTRATION_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
                                           _base_guid, _state_t, &nmo_##_prefix##_vtable, _fields)
-
-#define NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(_prefix, _state_t, _serialize, _deserialize, _finish_loading, _fields, _guid, _name, _class_id, _base_guid) \
-    NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(_prefix, _state_t) \
-    nmo_type_vtable_t nmo_##_prefix##_vtable = { \
-        NMO_OBJECT_VTABLE(nmo_##_prefix##_create, nmo_##_prefix##_destroy, _serialize, _deserialize, \
-                          nmo_##_prefix##_copy, nmo_##_prefix##_validate, nmo_##_prefix##_equals, nmo_##_prefix##_hash) \
-    }; \
-    NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(nmo_register_##_prefix##_type, _guid, _name, _class_id, \
-                                             _base_guid, _state_t, &nmo_##_prefix##_vtable, _finish_loading, _fields)
 
 #ifdef __cplusplus
 }

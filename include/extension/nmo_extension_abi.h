@@ -27,6 +27,7 @@ extern "C" {
 
 /* Forward declare nmo_chunk to avoid circular includes */
 typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_runtime_event_ctx nmo_runtime_event_ctx_t;
 
 /* ============================================================================
  * ABI Version Constants
@@ -35,7 +36,7 @@ typedef struct nmo_chunk nmo_chunk_t;
 /**
  * @brief Current ABI version (exact match required)
  */
-#define NMO_EXTENSION_ABI_VERSION 1u
+#define NMO_EXTENSION_ABI_VERSION 3u
 
 /**
  * @brief Default symbol name for extension query function
@@ -137,13 +138,8 @@ typedef struct nmo_extension_manager_desc {
     /** Category for filtering */
     nmo_plugin_category_t category;
 
-    /* Session lifecycle callbacks (all optional) */
-    int (*pre_load)(void *session, void *user_data);
-    int (*post_load)(void *session, void *user_data);
-    int (*load_data)(void *session, const struct nmo_chunk *chunk, void *user_data);
-    struct nmo_chunk *(*save_data)(void *session, void *user_data);
-    int (*pre_save)(void *session, void *user_data);
-    int (*post_save)(void *session, void *user_data);
+    /* Unified runtime event callback (optional). */
+    int (*on_event)(void *session, const nmo_runtime_event_ctx_t *ctx, void *user_data);
 
     /** User data passed to callbacks */
     void *user_data;

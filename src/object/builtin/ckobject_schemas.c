@@ -182,35 +182,60 @@ nmo_status_t nmo_object_serialize(
     NMO_RETURN_OK();
 }
 
-/* =============================================================================
- * FINISH LOADING (Phase 15 - PostLoad equivalent)
- * ============================================================================= */
-
-/**
- * @brief Finish loading CKObject (base implementation)
- * 
- * Base class implementation does nothing. Derived classes override to perform
- * reference resolution and runtime initialization.
- * 
- * @param state Object state (unused in base implementation)
- * @param context Serialization context (unused in base implementation)
- * @return Always NMO_OK
- */
- nmo_status_t nmo_object_finish_loading(
-    void *state,
-    nmo_arena_t *arena,
-    void *repository)
+nmo_status_t nmo_object_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
-    (void)repository;
-    if (!state) {
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_object_finish_loading");
+                         "Invalid arguments to nmo_object_prepare_dependencies");
     }
-
-    nmo_object_state_t *obj_state = (nmo_object_state_t *)state;
-    obj_state->visibility_flags &= (NMO_CKOBJECT_VISIBLE | NMO_CKOBJECT_HIERARCHICAL);
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_object_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_object_remap_dependencies");
+    }
+    nmo_object_state_t *state = (nmo_object_state_t *)instance;
+    state->visibility_flags &= (NMO_CKOBJECT_VISIBLE | NMO_CKOBJECT_HIERARCHICAL);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_object_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_object_pre_delete");
+    }
+    nmo_object_state_t *state = (nmo_object_state_t *)instance;
+    state->visibility_flags &= (NMO_CKOBJECT_VISIBLE | NMO_CKOBJECT_HIERARCHICAL);
+    NMO_RETURN_OK();
+}
+
+static void nmo_object_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
 }
 
 /* ============================================================================
@@ -221,6 +246,10 @@ nmo_status_t nmo_object_serialize(
  * because format/nmo_object.h declares nmo_object_create/nmo_object_destroy.
  */
 nmo_type_vtable_t nmo_object_vtable = {
+    .prepare_dependencies = nmo_object_prepare_dependencies,
+    .remap_dependencies = nmo_object_remap_dependencies,
+    .pre_delete = nmo_object_pre_delete,
+    .post_delete = nmo_object_post_delete,
     NMO_OBJECT_VTABLE(
         nmo_object_schema_create,
         nmo_object_schema_destroy,
@@ -232,7 +261,7 @@ nmo_type_vtable_t nmo_object_vtable = {
         nmo_object_state_hash)
 };
 
-NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     nmo_register_object_type,
     CKPGUID_OBJECT,
     "CKObject",
@@ -240,6 +269,10 @@ NMO_DEFINE_OBJECT_REGISTRATION_EX_FIELDS(
     (nmo_guid_t){0},
     nmo_object_state_t,
     &nmo_object_vtable,
-    nmo_object_finish_loading,
     nmo_object_fields)
+
+
+
+
+
 

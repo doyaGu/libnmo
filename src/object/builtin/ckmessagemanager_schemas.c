@@ -192,17 +192,25 @@ nmo_status_t nmo_messagemanager_serialize(
  * Vtable + registration
  * ============================================================================= */
 
-nmo_status_t nmo_messagemanager_finish_loading(
+nmo_status_t nmo_messagemanager_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
-    (void)repository;
+    return nmo_object_default_validate(instance, type, context);
+}
+
+nmo_status_t nmo_messagemanager_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_messagemanager_finish_loading");
+                         "Invalid arguments to nmo_messagemanager_remap_dependencies");
     }
 
     nmo_messagemanager_state_t *state = (nmo_messagemanager_state_t *)instance;
@@ -226,17 +234,60 @@ nmo_status_t nmo_messagemanager_finish_loading(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS(
-    messagemanager,
-    nmo_messagemanager_state_t,
-    nmo_messagemanager_serialize,
-    nmo_messagemanager_deserialize,
-    nmo_messagemanager_finish_loading,
-    nmo_messagemanager_fields,
+static nmo_status_t nmo_messagemanager_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_messagemanager_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_messagemanager_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+NMO_DEFINE_OBJECT_STATE_OPS(messagemanager, nmo_messagemanager_state_t)
+
+nmo_type_vtable_t nmo_messagemanager_vtable = {
+    .prepare_dependencies = nmo_messagemanager_prepare_dependencies,
+    .remap_dependencies = nmo_messagemanager_remap_dependencies,
+    .pre_delete = nmo_messagemanager_pre_delete,
+    .post_delete = nmo_messagemanager_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_messagemanager_create,
+        nmo_messagemanager_destroy,
+        nmo_messagemanager_serialize,
+        nmo_messagemanager_deserialize,
+        nmo_messagemanager_copy,
+        nmo_messagemanager_validate,
+        nmo_messagemanager_equals,
+        nmo_messagemanager_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_messagemanager_type,
     NMO_MANAGER_GUID_MESSAGE,
     "CKMessageManager",
     0,
-    NMO_GUID_NULL
-)
+    NMO_GUID_NULL,
+    nmo_messagemanager_state_t,
+    &nmo_messagemanager_vtable,
+    nmo_messagemanager_fields)
+
+
+
+
 
 

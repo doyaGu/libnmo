@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_grid_schemas.h
  * @brief CKGrid schema definitions
  */
@@ -52,10 +52,15 @@ NMO_API nmo_status_t nmo_grid_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_grid_finish_loading(
+NMO_API nmo_status_t nmo_grid_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_grid_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_grid_vtable, nmo_register_grid_type)
 

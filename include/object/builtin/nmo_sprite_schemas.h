@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_sprite_schemas.h
  * @brief Public API for CKSprite schema-based serialization
  *
@@ -160,10 +160,15 @@ NMO_API nmo_status_t nmo_sprite_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_sprite_finish_loading(
+NMO_API nmo_status_t nmo_sprite_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_sprite_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_sprite_vtable, nmo_register_sprite_type)
 

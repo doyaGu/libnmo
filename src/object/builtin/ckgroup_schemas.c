@@ -253,24 +253,6 @@ static nmo_status_t nmo_group_validate(
     NMO_RETURN_OK();
 }
 
-/* ============================================================================
- * Vtable + registration
- * ============================================================================ */
-
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    group,
-    nmo_group_state_t,
-    nmo_group_serialize,
-    nmo_group_deserialize,
-    nmo_group_finish_loading,
-    nmo_group_fields,
-    CKPGUID_GROUP,
-    "CKGroup",
-    NMO_CID_GROUP,
-    CKPGUID_BEOBJECT
-)
-
-
 /* =============================================================================
  * CKGroup FINISH LOADING (Phase 15 - PostLoad equivalent)
  * ============================================================================= */
@@ -288,16 +270,17 @@ NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
  * @param repository Object repository for reference resolution (opaque void*)
  * @return Result indicating success or error
  */
-nmo_status_t nmo_group_finish_loading(
+nmo_status_t nmo_group_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_group_finish_loading");
-    }
+    (void)type;
 
-    (void)arena;
+    if (!instance) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_group_remap_dependencies");
+    }
 
     nmo_group_state_t *group_state = (nmo_group_state_t *)instance;
 
@@ -332,8 +315,8 @@ nmo_status_t nmo_group_finish_loading(
 
         referenced_count++;
 
-        if (repository) {
-            nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+        if (context) {
+            nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
             nmo_object_t *obj = nmo_object_repository_find_by_id(repo, obj_id);
             if (obj == NULL) {
                 continue;
@@ -346,10 +329,82 @@ nmo_status_t nmo_group_finish_loading(
     group_state->object_ids.count = kept_count;
 
     if (referenced_count > 0) {
-        nmo_log_debug(NULL, "CKGroup finish_loading: %u referenced members", referenced_count);
+        nmo_log_debug(NULL, "CKGroup remap_dependencies: %u referenced members", referenced_count);
     }
 
     NMO_RETURN_OK();
 }
+
+nmo_status_t nmo_group_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_group_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_group_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_group_pre_delete");
+    }
+
+    nmo_group_state_t *state = (nmo_group_state_t *)instance;
+    state->object_ids.count = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_group_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+/* ============================================================================
+ * Vtable + registration
+ * ============================================================================ */
+
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(group, nmo_group_state_t)
+
+nmo_type_vtable_t nmo_group_vtable = {
+    .prepare_dependencies = nmo_group_prepare_dependencies,
+    .remap_dependencies = nmo_group_remap_dependencies,
+    .pre_delete = nmo_group_pre_delete,
+    .post_delete = nmo_group_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_group_create,
+        nmo_group_destroy,
+        nmo_group_serialize,
+        nmo_group_deserialize,
+        nmo_group_copy,
+        nmo_group_validate,
+        nmo_group_equals,
+        nmo_group_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_group_type,
+    CKPGUID_GROUP,
+    "CKGroup",
+    NMO_CID_GROUP,
+    CKPGUID_BEOBJECT,
+    nmo_group_state_t,
+    &nmo_group_vtable,
+    nmo_group_fields)
+
+
+
+
+
 
 

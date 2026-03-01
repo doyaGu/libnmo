@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_animation_schemas.h
  * @brief CKAnimation, CKKeyedAnimation, CKObjectAnimation schema definitions
  */
@@ -113,10 +113,15 @@ NMO_API nmo_status_t nmo_animation_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_animation_finish_loading(
+NMO_API nmo_status_t nmo_animation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_animation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_keyedanimation_deserialize(
     void *instance,
@@ -130,10 +135,15 @@ NMO_API nmo_status_t nmo_keyedanimation_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_keyedanimation_finish_loading(
+NMO_API nmo_status_t nmo_keyedanimation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_keyedanimation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_API nmo_status_t nmo_objectanimation_deserialize(
     void *instance,
@@ -147,10 +157,15 @@ NMO_API nmo_status_t nmo_objectanimation_serialize(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_objectanimation_finish_loading(
+NMO_API nmo_status_t nmo_objectanimation_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_objectanimation_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_animation_vtable, nmo_register_animation_type)
 NMO_DECLARE_OBJECT_SCHEMA(nmo_keyedanimation_vtable, nmo_register_keyedanimation_type)

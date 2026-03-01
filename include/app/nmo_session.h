@@ -10,6 +10,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena_array.h"
+#include "session/nmo_runtime_kernel.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,7 +21,6 @@ typedef struct nmo_context nmo_context_t;
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
-typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 typedef struct nmo_included_file nmo_included_file_t;
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_plugin_dep nmo_plugin_dep_t;
@@ -105,6 +105,63 @@ NMO_API nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session);
  * @return Object repository
  */
 NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session);
+
+/**
+ * @brief Execute unified runtime operation.
+ */
+NMO_API int nmo_session_execute(
+    nmo_session_t *session,
+    const nmo_runtime_request_t *request,
+    nmo_runtime_report_t *out_report);
+
+/**
+ * @brief Load file into an existing session via runtime execute.
+ */
+NMO_API int nmo_session_load_file(
+    nmo_session_t *session,
+    const char *filename,
+    const nmo_load_options_t *options,
+    nmo_runtime_report_t *out_report);
+
+/**
+ * @brief Save session to file via runtime execute.
+ */
+NMO_API int nmo_session_save_file(
+    nmo_session_t *session,
+    const char *filename,
+    const nmo_save_options_t *options,
+    nmo_runtime_report_t *out_report);
+
+/**
+ * @brief Create object via runtime execute.
+ */
+NMO_API int nmo_session_create_object(
+    nmo_session_t *session,
+    nmo_class_id_t class_id,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_created_id,
+    nmo_runtime_report_t *out_report);
+
+/**
+ * @brief Copy objects via runtime execute.
+ */
+NMO_API int nmo_session_copy_objects(
+    nmo_session_t *session,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_runtime_report_t *out_report);
+
+/**
+ * @brief Destroy objects via runtime execute.
+ */
+NMO_API int nmo_session_destroy_objects(
+    nmo_session_t *session,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_runtime_report_t *out_report);
 
 /**
  * @brief Get chunk pool used for chunk allocations
@@ -269,7 +326,7 @@ NMO_API const nmo_header_t *nmo_session_get_header(const nmo_session_t *session)
 /**
  * @brief Set object index
  *
- * Sets the object index for this session. Used by finish_loading phase.
+ * Sets the object index for this session. Used by runtime load pipeline.
  * If an index is already set, it will be destroyed and replaced.
  *
  * @param session Session
@@ -376,27 +433,7 @@ NMO_API nmo_included_file_t *nmo_session_get_included_files(
     const nmo_session_t *session,
     uint32_t *out_count);
 
-/**
- * @brief Get current reference resolver
- *
- * Returns the resolver instance associated with this session, or NULL if
- * reference resolution has not been initialized yet.
- */
-NMO_API nmo_reference_resolver_t *nmo_session_get_reference_resolver(
-    const nmo_session_t *session);
-
-/**
- * @brief Ensure reference resolver exists
- */
-NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
-    nmo_session_t *session);
-
-/**
- * @brief Reset reference resolver and release its resources
- */
-NMO_API void nmo_session_reset_reference_resolver(nmo_session_t *session);
-
-typedef struct nmo_finish_loading_stats {
+typedef struct nmo_runtime_load_stats {
     size_t total_objects;
     uint32_t flags;
     struct {
@@ -421,18 +458,18 @@ typedef struct nmo_finish_loading_stats {
         uint32_t errors;
     } object_postload;
     uint32_t manager_errors;
-} nmo_finish_loading_stats_t;
+} nmo_runtime_load_stats_t;
 
 /**
- * @brief Store finish-loading diagnostics for later retrieval.
+ * @brief Store runtime load diagnostics for later retrieval.
  */
-NMO_API void nmo_session_set_finish_loading_stats(
+NMO_API void nmo_session_set_runtime_load_stats(
     nmo_session_t *session,
-    const nmo_finish_loading_stats_t *stats);
+    const nmo_runtime_load_stats_t *stats);
 
-NMO_API int nmo_session_get_finish_loading_stats(
+NMO_API int nmo_session_get_runtime_load_stats(
     const nmo_session_t *session,
-    nmo_finish_loading_stats_t *out_stats);
+    nmo_runtime_load_stats_t *out_stats);
 
 typedef struct nmo_session_plugin_dependency_status {
     nmo_guid_t guid;

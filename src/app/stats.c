@@ -7,11 +7,11 @@
 
 #include "app/nmo_stats.h"
 #include "app/nmo_session.h"
+#include "session/nmo_session_internal.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_reference_resolver.h"
 #include "yyjson.h"
 #include <string.h>
 #include <time.h>
@@ -134,8 +134,8 @@ static void collect_reference_stats(
         return;
     }
 
-    nmo_finish_loading_stats_t finish_stats = {0};
-    if (nmo_session_get_finish_loading_stats(session, &finish_stats) == NMO_OK) {
+    nmo_runtime_load_stats_t finish_stats = {0};
+    if (nmo_session_get_runtime_load_stats(session, &finish_stats) == NMO_OK) {
         stats->references.total_references = finish_stats.references.total;
         stats->references.resolved = finish_stats.references.resolved;
         stats->references.unresolved = finish_stats.references.unresolved;

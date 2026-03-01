@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_group_schemas.h
  * @brief Public API for CKGroup schema-based serialization
  *
@@ -67,10 +67,15 @@ NMO_API nmo_status_t nmo_group_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_group_vtable, nmo_register_group_type)
 
-NMO_API nmo_status_t nmo_group_finish_loading(
+NMO_API nmo_status_t nmo_group_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_group_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

@@ -132,21 +132,21 @@ static nmo_status_t nmo_place_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_place_finish_loading(
+nmo_status_t nmo_place_remap_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
-    (void)arena;
+    (void)type;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_place_finish_loading");
+                         "Invalid arguments to nmo_place_remap_dependencies");
     }
 
     nmo_place_state_t *state = (nmo_place_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
-    nmo_status_t result = nmo_beobject_finish_loading(&state->base.base, arena, repository);
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
+    nmo_status_t result = nmo_beobject_remap_dependencies(&state->base.base, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -223,22 +223,76 @@ nmo_status_t nmo_place_finish_loading(
     return nmo_place_validate(state, NULL, NULL);
 }
 
+nmo_status_t nmo_place_prepare_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_place_validate(instance, type, context);
+}
+
+static nmo_status_t nmo_place_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_place_pre_delete");
+    }
+    nmo_place_state_t *state = (nmo_place_state_t *)instance;
+    state->has_camera = 0;
+    state->camera_id = 0;
+    state->has_level = 0;
+    state->level_id = 0;
+    state->portals.count = 0;
+    state->reference_ids.count = 0;
+    NMO_RETURN_OK();
+}
+
+static void nmo_place_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    place,
-    nmo_place_state_t,
-    nmo_place_serialize,
-    nmo_place_deserialize,
-    nmo_place_finish_loading,
-    nmo_place_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(place, nmo_place_state_t)
+
+nmo_type_vtable_t nmo_place_vtable = {
+    .prepare_dependencies = nmo_place_prepare_dependencies,
+    .remap_dependencies = nmo_place_remap_dependencies,
+    .pre_delete = nmo_place_pre_delete,
+    .post_delete = nmo_place_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_place_create,
+        nmo_place_destroy,
+        nmo_place_serialize,
+        nmo_place_deserialize,
+        nmo_place_copy,
+        nmo_place_validate,
+        nmo_place_equals,
+        nmo_place_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_place_type,
     CKPGUID_PLACE,
     "CKPlace",
     NMO_CID_PLACE,
-    CKPGUID_3DENTITY
-)
+    CKPGUID_3DENTITY,
+    nmo_place_state_t,
+    &nmo_place_vtable,
+    nmo_place_fields)
 
 static nmo_status_t nmo_place_serialize_internal(
     const nmo_place_state_t *in_state,
@@ -322,4 +376,8 @@ nmo_status_t nmo_place_serialize(
     const nmo_place_state_t *in_state = (const nmo_place_state_t *)instance;
     return nmo_place_serialize_internal(in_state, out_chunk, context);
 }
+
+
+
+
 

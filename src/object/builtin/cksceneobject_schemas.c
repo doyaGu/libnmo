@@ -155,37 +155,95 @@ static nmo_status_t nmo_sceneobject_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_sceneobject_finish_loading(
+nmo_status_t nmo_sceneobject_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sceneobject_prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_sceneobject_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_sceneobject_finish_loading");
+                         "Invalid arguments to nmo_sceneobject_remap_dependencies");
     }
 
     nmo_sceneobject_state_t *state = (nmo_sceneobject_state_t *)instance;
-    NMO_RETURN_IF_ERROR(nmo_object_finish_loading(&state->base, arena, repository));
+    NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
     return nmo_sceneobject_validate(state, NULL, NULL);
+}
+
+static nmo_status_t nmo_sceneobject_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_sceneobject_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_sceneobject_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
 }
 
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    sceneobject,
-    nmo_sceneobject_state_t,
-    nmo_sceneobject_serialize,
-    nmo_sceneobject_deserialize,
-    nmo_sceneobject_finish_loading,
-    nmo_sceneobject_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(sceneobject, nmo_sceneobject_state_t)
+
+nmo_type_vtable_t nmo_sceneobject_vtable = {
+    .prepare_dependencies = nmo_sceneobject_prepare_dependencies,
+    .remap_dependencies = nmo_sceneobject_remap_dependencies,
+    .pre_delete = nmo_sceneobject_pre_delete,
+    .post_delete = nmo_sceneobject_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_sceneobject_create,
+        nmo_sceneobject_destroy,
+        nmo_sceneobject_serialize,
+        nmo_sceneobject_deserialize,
+        nmo_sceneobject_copy,
+        nmo_sceneobject_validate,
+        nmo_sceneobject_equals,
+        nmo_sceneobject_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_sceneobject_type,
     CKPGUID_SCENEOBJECT,
     "CKSceneObject",
     NMO_CID_SCENEOBJECT,
-    CKPGUID_OBJECT
-)
+    CKPGUID_OBJECT,
+    nmo_sceneobject_state_t,
+    &nmo_sceneobject_vtable,
+    nmo_sceneobject_fields)
+
+
+
+
 
 
 

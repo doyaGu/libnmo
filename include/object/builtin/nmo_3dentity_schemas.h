@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_3dentity_schemas.h
  * @brief CK3dEntity schema definitions header
  */
@@ -75,10 +75,15 @@ NMO_API nmo_status_t nmo_3dentity_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_3dentity_vtable, nmo_register_3dentity_type)
 
-NMO_API nmo_status_t nmo_3dentity_finish_loading(
+NMO_API nmo_status_t nmo_3dentity_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository);
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+NMO_API nmo_status_t nmo_3dentity_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 #ifdef __cplusplus
 }

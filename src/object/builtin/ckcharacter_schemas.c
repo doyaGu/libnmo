@@ -155,20 +155,30 @@ static nmo_status_t nmo_bodypart_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_character_finish_loading(
+nmo_status_t nmo_character_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_character_validate(instance, type, context);
+}
+
+nmo_status_t nmo_character_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_character_finish_loading");
+                         "Invalid arguments to nmo_character_remap_dependencies");
     }
 
     nmo_character_state_t *state = (nmo_character_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    nmo_status_t result = nmo_3dentity_finish_loading(&state->base, arena, repository);
+    nmo_status_t result = nmo_3dentity_remap_dependencies(&state->base, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -298,20 +308,30 @@ nmo_status_t nmo_character_finish_loading(
     return nmo_character_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_bodypart_finish_loading(
+nmo_status_t nmo_bodypart_prepare_dependencies(
     void *instance,
-    nmo_arena_t *arena,
-    void *repository)
+    const nmo_type_descriptor_t *type,
+    void *context)
 {
+    return nmo_bodypart_validate(instance, type, context);
+}
+
+nmo_status_t nmo_bodypart_remap_dependencies(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_bodypart_finish_loading");
+                         "Invalid arguments to nmo_bodypart_remap_dependencies");
     }
 
     nmo_bodypart_state_t *state = (nmo_bodypart_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)repository;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
-    nmo_status_t result = nmo_3dobject_finish_loading(&state->base, arena, repository);
+    nmo_status_t result = nmo_3dobject_remap_dependencies(&state->base, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
@@ -333,36 +353,113 @@ nmo_status_t nmo_bodypart_finish_loading(
     return nmo_bodypart_validate(state, NULL, NULL);
 }
 
+static nmo_status_t nmo_character_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_character_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_character_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+static nmo_status_t nmo_bodypart_pre_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_bodypart_pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+static void nmo_bodypart_post_delete(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
 
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    character,
-    nmo_character_state_t,
-    nmo_character_serialize,
-    nmo_character_deserialize,
-    nmo_character_finish_loading,
-    nmo_character_fields,
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(character, nmo_character_state_t)
+NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(bodypart, nmo_bodypart_state_t)
+
+nmo_type_vtable_t nmo_character_vtable = {
+    .prepare_dependencies = nmo_character_prepare_dependencies,
+    .remap_dependencies = nmo_character_remap_dependencies,
+    .pre_delete = nmo_character_pre_delete,
+    .post_delete = nmo_character_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_character_create,
+        nmo_character_destroy,
+        nmo_character_serialize,
+        nmo_character_deserialize,
+        nmo_character_copy,
+        nmo_character_validate,
+        nmo_character_equals,
+        nmo_character_hash)
+};
+
+nmo_type_vtable_t nmo_bodypart_vtable = {
+    .prepare_dependencies = nmo_bodypart_prepare_dependencies,
+    .remap_dependencies = nmo_bodypart_remap_dependencies,
+    .pre_delete = nmo_bodypart_pre_delete,
+    .post_delete = nmo_bodypart_post_delete,
+    NMO_OBJECT_VTABLE(
+        nmo_bodypart_create,
+        nmo_bodypart_destroy,
+        nmo_bodypart_serialize,
+        nmo_bodypart_deserialize,
+        nmo_bodypart_copy,
+        nmo_bodypart_validate,
+        nmo_bodypart_equals,
+        nmo_bodypart_hash)
+};
+
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_character_type,
     CKPGUID_CHARACTER,
     "CKCharacter",
     NMO_CID_CHARACTER,
-    CKPGUID_3DENTITY
-)
+    CKPGUID_3DENTITY,
+    nmo_character_state_t,
+    &nmo_character_vtable,
+    nmo_character_fields)
 
-NMO_DEFINE_OBJECT_SCHEMA_EX_FIELDS_CUSTOM(
-    bodypart,
-    nmo_bodypart_state_t,
-    nmo_bodypart_serialize,
-    nmo_bodypart_deserialize,
-    nmo_bodypart_finish_loading,
-    nmo_bodypart_fields,
+NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
+    nmo_register_bodypart_type,
     CKPGUID_BODYPART,
     "CKBodyPart",
     NMO_CID_BODYPART,
-    CKPGUID_OBJECT3D
-)
+    CKPGUID_OBJECT3D,
+    nmo_bodypart_state_t,
+    &nmo_bodypart_vtable,
+    nmo_bodypart_fields)
 
 static nmo_status_t write_object_sequence(
     nmo_chunk_t *chunk,
@@ -729,4 +826,3 @@ nmo_status_t nmo_bodypart_serialize(
     const nmo_bodypart_state_t *in_state = (const nmo_bodypart_state_t *)instance;
     return nmo_bodypart_serialize_internal(in_state, out_chunk, context);
 }
-
