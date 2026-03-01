@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file array.c
  * @brief Generic dynamic array implementation with allocator-based memory management
  * 
@@ -6,33 +6,10 @@
  */
 
 #include "core/nmo_array.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_error.h"
 #include <string.h>
 #include <limits.h>
-
-static int nmo_size_mul_overflow(size_t a, size_t b, size_t *out) {
-    if (out == NULL) {
-        return 1;
-    }
-    if (a == 0 || b == 0) {
-        *out = 0;
-        return 0;
-    }
-    if (a > SIZE_MAX / b) {
-        return 1;
-    }
-    *out = a * b;
-    return 0;
-}
-
-static size_t nmo_array_alignment(size_t element_size) {
-    size_t alignment = element_size < sizeof(void*) ? sizeof(void*) : element_size;
-    /* Ensure power of two alignment */
-    if (alignment & (alignment - 1)) {
-        alignment = sizeof(void*);
-    }
-    return alignment;
-}
 
 static void nmo_array_copy_range(nmo_array_t *array,
                                  uint8_t *dest,
@@ -200,10 +177,10 @@ nmo_status_t nmo_array_reserve(nmo_array_t *array, size_t capacity) {
     }
 
     size_t new_size = 0;
-    if (nmo_size_mul_overflow(capacity, array->element_size, &new_size)) {
+    if (!nmo_safe_mul_size(capacity, array->element_size, &new_size)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array byte size overflow");
     }
-    size_t alignment = nmo_array_alignment(array->element_size);
+    size_t alignment = nmo_elem_alignment(array->element_size);
     void *new_data = nmo_alloc(&array->allocator, new_size, alignment);
     if (!new_data) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate array memory");
@@ -489,10 +466,10 @@ nmo_status_t nmo_array_alloc(nmo_array_t *array,
 
     // Allocate memory
     size_t size = 0;
-    if (nmo_size_mul_overflow(count, element_size, &size)) {
+    if (!nmo_safe_mul_size(count, element_size, &size)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array byte size overflow");
     }
-    size_t alignment = nmo_array_alignment(element_size);
+    size_t alignment = nmo_elem_alignment(element_size);
     void *data = nmo_alloc(&array->allocator, size, alignment);
     if (!data) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate array memory");
@@ -629,7 +606,7 @@ nmo_status_t nmo_array_shrink_to_fit(nmo_array_t *array) {
 
     // Reallocate to exact size
     size_t new_size = array->count * array->element_size;
-    size_t alignment = nmo_array_alignment(array->element_size);
+    size_t alignment = nmo_elem_alignment(array->element_size);
     void *new_data = nmo_alloc(&array->allocator, new_size, alignment);
     if (!new_data) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to shrink array");

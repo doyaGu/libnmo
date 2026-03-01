@@ -1,39 +1,14 @@
-﻿/**
+/**
  * @file bit_array.c
  * @brief Packed bitset utilities mirroring Virtools XBitArray behaviour.
  */
 
 #include "core/nmo_bit_array.h"
+#include "core/nmo_utils.h"
 
 #include <string.h>
 
 #define NMO_BITS_PER_WORD 32U
-
-static int nmo_size_add_overflow(size_t a, size_t b, size_t *out) {
-    if (out == NULL) {
-        return 1;
-    }
-    if (a > SIZE_MAX - b) {
-        return 1;
-    }
-    *out = a + b;
-    return 0;
-}
-
-static int nmo_size_mul_overflow(size_t a, size_t b, size_t *out) {
-    if (out == NULL) {
-        return 1;
-    }
-    if (a == 0 || b == 0) {
-        *out = 0;
-        return 0;
-    }
-    if (a > SIZE_MAX / b) {
-        return 1;
-    }
-    *out = a * b;
-    return 0;
-}
 
 static size_t nmo_bit_array_words_for_bits(size_t bits) {
     if (bits == 0) {
@@ -60,11 +35,11 @@ static nmo_status_t nmo_bit_array_grow(nmo_bit_array_t *array, size_t new_word_c
     }
 
     size_t bytes = 0;
-    if (nmo_size_mul_overflow(target, sizeof(uint32_t), &bytes)) {
+    if (!nmo_safe_mul_size(target, sizeof(uint32_t), &bytes)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Bit array size overflow");
     }
     size_t bit_capacity = 0;
-    if (nmo_size_mul_overflow(target, (size_t)NMO_BITS_PER_WORD, &bit_capacity)) {
+    if (!nmo_safe_mul_size(target, (size_t)NMO_BITS_PER_WORD, &bit_capacity)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Bit array capacity overflow");
     }
     uint32_t *words = (uint32_t *) nmo_alloc(&array->alloc, bytes, sizeof(uint32_t));
@@ -93,7 +68,7 @@ static nmo_status_t nmo_bit_array_grow(nmo_bit_array_t *array, size_t new_word_c
 
 static nmo_status_t nmo_bit_array_ensure_index(nmo_bit_array_t *array, size_t index) {
     size_t required_bits = 0;
-    if (nmo_size_add_overflow(index, 1u, &required_bits)) {
+    if (!nmo_safe_add_size(index, 1u, &required_bits)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Bit array index overflow");
     }
     size_t required_words = nmo_bit_array_words_for_bits(required_bits);
@@ -288,7 +263,7 @@ size_t nmo_bit_array_find_nth_unset(nmo_bit_array_t *array, size_t ordinal) {
 
     size_t delta = ordinal - seen;
     size_t target = 0;
-    if (nmo_size_add_overflow(bits, delta, &target)) {
+    if (!nmo_safe_add_size(bits, delta, &target)) {
         return SIZE_MAX;
     }
     nmo_status_t ensure = nmo_bit_array_ensure_index(array, target);

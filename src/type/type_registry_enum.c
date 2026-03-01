@@ -19,6 +19,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hash_table.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 #include <stdalign.h>
 #include <stdint.h>
@@ -99,7 +100,7 @@ static nmo_status_t validate_flags_bits(
         }
         
         /* Validate mask is a power of 2 (single bit) */
-        if (bits[i].mask == 0 || (bits[i].mask & (bits[i].mask - 1)) != 0) {
+        if (!NMO_IS_POWER_OF_TWO(bits[i].mask)) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                     "Flags bit mask must be a power of 2 (got 0x%llx for '%s')",
                                     (unsigned long long)bits[i].mask, bits[i].name);

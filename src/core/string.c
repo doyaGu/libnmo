@@ -1,9 +1,10 @@
-﻿/**
+/**
  * @file string.c
  * @brief Dynamic string implementation mirroring key XString features.
  */
 
 #include "core/nmo_string.h"
+#include "core/nmo_utils.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -13,17 +14,6 @@
 #include <stdlib.h>
 
 #define NMO_STRING_DEFAULT_CAPACITY 16u
-
-static int nmo_size_add_overflow(size_t a, size_t b, size_t *out) {
-    if (out == NULL) {
-        return 1;
-    }
-    if (a > SIZE_MAX - b) {
-        return 1;
-    }
-    *out = a + b;
-    return 0;
-}
 
 static const char *nmo_string_empty_cstr(void) {
     return "";
@@ -315,7 +305,7 @@ nmo_status_t nmo_string_append_len(nmo_string_t *string,
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "data must not be NULL when length > 0");
     }
     size_t new_length = 0;
-    if (nmo_size_add_overflow(nmo_string_length(string), length, &new_length)) {
+    if (!nmo_safe_add_size(nmo_string_length(string), length, &new_length)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
     nmo_status_t prep = nmo_string_prepare_write(string, new_length);
@@ -336,7 +326,7 @@ nmo_status_t nmo_string_append_view(nmo_string_t *string,
 
 nmo_status_t nmo_string_append_char(nmo_string_t *string, char ch) {
     size_t new_length = 0;
-    if (nmo_size_add_overflow(nmo_string_length(string), 1u, &new_length)) {
+    if (!nmo_safe_add_size(nmo_string_length(string), 1u, &new_length)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
     nmo_status_t prep = nmo_string_prepare_write(string, new_length);
@@ -371,7 +361,7 @@ nmo_status_t nmo_string_insert(nmo_string_t *string,
     }
 
     size_t new_length = 0;
-    if (nmo_size_add_overflow(string->length, length, &new_length)) {
+    if (!nmo_safe_add_size(string->length, length, &new_length)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
     nmo_status_t prep = nmo_string_prepare_write(string, new_length);
@@ -428,7 +418,7 @@ nmo_status_t nmo_string_replace(nmo_string_t *string,
     size_t current_span = nmo_string_min_size(length, string->length - index);
     size_t base_length = string->length - current_span;
     size_t updated_length = 0;
-    if (nmo_size_add_overflow(base_length, new_length, &updated_length)) {
+    if (!nmo_safe_add_size(base_length, new_length, &updated_length)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "string length overflow");
     }
 

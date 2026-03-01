@@ -1,9 +1,10 @@
-﻿/**
+/**
  * @file list.c
  * @brief Arena-backed doubly linked list implementation.
  */
 
 #include "core/nmo_list.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_error.h"
 #include "core/nmo_allocator.h"
 #include <stdlib.h>
@@ -26,14 +27,6 @@ struct nmo_list {
     nmo_container_lifecycle_t lifecycle;
 };
 
-static size_t nmo_list_alignment(size_t size) {
-    size_t alignment = size < sizeof(void*) ? sizeof(void*) : size;
-    if (alignment & (alignment - 1)) {
-        alignment = sizeof(void*);
-    }
-    return alignment;
-}
-
 static nmo_list_node_t *nmo_list_acquire_node(nmo_list_t *list) {
     nmo_list_node_t *node = NULL;
     if (list->free_nodes) {
@@ -44,7 +37,7 @@ static nmo_list_node_t *nmo_list_acquire_node(nmo_list_t *list) {
         node = (nmo_list_node_t *)nmo_arena_alloc(
             list->arena,
             alloc_size,
-            nmo_list_alignment(sizeof(nmo_list_node_t)));
+            nmo_elem_alignment(sizeof(nmo_list_node_t)));
     }
     if (node) {
         node->next = NULL;

@@ -16,6 +16,7 @@
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_object_struct_guids.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(patchmesh, nmo_patchmesh_state_t)
@@ -26,17 +27,6 @@ NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(patchmesh, nmo_patchmesh_state_t)
 #define CK_PATCHMESH_MATERIALSUPTODATE 0x00000004u
 #define CK_PATCHMESH_AUTOSMOOTH        0x00000008u
 #endif
-
-static inline uint32_t nmo_patchmesh_read_u32_le(const uint8_t *p) {
-    return (uint32_t)p[0]
-        | ((uint32_t)p[1] << 8)
-        | ((uint32_t)p[2] << 16)
-        | ((uint32_t)p[3] << 24);
-}
-
-static inline int16_t nmo_patchmesh_read_i16_le(const uint8_t *p) {
-    return (int16_t)(p[0] | ((uint16_t)p[1] << 8));
-}
 
 static inline uint32_t nmo_patchmesh_apply_flags(uint32_t flags) {
     flags |= CK_PATCHMESH_BUILDNORMALS;
@@ -72,27 +62,27 @@ static nmo_status_t nmo_patchmesh_convert_legacy_to_data3(
         for (uint32_t i = 0; i < out_state->patch_count; ++i) {
             const uint8_t *rec = raw + (size_t)i * 88u;
             nmo_patchmesh_patch_t *patch = &out_state->patches[i];
-            patch->type = nmo_patchmesh_read_u32_le(rec + 0);
+            patch->type = nmo_read_u32_le(rec + 0);
             patch->smoothing_group = 0xFFFFFFFFu;
             out_state->patch_material_ids[i] = out_state->legacy_default_material_id;
 
             int16_t data16[20] = {0};
-            data16[0] = nmo_patchmesh_read_i16_le(rec + 4);
-            data16[1] = nmo_patchmesh_read_i16_le(rec + 8);
-            data16[2] = nmo_patchmesh_read_i16_le(rec + 12);
-            data16[3] = nmo_patchmesh_read_i16_le(rec + 16);
-            data16[4] = nmo_patchmesh_read_i16_le(rec + 20);
-            data16[5] = nmo_patchmesh_read_i16_le(rec + 24);
-            data16[6] = nmo_patchmesh_read_i16_le(rec + 28);
-            data16[7] = nmo_patchmesh_read_i16_le(rec + 32);
-            data16[8] = nmo_patchmesh_read_i16_le(rec + 36);
-            data16[9] = nmo_patchmesh_read_i16_le(rec + 40);
-            data16[10] = nmo_patchmesh_read_i16_le(rec + 44);
-            data16[11] = nmo_patchmesh_read_i16_le(rec + 48);
-            data16[12] = nmo_patchmesh_read_i16_le(rec + 52);
-            data16[13] = nmo_patchmesh_read_i16_le(rec + 56);
-            data16[14] = nmo_patchmesh_read_i16_le(rec + 60);
-            data16[15] = nmo_patchmesh_read_i16_le(rec + 64);
+            data16[0] = nmo_read_i16_le(rec + 4);
+            data16[1] = nmo_read_i16_le(rec + 8);
+            data16[2] = nmo_read_i16_le(rec + 12);
+            data16[3] = nmo_read_i16_le(rec + 16);
+            data16[4] = nmo_read_i16_le(rec + 20);
+            data16[5] = nmo_read_i16_le(rec + 24);
+            data16[6] = nmo_read_i16_le(rec + 28);
+            data16[7] = nmo_read_i16_le(rec + 32);
+            data16[8] = nmo_read_i16_le(rec + 36);
+            data16[9] = nmo_read_i16_le(rec + 40);
+            data16[10] = nmo_read_i16_le(rec + 44);
+            data16[11] = nmo_read_i16_le(rec + 48);
+            data16[12] = nmo_read_i16_le(rec + 52);
+            data16[13] = nmo_read_i16_le(rec + 56);
+            data16[14] = nmo_read_i16_le(rec + 60);
+            data16[15] = nmo_read_i16_le(rec + 64);
             memcpy(patch->data, data16, sizeof(data16));
         }
     }
@@ -113,12 +103,12 @@ static nmo_status_t nmo_patchmesh_convert_legacy_to_data3(
         for (uint32_t i = 0; i < out_state->edge_count; ++i) {
             const uint8_t *rec = raw + (size_t)i * 24u;
             int16_t edge16[6];
-            edge16[0] = nmo_patchmesh_read_i16_le(rec + 0);
-            edge16[1] = nmo_patchmesh_read_i16_le(rec + 4);
-            edge16[2] = nmo_patchmesh_read_i16_le(rec + 8);
-            edge16[3] = nmo_patchmesh_read_i16_le(rec + 12);
-            edge16[4] = nmo_patchmesh_read_i16_le(rec + 16);
-            edge16[5] = nmo_patchmesh_read_i16_le(rec + 20);
+            edge16[0] = nmo_read_i16_le(rec + 0);
+            edge16[1] = nmo_read_i16_le(rec + 4);
+            edge16[2] = nmo_read_i16_le(rec + 8);
+            edge16[3] = nmo_read_i16_le(rec + 12);
+            edge16[4] = nmo_read_i16_le(rec + 16);
+            edge16[5] = nmo_read_i16_le(rec + 20);
             memcpy(out_state->edge_data + (size_t)i * 12u, edge16, sizeof(edge16));
         }
     }
@@ -153,10 +143,10 @@ static nmo_status_t nmo_patchmesh_convert_legacy_to_data3(
         for (uint32_t i = 0; i < channel->patch_count; ++i) {
             const uint8_t *rec = raw + (size_t)i * 16u;
             int16_t tv[4];
-            tv[0] = nmo_patchmesh_read_i16_le(rec + 0);
-            tv[1] = nmo_patchmesh_read_i16_le(rec + 4);
-            tv[2] = nmo_patchmesh_read_i16_le(rec + 8);
-            tv[3] = nmo_patchmesh_read_i16_le(rec + 12);
+            tv[0] = nmo_read_i16_le(rec + 0);
+            tv[1] = nmo_read_i16_le(rec + 4);
+            tv[2] = nmo_read_i16_le(rec + 8);
+            tv[3] = nmo_read_i16_le(rec + 12);
             memcpy(channel->patches_raw + (size_t)i * 8u, tv, sizeof(tv));
         }
     }

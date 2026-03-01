@@ -3,6 +3,7 @@
 
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
@@ -92,7 +93,7 @@ nmo_status_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     }
 
     size_t total_size_bytes = (size_t) total_size;
-    size_t dwords = (total_size_bytes + 3) / 4;
+    size_t dwords = nmo_bytes_to_dwords(total_size_bytes);
 
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;

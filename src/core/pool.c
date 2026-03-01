@@ -4,6 +4,7 @@
  */
 
 #include "core/nmo_pool.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 
 typedef struct nmo_pool_chunk {
@@ -26,19 +27,11 @@ struct nmo_pool {
     nmo_pool_chunk_t *chunks;
 };
 
-static size_t nmo_pool_align_up(size_t value, size_t alignment) {
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
-        return value;
-    }
-    size_t mask = alignment - 1;
-    return (value + mask) & ~mask;
-}
-
 static size_t nmo_pool_block_stride(size_t block_size) {
     size_t min_size = block_size < sizeof(nmo_pool_free_node_t)
         ? sizeof(nmo_pool_free_node_t)
         : block_size;
-    return nmo_pool_align_up(min_size, sizeof(void *));
+    return nmo_align(min_size, sizeof(void *));
 }
 
 static int nmo_pool_grow(nmo_pool_t *pool, size_t blocks) {
@@ -46,7 +39,7 @@ static int nmo_pool_grow(nmo_pool_t *pool, size_t blocks) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t header_size = nmo_pool_align_up(sizeof(nmo_pool_chunk_t), sizeof(void *));
+    size_t header_size = nmo_align(sizeof(nmo_pool_chunk_t), sizeof(void *));
     if (blocks > SIZE_MAX / pool->block_stride) {
         return NMO_ERR_NOMEM;
     }
@@ -166,7 +159,7 @@ void nmo_pool_reset(nmo_pool_t *pool) {
     pool->in_use = 0;
 
     nmo_pool_chunk_t *chunk = pool->chunks;
-    size_t header_size = nmo_pool_align_up(sizeof(nmo_pool_chunk_t), sizeof(void *));
+    size_t header_size = nmo_align(sizeof(nmo_pool_chunk_t), sizeof(void *));
     while (chunk) {
         uint8_t *block_base = (uint8_t *)chunk + header_size;
         size_t blocks = pool->blocks_per_chunk;

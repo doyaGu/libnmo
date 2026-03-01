@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file type_registry.c
  * @brief Implementation of unified type registry with GUID-based O(1) lookup
  *
@@ -17,6 +17,7 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_bit_array.h"
 #include "core/nmo_debug.h"
+#include "core/nmo_utils.h"
 #include "type/nmo_type_guids.h"
 #include <string.h>
 #include <assert.h>
@@ -511,7 +512,7 @@ static nmo_status_t validate_type_descriptor(
         }
     }
 
-    if (descriptor->alignment != 0 && !nmo_is_power_of_two_u32(descriptor->alignment)) {
+    if (descriptor->alignment != 0 && !NMO_IS_POWER_OF_TWO(descriptor->alignment)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Type alignment must be a power of two");
     }

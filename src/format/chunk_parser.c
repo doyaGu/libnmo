@@ -474,7 +474,7 @@ nmo_status_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
         NMO_PARSER_RETURN_ERROR_ROLLBACK(p, start_pos, NMO_ERR_INVALID_FORMAT, "Array size overflow");
     }
 #endif
-    size_t dword_count = ((size_t)data_size_bytes + 3u) / 4u;
+    size_t dword_count = nmo_bytes_to_dwords((size_t)data_size_bytes);
 
     // Bounds check before allocation
     if (!check_bounds(p, dword_count)) {
@@ -539,7 +539,7 @@ nmo_status_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
     }
 #endif
 
-    size_t dword_count = ((size_t)data_size_bytes + 3u) / 4u;
+    size_t dword_count = nmo_bytes_to_dwords((size_t)data_size_bytes);
     if (!check_bounds(p, dword_count)) {
         NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read array data");
     }

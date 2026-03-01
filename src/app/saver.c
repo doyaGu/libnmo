@@ -25,6 +25,7 @@
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_guid.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
@@ -61,21 +62,9 @@
     (nmo_last_error_setf((code), NMO_SEVERITY_ERROR, __FILE__, __LINE__, "%s", (msg)), \
      (nmo_status_t)(code))
 
-static int save_safe_add_size(size_t a, size_t b, size_t *out) {
-    if (SIZE_MAX - a < b) {
-        return 0;
-    }
-    *out = a + b;
-    return 1;
-}
-
 static nmo_status_t save_txn_write_u32_le(nmo_txn_handle_t *txn, uint32_t value) {
-    uint8_t encoded[4] = {
-        (uint8_t)(value & 0xFFu),
-        (uint8_t)((value >> 8) & 0xFFu),
-        (uint8_t)((value >> 16) & 0xFFu),
-        (uint8_t)((value >> 24) & 0xFFu)
-    };
+    uint8_t encoded[4];
+    nmo_write_u32_le(encoded, value);
     return nmo_txn_write(txn, encoded, sizeof(encoded));
 }
 
@@ -302,12 +291,12 @@ static nmo_status_t save_compute_manager_data_size(nmo_save_context_t *ctx, size
         }
 
         size_t entry_size = 0;
-        if (!save_safe_add_size(8u, 4u, &entry_size) ||
-            !save_safe_add_size(entry_size, chunk_size, &entry_size)) {
+        if (!nmo_safe_add_size(8u, 4u, &entry_size) ||
+            !nmo_safe_add_size(entry_size, chunk_size, &entry_size)) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Manager data size overflow");
         }
 
-        if (!save_safe_add_size(total, entry_size, &total)) {
+        if (!nmo_safe_add_size(total, entry_size, &total)) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Manager data size overflow");
         }
     }
@@ -328,8 +317,8 @@ static nmo_status_t save_fill_file_indices(nmo_save_context_t *ctx,
     NMO_RETURN_IF_ERROR(save_compute_manager_data_size(ctx, &manager_data_size));
 
     size_t offset = 0;
-    if (!save_safe_add_size(header_size, header1_unpack_size, &offset) ||
-        !save_safe_add_size(offset, manager_data_size, &offset)) {
+    if (!nmo_safe_add_size(header_size, header1_unpack_size, &offset) ||
+        !nmo_safe_add_size(offset, manager_data_size, &offset)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "File index base offset overflow");
     }
 
@@ -354,10 +343,10 @@ static nmo_status_t save_fill_file_indices(nmo_save_context_t *ctx,
         if (file_version < 7) {
             size_field_bytes += 4u; /* legacy object_id field */
         }
-        if (!save_safe_add_size(size_field_bytes, chunk_size, &entry_size)) {
+        if (!nmo_safe_add_size(size_field_bytes, chunk_size, &entry_size)) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "File index entry size overflow");
         }
-        if (!save_safe_add_size(offset, entry_size, &offset)) {
+        if (!nmo_safe_add_size(offset, entry_size, &offset)) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "File index overflow");
         }
     }

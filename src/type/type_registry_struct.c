@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file type_registry_struct.c
  * @brief Struct type registration with automatic layout calculation (Phase 6.2 Task 6.2.4)
  * 
@@ -21,6 +21,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdalign.h>
@@ -29,14 +30,6 @@
 /* ============================================================================
  * Helper Functions
  * ============================================================================ */
-
-/**
- * @brief Round up to next multiple of alignment
- */
-static uint32_t align_up(uint32_t offset, uint32_t alignment) {
-    if (alignment == 0) return offset;
-    return (offset + alignment - 1) & ~(alignment - 1);
-}
 
 static void free_heap_type_fields(nmo_allocator_t *allocator, nmo_type_field_t *fields, size_t count) {
     if (!allocator || !fields) {
@@ -58,13 +51,6 @@ static void free_heap_type_fields(nmo_allocator_t *allocator, nmo_type_field_t *
         }
     }
     nmo_free(allocator, fields);
-}
-
-/**
- * @brief Get maximum alignment requirement
- */
-static uint32_t max_alignment(uint32_t a, uint32_t b) {
-    return (a > b) ? a : b;
 }
 
 static const nmo_type_descriptor_t* resolve_field_type(
@@ -177,7 +163,7 @@ nmo_status_t nmo_type_calculate_layout(
                                 "Invalid parameters for layout calculation");
     }
 
-    if (desired_alignment > 0 && !nmo_is_power_of_two_u32(desired_alignment)) {
+    if (desired_alignment > 0 && !NMO_IS_POWER_OF_TWO(desired_alignment)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Struct alignment must be a power of two");
     }
@@ -241,10 +227,10 @@ nmo_status_t nmo_type_calculate_layout(
         uint32_t field_align = packed ? 1 : field_type->alignment;
         
         /* Update maximum alignment */
-        max_align = max_alignment(max_align, field_align);
+        max_align = NMO_MAX(max_align, field_align);
         
         /* Align offset to field alignment */
-        offset = align_up(offset, field_align);
+        offset = (uint32_t)nmo_align((size_t)(offset), (size_t)(field_align));
         
         /* Store field info for later use in registration */
         field->type_guid = field_type_guid;
@@ -259,7 +245,7 @@ nmo_status_t nmo_type_calculate_layout(
     }
     
     /* Align total size to struct alignment */
-    uint32_t total_size = align_up(offset, max_align);
+    uint32_t total_size = (uint32_t)nmo_align((size_t)(offset), (size_t)(max_align));
     
     if (out_total_size) {
         *out_total_size = total_size;
@@ -422,7 +408,7 @@ nmo_status_t nmo_type_registry_register_struct(
         }
         
         uint32_t field_align = struct_def->packed ? 1 : field_type->alignment;
-        offset = align_up(offset, field_align);
+        offset = (uint32_t)nmo_align((size_t)(offset), (size_t)(field_align));
         
         field_desc->type_guid = field_type_guid;
         field_desc->offset = offset;
@@ -879,7 +865,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
         }
         
         uint32_t field_align = field_type->alignment;
-        offset = align_up(offset, field_align);
+        offset = (uint32_t)nmo_align((size_t)(offset), (size_t)(field_align));
         
         field_desc->name = field_def->name;
         field_desc->type_guid = field_type_guid;
@@ -1118,7 +1104,7 @@ nmo_status_t nmo_type_registry_register_union(
                                 "Union must have at least one field");
     }
 
-    if (union_def->alignment > 0 && !nmo_is_power_of_two_u32(union_def->alignment)) {
+    if (union_def->alignment > 0 && !NMO_IS_POWER_OF_TWO(union_def->alignment)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Union alignment must be a power of two");
     }
@@ -1185,7 +1171,7 @@ nmo_status_t nmo_type_registry_register_union(
         }
 
         uint32_t field_align = union_def->packed ? 1 : field_type->alignment;
-        max_align = max_alignment(max_align, field_align);
+        max_align = NMO_MAX(max_align, field_align);
         if (total_field_size > max_size) {
             max_size = total_field_size;
         }
@@ -1197,7 +1183,7 @@ nmo_status_t nmo_type_registry_register_union(
         max_align = union_def->alignment;
     }
 
-    uint32_t total_size = align_up(max_size, max_align);
+    uint32_t total_size = (uint32_t)nmo_align((size_t)(max_size), (size_t)(max_align));
 
     /* Allocate union descriptors array */
     nmo_struct_descriptor_t *union_fields = (nmo_struct_descriptor_t*)

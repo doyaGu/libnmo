@@ -1,9 +1,10 @@
-﻿/**
+/**
  * @file hash_table.c
  * @brief Generic hash table implementation with linear probing
  */
 
 #include "core/nmo_hash_table.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_error.h"
 #include <string.h>
 #include <stddef.h>
@@ -34,15 +35,6 @@ struct nmo_hash_table {
 
 static int nmo_hash_table_default_compare(const void *a, const void *b, size_t size) {
     return memcmp(a, b, size);
-}
-
-static size_t nmo_hash_table_alignment(size_t element_size) {
-    size_t alignment = element_size < sizeof(void*) ? sizeof(void*) : element_size;
-    /* Clamp to nearest power of two */
-    if (alignment & (alignment - 1)) {
-        alignment = sizeof(void*);
-    }
-    return alignment;
 }
 
 static void nmo_hash_table_copy_key(const nmo_hash_table_t *table, void *dest, const void *src) {
@@ -96,9 +88,9 @@ static int nmo_hash_table_allocate_storage(nmo_hash_table_t *table, size_t capac
         capacity * sizeof(uint8_t),
         1);
     uint8_t *keys = (uint8_t *)nmo_alloc(&table->allocator, key_bytes,
-        nmo_hash_table_alignment(table->key_size));
+        nmo_elem_alignment(table->key_size));
     uint8_t *values = (uint8_t *)nmo_alloc(&table->allocator, value_bytes,
-        nmo_hash_table_alignment(table->value_size));
+        nmo_elem_alignment(table->value_size));
 
     if (states == NULL || keys == NULL || values == NULL) {
         if (states != NULL) {
@@ -243,7 +235,7 @@ nmo_hash_table_t *nmo_hash_table_create(
     nmo_hash_table_t *table = (nmo_hash_table_t *)nmo_alloc(
         &effective_allocator,
         sizeof(nmo_hash_table_t),
-        nmo_hash_table_alignment(sizeof(nmo_hash_table_t)));
+        nmo_elem_alignment(sizeof(nmo_hash_table_t)));
     if (table == NULL) {
         return NULL;
     }

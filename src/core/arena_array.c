@@ -7,44 +7,17 @@
 
 #include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
+#include "core/nmo_utils.h"
 #include <stddef.h>
 #include <stdalign.h>
 #include <string.h>
 #include <limits.h>
 
-#define NMO_ARENA_ARRAY_MAX_ALIGNMENT 16u
-
-static size_t nmo_array_alignment(size_t element_size) {
-    (void)element_size;
-
-    /*
-     * We only know element *size*, not element *alignment*.
-     * Using max_align_t is the safest portable default for generic storage.
-     */
-    size_t alignment = (size_t)alignof(max_align_t);
-    if (alignment > NMO_ARENA_ARRAY_MAX_ALIGNMENT) {
-        alignment = NMO_ARENA_ARRAY_MAX_ALIGNMENT;
-    }
-    if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
-        alignment = sizeof(void *);
-    }
-    return alignment;
-}
-
-static int nmo_size_mul_overflow(size_t a, size_t b, size_t *out) {
-    if (out == NULL) {
-        return 1;
-    }
-    if (a == 0 || b == 0) {
-        *out = 0;
-        return 0;
-    }
-    if (a > SIZE_MAX / b) {
-        return 1;
-    }
-    *out = a * b;
-    return 0;
-}
+/* Conservative alignment: use max fundamental type alignment, capped to avoid
+ * wasting too much space in small arenas.  We do NOT scale with element_size
+ * because we only know the size, not the required type alignment. */
+#define NMO_ARENA_ARRAY_ALIGN ((size_t)( \
+    alignof(max_align_t) > 16u ? 16u : alignof(max_align_t)))
 
 static void nmo_arena_array_copy_range(nmo_arena_array_t *array,
                                        uint8_t *dest,
@@ -214,11 +187,11 @@ nmo_status_t nmo_arena_array_reserve(nmo_arena_array_t *array, size_t capacity) 
     }
 
     size_t new_size = 0;
-    if (nmo_size_mul_overflow(capacity, array->element_size, &new_size)) {
+    if (!nmo_safe_mul_size(capacity, array->element_size, &new_size)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array byte size overflow");
     }
 
-    size_t alignment = nmo_array_alignment(array->element_size);
+    size_t alignment = NMO_ARENA_ARRAY_ALIGN;
     void *new_data = nmo_arena_alloc(array->arena, new_size, alignment);
     if (!new_data) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate array memory");
@@ -499,10 +472,10 @@ nmo_status_t nmo_arena_array_alloc(nmo_arena_array_t *array,
 
     // Allocate memory
     size_t size = 0;
-    if (nmo_size_mul_overflow(count, element_size, &size)) {
+    if (!nmo_safe_mul_size(count, element_size, &size)) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "array byte size overflow");
     }
-    size_t alignment = nmo_array_alignment(element_size);
+    size_t alignment = NMO_ARENA_ARRAY_ALIGN;
     void *data = nmo_arena_alloc(arena, size, alignment);
     if (!data) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate array memory");

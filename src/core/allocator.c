@@ -1,20 +1,11 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_debug.h"
+#include "core/nmo_utils.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdalign.h>
-
-static int nmo_is_power_of_two(size_t value) {
-    return value != 0 && (value & (value - 1)) == 0;
-}
-
-#if !defined(_WIN32) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-static size_t nmo_align_up(size_t value, size_t alignment) {
-    return (value + (alignment - 1)) & ~(alignment - 1);
-}
-#endif
 
 // Default allocator using malloc/free
 static void *default_alloc(void *user_data, size_t size, size_t alignment) {
@@ -28,7 +19,7 @@ static void *default_alloc(void *user_data, size_t size, size_t alignment) {
         alignment = alignof(max_align_t);
     }
 
-    if (!nmo_is_power_of_two(alignment)) {
+    if (!NMO_IS_POWER_OF_TWO(alignment)) {
         return NULL;
     }
 
@@ -48,7 +39,7 @@ static void *default_alloc(void *user_data, size_t size, size_t alignment) {
 
     // For larger alignments, use aligned_alloc or posix_memalign
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-    size_t aligned_size = nmo_align_up(size, alignment);
+    size_t aligned_size = nmo_align(size, alignment);
     if (aligned_size < size) {
         return NULL;
     }
@@ -105,7 +96,7 @@ void *nmo_alloc(nmo_allocator_t *allocator, size_t size, size_t alignment) {
     if (alignment == 0) {
         alignment = alignof(max_align_t);
     }
-    if (!nmo_is_power_of_two(alignment)) {
+    if (!NMO_IS_POWER_OF_TWO(alignment)) {
         return NULL;
     }
     return allocator->alloc(allocator->user_data, size, alignment);
@@ -144,7 +135,7 @@ static void *tracking_alloc(void *user_data, size_t size, size_t alignment) {
         alignment = alignof(max_align_t);
     }
 
-    if (!nmo_is_power_of_two(alignment)) {
+    if (!NMO_IS_POWER_OF_TWO(alignment)) {
         return NULL;
     }
 
@@ -223,7 +214,7 @@ static void *debug_alloc(void *user_data, size_t size, size_t alignment) {
         alignment = alignof(max_align_t);
     }
 
-    if (!nmo_is_power_of_two(alignment)) {
+    if (!NMO_IS_POWER_OF_TWO(alignment)) {
         return NULL;
     }
 

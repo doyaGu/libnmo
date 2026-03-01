@@ -1,9 +1,10 @@
-﻿/**
+/**
  * @file indexed_map.c
  * @brief Generic indexed map implementation (hash table + dense array)
  */
 
 #include "core/nmo_indexed_map.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include <string.h>
@@ -54,14 +55,6 @@ static size_t indexed_map_hash_default(const void *data, size_t size) {
 
 static int indexed_map_default_compare(const void *a, const void *b, size_t size) {
     return memcmp(a, b, size);
-}
-
-static size_t indexed_map_alignment(size_t size) {
-    size_t alignment = size < sizeof(void*) ? sizeof(void*) : size;
-    if (alignment & (alignment - 1)) {
-        alignment = sizeof(void*);
-    }
-    return alignment;
 }
 
 static void indexed_map_copy_key(const nmo_indexed_map_t *map, void *dest, const void *src) {
@@ -139,7 +132,7 @@ static int indexed_map_allocate_hash(nmo_indexed_map_t *map, size_t capacity) {
         1);
     size_t *indices = (size_t *)nmo_alloc(&map->hash_allocator,
         capacity * sizeof(size_t),
-        indexed_map_alignment(sizeof(size_t)));
+        nmo_elem_alignment(sizeof(size_t)));
     if (states == NULL || indices == NULL) {
         if (states != NULL) {
             nmo_free(&map->hash_allocator, states);
@@ -172,9 +165,9 @@ static int indexed_map_allocate_dense(nmo_indexed_map_t *map, size_t capacity) {
     size_t key_bytes = capacity * map->key_size;
     size_t value_bytes = capacity * map->value_size;
     uint8_t *keys = (uint8_t *)nmo_arena_alloc(map->arena, key_bytes,
-        indexed_map_alignment(map->key_size));
+        nmo_elem_alignment(map->key_size));
     uint8_t *values = (uint8_t *)nmo_arena_alloc(map->arena, value_bytes,
-        indexed_map_alignment(map->value_size));
+        nmo_elem_alignment(map->value_size));
 
     if (keys == NULL || values == NULL) {
         return NMO_ERR_NOMEM;
@@ -304,7 +297,7 @@ nmo_indexed_map_t *nmo_indexed_map_create(
     }
 
     nmo_indexed_map_t *map = (nmo_indexed_map_t *)nmo_arena_alloc(
-        arena_to_use, sizeof(nmo_indexed_map_t), indexed_map_alignment(sizeof(nmo_indexed_map_t)));
+        arena_to_use, sizeof(nmo_indexed_map_t), nmo_elem_alignment(sizeof(nmo_indexed_map_t)));
     if (map == NULL) {
         if (owns_arena) {
             nmo_arena_destroy(arena_to_use);

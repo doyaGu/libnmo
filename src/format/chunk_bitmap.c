@@ -1,5 +1,6 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_image_codec.h"
+#include "core/nmo_utils.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -26,7 +27,7 @@ static nmo_status_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t dwords = (size + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(size);
     NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
         return make_error(NMO_ERR_EOF, "Insufficient chunk data");
     });
@@ -68,7 +69,7 @@ static nmo_status_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t dwords = (size + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(size);
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         return make_error(NMO_ERR_EOF, label ? label : "Insufficient chunk data");
@@ -250,7 +251,7 @@ static nmo_status_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t dwords = (total_size + 3u) / 4u;
+    size_t dwords = nmo_bytes_to_dwords(total_size);
     nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 

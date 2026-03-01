@@ -1,6 +1,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_debug.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
@@ -28,10 +29,6 @@ static size_t safe_size_multiply_float(size_t base, float factor, size_t max_siz
         return max_size;
     }
     return (size_t)result;
-}
-
-static int nmo_arena_is_power_of_two(size_t value) {
-    return value != 0 && (value & (value - 1)) == 0;
 }
 
 // Arena chunk
@@ -122,7 +119,7 @@ nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_con
         !isfinite(cfg.growth_factor)) {
         cfg.growth_factor = NMO_ARENA_DEFAULT_GROWTH_FACTOR;
     }
-    if (cfg.alignment == 0 || !nmo_arena_is_power_of_two(cfg.alignment) || cfg.alignment > NMO_ARENA_ALIGNMENT) {
+    if (cfg.alignment == 0 || !NMO_IS_POWER_OF_TWO(cfg.alignment) || cfg.alignment > NMO_ARENA_ALIGNMENT) {
         cfg.alignment = NMO_ARENA_ALIGNMENT;
     }
     
@@ -182,7 +179,7 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment) {
         return NULL;
     }
 
-    if (!nmo_arena_is_power_of_two(alignment)) {
+    if (!NMO_IS_POWER_OF_TWO(alignment)) {
         return NULL;
     }
 

@@ -11,6 +11,7 @@
 #include "type/nmo_type_guids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_logger.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -690,7 +691,7 @@ nmo_status_t nmo_parse_flags_string(
         }
         
         /* Check if power of 2 (only one bit set) */
-        if (value > 0 && (value & (value - 1)) != 0) {
+        if (value > 0 && !NMO_IS_POWER_OF_TWO(value)) {
             /* Not a power of 2 - this is a warning, not an error */
             /* Flags can have combined values like ALL=0xFF */
         }

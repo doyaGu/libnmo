@@ -1,9 +1,10 @@
-﻿/**
+/**
  * @file hash_set.c
  * @brief Generic hash set implementation with linear probing.
  */
 
 #include "core/nmo_hash_set.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include <string.h>
@@ -32,14 +33,6 @@ struct nmo_hash_set {
 
 static int nmo_hash_set_default_compare(const void *a, const void *b, size_t size) {
     return memcmp(a, b, size);
-}
-
-static size_t nmo_hash_set_alignment(size_t size) {
-    size_t alignment = size < sizeof(void*) ? sizeof(void*) : size;
-    if (alignment & (alignment - 1)) {
-        alignment = sizeof(void*);
-    }
-    return alignment;
 }
 
 static void nmo_hash_set_copy_key(nmo_hash_set_t *set, void *dest, const void *src) {
@@ -81,7 +74,7 @@ static int nmo_hash_set_allocate_storage(nmo_hash_set_t *set, size_t capacity) {
         capacity * sizeof(uint8_t),
         1);
     uint8_t *keys = (uint8_t *)nmo_alloc(&set->allocator, key_bytes,
-        nmo_hash_set_alignment(set->key_size));
+        nmo_elem_alignment(set->key_size));
 
     if (states == NULL || keys == NULL) {
         if (states != NULL) {
@@ -191,7 +184,7 @@ nmo_hash_set_t *nmo_hash_set_create(const nmo_allocator_t *allocator,
     nmo_hash_set_t *set = (nmo_hash_set_t *)nmo_alloc(
         &effective_allocator,
         sizeof(nmo_hash_set_t),
-        nmo_hash_set_alignment(sizeof(nmo_hash_set_t)));
+        nmo_elem_alignment(sizeof(nmo_hash_set_t)));
     if (!set) {
         return NULL;
     }

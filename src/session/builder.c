@@ -11,6 +11,7 @@
 #include "object/nmo_class_ids.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "core/nmo_error.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
@@ -136,14 +137,6 @@ static void builder_set_error(nmo_builder_t *builder, const char *fmt, ...) {
     va_end(args);
 }
 
-static int builder_safe_add_size(size_t a, size_t b, size_t *out) {
-    if (SIZE_MAX - a < b) {
-        return 0;
-    }
-    *out = a + b;
-    return 1;
-}
-
 static nmo_status_t builder_build_header1(nmo_builder_t *builder) {
     if (builder == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid builder");
@@ -203,7 +196,7 @@ static nmo_status_t builder_build_header1(nmo_builder_t *builder) {
     uint32_t file_version = builder->file_version ? builder->file_version : BUILDER_DEFAULT_FILE_VERSION;
     size_t header_size = (file_version >= 5u) ? 64u : 32u;
     size_t offset = 0;
-    if (!builder_safe_add_size(header_size, builder->header1_unpack_size, &offset)) {
+    if (!nmo_safe_add_size(header_size, builder->header1_unpack_size, &offset)) {
         builder_set_error(builder, "Header1 size overflow");
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Header1 size overflow");
     }
@@ -224,8 +217,8 @@ static nmo_status_t builder_build_header1(nmo_builder_t *builder) {
         builder->obj_descs[i].file_index = (nmo_object_id_t)offset;
 
         size_t advance = 0;
-        if (!builder_safe_add_size(entry_size, chunk_size, &advance) ||
-            !builder_safe_add_size(offset, advance, &offset)) {
+        if (!nmo_safe_add_size(entry_size, chunk_size, &advance) ||
+            !nmo_safe_add_size(offset, advance, &offset)) {
             builder_set_error(builder, "File index size overflow");
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "File index size overflow");
         }

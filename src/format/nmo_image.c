@@ -4,6 +4,7 @@
  */
 
 #include "format/nmo_image.h"
+#include "core/nmo_utils.h"
 
 #include <limits.h>
 #include <string.h>
@@ -114,7 +115,7 @@ int32_t nmo_image_calc_bytes_per_line(int32_t width,
 
     int64_t bits = (int64_t)width * (int64_t)bits_per_pixel;
     int64_t bytes = (bits + 7) / 8;
-    bytes = (bytes + 3) & ~3;
+    bytes = (int64_t)nmo_align_dword((size_t)bytes);
     if (bytes > INT32_MAX) {
         return 0;
     }

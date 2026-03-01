@@ -40,6 +40,7 @@ static inline size_t nmo_align_dword(size_t bytes) {
  * @return Size rounded up to alignment boundary
  */
 static inline size_t nmo_align(size_t size, size_t alignment) {
+    if (alignment == 0) return size;
     return (size + alignment - 1u) & ~(alignment - 1u);
 }
 
@@ -50,6 +51,28 @@ static inline size_t nmo_align(size_t size, size_t alignment) {
  */
 static inline size_t nmo_bytes_to_dwords(size_t bytes) {
     return (bytes + 3u) / 4u;
+}
+
+/**
+ * @brief Check if a value is a power of two (works for any integer type).
+ * @param v Value to check (must be unsigned or positive)
+ * @return Non-zero if v is a power of two, zero otherwise
+ */
+#define NMO_IS_POWER_OF_TWO(v) ((v) != 0 && ((v) & ((v) - 1)) == 0)
+
+/**
+ * @brief Compute natural allocation alignment for a given element size.
+ *
+ * Returns at least sizeof(void*). Falls back to sizeof(void*) when the
+ * element size is not itself a power of two (e.g. odd structs).
+ *
+ * @param elem_size Element size in bytes
+ * @return Alignment to use (always a power of two, >= sizeof(void*))
+ */
+static inline size_t nmo_elem_alignment(size_t elem_size) {
+    size_t a = elem_size < sizeof(void *) ? sizeof(void *) : elem_size;
+    if (!NMO_IS_POWER_OF_TWO(a)) a = sizeof(void *);  /* clamp non-power-of-two */
+    return a;
 }
 
 /* ========================================================================
@@ -164,6 +187,13 @@ static inline void nmo_swap_16bit_words(void *data, size_t word_count) {
 static inline uint16_t nmo_read_u16_le(const uint8_t *data) {
     return (uint16_t)data[0] |
            ((uint16_t)data[1] << 8);
+}
+
+/**
+ * @brief Read int16_t from little-endian byte buffer (signed reinterpretation)
+ */
+static inline int16_t nmo_read_i16_le(const uint8_t *data) {
+    return (int16_t)nmo_read_u16_le(data);
 }
 
 /**
@@ -282,6 +312,37 @@ static inline int nmo_check_buffer_bounds(size_t pos, size_t needed, size_t tota
                 (size_t)(pos), (size_t)(needed), (size_t)(size)));          \
         }                                                                     \
     } while (0)
+
+/* ========================================================================
+ * Overflow-Safe Arithmetic
+ * ======================================================================== */
+
+/**
+ * @brief Multiply two size_t values, checking for overflow.
+ * @param a First operand.
+ * @param b Second operand.
+ * @param out Receives a * b on success.
+ * @return 1 on success, 0 on overflow.
+ */
+static inline int nmo_safe_mul_size(size_t a, size_t b, size_t *out) {
+    if (a == 0 || b == 0) { *out = 0; return 1; }
+    if (a > SIZE_MAX / b) return 0;
+    *out = a * b;
+    return 1;
+}
+
+/**
+ * @brief Add two size_t values, checking for overflow.
+ * @param a First operand.
+ * @param b Second operand.
+ * @param out Receives a + b on success.
+ * @return 1 on success, 0 on overflow.
+ */
+static inline int nmo_safe_add_size(size_t a, size_t b, size_t *out) {
+    if (a > SIZE_MAX - b) return 0;
+    *out = a + b;
+    return 1;
+}
 
 /* ========================================================================
  * Memory Utilities

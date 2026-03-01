@@ -160,11 +160,6 @@ NMO_API void nmo_free(nmo_allocator_t *allocator, void *ptr);
  */
 NMO_API char *nmo_strdup(nmo_allocator_t *alloc, const char *src);
 
-/* Internal utility: Check if a 32-bit value is a power of two */
-static inline int nmo_is_power_of_two_u32(uint32_t v) {
-    return v != 0u && (v & (v - 1u)) == 0u;
-}
-
 #ifdef __cplusplus
 }
 #endif

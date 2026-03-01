@@ -11,26 +11,6 @@
 #include <stdlib.h>
 #include <limits.h>
 
-static int nmo_safe_mul_size(size_t a, size_t b, size_t *out) {
-    if (a == 0 || b == 0) {
-        *out = 0;
-        return 1;
-    }
-    if (a > (SIZE_MAX / b)) {
-        return 0;
-    }
-    *out = a * b;
-    return 1;
-}
-
-static int nmo_safe_add_size(size_t a, size_t b, size_t *out) {
-    if (a > (SIZE_MAX - b)) {
-        return 0;
-    }
-    *out = a + b;
-    return 1;
-}
-
 /* Helper macros for safe buffer reading */
 #define CHECK_BUFFER_SIZE(pos, needed, size) \
     do { \
