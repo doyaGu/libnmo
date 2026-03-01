@@ -132,7 +132,43 @@ TEST(chunk_legacy_bitmap, bmp_forces_opaque_alpha) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_legacy_bitmap, truncated_payload_keeps_position) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 256 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_int(chunk, 9); /* 5-byte signature + 4-byte payload */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_int(chunk, 9);
+    ASSERT_EQ(result, NMO_OK);
+
+    /* Provide only 8 bytes; legacy reader expects 9 and should fail atomically. */
+    result = nmo_chunk_write_dword(chunk, 0x504B434Bu);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x00000000u);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_image_desc_t decoded;
+    uint8_t *decoded_pixels = NULL;
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_NULL(decoded_pixels);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_legacy_bitmap, png_roundtrip);
     REGISTER_TEST(chunk_legacy_bitmap, bmp_forces_opaque_alpha);
+    REGISTER_TEST(chunk_legacy_bitmap, truncated_payload_keeps_position);
 TEST_MAIN_END()

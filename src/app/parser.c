@@ -61,18 +61,6 @@ static const char *nmo_plugin_category_label(uint32_t category) {
 }
 
 /**
- * @brief Format GUID to short string for logging
- */
-static void nmo_format_guid_short(nmo_guid_t guid, char *buffer, size_t buffer_size) {
-    if (buffer == NULL || buffer_size == 0) {
-        return;
-    }
-    if (nmo_guid_format(guid, buffer, buffer_size) <= 0) {
-        buffer[0] = '\0';
-    }
-}
-
-/**
  * @brief Register included file with metadata only (for Header1 metadata entries)
  */
 static int nmo_register_included_metadata(
@@ -103,9 +91,25 @@ static int nmo_shadow_buffer_append(nmo_arena_t *arena,
         return NMO_OK;
     }
 
-    if (*size + data_size > *capacity) {
+    const size_t max_size = (size_t)-1;
+    if (*size > max_size - data_size) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    size_t required = *size + data_size;
+
+    if (required > *capacity) {
         size_t new_capacity = (*capacity != 0) ? (*capacity * 2) : 256;
-        while (new_capacity < *size + data_size) {
+
+        if (*capacity != 0 && new_capacity < *capacity) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+
+        while (new_capacity < required) {
+            if (new_capacity > (max_size / 2)) {
+                new_capacity = required;
+                break;
+            }
             new_capacity *= 2;
         }
 
@@ -585,7 +589,7 @@ static int nmo_load_file_with_io(
         for (size_t i = 0; i < diag->entry_count; i++) {
             const nmo_session_plugin_dependency_status_t *entry = &diag->entries[i];
             char guid_buffer[32];
-            nmo_format_guid_short(entry->guid, guid_buffer, sizeof(guid_buffer));
+            nmo_guid_format(entry->guid, guid_buffer, sizeof(guid_buffer));
 
             if (entry->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
                 nmo_log(logger, NMO_LOG_WARN,
@@ -850,7 +854,7 @@ static int nmo_load_file_with_io(
             for (uint32_t i = 0; i < data_sect.manager_count; i++) {
                 nmo_manager_data_t *mgr_data = &data_sect.managers[i];
                 char guid_buffer[64];
-                nmo_format_guid_short(mgr_data->guid, guid_buffer, sizeof(guid_buffer));
+                nmo_guid_format(mgr_data->guid, guid_buffer, sizeof(guid_buffer));
 
                 nmo_manager_t *manager = (nmo_manager_t *) nmo_manager_registry_find_by_guid(
                     manager_reg,

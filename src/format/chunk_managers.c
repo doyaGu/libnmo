@@ -6,14 +6,6 @@
 #include <string.h>
 
 // =============================================================================
-// Internal Helpers
-// =============================================================================
-
-static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
-    return (nmo_chunk_parser_state_t *) chunk->parser_state;
-}
-
-// =============================================================================
 // Manager Sequences
 // =============================================================================
 
@@ -25,7 +17,7 @@ nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
     // Set MAN flag
     chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
     }
@@ -58,7 +50,7 @@ nmo_status_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
     /* Set MAN flag */
     chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
     }
@@ -89,7 +81,7 @@ nmo_status_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
 
     NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, 3, "Insufficient data for manager int");
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     out_manager_guid->d1 = data[state->current_pos++];
     out_manager_guid->d2 = data[state->current_pos++];
@@ -103,13 +95,25 @@ nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
                                                    size_t *out_count) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_manager_guid, out_count, "Invalid arguments");
 
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
+    }
+    size_t start_pos = state->current_pos;
+
     // Read count then manager GUID
     uint32_t count_u32 = 0;
     nmo_status_t result = nmo_chunk_read_dword(chunk, &count_u32);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     result = nmo_chunk_read_guid(chunk, out_manager_guid);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     *out_count = (size_t)count_u32;
     NMO_RETURN_OK();

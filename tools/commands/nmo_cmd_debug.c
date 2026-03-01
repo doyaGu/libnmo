@@ -56,8 +56,8 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
     }
 
     /* Get finish loading stats */
-    nmo_finish_loading_stats_t stats;
-    bool has_stats = (nmo_session_get_finish_loading_stats(session, &stats) == NMO_OK);
+    nmo_runtime_load_stats_t stats;
+    bool has_stats = (nmo_session_get_runtime_load_stats(session, &stats) == NMO_OK);
 
     char out_err[128];
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));

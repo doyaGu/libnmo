@@ -207,9 +207,56 @@ TEST(chunk_raw_bitmap, empty_descriptor_writes_zero) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_raw_bitmap, truncated_plane_keeps_position) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 64 * 1024);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_int(chunk, 32);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_int(chunk, 1);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_int(chunk, 1);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xFF000000u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x00FF0000u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x0000FF00u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x000000FFu);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u);
+    ASSERT_EQ(result, NMO_OK);
+
+    /* Red plane size declares 8 bytes, but only 4 bytes payload are provided. */
+    result = nmo_chunk_write_dword(chunk, 8u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xAABBCCDDu);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_image_desc_t decoded;
+    uint8_t *decoded_pixels = NULL;
+    result = nmo_chunk_read_raw_bitmap(chunk, &decoded, &decoded_pixels);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_NULL(decoded_pixels);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_raw_bitmap, write_read_argb32_roundtrip);
     REGISTER_TEST(chunk_raw_bitmap, write_read_gradient);
     REGISTER_TEST(chunk_raw_bitmap, write_read_rgb565_conversion);
     REGISTER_TEST(chunk_raw_bitmap, empty_descriptor_writes_zero);
+    REGISTER_TEST(chunk_raw_bitmap, truncated_plane_keeps_position);
 TEST_MAIN_END()

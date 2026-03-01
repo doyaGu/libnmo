@@ -635,8 +635,8 @@ static int cmd_stats(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    nmo_finish_loading_stats_t stats;
-    if (nmo_session_get_finish_loading_stats(repl->session, &stats) != NMO_OK) {
+    nmo_runtime_load_stats_t stats;
+    if (nmo_session_get_runtime_load_stats(repl->session, &stats) != NMO_OK) {
         fprintf(stderr, "Finish loading stats unavailable.\n");
         return -1;
     }

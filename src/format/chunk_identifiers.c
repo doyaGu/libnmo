@@ -5,14 +5,6 @@
 #include "format/nmo_chunk.h"
 
 // =============================================================================
-// Internal Helpers
-// =============================================================================
-
-static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
-    return (nmo_chunk_parser_state_t *) chunk->parser_state;
-}
-
-// =============================================================================
 // Identifiers
 // =============================================================================
 
@@ -28,7 +20,7 @@ nmo_status_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
     nmo_status_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 
@@ -50,7 +42,7 @@ nmo_status_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
 nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state || state->current_pos >= chunk->data.count) {
         *out_id = 0;
         NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO,
@@ -94,7 +86,7 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
         ((nmo_chunk_parser_state_t *)chunk->parser_state)->data_size = chunk->data.count;
     }
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 

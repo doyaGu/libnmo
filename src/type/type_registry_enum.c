@@ -24,22 +24,11 @@
 #include <stdint.h>
 #include <limits.h>
 
-/* ============================================================================
- * Helper Functions
- * ============================================================================ */
-
-static char *type_allocator_strdup(nmo_allocator_t *allocator, const char *src) {
-    if (!allocator || !src) {
-        return NULL;
-    }
-    const size_t len = strlen(src) + 1u;
-    char *dst = (char *)nmo_alloc(allocator, len, _Alignof(char));
-    if (!dst) {
-        return NULL;
-    }
-    memcpy(dst, src, len);
-    return dst;
-}
+/* Upper bound for the O(n²) duplicate-name check in validation.
+ * Virtools types never approach this limit in practice (typical: 2-64 values).
+ * For larger inputs the uniqueness check is skipped; a hash-set pass could be
+ * added in the future if needed. */
+#define VALIDATE_MAX_QUADRATIC_N 256u
 
 /**
  * @brief Validate enum value definitions
@@ -67,12 +56,15 @@ static nmo_status_t validate_enum_values(
                                     values[i].name);
         }
         
-        /* Check for duplicate names */
-        for (size_t j = i + 1; j < value_count; j++) {
-            if (strcmp(values[i].name, values[j].name) == 0) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                        "Duplicate enum value name: '%s'",
-                                        values[i].name);
+        /* O(n²) duplicate-name check — guarded for pathologically large inputs.
+         * Virtools types are typically 2–64 values; skip the check beyond the cap. */
+        if (value_count <= VALIDATE_MAX_QUADRATIC_N) {
+            for (size_t j = i + 1; j < value_count; j++) {
+                if (strcmp(values[i].name, values[j].name) == 0) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                            "Duplicate enum value name: '%s'",
+                                            values[i].name);
+                }
             }
         }
     }
@@ -113,23 +105,124 @@ static nmo_status_t validate_flags_bits(
                                     (unsigned long long)bits[i].mask, bits[i].name);
         }
         
-        /* Check for duplicate names */
-        for (size_t j = i + 1; j < bit_count; j++) {
-            if (strcmp(bits[i].name, bits[j].name) == 0) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                        "Duplicate flags bit name: '%s'",
-                                        bits[i].name);
-            }
-            
-            /* Check for duplicate bit masks */
-            if (bits[i].mask == bits[j].mask) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                        "Duplicate bit mask 0x%llx for '%s' and '%s'",
-                                        (unsigned long long)bits[i].mask, bits[i].name, bits[j].name);
+        /* O(n²) duplicate-name/mask check — guarded for pathologically large inputs.
+         * Virtools types are typically 2–64 bits; skip the check beyond the cap. */
+        if (bit_count <= VALIDATE_MAX_QUADRATIC_N) {
+            for (size_t j = i + 1; j < bit_count; j++) {
+                if (strcmp(bits[i].name, bits[j].name) == 0) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                            "Duplicate flags bit name: '%s'",
+                                            bits[i].name);
+                }
+
+                /* Check for duplicate bit masks */
+                if (bits[i].mask == bits[j].mask) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                            "Duplicate bit mask 0x%llx for '%s' and '%s'",
+                                            (unsigned long long)bits[i].mask, bits[i].name, bits[j].name);
+                }
             }
         }
     }
     
+    NMO_RETURN_OK();
+}
+
+/* ============================================================================
+ * Internal Registration Scaffold
+ * ============================================================================ */
+
+/* Parameters common to both enum and flags registration. */
+typedef struct {
+    const char *name;          /* type name (required) */
+    const char *description;   /* may be NULL */
+    nmo_guid_t guid;           /* chosen GUID */
+    nmo_specialized_metadata_t *spec_meta; /* pre-built by caller */
+    nmo_type_category_t category;
+    uint32_t size;
+    uint32_t alignment;
+} enum_params_t;
+
+/* Shared scaffold: existence check, descriptor alloc, register, metadata link. */
+static nmo_status_t register_enum_type(nmo_type_registry_t *reg,
+                                             const enum_params_t *p,
+                                             nmo_guid_t *out_guid) {
+    if (reg->finalized) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Type registry is finalized; cannot register type");
+    }
+
+    const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(reg, p->guid);
+    if (existing) {
+        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
+                         "Type '%s' already registered", p->name);
+    }
+
+    nmo_arena_t *arena = reg->arena;
+
+    nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t *)
+        nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
+    if (!type_desc) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate type descriptor");
+    }
+    memset(type_desc, 0, sizeof(nmo_type_descriptor_t));
+
+    const char *type_name = nmo_arena_strdup(arena, p->name);
+    if (!type_name) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to copy type name");
+    }
+
+    type_desc->guid        = p->guid;
+    type_desc->name        = type_name;
+    type_desc->size        = p->size;
+    type_desc->alignment   = p->alignment;
+    type_desc->category    = p->category;
+    type_desc->flags       = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD;
+    type_desc->fields      = NULL;
+    type_desc->field_count = 0;
+    type_desc->vtable      = NULL;
+    type_desc->description = p->description ? nmo_arena_strdup(arena, p->description) : NULL;
+    type_desc->valid       = true;
+
+    nmo_status_t result = nmo_type_registry_register(reg, type_desc);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    nmo_type_descriptor_t *registered =
+        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(reg, p->guid);
+    if (!registered) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                         "Failed to find registered type");
+    }
+
+    p->spec_meta->type_id = registered->id;
+
+    size_t metadata_index = reg->metadata.count;
+    nmo_specialized_metadata_t *meta = p->spec_meta;
+    nmo_status_t append_res = nmo_arena_array_append(&reg->metadata, &meta);
+    if (append_res != NMO_OK) {
+        (void)nmo_type_registry_unregister(reg, p->guid);
+        return append_res;
+    }
+
+    nmo_status_t map_result = nmo_hash_table_insert(reg->type_to_metadata,
+                                                    &registered->id,
+                                                    &metadata_index);
+    if (map_result != NMO_OK) {
+        nmo_arena_array_pop(&reg->metadata, NULL);
+        (void)nmo_type_registry_unregister(reg, p->guid);
+        return map_result;
+    }
+
+    registered->specialized_index = (uint32_t)metadata_index;
+
+    if (out_guid) {
+        *out_guid = p->guid;
+    }
+
     NMO_RETURN_OK();
 }
 
@@ -146,152 +239,66 @@ nmo_status_t nmo_type_registry_register_enum(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry or enum_def");
     }
-
-    if (type_registry->finalized) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "Type registry is finalized; cannot register enum types");
-    }
-    
     if (!enum_def->name || enum_def->name[0] == '\0') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Enum type name cannot be empty");
     }
-    
-    /* Validate enum values */
+
     nmo_status_t result = validate_enum_values(enum_def->values, enum_def->value_count);
-        if (result != NMO_OK) {
+    if (result != NMO_OK) {
         return result;
     }
-    
-    /* Use provided GUID or generate from name */
-    nmo_guid_t type_guid;
-    if (!nmo_guid_is_null(enum_def->guid)) {
-        type_guid = enum_def->guid;
-    } else {
-        type_guid = nmo_type_generate_guid(enum_def->name);
-    }
-    
-    /* Check if type already exists */
-    const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (existing) {
-        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
-                                "Enum type '%s' already registered",
-                                enum_def->name);
-    }
-    
+
+    nmo_guid_t type_guid = !nmo_guid_is_null(enum_def->guid)
+        ? enum_def->guid
+        : nmo_type_generate_guid(enum_def->name);
+
     nmo_arena_t *arena = type_registry->arena;
-    
-    /* Allocate type descriptor */
-    nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
-        nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
-    if (!type_desc) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate enum type descriptor");
-    }
-    
-    /* Initialize all fields to zero */
-    memset(type_desc, 0, sizeof(nmo_type_descriptor_t));
-    
-    /* Copy enum type name */
-    const char *type_name = nmo_arena_strdup(arena, enum_def->name);
-    if (!type_name) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to copy enum type name");
-    }
-    
-    /* Allocate enum descriptors array */
-    nmo_enum_descriptor_t *enum_values = (nmo_enum_descriptor_t*)
+
+    /* Allocate and copy enum values array */
+    nmo_enum_descriptor_t *enum_values = (nmo_enum_descriptor_t *)
         nmo_arena_alloc(arena, sizeof(nmo_enum_descriptor_t) * enum_def->value_count,
                         alignof(nmo_enum_descriptor_t));
     if (!enum_values) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to allocate enum values array");
     }
-    
-    /* Copy enum values */
     for (size_t i = 0; i < enum_def->value_count; i++) {
         enum_values[i].name = nmo_arena_strdup(arena, enum_def->values[i].name);
         if (!enum_values[i].name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                     "Failed to copy enum value name");
         }
-        enum_values[i].value = enum_def->values[i].value;
-        enum_values[i].description = enum_def->values[i].description ? 
-            nmo_arena_strdup(arena, enum_def->values[i].description) : NULL;
+        enum_values[i].value       = enum_def->values[i].value;
+        enum_values[i].description = enum_def->values[i].description
+            ? nmo_arena_strdup(arena, enum_def->values[i].description) : NULL;
         enum_values[i].flags = 0;
     }
-    
-    /* Allocate specialized_metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
+
+    /* Build specialized metadata */
+    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t *)
         nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
     if (!spec_meta) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to allocate specialized metadata");
     }
-    
-    spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
-    spec_meta->metadata_type = NMO_METADATA_TYPE_ENUM;
-    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
-    spec_meta->enum_meta.values = enum_values;
+    spec_meta->type_id              = NMO_TYPE_ID_INVALID;
+    spec_meta->metadata_type        = NMO_METADATA_TYPE_ENUM;
+    spec_meta->ownership            = NMO_OWNERSHIP_ARENA;
+    spec_meta->enum_meta.values     = enum_values;
     spec_meta->enum_meta.value_count = enum_def->value_count;
-    
-    /* Initialize type descriptor */
-    type_desc->guid = type_guid;
-    type_desc->name = type_name;
-    type_desc->size = sizeof(int32_t); /* Enums are int32 */
-    type_desc->alignment = alignof(int32_t);
-    type_desc->category = NMO_TYPE_CATEGORY_ENUM;
-    type_desc->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD;
-    type_desc->fields = NULL;
-    type_desc->field_count = 0;
-    type_desc->vtable = NULL;
-    type_desc->description = enum_def->description ? nmo_arena_strdup(arena, enum_def->description) : NULL;
-    type_desc->valid = true;
-    
-    /* Register type in registry */
-    result = nmo_type_registry_register(type_registry, type_desc);
-        if (result != NMO_OK) {
-        return result;
-    }
 
-    /* Fetch registered descriptor to get assigned ID */
-    nmo_type_descriptor_t *registered =
-        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (!registered) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                "Failed to find registered enum type");
-    }
+    const enum_params_t p = {
+        .name        = enum_def->name,
+        .description = enum_def->description,
+        .guid        = type_guid,
+        .spec_meta   = spec_meta,
+        .category    = NMO_TYPE_CATEGORY_ENUM,
+        .size        = sizeof(int32_t),
+        .alignment   = alignof(int32_t)
+    };
 
-    /* Update type_id in metadata */
-    spec_meta->type_id = registered->id;
-
-    /* Add metadata to registry */
-    size_t metadata_index = type_registry->metadata.count;
-    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-        if (append_res != NMO_OK) {
-        (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return append_res;
-    }
-
-    /* Add to type_id -> metadata_index hash table */
-    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &registered->id,
-                                                    &metadata_index);
-        if (map_result != NMO_OK) {
-        nmo_arena_array_pop(&type_registry->metadata, NULL);
-        (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return map_result;
-    }
-
-    /* Update specialized_index (0-based) */
-    registered->specialized_index = (uint32_t)metadata_index;
-    
-    /* Return GUID */
-    if (out_guid) {
-        *out_guid = type_guid;
-    }
-    
-    NMO_RETURN_OK();
+    return register_enum_type(type_registry, &p, out_guid);
 }
 
 /* ============================================================================
@@ -307,147 +314,66 @@ nmo_status_t nmo_type_registry_register_flags(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL type_registry or flags_def");
     }
-    
     if (!flags_def->name || flags_def->name[0] == '\0') {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Flags type name cannot be empty");
     }
-    
-    /* Validate flags bits */
+
     nmo_status_t result = validate_flags_bits(flags_def->bits, flags_def->bit_count);
     if (result != NMO_OK) {
         return result;
     }
-    
-    /* Use provided GUID or generate from name */
-    nmo_guid_t type_guid;
-    if (!nmo_guid_is_null(flags_def->guid)) {
-        type_guid = flags_def->guid;
-    } else {
-        type_guid = nmo_type_generate_guid(flags_def->name);
-    }
-    
-    /* Check if type already exists */
-    const nmo_type_descriptor_t *existing = nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (existing) {
-        NMO_RETURN_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
-                                "Flags type '%s' already registered",
-                                flags_def->name);
-    }
-    
+
+    nmo_guid_t type_guid = !nmo_guid_is_null(flags_def->guid)
+        ? flags_def->guid
+        : nmo_type_generate_guid(flags_def->name);
+
     nmo_arena_t *arena = type_registry->arena;
-    
-    /* Allocate type descriptor */
-    nmo_type_descriptor_t *type_desc = (nmo_type_descriptor_t*)
-        nmo_arena_alloc(arena, sizeof(nmo_type_descriptor_t), alignof(nmo_type_descriptor_t));
-    if (!type_desc) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to allocate flags type descriptor");
-    }
-    
-    /* Initialize all fields to zero */
-    memset(type_desc, 0, sizeof(nmo_type_descriptor_t));
-    
-    /* Copy flags type name */
-    const char *type_name = nmo_arena_strdup(arena, flags_def->name);
-    if (!type_name) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                "Failed to copy flags type name");
-    }
-    
-    /* Allocate flags descriptors array */
-    nmo_flags_descriptor_t *flags_bits = (nmo_flags_descriptor_t*)
+
+    /* Allocate and copy flags bits array */
+    nmo_flags_descriptor_t *flags_bits = (nmo_flags_descriptor_t *)
         nmo_arena_alloc(arena, sizeof(nmo_flags_descriptor_t) * flags_def->bit_count,
                         alignof(nmo_flags_descriptor_t));
     if (!flags_bits) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to allocate flags bits array");
     }
-    
-    /* Copy flags bits */
     for (size_t i = 0; i < flags_def->bit_count; i++) {
         flags_bits[i].name = nmo_arena_strdup(arena, flags_def->bits[i].name);
         if (!flags_bits[i].name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                     "Failed to copy flags bit name");
         }
-        flags_bits[i].mask = flags_def->bits[i].mask;
-        flags_bits[i].description = flags_def->bits[i].description ? 
-            nmo_arena_strdup(arena, flags_def->bits[i].description) : NULL;
+        flags_bits[i].mask        = flags_def->bits[i].mask;
+        flags_bits[i].description = flags_def->bits[i].description
+            ? nmo_arena_strdup(arena, flags_def->bits[i].description) : NULL;
         flags_bits[i].flags = 0;
     }
-    
-    /* Allocate specialized_metadata */
-    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t*)
+
+    /* Build specialized metadata */
+    nmo_specialized_metadata_t *spec_meta = (nmo_specialized_metadata_t *)
         nmo_arena_alloc(arena, sizeof(nmo_specialized_metadata_t), alignof(nmo_specialized_metadata_t));
     if (!spec_meta) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to allocate specialized metadata");
     }
-    
-    spec_meta->type_id = NMO_TYPE_ID_INVALID;  /* Will be set during registration */
-    spec_meta->metadata_type = NMO_METADATA_TYPE_FLAGS;
-    spec_meta->ownership = NMO_OWNERSHIP_ARENA; /* arena-owned; do not free via type_allocator */
-    spec_meta->flags_meta.bits = flags_bits;
+    spec_meta->type_id             = NMO_TYPE_ID_INVALID;
+    spec_meta->metadata_type       = NMO_METADATA_TYPE_FLAGS;
+    spec_meta->ownership           = NMO_OWNERSHIP_ARENA;
+    spec_meta->flags_meta.bits     = flags_bits;
     spec_meta->flags_meta.bit_count = flags_def->bit_count;
-    
-    /* Initialize type descriptor */
-    type_desc->guid = type_guid;
-    type_desc->name = type_name;
-    type_desc->size = sizeof(uint32_t); /* Flags are uint32 */
-    type_desc->alignment = alignof(uint32_t);
-    type_desc->category = NMO_TYPE_CATEGORY_FLAGS;
-    type_desc->flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD;
-    type_desc->fields = NULL;
-    type_desc->field_count = 0;
-    type_desc->vtable = NULL;
-    type_desc->description = flags_def->description ? nmo_arena_strdup(arena, flags_def->description) : NULL;
-    type_desc->valid = true;
-    
-    /* Register type in registry */
-    result = nmo_type_registry_register(type_registry, type_desc);
-    if (result != NMO_OK) {
-        return result;
-    }
 
-    /* Fetch registered descriptor to get assigned ID */
-    nmo_type_descriptor_t *registered =
-        (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(type_registry, type_guid);
-    if (!registered) {
-        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                                "Failed to find registered flags type");
-    }
+    const enum_params_t p = {
+        .name        = flags_def->name,
+        .description = flags_def->description,
+        .guid        = type_guid,
+        .spec_meta   = spec_meta,
+        .category    = NMO_TYPE_CATEGORY_FLAGS,
+        .size        = sizeof(uint32_t),
+        .alignment   = alignof(uint32_t)
+    };
 
-    /* Update type_id in metadata */
-    spec_meta->type_id = registered->id;
-
-    /* Add metadata to registry */
-    size_t metadata_index = type_registry->metadata.count;
-    nmo_status_t append_res = nmo_arena_array_append(&type_registry->metadata, &spec_meta);
-    if (append_res != NMO_OK) {
-        (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return append_res;
-    }
-
-    /* Add to type_id -> metadata_index hash table */
-    nmo_status_t map_result = nmo_hash_table_insert(type_registry->type_to_metadata,
-                                                    &registered->id,
-                                                    &metadata_index);
-    if (map_result != NMO_OK) {
-        nmo_arena_array_pop(&type_registry->metadata, NULL);
-        (void)nmo_type_registry_unregister(type_registry, type_guid);
-        return map_result;
-    }
-
-    /* Update specialized_index (0-based) */
-    registered->specialized_index = (uint32_t)metadata_index;
-    
-    /* Return GUID */
-    if (out_guid) {
-        *out_guid = type_guid;
-    }
-    
-    NMO_RETURN_OK();
+    return register_enum_type(type_registry, &p, out_guid);
 }
 
 /* ============================================================================
@@ -732,9 +658,9 @@ nmo_status_t nmo_type_registry_change_enum_string(
             desc_copy = parsed_values[j].description ?
                 nmo_arena_strdup(arena, parsed_values[j].description) : NULL;
         } else {
-            name_copy = type_allocator_strdup(&type_registry->type_allocator, parsed_values[j].name);
+            name_copy = nmo_strdup(&type_registry->type_allocator, parsed_values[j].name);
             desc_copy = parsed_values[j].description ?
-                type_allocator_strdup(&type_registry->type_allocator, parsed_values[j].description) : NULL;
+                nmo_strdup(&type_registry->type_allocator, parsed_values[j].description) : NULL;
         }
 
         if (!name_copy || (parsed_values[j].description && !desc_copy)) {
@@ -943,9 +869,9 @@ nmo_status_t nmo_type_registry_change_flags_string(
             desc_copy = parsed_bits[j].description ?
                 nmo_arena_strdup(arena, parsed_bits[j].description) : NULL;
         } else {
-            name_copy = type_allocator_strdup(&type_registry->type_allocator, parsed_bits[j].name);
+            name_copy = nmo_strdup(&type_registry->type_allocator, parsed_bits[j].name);
             desc_copy = parsed_bits[j].description ?
-                type_allocator_strdup(&type_registry->type_allocator, parsed_bits[j].description) : NULL;
+                nmo_strdup(&type_registry->type_allocator, parsed_bits[j].description) : NULL;
         }
 
         if (!name_copy || (parsed_bits[j].description && !desc_copy)) {

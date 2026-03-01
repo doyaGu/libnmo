@@ -283,3 +283,12 @@ void nmo_allocator_stats_reset(nmo_allocator_stats_t *stats) {
     }
     memset(stats, 0, sizeof(*stats));
 }
+
+char *nmo_strdup(nmo_allocator_t *alloc, const char *src) {
+    if (!alloc || !src) return NULL;
+    const size_t len = strlen(src) + 1u;
+    char *dst = (char *)nmo_alloc(alloc, len, _Alignof(char));
+    if (!dst) return NULL;
+    memcpy(dst, src, len);
+    return dst;
+}

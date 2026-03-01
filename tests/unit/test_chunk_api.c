@@ -92,6 +92,35 @@ TEST(chunk_api, string) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, string_truncated_payload_keeps_position) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    /* Declared length is 8 bytes (2 DWORD payload), but only 1 DWORD is present. */
+    result = nmo_chunk_write_dword(chunk, 8u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xAABBCCDDu);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    char* out = (char*)1;
+    size_t len = nmo_chunk_read_string(chunk, &out);
+    ASSERT_EQ(len, 0u);
+    ASSERT_NULL(out);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
 // Test: Buffer write/read
 TEST(chunk_api, buffer) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
@@ -149,8 +178,80 @@ TEST(chunk_api, buffer_truncated_payload) {
 
     void* out_data = NULL;
     size_t out_size = 0;
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
     result = nmo_chunk_read_buffer(chunk, &out_data, &out_size);
     ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, buffer_fill_errors_keep_position) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_dword(chunk, 8u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xAABBCCDDu);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x11223344u);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    uint8_t small[4];
+    size_t read_size = nmo_chunk_read_and_fill_buffer(chunk, small, sizeof(small));
+    ASSERT_EQ(read_size, 0u);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, buffer_null_data_writes_zero_size) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_buffer(chunk, NULL, 16);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    void* out_data = (void*)1;
+    size_t out_size = 123;
+    result = nmo_chunk_read_buffer(chunk, &out_data, &out_size);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(out_size, 0);
+    ASSERT_NULL(out_data);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, buffer_no_size_rejects_null_data_with_size) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_buffer_no_size(chunk, NULL, 4);
+    ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
 
     nmo_arena_destroy(arena);
 }
@@ -263,6 +364,27 @@ TEST(chunk_api, sequence) {
     ASSERT_EQ(ids[1], 20);
     ASSERT_EQ(ids[2], 30);
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, sequence_rejects_negative_count) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_int(chunk, -1);
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    size_t count = 0;
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+
+    ASSERT_EQ(result, NMO_ERR_INVALID_FORMAT);
+    ASSERT_EQ(count, 0);
+
     nmo_arena_destroy(arena);
 }
 
@@ -471,6 +593,32 @@ TEST(chunk_api, manager_sequence) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, manager_sequence_truncated_guid_keeps_position) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_dword(chunk, 3u); /* count only, missing guid */
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_guid_t manager_guid = {0u, 0u};
+    size_t count = 0;
+    result = nmo_chunk_start_manager_read_sequence(chunk, &manager_guid, &count);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, sub_chunks) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -555,11 +703,99 @@ TEST(chunk_api, sub_chunk_truncated_header) {
 
     result = nmo_chunk_start_read(chunk);
     ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 
     nmo_chunk_t* sub = (nmo_chunk_t*)1;
     result = nmo_chunk_read_sub_chunk(chunk, &sub);
     ASSERT_EQ(result, NMO_ERR_EOF);
     ASSERT_NULL(sub);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, sub_chunk_invalid_manager_count_keeps_position) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    /* total_size=7 => class/version/data/file/id/chunk/manager (no payload). */
+    result = nmo_chunk_write_dword(chunk, 7u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x10u); /* class */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u); /* version_info */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u); /* data_size */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u); /* file_flag */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u); /* id_count */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u); /* chunk_count */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 1u); /* invalid manager_count (expected 0) */
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_chunk_t* sub = (nmo_chunk_t*)1;
+    result = nmo_chunk_read_sub_chunk(chunk, &sub);
+    ASSERT_EQ(result, NMO_ERR_INVALID_FORMAT);
+    ASSERT_NULL(sub);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, sub_chunk_reads_manager_count_independent_of_parent_version) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* sub = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sub);
+
+    nmo_status_t result = nmo_chunk_start_write(sub);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_guid_t manager_guid = {0x12345678u, 0x9ABCDEF0u};
+    result = nmo_chunk_write_manager_int(sub, manager_guid, 42u);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_chunk_t* parent = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(parent);
+
+    result = nmo_chunk_start_write(parent);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_sub_chunk_sequence(parent, 1);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_sub_chunk(parent, sub);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(parent);
+    ASSERT_EQ(result, NMO_OK);
+
+    uint32_t count = 0;
+    result = nmo_chunk_read_dword(parent, &count);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(count, 1u);
+
+    parent->chunk_version = 4u;
+
+    nmo_chunk_t* read_sub = NULL;
+    result = nmo_chunk_read_sub_chunk(parent, &read_sub);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_NOT_NULL(read_sub);
+    ASSERT_EQ(read_sub->managers.count, 1u);
 
     nmo_arena_destroy(arena);
 }
@@ -611,6 +847,69 @@ TEST(chunk_api, arrays) {
     ASSERT_FLOAT_EQ(float_ptr[1], 2.5f, 0.001f);
     ASSERT_FLOAT_EQ(float_ptr[2], 3.5f, 0.001f);
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, arrays_reject_inconsistent_header) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_dword(chunk, 0u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 2u);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    void* read_array = NULL;
+    size_t count = 0;
+    size_t elem_size = 0;
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+    result = nmo_chunk_read_array(chunk, &read_array, &count, &elem_size);
+    ASSERT_EQ(result, NMO_ERR_INVALID_FORMAT);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_dword(chunk, 8u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0u);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+    result = nmo_chunk_read_array(chunk, &read_array, &count, &elem_size);
+    ASSERT_EQ(result, NMO_ERR_INVALID_FORMAT);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_dword(chunk, 8u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 2u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0xAABBCCDDu);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+    result = nmo_chunk_read_array(chunk, &read_array, &count, &elem_size);
+    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
     nmo_arena_destroy(arena);
 }
 
@@ -749,20 +1048,29 @@ TEST(chunk_api, crc) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, primitives);
     REGISTER_TEST(chunk_api, string);
+    REGISTER_TEST(chunk_api, string_truncated_payload_keeps_position);
     REGISTER_TEST(chunk_api, buffer);
     REGISTER_TEST(chunk_api, buffer_truncated_payload);
+    REGISTER_TEST(chunk_api, buffer_fill_errors_keep_position);
+    REGISTER_TEST(chunk_api, buffer_null_data_writes_zero_size);
+    REGISTER_TEST(chunk_api, buffer_no_size_rejects_null_data_with_size);
     REGISTER_TEST(chunk_api, guid);
     REGISTER_TEST(chunk_api, object_id);
     REGISTER_TEST(chunk_api, sequence);
+    REGISTER_TEST(chunk_api, sequence_rejects_negative_count);
     REGISTER_TEST(chunk_api, navigation);
     REGISTER_TEST(chunk_api, navigation_read_bounds);
     REGISTER_TEST(chunk_api, auto_expand);
     REGISTER_TEST(chunk_api, identifiers);
     REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);
+    REGISTER_TEST(chunk_api, manager_sequence_truncated_guid_keeps_position);
     REGISTER_TEST(chunk_api, sub_chunks);
     REGISTER_TEST(chunk_api, sub_chunk_truncated_header);
+    REGISTER_TEST(chunk_api, sub_chunk_invalid_manager_count_keeps_position);
+    REGISTER_TEST(chunk_api, sub_chunk_reads_manager_count_independent_of_parent_version);
     REGISTER_TEST(chunk_api, arrays);
+    REGISTER_TEST(chunk_api, arrays_reject_inconsistent_header);
     REGISTER_TEST(chunk_api, compression);
     REGISTER_TEST(chunk_api, compression_new_api);
     REGISTER_TEST(chunk_api, crc);

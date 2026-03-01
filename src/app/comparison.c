@@ -59,15 +59,6 @@ static void format_chunk_context(const nmo_chunk_t *chunk, char *buffer, size_t 
              chunk->data.count);
 }
 
-static void format_guid_context(nmo_guid_t guid, char *buffer, size_t buffer_size) {
-    if (buffer == NULL || buffer_size == 0) {
-        return;
-    }
-    if (nmo_guid_format(guid, buffer, buffer_size) <= 0) {
-        snprintf(buffer, buffer_size, "{%08X-%08X}", guid.d1, guid.d2);
-    }
-}
-
 static nmo_object_id_t remap_or_identity(const nmo_id_remap_t *remap, nmo_object_id_t id) {
     if (remap == NULL || id == 0) {
         return id;
@@ -581,7 +572,7 @@ static int compare_manager_chunks(const nmo_manager_data_t *mgr1,
     }
 
     char guid_ctx[NMO_DIFF_CONTEXT_MAX];
-    format_guid_context(mgr1->guid, guid_ctx, sizeof(guid_ctx));
+    nmo_guid_format(mgr1->guid, guid_ctx, sizeof(guid_ctx));
 
     if (chunk1 == NULL || chunk2 == NULL) {
         char ctx[NMO_DIFF_CONTEXT_MAX];
@@ -718,7 +709,7 @@ static int nmo_session_compare_managers(const nmo_session_t *session1,
         }
 
         char guid_ctx[NMO_DIFF_CONTEXT_MAX];
-        format_guid_context(mgr1->guid, guid_ctx, sizeof(guid_ctx));
+        nmo_guid_format(mgr1->guid, guid_ctx, sizeof(guid_ctx));
 
         if (ambiguous) {
             char ctx[NMO_DIFF_CONTEXT_MAX];
@@ -758,7 +749,7 @@ static int nmo_session_compare_managers(const nmo_session_t *session1,
 
         char guid_ctx[NMO_DIFF_CONTEXT_MAX];
         char ctx[NMO_DIFF_CONTEXT_MAX];
-        format_guid_context(mgr2->guid, guid_ctx, sizeof(guid_ctx));
+        nmo_guid_format(mgr2->guid, guid_ctx, sizeof(guid_ctx));
         snprintf(ctx, sizeof(ctx), "manager missing in session1 guid=%s", guid_ctx);
         nmo_comparison_add_diff(result, NMO_DIFF_MANAGER_MISSING, 0, ctx);
         all_match = 0;

@@ -23,12 +23,6 @@
 #include <stddef.h>
 #include <ctype.h>
 
-typedef struct nmo_max_align_helper {
-    long double ld;
-    long long ll;
-    void *ptr;
-} nmo_max_align_helper_t;
-
 /* ============================================================================
  * Compatibility Mask Helpers (nmo_bit_array_t)
  * ============================================================================ */
@@ -38,23 +32,6 @@ static nmo_allocator_t type_allocator_from_registry(const nmo_type_registry_t *r
         return nmo_allocator_default();
     }
     return registry->type_allocator;
-}
-
-static bool is_power_of_two_u32(uint32_t value) {
-    return value != 0u && (value & (value - 1u)) == 0u;
-}
-
-static char *allocator_strdup(nmo_allocator_t *allocator, const char *src) {
-    if (!allocator || !src) {
-        return NULL;
-    }
-    size_t len = strlen(src) + 1u;
-    char *dst = (char *)nmo_alloc(allocator, len, _Alignof(char));
-    if (!dst) {
-        return NULL;
-    }
-    memcpy(dst, src, len);
-    return dst;
 }
 
 static size_t compat_mask_growth_bits(size_t required_bits) {
@@ -534,7 +511,7 @@ static nmo_status_t validate_type_descriptor(
         }
     }
 
-    if (descriptor->alignment != 0 && !is_power_of_two_u32(descriptor->alignment)) {
+    if (descriptor->alignment != 0 && !nmo_is_power_of_two_u32(descriptor->alignment)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Type alignment must be a power of two");
     }
@@ -884,7 +861,7 @@ nmo_status_t nmo_type_registry_register(
 
     // Deep copy name/description to registry-owned arena.
     if (type->name) {
-        char *name_copy = allocator_strdup(&registry->type_allocator, type->name);
+        char *name_copy = nmo_strdup(&registry->type_allocator, type->name);
         if (!name_copy) {
             free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
             return NMO_ERR_NOMEM;
@@ -899,7 +876,7 @@ nmo_status_t nmo_type_registry_register(
             (source_field_count == 0);
 
         if (!is_incomplete_struct_state) {
-            char *desc_copy = allocator_strdup(&registry->type_allocator, type->description);
+            char *desc_copy = nmo_strdup(&registry->type_allocator, type->description);
             if (!desc_copy) {
                 free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
                 return NMO_ERR_NOMEM;
@@ -921,7 +898,7 @@ nmo_status_t nmo_type_registry_register(
         memcpy(fields_copy, source_fields, sizeof(nmo_type_field_t) * source_field_count);
         for (size_t i = 0; i < source_field_count; i++) {
             if (fields_copy[i].name) {
-                char *field_name = allocator_strdup(&registry->type_allocator, fields_copy[i].name);
+                char *field_name = nmo_strdup(&registry->type_allocator, fields_copy[i].name);
                 if (!field_name) {
                     free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
                     return NMO_ERR_NOMEM;
@@ -929,7 +906,7 @@ nmo_status_t nmo_type_registry_register(
                 fields_copy[i].name = field_name;
             }
             if (fields_copy[i].description) {
-                char *field_desc = allocator_strdup(&registry->type_allocator, fields_copy[i].description);
+                char *field_desc = nmo_strdup(&registry->type_allocator, fields_copy[i].description);
                 if (!field_desc) {
                     free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
                     return NMO_ERR_NOMEM;
@@ -940,7 +917,7 @@ nmo_status_t nmo_type_registry_register(
                 void *default_copy = nmo_alloc(
                     &registry->type_allocator,
                     fields_copy[i].size,
-                    _Alignof(nmo_max_align_helper_t));
+                    _Alignof(max_align_t));
                 if (!default_copy) {
                     free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
                     return NMO_ERR_NOMEM;
@@ -1261,7 +1238,7 @@ nmo_status_t nmo_type_registry_add_name_alias(
         nmo_hash_table_remove(registry->name_map, &alias_key);
     }
 
-    char *alias_copy = allocator_strdup(&registry->type_allocator, alias);
+    char *alias_copy = nmo_strdup(&registry->type_allocator, alias);
     if (!alias_copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Out of memory");
     }

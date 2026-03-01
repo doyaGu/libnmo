@@ -7,14 +7,6 @@
 #include "format/nmo_id_remap.h"
 #include <string.h>
 
-// =============================================================================
-// Internal Helpers
-// =============================================================================
-
-static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
-    return (nmo_chunk_parser_state_t *) chunk->parser_state;
-}
-
 static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
     return NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 }
@@ -85,7 +77,7 @@ nmo_status_t nmo_chunk_write_byte(nmo_chunk_t *chunk, uint8_t value) {
     nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     data[state->current_pos++] = (uint32_t) value;
 
@@ -103,7 +95,7 @@ nmo_status_t nmo_chunk_write_word(nmo_chunk_t *chunk, uint16_t value) {
     nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     data[state->current_pos++] = (uint32_t) value;
 
@@ -121,7 +113,7 @@ nmo_status_t nmo_chunk_write_int(nmo_chunk_t *chunk, int32_t value) {
     nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     data[state->current_pos++] = (uint32_t) value;
 
@@ -143,7 +135,7 @@ nmo_status_t nmo_chunk_write_float(nmo_chunk_t *chunk, float value) {
     nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     // Store float as raw bits
     uint32_t raw = 0;
     memcpy(&raw, &value, sizeof(raw));
@@ -164,7 +156,7 @@ nmo_status_t nmo_chunk_write_guid(nmo_chunk_t *chunk, nmo_guid_t value) {
     nmo_status_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     data[state->current_pos++] = value.d1;
     data[state->current_pos++] = value.d2;
@@ -186,7 +178,7 @@ nmo_status_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value) {
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     *out_value = (uint8_t) (data[state->current_pos++] & 0xFF);
 
@@ -198,7 +190,7 @@ nmo_status_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value) {
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     *out_value = (uint16_t) (data[state->current_pos++] & 0xFFFF);
 
@@ -210,7 +202,7 @@ nmo_status_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value) {
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     *out_value = (int32_t) data[state->current_pos++];
 
@@ -226,7 +218,7 @@ nmo_status_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value) {
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     // Read float as raw bits
     uint32_t *data = get_data_u32(chunk);
     uint32_t raw = data[state->current_pos++];
@@ -240,7 +232,7 @@ nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 2);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     out_value->d1 = data[state->current_pos++];
     out_value->d2 = data[state->current_pos++];
@@ -263,7 +255,7 @@ nmo_status_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
     nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     data[state->current_pos++] = (uint32_t) len;
 
@@ -291,8 +283,9 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
         return 0;
     });
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
+    size_t start_pos = state->current_pos;
     uint32_t len = data[state->current_pos++];
 
     if (len == 0) {
@@ -301,14 +294,16 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
     }
 
     size_t dwords = (len + 3) / 4;
-    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
+    if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
+        state->current_pos = start_pos;
         *out_str = NULL;
         return 0;
-    });
+    }
 
     // Allocate from arena
     char *str = (char *) nmo_arena_alloc(chunk->arena, len, 1);
     if (!str) {
+        state->current_pos = start_pos;
         *out_str = NULL;
         return 0;
     }
@@ -329,13 +324,17 @@ nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
                                     size_t size) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
+    if (data == NULL) {
+        size = 0;
+    }
+
     size_t dwords = (size + 3) / 4;
 
     // Write size
     nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
     data_dwords[state->current_pos++] = (uint32_t) size;
 
@@ -358,6 +357,10 @@ nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
                                             size_t size) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
+    if (size > 0 && data == NULL) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Non-zero size with NULL buffer");
+    }
+
     if (size == 0) {
         NMO_RETURN_OK();
     }
@@ -367,7 +370,7 @@ nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
     nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
     memcpy(&data_dwords[state->current_pos], data, size);
     state->current_pos += dwords;
@@ -387,8 +390,9 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
+    size_t start_pos = state->current_pos;
     uint32_t size = data_dwords[state->current_pos++];
 
     *out_size = size;
@@ -399,11 +403,16 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     }
 
     size_t dwords = (size + 3) / 4;
-    NMO_CHUNK_CHECK_BOUNDS(chunk, dwords);
+    if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
+        state->current_pos = start_pos;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                               "Cannot read beyond data");
+    }
 
     // Allocate from arena
     void *data = nmo_arena_alloc(chunk->arena, size, 1);
     if (!data) {
+        state->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                "Failed to allocate buffer");
     }
@@ -426,8 +435,9 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
         return 0;
     });
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
+    size_t start_pos = state->current_pos;
     uint32_t size = data_dwords[state->current_pos++];
 
     if (size == 0) {
@@ -435,13 +445,15 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
     }
 
     if (size > buffer_size) {
+        state->current_pos = start_pos;
         return 0; // Buffer too small
     }
 
     size_t dwords = (size + 3) / 4;
-    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
+    if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
+        state->current_pos = start_pos;
         return 0;
-    });
+    }
 
     memcpy(buffer, &data_dwords[state->current_pos], size);
     state->current_pos += dwords;
@@ -460,7 +472,7 @@ size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
         return 0;
     }
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
 
     size_t dwords = (buffer_size + 3) / 4;
@@ -484,7 +496,7 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     const nmo_chunk_file_context_t *ctx = get_file_context(chunk);
     const int in_file_context = (ctx != NULL && ctx->runtime_to_file != NULL);
 
@@ -518,7 +530,7 @@ nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_i
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
     uint32_t raw_id = data_dwords[state->current_pos++];
     *out_id = decode_object_id(chunk, raw_id);

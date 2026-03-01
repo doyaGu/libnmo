@@ -26,12 +26,6 @@
 #include <stdalign.h>
 #include <stddef.h>
 
-typedef struct nmo_max_align_helper {
-    long double ld;
-    long long ll;
-    void *ptr;
-} nmo_max_align_helper_t;
-
 /* ============================================================================
  * Helper Functions
  * ============================================================================ */
@@ -42,23 +36,6 @@ typedef struct nmo_max_align_helper {
 static uint32_t align_up(uint32_t offset, uint32_t alignment) {
     if (alignment == 0) return offset;
     return (offset + alignment - 1) & ~(alignment - 1);
-}
-
-static bool is_power_of_two_u32(uint32_t value) {
-    return value != 0 && (value & (value - 1u)) == 0;
-}
-
-static char *type_allocator_strdup(nmo_allocator_t *allocator, const char *src) {
-    if (!allocator || !src) {
-        return NULL;
-    }
-    const size_t len = strlen(src) + 1u;
-    char *dst = (char *)nmo_alloc(allocator, len, _Alignof(char));
-    if (!dst) {
-        return NULL;
-    }
-    memcpy(dst, src, len);
-    return dst;
 }
 
 static void free_heap_type_fields(nmo_allocator_t *allocator, nmo_type_field_t *fields, size_t count) {
@@ -200,7 +177,7 @@ nmo_status_t nmo_type_calculate_layout(
                                 "Invalid parameters for layout calculation");
     }
 
-    if (desired_alignment > 0 && !is_power_of_two_u32(desired_alignment)) {
+    if (desired_alignment > 0 && !nmo_is_power_of_two_u32(desired_alignment)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Struct alignment must be a power of two");
     }
@@ -920,7 +897,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
         field_desc->pointer_depth = pointer_depth;
 
         if (field_def->name) {
-            type_fields[i].name = type_allocator_strdup(&type_registry->type_allocator, field_def->name);
+            type_fields[i].name = nmo_strdup(&type_registry->type_allocator, field_def->name);
             if (!type_fields[i].name) {
                 free_heap_type_fields(&type_registry->type_allocator, type_fields, i);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -929,7 +906,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
         }
 
         if (field_def->description) {
-            type_fields[i].description = type_allocator_strdup(&type_registry->type_allocator, field_def->description);
+            type_fields[i].description = nmo_strdup(&type_registry->type_allocator, field_def->description);
             if (!type_fields[i].description) {
                 free_heap_type_fields(&type_registry->type_allocator, type_fields, i + 1u);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -952,7 +929,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
             void *default_copy = nmo_alloc(
                 &type_registry->type_allocator,
                 total_field_size,
-                _Alignof(nmo_max_align_helper_t));
+                _Alignof(max_align_t));
             if (!default_copy) {
                 free_heap_type_fields(&type_registry->type_allocator, type_fields, i + 1u);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
@@ -1141,7 +1118,7 @@ nmo_status_t nmo_type_registry_register_union(
                                 "Union must have at least one field");
     }
 
-    if (union_def->alignment > 0 && !is_power_of_two_u32(union_def->alignment)) {
+    if (union_def->alignment > 0 && !nmo_is_power_of_two_u32(union_def->alignment)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Union alignment must be a power of two");
     }

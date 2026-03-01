@@ -151,6 +151,20 @@ NMO_API void *nmo_alloc(nmo_allocator_t *allocator, size_t size, size_t alignmen
  */
 NMO_API void nmo_free(nmo_allocator_t *allocator, void *ptr);
 
+/**
+ * @brief Duplicate a string using the allocator
+ *
+ * @param alloc Allocator to use
+ * @param src Null-terminated string to duplicate
+ * @return Pointer to duplicated string or NULL on failure
+ */
+NMO_API char *nmo_strdup(nmo_allocator_t *alloc, const char *src);
+
+/* Internal utility: Check if a 32-bit value is a power of two */
+static inline int nmo_is_power_of_two_u32(uint32_t v) {
+    return v != 0u && (v & (v - 1u)) == 0u;
+}
+
 #ifdef __cplusplus
 }
 #endif

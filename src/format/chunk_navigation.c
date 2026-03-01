@@ -6,28 +6,20 @@
 #include <string.h>
 
 // =============================================================================
-// Internal Helpers
-// =============================================================================
-
-static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
-    return (nmo_chunk_parser_state_t *) chunk->parser_state;
-}
-
-// =============================================================================
 // Navigation
 // =============================================================================
 
 size_t nmo_chunk_get_position(const nmo_chunk_t *chunk) {
     if (!chunk) return (size_t)-1;
 
-    nmo_chunk_parser_state_t *state = get_parser_state((nmo_chunk_t *) chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state((nmo_chunk_t *) chunk);
     return state ? state->current_pos : (size_t)-1;
 }
 
 nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
     }
@@ -44,7 +36,7 @@ nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
 nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
     }
@@ -85,7 +77,7 @@ nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
 nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Chunk not in write mode");
     }

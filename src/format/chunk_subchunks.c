@@ -7,14 +7,6 @@
 #include <string.h>
 
 // =============================================================================
-// Internal Helpers
-// =============================================================================
-
-static inline nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
-    return (nmo_chunk_parser_state_t *) chunk->parser_state;
-}
-
-// =============================================================================
 // Sub-chunks
 // =============================================================================
 
@@ -104,7 +96,7 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
     NMO_RETURN_IF_ERROR(list_result);
 
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
                                "Failed to get parser state");
@@ -173,6 +165,14 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     NMO_CHUNK_CHECK_ARGS(chunk, out_sub, "Invalid arguments");
 
     nmo_status_t result;
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state == NULL) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                               "Failed to get parser state");
+    }
+
+    size_t start_pos = state->current_pos;
+    *out_sub = NULL;
 
     // Read header
     uint32_t total_size, version_info, data_size, file_flag;
@@ -180,7 +180,10 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     uint32_t class_id;  // CK2 reads as full DWORD
 
     result = nmo_chunk_read_dword(chunk, &total_size);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     if (total_size == 0) {
         *out_sub = NULL;
@@ -188,37 +191,84 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     }
 
     if (!nmo_chunk_has_read_capacity(chunk, (size_t) total_size)) {
+        state->current_pos = start_pos;
         *out_sub = NULL;
         NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk out of bounds");
     }
 
     // CK2 reads class_id as full DWORD, not WORD
     result = nmo_chunk_read_dword(chunk, &class_id);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     result = nmo_chunk_read_dword(chunk, &version_info);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     result = nmo_chunk_read_dword(chunk, &data_size);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     result = nmo_chunk_read_dword(chunk, &file_flag);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     result = nmo_chunk_read_dword(chunk, &id_count);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     result = nmo_chunk_read_dword(chunk, &chunk_count);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
-    if (chunk->chunk_version > 4) {
-        result = nmo_chunk_read_dword(chunk, &manager_count);
-        NMO_RETURN_IF_ERROR(result);
+    {
+        const uint32_t header_without_manager_dwords = 6u;
+        if (total_size < header_without_manager_dwords) {
+            state->current_pos = start_pos;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Sub-chunk size is too small");
+        }
+
+        size_t payload_consumed = (size_t)data_size + (size_t)id_count + (size_t)chunk_count;
+        size_t payload_capacity = (size_t)total_size - (size_t)header_without_manager_dwords;
+        if (payload_consumed > payload_capacity) {
+            state->current_pos = start_pos;
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Sub-chunk payload exceeds declared size");
+        }
+
+        size_t payload_remaining = payload_capacity - payload_consumed;
+        if (payload_remaining > 0) {
+            result = nmo_chunk_read_dword(chunk, &manager_count);
+            if (result != NMO_OK) {
+                state->current_pos = start_pos;
+                return result;
+            }
+
+            if (manager_count != (uint32_t)(payload_remaining - 1u)) {
+                state->current_pos = start_pos;
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Sub-chunk manager count does not match declared size");
+            }
+        }
     }
 
     // Create sub-chunk
     nmo_chunk_t *sub = nmo_chunk_create(chunk->arena);
     if (!sub) {
+        state->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                "Failed to create sub-chunk");
     }
@@ -235,12 +285,18 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     // Read data
     if (data_size > 0) {
-        NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, data_size, "Insufficient data");
+        if (!nmo_chunk_has_read_capacity(chunk, data_size)) {
+            state->current_pos = start_pos;
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                   "Insufficient data");
+        }
 
         result = nmo_arena_array_resize(&sub->data, data_size);
-        NMO_RETURN_IF_ERROR(result);
+        if (result != NMO_OK) {
+            state->current_pos = start_pos;
+            return result;
+        }
 
-        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
         uint32_t *parent_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
         uint32_t *sub_data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
         memcpy(sub_data,
@@ -251,12 +307,18 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     // Read IDs
     if (id_count > 0) {
-        NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, id_count, "Insufficient IDs data");
+        if (!nmo_chunk_has_read_capacity(chunk, id_count)) {
+            state->current_pos = start_pos;
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                   "Insufficient IDs data");
+        }
 
         result = nmo_arena_array_resize(&sub->ids, id_count);
-        NMO_RETURN_IF_ERROR(result);
+        if (result != NMO_OK) {
+            state->current_pos = start_pos;
+            return result;
+        }
 
-        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
         uint32_t *parent_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
         uint32_t *sub_ids = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->ids);
         memcpy(sub_ids,
@@ -267,12 +329,18 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     // Read chunk refs (offset list)
     if (chunk_count > 0) {
-        NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, chunk_count, "Insufficient chunk refs data");
+        if (!nmo_chunk_has_read_capacity(chunk, chunk_count)) {
+            state->current_pos = start_pos;
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                   "Insufficient chunk refs data");
+        }
 
         result = nmo_arena_array_resize(&sub->chunk_refs, chunk_count);
-        NMO_RETURN_IF_ERROR(result);
+        if (result != NMO_OK) {
+            state->current_pos = start_pos;
+            return result;
+        }
 
-        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
         uint32_t *parent_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
         uint32_t *sub_refs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->chunk_refs);
         memcpy(sub_refs,
@@ -283,12 +351,18 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
     // Read managers list
     if (manager_count > 0) {
-        NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, manager_count, "Insufficient manager refs data");
+        if (!nmo_chunk_has_read_capacity(chunk, manager_count)) {
+            state->current_pos = start_pos;
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                                   "Insufficient manager refs data");
+        }
 
         result = nmo_arena_array_resize(&sub->managers, manager_count);
-        NMO_RETURN_IF_ERROR(result);
+        if (result != NMO_OK) {
+            state->current_pos = start_pos;
+            return result;
+        }
 
-        nmo_chunk_parser_state_t *state = get_parser_state(chunk);
         uint32_t *parent_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
         uint32_t *sub_mgrs = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
         memcpy(sub_mgrs,
@@ -309,7 +383,7 @@ nmo_status_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
                                "Failed to get parser state");

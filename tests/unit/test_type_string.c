@@ -492,16 +492,14 @@ TEST(type_string, quaternion_roundtrip) {
 }
 
 /* ============================================================================
- * Enum Conversion Tests (DISABLED - requires Phase 6.2 register_enum API)
+ * Enum Conversion Tests
  * ============================================================================ */
 
-#if 0  // Disabled until nmo_type_registry_register_enum is implemented
 TEST(type_string, enum_to_string_by_name) {
     setup();
     
-    // Register enum type: Color { RED=1, GREEN=2, BLUE=3 }
     nmo_guid_t enum_guid = {0x12345678, 0x00000001};
-    nmo_status_t reg_result = nmo_type_registry_register_enum(
+    nmo_status_t reg_result = nmo_type_registry_register_enum_string(
         registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
     ASSERT_EQ(NMO_OK, reg_result);
     
@@ -510,7 +508,7 @@ TEST(type_string, enum_to_string_by_name) {
     
     char buffer[64];
     int32_t value = 2;  // GREEN
-    nmo_status_t result = nmo_enum_to_string(&value, type, buffer, sizeof(buffer), true);
+    nmo_status_t result = nmo_enum_to_string(&value, type, registry, buffer, sizeof(buffer), true);
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("GREEN", buffer);
@@ -522,13 +520,16 @@ TEST(type_string, enum_to_string_by_value) {
     setup();
     
     nmo_guid_t enum_guid = {0x12345678, 0x00000001};
-    nmo_type_registry_register_enum(registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    nmo_status_t reg_result = nmo_type_registry_register_enum_string(
+        registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
+    ASSERT_NE(NULL, type);
     
     char buffer[64];
     int32_t value = 2;
-    nmo_status_t result = nmo_enum_to_string(&value, type, buffer, sizeof(buffer), false);
+    nmo_status_t result = nmo_enum_to_string(&value, type, registry, buffer, sizeof(buffer), false);
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("2", buffer);
@@ -540,12 +541,15 @@ TEST(type_string, enum_from_string_by_name) {
     setup();
     
     nmo_guid_t enum_guid = {0x12345678, 0x00000001};
-    nmo_type_registry_register_enum(registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    nmo_status_t reg_result = nmo_type_registry_register_enum_string(
+        registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
+    ASSERT_NE(NULL, type);
     
     int32_t value = 0;
-    nmo_status_t result = nmo_enum_from_string(&value, type, "BLUE");
+    nmo_status_t result = nmo_enum_from_string(&value, type, registry, "BLUE");
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3, value);
@@ -557,12 +561,15 @@ TEST(type_string, enum_from_string_by_value) {
     setup();
     
     nmo_guid_t enum_guid = {0x12345678, 0x00000001};
-    nmo_type_registry_register_enum(registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    nmo_status_t reg_result = nmo_type_registry_register_enum_string(
+        registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
+    ASSERT_NE(NULL, type);
     
     int32_t value = 0;
-    nmo_status_t result = nmo_enum_from_string(&value, type, "2");
+    nmo_status_t result = nmo_enum_from_string(&value, type, registry, "2");
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(2, value);
@@ -574,37 +581,37 @@ TEST(type_string, enum_roundtrip) {
     setup();
     
     nmo_guid_t enum_guid = {0x12345678, 0x00000001};
-    nmo_type_registry_register_enum(registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    nmo_status_t reg_result = nmo_type_registry_register_enum_string(
+        registry, enum_guid, "Color", "RED=1,GREEN=2,BLUE=3");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, enum_guid);
+    ASSERT_NE(NULL, type);
     
     int32_t original = 1;  // RED
     char buffer[64];
     int32_t parsed = 0;
     
-    nmo_status_t r1 = nmo_enum_to_string(&original, type, buffer, sizeof(buffer), true);
+    nmo_status_t r1 = nmo_enum_to_string(&original, type, registry, buffer, sizeof(buffer), true);
     ASSERT_EQ(NMO_OK, r1);
     
-    nmo_status_t r2 = nmo_enum_from_string(&parsed, type, buffer);
+    nmo_status_t r2 = nmo_enum_from_string(&parsed, type, registry, buffer);
     ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
     teardown();
 }
-#endif  // Disabled enum tests
 
 /* ============================================================================
- * Flags Conversion Tests (DISABLED - requires Phase 6.2 register_flags API)
+ * Flags Conversion Tests
  * ============================================================================ */
 
-#if 0  // Disabled until nmo_type_registry_register_flags is implemented
 TEST(type_string, flags_to_string_by_names) {
     setup();
     
-    // Register flags type: FileMode { READ=1, WRITE=2, EXECUTE=4 }
     nmo_guid_t flags_guid = {0x12345678, 0x00000002};
-    nmo_status_t reg_result = nmo_type_registry_register_flags(
+    nmo_status_t reg_result = nmo_type_registry_register_flags_string(
         registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
     ASSERT_EQ(NMO_OK, reg_result);
     
@@ -613,7 +620,7 @@ TEST(type_string, flags_to_string_by_names) {
     
     char buffer[128];
     uint32_t value = 3;  // READ | WRITE
-    nmo_status_t result = nmo_flags_to_string(&value, type, buffer, sizeof(buffer), true);
+    nmo_status_t result = nmo_flags_to_string(&value, type, registry, buffer, sizeof(buffer), true);
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("READ|WRITE", buffer);
@@ -625,13 +632,16 @@ TEST(type_string, flags_to_string_by_hex) {
     setup();
     
     nmo_guid_t flags_guid = {0x12345678, 0x00000002};
-    nmo_type_registry_register_flags(registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    nmo_status_t reg_result = nmo_type_registry_register_flags_string(
+        registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
+    ASSERT_NE(NULL, type);
     
     char buffer[128];
     uint32_t value = 7;  // READ | WRITE | EXECUTE
-    nmo_status_t result = nmo_flags_to_string(&value, type, buffer, sizeof(buffer), false);
+    nmo_status_t result = nmo_flags_to_string(&value, type, registry, buffer, sizeof(buffer), false);
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_STR_EQ("0x7", buffer);
@@ -643,12 +653,15 @@ TEST(type_string, flags_from_string_by_names) {
     setup();
     
     nmo_guid_t flags_guid = {0x12345678, 0x00000002};
-    nmo_type_registry_register_flags(registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    nmo_status_t reg_result = nmo_type_registry_register_flags_string(
+        registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
+    ASSERT_NE(NULL, type);
     
     uint32_t value = 0;
-    nmo_status_t result = nmo_flags_from_string(&value, type, "READ|EXECUTE");
+    nmo_status_t result = nmo_flags_from_string(&value, type, registry, "READ|EXECUTE");
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(5u, value);  // 1 | 4
@@ -660,12 +673,15 @@ TEST(type_string, flags_from_string_by_hex) {
     setup();
     
     nmo_guid_t flags_guid = {0x12345678, 0x00000002};
-    nmo_type_registry_register_flags(registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    nmo_status_t reg_result = nmo_type_registry_register_flags_string(
+        registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
+    ASSERT_NE(NULL, type);
     
     uint32_t value = 0;
-    nmo_status_t result = nmo_flags_from_string(&value, type, "0x3");
+    nmo_status_t result = nmo_flags_from_string(&value, type, registry, "0x3");
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_EQ(3u, value);
@@ -677,25 +693,27 @@ TEST(type_string, flags_roundtrip) {
     setup();
     
     nmo_guid_t flags_guid = {0x12345678, 0x00000002};
-    nmo_type_registry_register_flags(registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    nmo_status_t reg_result = nmo_type_registry_register_flags_string(
+        registry, flags_guid, "FileMode", "READ=1,WRITE=2,EXECUTE=4");
+    ASSERT_EQ(NMO_OK, reg_result);
     
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, flags_guid);
+    ASSERT_NE(NULL, type);
     
     uint32_t original = 6;  // WRITE | EXECUTE
     char buffer[128];
     uint32_t parsed = 0;
     
-    nmo_status_t r1 = nmo_flags_to_string(&original, type, buffer, sizeof(buffer), true);
+    nmo_status_t r1 = nmo_flags_to_string(&original, type, registry, buffer, sizeof(buffer), true);
     ASSERT_EQ(NMO_OK, r1);
     
-    nmo_status_t r2 = nmo_flags_from_string(&parsed, type, buffer);
+    nmo_status_t r2 = nmo_flags_from_string(&parsed, type, registry, buffer);
     ASSERT_EQ(NMO_OK, r2);
     
     ASSERT_EQ(original, parsed);
     
     teardown();
 }
-#endif  // Disabled flags tests
 
 /* ============================================================================
  * String Escape/Unescape Tests
@@ -1368,23 +1386,19 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, quaternion_from_string);
     REGISTER_TEST(type_string, quaternion_roundtrip);
     
-    // Enum tests (DISABLED - Phase 6.2 API not implemented yet)
-    /*
+    // Enum tests
     REGISTER_TEST(type_string, enum_to_string_by_name);
     REGISTER_TEST(type_string, enum_to_string_by_value);
     REGISTER_TEST(type_string, enum_from_string_by_name);
     REGISTER_TEST(type_string, enum_from_string_by_value);
     REGISTER_TEST(type_string, enum_roundtrip);
-    */
     
-    // Flags tests (DISABLED - Phase 6.2 API not implemented yet)
-    /*
+    // Flags tests
     REGISTER_TEST(type_string, flags_to_string_by_names);
     REGISTER_TEST(type_string, flags_to_string_by_hex);
     REGISTER_TEST(type_string, flags_from_string_by_names);
     REGISTER_TEST(type_string, flags_from_string_by_hex);
     REGISTER_TEST(type_string, flags_roundtrip);
-    */
     
     // String escape/unescape tests
     REGISTER_TEST(type_string, string_escape_simple);

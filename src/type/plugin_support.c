@@ -22,7 +22,7 @@
  * Metadata Deep Copy Helpers
  * ============================================================================ */
 
-static const char *nmo_alloc_strdup_optional(nmo_allocator_t *allocator, const char *src) {
+static const char *nmo_strdup_optional(nmo_allocator_t *allocator, const char *src) {
     if (!src) {
         return NULL;
     }
@@ -55,11 +55,11 @@ static nmo_status_t nmo_copy_enum_metadata(
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
         const nmo_enum_descriptor_t *src = &metadata->enum_meta.values[i];
         nmo_enum_descriptor_t *dst = &values_copy[i];
-        dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
+        dst->name = nmo_strdup_optional(&registry->type_allocator, src->name);
         if (src->name && !dst->name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy enum value name");
         }
-        dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
+        dst->description = nmo_strdup_optional(&registry->type_allocator, src->description);
         if (src->description && !dst->description) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy enum value description");
         }
@@ -92,11 +92,11 @@ static nmo_status_t nmo_copy_flags_metadata(
     for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
         const nmo_flags_descriptor_t *src = &metadata->flags_meta.bits[i];
         nmo_flags_descriptor_t *dst = &bits_copy[i];
-        dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
+        dst->name = nmo_strdup_optional(&registry->type_allocator, src->name);
         if (src->name && !dst->name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy flags bit name");
         }
-        dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
+        dst->description = nmo_strdup_optional(&registry->type_allocator, src->description);
         if (src->description && !dst->description) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy flags bit description");
         }
@@ -129,11 +129,11 @@ static nmo_status_t nmo_copy_struct_metadata(
     for (size_t i = 0; i < metadata->struct_meta.field_count; i++) {
         const nmo_struct_descriptor_t *src = &metadata->struct_meta.fields[i];
         nmo_struct_descriptor_t *dst = &fields_copy[i];
-        dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
+        dst->name = nmo_strdup_optional(&registry->type_allocator, src->name);
         if (src->name && !dst->name) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy struct field name");
         }
-        dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
+        dst->description = nmo_strdup_optional(&registry->type_allocator, src->description);
         if (src->description && !dst->description) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy struct field description");
         }
@@ -180,13 +180,13 @@ static nmo_status_t nmo_copy_union_metadata(
 
         memset(dst, 0, sizeof(*dst));
         if (src->name) {
-            dst->name = nmo_alloc_strdup_optional(&registry->type_allocator, src->name);
+            dst->name = nmo_strdup_optional(&registry->type_allocator, src->name);
             if (!dst->name) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy union field name");
             }
         }
         if (src->description) {
-            dst->description = nmo_alloc_strdup_optional(&registry->type_allocator, src->description);
+            dst->description = nmo_strdup_optional(&registry->type_allocator, src->description);
             if (!dst->description) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy union field description");
             }

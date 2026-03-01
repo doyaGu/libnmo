@@ -74,6 +74,11 @@ static inline int nmo_chunk_has_read_capacity(const nmo_chunk_t *chunk, size_t d
     return dwords <= (readable_dwords - state->current_pos);
 }
 
+static inline nmo_chunk_parser_state_t *nmo_chunk_get_parser_state(
+        nmo_chunk_t *chunk) {
+    return (nmo_chunk_parser_state_t *) chunk->parser_state;
+}
+
 // =============================================================================
 // BOUNDS CHECKING
 // =============================================================================

@@ -28,6 +28,8 @@
 #include "core/nmo_guid.h"
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
+#include "io/nmo_io_memory.h"
+#include "io/nmo_txn.h"
 #include "format/nmo_header.h"
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"
@@ -65,6 +67,16 @@ static int save_safe_add_size(size_t a, size_t b, size_t *out) {
     }
     *out = a + b;
     return 1;
+}
+
+static nmo_status_t save_txn_write_u32_le(nmo_txn_handle_t *txn, uint32_t value) {
+    uint8_t encoded[4] = {
+        (uint8_t)(value & 0xFFu),
+        (uint8_t)((value >> 8) & 0xFFu),
+        (uint8_t)((value >> 16) & 0xFFu),
+        (uint8_t)((value >> 24) & 0xFFu)
+    };
+    return nmo_txn_write(txn, encoded, sizeof(encoded));
 }
 
 /* ============================================================================
@@ -1345,35 +1357,69 @@ static nmo_status_t save_write_file(nmo_save_context_t *ctx, const char *path) {
         /* Could add checksum verification, pointer validation, etc. */
     }
 
-    /* Open output file */
-    nmo_log(ctx->logger, NMO_LOG_INFO, "  Opening output file: %s", path);
-    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_WRITE | NMO_IO_CREATE);
-    if (io == NULL) {
-        nmo_log(ctx->logger, NMO_LOG_ERROR, "Failed to open output file: %s", path);
-        return SAVE_ERR(NMO_ERR_FILE_NOT_FOUND, "Cannot open output file");
+    /* Open atomic transaction */
+    nmo_log(ctx->logger, NMO_LOG_INFO, "  Opening output transaction: %s", path);
+    nmo_txn_desc_t txn_desc = {
+        .path = path,
+        .durability = NMO_TXN_FSYNC,
+        .staging_dir = NULL
+    };
+
+    nmo_txn_handle_t *txn = nmo_txn_open(&txn_desc);
+    if (txn == NULL) {
+        nmo_log(ctx->logger, NMO_LOG_ERROR, "Failed to open output transaction: %s", path);
+        return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Cannot open output transaction");
     }
 
-    /* Write file header */
-    nmo_status_t header_result = nmo_file_header_serialize(&header, io);
+    /* Serialize header using canonical IO serializer into memory, then write via transaction */
+    nmo_io_interface_t *header_io = nmo_memory_io_open_write(sizeof(nmo_file_header_t));
+    if (header_io == NULL) {
+        nmo_txn_rollback(txn);
+        nmo_txn_close(txn);
+        return SAVE_ERR(NMO_ERR_NOMEM, "Cannot allocate header serialization buffer");
+    }
+
+    nmo_status_t header_result = nmo_file_header_serialize(&header, header_io);
     if (header_result != NMO_OK) {
-        nmo_io_close(io);
+        nmo_io_close(header_io);
+        nmo_txn_rollback(txn);
+        nmo_txn_close(txn);
         return header_result;
+    }
+
+    size_t serialized_header_size = 0;
+    const void *serialized_header = nmo_memory_io_get_data(header_io, &serialized_header_size);
+    if (serialized_header == NULL || serialized_header_size == 0) {
+        nmo_io_close(header_io);
+        nmo_txn_rollback(txn);
+        nmo_txn_close(txn);
+        return SAVE_ERR(NMO_ERR_INTERNAL, "Header serialization produced no data");
+    }
+
+    nmo_status_t write_result = nmo_txn_write(txn, serialized_header, serialized_header_size);
+    nmo_io_close(header_io);
+    if (write_result != NMO_OK) {
+        nmo_txn_rollback(txn);
+        nmo_txn_close(txn);
+        return SAVE_ERR(write_result, "Header write failed");
     }
 
     /* Write Header1 */
     if (ctx->header1_pack_size > 0) {
-        int write_result = nmo_io_write(io, ctx->header1_packed, ctx->header1_pack_size);
+        write_result = nmo_txn_write(txn, ctx->header1_packed, ctx->header1_pack_size);
         if (write_result != NMO_OK) {
-            nmo_io_close(io);
+            nmo_txn_rollback(txn);
+            nmo_txn_close(txn);
             return SAVE_ERR(write_result, "Header1 write failed");
         }
     }
 
     /* Write Data section */
     if (ctx->data_pack_size > 0) {
-        int write_result = nmo_io_write(io, ctx->data_packed, ctx->data_pack_size);
+        write_result = nmo_txn_write(txn, ctx->data_packed, ctx->data_pack_size);
         if (write_result != NMO_OK) {
-            nmo_io_close(io);
+            nmo_txn_rollback(txn);
+            nmo_txn_close(txn);
             return SAVE_ERR(write_result, "Data section write failed");
         }
     }
@@ -1408,8 +1454,9 @@ static nmo_status_t save_write_file(nmo_save_context_t *ctx, const char *path) {
     if (!strip_included && use_shadow_included) {
         nmo_log(ctx->logger, NMO_LOG_INFO, "  Writing shadow included files blob (%zu bytes)",
                 shadow_size);
-        if (nmo_io_write(io, shadow_blob, shadow_size) != NMO_OK) {
-            nmo_io_close(io);
+        if (nmo_txn_write(txn, shadow_blob, shadow_size) != NMO_OK) {
+            nmo_txn_rollback(txn);
+            nmo_txn_close(txn);
             return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included files shadow blob write failed");
         }
     } else if (!strip_included && session_included_files != NULL && session_included_count > 0) {
@@ -1422,16 +1469,18 @@ static nmo_status_t save_write_file(nmo_save_context_t *ctx, const char *path) {
             const int metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
             uint32_t payload_size = (entry->data != NULL && !metadata_only) ? entry->size : 0u;
 
-            if (nmo_io_write_u32(io, name_len) != NMO_OK ||
-                (name_len > 0 && nmo_io_write(io, name, name_len) != NMO_OK) ||
-                nmo_io_write_u32(io, payload_size) != NMO_OK) {
-                nmo_io_close(io);
+            if (save_txn_write_u32_le(txn, name_len) != NMO_OK ||
+                (name_len > 0 && nmo_txn_write(txn, name, name_len) != NMO_OK) ||
+                save_txn_write_u32_le(txn, payload_size) != NMO_OK) {
+                nmo_txn_rollback(txn);
+                nmo_txn_close(txn);
                 return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included file metadata write failed");
             }
 
             if (payload_size > 0 && entry->data != NULL) {
-                if (nmo_io_write(io, entry->data, payload_size) != NMO_OK) {
-                    nmo_io_close(io);
+                if (nmo_txn_write(txn, entry->data, payload_size) != NMO_OK) {
+                    nmo_txn_rollback(txn);
+                    nmo_txn_close(txn);
                     return SAVE_ERR(NMO_ERR_CANT_WRITE_FILE, "Included file payload write failed");
                 }
             } else if (entry->size > 0 && metadata_only) {
@@ -1441,7 +1490,13 @@ static nmo_status_t save_write_file(nmo_save_context_t *ctx, const char *path) {
         }
     }
 
-    nmo_io_close(io);
+    write_result = nmo_txn_commit(txn);
+    if (write_result != NMO_OK) {
+        nmo_txn_rollback(txn);
+        nmo_txn_close(txn);
+        return SAVE_ERR(write_result, "Atomic commit failed");
+    }
+    nmo_txn_close(txn);
 
     nmo_log(ctx->logger, NMO_LOG_INFO, "  Write complete: %u bytes", file_size);
 
