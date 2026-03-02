@@ -1376,9 +1376,22 @@ static nmo_status_t nmo_type_value_to_string_impl(
     nmo_status_t result = NMO_OK;
 
     /* If a type provides a custom to_string implementation, prefer it.
-     * This makes vtables authoritative for parameter value types. */
+     * This makes vtables authoritative for parameter value types.
+     *
+     * IMPORTANT: Skip nmo_object_default_to_string (the default trampoline).
+     * It calls the PUBLIC nmo_type_value_to_string which resets depth to 0,
+     * creating infinite recursion and stack overflow.  Object types with
+     * reflection fields are better handled by struct-like rendering below
+     * which properly tracks recursion depth. */
     if (type->vtable && type->vtable->to_string) {
-        return type->vtable->to_string(value, type, buffer, buffer_size, (void *)registry);
+        /* Skip the default object trampoline that re-enters this function.
+         * Types with reflection fields will fall through to struct-like
+         * rendering which respects the depth limit. */
+        extern nmo_status_t nmo_object_default_to_string(
+            const void *, const nmo_type_descriptor_t *, char *, size_t, void *);
+        if (type->vtable->to_string != nmo_object_default_to_string) {
+            return type->vtable->to_string(value, type, buffer, buffer_size, (void *)registry);
+        }
     }
 
     /* Prefer explicit built-in GUID formatting over generic struct formatting.
