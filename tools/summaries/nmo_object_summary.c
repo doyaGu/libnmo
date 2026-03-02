@@ -7,10 +7,10 @@
  * summaries without requiring hardcoded type-specific handlers.
  *
  * Architecture:
- * 1. ValueFormatter - Type-aware value formatting (uses type system)
- * 2. FieldRenderer - Renders individual fields with proper formatting
- * 3. SummaryEngine - Orchestrates the full summary generation
- * 4. EnricherRegistry - Pluggable type-specific computed values
+ * 1. ValueFormatter - Type-aware value formatting (uses type system + GUID dispatch)
+ * 2. FieldRenderer - Renders individual fields with GUID-aware formatting
+ * 3. HierarchyFlattener - Walks base class embeddings, emits per-class sections
+ * 4. SummaryEngine - Orchestrates the full summary generation
  */
 
 #include "nmo_object_summary.h"
@@ -43,7 +43,6 @@
 #define NMO_SUMMARY_DEFAULT_ARRAY_PREVIEW_MAX   16u
 #define NMO_SUMMARY_DEFAULT_TEXT_PREVIEW_MAX    8u
 #define NMO_SUMMARY_DEFAULT_MAX_DEPTH           2u
-#define NMO_SUMMARY_MAX_ENRICHERS               64u
 #define NMO_SUMMARY_VALUE_BUFFER_SIZE           512u
 
 nmo_summary_config_t nmo_summary_config_default(void) {
@@ -172,19 +171,6 @@ static yyjson_mut_val *nmo_summary_json_strcpy_safe(yyjson_mut_doc *doc, const c
 }
 
 /* ============================================================================
- * Enricher Registry (Simple Static Table)
- * ============================================================================ */
-
-typedef struct {
-    nmo_guid_t base_guid;
-    nmo_summary_enricher_fn enricher;
-} nmo_enricher_entry_t;
-
-static nmo_enricher_entry_t g_enrichers[NMO_SUMMARY_MAX_ENRICHERS];
-static size_t g_enricher_count = 0;
-static bool g_enrichers_initialized = false;
-
-/* ============================================================================
  * Forward Declarations
  * ============================================================================ */
 
@@ -225,7 +211,6 @@ static bool nmo_summary_emit_reflection_fields(
     nmo_object_t *obj,
     nmo_summary_output_t *out,
     const nmo_summary_config_t *config);
-static bool nmo_summary_emit_enrichments(nmo_object_t *obj, nmo_summary_output_t *out);
 
 /* ============================================================================
  * Summary Context Helpers
@@ -1187,10 +1172,123 @@ static yyjson_mut_val *nmo_summary_query_value_to_json(
     }
 }
 
+/* ============================================================================
+ * Parameter Value Decoding Helpers
+ *
+ * When rendering CKParameter (or subclass) fields, the raw buffer_data array
+ * can be decoded into a human-readable value using the sibling type_guid field.
+ * ============================================================================ */
+
+/**
+ * @brief Read a sibling GUID field from the same owner instance via reflection.
+ *
+ * Searches the owner type's fields for a field with the given name and
+ * GUID-sized storage, then copies the value out.
+ */
+static bool nmo_summary_read_sibling_guid(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const char *field_name,
+    nmo_guid_t *out_guid)
+{
+    if (!owner_type || !owner_instance || !field_name || !out_guid) return false;
+
+    for (size_t i = 0; i < owner_type->field_count; ++i) {
+        const nmo_type_field_t *f = &owner_type->fields[i];
+        if (f->name && strcmp(f->name, field_name) == 0 && f->size == sizeof(nmo_guid_t)) {
+            const void *ptr = (const uint8_t *)owner_instance + f->offset;
+            memcpy(out_guid, ptr, sizeof(nmo_guid_t));
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Well-known parameter type GUID aliases for unregistered types.
+ *
+ * Maps parameter type GUIDs that aren't registered in the type registry
+ * to equivalent registered types for value decoding.
+ */
+static const struct {
+    uint32_t d1, d2;      /* Source GUID (unregistered) */
+    uint32_t ad1, ad2;    /* Alias GUID (registered, used for decoding) */
+    const char *name;     /* Human-readable name */
+} nmo_param_type_aliases[] = {
+    /* CKPGUID_TIME -> float (milliseconds) */
+    { 0x54b4422b, 0x730f0f4f, CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2, "Time" },
+    /* CKPGUID_OLDTIME -> float */
+    { 0x4a4d4867, 0x3c28773f, CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2, "OldTime" },
+    /* CKPGUID_MESSAGE -> int */
+    { 0x03881e12, 0x5ba34e2b, CKPGUID_INT_D1, CKPGUID_INT_D2, "Message" },
+    /* CKPGUID_ATTRIBUTE -> int */
+    { 0x3ea34ee9, 0x09fa5366, CKPGUID_INT_D1, CKPGUID_INT_D2, "Attribute" },
+    /* CKPGUID_CLASSID -> uint32 */
+    { 0x19644e43, 0x4d6f6123, CKPGUID_UINT32_D1, CKPGUID_UINT32_D2, "ClassID" },
+};
+#define NMO_PARAM_TYPE_ALIAS_COUNT \
+    (sizeof(nmo_param_type_aliases) / sizeof(nmo_param_type_aliases[0]))
+
+/**
+ * @brief Resolve a parameter type GUID to its best-effort type descriptor.
+ *
+ * First checks the registry directly. If not found, checks the alias table.
+ * Returns the type descriptor and optionally the human-readable name.
+ */
+static const nmo_type_descriptor_t *nmo_summary_resolve_param_type(
+    const nmo_type_registry_t *registry,
+    nmo_guid_t guid,
+    const char **out_name)
+{
+    if (!registry) return NULL;
+
+    /* Direct lookup */
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, guid);
+    if (type) {
+        if (out_name) *out_name = type->name;
+        return type;
+    }
+
+    /* Alias table lookup */
+    for (size_t i = 0; i < NMO_PARAM_TYPE_ALIAS_COUNT; ++i) {
+        if (guid.d1 == nmo_param_type_aliases[i].d1 &&
+            guid.d2 == nmo_param_type_aliases[i].d2) {
+            nmo_guid_t alias = { nmo_param_type_aliases[i].ad1, nmo_param_type_aliases[i].ad2 };
+            type = nmo_type_registry_find_by_guid(registry, alias);
+            if (type && out_name) *out_name = nmo_param_type_aliases[i].name;
+            return type;
+        }
+    }
+
+    return NULL;
+}
+
 static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *field, const void *field_ptr) {
     nmo_field_render_ctx_t *ctx = (nmo_field_render_ctx_t*)user_data;
     if (!ctx || !ctx->out || !field || !field->name) {
         return true;
+    }
+
+    /* Skip base class embedding fields â€?these are handled by the flattening
+     * walker in nmo_summary_emit_reflection_fields_recursive(). */
+    if (!(field->flags & NMO_FIELD_REPEATED) &&
+        !nmo_guid_is_null(ctx->owner_type->base_type))
+    {
+        /* Check if this field holds the parent class state.
+         * Match by type_guid == parent's GUID, or by well-known embedding names
+         * when the type_guid is CKPGUID_NONE. */
+        nmo_guid_t parent_guid = ctx->owner_type->base_type;
+        if (nmo_guid_equals(field->type_guid, parent_guid)) {
+            return true; /* Skip: parent base embedding */
+        }
+        if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
+            if (strcmp(field->name, "base") == 0 ||
+                strcmp(field->name, "entity") == 0 ||
+                strcmp(field->name, "beobject") == 0 ||
+                strcmp(field->name, "object") == 0) {
+                return true; /* Skip: likely parent base embedding */
+            }
+        }
     }
 
     ctx->field_count++;
@@ -1205,6 +1303,222 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
     const nmo_type_descriptor_t *field_type = NULL;
     if (ctx->registry) {
         field_type = nmo_type_registry_find_by_guid(ctx->registry, field->type_guid);
+    }
+
+    /* ---- Enhanced type_guid display: show type name alongside GUID ---- */
+    if (strcmp(field->name, "type_guid") == 0 &&
+        nmo_guid_equals(field->type_guid, CKPGUID_GUID) &&
+        field->size == sizeof(nmo_guid_t) && field_ptr && ctx->registry)
+    {
+        nmo_guid_t guid_val = *(const nmo_guid_t *)field_ptr;
+        const char *type_name = NULL;
+        nmo_summary_resolve_param_type(ctx->registry, guid_val, &type_name);
+
+        char buf[128];
+        if (type_name) {
+            snprintf(buf, sizeof(buf), "%s ({%08X-%08X})", type_name, guid_val.d1, guid_val.d2);
+        } else {
+            snprintf(buf, sizeof(buf), "{%08X-%08X}", guid_val.d1, guid_val.d2);
+        }
+
+        if (ctx->out->is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", "type");
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "value_str", buf);
+            if (type_name) {
+                nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "type_name", type_name);
+            }
+            char guid_str[32];
+            snprintf(guid_str, sizeof(guid_str), "{%08X-%08X}", guid_val.d1, guid_val.d2);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "guid", guid_str);
+            yyjson_mut_arr_add_val(ctx->json_fields, item);
+        } else {
+            nmo_cli_print_kv(ctx->out->stream, "type", buf, ctx->label_width, ctx->out->colorize);
+        }
+        return true;
+    }
+
+    /* ---- Parameter buffer_data decoding ---- */
+    /* When a buffer_data array has a sibling type_guid, decode the raw bytes
+     * as a typed value instead of showing individual bytes. */
+    if ((field->flags & NMO_FIELD_REPEATED) &&
+        strcmp(field->name, "buffer_data") == 0 &&
+        ctx->owner_type && ctx->owner_instance && ctx->registry)
+    {
+        nmo_guid_t param_type_guid = {0};
+        if (nmo_summary_read_sibling_guid(ctx->owner_type, ctx->owner_instance,
+                                           "type_guid", &param_type_guid) &&
+            !nmo_guid_is_null(param_type_guid))
+        {
+            const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
+            uint64_t byte_count = nmo_summary_guess_array_count(
+                ctx->owner_type, ctx->owner_instance, field);
+
+            const char *type_name = NULL;
+            const nmo_type_descriptor_t *param_type =
+                nmo_summary_resolve_param_type(ctx->registry, param_type_guid, &type_name);
+
+            if (param_type && array_ptr && byte_count > 0 &&
+                param_type->size > 0 && (size_t)param_type->size == byte_count)
+            {
+                char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+                nmo_status_t status = nmo_type_value_to_string(
+                    array_ptr, param_type, ctx->registry, value_buf, sizeof(value_buf));
+                if (status == NMO_OK) {
+                    if (ctx->out->is_json) {
+                        yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+                        nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", "value");
+                        nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "value_str", value_buf);
+                        yyjson_mut_obj_add_uint(ctx->out->json_doc, item, "buffer_size", byte_count);
+                        if (type_name) {
+                            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "decoded_type", type_name);
+                        }
+                        yyjson_mut_arr_add_val(ctx->json_fields, item);
+                    } else {
+                        nmo_cli_print_kv(ctx->out->stream, "value", value_buf,
+                                         ctx->label_width, ctx->out->colorize);
+                    }
+                    return true;
+                }
+            }
+
+            /* String parameters: buffer contains raw character data (variable size) */
+            if (array_ptr && byte_count > 0 &&
+                nmo_guid_equals(param_type_guid, CKPGUID_STRING))
+            {
+                /* Treat buffer bytes as a C string (usually null-terminated) */
+                char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+                size_t str_len = byte_count;
+                /* Strip trailing null if present */
+                const char *str_data = (const char *)array_ptr;
+                if (str_len > 0 && str_data[str_len - 1] == '\0') {
+                    str_len--;
+                }
+                size_t copy_len = str_len < sizeof(value_buf) - 3 ? str_len : sizeof(value_buf) - 3;
+                value_buf[0] = '"';
+                memcpy(value_buf + 1, str_data, copy_len);
+                value_buf[1 + copy_len] = '"';
+                value_buf[2 + copy_len] = '\0';
+
+                if (ctx->out->is_json) {
+                    yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+                    nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", "value");
+                    /* Use safe string copy for JSON (validates UTF-8) */
+                    char raw_str[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+                    size_t raw_len = str_len < sizeof(raw_str) - 1 ? str_len : sizeof(raw_str) - 1;
+                    memcpy(raw_str, str_data, raw_len);
+                    raw_str[raw_len] = '\0';
+                    yyjson_mut_val *str_val = nmo_summary_json_strcpy_safe(ctx->out->json_doc, raw_str);
+                    yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value_str", str_val);
+                    yyjson_mut_arr_add_val(ctx->json_fields, item);
+                } else {
+                    nmo_cli_print_kv(ctx->out->stream, "value", value_buf,
+                                     ctx->label_width, ctx->out->colorize);
+                }
+                return true;
+            }
+            /* Size mismatch or decoding failed: for known types with 0 bytes,
+             * show "(empty)" instead of falling through to raw bytes */
+            if (byte_count == 0) {
+                if (ctx->out->is_json) {
+                    yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+                    nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", "value");
+                    yyjson_mut_obj_add_null(ctx->out->json_doc, item, "value_str");
+                    yyjson_mut_arr_add_val(ctx->json_fields, item);
+                } else {
+                    nmo_cli_print_kv(ctx->out->stream, "value", "(no data)",
+                                     ctx->label_width, ctx->out->colorize);
+                }
+                return true;
+            }
+            /* Fall through to raw byte display for unrecognized sizes */
+        }
+    }
+
+    /* ---- GUID-aware formatting: colors stored as uint32_t ARGB ---- */
+    if (nmo_guid_equals(field->type_guid, CKPGUID_COLOR) && field->size == sizeof(uint32_t)
+        && !(field->flags & NMO_FIELD_REPEATED) && field_ptr)
+    {
+        uint32_t argb = *(const uint32_t *)field_ptr;
+
+        if (ctx->out->is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
+            /* Structured color */
+            uint8_t a = (argb >> 24) & 0xFF;
+            uint8_t r = (argb >> 16) & 0xFF;
+            uint8_t g = (argb >> 8) & 0xFF;
+            uint8_t b = argb & 0xFF;
+            yyjson_mut_val *color = yyjson_mut_obj(ctx->out->json_doc);
+            yyjson_mut_obj_add_uint(ctx->out->json_doc, color, "r", r);
+            yyjson_mut_obj_add_uint(ctx->out->json_doc, color, "g", g);
+            yyjson_mut_obj_add_uint(ctx->out->json_doc, color, "b", b);
+            yyjson_mut_obj_add_uint(ctx->out->json_doc, color, "a", a);
+            char hex[16];
+            snprintf(hex, sizeof(hex), "#%02X%02X%02X%02X", a, r, g, b);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, color, "hex", hex);
+            yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value", color);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "value_str", hex);
+            yyjson_mut_arr_add_val(ctx->json_fields, item);
+        } else {
+            char buf[48];
+            uint8_t a = (argb >> 24) & 0xFF;
+            uint8_t r = (argb >> 16) & 0xFF;
+            uint8_t g = (argb >> 8) & 0xFF;
+            uint8_t b = argb & 0xFF;
+            snprintf(buf, sizeof(buf), "#%02X%02X%02X%02X (ARGB)", a, r, g, b);
+            nmo_cli_print_kv(ctx->out->stream, field->name, buf, ctx->label_width, ctx->out->colorize);
+        }
+        return true;
+    }
+
+    /* ---- GUID-aware formatting: 4x4 matrix decomposition ---- */
+    if (nmo_guid_equals(field->type_guid, CKPGUID_MATRIX) && field->size == sizeof(float) * 16
+        && !(field->flags & NMO_FIELD_REPEATED) && field_ptr)
+    {
+        const float *m = (const float *)field_ptr;
+        /* Virtools row-major: [12,13,14] = translation */
+        float px = m[12], py = m[13], pz = m[14];
+        /* Scale from column magnitudes */
+        float sx = sqrtf(m[0]*m[0] + m[1]*m[1] + m[2]*m[2]);
+        float sy = sqrtf(m[4]*m[4] + m[5]*m[5] + m[6]*m[6]);
+        float sz = sqrtf(m[8]*m[8] + m[9]*m[9] + m[10]*m[10]);
+
+        if (ctx->out->is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
+            yyjson_mut_val *mat_obj = yyjson_mut_obj(ctx->out->json_doc);
+            /* Position */
+            yyjson_mut_val *pos_arr = yyjson_mut_arr(ctx->out->json_doc);
+            yyjson_mut_arr_add_real(ctx->out->json_doc, pos_arr, (double)px);
+            yyjson_mut_arr_add_real(ctx->out->json_doc, pos_arr, (double)py);
+            yyjson_mut_arr_add_real(ctx->out->json_doc, pos_arr, (double)pz);
+            yyjson_mut_obj_add_val(ctx->out->json_doc, mat_obj, "position", pos_arr);
+            /* Scale */
+            yyjson_mut_val *scl_arr = yyjson_mut_arr(ctx->out->json_doc);
+            yyjson_mut_arr_add_real(ctx->out->json_doc, scl_arr, (double)sx);
+            yyjson_mut_arr_add_real(ctx->out->json_doc, scl_arr, (double)sy);
+            yyjson_mut_arr_add_real(ctx->out->json_doc, scl_arr, (double)sz);
+            yyjson_mut_obj_add_val(ctx->out->json_doc, mat_obj, "scale", scl_arr);
+            /* Raw 16 floats */
+            yyjson_mut_val *raw = yyjson_mut_arr(ctx->out->json_doc);
+            for (int i = 0; i < 16; ++i)
+                yyjson_mut_arr_add_real(ctx->out->json_doc, raw, (double)m[i]);
+            yyjson_mut_obj_add_val(ctx->out->json_doc, mat_obj, "raw", raw);
+            yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value", mat_obj);
+            yyjson_mut_arr_add_val(ctx->json_fields, item);
+        } else {
+            /* Text: emit position and scale as two compact lines */
+            char pos_buf[64], scl_buf[64];
+            snprintf(pos_buf, sizeof(pos_buf), "(%.4g, %.4g, %.4g)", px, py, pz);
+            snprintf(scl_buf, sizeof(scl_buf), "(%.4g, %.4g, %.4g)", sx, sy, sz);
+            char mat_label[64];
+            snprintf(mat_label, sizeof(mat_label), "%s.position", field->name);
+            nmo_cli_print_kv(ctx->out->stream, mat_label, pos_buf, ctx->label_width, ctx->out->colorize);
+            snprintf(mat_label, sizeof(mat_label), "%s.scale", field->name);
+            nmo_cli_print_kv(ctx->out->stream, mat_label, scl_buf, ctx->label_width, ctx->out->colorize);
+        }
+        return true;
     }
 
     /* Handle repeated (array) fields */
@@ -1325,8 +1639,118 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
 }
 
 /* ============================================================================
- * Summary Sections
+ * Summary Sections: Recursive Base-Class Flattening
  * ============================================================================ */
+
+/**
+ * @brief Check if a field is a base-class embedding that should be flattened.
+ *
+ * Detection: The field's type_guid matches the type's parent GUID, or the
+ * field uses CKPGUID_NONE and has a well-known embedding name
+ * ("base", "entity", "beobject", "object").
+ */
+static bool nmo_summary_is_base_embedding(
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field)
+{
+    if (!owner_type || !field) return false;
+    if (field->flags & NMO_FIELD_REPEATED) return false;
+    if (nmo_guid_is_null(owner_type->base_type)) return false;
+
+    /* Check if type_guid matches the parent */
+    if (nmo_guid_equals(field->type_guid, owner_type->base_type)) {
+        return true;
+    }
+
+    /* Check well-known embedding names when type_guid is CKPGUID_NONE.
+     * No size threshold: CKObject base is only 4 bytes. */
+    if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
+        if (strcmp(field->name, "base") == 0 ||
+            strcmp(field->name, "entity") == 0 ||
+            strcmp(field->name, "beobject") == 0 ||
+            strcmp(field->name, "object") == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Build the class hierarchy chain (deepest-first) for flattened rendering.
+ *
+ * Walks from the leaf type up through base embeddings, collecting each level's
+ * (type, state_ptr) pair. Returns the number of levels found.
+ *
+ * The output is stored BOTTOM-UP: index 0 is the deepest base class (e.g. CKObject),
+ * and the last index is the leaf class (e.g. CK3dObject).
+ */
+#define NMO_MAX_HIERARCHY_DEPTH 16
+
+typedef struct {
+    const nmo_type_descriptor_t *type;
+    const void *state;
+} nmo_hierarchy_level_t;
+
+static size_t nmo_summary_build_hierarchy(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *root_type,
+    const void *root_state,
+    nmo_hierarchy_level_t *levels,
+    size_t max_levels)
+{
+    if (!registry || !root_type || !root_state || !levels || max_levels == 0) {
+        return 0;
+    }
+
+    /* First, collect top-down (leaf first), then reverse */
+    nmo_hierarchy_level_t stack[NMO_MAX_HIERARCHY_DEPTH];
+    size_t depth = 0;
+
+    const nmo_type_descriptor_t *cur_type = root_type;
+    const void *cur_state = root_state;
+
+    while (cur_type && depth < NMO_MAX_HIERARCHY_DEPTH) {
+        stack[depth].type = cur_type;
+        stack[depth].state = cur_state;
+        depth++;
+
+        /* Find the base embedding field */
+        bool found_base = false;
+        for (size_t i = 0; i < cur_type->field_count; ++i) {
+            const nmo_type_field_t *field = &cur_type->fields[i];
+            if (nmo_summary_is_base_embedding(cur_type, field)) {
+                const void *base_ptr = (const uint8_t *)cur_state + field->offset;
+
+                /* Resolve the parent type descriptor */
+                const nmo_type_descriptor_t *parent_type = NULL;
+                if (!nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
+                    parent_type = nmo_type_registry_find_by_guid(registry, field->type_guid);
+                }
+                if (!parent_type && !nmo_guid_is_null(cur_type->base_type)) {
+                    parent_type = nmo_type_registry_find_by_guid(registry, cur_type->base_type);
+                }
+
+                if (parent_type && nmo_type_has_reflection(parent_type)) {
+                    cur_type = parent_type;
+                    cur_state = base_ptr;
+                    found_base = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found_base) break;
+    }
+
+    /* Reverse into levels[] so index 0 is the deepest base */
+    size_t count = depth < max_levels ? depth : max_levels;
+    for (size_t i = 0; i < count; ++i) {
+        levels[i] = stack[depth - 1 - i];
+    }
+
+    return count;
+}
 
 static bool nmo_summary_emit_reflection_fields(
     nmo_object_t *obj,
@@ -1356,29 +1780,44 @@ static bool nmo_summary_emit_reflection_fields(
         return false;
     }
 
-    nmo_summary_add_section(out, "Fields");
+    /* Build the flattened class hierarchy */
+    nmo_hierarchy_level_t levels[NMO_MAX_HIERARCHY_DEPTH];
+    size_t level_count = nmo_summary_build_hierarchy(registry, type, state, levels, NMO_MAX_HIERARCHY_DEPTH);
 
-    if (!out->is_json) {
-        char type_info[128];
-        snprintf(type_info, sizeof(type_info), "%s (%zu fields)",
-                type->name ? type->name : "(unnamed)",
-                nmo_type_get_field_count(type));
-        nmo_cli_print_kv(out->stream, "Schema", type_info, 18, out->colorize);
-        fprintf(out->stream, "\n");
+    if (level_count == 0) {
+        return false;
     }
 
+    /* Shared render context for stats accumulation */
     nmo_field_render_ctx_t ctx = {
         .out = out,
         .registry = registry,
-        .owner_type = type,
-        .owner_instance = state,
+        .owner_type = NULL,
+        .owner_instance = NULL,
         .config = config,
         .json_fields = out->is_json ? yyjson_mut_arr(out->json_doc) : NULL,
-        .label_width = 24,
+        .label_width = 28,
         .depth = 0,
     };
 
-    nmo_type_foreach_field(type, state, nmo_summary_render_field, &ctx);
+    /* Walk hierarchy from base (CKObject) to leaf (e.g. CK3dObject).
+     * Emit each level's own (non-base-embedding) fields with a section header. */
+    for (size_t lvl = 0; lvl < level_count; ++lvl) {
+        const nmo_type_descriptor_t *lvl_type = levels[lvl].type;
+        const void *lvl_state = levels[lvl].state;
+
+        /* Section header for each class level */
+        const char *class_name = lvl_type->name ? lvl_type->name : "(unnamed)";
+
+        if (!out->is_json) {
+            nmo_summary_add_section(out, class_name);
+        }
+
+        /* Iterate fields of this level, skipping base embeddings */
+        ctx.owner_type = lvl_type;
+        ctx.owner_instance = lvl_state;
+        nmo_type_foreach_field(lvl_type, lvl_state, nmo_summary_render_field, &ctx);
+    }
 
     if (out->is_json) {
         yyjson_mut_obj_add_val(out->json_doc, out->json_data, "fields", ctx.json_fields);
@@ -1396,144 +1835,12 @@ static bool nmo_summary_emit_reflection_fields(
     return true;
 }
 
-static bool nmo_summary_emit_enrichments(nmo_object_t *obj, nmo_summary_output_t *out) {
-    if (!obj || !out || g_enricher_count == 0) {
-        return false;
-    }
-
-    const void *state = nmo_object_get_state(obj);
-    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
-    if (!registry) {
-        return false;
-    }
-
-    const nmo_type_descriptor_t *type = nmo_summary_get_type_for_object(registry, obj);
-    if (!type) {
-        return false;
-    }
-
-    for (size_t i = 0; i < g_enricher_count; ++i) {
-        if (!g_enrichers[i].enricher) {
-            continue;
-        }
-
-        const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(
-            registry, g_enrichers[i].base_guid);
-        if (!base) {
-            continue;
-        }
-
-        if (nmo_type_is_derived_from((nmo_type_registry_t *)registry, type->id, base->id)) {
-            return g_enrichers[i].enricher(obj, state, out);
-        }
-    }
-
-    return false;
-}
-
-/* ============================================================================
- * Enricher Registry
- * ============================================================================ */
-
-void nmo_summary_register_enricher(nmo_guid_t base_guid, nmo_summary_enricher_fn enricher) {
-    if (g_enricher_count >= NMO_SUMMARY_MAX_ENRICHERS) {
-        return;
-    }
-
-    /* Check for duplicate */
-    for (size_t i = 0; i < g_enricher_count; ++i) {
-        if (nmo_guid_equals(g_enrichers[i].base_guid, base_guid)) {
-            g_enrichers[i].enricher = enricher;
-            return;
-        }
-    }
-
-    g_enrichers[g_enricher_count++] = (nmo_enricher_entry_t){
-        .base_guid = base_guid,
-        .enricher = enricher,
-    };
-}
-
-bool nmo_summary_has_enricher(nmo_guid_t base_guid) {
-    for (size_t i = 0; i < g_enricher_count; ++i) {
-        if (nmo_guid_equals(g_enrichers[i].base_guid, base_guid)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* ============================================================================
- * Built-in Enrichers (Minimal - Computed Values Only)
- * ============================================================================ */
-
-/* Mesh enricher: total face count = sum(face_counts per channel) */
-static bool nmo_enricher_mesh(nmo_object_t *obj, const void *state, nmo_summary_output_t *out) {
-    (void)obj;
-    if (!state || !out) return false;
-
-    /* Access via reflection rather than direct struct cast */
-    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
-    const nmo_type_descriptor_t *type = nmo_summary_get_type_for_object(registry, obj);
-    if (!type) return false;
-
-    /* Look for vertex_count file */
-    const nmo_type_field_t *vert_field = nmo_type_get_field_by_name(type, "vertex_count");
-    const nmo_type_field_t *channel_field = nmo_type_get_field_by_name(type, "channel_count");
-
-    if (vert_field && channel_field) {
-        uint32_t verts = nmo_field_get_uint32(state, vert_field);
-        uint32_t channels = nmo_field_get_uint32(state, channel_field);
-
-        nmo_summary_add_section(out, "Mesh Summary");
-        nmo_summary_add_uint(out, "Total Vertices", verts, 18);
-        nmo_summary_add_uint(out, "Channels", channels, 18);
-    }
-
-    return true;
-}
-
-/* Behavior enricher: complexity metrics */
-static bool nmo_enricher_behavior(nmo_object_t *obj, const void *state, nmo_summary_output_t *out) {
-    (void)obj;
-    if (!state || !out) return false;
-
-    const nmo_type_registry_t *registry = nmo_summary_get_registry(out);
-    const nmo_type_descriptor_t *type = nmo_summary_get_type_for_object(registry, obj);
-    if (!type) return false;
-
-    /* Compute complexity = sub_behaviors + links + operations */
-    const nmo_type_field_t *sub_beh = nmo_type_get_field_by_name(type, "sub_behavior_count");
-    const nmo_type_field_t *links = nmo_type_get_field_by_name(type, "sub_behavior_link_count");
-    const nmo_type_field_t *ops = nmo_type_get_field_by_name(type, "operation_count");
-
-    if (sub_beh && links && ops) {
-        uint32_t total = nmo_field_get_uint32(state, sub_beh) +
-                        nmo_field_get_uint32(state, links) +
-                        nmo_field_get_uint32(state, ops);
-
-        nmo_summary_add_section(out, "Behavior Summary");
-        nmo_summary_add_uint(out, "Complexity Score", total, 18);
-    }
-
-    return true;
-}
-
-void nmo_summary_init_builtin_enrichers(void) {
-    if (g_enrichers_initialized) return;
-
-    nmo_summary_register_enricher(CKPGUID_MESH, nmo_enricher_mesh);
-    nmo_summary_register_enricher(CKPGUID_BEHAVIOR, nmo_enricher_behavior);
-
-    g_enrichers_initialized = true;
-}
-
 /* ============================================================================
  * Public API
  * ============================================================================ */
 
 void nmo_summary_init(void) {
-    nmo_summary_init_builtin_enrichers();
+    /* Reflection-first implementation currently requires no setup. */
 }
 
 bool nmo_summary_has_reflection(nmo_context_t *ctx, nmo_class_id_t class_id) {
@@ -1558,25 +1865,9 @@ bool nmo_object_summary_with_config(
 {
     if (!obj || !out) return false;
 
-    /* Lazy auto-init enrichers on first use */
-    if (!g_enrichers_initialized) {
-        nmo_summary_init_builtin_enrichers();
-    }
-
     nmo_summary_config_t cfg = config ? *config : nmo_summary_config_default();
-    bool emitted = false;
 
-    if (out->is_json) {
-        /* JSON: add reflection fields + enrichments directly to json_data */
-        emitted |= nmo_summary_emit_reflection_fields(obj, out, &cfg);
-        emitted |= nmo_summary_emit_enrichments(obj, out);
-    } else {
-        /* Text: emit reflection fields + enrichments */
-        emitted |= nmo_summary_emit_reflection_fields(obj, out, &cfg);
-        emitted |= nmo_summary_emit_enrichments(obj, out);
-    }
-
-    return emitted;
+    return nmo_summary_emit_reflection_fields(obj, out, &cfg);
 }
 
 bool nmo_object_summary_select(nmo_object_t *obj, nmo_summary_output_t *out,
@@ -1595,11 +1886,6 @@ bool nmo_object_summary_select_with_config(
 {
     if (!obj || !out || !config || !paths || path_count == 0) {
         return false;
-    }
-
-    /* Lazy auto-init enrichers on first use (keep consistent with other entrypoints) */
-    if (!g_enrichers_initialized) {
-        nmo_summary_init_builtin_enrichers();
     }
 
     if (!out->is_json) {
@@ -1941,3 +2227,4 @@ void nmo_summary_add_guid(nmo_summary_output_t *out, const char *key,
         nmo_cli_print_kv(out->stream, key, buf, label_width, out->colorize);
     }
 }
+

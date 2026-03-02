@@ -8,11 +8,11 @@
  * 1. REFLECTION-FIRST: Field traversal is the primary mechanism, not type-specific
  *    hardcoded handlers. All types with reflection get automatic summaries.
  *
- * 2. TYPE-AWARE FORMATTING: Uses the type system's string conversion for proper
- *    enum names, flags formatting, etc.
+ * 2. TYPE-AWARE FORMATTING: Uses GUID-aware rendering for colors (ARGB hex),
+ *    enums, flags, and object refs.
  *
- * 3. PLUGGABLE ENRICHERS: Type-specific computed values (like "total faces" for
- *    mesh) are handled by small enricher functions, not full summary rewrites.
+ * 3. BASE CLASS FLATTENING: Walks the inheritance hierarchy at render time,
+ *    emitting fields from each class level with section headers.
  *
  * 4. DRY + SOLID: Single responsibility for each component, no code duplication.
  */
@@ -84,52 +84,13 @@ typedef struct nmo_summary_config {
 nmo_summary_config_t nmo_summary_config_default(void);
 
 /* ============================================================================
- * Enricher Interface (for type-specific computed values)
- * ============================================================================ */
-
-/**
- * @brief Enricher callback signature
- *
- * Enrichers add computed/derived values that can't be obtained from raw
- * field reflection. They should NOT reimplement the full summary - just
- * add extra semantic information.
- *
- * @param obj Object to enrich
- * @param state Object state pointer
- * @param out Output context
- * @return true if enrichment was added
- */
-typedef bool (*nmo_summary_enricher_fn)(
-    nmo_object_t *obj,
-    const void *state,
-    nmo_summary_output_t *out);
-
-/**
- * @brief Register an enricher for a base type GUID
- *
- * Enrichers are applied to objects derived from the base type.
- *
- * @param base_guid Base type GUID to register for
- * @param enricher Enricher callback
- */
-void nmo_summary_register_enricher(nmo_guid_t base_guid, nmo_summary_enricher_fn enricher);
-
-/**
- * @brief Initialize built-in enrichers
- *
- * Registers enrichers for types that benefit from computed values
- * (e.g., mesh face count, behavior complexity metrics).
- */
-void nmo_summary_init_builtin_enrichers(void);
-
-/* ============================================================================
  * Main Summary API
  * ============================================================================ */
 
 /**
  * @brief Initialize the summary system
  *
- * Must be called before using summary functions. Registers built-in enrichers.
+ * Reflection-first summaries do not require explicit setup.
  */
 void nmo_summary_init(void);
 
@@ -139,7 +100,7 @@ void nmo_summary_init(void);
  * This is the main entry point. It generates:
  * 1. Base metadata (file index, state size, parent, etc.)
  * 2. Reflection-based field dump (using type system)
- * 3. Type-specific enrichments (if registered)
+ * 3. Optional projection/query sections when requested
  *
  * @param obj Object to summarize
  * @param out Output context
@@ -230,14 +191,6 @@ bool nmo_object_summary_expr_with_config(
  */
 bool nmo_summary_has_reflection(nmo_context_t *ctx, nmo_class_id_t class_id);
 
-/**
- * @brief Check if a class has an enricher registered
- *
- * @param class_id Class ID to check
- * @return true if an enricher is registered
- */
-bool nmo_summary_has_enricher(nmo_guid_t base_guid);
-
 /* ============================================================================
  * Output Helper Functions
  * ============================================================================ */
@@ -290,3 +243,4 @@ void nmo_summary_add_guid(nmo_summary_output_t *out, const char *key,
 #endif
 
 #endif /* NMO_OBJECT_SUMMARY_H */
+
