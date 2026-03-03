@@ -5,7 +5,7 @@
 
 #include "nmo_cli_output.h"
 
-#include "nmo_cli_hex.h"
+#include "core/nmo_utils.h"
 
 #include "format/nmo_chunk.h"
 
@@ -13,20 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-
-static char *nmo_cli_strdup_local(const char *value) {
-    const char *src = value ? value : "";
-    size_t len = strlen(src);
-    char *copy = (char *)malloc(len + 1);
-    if (!copy) {
-        return NULL;
-    }
-    if (len > 0) {
-        memcpy(copy, src, len);
-    }
-    copy[len] = '\0';
-    return copy;
-}
 
 const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size) {
     if (!buf || buf_size == 0) {
@@ -110,40 +96,6 @@ const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t 
     return buf;
 }
 
-static char *nmo_cli_escape_bytes(const char *value) {
-    if (!value) {
-        return nmo_cli_strdup_local("");
-    }
-
-    size_t len = strlen(value);
-    size_t max_len = len * 4 + 1; /* worst-case: \xHH */
-    char *out = (char *)malloc(max_len);
-    if (!out) {
-        return nmo_cli_strdup_local("");
-    }
-
-    size_t pos = 0;
-    const unsigned char *p = (const unsigned char *)value;
-    for (; *p; ++p) {
-        unsigned char c = *p;
-        if (c >= 0x20 && c <= 0x7E) {
-            out[pos++] = (char)c;
-        } else {
-            if (pos + 4 >= max_len) {
-                break;
-            }
-            out[pos++] = '\\';
-            out[pos++] = 'x';
-            char hex[2];
-            nmo_cli_hex_write_byte(hex, (uint8_t)c, true);
-            out[pos++] = hex[0];
-            out[pos++] = hex[1];
-        }
-    }
-    out[pos] = '\0';
-    return out;
-}
-
 /* ============================================================================
  * Table utilities
  * ============================================================================ */
@@ -176,9 +128,9 @@ bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t ce
 
     for (size_t i = 0; i < cell_count; ++i) {
         if (cells[i]) {
-            row->cells[i] = nmo_cli_escape_bytes(cells[i]);
+            row->cells[i] = nmo_text_escape_bytes(cells[i]);
         } else {
-            row->cells[i] = nmo_cli_strdup_local("");
+            row->cells[i] = nmo_text_strdup_or_empty("");
         }
     }
 
@@ -351,7 +303,7 @@ void nmo_cli_print_kv(FILE *out, const char *key, const char *value, int key_wid
     if (!out) {
         return;
     }
-    char *escaped = nmo_cli_escape_bytes(value ? value : "");
+    char *escaped = nmo_text_escape_bytes(value ? value : "");
     if (colorize) {
         fprintf(out, "%s%-*s%s: %s\n",
                 NMO_CLI_COLOR_CYAN,

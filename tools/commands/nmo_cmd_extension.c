@@ -130,10 +130,7 @@ int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "extension.list", NULL);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.list", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Registered Extensions", colorize);
@@ -275,10 +272,7 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "extension.load", dll_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.load", dll_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Extension Load Result", colorize);
@@ -392,10 +386,7 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "extension.info", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.info", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Extension Metadata", colorize);
@@ -570,10 +561,7 @@ int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *
         }
         yyjson_mut_obj_add_val(doc, data, "issues", issues_arr);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "extension.check", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.check", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Plugin Dependency Check", colorize);
@@ -627,3 +615,4 @@ int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_tool_close_session(ctx, session);
     return exit_code;
 }
+

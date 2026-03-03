@@ -87,22 +87,24 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
                     global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
     if (is_json) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_doc *doc = NULL;
+        yyjson_mut_val *data = NULL;
+        if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
 
         int rc = file_info_single(file_path, global, NULL, doc, data);
 
         yyjson_mut_obj_add_str(doc, data, "file", file_path);
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.info", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-
         char out_err[128];
         FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
         if (out) {
-            nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            nmo_cli_json_write_enveloped_and_free(doc, data, "file.info", file_path,
+                                                  out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
             nmo_cli_close_output_stream(global, out);
+        } else {
+            nmo_cli_json_free_doc(doc);
         }
-        nmo_cli_json_free_doc(doc);
         return rc;
     }
 
@@ -186,10 +188,8 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_obj_add_uint(doc, data, "hdr1_unpack_size", header->hdr1_unpack_size);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.header", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "file.header", file_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "File Header", colorize);
 
@@ -321,10 +321,7 @@ int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_real(doc, perf_stats, "remap_time_ms", stats.performance.remap_time_ms);
         yyjson_mut_obj_add_val(doc, data, "performance", perf_stats);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.stats", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "file.stats", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "File Statistics", colorize);
         fprintf(out, "\n");
@@ -504,10 +501,7 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
 
         yyjson_mut_obj_add_val(doc, data, "classes", classes);
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.classes", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "file.classes", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "File Class IDs", colorize);
         nmo_cli_print_kv(out, "File", file_path, 8, colorize);
@@ -595,10 +589,7 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         yyjson_mut_obj_add_val(doc, data, "entries", entries);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "file.plugins", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "file.plugins", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Plugin Dependencies", colorize);
 
@@ -638,3 +629,4 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_cli_close_output_stream(global, out);
     return NMO_CLI_EXIT_SUCCESS;
 }
+

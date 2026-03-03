@@ -117,7 +117,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 if(ZLIB_INCLUDE_DIRS)
     include_directories(SYSTEM ${ZLIB_INCLUDE_DIRS})
 endif()
-# yyjson include dirs propagate automatically via target_link_libraries PUBLIC yyjson
+# yyjson include dirs are provided to targets that link yyjson (e.g. nmo_json, nmo_cli).
 
 # Core library sources
 set(NMO_CORE_SOURCES
@@ -137,6 +137,9 @@ set(NMO_CORE_SOURCES
     src/core/hash_set.c
     src/core/indexed_map.c
     src/core/list.c
+    src/core/hex.c
+    src/core/utils.c
+    src/core/path.c
     src/core/pool.c
     src/core/ownership.c
     src/core/refcount.c
@@ -305,14 +308,25 @@ set(NMO_SESSION_SOURCES
 set(NMO_APP_SOURCES
     src/app/context.c
     src/app/session.c
+    src/app/session_util.c
     src/app/parser.c
     src/app/saver.c
     src/app/save_buffer.c
     src/app/comparison.c
     src/app/stats.c
     src/app/inspector.c
+    src/app/json_stream.c
     src/app/hexdump.c
+    src/app/type_query.c
+    src/app/chunk_index.c
+    src/app/object_hierarchy.c
+    src/app/behavior_graph.c
     src/app/object_diff.c
+)
+
+set(NMO_JSON_SOURCES
+    src/app/json_util.c
+    src/app/object_summary.c
 )
 
 # Combine all sources
@@ -339,11 +353,14 @@ target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS
 
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
-if(YYJSON_FOUND)
-    target_link_libraries(nmo PUBLIC yyjson)
-endif()
 
 target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps)
+
+if(YYJSON_FOUND)
+    add_library(nmo_json STATIC ${NMO_JSON_SOURCES})
+    target_link_libraries(nmo_json PUBLIC nmo yyjson)
+    target_include_directories(nmo_json PRIVATE ${PROJECT_SOURCE_DIR}/deps)
+endif()
 
 # Enable threads support
 find_package(Threads REQUIRED)

@@ -144,6 +144,15 @@ add_unit_test(test_session)
 # App layer tests (Phase 7)
 # Public API / umbrella header smoke test
 add_unit_test(test_public_api_smoke)
+add_unit_test(test_json_stream)
+if(TARGET nmo_json)
+    add_unit_test(test_app_util)
+    target_link_libraries(test_app_util PRIVATE nmo_json)
+    add_unit_test(test_object_summary_api)
+    target_link_libraries(test_object_summary_api PRIVATE nmo_json)
+else()
+    message(STATUS "Skipping test_app_util/test_object_summary_api (nmo_json target unavailable)")
+endif()
 
 # Context and session integration
 add_unit_test(test_context_session)

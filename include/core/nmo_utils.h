@@ -12,6 +12,8 @@
 #ifndef NMO_UTILS_H
 #define NMO_UTILS_H
 
+#include "nmo_types.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -371,6 +373,27 @@ static inline size_t nmo_padding_bytes(size_t size, size_t alignment) {
     size_t aligned = nmo_align(size, alignment);
     return aligned - size;
 }
+
+/* ======================================================================== */
+/* Text Utilities                                                            */
+/* ======================================================================== */
+
+/**
+ * @brief Duplicate string, treating NULL as an empty string.
+ *
+ * @return Newly allocated string (caller frees with `free()`), or NULL on OOM.
+ */
+NMO_API char *nmo_text_strdup_or_empty(const char *value);
+
+/**
+ * @brief Escape non-printable bytes as `\\xHH` for terminal-safe display.
+ *
+ * Printable ASCII bytes (0x20..0x7E) are preserved as-is.
+ *
+ * @return Newly allocated escaped string (caller frees with `free()`), or NULL
+ *         on OOM.
+ */
+NMO_API char *nmo_text_escape_bytes(const char *value);
 
 #ifdef __cplusplus
 }

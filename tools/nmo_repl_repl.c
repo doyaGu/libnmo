@@ -2,6 +2,7 @@
 
 #include "nmo_repl_commands.h"
 #include "nmo_repl_util.h"
+#include "nmo_tool_common.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,12 +27,12 @@ static void repl_history_add(nmo_repl_context_t *repl, const char *line) {
 
     if (repl->history_count < NMO_REPL_HISTORY_SIZE) {
         size_t idx = (repl->history_start + repl->history_count) % NMO_REPL_HISTORY_SIZE;
-        repl->history[idx] = strdup(line);
+        repl->history[idx] = nmo_tool_strdup(line);
         repl->history_count++;
     } else {
         /* Ring buffer full: overwrite oldest */
         free(repl->history[repl->history_start]);
-        repl->history[repl->history_start] = strdup(line);
+        repl->history[repl->history_start] = nmo_tool_strdup(line);
         repl->history_start = (repl->history_start + 1) % NMO_REPL_HISTORY_SIZE;
     }
 }

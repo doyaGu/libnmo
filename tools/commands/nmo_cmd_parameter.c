@@ -113,10 +113,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)param_count);
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "parameter.list", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "parameter.list", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         static const nmo_cli_table_col_t columns[] = {
             {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
@@ -163,3 +160,4 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     /* Reuse object show output contract. */
     return nmo_cmd_object_show(argc, argv, global);
 }
+

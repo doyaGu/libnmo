@@ -3,6 +3,7 @@
 #include "nmo_tool_common.h"
 
 #include "app/nmo_context.h"
+#include "core/nmo_path.h"
 #include "type/nmo_type_system.h"
 
 #include <ctype.h>
@@ -10,24 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *nmo_repl_basename(const char *path) {
-    if (!path || !*path) {
-        return "";
-    }
-
-    const char *slash = strrchr(path, '/');
-    const char *bslash = strrchr(path, '\\');
-    const char *sep = slash;
-    if (!sep || (bslash && bslash > sep)) {
-        sep = bslash;
-    }
-    return sep ? (sep + 1) : path;
-}
-
 void nmo_repl_print_prompt(const nmo_repl_context_t *repl) {
     const char *file_label = "";
     if (repl && repl->filename && repl->filename[0] != '\0') {
-        file_label = nmo_repl_basename(repl->filename);
+        file_label = nmo_path_basename(repl->filename);
     }
 
     if (repl && repl->has_selection) {

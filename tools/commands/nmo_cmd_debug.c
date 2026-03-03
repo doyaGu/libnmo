@@ -8,7 +8,6 @@
 #include "../nmo_cli_common.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_cli_json.h"
-#include "../nmo_cli_hex.h"
 #include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 
@@ -82,10 +81,7 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
             yyjson_mut_obj_add_uint(doc, data, "manager_errors", stats.manager_errors);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "debug.load-phases", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "debug.load-phases", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Load Phases", colorize);
         nmo_cli_print_kv(out, "File", file_path, 16, colorize);
@@ -212,10 +208,7 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
         yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "debug.chunks", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "debug.chunks", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Chunk Debug Info", colorize);
         fprintf(out, "Chunks: %zu (from %zu objects)\n\n", chunk_count, object_count);
@@ -343,10 +336,7 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
         yyjson_mut_obj_add_val(doc, data, "objects", objs);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "debug.objects", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "debug.objects", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Object Debug Info", colorize);
         fprintf(out, "Objects: %zu\n\n", object_count);
@@ -505,10 +495,7 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     yyjson_mut_obj_add_val(doc, data, "objects", objs);
-    yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "debug.export", file_path);
-    yyjson_mut_doc_set_root(doc, root);
-    nmo_cli_json_write(doc, json_out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    nmo_cli_json_free_doc(doc);
+    nmo_cli_json_write_enveloped_and_free(doc, data, "debug.export", file_path, json_out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
     if (!is_json && global->output_path) {
         fprintf(stdout, "Exported %zu objects to %s\n", object_count, global->output_path);
@@ -518,3 +505,4 @@ int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_tool_close_session(ctx, session);
     return NMO_CLI_EXIT_SUCCESS;
 }
+

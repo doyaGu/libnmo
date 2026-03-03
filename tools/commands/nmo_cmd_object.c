@@ -10,14 +10,14 @@
 #include "../nmo_cli_json.h"
 #include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
-#include "../summaries/nmo_object_summary.h"
+#include "app/nmo_object_summary.h"
 
 #include "nmo.h"
 #include "app/nmo_context.h"
+#include "app/nmo_object_hierarchy.h"
 #include "core/nmo_arena.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_ref_enumerate.h"
 #include "session/nmo_ref_graph.h"
 
 #include <stdio.h>
@@ -221,10 +221,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)filtered_count);
         yyjson_mut_obj_add_val(doc, data, "objects", objs);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "object.list", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "object.list", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Table output */
         static const nmo_cli_table_col_t columns[] = {
@@ -296,75 +293,6 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
  *   - Reverse ownership: CK3dEntity.parent_id (child points to parent)
  *   - All other references (mesh_ids, material, texture, etc.) are not ownership.
  * ============================================================================ */
-
-/**
- * @brief Classify a reference field as ownership or not.
- * @return 1 = forward (source owns target), -1 = reverse (target owns source), 0 = not ownership
- */
-static int classify_ownership_field(const char *field_name) {
-    if (!field_name) return 0;
-
-    /* Forward ownership: this object's field contains child IDs */
-    if (strcmp(field_name, "script_ids") == 0) return 1;
-    if (strcmp(field_name, "sub_behaviors") == 0) return 1;
-    if (strcmp(field_name, "sub_behavior_links") == 0) return 1;
-    if (strcmp(field_name, "operations") == 0) return 1;
-    if (strcmp(field_name, "in_parameters") == 0) return 1;
-    if (strcmp(field_name, "out_parameters") == 0) return 1;
-    if (strcmp(field_name, "local_parameters") == 0) return 1;
-    if (strcmp(field_name, "inputs") == 0) return 1;
-    if (strcmp(field_name, "outputs") == 0) return 1;
-    if (strcmp(field_name, "target_parameter_id") == 0) return 1;
-    if (strcmp(field_name, "attribute_parameter_ids") == 0) return 1;
-    if (strcmp(field_name, "in1_id") == 0) return 1;  /* CKParameterOperation */
-    if (strcmp(field_name, "in2_id") == 0) return 1;
-    if (strcmp(field_name, "out_id") == 0) return 1;
-
-    /* Reverse ownership: referenced object is this object's parent */
-    if (strcmp(field_name, "parent_id") == 0) return -1;
-
-    return 0;
-}
-
-/** Context for tree ownership visitor */
-typedef struct {
-    nmo_object_id_t *parent_of;     /**< parent_of[child_id] = parent_id (0 = root) */
-    size_t map_size;                /**< Size of parent_of array */
-    nmo_object_id_t source_id;      /**< Object currently being enumerated */
-} tree_owner_ctx_t;
-
-/** Visitor: classify each reference and record ownership */
-static bool tree_ownership_visitor(
-    void *user_data,
-    uint32_t target_id,
-    nmo_ref_kind_t kind,
-    const char *field_name,
-    uint32_t index)
-{
-    (void)kind;
-    (void)index;
-    tree_owner_ctx_t *ctx = (tree_owner_ctx_t *)user_data;
-
-    int own = classify_ownership_field(field_name);
-    if (own == 0) return true;
-
-    if (own == 1) {
-        /* Forward: source owns target */
-        if (target_id > 0 && target_id < ctx->map_size &&
-            ctx->parent_of[target_id] == 0) {
-            ctx->parent_of[target_id] = ctx->source_id;
-        }
-    } else {
-        /* Reverse: target owns source (parent_id) */
-        if (target_id > 0 && target_id < ctx->map_size &&
-            ctx->source_id > 0 && ctx->source_id < ctx->map_size &&
-            ctx->parent_of[ctx->source_id] == 0) {
-            ctx->parent_of[ctx->source_id] = target_id;
-        }
-    }
-
-    return true;
-}
 
 /** Create a tree node for an object (label + user_data, no children yet) */
 static nmo_cli_tree_node_t *create_tree_label(
@@ -492,30 +420,22 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
     bool colorize = nmo_cli_should_colorize(global, out);
 
-    /* ---- Phase 1: Build ownership map via reference enumeration ---- */
-    nmo_object_id_t max_id = 0;
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_id_t id = nmo_object_get_id(objects[i]);
-        if (id > max_id) max_id = id;
-    }
-
-    size_t map_size = (size_t)max_id + 1;
-    nmo_object_id_t *parent_of = (nmo_object_id_t *)calloc(map_size, sizeof(nmo_object_id_t));
-    nmo_cli_tree_node_t **node_map = (nmo_cli_tree_node_t **)calloc(map_size, sizeof(nmo_cli_tree_node_t *));
-    if (!parent_of || !node_map) {
-        free(parent_of);
-        free(node_map);
+    nmo_object_hierarchy_t hierarchy;
+    if (!nmo_object_hierarchy_build(ctx, session, &hierarchy)) {
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: Out of memory\n");
+        fprintf(stderr, "Error: Failed to build object hierarchy\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    tree_owner_ctx_t builder = { .parent_of = parent_of, .map_size = map_size };
+    size_t map_size = hierarchy.map_size;
+    nmo_object_id_t *parent_of = hierarchy.parent_of;
 
-    for (size_t i = 0; i < object_count; ++i) {
-        builder.source_id = nmo_object_get_id(objects[i]);
-        nmo_ref_enumerate_object(registry, objects[i], tree_ownership_visitor, &builder);
+    nmo_cli_tree_node_t **node_map = (nmo_cli_tree_node_t **)calloc(map_size, sizeof(nmo_cli_tree_node_t *));
+    if (!node_map) {
+        nmo_object_hierarchy_free(&hierarchy);
+        nmo_tool_close_session(ctx, session);
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     /* ---- Phase 2: Create tree nodes ---- */
@@ -560,10 +480,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         yyjson_mut_obj_add_val(doc, data, "roots", roots);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "object.tree", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "object.tree", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "Object Tree: %zu objects (%zu roots)\n\n", object_count, root_count);
 
@@ -577,7 +494,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
-    free(parent_of);
+    nmo_object_hierarchy_free(&hierarchy);
     free(node_map);
     nmo_tool_close_session(ctx, session);
     nmo_cli_close_output_stream(global, out);
@@ -749,10 +666,7 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             }
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "object.show", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "object.show", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Object Details", colorize);
 
@@ -965,10 +879,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)match_count);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "object.find", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "object.find", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Table output */
         static const nmo_cli_table_col_t columns[] = {
@@ -1197,10 +1108,7 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_obj_add_val(doc, data, "incoming", incoming);
         yyjson_mut_obj_add_uint(doc, data, "incoming_count", (uint64_t)in_count);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "object.refs", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "object.refs", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         const char *obj_name = nmo_object_get_name(obj);
@@ -1328,3 +1236,4 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_cli_close_output_stream(global, out);
     return NMO_CLI_EXIT_SUCCESS;
 }
+

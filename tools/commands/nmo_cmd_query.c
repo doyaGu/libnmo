@@ -523,10 +523,7 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
         add_dsl_value_to_json(doc, data, "result", &result);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "query.eval", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.eval", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
         format_dsl_value(&result, value_buf, sizeof(value_buf));
@@ -646,10 +643,7 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "query.script", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.script", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
         format_dsl_value(&result, value_buf, sizeof(value_buf));
@@ -737,10 +731,7 @@ int nmo_cmd_query_schema(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
         yyjson_mut_obj_add_str(doc, data, "status", "applied");
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "query.schema", schema_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.schema", schema_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "Schema applied successfully\n");
     }
@@ -856,10 +847,7 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "query.module", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.module", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
         format_dsl_value(&result, value_buf, sizeof(value_buf));
@@ -874,3 +862,4 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_cli_close_output_stream(global, out);
     return NMO_CLI_EXIT_SUCCESS;
 }
+

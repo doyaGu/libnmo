@@ -25,6 +25,7 @@
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
+#include "core/nmo_path.h"
 #include "core/nmo_utils.h"
 #include "core/nmo_guid.h"
 #include "io/nmo_io.h"
@@ -162,8 +163,6 @@ static nmo_chunk_t *serialize_object_with_schema(
     int require_schema);
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
-
-static const char *nmo_basename(const char *path);
 static nmo_status_t save_report_progress(nmo_save_context_t *ctx,
                                          nmo_save_phase_t phase,
                                          float progress,
@@ -188,26 +187,6 @@ nmo_save_options_t nmo_save_options_default(void) {
     opts.progress_user_data = NULL;
     opts.allow_cancel = false;
     return opts;
-}
-
-static const char *nmo_basename(const char *path) {
-    if (path == NULL) {
-        return "";
-    }
-
-    const char *last_slash = strrchr(path, '/');
-    const char *last_backslash = strrchr(path, '\\');
-
-    const char *base = path;
-    if (last_slash && last_backslash) {
-        base = (last_slash > last_backslash) ? last_slash + 1 : last_backslash + 1;
-    } else if (last_slash) {
-        base = last_slash + 1;
-    } else if (last_backslash) {
-        base = last_backslash + 1;
-    }
-
-    return base;
 }
 
 static void save_log_require_schema_failure(nmo_logger_t *logger,
@@ -1453,7 +1432,7 @@ static nmo_status_t save_write_file(nmo_save_context_t *ctx, const char *path) {
 
         for (uint32_t i = 0; i < session_included_count; i++) {
             const nmo_included_file_t *entry = &session_included_files[i];
-            const char *name = nmo_basename(entry->name ? entry->name : "");
+            const char *name = nmo_path_basename(entry->name ? entry->name : "");
             uint32_t name_len = (uint32_t)strlen(name);
             const int metadata_only = (entry->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
             uint32_t payload_size = (entry->data != NULL && !metadata_only) ? entry->size : 0u;

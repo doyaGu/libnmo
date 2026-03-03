@@ -192,10 +192,7 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
         yyjson_mut_obj_add_val(doc, data, "classes", classes);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "type.list", NULL);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "type.list", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Registered Classes", colorize);
         fprintf(out, "\n");
@@ -316,10 +313,7 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         }
         yyjson_mut_obj_add_val(doc, data, "inheritance_chain", chain);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "type.show", NULL);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "type.show", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Class Details", colorize);
 
@@ -415,10 +409,7 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         }
 
         yyjson_mut_obj_add_val(doc, data, "roots", roots);
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "type.class-tree", NULL);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "type.class-tree", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "Class Tree: %zu classes\n\n", class_count);
 
@@ -495,3 +486,4 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_context_release(ctx);
     return NMO_CLI_EXIT_SUCCESS;
 }
+

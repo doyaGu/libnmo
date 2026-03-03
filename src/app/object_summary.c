@@ -13,9 +13,11 @@
  * 4. SummaryEngine - Orchestrates the full summary generation
  */
 
-#include "nmo_object_summary.h"
-#include "../nmo_cli_common.h"
-#include "../nmo_cli_json.h"
+#include "app/nmo_object_summary.h"
+#include "app/nmo_ansi.h"
+#include "core/nmo_utils.h"
+#include "app/nmo_json_util.h"
+#include "yyjson.h"
 
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_string.h"
@@ -35,6 +37,38 @@
 #include <math.h>
 #include <stdlib.h>
 #include <ctype.h>
+
+static void nmo_summary_print_heading(FILE *out, const char *title, bool colorize) {
+    if (!out || !title) {
+        return;
+    }
+    if (colorize) {
+        fprintf(out, "%s%s%s\n", NMO_ANSI_BOLD, title, NMO_ANSI_RESET);
+    } else {
+        fprintf(out, "%s\n", title);
+    }
+}
+
+static void nmo_summary_print_kv(FILE *out, const char *key, const char *value, int key_width, bool colorize) {
+    if (!out) {
+        return;
+    }
+    char *escaped = nmo_text_escape_bytes(value ? value : "");
+    if (colorize) {
+        fprintf(out, "%s%-*s%s: %s\n",
+                NMO_ANSI_CYAN,
+                key_width, key ? key : "",
+                NMO_ANSI_RESET,
+                escaped ? escaped : "");
+    } else {
+        fprintf(out, "%-*s: %s\n", key_width, key ? key : "", escaped ? escaped : "");
+    }
+    free(escaped);
+}
+
+#define nmo_cli_json_add_str_safe nmo_json_add_str_safe
+#define nmo_cli_print_heading nmo_summary_print_heading
+#define nmo_cli_print_kv nmo_summary_print_kv
 
 /* ============================================================================
  * Configuration Constants
@@ -56,118 +90,6 @@ nmo_summary_config_t nmo_summary_config_default(void) {
         .format_flags_names = true,
     };
     return config;
-}
-
-/* ============================================================================
- * UTF-8 Safe JSON String Helper
- * ============================================================================ */
-
-/**
- * @brief Create a yyjson_mut_val string that is safe for JSON output.
- *
- * Validates UTF-8 and replaces invalid bytes with U+FFFD replacement character.
- * Always copies the string into the document's allocator.
- */
-static yyjson_mut_val *nmo_summary_json_strcpy_safe(yyjson_mut_doc *doc, const char *str) {
-    if (!doc) return NULL;
-    if (!str) return yyjson_mut_null(doc);
-
-    /* Quick UTF-8 validation */
-    const unsigned char *s = (const unsigned char *)str;
-    size_t slen = strlen(str);
-    bool valid = true;
-
-    for (size_t i = 0; i < slen; ) {
-        unsigned char c = s[i];
-        if (c < 0x80) { i++; continue; }
-        if ((c & 0xE0) == 0xC0 && c >= 0xC2 && i + 1 < slen && (s[i+1] & 0xC0) == 0x80) { i += 2; continue; }
-        if ((c & 0xF0) == 0xE0 && i + 2 < slen && (s[i+1] & 0xC0) == 0x80 && (s[i+2] & 0xC0) == 0x80) {
-            if (c == 0xE0 && s[i+1] < 0xA0) { valid = false; break; }
-            if (c == 0xED && s[i+1] >= 0xA0) { valid = false; break; }
-            i += 3; continue;
-        }
-        if ((c & 0xF8) == 0xF0 && i + 3 < slen &&
-            (s[i+1] & 0xC0) == 0x80 && (s[i+2] & 0xC0) == 0x80 && (s[i+3] & 0xC0) == 0x80) {
-            if (c == 0xF0 && s[i+1] < 0x90) { valid = false; break; }
-            if (c > 0xF4 || (c == 0xF4 && s[i+1] > 0x8F)) { valid = false; break; }
-            i += 4; continue;
-        }
-        valid = false; break;
-    }
-
-    if (valid) {
-        return yyjson_mut_strcpy(doc, str);
-    }
-
-    /* Sanitize: preserve valid UTF-8 sequences; replace invalid bytes with U+FFFD. */
-    const size_t cap = (slen * 3u) + 1u;
-    char *buf = (char *)malloc(cap);
-    if (!buf) return yyjson_mut_null(doc);
-
-    size_t out_len = 0;
-    for (size_t i = 0; i < slen; ) {
-        unsigned char c = s[i];
-
-        /* Allow ASCII printable + common whitespace; replace other controls. */
-        if (c < 0x80) {
-            if (c == '\t' || c == '\n' || c == '\r' || c >= 0x20) {
-                buf[out_len++] = (char)c;
-            } else {
-                buf[out_len++] = (char)0xEF;
-                buf[out_len++] = (char)0xBF;
-                buf[out_len++] = (char)0xBD;
-            }
-            i++;
-            continue;
-        }
-
-        /* Copy valid multi-byte sequences as-is. */
-        if ((c & 0xE0) == 0xC0 && c >= 0xC2 && i + 1 < slen && (s[i+1] & 0xC0) == 0x80) {
-            buf[out_len++] = (char)s[i++];
-            buf[out_len++] = (char)s[i++];
-            continue;
-        }
-
-        if ((c & 0xF0) == 0xE0 && i + 2 < slen &&
-            (s[i+1] & 0xC0) == 0x80 && (s[i+2] & 0xC0) == 0x80) {
-            if (c == 0xE0 && s[i+1] < 0xA0) {
-                /* Overlong */
-            } else if (c == 0xED && s[i+1] >= 0xA0) {
-                /* Surrogate */
-            } else {
-                buf[out_len++] = (char)s[i++];
-                buf[out_len++] = (char)s[i++];
-                buf[out_len++] = (char)s[i++];
-                continue;
-            }
-        }
-
-        if ((c & 0xF8) == 0xF0 && i + 3 < slen &&
-            (s[i+1] & 0xC0) == 0x80 && (s[i+2] & 0xC0) == 0x80 && (s[i+3] & 0xC0) == 0x80) {
-            if (c == 0xF0 && s[i+1] < 0x90) {
-                /* Overlong */
-            } else if (c > 0xF4 || (c == 0xF4 && s[i+1] > 0x8F)) {
-                /* Out of range */
-            } else {
-                buf[out_len++] = (char)s[i++];
-                buf[out_len++] = (char)s[i++];
-                buf[out_len++] = (char)s[i++];
-                buf[out_len++] = (char)s[i++];
-                continue;
-            }
-        }
-
-        /* Invalid byte: replace and advance 1. */
-        buf[out_len++] = (char)0xEF;
-        buf[out_len++] = (char)0xBF;
-        buf[out_len++] = (char)0xBD;
-        i++;
-    }
-
-    buf[out_len] = '\0';
-    yyjson_mut_val *val = yyjson_mut_strcpy(doc, buf);
-    free(buf);
-    return val ? val : yyjson_mut_null(doc);
 }
 
 /* ============================================================================
@@ -363,7 +285,7 @@ static bool nmo_summary_format_value_to_json(
     char buffer[NMO_SUMMARY_VALUE_BUFFER_SIZE];
     if (nmo_summary_format_value_string(registry, field_type, field_guid,
                                         value_ptr, value_size, buffer, sizeof(buffer))) {
-        *out_val = nmo_summary_json_strcpy_safe(out->json_doc, buffer);
+        *out_val = nmo_json_make_str_safe(out->json_doc, buffer);
         return true;
     }
 
@@ -1122,7 +1044,7 @@ static yyjson_mut_val *nmo_summary_query_value_to_json(
             if (isnan(value->as.r) || isinf(value->as.r)) return yyjson_mut_null(out->json_doc);
             return yyjson_mut_real(out->json_doc, value->as.r);
         case NMO_DSL_VALUE_STRING:
-            return nmo_summary_json_strcpy_safe(out->json_doc, value->as.s ? value->as.s : "");
+            return nmo_json_make_str_safe(out->json_doc, value->as.s ? value->as.s : "");
 
         case NMO_DSL_VALUE_BYREF: {
             yyjson_mut_val *v = NULL;
@@ -1141,7 +1063,7 @@ static yyjson_mut_val *nmo_summary_query_value_to_json(
                 (void)nmo_type_value_to_string(value->as.object.instance, value->as.object.type, registry,
                                                buf, sizeof(buf));
             }
-            return nmo_summary_json_strcpy_safe(out->json_doc, buf[0] ? buf : "<object>");
+            return nmo_json_make_str_safe(out->json_doc, buf[0] ? buf : "<object>");
         }
 
         case NMO_DSL_VALUE_SEQ: {
@@ -1269,7 +1191,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         return true;
     }
 
-    /* Skip base class embedding fields ï¿½?these are handled by the flattening
+    /* Skip base class embedding fields ï¿?these are handled by the flattening
      * walker in nmo_summary_emit_reflection_fields_recursive(). */
     if (!(field->flags & NMO_FIELD_REPEATED) &&
         !nmo_guid_is_null(ctx->owner_type->base_type))
@@ -1408,7 +1330,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
                     size_t raw_len = str_len < sizeof(raw_str) - 1 ? str_len : sizeof(raw_str) - 1;
                     memcpy(raw_str, str_data, raw_len);
                     raw_str[raw_len] = '\0';
-                    yyjson_mut_val *str_val = nmo_summary_json_strcpy_safe(ctx->out->json_doc, raw_str);
+                    yyjson_mut_val *str_val = nmo_json_make_str_safe(ctx->out->json_doc, raw_str);
                     yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value_str", str_val);
                     yyjson_mut_arr_add_val(ctx->json_fields, item);
                 } else {

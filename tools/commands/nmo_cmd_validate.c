@@ -154,22 +154,24 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     if (is_json) {
         /* Single-file JSON: use the batch handler to populate, then wrap */
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_doc *doc = NULL;
+        yyjson_mut_val *data = NULL;
+        if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
 
         int rc = validate_all_single(file_path, global, NULL, doc, data);
 
         yyjson_mut_obj_add_str(doc, data, "file", file_path);
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "validate.all", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-
         char out_err[128];
         FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
         if (out) {
-            nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            nmo_cli_json_write_enveloped_and_free(doc, data, "validate.all", file_path,
+                                                  out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
             nmo_cli_close_output_stream(global, out);
+        } else {
+            nmo_cli_json_free_doc(doc);
         }
-        nmo_cli_json_free_doc(doc);
         return rc;
     }
 
@@ -335,10 +337,8 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
         yyjson_mut_obj_add_uint(doc, data, "warning_count", (uint64_t)warning_count);
         yyjson_mut_obj_add_val(doc, data, "issues", issues);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "validate.structure", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "validate.structure", file_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "\nSummary:\n");
         char buf[32];
@@ -478,10 +478,7 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
             yyjson_mut_obj_add_val(doc, data, "broken_references", broken_arr);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "validate.references", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "validate.references", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Reference Validation", colorize);
@@ -669,10 +666,7 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
         }
         yyjson_mut_obj_add_val(doc, data, "entries", entries);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "validate.resources", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "validate.resources", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Resource Validation", colorize);
         nmo_cli_print_kv(out, "File", file_path, 18, colorize);
@@ -713,3 +707,4 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
     nmo_cli_close_output_stream(global, out);
     return exit_code;
 }
+

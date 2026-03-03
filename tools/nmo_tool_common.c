@@ -2,6 +2,7 @@
 #include "nmo_cli_common.h"
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
+#include "core/nmo_allocator.h"
 #include "yyjson.h"
 
 #include <ctype.h>
@@ -75,13 +76,8 @@ char *nmo_tool_strdup(const char *src) {
     if (!src) {
         return NULL;
     }
-    size_t len = strlen(src);
-    char *copy = (char *)malloc(len + 1);
-    if (!copy) {
-        return NULL;
-    }
-    memcpy(copy, src, len + 1);
-    return copy;
+    nmo_allocator_t alloc = nmo_allocator_default();
+    return nmo_strdup(&alloc, src);
 }
 
 bool nmo_tool_parse_u32_dec(const char *text, uint32_t *out) {

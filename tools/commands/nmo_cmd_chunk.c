@@ -12,12 +12,11 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
+#include "app/nmo_chunk_index.h"
 #include "app/nmo_context.h"
 #include "app/nmo_hexdump.h"
 
 #include "format/nmo_chunk_api.h"
-
-#include "../nmo_cli_hex.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -25,59 +24,15 @@
 #include <stdlib.h>
 
 
-typedef struct nmo_cli_chunk_entry {
-    nmo_chunk_t *chunk;
-    uint32_t owner_object_id;
-    const char *owner_object_name;
-    uint32_t owner_class_id;
-    int64_t parent_index; /* -1 for root */
-    uint32_t depth;
-} nmo_cli_chunk_entry_t;
-
-typedef struct nmo_cli_chunk_ptr_index {
-    const nmo_chunk_t *ptr;
-    uint32_t index;
-} nmo_cli_chunk_ptr_index_t;
-
-static int cmp_chunk_ptr_index(const void *a, const void *b) {
-    const nmo_cli_chunk_ptr_index_t *pa = (const nmo_cli_chunk_ptr_index_t *)a;
-    const nmo_cli_chunk_ptr_index_t *pb = (const nmo_cli_chunk_ptr_index_t *)b;
-
-    if (pa->ptr < pb->ptr) return -1;
-    if (pa->ptr > pb->ptr) return 1;
-    return 0;
-}
+typedef nmo_chunk_index_entry_t nmo_cli_chunk_entry_t;
+typedef nmo_chunk_ptr_index_t nmo_cli_chunk_ptr_index_t;
 
 static bool build_chunk_index_map(const nmo_cli_chunk_entry_t *entries,
                                   size_t entry_count,
                                   nmo_cli_chunk_ptr_index_t **out_map,
                                   size_t *out_map_count)
 {
-    if (!out_map || !out_map_count) {
-        return false;
-    }
-    *out_map = NULL;
-    *out_map_count = 0;
-
-    if (!entries || entry_count == 0) {
-        return true;
-    }
-
-    nmo_cli_chunk_ptr_index_t *map = (nmo_cli_chunk_ptr_index_t *)malloc(
-        entry_count * sizeof(nmo_cli_chunk_ptr_index_t));
-    if (!map) {
-        return false;
-    }
-
-    for (size_t i = 0; i < entry_count; ++i) {
-        map[i].ptr = entries[i].chunk;
-        map[i].index = (uint32_t)i;
-    }
-
-    qsort(map, entry_count, sizeof(*map), cmp_chunk_ptr_index);
-    *out_map = map;
-    *out_map_count = entry_count;
-    return true;
+    return nmo_chunk_index_build_map(entries, entry_count, out_map, out_map_count);
 }
 
 static bool lookup_chunk_index(const nmo_cli_chunk_ptr_index_t *map,
@@ -85,23 +40,7 @@ static bool lookup_chunk_index(const nmo_cli_chunk_ptr_index_t *map,
                                const nmo_chunk_t *chunk,
                                uint32_t *out_index)
 {
-    if (!out_index) {
-        return false;
-    }
-    *out_index = 0;
-
-    if (!map || map_count == 0 || !chunk) {
-        return false;
-    }
-
-    nmo_cli_chunk_ptr_index_t key = {.ptr = chunk, .index = 0};
-    nmo_cli_chunk_ptr_index_t *found = (nmo_cli_chunk_ptr_index_t *)bsearch(
-        &key, map, map_count, sizeof(*map), cmp_chunk_ptr_index);
-    if (!found) {
-        return false;
-    }
-    *out_index = found->index;
-    return true;
+    return nmo_chunk_index_lookup(map, map_count, chunk, out_index);
 }
 
 static nmo_cli_tree_node_t *build_chunk_tree_node(nmo_context_t *ctx,
@@ -220,127 +159,12 @@ static void chunk_tree_render(FILE *out, const nmo_cli_tree_node_t *node, bool c
     }
 }
 
-static bool chunk_entries_push(nmo_cli_chunk_entry_t **entries,
-                               size_t *count,
-                               size_t *capacity,
-                               const nmo_cli_chunk_entry_t *item)
-{
-    if (!entries || !count || !capacity || !item) {
-        return false;
-    }
-
-    if (*count == *capacity) {
-        size_t new_cap = (*capacity == 0) ? 128 : (*capacity * 2);
-        nmo_cli_chunk_entry_t *new_entries = (nmo_cli_chunk_entry_t *)realloc(
-            *entries, new_cap * sizeof(nmo_cli_chunk_entry_t));
-        if (!new_entries) {
-            return false;
-        }
-        *entries = new_entries;
-        *capacity = new_cap;
-    }
-
-    (*entries)[*count] = *item;
-    (*count)++;
-    return true;
-}
-
-static bool collect_chunk_entries_recursive(nmo_cli_chunk_entry_t **entries,
-                                            size_t *count,
-                                            size_t *capacity,
-                                            nmo_chunk_t *chunk,
-                                            uint32_t owner_object_id,
-                                            const char *owner_object_name,
-                                            uint32_t owner_class_id,
-                                            int64_t parent_index,
-                                            uint32_t depth)
-{
-    if (!chunk) {
-        return true;
-    }
-
-    nmo_cli_chunk_entry_t e = {
-        .chunk = chunk,
-        .owner_object_id = owner_object_id,
-        .owner_object_name = owner_object_name,
-        .owner_class_id = owner_class_id,
-        .parent_index = parent_index,
-        .depth = depth,
-    };
-
-    int64_t this_index = (int64_t)*count;
-    if (!chunk_entries_push(entries, count, capacity, &e)) {
-        return false;
-    }
-
-    uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
-    for (uint32_t i = 0; i < sub_count; ++i) {
-        nmo_chunk_t *sub = nmo_chunk_get_sub_chunk(chunk, i);
-        if (!collect_chunk_entries_recursive(entries, count, capacity,
-                                             sub, owner_object_id, owner_object_name,
-                                             owner_class_id,
-                                             this_index, depth + 1)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 static bool collect_all_chunk_entries(nmo_session_t *session,
                                       nmo_cli_chunk_entry_t **out_entries,
                                       size_t *out_count,
                                       size_t *out_object_count)
 {
-    if (!session || !out_entries || !out_count) {
-        return false;
-    }
-
-    *out_entries = NULL;
-    *out_count = 0;
-    if (out_object_count) {
-        *out_object_count = 0;
-    }
-
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        return false;
-    }
-
-    nmo_cli_chunk_entry_t *entries = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
-
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        if (!chunk) {
-            continue;
-        }
-
-        uint32_t owner_id = nmo_object_get_id(obj);
-        const char *owner_name = nmo_object_get_name(obj);
-        uint32_t owner_class_id = nmo_object_get_class_id(obj);
-
-        if (!collect_chunk_entries_recursive(&entries, &count, &capacity,
-                                             chunk,
-                                             owner_id,
-                                             (owner_name && owner_name[0]) ? owner_name : NULL,
-                                             owner_class_id,
-                                             -1,
-                                             0)) {
-            free(entries);
-            return false;
-        }
-    }
-
-    *out_entries = entries;
-    *out_count = count;
-    if (out_object_count) {
-        *out_object_count = object_count;
-    }
-    return true;
+    return nmo_chunk_index_collect_entries(session, out_entries, out_count, out_object_count);
 }
 
 /* ============================================================================
@@ -432,10 +256,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
         yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "chunk.list", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.list", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "Chunks: %zu (including sub-chunks; from %zu objects)\n\n", entry_count, object_count);
 
@@ -501,7 +322,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
         nmo_cli_table_free(&table);
     }
 
-    free(entries);
+    nmo_chunk_index_free_entries(entries);
 
     nmo_tool_close_session(ctx, session);
     nmo_cli_close_output_stream(global, out);
@@ -595,10 +416,7 @@ int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
         yyjson_mut_obj_add_val(doc, data, "roots", roots);
 
-        yyjson_mut_val *env = nmo_cli_json_add_envelope(doc, data, "chunk.tree", file_path);
-        yyjson_mut_doc_set_root(doc, env);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.tree", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "Chunk Tree (sub-chunks): %zu objects\n\n", object_count);
 
@@ -628,8 +446,8 @@ int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
     }
 
-    free(index_map);
-    free(flat_entries);
+    nmo_chunk_index_free_map(index_map);
+    nmo_chunk_index_free_entries(flat_entries);
 
     nmo_tool_close_session(ctx, session);
     nmo_cli_close_output_stream(global, out);
@@ -766,7 +584,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
         if ((size_t)chunk_index >= entry_count) {
-            free(entries);
+            nmo_chunk_index_free_entries(entries);
             nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Chunk index %u out of range (0..%zu)\n",
                     chunk_index, entry_count ? (entry_count - 1) : 0);
@@ -777,7 +595,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         object_id = selected.owner_object_id;
         parent_index = selected.parent_index;
         depth = selected.depth;
-        free(entries);
+        nmo_chunk_index_free_entries(entries);
 
         flat_index_known = true;
         flat_index = chunk_index;
@@ -840,7 +658,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
                 }
                 free(map);
             }
-            free(entries);
+            nmo_chunk_index_free_entries(entries);
         }
     }
 
@@ -898,10 +716,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_uint(doc, data, "subchunk_count", (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
         yyjson_mut_obj_add_uint(doc, data, "manager_count", (uint64_t)chunk->managers.count);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "chunk.show", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.show", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Chunk Details", colorize);
 
@@ -1124,10 +939,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)match_count);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "chunk.find", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.find", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Table output */
         static const nmo_cli_table_col_t columns[] = {
@@ -1176,3 +988,4 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_cli_close_output_stream(global, out);
     return NMO_CLI_EXIT_SUCCESS;
 }
+

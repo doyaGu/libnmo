@@ -8,11 +8,10 @@
 #include "app/nmo_inspector.h"
 #include "app/nmo_ansi.h"
 #include "app/nmo_hexdump.h"
+#include "app/nmo_json_stream.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
-#include "core/nmo_allocator.h"
-#include "yyjson.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
@@ -400,64 +399,76 @@ int nmo_inspector_compare_chunks(
     return 1;
 }
 
-/* Helper to convert chunk to JSON recursively */
-static yyjson_mut_val* chunk_to_json(
-    yyjson_mut_doc *doc,
-    const nmo_chunk_t *chunk,
-    bool include_data
-) {
-    if (!chunk) return yyjson_mut_null(doc);
-    
-    yyjson_mut_val *obj = yyjson_mut_obj(doc);
-    
-    /* Basic info */
-    nmo_class_id_t class_id = nmo_chunk_get_class_id(chunk);
-    yyjson_mut_obj_add_uint(doc, obj, "class_id", class_id);
-    
-    size_t data_size = 0;
-    nmo_chunk_get_data(chunk, &data_size);
-    yyjson_mut_obj_add_uint(doc, obj, "data_size", data_size);
-    
-    size_t id_count = nmo_chunk_get_id_count(chunk);
-    yyjson_mut_obj_add_uint(doc, obj, "id_count", id_count);
-    
-    if (nmo_chunk_is_compressed(chunk)) {
-        yyjson_mut_obj_add_bool(doc, obj, "compressed", true);
+static int json_write_chunk(nmo_json_stream_t *writer,
+                            const nmo_chunk_t *chunk,
+                            bool include_data) {
+    if (!writer || !chunk) {
+        return -1;
     }
-    
-    /* Data (hex-encoded if requested) */
-    if (include_data && data_size > 0) {
-        size_t temp_size = 0;
-        const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(chunk, &temp_size);
-        if (data != NULL) {
-            nmo_allocator_t alloc = nmo_allocator_default();
-            char *hex = (char*)nmo_alloc(&alloc, data_size * 2 + 1, 1);
-            if (hex) {
-                for (size_t i = 0; i < data_size; i++) {
-                    sprintf(hex + i * 2, "%02x", data[i]);
-                }
-                hex[data_size * 2] = '\0';
-                yyjson_mut_obj_add_strcpy(doc, obj, "data_hex", hex);
-                nmo_free(&alloc, hex);
-            }
+
+    if (!nmo_json_stream_begin_object(writer)) {
+        return -1;
+    }
+
+    size_t data_size = 0;
+    const uint8_t *data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
+
+    if (!nmo_json_stream_key(writer, "class_id") ||
+        !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_class_id(chunk))) {
+        return -1;
+    }
+
+    if (!nmo_json_stream_key(writer, "data_size") ||
+        !nmo_json_stream_value_uint(writer, (uint64_t)data_size)) {
+        return -1;
+    }
+
+    if (!nmo_json_stream_key(writer, "id_count") ||
+        !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_id_count(chunk))) {
+        return -1;
+    }
+
+    if (nmo_chunk_is_compressed(chunk)) {
+        if (!nmo_json_stream_key(writer, "compressed") ||
+            !nmo_json_stream_value_bool(writer, true)) {
+            return -1;
         }
     }
-    
-    /* Sub-chunks */
+
+    if (include_data && data && data_size > 0) {
+        if (!nmo_json_stream_key(writer, "data_hex") ||
+            !nmo_json_stream_value_hex_bytes(writer, data, data_size, false)) {
+            return -1;
+        }
+    }
+
     uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
     if (sub_count > 0) {
-        yyjson_mut_val *sub_arr = yyjson_mut_arr(doc);
-        for (uint32_t i = 0; i < sub_count; i++) {
+        if (!nmo_json_stream_key(writer, "sub_chunks") ||
+            !nmo_json_stream_begin_array(writer)) {
+            return -1;
+        }
+
+        for (uint32_t i = 0; i < sub_count; ++i) {
             nmo_chunk_t *sub = nmo_chunk_get_sub_chunk(chunk, i);
-            if (sub != NULL) {
-                yyjson_mut_val *sub_json = chunk_to_json(doc, sub, include_data);
-                yyjson_mut_arr_append(sub_arr, sub_json);
+            if (!sub) {
+                continue;
+            }
+            if (json_write_chunk(writer, sub, include_data) != 0) {
+                return -1;
             }
         }
-        yyjson_mut_obj_add_val(doc, obj, "sub_chunks", sub_arr);
+
+        if (!nmo_json_stream_end_array(writer)) {
+            return -1;
+        }
     }
-    
-    return obj;
+
+    if (!nmo_json_stream_end_object(writer)) {
+        return -1;
+    }
+
+    return 0;
 }
 
 int nmo_inspector_export_json(
@@ -468,24 +479,15 @@ int nmo_inspector_export_json(
     if (chunk == NULL || stream == NULL) {
         return -1;
     }
-    
-    /* Create JSON document */
-    yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
-    if (!doc) return -1;
-    
-    /* Convert chunk to JSON */
-    yyjson_mut_val *root = chunk_to_json(doc, chunk, include_data);
-    yyjson_mut_doc_set_root(doc, root);
-    
-    /* Write to stream */
-    yyjson_write_flag flg = YYJSON_WRITE_PRETTY | YYJSON_WRITE_ESCAPE_UNICODE;
-    nmo_allocator_t alloc = nmo_allocator_default();
-    char *json = yyjson_mut_write(doc, flg, NULL);
-    if (json) {
-        fputs(json, stream);
-        nmo_free(&alloc, json);
+
+    nmo_json_stream_t writer;
+    nmo_json_stream_init(&writer, stream, true);
+
+    if (json_write_chunk(&writer, chunk, include_data) != 0) {
+        return -1;
     }
-    
-    yyjson_mut_doc_free(doc);
-    return json ? 0 : -1;
+    if (fputc('\n', stream) == EOF) {
+        return -1;
+    }
+    return 0;
 }

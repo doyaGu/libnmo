@@ -134,12 +134,9 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
         nmo_cli_json_add_uint_safe(doc, data, "flags", save_opts.flags);
         nmo_cli_json_add_int_safe(doc, data, "compression_level", save_opts.compression_level);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "convert.copy", input_path);
-        yyjson_mut_doc_set_root(doc, root);
-
         FILE *out = stdout;
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.copy", input_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         printf("Saved to %s\n", output_path);
     }
@@ -198,12 +195,9 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
             nmo_cli_json_add_uint_safe(doc, data, "object_count", (uint64_t)info.object_count);
             nmo_cli_json_add_uint_safe(doc, data, "manager_count", (uint64_t)info.manager_count);
 
-            yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "convert.version", input_path);
-            yyjson_mut_doc_set_root(doc, root);
-
             FILE *out = stdout;
-            nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-            nmo_cli_json_free_doc(doc);
+            nmo_cli_json_write_enveloped_and_free(doc, data, "convert.version", input_path,
+                                                  out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
         } else {
             printf("File version:    %u\n", info.file_version);
             printf("File version2:   %u\n", info.file_version2);
@@ -241,12 +235,9 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
         nmo_cli_json_add_str_safe(doc, data, "input_file", input_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "convert.version", input_path);
-        yyjson_mut_doc_set_root(doc, root);
-
         FILE *out = stdout;
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.version", input_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         printf("Saved to %s\n", output_path);
     }
@@ -403,12 +394,9 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "convert.strip", input_path);
-        yyjson_mut_doc_set_root(doc, root);
-
         FILE *out = stdout;
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.strip", input_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         printf("Removed %zu object(s)\n", report.deleted_objects);
         printf("Saved to %s\n", output_path);
@@ -536,12 +524,9 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
         nmo_cli_json_add_uint_safe(doc, data, "objects_copied", (uint64_t)report.copied_objects);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "convert.merge", source_path);
-        yyjson_mut_doc_set_root(doc, root);
-
         FILE *out = stdout;
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.merge", source_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         printf("Copied %zu object(s) from source to target\n", report.copied_objects);
         printf("Saved to %s\n", output_path);

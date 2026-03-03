@@ -193,10 +193,7 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
         yyjson_mut_obj_add_val(doc, data, "resources", arr);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "resource.list", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "resource.list", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         static const nmo_cli_table_col_t columns[] = {
             {"Index", NMO_CLI_ALIGN_RIGHT, 5, 0},
@@ -373,10 +370,7 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
         yyjson_mut_obj_add_val(doc, data, "owners", owners);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "resource.show", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "resource.show", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         nmo_cli_print_heading(out, "Resource", colorize);
 
@@ -633,10 +627,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
         yyjson_mut_obj_add_uint(doc, data, "errors", errors);
         yyjson_mut_obj_add_val(doc, data, "entries", entries);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "resource.extract", file_path);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "resource.extract", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         fprintf(out, "\nExtracted: %u, Skipped: %u, Errors: %u\n", extracted, skipped, errors);
     }
@@ -645,3 +636,4 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     nmo_cli_close_output_stream(global, out);
     return exit_code;
 }
+

@@ -13,7 +13,6 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_ref_graph.h"
 
-#include "nmo_cli_hex.h"
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
 

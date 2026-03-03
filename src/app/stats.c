@@ -6,13 +6,13 @@
  */
 
 #include "app/nmo_stats.h"
+#include "app/nmo_json_stream.h"
 #include "app/nmo_session.h"
 #include "session/nmo_session_internal.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_object_repository.h"
-#include "yyjson.h"
 #include <string.h>
 #include <time.h>
 #include <stdarg.h>
@@ -275,72 +275,104 @@ int nmo_stats_export_json(
     if (stats == NULL || output_path == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    
-    /* Create JSON document */
-    yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
-    if (!doc) return NMO_ERR_NOMEM;
-    
-    yyjson_mut_val *root = yyjson_mut_obj(doc);
-    yyjson_mut_doc_set_root(doc, root);
-    
-    /* Objects */
-    yyjson_mut_val *objects = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, objects, "total_count", stats->objects.total_count);
-    yyjson_mut_obj_add_uint(doc, objects, "unique_classes", stats->objects.unique_classes);
-    yyjson_mut_obj_add_uint(doc, objects, "max_class_id", stats->objects.max_class_id);
-    
-    yyjson_mut_val *by_class = yyjson_mut_arr(doc);
-    for (size_t i = 0; i <= stats->objects.max_class_id && i < 256; i++) {
-        if (stats->objects.by_class[i] > 0) {
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "class_id", i);
-            yyjson_mut_obj_add_uint(doc, item, "count", stats->objects.by_class[i]);
-            yyjson_mut_arr_append(by_class, item);
+
+    FILE *out = fopen(output_path, "wb");
+    if (!out) {
+        return -1;
+    }
+
+    nmo_json_stream_t js;
+    nmo_json_stream_init(&js, out, true);
+
+#define JSON_TRY(expr) do { if (!(expr)) goto fail; } while (0)
+
+    JSON_TRY(nmo_json_stream_begin_object(&js));
+
+    JSON_TRY(nmo_json_stream_key(&js, "objects"));
+    JSON_TRY(nmo_json_stream_begin_object(&js));
+    JSON_TRY(nmo_json_stream_key(&js, "total_count"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->objects.total_count));
+    JSON_TRY(nmo_json_stream_key(&js, "unique_classes"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->objects.unique_classes));
+    JSON_TRY(nmo_json_stream_key(&js, "max_class_id"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->objects.max_class_id));
+    JSON_TRY(nmo_json_stream_key(&js, "by_class"));
+    JSON_TRY(nmo_json_stream_begin_array(&js));
+    for (size_t i = 0; i <= stats->objects.max_class_id && i < 256; ++i) {
+        if (stats->objects.by_class[i] == 0) {
+            continue;
         }
+        JSON_TRY(nmo_json_stream_begin_object(&js));
+        JSON_TRY(nmo_json_stream_key(&js, "class_id"));
+        JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)i));
+        JSON_TRY(nmo_json_stream_key(&js, "count"));
+        JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->objects.by_class[i]));
+        JSON_TRY(nmo_json_stream_end_object(&js));
     }
-    yyjson_mut_obj_add_val(doc, objects, "by_class", by_class);
-    yyjson_mut_obj_add_val(doc, root, "objects", objects);
-    
-    /* Memory */
-    yyjson_mut_val *memory = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, memory, "total_size", stats->memory.total_size);
-    yyjson_mut_obj_add_uint(doc, memory, "header_size", stats->memory.header_size);
-    yyjson_mut_obj_add_uint(doc, memory, "data_size", stats->memory.data_size);
-    yyjson_mut_obj_add_uint(doc, memory, "chunk_data_size", stats->memory.chunk_data_size);
-    yyjson_mut_obj_add_uint(doc, memory, "chunk_overhead", stats->memory.chunk_overhead);
-    yyjson_mut_obj_add_uint(doc, memory, "compression_ratio", stats->memory.compression_ratio);
-    yyjson_mut_obj_add_val(doc, root, "memory", memory);
-    
-    /* Chunks */
-    yyjson_mut_val *chunks = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, chunks, "total_chunks", stats->chunks.total_chunks);
-    yyjson_mut_obj_add_uint(doc, chunks, "compressed_chunks", stats->chunks.compressed_chunks);
-    yyjson_mut_obj_add_uint(doc, chunks, "max_chunk_size", stats->chunks.max_chunk_size);
-    yyjson_mut_obj_add_uint(doc, chunks, "avg_chunk_size", stats->chunks.avg_chunk_size);
-    yyjson_mut_obj_add_val(doc, root, "chunks", chunks);
-    
-    /* Performance */
-    yyjson_mut_val *performance = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_real(doc, performance, "load_time_ms", stats->performance.load_time_ms);
-    yyjson_mut_obj_add_real(doc, performance, "parse_time_ms", stats->performance.parse_time_ms);
-    yyjson_mut_obj_add_real(doc, performance, "remap_time_ms", stats->performance.remap_time_ms);
-    yyjson_mut_obj_add_val(doc, root, "performance", performance);
-    
-    /* References */
-    yyjson_mut_val *references = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, references, "total_references", stats->references.total_references);
-    yyjson_mut_obj_add_uint(doc, references, "resolved", stats->references.resolved);
-    yyjson_mut_obj_add_uint(doc, references, "unresolved", stats->references.unresolved);
-    yyjson_mut_obj_add_val(doc, root, "references", references);
-    
-    /* Write to file */
-    yyjson_write_err err;
-    yyjson_write_flag flg = YYJSON_WRITE_PRETTY | YYJSON_WRITE_ESCAPE_UNICODE;
-    if (!yyjson_mut_write_file(output_path, doc, flg, NULL, &err)) {
-        yyjson_mut_doc_free(doc);
-        return NMO_ERR_CANT_WRITE_FILE;
+    JSON_TRY(nmo_json_stream_end_array(&js));
+    JSON_TRY(nmo_json_stream_end_object(&js));
+
+    JSON_TRY(nmo_json_stream_key(&js, "memory"));
+    JSON_TRY(nmo_json_stream_begin_object(&js));
+    JSON_TRY(nmo_json_stream_key(&js, "total_size"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->memory.total_size));
+    JSON_TRY(nmo_json_stream_key(&js, "header_size"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->memory.header_size));
+    JSON_TRY(nmo_json_stream_key(&js, "data_size"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->memory.data_size));
+    JSON_TRY(nmo_json_stream_key(&js, "chunk_data_size"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->memory.chunk_data_size));
+    JSON_TRY(nmo_json_stream_key(&js, "chunk_overhead"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->memory.chunk_overhead));
+    JSON_TRY(nmo_json_stream_key(&js, "compression_ratio"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->memory.compression_ratio));
+    JSON_TRY(nmo_json_stream_end_object(&js));
+
+    JSON_TRY(nmo_json_stream_key(&js, "chunks"));
+    JSON_TRY(nmo_json_stream_begin_object(&js));
+    JSON_TRY(nmo_json_stream_key(&js, "total_chunks"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->chunks.total_chunks));
+    JSON_TRY(nmo_json_stream_key(&js, "compressed_chunks"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->chunks.compressed_chunks));
+    JSON_TRY(nmo_json_stream_key(&js, "max_chunk_size"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->chunks.max_chunk_size));
+    JSON_TRY(nmo_json_stream_key(&js, "avg_chunk_size"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->chunks.avg_chunk_size));
+    JSON_TRY(nmo_json_stream_end_object(&js));
+
+    JSON_TRY(nmo_json_stream_key(&js, "performance"));
+    JSON_TRY(nmo_json_stream_begin_object(&js));
+    JSON_TRY(nmo_json_stream_key(&js, "load_time_ms"));
+    JSON_TRY(nmo_json_stream_value_real(&js, stats->performance.load_time_ms));
+    JSON_TRY(nmo_json_stream_key(&js, "parse_time_ms"));
+    JSON_TRY(nmo_json_stream_value_real(&js, stats->performance.parse_time_ms));
+    JSON_TRY(nmo_json_stream_key(&js, "remap_time_ms"));
+    JSON_TRY(nmo_json_stream_value_real(&js, stats->performance.remap_time_ms));
+    JSON_TRY(nmo_json_stream_end_object(&js));
+
+    JSON_TRY(nmo_json_stream_key(&js, "references"));
+    JSON_TRY(nmo_json_stream_begin_object(&js));
+    JSON_TRY(nmo_json_stream_key(&js, "total_references"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->references.total_references));
+    JSON_TRY(nmo_json_stream_key(&js, "resolved"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->references.resolved));
+    JSON_TRY(nmo_json_stream_key(&js, "unresolved"));
+    JSON_TRY(nmo_json_stream_value_uint(&js, (uint64_t)stats->references.unresolved));
+    JSON_TRY(nmo_json_stream_end_object(&js));
+
+    JSON_TRY(nmo_json_stream_end_object(&js));
+    if (fputc('\n', out) == EOF) {
+        goto fail;
     }
-    
-    yyjson_mut_doc_free(doc);
-    return NMO_OK;
+
+#undef JSON_TRY
+
+    if (fclose(out) != 0) {
+        return -1;
+    }
+    return 0;
+
+fail:
+    (void)fclose(out);
+    return -1;
 }

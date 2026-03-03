@@ -25,6 +25,15 @@ extern "C" {
 yyjson_mut_doc *nmo_cli_json_create_doc(void);
 
 /**
+ * @brief Create a document and default top-level `data` object.
+ *
+ * Equivalent to:
+ * - doc = nmo_cli_json_create_doc()
+ * - data = yyjson_mut_obj(doc)
+ */
+bool nmo_cli_json_create_data_doc(yyjson_mut_doc **out_doc, yyjson_mut_val **out_data);
+
+/**
  * @brief Add standard envelope to JSON output
  *
  * All CLI JSON outputs include:
@@ -53,6 +62,18 @@ yyjson_mut_val *nmo_cli_json_add_envelope(yyjson_mut_doc *doc,
  * @return true on success
  */
 bool nmo_cli_json_write(yyjson_mut_doc *doc, FILE *out, bool pretty);
+
+/**
+ * @brief Add envelope, write document, then free document.
+ *
+ * This is the common command-output finalize path.
+ */
+bool nmo_cli_json_write_enveloped_and_free(yyjson_mut_doc *doc,
+                                           yyjson_mut_val *data,
+                                           const char *command,
+                                           const char *input_file,
+                                           FILE *out,
+                                           bool pretty);
 
 /**
  * @brief Write JSON document to string

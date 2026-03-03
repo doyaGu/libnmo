@@ -302,10 +302,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_val(doc, data, "diffs", diffs);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "diff.summary", paths[0]);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.summary", paths[0], out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Diff Summary", colorize);
@@ -390,7 +387,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
 }
 
 /* ============================================================================
- * diff objects â€” thin CLI wrapper over nmo_diff_objects() library API
+ * diff objects â€?thin CLI wrapper over nmo_diff_objects() library API
  * ============================================================================ */
 
 int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *global)
@@ -563,10 +560,7 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
         yyjson_mut_obj_add_val(doc, data, "added", added_arr);
         yyjson_mut_obj_add_uint(doc, data, "added_count", (uint64_t)diff.added_count);
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "diff.objects", paths[0]);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.objects", paths[0], out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* ---- Text output: Git-style unified diff ---- */
         fprintf(out, "%sdiff a/%s b/%s%s\n",
@@ -794,10 +788,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_obj_add_val(doc, data, "diffs", diffs);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "diff.chunks", paths[0]);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.chunks", paths[0], out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output */
         nmo_cli_print_heading(out, "Chunk Comparison", colorize);
@@ -954,10 +945,7 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
             yyjson_mut_obj_add_val(doc, data, "diffs", diffs);
         }
 
-        yyjson_mut_val *root = nmo_cli_json_add_envelope(doc, data, "diff.full", paths[0]);
-        yyjson_mut_doc_set_root(doc, root);
-        nmo_cli_json_write(doc, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        nmo_cli_json_free_doc(doc);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.full", paths[0], out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         /* Text output - print the formatted report */
         nmo_cli_print_heading(out, "Full Comparison Report", colorize);
@@ -1010,3 +998,4 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     return NMO_CLI_EXIT_SUCCESS;
 }
+
