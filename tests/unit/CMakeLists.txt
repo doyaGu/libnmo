@@ -166,3 +166,4 @@ add_unit_test(test_io_mmap)
 
 # Phase 2.4: DOM Comparison API tests
 add_unit_test(test_comparison)
+add_unit_test(test_object_diff)

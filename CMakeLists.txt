@@ -312,6 +312,7 @@ set(NMO_APP_SOURCES
     src/app/stats.c
     src/app/inspector.c
     src/app/hexdump.c
+    src/app/object_diff.c
 )
 
 # Combine all sources

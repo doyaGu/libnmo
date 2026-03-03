@@ -59,6 +59,12 @@ if(TARGET nmo_cli)
     add_dependencies(test_cli_commands nmo_cli)
     target_compile_definitions(test_cli_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_commands COMMAND test_cli_commands)
+
+    add_executable(test_cli_diff_objects test_cli_diff_objects.c)
+    target_link_libraries(test_cli_diff_objects PRIVATE nmo test_framework yyjson)
+    add_dependencies(test_cli_diff_objects nmo_cli)
+    target_compile_definitions(test_cli_diff_objects PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
+    add_test(NAME test_cli_diff_objects COMMAND test_cli_diff_objects)
 endif()
 
 # Temporarily disabled - test_phase6_integration uses deprecated API

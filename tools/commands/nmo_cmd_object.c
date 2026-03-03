@@ -17,6 +17,7 @@
 #include "core/nmo_arena.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_object_repository.h"
+#include "session/nmo_ref_enumerate.h"
 #include "session/nmo_ref_graph.h"
 
 #include <stdio.h>
@@ -287,13 +288,86 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 /* ============================================================================
- * object tree
+ * object tree - Ownership-based hierarchy
+ *
+ * Builds a tree by analyzing reference fields to determine object ownership:
+ *   - Forward ownership: CKBeObject.script_ids, CKBehavior.sub_behaviors,
+ *     inputs, outputs, in_parameters, out_parameters, local_parameters, etc.
+ *   - Reverse ownership: CK3dEntity.parent_id (child points to parent)
+ *   - All other references (mesh_ids, material, texture, etc.) are not ownership.
  * ============================================================================ */
 
 /**
- * Build tree node recursively
+ * @brief Classify a reference field as ownership or not.
+ * @return 1 = forward (source owns target), -1 = reverse (target owns source), 0 = not ownership
  */
-static nmo_cli_tree_node_t *build_object_tree_node(
+static int classify_ownership_field(const char *field_name) {
+    if (!field_name) return 0;
+
+    /* Forward ownership: this object's field contains child IDs */
+    if (strcmp(field_name, "script_ids") == 0) return 1;
+    if (strcmp(field_name, "sub_behaviors") == 0) return 1;
+    if (strcmp(field_name, "sub_behavior_links") == 0) return 1;
+    if (strcmp(field_name, "operations") == 0) return 1;
+    if (strcmp(field_name, "in_parameters") == 0) return 1;
+    if (strcmp(field_name, "out_parameters") == 0) return 1;
+    if (strcmp(field_name, "local_parameters") == 0) return 1;
+    if (strcmp(field_name, "inputs") == 0) return 1;
+    if (strcmp(field_name, "outputs") == 0) return 1;
+    if (strcmp(field_name, "target_parameter_id") == 0) return 1;
+    if (strcmp(field_name, "attribute_parameter_ids") == 0) return 1;
+    if (strcmp(field_name, "in1_id") == 0) return 1;  /* CKParameterOperation */
+    if (strcmp(field_name, "in2_id") == 0) return 1;
+    if (strcmp(field_name, "out_id") == 0) return 1;
+
+    /* Reverse ownership: referenced object is this object's parent */
+    if (strcmp(field_name, "parent_id") == 0) return -1;
+
+    return 0;
+}
+
+/** Context for tree ownership visitor */
+typedef struct {
+    nmo_object_id_t *parent_of;     /**< parent_of[child_id] = parent_id (0 = root) */
+    size_t map_size;                /**< Size of parent_of array */
+    nmo_object_id_t source_id;      /**< Object currently being enumerated */
+} tree_owner_ctx_t;
+
+/** Visitor: classify each reference and record ownership */
+static bool tree_ownership_visitor(
+    void *user_data,
+    uint32_t target_id,
+    nmo_ref_kind_t kind,
+    const char *field_name,
+    uint32_t index)
+{
+    (void)kind;
+    (void)index;
+    tree_owner_ctx_t *ctx = (tree_owner_ctx_t *)user_data;
+
+    int own = classify_ownership_field(field_name);
+    if (own == 0) return true;
+
+    if (own == 1) {
+        /* Forward: source owns target */
+        if (target_id > 0 && target_id < ctx->map_size &&
+            ctx->parent_of[target_id] == 0) {
+            ctx->parent_of[target_id] = ctx->source_id;
+        }
+    } else {
+        /* Reverse: target owns source (parent_id) */
+        if (target_id > 0 && target_id < ctx->map_size &&
+            ctx->source_id > 0 && ctx->source_id < ctx->map_size &&
+            ctx->parent_of[ctx->source_id] == 0) {
+            ctx->parent_of[ctx->source_id] = target_id;
+        }
+    }
+
+    return true;
+}
+
+/** Create a tree node for an object (label + user_data, no children yet) */
+static nmo_cli_tree_node_t *create_tree_label(
     nmo_context_t *ctx,
     nmo_object_t *obj,
     nmo_arena_t *arena)
@@ -301,7 +375,6 @@ static nmo_cli_tree_node_t *build_object_tree_node(
     nmo_cli_tree_node_t *node = nmo_arena_alloc(arena, sizeof(*node), _Alignof(nmo_cli_tree_node_t));
     if (!node) return NULL;
 
-    /* Build label: "ID: Name [ClassName]" */
     const char *name = nmo_object_get_name(obj);
     const char *class_name = nmo_cli_class_name_from_id(ctx, nmo_object_get_class_id(obj));
     char *label = nmo_arena_alloc(arena, 256, 1);
@@ -315,64 +388,61 @@ static nmo_cli_tree_node_t *build_object_tree_node(
     node->user_data = obj;
     node->first_child = NULL;
     node->next_sibling = NULL;
-
-    /* Build children */
-    size_t child_count = nmo_object_get_child_count(obj);
-    nmo_cli_tree_node_t *prev_child = NULL;
-    for (size_t i = 0; i < child_count; ++i) {
-        nmo_object_t *child = nmo_object_get_child(obj, i);
-        if (!child) continue;
-
-        nmo_cli_tree_node_t *child_node = build_object_tree_node(ctx, child, arena);
-        if (!child_node) continue;
-
-        if (!node->first_child) {
-            node->first_child = child_node;
-        } else if (prev_child) {
-            prev_child->next_sibling = child_node;
-        }
-        prev_child = child_node;
-    }
-
     return node;
 }
 
-static yyjson_mut_val *build_object_json_tree(yyjson_mut_doc *doc, nmo_context_t *ctx, nmo_object_t *obj) {
-    if (!doc || !obj) {
-        return yyjson_mut_null(doc);
+/** Append a child node to a parent (at end of sibling list) */
+static void tree_node_add_child(nmo_cli_tree_node_t *parent, nmo_cli_tree_node_t *child) {
+    if (!parent->first_child) {
+        parent->first_child = child;
+    } else {
+        nmo_cli_tree_node_t *last = parent->first_child;
+        while (last->next_sibling) last = last->next_sibling;
+        last->next_sibling = child;
     }
+}
 
-    yyjson_mut_val *node = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, node, "id", nmo_object_get_id(obj));
-    yyjson_mut_obj_add_uint(doc, node, "class_id", nmo_object_get_class_id(obj));
+/** Build JSON tree recursively from tree nodes */
+static yyjson_mut_val *build_json_from_tree(
+    yyjson_mut_doc *doc,
+    nmo_context_t *ctx,
+    const nmo_cli_tree_node_t *node)
+{
+    if (!doc || !node) return yyjson_mut_null(doc);
+
+    nmo_object_t *obj = (nmo_object_t *)node->user_data;
+    yyjson_mut_val *jnode = yyjson_mut_obj(doc);
+
+    yyjson_mut_obj_add_uint(doc, jnode, "id", nmo_object_get_id(obj));
+    yyjson_mut_obj_add_uint(doc, jnode, "class_id", nmo_object_get_class_id(obj));
 
     const char *class_name = nmo_cli_class_name_from_id(ctx, nmo_object_get_class_id(obj));
     if (class_name) {
-        yyjson_mut_obj_add_str(doc, node, "class_name", class_name);
+        yyjson_mut_obj_add_str(doc, jnode, "class_name", class_name);
     }
 
     const char *name = nmo_object_get_name(obj);
     if (name && name[0]) {
-        nmo_cli_json_add_str_safe(doc, node, "name", name);
+        nmo_cli_json_add_str_safe(doc, jnode, "name", name);
     }
 
-    size_t child_count = nmo_object_get_child_count(obj);
-    yyjson_mut_obj_add_uint(doc, node, "child_count", (uint64_t)child_count);
+    /* Count children */
+    size_t child_count = 0;
+    for (const nmo_cli_tree_node_t *c = node->first_child; c; c = c->next_sibling) {
+        child_count++;
+    }
+    yyjson_mut_obj_add_uint(doc, jnode, "child_count", (uint64_t)child_count);
 
     if (child_count > 0) {
         yyjson_mut_val *children = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < child_count; ++i) {
-            nmo_object_t *child = nmo_object_get_child(obj, i);
-            if (!child) {
-                continue;
-            }
-            yyjson_mut_val *child_node = build_object_json_tree(doc, ctx, child);
-            yyjson_mut_arr_add_val(children, child_node);
+        for (const nmo_cli_tree_node_t *c = node->first_child; c; c = c->next_sibling) {
+            yyjson_mut_val *cjson = build_json_from_tree(doc, ctx, c);
+            yyjson_mut_arr_add_val(children, cjson);
         }
-        yyjson_mut_obj_add_val(doc, node, "children", children);
+        yyjson_mut_obj_add_val(doc, jnode, "children", children);
     }
 
-    return node;
+    return jnode;
 }
 
 /**
@@ -422,14 +492,56 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
     bool colorize = nmo_cli_should_colorize(global, out);
 
-    /* Find root objects (those without parents) */
+    /* ---- Phase 1: Build ownership map via reference enumeration ---- */
+    nmo_object_id_t max_id = 0;
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_id_t id = nmo_object_get_id(objects[i]);
+        if (id > max_id) max_id = id;
+    }
+
+    size_t map_size = (size_t)max_id + 1;
+    nmo_object_id_t *parent_of = (nmo_object_id_t *)calloc(map_size, sizeof(nmo_object_id_t));
+    nmo_cli_tree_node_t **node_map = (nmo_cli_tree_node_t **)calloc(map_size, sizeof(nmo_cli_tree_node_t *));
+    if (!parent_of || !node_map) {
+        free(parent_of);
+        free(node_map);
+        nmo_tool_close_session(ctx, session);
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    tree_owner_ctx_t builder = { .parent_of = parent_of, .map_size = map_size };
+
+    for (size_t i = 0; i < object_count; ++i) {
+        builder.source_id = nmo_object_get_id(objects[i]);
+        nmo_ref_enumerate_object(registry, objects[i], tree_ownership_visitor, &builder);
+    }
+
+    /* ---- Phase 2: Create tree nodes ---- */
+    nmo_arena_t *tree_arena = nmo_session_get_arena(session);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_id_t id = nmo_object_get_id(objects[i]);
+        if (id > 0 && id < map_size) {
+            node_map[id] = create_tree_label(ctx, objects[i], tree_arena);
+        }
+    }
+
+    /* ---- Phase 3: Link children to parents ---- */
     size_t root_count = 0;
     for (size_t i = 0; i < object_count; ++i) {
-        if (nmo_object_get_parent(objects[i]) == NULL) {
+        nmo_object_id_t id = nmo_object_get_id(objects[i]);
+        if (id == 0 || id >= map_size || !node_map[id]) continue;
+
+        nmo_object_id_t pid = parent_of[id];
+        if (pid > 0 && pid < map_size && node_map[pid]) {
+            tree_node_add_child(node_map[pid], node_map[id]);
+        } else {
             root_count++;
         }
     }
 
+    /* ---- Phase 4: Output ---- */
     if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
         yyjson_mut_doc *doc = nmo_cli_json_create_doc();
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -439,10 +551,12 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         yyjson_mut_val *roots = yyjson_mut_arr(doc);
         for (size_t i = 0; i < object_count; ++i) {
-            if (nmo_object_get_parent(objects[i]) == NULL) {
-                yyjson_mut_val *obj_node = build_object_json_tree(doc, ctx, objects[i]);
-                yyjson_mut_arr_add_val(roots, obj_node);
-            }
+            nmo_object_id_t id = nmo_object_get_id(objects[i]);
+            if (id == 0 || id >= map_size || !node_map[id]) continue;
+            if (parent_of[id] > 0 && parent_of[id] < map_size && node_map[parent_of[id]]) continue;
+
+            yyjson_mut_val *obj_node = build_json_from_tree(doc, ctx, node_map[id]);
+            yyjson_mut_arr_add_val(roots, obj_node);
         }
         yyjson_mut_obj_add_val(doc, data, "roots", roots);
 
@@ -453,19 +567,18 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
     } else {
         fprintf(out, "Object Tree: %zu objects (%zu roots)\n\n", object_count, root_count);
 
-        /* Build and print tree for each root */
-        nmo_arena_t *tree_arena = nmo_session_get_arena(session);
         for (size_t i = 0; i < object_count; ++i) {
-            if (nmo_object_get_parent(objects[i]) == NULL) {
-                nmo_cli_tree_node_t *tree = build_object_tree_node(ctx, objects[i], tree_arena);
-                if (tree) {
-                    nmo_cli_print_tree(tree, out, colorize, object_tree_render);
-                    fprintf(out, "\n");
-                }
-            }
+            nmo_object_id_t id = nmo_object_get_id(objects[i]);
+            if (id == 0 || id >= map_size || !node_map[id]) continue;
+            if (parent_of[id] > 0 && parent_of[id] < map_size && node_map[parent_of[id]]) continue;
+
+            nmo_cli_print_tree(node_map[id], out, colorize, object_tree_render);
+            fprintf(out, "\n");
         }
     }
 
+    free(parent_of);
+    free(node_map);
     nmo_tool_close_session(ctx, session);
     nmo_cli_close_output_stream(global, out);
     return NMO_CLI_EXIT_SUCCESS;

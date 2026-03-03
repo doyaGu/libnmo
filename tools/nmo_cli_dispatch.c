@@ -289,8 +289,14 @@ static void diff_summary_usage(FILE *out) {
 }
 
 static void diff_objects_usage(FILE *out) {
-    fprintf(out, "Usage: nmo diff objects <file1> <file2>\n\n");
-    fprintf(out, "Compare objects between two files.\n");
+    fprintf(out, "Usage: nmo diff objects [options] <file1> <file2>\n\n");
+    fprintf(out, "Compare objects using topology-aware matching between two files.\n");
+    fprintf(out, "Output uses git-style unified diff format.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --max-objects <N>      Max changed objects to show (default: unlimited)\n");
+    fprintf(out, "  --max-fields <N>       Max changed fields per object (default: unlimited)\n");
+    fprintf(out, "  --min-similarity <f>   Min match similarity in [0,1] (default: 0.0)\n");
+    fprintf(out, "  --rename-similarity <f> Min rename similarity in [0,1] (default: 0.85)\n");
 }
 
 static void diff_chunks_usage(FILE *out) {

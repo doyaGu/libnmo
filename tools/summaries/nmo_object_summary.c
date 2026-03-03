@@ -1269,7 +1269,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         return true;
     }
 
-    /* Skip base class embedding fields â€?these are handled by the flattening
+    /* Skip base class embedding fields ï¿½?these are handled by the flattening
      * walker in nmo_summary_emit_reflection_fields_recursive(). */
     if (!(field->flags & NMO_FIELD_REPEATED) &&
         !nmo_guid_is_null(ctx->owner_type->base_type))
@@ -1752,6 +1752,49 @@ static size_t nmo_summary_build_hierarchy(
     return count;
 }
 
+/* ============================================================================
+ * Visible Field Counter (for empty section suppression)
+ * ============================================================================ */
+
+typedef struct {
+    const nmo_type_descriptor_t *owner_type;
+    size_t count;
+} nmo_field_count_ctx_t;
+
+/**
+ * @brief Counting visitor that mirrors the base-embedding skip logic
+ *        of nmo_summary_render_field, used to suppress empty sections.
+ */
+static bool count_visible_fields_visitor(void *user_data,
+                                         const nmo_type_field_t *field,
+                                         const void *field_ptr)
+{
+    (void)field_ptr;
+    nmo_field_count_ctx_t *ctx = (nmo_field_count_ctx_t *)user_data;
+    if (!ctx || !field || !field->name) return true;
+
+    /* Mirror the base-class embedding skip from nmo_summary_render_field */
+    if (!(field->flags & NMO_FIELD_REPEATED) &&
+        !nmo_guid_is_null(ctx->owner_type->base_type))
+    {
+        nmo_guid_t parent_guid = ctx->owner_type->base_type;
+        if (nmo_guid_equals(field->type_guid, parent_guid)) {
+            return true; /* Skip: parent base embedding */
+        }
+        if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
+            if (strcmp(field->name, "base") == 0 ||
+                strcmp(field->name, "entity") == 0 ||
+                strcmp(field->name, "beobject") == 0 ||
+                strcmp(field->name, "object") == 0) {
+                return true; /* Skip: likely parent base embedding */
+            }
+        }
+    }
+
+    ctx->count++;
+    return true;
+}
+
 static bool nmo_summary_emit_reflection_fields(
     nmo_object_t *obj,
     nmo_summary_output_t *out,
@@ -1801,10 +1844,18 @@ static bool nmo_summary_emit_reflection_fields(
     };
 
     /* Walk hierarchy from base (CKObject) to leaf (e.g. CK3dObject).
-     * Emit each level's own (non-base-embedding) fields with a section header. */
+     * Emit each level's own (non-base-embedding) fields with a section header.
+     * Skip levels that have zero visible fields (e.g. CKRenderObject). */
     for (size_t lvl = 0; lvl < level_count; ++lvl) {
         const nmo_type_descriptor_t *lvl_type = levels[lvl].type;
         const void *lvl_state = levels[lvl].state;
+
+        /* Pre-count visible fields to suppress empty sections */
+        nmo_field_count_ctx_t count_ctx = { .owner_type = lvl_type, .count = 0 };
+        nmo_type_foreach_field(lvl_type, lvl_state, count_visible_fields_visitor, &count_ctx);
+        if (count_ctx.count == 0) {
+            continue; /* Skip empty levels like CKRenderObject */
+        }
 
         /* Section header for each class level */
         const char *class_name = lvl_type->name ? lvl_type->name : "(unnamed)";

@@ -13,6 +13,13 @@
 #include "app/nmo_session.h"
 #include "app/nmo_context.h"
 #include "dsl/nmo_dsl.h"
+#include "format/nmo_object.h"
+#include "object/nmo_object_repository.h"
+#include "type/nmo_reflection.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_type_guids.h"
+#include "core/nmo_error.h"
+#include "core/nmo_guid.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -59,9 +66,101 @@ static bool format_dsl_value(const nmo_dsl_value_t *value, char *buf, size_t buf
             }
             return true;
 
-        case NMO_DSL_VALUE_BYREF:
-            snprintf(buf, buf_size, "<byref:%p>", value->as.byref.ptr);
+        case NMO_DSL_VALUE_BYREF: {
+            if (!value->as.byref.ptr) {
+                snprintf(buf, buf_size, "null");
+                return true;
+            }
+            nmo_guid_t g = value->as.byref.type
+                ? value->as.byref.type->guid : value->as.byref.guid;
+            size_t sz = value->as.byref.size;
+            if (sz == 0 && value->as.byref.type)
+                sz = (size_t)value->as.byref.type->size;
+            const void *p = value->as.byref.ptr;
+
+            /* Decode common primitive types */
+            if (nmo_guid_equals(g, CKPGUID_BOOL) && sz >= 1) {
+                snprintf(buf, buf_size, "%s",
+                         (*(const uint8_t *)p) ? "true" : "false");
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT) && sz >= 4) {
+                snprintf(buf, buf_size, "%d", *(const int32_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT32) && sz >= 4) {
+                snprintf(buf, buf_size, "%u", *(const uint32_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_FLOAT) && sz >= 4) {
+                snprintf(buf, buf_size, "%g", (double)*(const float *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_DOUBLE) && sz >= 8) {
+                snprintf(buf, buf_size, "%g", *(const double *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_STRING)) {
+                const char *s = *(const char *const *)p;
+                snprintf(buf, buf_size, "%s", s ? s : "(null)");
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_ID) && sz >= 4) {
+                snprintf(buf, buf_size, "#%u", *(const uint32_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT64) && sz >= 8) {
+                snprintf(buf, buf_size, "%lld", (long long)*(const int64_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT64) && sz >= 8) {
+                snprintf(buf, buf_size, "%llu",
+                         (unsigned long long)*(const uint64_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT16) && sz >= 2) {
+                snprintf(buf, buf_size, "%d", (int)*(const int16_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT16) && sz >= 2) {
+                snprintf(buf, buf_size, "%u", (unsigned)*(const uint16_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_INT8) && sz >= 1) {
+                snprintf(buf, buf_size, "%d", (int)*(const int8_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_UINT8) && sz >= 1) {
+                snprintf(buf, buf_size, "%u", (unsigned)*(const uint8_t *)p);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_VECTOR) && sz >= 12) {
+                const float *v = (const float *)p;
+                snprintf(buf, buf_size, "(%g, %g, %g)",
+                         (double)v[0], (double)v[1], (double)v[2]);
+                return true;
+            }
+            if (nmo_guid_equals(g, CKPGUID_GUID) && sz >= 8) {
+                const nmo_guid_t *gv = (const nmo_guid_t *)p;
+                snprintf(buf, buf_size, "{%08X-%08X}", gv->d1, gv->d2);
+                return true;
+            }
+            /* Fallback: show hex bytes for small values */
+            if (sz <= 8 && sz > 0) {
+                const uint8_t *bytes = (const uint8_t *)p;
+                char *pos = buf;
+                size_t rem = buf_size;
+                int n = snprintf(pos, rem, "0x");
+                pos += n; rem -= (size_t)n;
+                for (size_t i = 0; i < sz && rem > 2; i++) {
+                    n = snprintf(pos, rem, "%02X", bytes[i]);
+                    pos += n; rem -= (size_t)n;
+                }
+                return true;
+            }
+            snprintf(buf, buf_size, "<byref:%zu bytes>", sz);
             return true;
+        }
 
         case NMO_DSL_VALUE_OBJECT:
             snprintf(buf, buf_size, "<object:%p>", value->as.object.instance);
@@ -246,14 +345,29 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     } else if (use_stdin) {
         file_path = nmo_tool_find_file_arg_last(argc, argv);
     } else {
-        /* First positional is expression, second is file */
-        const char *args[2];
-        size_t arg_count = nmo_tool_find_file_args(argc, argv, args, 2);
-        if (arg_count >= 1) {
-            expr_str = args[0];
+        /* Collect positional args, skipping known --key value pairs */
+        const char *positionals[3];
+        size_t pos_count = 0;
+        for (int i = 1; i < argc && pos_count < 3; ++i) {
+            if (argv[i][0] == '-') {
+                /* Skip options that consume a value */
+                if (strcmp(argv[i], "--object") == 0 ||
+                    strcmp(argv[i], "--expr") == 0 ||
+                    strcmp(argv[i], "--format") == 0 ||
+                    strcmp(argv[i], "-e") == 0 ||
+                    strcmp(argv[i], "-o") == 0 ||
+                    strcmp(argv[i], "-f") == 0) {
+                    ++i; /* skip value */
+                }
+                continue;
+            }
+            positionals[pos_count++] = argv[i];
         }
-        if (arg_count >= 2) {
-            file_path = args[1];
+        if (pos_count >= 1) {
+            expr_str = positionals[0];
+        }
+        if (pos_count >= 2) {
+            file_path = positionals[1];
         }
     }
 
@@ -262,6 +376,7 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
         fprintf(stderr, "Usage: nmo query eval \"<expression>\" <file>\n");
         fprintf(stderr, "       nmo query eval --expr \"<expression>\" <file>\n");
         fprintf(stderr, "       nmo query eval --stdin <file>\n");
+        fprintf(stderr, "       nmo query eval --object <id|name> \"<expression>\" <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -319,10 +434,56 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     memset(&eval_ctx, 0, sizeof(eval_ctx));
     eval_ctx.registry = registry;
     eval_ctx.ops = NULL;
-    eval_ctx.root_type = NULL;
-    eval_ctx.root_instance = NULL;
-    eval_ctx.current_type = NULL;
-    eval_ctx.current_instance = repo;
+
+    /* Check for --object flag to set type context */
+    const char *obj_opt = nmo_tool_find_opt_value(argc, argv, "--object", NULL);
+    nmo_object_t *target_obj = NULL;
+    if (obj_opt) {
+        /* Try as numeric ID first, then as name */
+        char *end = NULL;
+        long id = strtol(obj_opt, &end, 10);
+        if (end && end != obj_opt && *end == '\0' && id > 0) {
+            target_obj = nmo_object_repository_find_by_id(repo, (nmo_object_id_t)id);
+        }
+        if (!target_obj) {
+            target_obj = nmo_object_repository_find_by_name(repo, obj_opt);
+        }
+        if (!target_obj) {
+            free(stdin_buffer);
+            nmo_tool_close_session(ctx, session);
+            fprintf(stderr, "Error: Object not found: %s\n", obj_opt);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+
+        /* Resolve type descriptor for this object */
+        nmo_guid_t type_guid = nmo_object_get_type_guid(target_obj);
+        const nmo_type_descriptor_t *obj_type = NULL;
+        if (!nmo_guid_is_null(type_guid)) {
+            obj_type = nmo_type_registry_find_by_guid(registry, type_guid);
+        }
+        if (!obj_type) {
+            obj_type = nmo_type_registry_find_by_class_id_inherited(
+                registry, nmo_object_get_class_id(target_obj));
+        }
+
+        if (obj_type && nmo_type_has_reflection(obj_type)) {
+            const void *state = nmo_object_get_state(target_obj);
+            eval_ctx.root_type = obj_type;
+            eval_ctx.root_instance = (void *)state;
+            eval_ctx.current_type = obj_type;
+            eval_ctx.current_instance = state;
+        } else {
+            free(stdin_buffer);
+            nmo_tool_close_session(ctx, session);
+            fprintf(stderr, "Error: Object '%s' has no reflection data\n", obj_opt);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    } else {
+        eval_ctx.root_type = NULL;
+        eval_ctx.root_instance = NULL;
+        eval_ctx.current_type = NULL;
+        eval_ctx.current_instance = repo;
+    }
 
     /* Evaluate expression */
     nmo_dsl_value_t result = {0};
@@ -330,8 +491,18 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     if (status != NMO_OK) {
         free(stdin_buffer);
+        /* Capture detailed error before closing session (which may clear it) */
+        char detail[256];
+        size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: DSL evaluation failed: %s\n", nmo_error_string(status));
+        if (detail_len > 0) {
+            fprintf(stderr, "Error: %s\n", detail);
+        } else {
+            fprintf(stderr, "Error: DSL evaluation failed: %s\n", nmo_error_string(status));
+        }
+        if (!obj_opt) {
+            fprintf(stderr, "Hint: Use --object <id|name> to evaluate in the context of an object\n");
+        }
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
