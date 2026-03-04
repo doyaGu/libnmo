@@ -53,9 +53,13 @@ static nmo_status_t parse_manager_data(
     }
 
     /* Allocate manager data array */
+    size_t manager_bytes = 0;
+    if (!nmo_safe_mul_size(sizeof(nmo_manager_data_t), section->manager_count, &manager_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Manager data allocation overflow");
+    }
     section->managers = (nmo_manager_data_t *) nmo_arena_alloc(
         arena,
-        sizeof(nmo_manager_data_t) * section->manager_count,
+        manager_bytes,
         alignof(nmo_manager_data_t));
     if (section->managers == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager data array");
@@ -131,9 +135,13 @@ static nmo_status_t parse_object_data(
     }
 
     /* Allocate object data array */
+    size_t object_bytes = 0;
+    if (!nmo_safe_mul_size(sizeof(nmo_object_data_t), section->object_count, &object_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Object data allocation overflow");
+    }
     section->objects = (nmo_object_data_t *) nmo_arena_alloc(
         arena,
-        sizeof(nmo_object_data_t) * section->object_count,
+        object_bytes,
         alignof(nmo_object_data_t));
     if (section->objects == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object data array");
@@ -297,6 +305,9 @@ nmo_status_t nmo_data_section_serialize(
             /* Write actual data size */
             NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                        "Buffer too small for manager data size (index=%u)", (unsigned)i);
+            NMO_ENSURE(chunk_size <= (size_t)UINT32_MAX, NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                       "Manager chunk too large to serialize (index=%u, size=%zu)",
+                       (unsigned)i, chunk_size);
             nmo_write_u32_le(buf + pos, (uint32_t)chunk_size);
             pos += 4;
 
@@ -346,6 +357,9 @@ nmo_status_t nmo_data_section_serialize(
             /* Write actual data size */
             NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                        "Buffer too small for object data size (index=%u)", (unsigned)i);
+            NMO_ENSURE(chunk_size <= (size_t)UINT32_MAX, NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                       "Object chunk too large to serialize (index=%u, size=%zu)",
+                       (unsigned)i, chunk_size);
             nmo_write_u32_le(buf + pos, (uint32_t)chunk_size);
             pos += 4;
 
@@ -378,22 +392,31 @@ size_t nmo_data_section_calculate_size(
     if (data_section->managers != NULL) {
         for (uint32_t i = 0; i < data_section->manager_count; i++) {
             const nmo_manager_data_t *mgr = &data_section->managers[i];
-            total_size += 8; // GUID
-            total_size += 4; // Data size
+            if (!nmo_safe_add_size(total_size, 8u, &total_size) ||
+                !nmo_safe_add_size(total_size, 4u, &total_size)) {
+                return 0;
+            }
 
             /* Use data_size if set, otherwise serialize to get size */
+            size_t chunk_size = 0;
             if (mgr->data_size > 0) {
-                total_size += mgr->data_size;
+                chunk_size = mgr->data_size;
             } else if (mgr->chunk != NULL) {
                 if (mgr->chunk->raw_data != NULL) {
-                    total_size += mgr->chunk->raw_size;
+                    chunk_size = mgr->chunk->raw_size;
                 } else {
                     void *chunk_data = NULL;
-                    size_t chunk_size = 0;
+                    chunk_size = 0;
                     // This is inefficient, but necessary to get the size.
-                    nmo_chunk_serialize_version1(mgr->chunk, &chunk_data, &chunk_size, arena);
-                    total_size += chunk_size;
+                    nmo_status_t status = nmo_chunk_serialize_version1(mgr->chunk, &chunk_data, &chunk_size, arena);
+                    if (status != NMO_OK) {
+                        return 0;
+                    }
                 }
+            }
+
+            if (chunk_size > (size_t)UINT32_MAX || !nmo_safe_add_size(total_size, chunk_size, &total_size)) {
+                return 0;
             }
         }
     }
@@ -404,24 +427,35 @@ size_t nmo_data_section_calculate_size(
             const nmo_object_data_t *obj = &data_section->objects[i];
 
             if (file_version < 7) {
-                total_size += 4; // object_id
+                if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
+                    return 0;
+                }
             }
 
-            total_size += 4; // Data size
+            if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
+                return 0;
+            }
 
             /* Use data_size if set, otherwise serialize to get size */
+            size_t chunk_size = 0;
             if (obj->data_size > 0) {
-                total_size += obj->data_size;
+                chunk_size = obj->data_size;
             } else if (obj->chunk != NULL) {
                 if (obj->chunk->raw_data != NULL) {
-                    total_size += obj->chunk->raw_size;
+                    chunk_size = obj->chunk->raw_size;
                 } else {
                     void *chunk_data = NULL;
-                    size_t chunk_size = 0;
+                    chunk_size = 0;
                     // This is inefficient, but necessary to get the size.
-                    nmo_chunk_serialize_version1(obj->chunk, &chunk_data, &chunk_size, arena);
-                    total_size += chunk_size;
+                    nmo_status_t status = nmo_chunk_serialize_version1(obj->chunk, &chunk_data, &chunk_size, arena);
+                    if (status != NMO_OK) {
+                        return 0;
+                    }
                 }
+            }
+
+            if (chunk_size > (size_t)UINT32_MAX || !nmo_safe_add_size(total_size, chunk_size, &total_size)) {
+                return 0;
             }
         }
     }

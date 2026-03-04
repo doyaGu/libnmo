@@ -78,18 +78,30 @@ typedef struct nmo_chunk_writer {
 
 // Helper to ensure capacity
 static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
-    if (w->data_size + needed_dwords <= w->data_capacity) {
+    size_t required = 0;
+    if (!nmo_safe_add_size(w->data_size, needed_dwords, &required)) {
+        return NMO_ERR_CORRUPT;
+    }
+
+    if (required <= w->data_capacity) {
         return NMO_OK;
     }
 
     // Grow by WRITER_GROWTH_INCREMENT
-    size_t new_capacity = w->data_capacity + WRITER_GROWTH_INCREMENT;
-    while (new_capacity < w->data_size + needed_dwords) {
-        new_capacity += WRITER_GROWTH_INCREMENT;
+    size_t new_capacity = w->data_capacity;
+    while (new_capacity < required) {
+        if (!nmo_safe_add_size(new_capacity, WRITER_GROWTH_INCREMENT, &new_capacity)) {
+            return NMO_ERR_CORRUPT;
+        }
+    }
+
+    size_t alloc_bytes = 0;
+    if (!nmo_safe_mul_size(new_capacity, sizeof(uint32_t), &alloc_bytes)) {
+        return NMO_ERR_CORRUPT;
     }
 
     uint32_t *new_data = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                      new_capacity * sizeof(uint32_t),
+                                                      alloc_bytes,
                                                       sizeof(uint32_t));
     if (new_data == NULL) {
         return NMO_ERR_NOMEM;
@@ -97,7 +109,11 @@ static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
 
     // Copy existing data
     if (w->data != NULL && w->data_size > 0) {
-        memcpy(new_data, w->data, w->data_size * sizeof(uint32_t));
+        size_t copy_bytes = 0;
+        if (!nmo_safe_mul_size(w->data_size, sizeof(uint32_t), &copy_bytes)) {
+            return NMO_ERR_CORRUPT;
+        }
+        memcpy(new_data, w->data, copy_bytes);
     }
 
     w->data = new_data;
@@ -106,56 +122,63 @@ static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
     return NMO_OK;
 }
 
-static int ensure_id_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
-    if (w->id_count + needed_entries <= w->id_capacity) {
+static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
+                                    uint32_t **list,
+                                    size_t count,
+                                    size_t *capacity,
+                                    size_t needed_entries) {
+    size_t required = 0;
+    if (!nmo_safe_add_size(count, needed_entries, &required)) {
+        return NMO_ERR_CORRUPT;
+    }
+
+    if (required <= *capacity) {
         return NMO_OK;
     }
 
-    size_t new_capacity = (w->id_capacity == 0) ? 16 : w->id_capacity * 2;
-    while (new_capacity < w->id_count + needed_entries) {
+    size_t new_capacity = (*capacity == 0) ? 16 : *capacity;
+    while (new_capacity < required) {
+        if (new_capacity > (SIZE_MAX / 2u)) {
+            return NMO_ERR_CORRUPT;
+        }
         new_capacity *= 2;
     }
 
+    size_t alloc_bytes = 0;
+    if (!nmo_safe_mul_size(new_capacity, sizeof(uint32_t), &alloc_bytes)) {
+        return NMO_ERR_CORRUPT;
+    }
+
     uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                      new_capacity * sizeof(uint32_t),
+                                                      alloc_bytes,
                                                       sizeof(uint32_t));
     if (new_list == NULL) {
         return NMO_ERR_NOMEM;
     }
 
-    if (w->id_list != NULL && w->id_count > 0) {
-        memcpy(new_list, w->id_list, w->id_count * sizeof(uint32_t));
+    if (*list != NULL && count > 0) {
+        size_t copy_bytes = 0;
+        if (!nmo_safe_mul_size(count, sizeof(uint32_t), &copy_bytes)) {
+            return NMO_ERR_CORRUPT;
+        }
+        memcpy(new_list, *list, copy_bytes);
     }
 
-    w->id_list = new_list;
-    w->id_capacity = new_capacity;
+    *list = new_list;
+    *capacity = new_capacity;
     return NMO_OK;
 }
 
+static int ensure_id_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
+    return ensure_u32_list_capacity(w, &w->id_list, w->id_count, &w->id_capacity, needed_entries);
+}
+
 static int ensure_manager_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
-    if (w->manager_count + needed_entries <= w->manager_capacity) {
-        return NMO_OK;
-    }
-
-    size_t new_capacity = (w->manager_capacity == 0) ? 16 : w->manager_capacity * 2;
-    while (new_capacity < w->manager_count + needed_entries) {
-        new_capacity *= 2;
-    }
-
-    uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                      new_capacity * sizeof(uint32_t),
-                                                      sizeof(uint32_t));
-    if (new_list == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    if (w->manager_list != NULL && w->manager_count > 0) {
-        memcpy(new_list, w->manager_list, w->manager_count * sizeof(uint32_t));
-    }
-
-    w->manager_list = new_list;
-    w->manager_capacity = new_capacity;
-    return NMO_OK;
+    return ensure_u32_list_capacity(w,
+                                    &w->manager_list,
+                                    w->manager_count,
+                                    &w->manager_capacity,
+                                    needed_entries);
 }
 
 static int track_id_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
@@ -181,29 +204,11 @@ static int track_manager_sequence_start(nmo_chunk_writer_t *w, uint32_t position
 }
 
 static int ensure_chunk_ref_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
-    if (w->chunk_ref_count + needed_entries <= w->chunk_ref_capacity) {
-        return NMO_OK;
-    }
-
-    size_t new_capacity = (w->chunk_ref_capacity == 0) ? 16 : w->chunk_ref_capacity * 2;
-    while (new_capacity < w->chunk_ref_count + needed_entries) {
-        new_capacity *= 2;
-    }
-
-    uint32_t *new_list = (uint32_t *) nmo_arena_alloc(w->arena,
-                                                      new_capacity * sizeof(uint32_t),
-                                                      sizeof(uint32_t));
-    if (new_list == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    if (w->chunk_ref_list != NULL && w->chunk_ref_count > 0) {
-        memcpy(new_list, w->chunk_ref_list, w->chunk_ref_count * sizeof(uint32_t));
-    }
-
-    w->chunk_ref_list = new_list;
-    w->chunk_ref_capacity = new_capacity;
-    return NMO_OK;
+    return ensure_u32_list_capacity(w,
+                                    &w->chunk_ref_list,
+                                    w->chunk_ref_count,
+                                    &w->chunk_ref_capacity,
+                                    needed_entries);
 }
 
 static int track_chunk_sequence_start(nmo_chunk_writer_t *w, uint32_t position) {
@@ -835,9 +840,27 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
     if (sub != NULL) {
         // Grow chunk list if needed
         if (w->chunk_count >= w->chunk_capacity) {
-            size_t new_capacity = w->chunk_capacity == 0 ? 16 : w->chunk_capacity * 2;
+            size_t new_capacity = (w->chunk_capacity == 0) ? 16 : w->chunk_capacity;
+            size_t required_entries = 0;
+            if (!nmo_safe_add_size(w->chunk_count, 1u, &required_entries)) {
+                return NMO_ERR_CORRUPT;
+            }
+            if (new_capacity < required_entries) {
+                while (new_capacity < required_entries) {
+                    if (new_capacity > (SIZE_MAX / 2u)) {
+                        return NMO_ERR_CORRUPT;
+                    }
+                    new_capacity *= 2u;
+                }
+            }
+
+            size_t alloc_bytes = 0;
+            if (!nmo_safe_mul_size(new_capacity, sizeof(nmo_chunk_t *), &alloc_bytes)) {
+                return NMO_ERR_CORRUPT;
+            }
+
             nmo_chunk_t **new_list = (nmo_chunk_t **) nmo_arena_alloc(w->arena,
-                                                                      new_capacity * sizeof(nmo_chunk_t *),
+                                                                      alloc_bytes,
                                                                       sizeof(void *));
             if (new_list == NULL) {
                 return NMO_ERR_NOMEM;
@@ -845,7 +868,11 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
 
             // Copy existing entries
             if (w->chunk_count > 0 && w->chunk_list != NULL) {
-                memcpy(new_list, w->chunk_list, w->chunk_count * sizeof(nmo_chunk_t *));
+                size_t copy_bytes = 0;
+                if (!nmo_safe_mul_size(w->chunk_count, sizeof(nmo_chunk_t *), &copy_bytes)) {
+                    return NMO_ERR_CORRUPT;
+                }
+                memcpy(new_list, w->chunk_list, copy_bytes);
             }
 
             w->chunk_list = new_list;

@@ -467,6 +467,14 @@ static nmo_status_t calculate_serialize_size(const nmo_header1_t *header, size_t
     if (header == NULL || out_size == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid header size arguments");
     }
+    if (header->object_count > 0 && header->objects == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Header1 object count is non-zero but object array is NULL");
+    }
+    if (header->plugin_dep_count > 0 && header->plugin_deps == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Header1 plugin dependency count is non-zero but dependency array is NULL");
+    }
 
     /* NOTE: Object count is NOT in buffer - it's in file header */
 
@@ -560,6 +568,14 @@ nmo_status_t nmo_header1_serialize(
     nmo_arena_t *arena) {
     if (header == NULL || out_data == NULL || out_size == NULL || arena == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL pointer passed to nmo_header1_serialize");
+    }
+    if (header->object_count > 0 && header->objects == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Header1 object count is non-zero but object array is NULL");
+    }
+    if (header->plugin_dep_count > 0 && header->plugin_deps == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Header1 plugin dependency count is non-zero but dependency array is NULL");
     }
 
     /* Calculate required buffer size */

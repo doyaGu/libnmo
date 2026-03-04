@@ -195,7 +195,8 @@ nmo_status_t nmo_chunk_parser_skip(nmo_chunk_parser_t *p, size_t dwords) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser");
     }
 
-    if (p->cursor + dwords > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
+    size_t data_size = NMO_CHUNK_PARSER_DATA_SIZE(p);
+    if (p->cursor > data_size || dwords > (data_size - p->cursor)) {
         NMO_PARSER_RETURN_INVALID_OFFSET("Skip beyond end of chunk");
     }
 
