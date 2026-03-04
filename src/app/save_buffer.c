@@ -5,6 +5,7 @@
 
 #include "app/nmo_save_buffer.h"
 #include "core/nmo_allocator.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,6 +21,17 @@ struct nmo_save_buffer {
     size_t capacity;     /**< Allocated capacity */
     nmo_arena_t *arena;  /**< Arena for struct allocation (not for data) */
 };
+
+static int nmo_checked_add_size(size_t a, size_t b, size_t *out) {
+    if (out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (a > (SIZE_MAX - b)) {
+        return NMO_ERR_NOMEM;
+    }
+    *out = a + b;
+    return NMO_OK;
+}
 
 nmo_save_buffer_t *nmo_save_buffer_create(nmo_arena_t *arena, size_t initial_capacity) {
     if (arena == NULL) {
@@ -99,7 +111,10 @@ int nmo_save_buffer_reserve(nmo_save_buffer_t *buffer, size_t capacity) {
     }
 
     /* Grow to at least double current capacity or requested size */
-    size_t new_capacity = buffer->capacity * GROWTH_FACTOR;
+    size_t new_capacity = capacity;
+    if (buffer->capacity <= (SIZE_MAX / GROWTH_FACTOR)) {
+        new_capacity = buffer->capacity * GROWTH_FACTOR;
+    }
     if (new_capacity < capacity) {
         new_capacity = capacity;
     }
@@ -131,7 +146,11 @@ int nmo_save_buffer_write(nmo_save_buffer_t *buffer, const void *data, size_t si
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t required = buffer->size + size;
+    size_t required = 0;
+    int add_result = nmo_checked_add_size(buffer->size, size, &required);
+    if (add_result != NMO_OK) {
+        return add_result;
+    }
     if (required > buffer->capacity) {
         int result = nmo_save_buffer_reserve(buffer, required);
         if (result != NMO_OK) {
@@ -158,7 +177,11 @@ int nmo_save_buffer_reserve_space(nmo_save_buffer_t *buffer, size_t size, size_t
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    size_t required = buffer->size + size;
+    size_t required = 0;
+    int add_result = nmo_checked_add_size(buffer->size, size, &required);
+    if (add_result != NMO_OK) {
+        return add_result;
+    }
     if (required > buffer->capacity) {
         int result = nmo_save_buffer_reserve(buffer, required);
         if (result != NMO_OK) {
@@ -180,7 +203,7 @@ int nmo_save_buffer_patch(nmo_save_buffer_t *buffer, size_t offset, const void *
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (offset + size > buffer->size) {
+    if (offset > (SIZE_MAX - size) || (offset + size) > buffer->size) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 

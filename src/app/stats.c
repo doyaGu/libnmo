@@ -162,14 +162,14 @@ int nmo_stats_collect(
     nmo_file_stats_t *out_stats
 ) {
     if (session == NULL || out_stats == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
     
     memset(out_stats, 0, sizeof(nmo_file_stats_t));
     
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     if (repo == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_STATE;
     }
     
     /* Collect different categories of statistics */
@@ -180,7 +180,7 @@ int nmo_stats_collect(
     /* Performance stats would be collected during load/save operations */
     /* For now, leave them at zero */
     
-    return 0;
+    return NMO_OK;
 }
 
 void nmo_stats_print(
@@ -273,12 +273,12 @@ int nmo_stats_export_json(
     const char *output_path
 ) {
     if (stats == NULL || output_path == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
     
     /* Create JSON document */
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
-    if (!doc) return -1;
+    if (!doc) return NMO_ERR_NOMEM;
     
     yyjson_mut_val *root = yyjson_mut_obj(doc);
     yyjson_mut_doc_set_root(doc, root);
@@ -338,9 +338,9 @@ int nmo_stats_export_json(
     yyjson_write_flag flg = YYJSON_WRITE_PRETTY | YYJSON_WRITE_ESCAPE_UNICODE;
     if (!yyjson_mut_write_file(output_path, doc, flg, NULL, &err)) {
         yyjson_mut_doc_free(doc);
-        return -1;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
     
     yyjson_mut_doc_free(doc);
-    return 0;
+    return NMO_OK;
 }

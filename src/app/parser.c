@@ -773,8 +773,11 @@ static int nmo_load_file_with_io(
             opts->max_included_name_len,
             opts->max_included_file_size);
         if (included_result != NMO_OK) {
-            nmo_log(logger, NMO_LOG_WARN,
+            nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to load included files (code=%d)", included_result);
+            nmo_load_session_destroy(load_session);
+            nmo_io_close(io);
+            return included_result;
         }
     }
 
@@ -1063,11 +1066,11 @@ int nmo_load_file(nmo_session_t *session,
         nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file (mmap): %s", path);
         nmo_io_interface_t *io = nmo_mmap_io_open(path);
         if (io == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to open mmap for file: %s", path);
-            return NMO_ERR_FILE_NOT_FOUND;
+            nmo_log(logger, NMO_LOG_WARN,
+                    "Failed to open mmap for file, falling back to standard IO: %s", path);
+        } else {
+            return nmo_load_file_with_io(session, path, io, opts);
         }
-
-        return nmo_load_file_with_io(session, path, io, opts);
     }
 
     nmo_log(logger, NMO_LOG_INFO, "Phase 1: Opening file: %s", path);
@@ -1079,4 +1082,3 @@ int nmo_load_file(nmo_session_t *session,
 
     return nmo_load_file_with_io(session, path, io, opts);
 }
-
