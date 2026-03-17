@@ -319,6 +319,32 @@ TEST(load_session_id_remap, id_remap_plan_invalid_inputs) {
 }
 
 /**
+ * Test ID remap plan rejects duplicate preserved file IDs
+ */
+TEST(load_session_id_remap, id_remap_plan_rejects_duplicate_preserved_ids) {
+    nmo_allocator_t allocator = nmo_allocator_default();
+
+    nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t* objects[2];
+    for (int i = 0; i < 2; i++) {
+        objects[i] = nmo_object_create(&allocator, (nmo_object_id_t)(400 + i), 0x00000001);
+        ASSERT_NOT_NULL(objects[i]);
+        nmo_object_t *repo_obj = objects[i];
+        ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &objects[i]));
+        objects[i] = repo_obj;
+    }
+
+    objects[0]->file_id = 7;
+    objects[1]->file_id = 7;
+
+    ASSERT_NULL(nmo_id_remap_plan_create(repo, (nmo_object_t**)objects, 2));
+
+    nmo_object_repository_destroy(repo);
+}
+
+/**
  * Test remap plan with large number of objects
  */
 TEST(load_session_id_remap, remap_plan_large) {
@@ -410,6 +436,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_session_id_remap, id_remap_plan_create);
     REGISTER_TEST(load_session_id_remap, id_remap_plan_preserve_and_fill_gaps);
     REGISTER_TEST(load_session_id_remap, id_remap_plan_invalid_inputs);
+    REGISTER_TEST(load_session_id_remap, id_remap_plan_rejects_duplicate_preserved_ids);
     REGISTER_TEST(load_session_id_remap, remap_plan_large);
     REGISTER_TEST(load_session_id_remap, load_session_end);
 TEST_MAIN_END()

@@ -29,7 +29,8 @@ static int file_info_single(const char *file_path,
                              yyjson_mut_doc *doc,
                              yyjson_mut_val *data)
 {
-    (void)user_data;
+    const nmo_tool_text_output_ctx_t *text_ctx =
+        (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -47,14 +48,15 @@ static int file_info_single(const char *file_path,
         yyjson_mut_obj_add_uint(doc, data, "manager_count", info.manager_count);
         yyjson_mut_obj_add_uint(doc, data, "ck_version", info.ck_version);
     } else {
-        bool colorize = nmo_cli_should_colorize(global, stdout);
+        FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
+        bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
         char buf[64];
         snprintf(buf, sizeof(buf), "%u", info.object_count);
-        nmo_cli_print_kv(stdout, "Objects", buf, 14, colorize);
+        nmo_cli_print_kv(out, "Objects", buf, 14, colorize);
         snprintf(buf, sizeof(buf), "%u", info.manager_count);
-        nmo_cli_print_kv(stdout, "Managers", buf, 14, colorize);
+        nmo_cli_print_kv(out, "Managers", buf, 14, colorize);
         snprintf(buf, sizeof(buf), "0x%08X", info.ck_version);
-        nmo_cli_print_kv(stdout, "CK Version", buf, 14, colorize);
+        nmo_cli_print_kv(out, "CK Version", buf, 14, colorize);
     }
 
     nmo_tool_close_session(ctx, session);
@@ -87,24 +89,26 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
                     global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
     if (is_json) {
+        char out_err[128];
+        FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+        if (!out) {
+            fprintf(stderr, "Error: %s\n", out_err);
+            return NMO_CLI_EXIT_IO_ERROR;
+        }
+
         yyjson_mut_doc *doc = NULL;
         yyjson_mut_val *data = NULL;
         if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+            nmo_cli_close_output_stream(global, out);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
         int rc = file_info_single(file_path, global, NULL, doc, data);
 
         yyjson_mut_obj_add_str(doc, data, "file", file_path);
-        char out_err[128];
-        FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-        if (out) {
-            nmo_cli_json_write_enveloped_and_free(doc, data, "file.info", file_path,
-                                                  out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-            nmo_cli_close_output_stream(global, out);
-        } else {
-            nmo_cli_json_free_doc(doc);
-        }
+        nmo_cli_json_write_enveloped_and_free(doc, data, "file.info", file_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_close_output_stream(global, out);
         return rc;
     }
 
@@ -116,11 +120,17 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
         return NMO_CLI_EXIT_IO_ERROR;
     }
     bool colorize = nmo_cli_should_colorize(global, out);
+    nmo_tool_text_output_ctx_t text_ctx = {
+        .out = out,
+        .colorize = colorize,
+        .user_data = NULL
+    };
     nmo_cli_print_heading(out, "File Info", colorize);
     nmo_cli_print_kv(out, "File", file_path, 14, colorize);
-    nmo_cli_close_output_stream(global, out);
 
-    return file_info_single(file_path, global, NULL, NULL, NULL);
+    int rc = file_info_single(file_path, global, &text_ctx, NULL, NULL);
+    nmo_cli_close_output_stream(global, out);
+    return rc;
 }
 
 /* ============================================================================

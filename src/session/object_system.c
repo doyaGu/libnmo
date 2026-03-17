@@ -233,6 +233,17 @@ static void object_system_destroy_state_layers(
     }
 }
 
+static void object_system_clear_failed_object_state(nmo_object_t *obj)
+{
+    if (obj == NULL) {
+        return;
+    }
+
+    obj->data = NULL;
+    obj->state = NULL;
+    obj->state_size = 0;
+}
+
 nmo_status_t nmo_object_system_create_objects_from_header1(
     const nmo_allocator_t *object_allocator,
     nmo_arena_t *scratch_arena,
@@ -659,6 +670,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
 
             object_system_destroy_state_layers(
                 state, &deser_ctx, created_layers, created_count);
+            object_system_clear_failed_object_state(obj);
             nmo_chunk_close(obj->chunk);
             continue;
         }
@@ -700,6 +712,10 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                         "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to start chunk read: %d",
                         file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), read_result);
             }
+            object_system_destroy_state_layers(
+                state, &deser_ctx, created_layers, created_count);
+            object_system_clear_failed_object_state(obj);
+            nmo_chunk_close(obj->chunk);
             continue;
         }
 
@@ -768,6 +784,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
 
             object_system_destroy_state_layers(
                 state, &deser_ctx, created_layers, created_count);
+            object_system_clear_failed_object_state(obj);
 
             nmo_chunk_close(obj->chunk);
         }

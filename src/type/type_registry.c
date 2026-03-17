@@ -263,6 +263,60 @@ static void child_list_remove(
     }
 }
 
+static bool child_list_contains(
+    const nmo_type_child_list_t *list,
+    nmo_type_id_t child_id)
+{
+    if (!list || !list->children || list->count == 0) {
+        return false;
+    }
+
+    for (size_t i = 0; i < list->count; i++) {
+        if (list->children[i] == child_id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static nmo_status_t child_list_append_unique(
+    nmo_type_registry_t *registry,
+    nmo_type_id_t parent_id,
+    nmo_type_id_t child_id)
+{
+    nmo_type_child_list_t *parent_list = get_child_list(registry, parent_id);
+    if (!parent_list) {
+        NMO_RETURN_OK();
+    }
+    if (child_list_contains(parent_list, child_id)) {
+        NMO_RETURN_OK();
+    }
+    return child_list_append(registry, parent_list, child_id);
+}
+
+static nmo_status_t ensure_parent_child_link(
+    nmo_type_registry_t *registry,
+    nmo_type_descriptor_t *type)
+{
+    if (!registry || !type || !type->valid || nmo_guid_is_null(type->base_type)) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_type_id_t parent_id = type->base_type_id;
+    if (parent_id == NMO_TYPE_ID_INVALID) {
+        if (nmo_hash_table_get(registry->guid_map, &type->base_type, &parent_id) != NMO_OK) {
+            NMO_RETURN_OK();
+        }
+        type->base_type_id = parent_id;
+    }
+
+    if (parent_id < 0 || (size_t)parent_id >= registry->types.count) {
+        NMO_RETURN_OK();
+    }
+
+    return child_list_append_unique(registry, parent_id, type->id);
+}
+
 static void free_child_list(nmo_type_registry_t *registry, nmo_type_id_t type_id) {
     nmo_type_child_list_t *list = get_child_list(registry, type_id);
     if (!list) {
@@ -1051,17 +1105,10 @@ nmo_status_t nmo_type_registry_register(
     registry->class_id_inherited_version = 0;
 
     if (!nmo_guid_is_null(type->base_type)) {
-        nmo_type_id_t parent_id = NMO_TYPE_ID_INVALID;
-        if (nmo_hash_table_get(registry->guid_map, &type->base_type, &parent_id) == NMO_OK) {
-            type->base_type_id = parent_id;
-            nmo_type_child_list_t *parent_list = get_child_list(registry, parent_id);
-            if (parent_list) {
-                nmo_status_t child_res = child_list_append(registry, parent_list, type->id);
-                if (child_res != NMO_OK) {
-                    nmo_type_registry_unregister(registry, type->guid);
-                    return child_res;
-                }
-            }
+        nmo_status_t child_res = ensure_parent_child_link(registry, type);
+        if (child_res != NMO_OK) {
+            nmo_type_registry_unregister(registry, type->guid);
+            return child_res;
         }
     }
 
@@ -1502,11 +1549,10 @@ static bool compute_compat_mask_recursive(
     }
 
     if (!nmo_guid_is_null(type->base_type)) {
-        nmo_type_id_t parent_id = type->base_type_id;
-        if (parent_id == NMO_TYPE_ID_INVALID) {
-            nmo_hash_table_get(registry->guid_map, &type->base_type, &parent_id);
-            type->base_type_id = parent_id;
+        if (ensure_parent_child_link(registry, type) != NMO_OK) {
+            return false;
         }
+        nmo_type_id_t parent_id = type->base_type_id;
 
         if (parent_id >= 0 && (size_t)parent_id < registry->types.count) {
             if (!compute_compat_mask_recursive(registry, (size_t)parent_id, state)) {
@@ -1547,10 +1593,9 @@ void nmo_type_registry_update_derivation_masks(nmo_type_registry_t *registry) {
             if (ensure_compat_mask_capacity(registry, type) != NMO_OK) {
                 return;
             }
-            if (!nmo_guid_is_null(type->base_type) && type->base_type_id == NMO_TYPE_ID_INVALID) {
-                nmo_type_id_t parent_id = NMO_TYPE_ID_INVALID;
-                if (nmo_hash_table_get(registry->guid_map, &type->base_type, &parent_id) == NMO_OK) {
-                    type->base_type_id = parent_id;
+            if (!nmo_guid_is_null(type->base_type)) {
+                if (ensure_parent_child_link(registry, type) != NMO_OK) {
+                    return;
                 }
             }
         }

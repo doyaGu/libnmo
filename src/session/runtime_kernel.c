@@ -13,9 +13,31 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
+#include "session/nmo_ref_enumerate.h"
+#include "type/nmo_reflection.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
+#include "core/nmo_array.h"
 #include <string.h>
+
+typedef struct runtime_id_pair {
+    nmo_object_id_t old_id;
+    nmo_object_id_t new_id;
+} runtime_id_pair_t;
+
+typedef struct runtime_id_set {
+    nmo_object_id_t *ids;
+    size_t count;
+    size_t capacity;
+    nmo_arena_t *arena;
+} runtime_id_set_t;
+
+typedef struct runtime_created_layer {
+    const nmo_type_descriptor_t *type;
+    uint32_t offset;
+} runtime_created_layer_t;
+
+#define RUNTIME_MAX_HIERARCHY_DEPTH 64
 
 static int runtime_init_report(nmo_runtime_report_t *report)
 {
@@ -95,6 +117,580 @@ static const nmo_type_descriptor_t *runtime_find_type_for_object(
     return nmo_type_registry_find_by_class_id_inherited(type_rt->types, object->class_id);
 }
 
+static bool runtime_lookup_mapping(
+    const runtime_id_pair_t *mapping,
+    size_t mapping_count,
+    nmo_object_id_t old_id,
+    nmo_object_id_t *out_new_id)
+{
+    if (mapping == NULL || out_new_id == NULL || old_id == NMO_OBJECT_ID_NONE) {
+        return false;
+    }
+
+    for (size_t i = 0; i < mapping_count; i++) {
+        if (mapping[i].old_id == old_id) {
+            *out_new_id = mapping[i].new_id;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool runtime_id_set_contains(const runtime_id_set_t *set, nmo_object_id_t id)
+{
+    if (set == NULL || id == NMO_OBJECT_ID_NONE) {
+        return false;
+    }
+
+    for (size_t i = 0; i < set->count; i++) {
+        if (set->ids[i] == id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int runtime_id_set_init(
+    runtime_id_set_t *set,
+    nmo_arena_t *arena,
+    size_t initial_capacity)
+{
+    if (set == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    memset(set, 0, sizeof(*set));
+    set->arena = arena;
+
+    if (initial_capacity == 0) {
+        initial_capacity = 1;
+    }
+
+    set->ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, initial_capacity * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
+    if (set->ids == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    set->capacity = initial_capacity;
+    return NMO_OK;
+}
+
+static size_t runtime_build_create_plan(
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *type,
+    runtime_created_layer_t *layers,
+    size_t layer_cap)
+{
+    if (types == NULL || type == NULL || layers == NULL || layer_cap == 0) {
+        return 0;
+    }
+
+    const nmo_type_descriptor_t *lineage[RUNTIME_MAX_HIERARCHY_DEPTH];
+    uint32_t lineage_offsets[RUNTIME_MAX_HIERARCHY_DEPTH];
+    size_t depth = 0;
+    const nmo_type_descriptor_t *current = type;
+    uint32_t current_offset = 0;
+
+    while (current != NULL && depth < layer_cap && depth < RUNTIME_MAX_HIERARCHY_DEPTH) {
+        lineage[depth++] = current;
+        lineage_offsets[depth - 1] = current_offset;
+        if (nmo_guid_is_null(current->base_type)) {
+            break;
+        }
+
+        const nmo_type_descriptor_t *base =
+            nmo_type_registry_find_by_guid(types, current->base_type);
+        if (base == NULL) {
+            break;
+        }
+
+        const nmo_type_field_t *base_field = nmo_type_get_field_by_name(current, "base");
+        if (base_field != NULL && nmo_guid_equals(base_field->type_guid, base->guid)) {
+            current_offset += (uint32_t)base_field->offset;
+        } else {
+            uint32_t offset = nmo_type_get_state_offset(types, type, base);
+            if (offset == (uint32_t)-1) {
+                break;
+            }
+            current_offset = offset;
+        }
+
+        current = base;
+    }
+
+    if (depth == 0) {
+        layers[0].type = type;
+        layers[0].offset = 0;
+        return 1;
+    }
+
+    for (size_t i = 0; i < depth; ++i) {
+        layers[i].type = lineage[i];
+        layers[i].offset = lineage_offsets[i];
+    }
+
+    return depth;
+}
+
+static int runtime_create_state_layers(
+    void *state,
+    void *context,
+    const runtime_created_layer_t *plan,
+    size_t plan_count,
+    runtime_created_layer_t *out_created_layers,
+    size_t out_created_cap,
+    size_t *out_created_count)
+{
+    if (state == NULL || plan == NULL || plan_count == 0 ||
+        out_created_layers == NULL || out_created_cap == 0 || out_created_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_created_count = 0;
+
+    for (size_t i = 0; i < plan_count; ++i) {
+        const nmo_type_descriptor_t *layer_type = plan[i].type;
+        if (layer_type == NULL || layer_type->vtable == NULL || layer_type->vtable->create == NULL) {
+            continue;
+        }
+
+        uint8_t *layer_state = (uint8_t *)state + plan[i].offset;
+        int result = layer_type->vtable->create(layer_state, layer_type, context);
+        if (result != NMO_OK) {
+            return result;
+        }
+
+        if (*out_created_count >= out_created_cap) {
+            return NMO_ERR_INTERNAL;
+        }
+
+        out_created_layers[*out_created_count] = plan[i];
+        (*out_created_count)++;
+    }
+
+    return NMO_OK;
+}
+
+static void runtime_destroy_state_layers(
+    void *state,
+    void *context,
+    const runtime_created_layer_t *created_layers,
+    size_t created_count)
+{
+    if (state == NULL || created_layers == NULL || created_count == 0) {
+        return;
+    }
+
+    for (size_t idx = created_count; idx > 0; --idx) {
+        size_t i = idx - 1;
+        const nmo_type_descriptor_t *layer_type = created_layers[i].type;
+        if (layer_type == NULL || layer_type->vtable == NULL || layer_type->vtable->destroy == NULL) {
+            continue;
+        }
+
+        uint8_t *layer_state = (uint8_t *)state + created_layers[i].offset;
+        layer_type->vtable->destroy(layer_state, layer_type, context);
+    }
+}
+
+static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
+{
+    if (set == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (id == NMO_OBJECT_ID_NONE || runtime_id_set_contains(set, id)) {
+        return NMO_OK;
+    }
+
+    if (set->count == set->capacity) {
+        size_t new_capacity = set->capacity * 2;
+        nmo_object_id_t *new_ids = (nmo_object_id_t *)nmo_arena_alloc(
+            set->arena, new_capacity * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
+        if (new_ids == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+
+        memcpy(new_ids, set->ids, set->count * sizeof(nmo_object_id_t));
+        set->ids = new_ids;
+        set->capacity = new_capacity;
+    }
+
+    set->ids[set->count++] = id;
+    return NMO_OK;
+}
+
+static bool runtime_get_pointer_array_count(
+    const nmo_type_descriptor_t *type,
+    const char *field_name,
+    const void *instance,
+    uint32_t *out_count)
+{
+    if (type == NULL || field_name == NULL || instance == NULL || out_count == NULL) {
+        return false;
+    }
+
+    size_t name_len = strlen(field_name);
+    size_t base_len = name_len;
+
+    if (name_len > 4 && strcmp(field_name + name_len - 4, "_ids") == 0) {
+        base_len = name_len - 4;
+    } else if (name_len > 3 && strcmp(field_name + name_len - 3, "_id") == 0) {
+        base_len = name_len - 3;
+    } else if (name_len > 1 && field_name[name_len - 1] == 's') {
+        base_len = name_len - 1;
+    }
+
+    if (base_len == 0 || base_len + 6 >= 128) {
+        return false;
+    }
+
+    char count_name[128];
+    memcpy(count_name, field_name, base_len);
+    memcpy(count_name + base_len, "_count", 7);
+
+    const nmo_type_field_t *count_field = nmo_type_get_field_by_name(type, count_name);
+    if (count_field == NULL && base_len > 0) {
+        const char *last_underscore = NULL;
+        for (size_t i = 0; i < base_len; ++i) {
+            if (field_name[i] == '_') {
+                last_underscore = field_name + i;
+            }
+        }
+
+        if (last_underscore != NULL) {
+            size_t short_base_len = (size_t)(last_underscore - field_name);
+            if (short_base_len > 0 && short_base_len + 6 < sizeof(count_name)) {
+                memcpy(count_name, field_name, short_base_len);
+                memcpy(count_name + short_base_len, "_count", 7);
+                count_field = nmo_type_get_field_by_name(type, count_name);
+            }
+        }
+    }
+
+    if (count_field == NULL) {
+        return false;
+    }
+
+    *out_count = nmo_field_get_uint32(instance, count_field);
+    return true;
+}
+
+typedef struct runtime_ref_remap_ctx {
+    const runtime_id_pair_t *mapping;
+    size_t mapping_count;
+    const nmo_type_descriptor_t *type;
+    void *instance;
+} runtime_ref_remap_ctx_t;
+
+static bool runtime_remap_ref_field(
+    void *user_data,
+    const nmo_type_field_t *field,
+    const void *field_ptr)
+{
+    (void)field_ptr;
+
+    runtime_ref_remap_ctx_t *ctx = (runtime_ref_remap_ctx_t *)user_data;
+    if (ctx == NULL || field == NULL || ctx->instance == NULL) {
+        return true;
+    }
+
+    if (!nmo_field_is_ref(field)) {
+        return true;
+    }
+
+    if (!nmo_field_is_array(field)) {
+        if (field->size == sizeof(nmo_object_id_t)) {
+            nmo_object_id_t *id_ptr = (nmo_object_id_t *)nmo_field_get_ptr(ctx->instance, field);
+            if (id_ptr != NULL && *id_ptr != NMO_OBJECT_ID_NONE) {
+                nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+                if (runtime_lookup_mapping(ctx->mapping, ctx->mapping_count, *id_ptr, &mapped)) {
+                    *id_ptr = mapped;
+                }
+            }
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(nmo_array_t)) {
+        nmo_array_t *arr = (nmo_array_t *)nmo_field_get_ptr(ctx->instance, field);
+        if (arr == NULL || arr->data == NULL || arr->count == 0 ||
+            arr->element_size != sizeof(nmo_object_id_t)) {
+            return true;
+        }
+
+        nmo_object_id_t *ids = (nmo_object_id_t *)arr->data;
+        for (size_t i = 0; i < arr->count; i++) {
+            nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+            if (runtime_lookup_mapping(ctx->mapping, ctx->mapping_count, ids[i], &mapped)) {
+                ids[i] = mapped;
+            }
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(nmo_object_id_t *)) {
+        nmo_object_id_t **ids_ptr = (nmo_object_id_t **)nmo_field_get_ptr(ctx->instance, field);
+        if (ids_ptr == NULL || *ids_ptr == NULL) {
+            return true;
+        }
+
+        uint32_t count = 0;
+        if (!runtime_get_pointer_array_count(ctx->type, field->name, ctx->instance, &count)) {
+            return true;
+        }
+
+        nmo_object_id_t *ids = *ids_ptr;
+        for (uint32_t i = 0; i < count; i++) {
+            nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+            if (runtime_lookup_mapping(ctx->mapping, ctx->mapping_count, ids[i], &mapped)) {
+                ids[i] = mapped;
+            }
+        }
+    }
+
+    return true;
+}
+
+static const void *runtime_get_base_instance(
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *derived_type,
+    const void *derived_instance,
+    const nmo_type_descriptor_t *current_type,
+    const void *current_instance,
+    const nmo_type_descriptor_t *base_type)
+{
+    const nmo_type_field_t *base_field = nmo_type_get_field_by_name(current_type, "base");
+    if (base_field != NULL && nmo_guid_equals(base_field->type_guid, base_type->guid)) {
+        return nmo_field_get_ptr_const(current_instance, base_field);
+    }
+
+    if (derived_type != NULL && derived_type->ext != NULL && derived_type->ext->state_offsets != NULL) {
+        uint32_t offset = nmo_type_get_state_offset(types, derived_type, base_type);
+        if (offset != (uint32_t)-1) {
+            return (const char *)derived_instance + offset;
+        }
+    }
+
+    return NULL;
+}
+
+static int runtime_remap_object_copy_refs(
+    const nmo_type_runtime_t *type_rt,
+    const nmo_type_descriptor_t *type,
+    void *instance,
+    const runtime_id_pair_t *mapping,
+    size_t mapping_count)
+{
+    if (type_rt == NULL || type_rt->types == NULL || type == NULL || instance == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (mapping == NULL || mapping_count == 0) {
+        return NMO_OK;
+    }
+
+    const nmo_type_descriptor_t *current = type;
+    void *current_instance = instance;
+    const nmo_type_descriptor_t *derived_type = type;
+    const void *derived_instance = instance;
+
+    for (size_t depth = 0; current != NULL && current_instance != NULL && depth < 64; ++depth) {
+        runtime_ref_remap_ctx_t remap_ctx = {
+            .mapping = mapping,
+            .mapping_count = mapping_count,
+            .type = current,
+            .instance = current_instance
+        };
+
+        int remap_result = nmo_type_foreach_ref_field(
+            current,
+            current_instance,
+            runtime_remap_ref_field,
+            &remap_ctx);
+        if (remap_result != NMO_OK) {
+            return remap_result;
+        }
+
+        if (nmo_guid_is_null(current->base_type)) {
+            break;
+        }
+
+        const nmo_type_descriptor_t *base =
+            nmo_type_registry_find_by_guid(type_rt->types, current->base_type);
+        if (base == NULL) {
+            break;
+        }
+
+        void *base_instance = (void *)runtime_get_base_instance(
+            type_rt->types, derived_type, derived_instance, current, current_instance, base);
+        if (base_instance == NULL) {
+            break;
+        }
+
+        current = base;
+        current_instance = base_instance;
+    }
+
+    return NMO_OK;
+}
+
+typedef struct runtime_ref_target_scan_ctx {
+    const runtime_id_set_t *targets;
+    bool found;
+} runtime_ref_target_scan_ctx_t;
+
+static bool runtime_ref_target_scan(
+    void *user_data,
+    uint32_t target_id,
+    nmo_ref_kind_t kind,
+    const char *field_name,
+    uint32_t index)
+{
+    (void)kind;
+    (void)field_name;
+    (void)index;
+
+    runtime_ref_target_scan_ctx_t *ctx = (runtime_ref_target_scan_ctx_t *)user_data;
+    if (ctx == NULL || ctx->targets == NULL) {
+        return false;
+    }
+
+    if (runtime_id_set_contains(ctx->targets, target_id)) {
+        ctx->found = true;
+        return false;
+    }
+
+    return true;
+}
+
+static bool runtime_object_references_targets(
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *obj,
+    const runtime_id_set_t *targets)
+{
+    if (type_rt == NULL || type_rt->types == NULL || obj == NULL || targets == NULL) {
+        return false;
+    }
+
+    if (obj->state == NULL) {
+        return false;
+    }
+
+    runtime_ref_target_scan_ctx_t scan_ctx = {
+        .targets = targets,
+        .found = false
+    };
+
+    int enum_result = nmo_ref_enumerate_object(
+        type_rt->types,
+        obj,
+        runtime_ref_target_scan,
+        &scan_ctx);
+    if (enum_result != NMO_OK) {
+        return false;
+    }
+
+    return scan_ctx.found;
+}
+
+static int runtime_collect_delete_set(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    const nmo_runtime_request_t *request,
+    runtime_id_set_t *out_set)
+{
+    if (repo == NULL || arena == NULL || request == NULL || out_set == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int init_result = runtime_id_set_init(out_set, arena, request->payload.destroy.count);
+    if (init_result != NMO_OK) {
+        return init_result;
+    }
+
+    const nmo_object_id_t *ids = request->payload.destroy.ids;
+    size_t count = request->payload.destroy.count;
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, ids[i]);
+        if (obj == NULL) {
+            if (request->flags & NMO_RUNTIME_REQUEST_STRICT) {
+                return NMO_ERR_NOT_FOUND;
+            }
+            continue;
+        }
+
+        int add_result = runtime_id_set_add(out_set, obj->id);
+        if (add_result != NMO_OK) {
+            return add_result;
+        }
+    }
+
+    if ((request->flags & NMO_RUNTIME_REQUEST_CASCADE) == 0 ||
+        type_rt == NULL || type_rt->types == NULL) {
+        return NMO_OK;
+    }
+
+    bool added = false;
+    do {
+        added = false;
+
+        size_t object_count = 0;
+        nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+        for (size_t i = 0; i < object_count; i++) {
+            nmo_object_t *obj = objects[i];
+            if (obj == NULL || runtime_id_set_contains(out_set, obj->id)) {
+                continue;
+            }
+
+            if (runtime_object_references_targets(type_rt, obj, out_set)) {
+                int add_result = runtime_id_set_add(out_set, obj->id);
+                if (add_result != NMO_OK) {
+                    return add_result;
+                }
+                added = true;
+            }
+        }
+    } while (added);
+
+    return NMO_OK;
+}
+
+static int runtime_safe_detach_remaining(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    uint32_t request_flags)
+{
+    if (repo == NULL || type_rt == NULL || type_rt->types == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t object_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
+    for (size_t i = 0; i < object_count; i++) {
+        nmo_object_t *obj = objects[i];
+        if (obj == NULL || obj->state == NULL) {
+            continue;
+        }
+
+        const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, obj);
+        if (type == NULL || type->vtable == NULL || type->vtable->remap_dependencies == NULL) {
+            continue;
+        }
+
+        int hook_result = type->vtable->remap_dependencies(obj->state, type, repo);
+        if (hook_result != NMO_OK && (request_flags & NMO_RUNTIME_REQUEST_STRICT)) {
+            return hook_result;
+        }
+    }
+
+    return NMO_OK;
+}
+
 static int runtime_execute_create(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
@@ -130,11 +726,36 @@ static int runtime_execute_create(
     const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
     const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, object);
     if (type != NULL && type->size > 0) {
-        if (nmo_object_alloc_state(object, type->size) == NMO_OK &&
-            object->state != NULL &&
-            type->vtable != NULL &&
-            type->vtable->create != NULL) {
-            (void)type->vtable->create(object->state, type, session);
+        uint32_t state_size = type->size;
+        runtime_created_layer_t create_plan[RUNTIME_MAX_HIERARCHY_DEPTH];
+        runtime_created_layer_t created_layers[RUNTIME_MAX_HIERARCHY_DEPTH];
+        size_t created_count = 0;
+        if (type->ext != NULL && type->ext->total_state_size > 0) {
+            state_size = type->ext->total_state_size;
+        }
+
+        int alloc_result = nmo_object_alloc_state(object, state_size);
+        if (alloc_result != NMO_OK) {
+            nmo_object_destroy(object);
+            return alloc_result;
+        }
+
+        if (object->state != NULL) {
+            size_t plan_count = runtime_build_create_plan(
+                type_rt->types, type, create_plan, RUNTIME_MAX_HIERARCHY_DEPTH);
+            int create_result = runtime_create_state_layers(
+                object->state,
+                session,
+                create_plan,
+                plan_count,
+                created_layers,
+                RUNTIME_MAX_HIERARCHY_DEPTH,
+                &created_count);
+            if (create_result != NMO_OK) {
+                runtime_destroy_state_layers(object->state, session, created_layers, created_count);
+                nmo_object_destroy(object);
+                return create_result;
+            }
         }
     }
 
@@ -156,25 +777,27 @@ static int runtime_execute_create(
     return NMO_OK;
 }
 
-static nmo_object_t *runtime_clone_object(
+static int runtime_clone_object(
     nmo_session_t *session,
     const nmo_object_t *source,
-    const nmo_type_descriptor_t *type)
+    const nmo_type_descriptor_t *type,
+    nmo_object_t **out_clone)
 {
-    if (session == NULL || source == NULL) {
-        return NULL;
+    if (session == NULL || source == NULL || out_clone == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
+    *out_clone = NULL;
 
     nmo_context_t *ctx = nmo_session_get_context(session);
     const nmo_allocator_t *alloc = (ctx != NULL) ? nmo_context_get_allocator(ctx) : NULL;
     nmo_arena_t *arena = nmo_session_get_arena(session);
     if (arena == NULL) {
-        return NULL;
+        return NMO_ERR_INVALID_STATE;
     }
 
     nmo_object_t *clone = nmo_object_create(alloc, NMO_OBJECT_ID_NONE, source->class_id);
     if (clone == NULL) {
-        return NULL;
+        return NMO_ERR_NOMEM;
     }
 
     if (source->name != NULL) {
@@ -193,21 +816,22 @@ static nmo_object_t *runtime_clone_object(
     if (source->state != NULL && source->state_size > 0) {
         if (nmo_object_alloc_state(clone, source->state_size) != NMO_OK) {
             nmo_object_destroy(clone);
-            return NULL;
+            return NMO_ERR_NOMEM;
         }
 
         if (type != NULL && type->vtable != NULL && type->vtable->copy != NULL) {
             int copy_result = type->vtable->copy(source->state, clone->state, type, arena);
             if (copy_result != NMO_OK) {
                 nmo_object_destroy(clone);
-                return NULL;
+                return copy_result;
             }
         } else {
             memcpy(clone->state, source->state, source->state_size);
         }
     }
 
-    return clone;
+    *out_clone = clone;
+    return NMO_OK;
 }
 
 static int runtime_execute_copy(
@@ -232,6 +856,28 @@ static int runtime_execute_copy(
         return NMO_ERR_INVALID_STATE;
     }
 
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    if (arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_object_t **sources = (nmo_object_t **)nmo_arena_alloc(
+        arena,
+        sizeof(nmo_object_t *) * count,
+        _Alignof(nmo_object_t *));
+    nmo_object_t **clones = (nmo_object_t **)nmo_arena_alloc(
+        arena,
+        sizeof(nmo_object_t *) * count,
+        _Alignof(nmo_object_t *));
+    const nmo_type_descriptor_t **types = (const nmo_type_descriptor_t **)nmo_arena_alloc(
+        arena,
+        sizeof(nmo_type_descriptor_t *) * count,
+        _Alignof(nmo_type_descriptor_t *));
+    if (sources == NULL || clones == NULL || types == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    size_t copied_count = 0;
     for (size_t i = 0; i < count; i++) {
         nmo_object_t *src = nmo_object_repository_find_by_id(repo, ids[i]);
         if (src == NULL) {
@@ -242,23 +888,10 @@ static int runtime_execute_copy(
         }
 
         const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, src);
-        nmo_object_t *clone = runtime_clone_object(session, src, type);
-        if (clone == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-
-        if (type != NULL &&
-            type->vtable != NULL &&
-            type->vtable->prepare_dependencies != NULL &&
-            clone->state != NULL) {
-            (void)type->vtable->prepare_dependencies(clone->state, type, repo);
-        }
-
-        if (type != NULL &&
-            type->vtable != NULL &&
-            type->vtable->remap_dependencies != NULL &&
-            clone->state != NULL) {
-            (void)type->vtable->remap_dependencies(clone->state, type, repo);
+        nmo_object_t *clone = NULL;
+        int clone_result = runtime_clone_object(session, src, type, &clone);
+        if (clone_result != NMO_OK) {
+            return clone_result;
         }
 
         nmo_object_t *owned = clone;
@@ -268,9 +901,54 @@ static int runtime_execute_copy(
             return add_result;
         }
 
+        sources[copied_count] = src;
+        clones[copied_count] = clone;
+        types[copied_count] = type;
+        copied_count++;
+
         if (report != NULL) {
             report->copied_objects++;
             report->affected_objects++;
+        }
+    }
+
+    if (copied_count == 0) {
+        return NMO_OK;
+    }
+
+    runtime_id_pair_t *mapping = (runtime_id_pair_t *)nmo_arena_alloc(
+        arena,
+        sizeof(runtime_id_pair_t) * copied_count,
+        _Alignof(runtime_id_pair_t));
+    if (mapping == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    for (size_t i = 0; i < copied_count; i++) {
+        mapping[i].old_id = sources[i]->id;
+        mapping[i].new_id = clones[i]->id;
+    }
+
+    for (size_t i = 0; i < copied_count; i++) {
+        nmo_object_t *clone = clones[i];
+        const nmo_type_descriptor_t *type = types[i];
+        if (clone == NULL || clone->state == NULL || type == NULL) {
+            continue;
+        }
+
+        (void)runtime_remap_object_copy_refs(
+            type_rt,
+            type,
+            clone->state,
+            mapping,
+            copied_count);
+
+        if (type->vtable != NULL && type->vtable->prepare_dependencies != NULL) {
+            (void)type->vtable->prepare_dependencies(clone->state, type, repo);
+        }
+
+        if (type->vtable != NULL && type->vtable->remap_dependencies != NULL) {
+            (void)type->vtable->remap_dependencies(clone->state, type, repo);
         }
     }
 
@@ -286,25 +964,28 @@ static int runtime_execute_delete(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    const nmo_object_id_t *ids = request->payload.destroy.ids;
-    size_t count = request->payload.destroy.count;
-    if (ids == NULL || count == 0) {
+    if (request->payload.destroy.ids == NULL || request->payload.destroy.count == 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_context_t *ctx = nmo_session_get_context(session);
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_arena_t *arena = nmo_session_get_arena(session);
     const nmo_type_runtime_t *type_rt = (ctx != NULL) ? nmo_context_get_type_runtime(ctx) : NULL;
-    if (repo == NULL) {
+    if (repo == NULL || arena == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, ids[i]);
+    runtime_id_set_t delete_set;
+    int collect_result = runtime_collect_delete_set(repo, type_rt, arena, request, &delete_set);
+    if (collect_result != NMO_OK) {
+        return collect_result;
+    }
+
+    for (size_t i = 0; i < delete_set.count; i++) {
+        nmo_object_id_t object_id = delete_set.ids[i];
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
         if (obj == NULL) {
-            if (request->flags & NMO_RUNTIME_REQUEST_STRICT) {
-                return NMO_ERR_NOT_FOUND;
-            }
             continue;
         }
 
@@ -320,7 +1001,7 @@ static int runtime_execute_delete(
         }
 
         nmo_object_t *detached = NULL;
-        int remove_result = nmo_object_repository_take(repo, ids[i], &detached);
+        int remove_result = nmo_object_repository_take(repo, object_id, &detached);
         if (remove_result != NMO_OK && (request->flags & NMO_RUNTIME_REQUEST_STRICT)) {
             return remove_result;
         }
@@ -337,6 +1018,15 @@ static int runtime_execute_delete(
             if (report != NULL) {
                 report->deleted_objects++;
                 report->affected_objects++;
+            }
+        }
+    }
+
+    if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
+        if (type_rt != NULL && type_rt->types != NULL) {
+            int detach_result = runtime_safe_detach_remaining(repo, type_rt, request->flags);
+            if (detach_result != NMO_OK) {
+                return detach_result;
             }
         }
     }

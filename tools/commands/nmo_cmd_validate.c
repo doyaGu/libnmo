@@ -50,7 +50,8 @@ static int validate_all_single(const char *file_path,
                                 yyjson_mut_doc *doc,
                                 yyjson_mut_val *data)
 {
-    (void)user_data;
+    const nmo_tool_text_output_ctx_t *text_ctx =
+        (const nmo_tool_text_output_ctx_t *)user_data;
 
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -71,6 +72,8 @@ static int validate_all_single(const char *file_path,
 
     size_t error_count = 0;
     size_t warning_count = 0;
+    FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
+    bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
 
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
@@ -79,7 +82,7 @@ static int validate_all_single(const char *file_path,
         if (!chunk) {
             warning_count++;
             if (!doc && global->verbosity > 0) {
-                printf("Warning: Object %u has no chunk\n", nmo_object_get_id(obj));
+                fprintf(out, "Warning: Object %u has no chunk\n", nmo_object_get_id(obj));
             }
             continue;
         }
@@ -89,9 +92,9 @@ static int validate_all_single(const char *file_path,
         if (rc != 0 || !result.is_valid) {
             error_count++;
             if (!doc) {
-                printf("Error: Object %u chunk validation failed: %s\n",
-                       nmo_object_get_id(obj),
-                       result.error_message[0] ? result.error_message : "unknown");
+                fprintf(out, "Error: Object %u chunk validation failed: %s\n",
+                        nmo_object_get_id(obj),
+                        result.error_message[0] ? result.error_message : "unknown");
             }
         }
     }
@@ -112,15 +115,14 @@ static int validate_all_single(const char *file_path,
         yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)object_count);
     } else {
         /* Text mode: output summary */
-        bool colorize = nmo_cli_should_colorize(global, stdout);
         char buf[32];
         snprintf(buf, sizeof(buf), "%zu", object_count);
-        nmo_cli_print_kv(stdout, "Objects", buf, 12, colorize);
+        nmo_cli_print_kv(out, "Objects", buf, 12, colorize);
         snprintf(buf, sizeof(buf), "%zu", error_count);
-        nmo_cli_print_kv(stdout, "Errors", buf, 12, colorize);
+        nmo_cli_print_kv(out, "Errors", buf, 12, colorize);
         snprintf(buf, sizeof(buf), "%zu", warning_count);
-        nmo_cli_print_kv(stdout, "Warnings", buf, 12, colorize);
-        printf("Result: %s\n", error_count == 0 ? "VALID" : "INVALID");
+        nmo_cli_print_kv(out, "Warnings", buf, 12, colorize);
+        fprintf(out, "Result: %s\n", error_count == 0 ? "VALID" : "INVALID");
     }
 
     nmo_tool_close_session(ctx, session);
@@ -153,25 +155,27 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
                     global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
     if (is_json) {
+        char out_err[128];
+        FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+        if (!out) {
+            fprintf(stderr, "Error: %s\n", out_err);
+            return NMO_CLI_EXIT_IO_ERROR;
+        }
+
         /* Single-file JSON: use the batch handler to populate, then wrap */
         yyjson_mut_doc *doc = NULL;
         yyjson_mut_val *data = NULL;
         if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+            nmo_cli_close_output_stream(global, out);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
 
         int rc = validate_all_single(file_path, global, NULL, doc, data);
 
         yyjson_mut_obj_add_str(doc, data, "file", file_path);
-        char out_err[128];
-        FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-        if (out) {
-            nmo_cli_json_write_enveloped_and_free(doc, data, "validate.all", file_path,
-                                                  out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-            nmo_cli_close_output_stream(global, out);
-        } else {
-            nmo_cli_json_free_doc(doc);
-        }
+        nmo_cli_json_write_enveloped_and_free(doc, data, "validate.all", file_path,
+                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_close_output_stream(global, out);
         return rc;
     }
 
@@ -183,12 +187,18 @@ int nmo_cmd_validate_all(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return NMO_CLI_EXIT_IO_ERROR;
     }
     bool colorize = nmo_cli_should_colorize(global, out);
+    nmo_tool_text_output_ctx_t text_ctx = {
+        .out = out,
+        .colorize = colorize,
+        .user_data = NULL
+    };
     nmo_cli_print_heading(out, "Validation Results", colorize);
     nmo_cli_print_kv(out, "File", file_path, 12, colorize);
     fprintf(out, "\n");
-    nmo_cli_close_output_stream(global, out);
 
-    return validate_all_single(file_path, global, NULL, NULL, NULL);
+    int rc = validate_all_single(file_path, global, &text_ctx, NULL, NULL);
+    nmo_cli_close_output_stream(global, out);
+    return rc;
 }
 
 /* ============================================================================

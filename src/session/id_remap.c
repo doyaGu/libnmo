@@ -162,6 +162,12 @@ nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
         }
 
         if (obj->file_id != 0) {
+            for (size_t u = 0; u < used_count; u++) {
+                if (used_ids[u] == obj->file_id) {
+                    nmo_arena_destroy(arena);
+                    return NULL;
+                }
+            }
             used_ids[used_count++] = obj->file_id;
         }
     }

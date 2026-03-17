@@ -162,11 +162,61 @@ const char *nmo_tool_find_file_arg_last(int argc, char **argv) {
 
 size_t nmo_tool_find_file_args(int argc, char **argv,
                                const char **out_paths, size_t max_count) {
-    size_t count = 0;
-    for (int i = 1; i < argc && count < max_count; ++i) {
-        if (argv[i][0] != '-') {
-            out_paths[count++] = argv[i];
+    static const char *const known_value_opts[] = {
+        "-o", "--output", "--object"
+    };
+    return nmo_tool_find_file_args_ex(
+        argc, argv, out_paths, max_count, known_value_opts,
+        sizeof(known_value_opts) / sizeof(known_value_opts[0]));
+}
+
+static bool option_takes_value(const char *token,
+                               const char *const *opts_with_values,
+                               size_t opt_count)
+{
+    if (!token || !opts_with_values || opt_count == 0) {
+        return false;
+    }
+
+    for (size_t i = 0; i < opt_count; ++i) {
+        const char *opt = opts_with_values[i];
+        if (!opt) {
+            continue;
         }
+
+        if (strcmp(token, opt) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+size_t nmo_tool_find_file_args_ex(int argc, char **argv,
+                                  const char **out_paths, size_t max_count,
+                                  const char *const *opts_with_values, size_t opt_count) {
+    size_t count = 0;
+    bool skip_next = false;
+
+    for (int i = 1; i < argc && count < max_count; ++i) {
+        const char *token = argv[i];
+        if (!token) {
+            continue;
+        }
+
+        if (skip_next) {
+            skip_next = false;
+            continue;
+        }
+
+        if (token[0] == '-') {
+            if (option_takes_value(token, opts_with_values, opt_count)) {
+                skip_next = true;
+            }
+            continue;
+        }
+
+        out_paths[count++] = token;
     }
     return count;
 }
@@ -295,6 +345,11 @@ int nmo_tool_batch_run(
         } else {
             /* Text mode: print per-file heading */
             bool colorize = nmo_cli_should_colorize(global, out);
+            nmo_tool_text_output_ctx_t text_ctx = {
+                .out = out,
+                .colorize = colorize,
+                .user_data = user_data
+            };
 
             if (i > 0) {
                 fprintf(out, "\n");
@@ -304,7 +359,7 @@ int nmo_tool_batch_run(
                     i + 1, file_count, path,
                     colorize ? NMO_CLI_COLOR_RESET : "");
 
-            int rc = handler(path, global, user_data, NULL, NULL);
+            int rc = handler(path, global, &text_ctx, NULL, NULL);
             if (rc != NMO_CLI_EXIT_SUCCESS) {
                 failed++;
             } else {

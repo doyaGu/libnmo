@@ -97,7 +97,7 @@ TEST(subchunks, create_and_write_subchunks) {
     uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &parent->chunk_refs);
     ASSERT_NOT_NULL(refs);
     ASSERT_EQ(0xFFFFFFFFu, refs[0]);  // Sentinel before packed list
-    ASSERT_EQ(0u, refs[1]);          // Sequence header offset
+    ASSERT_EQ(1u, refs[1]);          // Sequence header offset (after the leading int)
     ASSERT_NE(0xFFFFFFFFu, refs[2]);
     ASSERT_NE(0xFFFFFFFFu, refs[3]);
     ASSERT_LT(refs[2], parent->data.count);
@@ -306,8 +306,62 @@ TEST(subchunks, standalone_subchunk_refs) {
     nmo_arena_destroy(sub_arena);
 }
 
+TEST(subchunks, mixed_version_subchunk_preserves_manager_header) {
+    nmo_arena_t* parent_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(parent_arena);
+
+    nmo_arena_t* sub_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(sub_arena);
+
+    nmo_chunk_writer_t* sub_writer = nmo_chunk_writer_create(sub_arena);
+    ASSERT_NOT_NULL(sub_writer);
+    nmo_chunk_writer_start(sub_writer, 0xABCDEF01u, 7u);
+
+    nmo_guid_t manager_guid = {0x11111111u, 0x22222222u};
+    int result = nmo_chunk_writer_write_manager_int(sub_writer, manager_guid, 55);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_chunk_t* sub = nmo_chunk_writer_finalize(sub_writer);
+    ASSERT_NOT_NULL(sub);
+    ASSERT_EQ(sub->managers.count, 1u);
+
+    nmo_chunk_writer_t* parent_writer = nmo_chunk_writer_create(parent_arena);
+    ASSERT_NOT_NULL(parent_writer);
+    nmo_chunk_writer_start(parent_writer, 0x12345678u, 4u);
+
+    result = nmo_chunk_writer_start_subchunk_sequence(parent_writer, 1u);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_writer_write_subchunk(parent_writer, sub);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_chunk_t* parent = nmo_chunk_writer_finalize(parent_writer);
+    ASSERT_NOT_NULL(parent);
+
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(parent);
+    ASSERT_NOT_NULL(parser);
+
+    size_t seq_count = 0;
+    nmo_status_t parse_result = nmo_chunk_parser_start_read_sequence(parser, &seq_count);
+    ASSERT_EQ(parse_result, NMO_OK);
+    ASSERT_EQ(seq_count, 1u);
+
+    nmo_chunk_t* read_sub = NULL;
+    parse_result = nmo_chunk_parser_read_subchunk(parser, sub_arena, &read_sub);
+    ASSERT_EQ(parse_result, NMO_OK);
+    ASSERT_NOT_NULL(read_sub);
+    ASSERT_EQ(read_sub->chunk_version, 7u);
+    ASSERT_EQ(read_sub->managers.count, 1u);
+
+    nmo_chunk_parser_destroy(parser);
+    nmo_chunk_writer_destroy(parent_writer);
+    nmo_chunk_writer_destroy(sub_writer);
+    nmo_arena_destroy(parent_arena);
+    nmo_arena_destroy(sub_arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(subchunks, create_and_write_subchunks);
     REGISTER_TEST(subchunks, read_subchunks);
     REGISTER_TEST(subchunks, standalone_subchunk_refs);
+    REGISTER_TEST(subchunks, mixed_version_subchunk_preserves_manager_header);
 TEST_MAIN_END()

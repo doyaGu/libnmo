@@ -204,11 +204,18 @@ static int memory_write_io_write(void *handle, const void *buffer, size_t size) 
         // Copy existing data
         if (mh->data != NULL && mh->size > 0) {
             memcpy(new_data, mh->data, mh->size);
+        }
+        if (mh->data != NULL) {
             nmo_free(&alloc, mh->data);
         }
 
         mh->data = new_data;
         mh->capacity = new_capacity;
+    }
+
+    // If writing after a sparse seek, zero-fill the gap.
+    if (mh->position > mh->size) {
+        memset(mh->data + mh->size, 0, mh->position - mh->size);
     }
 
     // Write data

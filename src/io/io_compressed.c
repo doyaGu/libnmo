@@ -40,6 +40,9 @@ static int compressed_io_read(void *handle, void *buffer, size_t size, size_t *b
     if (!ctx->initialized) {
         return NMO_ERR_INVALID_STATE;
     }
+    if (ctx->is_write) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
 
     ctx->stream.next_out = (Bytef *) buffer;
     ctx->stream.avail_out = (uInt) size;
@@ -109,6 +112,9 @@ static int compressed_io_write(void *handle, const void *buffer, size_t size) {
     if (!ctx->initialized) {
         return NMO_ERR_INVALID_STATE;
     }
+    if (!ctx->is_write) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
 
     ctx->stream.next_in = (Bytef *) buffer;
     ctx->stream.avail_in = (uInt) size;
@@ -134,8 +140,25 @@ static int compressed_io_write(void *handle, const void *buffer, size_t size) {
     return NMO_OK;
 }
 
+static int compressed_io_reset_inflate_state(nmo_compressed_io_handle_t *ctx) {
+    if (ctx == NULL || !ctx->initialized || ctx->is_write) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    inflateEnd(&ctx->stream);
+    memset(&ctx->stream, 0, sizeof(z_stream));
+
+    int zret = inflateInit(&ctx->stream);
+    if (zret != Z_OK) {
+        ctx->initialized = false;
+        return NMO_ERR_DECOMPRESSION_FAILED;
+    }
+
+    return NMO_OK;
+}
+
 /**
- * @brief Seek function for compressed IO (pass-through)
+ * @brief Seek function for compressed IO
  */
 static int compressed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) {
     if (handle == NULL) {
@@ -148,7 +171,16 @@ static int compressed_io_seek(void *handle, int64_t offset, nmo_seek_origin_t or
         return NMO_ERR_INVALID_STATE;
     }
 
-    return ctx->inner->seek(ctx->inner->handle, offset, origin);
+    if (ctx->is_write) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    int seek_result = ctx->inner->seek(ctx->inner->handle, offset, origin);
+    if (seek_result != NMO_OK) {
+        return seek_result;
+    }
+
+    return compressed_io_reset_inflate_state(ctx);
 }
 
 /**
@@ -236,9 +268,14 @@ static int compressed_io_close(void *handle) {
 
     // Flush any remaining data
     if (ctx->initialized) {
-        int flush_result = compressed_io_flush(handle);
-        if (flush_result != NMO_OK && result == NMO_OK) {
-            result = flush_result;
+        if (ctx->is_write) {
+            int flush_result = compressed_io_flush(handle);
+            if (flush_result != NMO_OK && result == NMO_OK) {
+                result = flush_result;
+            }
+        } else {
+            inflateEnd(&ctx->stream);
+            ctx->initialized = false;
         }
     }
 

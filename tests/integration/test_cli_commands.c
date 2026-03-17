@@ -8,11 +8,15 @@
 
 #include "test_framework.h"
 
+#include "../../tools/nmo_cli_common.h"
 #include "yyjson.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
 
 /*
  * On MinGW/MSYS, _popen uses cmd.exe which has path handling issues.
@@ -37,21 +41,42 @@
  * Helpers
  * ============================================================================ */
 
-static char *run_cli(const char *args) {
+typedef struct cli_run_result {
+    char *output;
+    int exit_code;
+} cli_run_result_t;
+
+static int normalize_cli_exit_code(int status) {
+    if (status < 0) {
+        return status;
+    }
+#if !defined(_WIN32)
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+#endif
+    return status;
+}
+
+static cli_run_result_t run_cli_capture(const char *args) {
+    cli_run_result_t result;
+    result.output = NULL;
+    result.exit_code = -1;
+
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "%s %s 2>&1", NMO_CLI_PATH, args);
 
     FILE *pipe = NMO_POPEN(cmd, "r");
     if (!pipe) {
-        return NULL;
+        return result;
     }
 
     size_t cap = 4096;
     size_t len = 0;
     char *buf = (char *)malloc(cap);
     if (!buf) {
-        NMO_PCLOSE(pipe);
-        return NULL;
+        result.exit_code = normalize_cli_exit_code(NMO_PCLOSE(pipe));
+        return result;
     }
 
     char chunk[1024];
@@ -60,14 +85,61 @@ static char *run_cli(const char *args) {
         if (len + clen + 1 > cap) {
             cap *= 2;
             char *nb = (char *)realloc(buf, cap);
-            if (!nb) { free(buf); NMO_PCLOSE(pipe); return NULL; }
+            if (!nb) {
+                free(buf);
+                result.exit_code = normalize_cli_exit_code(NMO_PCLOSE(pipe));
+                return result;
+            }
             buf = nb;
         }
         memcpy(buf + len, chunk, clen);
         len += clen;
     }
     buf[len] = '\0';
-    NMO_PCLOSE(pipe);
+    result.exit_code = normalize_cli_exit_code(NMO_PCLOSE(pipe));
+    result.output = buf;
+    return result;
+}
+
+static char *run_cli(const char *args) {
+    cli_run_result_t result = run_cli_capture(args);
+    if (result.exit_code < 0) {
+        free(result.output);
+        return NULL;
+    }
+    return result.output;
+}
+
+static char *read_file_text(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return NULL;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    long size = ftell(fp);
+    if (size < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    char *buf = (char *)malloc((size_t)size + 1);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+
+    size_t read_size = fread(buf, 1, (size_t)size, fp);
+    fclose(fp);
+    if (read_size != (size_t)size) {
+        free(buf);
+        return NULL;
+    }
+
+    buf[size] = '\0';
     return buf;
 }
 
@@ -79,6 +151,15 @@ static yyjson_doc *run_cli_json(const char *args) {
     yyjson_doc *doc = yyjson_read(output, strlen(output), 0);
     free(output);
     return doc;
+}
+
+static int file_exists(const char *path) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
 }
 
 static yyjson_val *json_envelope_data(yyjson_doc *doc) {
@@ -127,6 +208,55 @@ TEST(cli, file_info_json) {
     ASSERT_TRUE(yyjson_get_uint(obj_count) > 0);
 
     yyjson_doc_free(doc);
+}
+
+TEST(cli, file_info_output_file_text) {
+    const char *report_path = "test_cli_file_info_output.txt";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" file info \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "File Info");
+    ASSERT_STR_CONTAINS(report, "Objects");
+    ASSERT_STR_CONTAINS(report, "Managers");
+    ASSERT_STR_CONTAINS(report, "CK Version");
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
+TEST(cli, file_info_output_file_json) {
+    const char *report_path = "test_cli_file_info_output.json";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" -f json file info \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    yyjson_doc *doc = yyjson_read(report, strlen(report), 0);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "file.info");
+    ASSERT_NOT_NULL(json_envelope_data(doc));
+
+    yyjson_doc_free(doc);
+    free(report);
+    free(result.output);
+    remove(report_path);
 }
 
 /* ============================================================================
@@ -264,6 +394,56 @@ TEST(cli, validate_all_json) {
     yyjson_doc_free(doc);
 }
 
+TEST(cli, validate_all_output_file_text) {
+    const char *report_path = "test_cli_validate_all_output.txt";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" validate all \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "Validation Results");
+    ASSERT_STR_CONTAINS(report, "Objects");
+    ASSERT_STR_CONTAINS(report, "Errors");
+    ASSERT_STR_CONTAINS(report, "Warnings");
+    ASSERT_STR_CONTAINS(report, "Result:");
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
+TEST(cli, validate_all_output_file_json) {
+    const char *report_path = "test_cli_validate_all_output.json";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" -f json validate all \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    yyjson_doc *doc = yyjson_read(report, strlen(report), 0);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "validate.all");
+    ASSERT_NOT_NULL(json_envelope_data(doc));
+
+    yyjson_doc_free(doc);
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
 TEST(cli, validate_structure_text) {
     char args[512];
     snprintf(args, sizeof(args), "validate structure \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
@@ -396,6 +576,214 @@ TEST(cli, batch_validate_all) {
     free(output);
 }
 
+TEST(cli, batch_file_info_output_file_text) {
+    const char *report_path = "test_cli_batch_file_info_output.txt";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" --batch file info \"%s\" \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"), NMO_TEST_DATA_FILE("Menu.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "--- [1/2]");
+    ASSERT_STR_CONTAINS(report, "--- [2/2]");
+    ASSERT_STR_CONTAINS(report, "Objects");
+    ASSERT_STR_CONTAINS(report, "=== Batch Summary ===");
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
+TEST(cli, batch_validate_all_output_file_text) {
+    const char *report_path = "test_cli_batch_validate_all_output.txt";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" --batch validate all \"%s\" \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"), NMO_TEST_DATA_FILE("Menu.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "--- [1/2]");
+    ASSERT_STR_CONTAINS(report, "--- [2/2]");
+    ASSERT_STR_CONTAINS(report, "Result:");
+    ASSERT_STR_CONTAINS(report, "=== Batch Summary ===");
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
+TEST(cli, convert_version_output_file_text) {
+    const char *report_path = "test_cli_convert_version_output.txt";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" convert version \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "File version:");
+    ASSERT_STR_CONTAINS(report, "CK version:");
+    ASSERT_STR_CONTAINS(report, "Manager count:");
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
+TEST(cli, convert_version_output_file_json) {
+    const char *report_path = "test_cli_convert_version_output.json";
+    remove(report_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" -f json convert version \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    yyjson_doc *doc = yyjson_read(report, strlen(report), 0);
+    ASSERT_NOT_NULL(doc);
+    ASSERT_STR_EQ(json_envelope_command(doc), "convert.version");
+    ASSERT_NOT_NULL(json_envelope_data(doc));
+
+    yyjson_doc_free(doc);
+    free(report);
+    free(result.output);
+    remove(report_path);
+}
+
+TEST(cli, convert_copy_output_and_report_files) {
+    const char *report_path = "test_cli_convert_copy_report.txt";
+    const char *save_path = "test_cli_convert_copy_output.nmo";
+    remove(report_path);
+    remove(save_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" convert copy -o \"%s\" \"%s\"",
+             report_path, save_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+    ASSERT_TRUE(file_exists(save_path));
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "Saved to");
+    ASSERT_STR_CONTAINS(report, save_path);
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+    remove(save_path);
+}
+
+TEST(cli, convert_merge_option_values_not_treated_as_files) {
+    const char *report_path = "test_cli_convert_merge_report.txt";
+    const char *save_path = "test_cli_convert_merge_output.nmo";
+    remove(report_path);
+    remove(save_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "--output \"%s\" convert merge -o \"%s\" \"%s\" \"%s\"",
+             report_path, save_path,
+             NMO_TEST_DATA_FILE("Camera.nmo"),
+             NMO_TEST_DATA_FILE("Menu.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_EQ(result.output, "");
+    ASSERT_TRUE(file_exists(save_path));
+
+    char *report = read_file_text(report_path);
+    ASSERT_NOT_NULL(report);
+    ASSERT_STR_CONTAINS(report, "Copied");
+    ASSERT_STR_CONTAINS(report, "Saved to");
+
+    free(report);
+    free(result.output);
+    remove(report_path);
+    remove(save_path);
+}
+
+TEST(cli, diff_chunks_object_option_value_not_treated_as_file) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "diff chunks --object 1 \"%s\" \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"),
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Chunk Comparison");
+    ASSERT_STR_CONTAINS(result.output, "File 1");
+    ASSERT_STR_CONTAINS(result.output, "File 2");
+    free(result.output);
+}
+
+TEST(cli, file_info_output_open_failure) {
+    const char *report_path = "test_cli_missing_dir_a8d74e/report.txt";
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" file info \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_IO_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Cannot open");
+    free(result.output);
+}
+
+TEST(cli, validate_all_output_open_failure) {
+    const char *report_path = "test_cli_missing_dir_b19c52/report.txt";
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" validate all \"%s\"",
+             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_IO_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Cannot open");
+    free(result.output);
+}
+
+TEST(cli, convert_copy_output_open_failure) {
+    const char *report_path = "test_cli_missing_dir_c27d1f/report.txt";
+    const char *save_path = "test_cli_convert_copy_fail_output.nmo";
+    remove(save_path);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "--output \"%s\" convert copy -o \"%s\" \"%s\"",
+             report_path, save_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_IO_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Cannot open");
+    ASSERT_FALSE(file_exists(save_path));
+
+    free(result.output);
+    remove(save_path);
+}
+
 /* ============================================================================
  * JSON schema envelope
  * ============================================================================ */
@@ -458,6 +846,8 @@ TEST_MAIN_BEGIN()
     /* file commands */
     REGISTER_TEST(cli, file_info_text);
     REGISTER_TEST(cli, file_info_json);
+    REGISTER_TEST(cli, file_info_output_file_text);
+    REGISTER_TEST(cli, file_info_output_file_json);
     REGISTER_TEST(cli, file_stats_text);
     REGISTER_TEST(cli, file_stats_verbose);
     REGISTER_TEST(cli, file_stats_json);
@@ -470,6 +860,8 @@ TEST_MAIN_BEGIN()
     /* validate commands */
     REGISTER_TEST(cli, validate_all_text);
     REGISTER_TEST(cli, validate_all_json);
+    REGISTER_TEST(cli, validate_all_output_file_text);
+    REGISTER_TEST(cli, validate_all_output_file_json);
     REGISTER_TEST(cli, validate_structure_text);
     REGISTER_TEST(cli, validate_structure_fix);
     REGISTER_TEST(cli, validate_references_text);
@@ -482,7 +874,21 @@ TEST_MAIN_BEGIN()
     /* batch processing */
     REGISTER_TEST(cli, batch_file_info);
     REGISTER_TEST(cli, batch_file_info_json);
+    REGISTER_TEST(cli, batch_file_info_output_file_text);
     REGISTER_TEST(cli, batch_validate_all);
+    REGISTER_TEST(cli, batch_validate_all_output_file_text);
+
+    /* convert command output redirection */
+    REGISTER_TEST(cli, convert_version_output_file_text);
+    REGISTER_TEST(cli, convert_version_output_file_json);
+    REGISTER_TEST(cli, convert_copy_output_and_report_files);
+    REGISTER_TEST(cli, convert_merge_option_values_not_treated_as_files);
+    REGISTER_TEST(cli, diff_chunks_object_option_value_not_treated_as_file);
+
+    /* output-open failure handling */
+    REGISTER_TEST(cli, file_info_output_open_failure);
+    REGISTER_TEST(cli, validate_all_output_open_failure);
+    REGISTER_TEST(cli, convert_copy_output_open_failure);
 
     /* JSON envelope */
     REGISTER_TEST(cli, json_schema_envelope);

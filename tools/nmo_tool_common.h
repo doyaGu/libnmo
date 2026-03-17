@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,6 +60,16 @@ size_t nmo_tool_find_file_args(int argc, char **argv,
                                const char **out_paths, size_t max_count);
 
 /**
+ * Collect positional arguments while skipping values for known value-taking options.
+ *
+ * `opts_with_values` should contain option names such as "--object" or "-o".
+ * Tokens provided as values for those options are excluded from positional results.
+ */
+size_t nmo_tool_find_file_args_ex(int argc, char **argv,
+                                  const char **out_paths, size_t max_count,
+                                  const char *const *opts_with_values, size_t opt_count);
+
+/**
  * Look up a named option value.
  * Searches for `opt1 <value>` or `opt2 <value>` in argv.
  * Either opt1 or opt2 may be NULL.
@@ -103,6 +114,12 @@ typedef int (*nmo_batch_handler_t)(
     void *user_data,
     struct yyjson_mut_doc *doc,
     struct yyjson_mut_val *result_data);
+
+typedef struct nmo_tool_text_output_ctx {
+    FILE *out;
+    bool colorize;
+    void *user_data;
+} nmo_tool_text_output_ctx_t;
 
 /**
  * Run a command handler over multiple files.

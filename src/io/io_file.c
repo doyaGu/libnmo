@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 /**
  * @brief File IO context structure
@@ -36,6 +37,51 @@ static int nmo_seek_to_stdio(nmo_seek_origin_t origin) {
     case NMO_SEEK_END: return SEEK_END;
     default: return SEEK_SET;
     }
+}
+
+static int nmo_file_seek64(FILE *fp, int64_t offset, int whence) {
+    if (fp == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+#if defined(_WIN32)
+    if (_fseeki64(fp, offset, whence) != 0) {
+        return NMO_ERR_INVALID_OFFSET;
+    }
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+    if (fseeko(fp, (off_t) offset, whence) != 0) {
+        return NMO_ERR_INVALID_OFFSET;
+    }
+#else
+    if (offset > LONG_MAX || offset < LONG_MIN) {
+        return NMO_ERR_INVALID_OFFSET;
+    }
+    if (fseek(fp, (long) offset, whence) != 0) {
+        return NMO_ERR_INVALID_OFFSET;
+    }
+#endif
+
+    return NMO_OK;
+}
+
+static int64_t nmo_file_tell64(FILE *fp) {
+    if (fp == NULL) {
+        return -1;
+    }
+
+#if defined(_WIN32)
+    __int64 pos = _ftelli64(fp);
+    if (pos < 0) {
+        return -1;
+    }
+    return (int64_t) pos;
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
+    off_t pos = ftello(fp);
+    return (int64_t) pos;
+#else
+    long pos = ftell(fp);
+    return (int64_t) pos;
+#endif
 }
 
 /**
@@ -109,19 +155,7 @@ static int file_io_seek(void *handle, int64_t offset, nmo_seek_origin_t origin) 
 
     int whence = nmo_seek_to_stdio(origin);
 
-    // Use fseeko for large file support on POSIX systems
-#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
-    if (fseeko(fh->fp, (off_t) offset, whence) != 0) {
-        return NMO_ERR_INVALID_OFFSET;
-    }
-#else
-    // Fallback for non-POSIX or when large file support is not available
-    if (fseek(fh->fp, (long) offset, whence) != 0) {
-        return NMO_ERR_INVALID_OFFSET;
-    }
-#endif
-
-    return NMO_OK;
+    return nmo_file_seek64(fh->fp, offset, whence);
 }
 
 /**
@@ -138,14 +172,7 @@ static int64_t file_io_tell(void *handle) {
         return -1;
     }
 
-    // Use ftello for large file support on POSIX systems
-#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
-    off_t pos = ftello(fh->fp);
-    return (int64_t) pos;
-#else
-    long pos = ftell(fh->fp);
-    return (int64_t) pos;
-#endif
+    return nmo_file_tell64(fh->fp);
 }
 
 /**
@@ -322,17 +349,11 @@ int64_t nmo_io_file_seek(nmo_io_file_t *io_file, int64_t offset, int whence) {
         return -1;
     }
 
-#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
-    if (fseeko(io_file->fp, (off_t) offset, whence) != 0) {
+    int result = nmo_file_seek64(io_file->fp, offset, whence);
+    if (result != NMO_OK) {
         return -1;
     }
-    return (int64_t) ftello(io_file->fp);
-#else
-    if (fseek(io_file->fp, (long) offset, whence) != 0) {
-        return -1;
-    }
-    return (int64_t) ftell(io_file->fp);
-#endif
+    return nmo_file_tell64(io_file->fp);
 }
 
 /**
@@ -343,11 +364,7 @@ int64_t nmo_io_file_tell(nmo_io_file_t *io_file) {
         return -1;
     }
 
-#if defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L
-    return (int64_t) ftello(io_file->fp);
-#else
-    return (int64_t) ftell(io_file->fp);
-#endif
+    return nmo_file_tell64(io_file->fp);
 }
 
 /**

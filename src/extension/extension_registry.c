@@ -25,6 +25,12 @@
  *
  * Owned by the registry. Contains deep-copied metadata and contribution tracking.
  */
+typedef struct nmo_extension_library_ref {
+    nmo_shared_library_t *handle;
+    size_t ref_count;
+    nmo_allocator_t allocator;
+} nmo_extension_library_ref_t;
+
 typedef struct nmo_extension_instance {
     /** Public info (for list/find queries) */
     nmo_extension_plugin_info_t info;
@@ -38,8 +44,12 @@ typedef struct nmo_extension_instance {
     /** Shutdown callback (called during unload) */
     void (*shutdown)(const nmo_extension_host_t *host, void *host_user);
 
-    /** Shared library handle (NULL for static plugins) */
-    nmo_shared_library_t *library;
+    /** Shared-library ownership record (NULL for static plugins) */
+    nmo_extension_library_ref_t *library_ref;
+
+    /** Host context persisted from init() and passed to shutdown() */
+    nmo_extension_host_context_t host_ctx;
+    bool has_host_ctx;
 
     /** Registered manager IDs (for rollback) */
     uint32_t *manager_ids;
@@ -63,6 +73,10 @@ struct nmo_extension_registry {
     /** Ordered list of instances (for iteration) */
     nmo_array_t instances;
 
+    /** Cached contiguous list payload for nmo_extension_registry_list() */
+    nmo_array_t info_cache;
+    bool info_cache_dirty;
+
     /** Type registry for type contributions */
     nmo_type_registry_t *type_registry;
 
@@ -77,12 +91,26 @@ struct nmo_extension_registry {
 static nmo_status_t register_single_plugin(
     nmo_extension_registry_t *registry,
     const nmo_extension_plugin_t *plugin,
-    nmo_shared_library_t *library,
+    nmo_extension_library_ref_t *library_ref,
     const char *library_path);
 
 static void unload_instance(
     nmo_extension_registry_t *registry,
     nmo_extension_instance_t *instance);
+
+static nmo_status_t finalize_update(
+    nmo_extension_registry_t *registry,
+    nmo_status_t status);
+
+static nmo_extension_library_ref_t *library_ref_create(
+    nmo_extension_registry_t *registry,
+    nmo_shared_library_t *library);
+
+static void library_ref_retain(nmo_extension_library_ref_t *ref);
+static void library_ref_release(nmo_extension_library_ref_t *ref);
+
+static void mark_list_dirty(nmo_extension_registry_t *registry);
+static nmo_status_t rebuild_list_cache(nmo_extension_registry_t *registry);
 
 static size_t guid_hash_func(const void *key, size_t key_size);
 static int guid_compare_func(const void *a, const void *b, size_t key_size);
@@ -162,6 +190,19 @@ nmo_extension_registry_t *nmo_extension_registry_create(
         return NULL;
     }
 
+    status = nmo_array_init(
+        &registry->info_cache,
+        sizeof(nmo_extension_plugin_info_t),
+        16,
+        &alloc);
+    if (status != NMO_OK) {
+        nmo_array_dispose(&registry->instances);
+        nmo_hash_table_destroy(registry->guid_map);
+        alloc.free(alloc.user_data, registry);
+        return NULL;
+    }
+    registry->info_cache_dirty = true;
+
     return registry;
 }
 
@@ -169,8 +210,9 @@ void nmo_extension_registry_destroy(nmo_extension_registry_t *registry)
 {
     if (registry == NULL) return;
 
+    bool began_update = false;
     if (registry->type_registry) {
-        (void)nmo_type_registry_begin_update(registry->type_registry);
+        began_update = (nmo_type_registry_begin_update(registry->type_registry) == NMO_OK);
     }
 
     /* Unload all plugins in reverse order */
@@ -179,8 +221,12 @@ void nmo_extension_registry_destroy(nmo_extension_registry_t *registry)
             nmo_array_get(&registry->instances, registry->instances.count - 1);
         unload_instance(registry, instance);
     }
+    if (began_update) {
+        (void)nmo_type_registry_finalize(registry->type_registry);
+    }
 
     /* Clean up containers */
+    nmo_array_dispose(&registry->info_cache);
     nmo_hash_table_destroy(registry->guid_map);
     nmo_array_dispose(&registry->instances);
 
@@ -208,11 +254,12 @@ nmo_status_t nmo_extension_registry_register_static(
     }
 
     if (plugin_count == 0) {
-        NMO_RETURN_OK();
+        return finalize_update(registry, NMO_OK);
     }
 
     /* Track how many we successfully registered for rollback */
     size_t registered_count = 0;
+    nmo_status_t status = NMO_OK;
 
     for (size_t i = 0; i < plugin_count; i++) {
         const nmo_extension_plugin_t *plugin = &plugins[i];
@@ -222,6 +269,7 @@ nmo_status_t nmo_extension_registry_register_static(
             NMO_SET_LAST_ERROR(NMO_ERR_UNSUPPORTED_VERSION, NMO_SEVERITY_ERROR,
                 "Plugin ABI version mismatch (got %u, expected %u)",
                 plugin->abi_version, NMO_EXTENSION_ABI_VERSION);
+            status = NMO_ERR_UNSUPPORTED_VERSION;
             goto rollback;
         }
 
@@ -231,11 +279,12 @@ nmo_status_t nmo_extension_registry_register_static(
             NMO_SET_LAST_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
                 "Plugin GUID {%08x-%08x} already registered",
                 plugin->guid.d1, plugin->guid.d2);
+            status = NMO_ERR_ALREADY_EXISTS;
             goto rollback;
         }
 
         /* Register the plugin */
-        nmo_status_t status = register_single_plugin(registry, plugin, NULL, NULL);
+        status = register_single_plugin(registry, plugin, NULL, NULL);
         if (status != NMO_OK) {
             goto rollback;
         }
@@ -243,15 +292,24 @@ nmo_status_t nmo_extension_registry_register_static(
         registered_count++;
     }
 
-    return nmo_type_registry_finalize(registry->type_registry);
+    return finalize_update(registry, NMO_OK);
 
 rollback:
     /* Roll back successfully registered plugins in reverse order */
     for (size_t i = registered_count; i > 0; i--) {
         nmo_guid_t guid = plugins[i - 1].guid;
-        nmo_extension_registry_unload_by_guid(registry, guid);
+        nmo_extension_instance_t *instance = NULL;
+        if (nmo_hash_table_get(registry->guid_map, &guid, &instance) == NMO_OK) {
+            unload_instance(registry, instance);
+        }
     }
-    return nmo_last_error_code();
+    {
+        nmo_status_t failure_status = status;
+        if (failure_status == NMO_OK) {
+            failure_status = (nmo_status_t)nmo_last_error_code();
+        }
+        return finalize_update(registry, failure_status);
+    }
 }
 
 /* ============================================================================
@@ -275,6 +333,7 @@ nmo_status_t nmo_extension_registry_load_library(
 
     nmo_shared_library_t *library = NULL;
     nmo_extension_query_fn query_fn = NULL;
+    nmo_extension_library_ref_t *library_ref = NULL;
 
     /* Load library and resolve query function */
     nmo_status_t status = nmo_extension_loader_open(
@@ -285,7 +344,7 @@ nmo_status_t nmo_extension_registry_load_library(
         &query_fn);
 
     if (status != NMO_OK) {
-        return status;
+        return finalize_update(registry, status);
     }
 
     /* Query plugins */
@@ -295,16 +354,24 @@ nmo_status_t nmo_extension_registry_load_library(
     status = nmo_extension_loader_query(query_fn, &plugins, &plugin_count);
     if (status != NMO_OK) {
         nmo_extension_loader_close(library);
-        return status;
+        return finalize_update(registry, status);
+    }
+
+    library_ref = library_ref_create(registry, library);
+    if (library_ref == NULL) {
+        nmo_extension_loader_close(library);
+        return finalize_update(registry, NMO_ERR_NOMEM);
     }
 
     if (plugin_count == 0) {
-        nmo_extension_loader_close(library);
-        NMO_RETURN_OK();
+        nmo_extension_loader_close(library_ref->handle);
+        registry->allocator.free(registry->allocator.user_data, library_ref);
+        return finalize_update(registry, NMO_OK);
     }
 
     /* Register each plugin */
     size_t registered_count = 0;
+    status = NMO_OK;
 
     for (size_t i = 0; i < plugin_count; i++) {
         const nmo_extension_plugin_t *plugin = &plugins[i];
@@ -314,6 +381,7 @@ nmo_status_t nmo_extension_registry_load_library(
             NMO_SET_LAST_ERROR(NMO_ERR_UNSUPPORTED_VERSION, NMO_SEVERITY_ERROR,
                 "Plugin ABI version mismatch in %s (got %u, expected %u)",
                 path, plugin->abi_version, NMO_EXTENSION_ABI_VERSION);
+            status = NMO_ERR_UNSUPPORTED_VERSION;
             goto rollback;
         }
 
@@ -323,14 +391,15 @@ nmo_status_t nmo_extension_registry_load_library(
             NMO_SET_LAST_ERROR(NMO_ERR_ALREADY_EXISTS, NMO_SEVERITY_ERROR,
                 "Plugin GUID {%08x-%08x} from %s already registered",
                 plugin->guid.d1, plugin->guid.d2, path);
+            status = NMO_ERR_ALREADY_EXISTS;
             goto rollback;
         }
 
-        /* Register the plugin - first plugin owns the library */
+        /* Register plugin instance against the shared library ref-count record. */
         status = register_single_plugin(
             registry,
             plugin,
-            (i == 0) ? library : NULL,  /* Only first plugin owns the library */
+            library_ref,
             path);
 
         if (status != NMO_OK) {
@@ -340,21 +409,31 @@ nmo_status_t nmo_extension_registry_load_library(
         registered_count++;
     }
 
-    return nmo_type_registry_finalize(registry->type_registry);
+    return finalize_update(registry, NMO_OK);
 
 rollback:
     /* Roll back successfully registered plugins in reverse order */
     for (size_t i = registered_count; i > 0; i--) {
         nmo_guid_t guid = plugins[i - 1].guid;
-        nmo_extension_registry_unload_by_guid(registry, guid);
+        nmo_extension_instance_t *instance = NULL;
+        if (nmo_hash_table_get(registry->guid_map, &guid, &instance) == NMO_OK) {
+            unload_instance(registry, instance);
+        }
     }
 
     /* Close library if no plugins were registered */
     if (registered_count == 0) {
-        nmo_extension_loader_close(library);
+        nmo_extension_loader_close(library_ref->handle);
+        registry->allocator.free(registry->allocator.user_data, library_ref);
     }
 
-    return nmo_last_error_code();
+    {
+        nmo_status_t failure_status = status;
+        if (failure_status == NMO_OK) {
+            failure_status = (nmo_status_t)nmo_last_error_code();
+        }
+        return finalize_update(registry, failure_status);
+    }
 }
 
 /* ============================================================================
@@ -378,13 +457,14 @@ nmo_status_t nmo_extension_registry_unload_by_guid(
     /* Find the instance */
     nmo_extension_instance_t *instance = NULL;
     if (nmo_hash_table_get(registry->guid_map, &guid, &instance) != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+        NMO_SET_LAST_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
             "Plugin GUID {%08x-%08x} not found",
             guid.d1, guid.d2);
+        return finalize_update(registry, NMO_ERR_NOT_FOUND);
     }
 
     unload_instance(registry, instance);
-    return nmo_type_registry_finalize(registry->type_registry);
+    return finalize_update(registry, NMO_OK);
 }
 
 /* ============================================================================
@@ -406,11 +486,12 @@ const nmo_extension_plugin_info_t *nmo_extension_registry_list(
         return NULL;
     }
 
-    /* Build info array from instances */
-    /* Note: This could be cached for better performance */
-    nmo_extension_instance_t *first = *(nmo_extension_instance_t **)
-        nmo_array_get(&registry->instances, 0);
-    return &first->info;
+    nmo_extension_registry_t *mutable_registry = (nmo_extension_registry_t *)registry;
+    if (rebuild_list_cache(mutable_registry) != NMO_OK) {
+        *out_count = 0;
+        return NULL;
+    }
+    return (const nmo_extension_plugin_info_t *)nmo_array_data(&registry->info_cache);
 }
 
 const nmo_extension_plugin_info_t *nmo_extension_registry_find(
@@ -444,7 +525,7 @@ size_t nmo_extension_registry_get_count(const nmo_extension_registry_t *registry
 static nmo_status_t register_single_plugin(
     nmo_extension_registry_t *registry,
     const nmo_extension_plugin_t *plugin,
-    nmo_shared_library_t *library,
+    nmo_extension_library_ref_t *library_ref,
     const char *library_path)
 {
     nmo_allocator_t *alloc = &registry->allocator;
@@ -467,7 +548,8 @@ static nmo_status_t register_single_plugin(
 
     memset(instance, 0, sizeof(*instance));
     instance->arena = arena;
-    instance->library = library;
+    instance->library_ref = NULL;
+    instance->has_host_ctx = false;
     instance->init = plugin->init;
     instance->shutdown = plugin->shutdown;
 
@@ -475,7 +557,7 @@ static nmo_status_t register_single_plugin(
     instance->info.guid = plugin->guid;
     instance->info.version = plugin->version;
     instance->info.category = plugin->category;
-    instance->info.flags = library ? NMO_EXTENSION_FLAG_DYNAMIC : NMO_EXTENSION_FLAG_NONE;
+    instance->info.flags = library_ref ? NMO_EXTENSION_FLAG_DYNAMIC : NMO_EXTENSION_FLAG_NONE;
 
     /* Copy name */
     if (plugin->name) {
@@ -557,8 +639,17 @@ static nmo_status_t register_single_plugin(
 
         instance->info.flags |= NMO_EXTENSION_FLAG_INITIALIZED;
 
-        /* Don't call cleanup - we transferred ownership */
+        instance->host_ctx = host_ctx;
+        instance->has_host_ctx = true;
+        /* Don't call cleanup - ownership is transferred to the instance. */
     }
+
+    if (library_ref != NULL) {
+        library_ref_retain(library_ref);
+        instance->library_ref = library_ref;
+    }
+
+    mark_list_dirty(registry);
 
     NMO_RETURN_OK();
 }
@@ -572,7 +663,7 @@ static void unload_instance(
     /* 1. Call shutdown callback while DLL is still loaded */
     if (instance->shutdown && (instance->info.flags & NMO_EXTENSION_FLAG_INITIALIZED)) {
         const nmo_extension_host_t *host_api = nmo_extension_host_get_api();
-        instance->shutdown(host_api, NULL);
+        instance->shutdown(host_api, instance->has_host_ctx ? &instance->host_ctx : NULL);
     }
 
     /* 2. Unregister contributions by GUID */
@@ -600,8 +691,14 @@ static void unload_instance(
     }
 
     /* 4. Close shared library (if dynamic) */
-    if (instance->library) {
-        nmo_extension_loader_close(instance->library);
+    if (instance->library_ref) {
+        library_ref_release(instance->library_ref);
+        instance->library_ref = NULL;
+    }
+
+    if (instance->has_host_ctx) {
+        nmo_extension_host_context_cleanup(&instance->host_ctx);
+        instance->has_host_ctx = false;
     }
 
     /* 5. Destroy plugin arena (frees all deep copies) */
@@ -609,6 +706,97 @@ static void unload_instance(
 
     /* 6. Free instance record */
     registry->allocator.free(registry->allocator.user_data, instance);
+    mark_list_dirty(registry);
+}
+
+static nmo_status_t finalize_update(
+    nmo_extension_registry_t *registry,
+    nmo_status_t status)
+{
+    nmo_status_t finalize_status = nmo_type_registry_finalize(registry->type_registry);
+    if (status != NMO_OK) {
+        return status;
+    }
+    return finalize_status;
+}
+
+static nmo_extension_library_ref_t *library_ref_create(
+    nmo_extension_registry_t *registry,
+    nmo_shared_library_t *library)
+{
+    if (registry == NULL || library == NULL) {
+        return NULL;
+    }
+
+    nmo_extension_library_ref_t *ref = registry->allocator.alloc(
+        registry->allocator.user_data,
+        sizeof(*ref),
+        alignof(nmo_extension_library_ref_t));
+    if (ref == NULL) {
+        return NULL;
+    }
+
+    ref->handle = library;
+    ref->ref_count = 0;
+    ref->allocator = registry->allocator;
+    return ref;
+}
+
+static void library_ref_retain(nmo_extension_library_ref_t *ref)
+{
+    if (ref == NULL) {
+        return;
+    }
+    ref->ref_count++;
+}
+
+static void library_ref_release(nmo_extension_library_ref_t *ref)
+{
+    if (ref == NULL) {
+        return;
+    }
+    if (ref->ref_count == 0) {
+        return;
+    }
+
+    ref->ref_count--;
+    if (ref->ref_count == 0) {
+        nmo_extension_loader_close(ref->handle);
+        ref->allocator.free(ref->allocator.user_data, ref);
+    }
+}
+
+static void mark_list_dirty(nmo_extension_registry_t *registry)
+{
+    if (registry != NULL) {
+        registry->info_cache_dirty = true;
+    }
+}
+
+static nmo_status_t rebuild_list_cache(nmo_extension_registry_t *registry)
+{
+    if (registry == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!registry->info_cache_dirty) {
+        return NMO_OK;
+    }
+
+    nmo_array_clear(&registry->info_cache);
+    for (size_t i = 0; i < registry->instances.count; i++) {
+        nmo_extension_instance_t *instance = *(nmo_extension_instance_t **)
+            nmo_array_get(&registry->instances, i);
+        nmo_status_t status = nmo_array_append(&registry->info_cache, &instance->info);
+        if (status != NMO_OK) {
+            nmo_array_clear(&registry->info_cache);
+            NMO_SET_LAST_ERROR(status, NMO_SEVERITY_ERROR,
+                "Failed to build plugin info list cache");
+            return status;
+        }
+    }
+
+    registry->info_cache_dirty = false;
+    return NMO_OK;
 }
 
 static size_t guid_hash_func(const void *key, size_t key_size)

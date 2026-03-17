@@ -250,6 +250,47 @@ typedef struct schema_apply_context {
     const nmo_dsl_schema_options_t *options;
 } schema_apply_context_t;
 
+typedef struct schema_apply_log {
+    nmo_guid_t *guids;
+    size_t count;
+    size_t capacity;
+} schema_apply_log_t;
+
+static void schema_apply_log_dispose(schema_apply_log_t *log) {
+    if (!log) return;
+    free(log->guids);
+    log->guids = NULL;
+    log->count = 0;
+    log->capacity = 0;
+}
+
+static nmo_status_t schema_apply_log_append(schema_apply_log_t *log, nmo_guid_t guid) {
+    if (!log) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "invalid schema apply log");
+    }
+
+    if (log->count == log->capacity) {
+        size_t new_capacity = (log->capacity == 0) ? 8u : (log->capacity * 2u);
+        nmo_guid_t *new_guids = (nmo_guid_t *)realloc(log->guids, new_capacity * sizeof(nmo_guid_t));
+        if (!new_guids) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "oom");
+        }
+        log->guids = new_guids;
+        log->capacity = new_capacity;
+    }
+
+    log->guids[log->count++] = guid;
+    NMO_RETURN_OK();
+}
+
+static void schema_apply_rollback(nmo_type_registry_t *registry, const schema_apply_log_t *log) {
+    if (!registry || !log || !log->guids) return;
+
+    for (size_t i = log->count; i > 0; i--) {
+        (void)nmo_type_registry_unregister(registry, log->guids[i - 1]);
+    }
+}
+
 static nmo_guid_t schema_generate_guid(
     const schema_apply_context_t *ctx,
     const char *type_name)
@@ -526,8 +567,13 @@ static nmo_status_t schema_resolve_struct_base(
 
 static nmo_status_t schema_apply_enum_decl(
     const schema_apply_context_t *ctx,
-    const nmo_dsl_enum_decl_t *decl)
+    const nmo_dsl_enum_decl_t *decl,
+    nmo_guid_t *out_guid,
+    bool *out_created)
 {
+    if (out_guid) *out_guid = NMO_GUID_NULL;
+    if (out_created) *out_created = false;
+
     if (schema_should_skip_redeclare(ctx, decl->name)) {
         NMO_RETURN_OK();
     }
@@ -550,16 +596,25 @@ static nmo_status_t schema_apply_enum_decl(
         .default_value = default_value,
     };
 
-    nmo_guid_t out_guid;
-    st = nmo_type_registry_register_enum(ctx->registry, &def, &out_guid);
+    nmo_guid_t registered_guid = NMO_GUID_NULL;
+    st = nmo_type_registry_register_enum(ctx->registry, &def, &registered_guid);
     free(values);
+    if (st == NMO_OK) {
+        if (out_guid) *out_guid = registered_guid;
+        if (out_created) *out_created = true;
+    }
     return st;
 }
 
 static nmo_status_t schema_apply_flags_decl(
     const schema_apply_context_t *ctx,
-    const nmo_dsl_flags_decl_t *decl)
+    const nmo_dsl_flags_decl_t *decl,
+    nmo_guid_t *out_guid,
+    bool *out_created)
 {
+    if (out_guid) *out_guid = NMO_GUID_NULL;
+    if (out_created) *out_created = false;
+
     if (schema_should_skip_redeclare(ctx, decl->name)) {
         NMO_RETURN_OK();
     }
@@ -581,16 +636,25 @@ static nmo_status_t schema_apply_flags_decl(
         .default_value = 0,
     };
 
-    nmo_guid_t out_guid;
-    st = nmo_type_registry_register_flags(ctx->registry, &def, &out_guid);
+    nmo_guid_t registered_guid = NMO_GUID_NULL;
+    st = nmo_type_registry_register_flags(ctx->registry, &def, &registered_guid);
     free(bits);
+    if (st == NMO_OK) {
+        if (out_guid) *out_guid = registered_guid;
+        if (out_created) *out_created = true;
+    }
     return st;
 }
 
 static nmo_status_t schema_apply_struct_decl(
     const schema_apply_context_t *ctx,
-    const nmo_dsl_struct_decl_t *decl)
+    const nmo_dsl_struct_decl_t *decl,
+    nmo_guid_t *out_guid,
+    bool *out_created)
 {
+    if (out_guid) *out_guid = NMO_GUID_NULL;
+    if (out_created) *out_created = false;
+
     if (schema_should_skip_redeclare(ctx, decl->name)) {
         NMO_RETURN_OK();
     }
@@ -617,16 +681,25 @@ static nmo_status_t schema_apply_struct_decl(
         .packed = decl->is_packed,
     };
 
-    nmo_guid_t out_guid;
-    st = nmo_type_registry_register_struct(ctx->registry, &def, &out_guid);
+    nmo_guid_t registered_guid = NMO_GUID_NULL;
+    st = nmo_type_registry_register_struct(ctx->registry, &def, &registered_guid);
     schema_free_struct_fields(decl, fields);
+    if (st == NMO_OK) {
+        if (out_guid) *out_guid = registered_guid;
+        if (out_created) *out_created = true;
+    }
     return st;
 }
 
 static nmo_status_t schema_apply_alias_decl(
     const schema_apply_context_t *ctx,
-    const nmo_dsl_alias_decl_t *decl)
+    const nmo_dsl_alias_decl_t *decl,
+    nmo_guid_t *out_guid,
+    bool *out_created)
 {
+    if (out_guid) *out_guid = NMO_GUID_NULL;
+    if (out_created) *out_created = false;
+
     const nmo_type_descriptor_t *target =
         nmo_type_registry_find_by_name(ctx->registry, decl->target_name);
     if (!target) {
@@ -678,22 +751,26 @@ static nmo_status_t schema_apply_alias_decl(
         }
     }
 
+    if (out_guid) *out_guid = alias_desc.guid;
+    if (out_created) *out_created = true;
     NMO_RETURN_OK();
 }
 
 static nmo_status_t schema_apply_decl(
     const schema_apply_context_t *ctx,
-    const nmo_dsl_stmt_t *stmt)
+    const nmo_dsl_stmt_t *stmt,
+    nmo_guid_t *out_guid,
+    bool *out_created)
 {
     switch (stmt->kind) {
         case NMO_DSL_STMT_ENUM_DECL:
-            return schema_apply_enum_decl(ctx, &stmt->as.enum_decl);
+            return schema_apply_enum_decl(ctx, &stmt->as.enum_decl, out_guid, out_created);
         case NMO_DSL_STMT_FLAGS_DECL:
-            return schema_apply_flags_decl(ctx, &stmt->as.flags_decl);
+            return schema_apply_flags_decl(ctx, &stmt->as.flags_decl, out_guid, out_created);
         case NMO_DSL_STMT_STRUCT_DECL:
-            return schema_apply_struct_decl(ctx, &stmt->as.struct_decl);
+            return schema_apply_struct_decl(ctx, &stmt->as.struct_decl, out_guid, out_created);
         case NMO_DSL_STMT_ALIAS_DECL:
-            return schema_apply_alias_decl(ctx, &stmt->as.alias_decl);
+            return schema_apply_alias_decl(ctx, &stmt->as.alias_decl, out_guid, out_created);
         default:
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "unexpected statement kind in schema");
@@ -703,16 +780,38 @@ static nmo_status_t schema_apply_decl(
 static nmo_status_t schema_apply_decls(
     nmo_type_registry_t *registry,
     const nmo_dsl_schema_options_t *options,
-    const nmo_dsl_stmt_t *decls)
+    const nmo_dsl_stmt_t *decls,
+    schema_apply_log_t *out_log)
 {
     schema_apply_context_t ctx = {
         .registry = registry,
         .options = options,
     };
+    schema_apply_log_t log = {0};
 
     for (const nmo_dsl_stmt_t *stmt = decls; stmt; stmt = stmt->next) {
-        nmo_status_t st = schema_apply_decl(&ctx, stmt);
-        if (st != NMO_OK) return st;
+        nmo_guid_t guid = NMO_GUID_NULL;
+        bool created = false;
+        nmo_status_t st = schema_apply_decl(&ctx, stmt, &guid, &created);
+        if (st != NMO_OK) {
+            schema_apply_rollback(registry, &log);
+            schema_apply_log_dispose(&log);
+            return st;
+        }
+        if (created) {
+            st = schema_apply_log_append(&log, guid);
+            if (st != NMO_OK) {
+                schema_apply_rollback(registry, &log);
+                schema_apply_log_dispose(&log);
+                return st;
+            }
+        }
+    }
+
+    if (out_log) {
+        *out_log = log;
+    } else {
+        schema_apply_log_dispose(&log);
     }
 
     NMO_RETURN_OK();
@@ -736,7 +835,7 @@ nmo_status_t nmo_dsl_apply_schema_ex(
         NMO_RETURN_OK();
     }
 
-    return schema_apply_decls(registry, options, program->schema_decls);
+    return schema_apply_decls(registry, options, program->schema_decls, NULL);
 }
 
 nmo_status_t nmo_dsl_apply_schema(
@@ -761,23 +860,39 @@ nmo_status_t nmo_dsl_run_module(
                          "program not compiled in module mode");
     }
 
-    nmo_status_t st = nmo_dsl_apply_schema_ex(registry, program, schema_options);
-    if (st != NMO_OK) return st;
+    schema_apply_log_t schema_log = {0};
+    nmo_status_t st = schema_apply_decls(
+        registry,
+        schema_options,
+        program->schema_decls,
+        &schema_log);
+    if (st != NMO_OK) {
+        schema_apply_log_dispose(&schema_log);
+        return st;
+    }
 
     nmo_dsl_eval_context_t exec_ctx = *ctx;
     if (!exec_ctx.registry) {
         exec_ctx.registry = registry;
     } else if (exec_ctx.registry != registry) {
+        schema_apply_rollback(registry, &schema_log);
+        schema_apply_log_dispose(&schema_log);
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "ctx registry must match module registry");
     }
 
     if (!program->stmts) {
         if (out_last_value) memset(out_last_value, 0, sizeof(*out_last_value));
+        schema_apply_log_dispose(&schema_log);
         NMO_RETURN_OK();
     }
 
-    return nmo_dsl_exec(program, &exec_ctx, out_last_value);
+    st = nmo_dsl_exec(program, &exec_ctx, out_last_value);
+    if (st != NMO_OK) {
+        schema_apply_rollback(registry, &schema_log);
+    }
+    schema_apply_log_dispose(&schema_log);
+    return st;
 }
 
 /* ============================================================================

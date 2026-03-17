@@ -309,6 +309,92 @@ TEST(io_compressed, read_after_compression) {
     nmo_io_close(decompress_io);
 }
 
+TEST(io_compressed, inflate_seek_resets_state) {
+    const char *original = "Seek reset regression payload: ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const size_t original_size = strlen(original);
+
+    nmo_io_interface_t *compress_io_mem = nmo_memory_io_open_write(1024);
+    ASSERT_NOT_NULL(compress_io_mem);
+
+    nmo_compressed_io_desc_t compress_desc = {
+        .codec = NMO_CODEC_ZLIB,
+        .mode = NMO_COMPRESS_MODE_DEFLATE,
+        .level = 6
+    };
+    nmo_io_interface_t *compress_io = nmo_compressed_io_wrap(compress_io_mem, &compress_desc);
+    ASSERT_NOT_NULL(compress_io);
+
+    int result = nmo_io_write(compress_io, original, original_size);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(NMO_OK, nmo_io_flush(compress_io));
+
+    size_t compressed_size = 0;
+    const uint8_t *compressed_data = (const uint8_t *) nmo_memory_io_get_data(compress_io_mem, &compressed_size);
+    ASSERT_NOT_NULL(compressed_data);
+    ASSERT_GT(compressed_size, 0u);
+
+    uint8_t compressed_buffer[1024];
+    ASSERT_LE(compressed_size, sizeof(compressed_buffer));
+    memcpy(compressed_buffer, compressed_data, compressed_size);
+    nmo_io_close(compress_io);
+
+    nmo_io_interface_t *decompress_io_mem = nmo_memory_io_open_read(compressed_buffer, compressed_size);
+    ASSERT_NOT_NULL(decompress_io_mem);
+
+    nmo_compressed_io_desc_t decompress_desc = {
+        .codec = NMO_CODEC_ZLIB,
+        .mode = NMO_COMPRESS_MODE_INFLATE,
+        .level = 0
+    };
+    nmo_io_interface_t *decompress_io = nmo_compressed_io_wrap(decompress_io_mem, &decompress_desc);
+    ASSERT_NOT_NULL(decompress_io);
+
+    char prefix1[8] = {0};
+    char prefix2[8] = {0};
+    size_t bytes_read = 0;
+    result = nmo_io_read(decompress_io, prefix1, 5, &bytes_read);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(bytes_read, 5u);
+
+    result = nmo_io_seek(decompress_io, 0, NMO_SEEK_SET);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_io_read(decompress_io, prefix2, 5, &bytes_read);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(bytes_read, 5u);
+    ASSERT_MEM_EQ(prefix1, prefix2, 5);
+
+    result = nmo_io_seek(decompress_io, 0, NMO_SEEK_SET);
+    ASSERT_EQ(result, NMO_OK);
+
+    char full[128] = {0};
+    ASSERT_LT(original_size, sizeof(full));
+    result = nmo_io_read(decompress_io, full, original_size, &bytes_read);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(bytes_read, original_size);
+    ASSERT_MEM_EQ(full, original, original_size);
+
+    nmo_io_close(decompress_io);
+}
+
+TEST(io_compressed, deflate_seek_not_supported) {
+    nmo_io_interface_t *mem_io = nmo_memory_io_open_write(1024);
+    ASSERT_NOT_NULL(mem_io);
+
+    nmo_compressed_io_desc_t desc = {
+        .codec = NMO_CODEC_ZLIB,
+        .mode = NMO_COMPRESS_MODE_DEFLATE,
+        .level = 6
+    };
+    nmo_io_interface_t *compressed_io = nmo_compressed_io_wrap(mem_io, &desc);
+    ASSERT_NOT_NULL(compressed_io);
+
+    int result = nmo_io_seek(compressed_io, 0, NMO_SEEK_SET);
+    ASSERT_EQ(result, NMO_ERR_NOT_SUPPORTED);
+
+    nmo_io_close(compressed_io);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(io_compressed, create_deflate_wrapper);
     REGISTER_TEST(io_compressed, create_inflate_wrapper);
@@ -318,4 +404,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(io_compressed, compress_empty_data);
     REGISTER_TEST(io_compressed, invalid_parameters);
     REGISTER_TEST(io_compressed, read_after_compression);
+    REGISTER_TEST(io_compressed, inflate_seek_resets_state);
+    REGISTER_TEST(io_compressed, deflate_seek_not_supported);
 TEST_MAIN_END()

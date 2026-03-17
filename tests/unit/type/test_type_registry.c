@@ -761,6 +761,42 @@ TEST(type_registry, derivation_depth) {
     nmo_arena_destroy(arena);
 }
 
+TEST(type_registry, unregister_derived_handles_late_base_resolution) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+
+    nmo_guid_t base_guid = (nmo_guid_t){0xA0A0A001u, 0xB0B0B001u};
+    nmo_guid_t child_guid = (nmo_guid_t){0xA0A0A002u, 0xB0B0B002u};
+
+    nmo_type_descriptor_t child = {0};
+    child.guid = child_guid;
+    child.name = "LateChild";
+    child.category = NMO_TYPE_CATEGORY_STRUCT;
+    child.size = 8;
+    child.alignment = 4;
+    child.base_type = base_guid; /* base not registered yet */
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &child));
+
+    nmo_type_descriptor_t base = {0};
+    base.guid = base_guid;
+    base.name = "LateBase";
+    base.category = NMO_TYPE_CATEGORY_STRUCT;
+    base.size = 4;
+    base.alignment = 4;
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &base));
+
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, child_guid));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, base_guid));
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_unregister_derived(registry, base_guid));
+
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_guid(registry, child_guid));
+    ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, base_guid));
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Test: Statistics
  * ============================================================================ */
@@ -818,5 +854,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_registry, compatibility_same_type);
     REGISTER_TEST(type_registry, compatibility_inheritance);
     REGISTER_TEST(type_registry, derivation_depth);
+    REGISTER_TEST(type_registry, unregister_derived_handles_late_base_resolution);
     REGISTER_TEST(type_registry, statistics);
 TEST_MAIN_END()

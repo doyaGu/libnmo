@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include <limits.h>
 
 // Helper: Create a temporary test file
 static const char *create_temp_file(const char *content) {
@@ -158,6 +159,42 @@ TEST(io_file, create_nonexistent_file_read) {
     }
 }
 
+TEST(io_file, large_offset_seek_windows_paths) {
+    const char *path = "test_large_seek_windows.dat";
+
+#if defined(_WIN32)
+    nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_WRITE | NMO_IO_CREATE);
+    ASSERT_NOT_NULL(io);
+
+    int64_t large_offset = (int64_t) LONG_MAX + 12345ll;
+    int result = nmo_io_seek(io, large_offset, NMO_SEEK_SET);
+    ASSERT_EQ(result, NMO_OK);
+
+    uint8_t marker = 0x5Au;
+    result = nmo_io_write(io, &marker, sizeof(marker));
+    ASSERT_EQ(result, NMO_OK);
+
+    int64_t pos = nmo_io_tell(io);
+    ASSERT_EQ(pos, large_offset + 1);
+
+    result = nmo_io_close(io);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_io_file_t *legacy = nmo_io_file_create(path, "rb");
+    ASSERT_NOT_NULL(legacy);
+
+    int64_t legacy_pos = nmo_io_file_seek(legacy, large_offset, NMO_SEEK_SET);
+    ASSERT_EQ(legacy_pos, large_offset);
+    ASSERT_EQ(nmo_io_file_tell(legacy), large_offset);
+
+    nmo_io_file_destroy(legacy);
+    remove_temp_file(path);
+#else
+    (void) path;
+    ASSERT_TRUE(1);
+#endif
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(io_file, create_for_reading);
     REGISTER_TEST(io_file, create_for_writing);
@@ -167,4 +204,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(io_file, read_after_seek);
     REGISTER_TEST(io_file, close_file);
     REGISTER_TEST(io_file, create_nonexistent_file_read);
+    REGISTER_TEST(io_file, large_offset_seek_windows_paths);
 TEST_MAIN_END()

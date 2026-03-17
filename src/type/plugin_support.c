@@ -416,6 +416,7 @@ nmo_status_t nmo_type_registry_unregister_derived(
     }
 
     nmo_type_id_t base_id = base_type->id;
+    nmo_type_registry_update_derivation_masks(registry);
     if (base_id < 0 || (size_t)base_id >= registry->child_lists.count) {
         NMO_RETURN_OK();
     }
@@ -423,6 +424,23 @@ nmo_status_t nmo_type_registry_unregister_derived(
     nmo_type_child_list_t *child_list =
         (nmo_type_child_list_t *)nmo_arena_array_get(&registry->child_lists, (size_t)base_id);
     if (!child_list || child_list->count == 0 || !child_list->children) {
+        /* Defensive fallback for registries that had unresolved base links. */
+        for (size_t i = 0; i < registry->types.count; i++) {
+            nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
+            if (!type || !type->valid) continue;
+            if (!nmo_guid_equals(type->base_type, base_guid)) continue;
+
+            nmo_status_t result = nmo_type_registry_unregister_derived(registry, type->guid);
+            if (result != NMO_OK) {
+                return result;
+            }
+
+            result = nmo_type_registry_unregister(registry, type->guid);
+            if (result != NMO_OK) {
+                return result;
+            }
+        }
+
         NMO_RETURN_OK();
     }
 

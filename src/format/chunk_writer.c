@@ -791,7 +791,7 @@ int nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, size_t count
         return result;
     }
 
-    uint32_t sequence_pos = (w->data_size == 0) ? 0u : (uint32_t) (w->data_size - 1);
+    uint32_t sequence_pos = (uint32_t) w->data_size;
     result = track_chunk_sequence_start(w, sequence_pos);
     if (result != NMO_OK) {
         return result;
@@ -888,8 +888,7 @@ int nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_chunk_t *su
     const int has_subchunk = (sub != NULL);
 
     if (has_subchunk) {
-        const int include_manager_field =
-            (w->chunk != NULL && w->chunk->chunk_version > 4); /* literal 4 */
+        const int include_manager_field = (sub->chunk_version > 4); /* literal 4 */
         manager_count_field = include_manager_field ? (uint32_t) sub->managers.count : 0u;
 
         size_t header_fields = 6; /* class_id, version, chunk_size, has_file, id_count, chunk_count */

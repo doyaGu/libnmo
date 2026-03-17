@@ -734,6 +734,39 @@ TEST(dsl_schema, module_registry_mismatch_rejected) {
     teardown();
 }
 
+TEST(dsl_schema, apply_schema_rolls_back_on_failure) {
+    setup();
+
+    const char *src =
+        "schema {\n"
+        "enum KeepMe : int { A = 1 }\n"
+        "flags BreakMe : int { B = 0x01 }\n"
+        "}";
+
+    nmo_status_t st = apply_schema(registry, src);
+    ASSERT_NE(NMO_OK, st);
+
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "KeepMe"));
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "BreakMe"));
+
+    teardown();
+}
+
+TEST(dsl_schema, module_script_failure_rolls_back_schema) {
+    setup();
+
+    const char *src =
+        "schema { enum RuntimeTemp : int { A = 0 } }\n"
+        "missing_symbol + 1";
+
+    nmo_status_t st = run_module(registry, src);
+    ASSERT_NE(NMO_OK, st);
+
+    ASSERT_EQ(NULL, nmo_type_registry_find_by_name(registry, "RuntimeTemp"));
+
+    teardown();
+}
+
 /* ============================================================================
  * Test Runner
  * ============================================================================ */
@@ -774,4 +807,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(dsl_schema, flags_underlying_non_uint32_rejected);
     REGISTER_TEST(dsl_schema, module_trailing_junk_rejected);
     REGISTER_TEST(dsl_schema, module_registry_mismatch_rejected);
+    REGISTER_TEST(dsl_schema, apply_schema_rolls_back_on_failure);
+    REGISTER_TEST(dsl_schema, module_script_failure_rolls_back_schema);
 TEST_MAIN_END()

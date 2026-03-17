@@ -47,7 +47,9 @@ typedef struct nmo_compressed_io_desc {
  * wrapping the provided inner IO interface. The wrapper handles streaming
  * compression/decompression with internal buffering (64KB default).
  *
- * The wrapper passes through seek/tell operations to the underlying IO.
+ * Tell is passed through to the underlying IO.
+ * Seek is supported in inflate mode by repositioning the inner stream and
+ * resetting decompression state; seek is not supported in deflate mode.
  * Compression is properly flushed on close.
  *
  * @param inner The inner IO interface to wrap (must not be NULL)
