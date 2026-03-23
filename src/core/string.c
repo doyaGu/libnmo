@@ -172,16 +172,12 @@ const char *nmo_string_c_str(const nmo_string_t *string) {
     if (string == NULL || string->data == NULL) {
         return nmo_string_empty_cstr();
     }
-    string->data[string->length] = '\0';
     return string->data;
 }
 
 char *nmo_string_data(nmo_string_t *string) {
     if (string == NULL) {
         return NULL;
-    }
-    if (string->data != NULL) {
-        string->data[string->length] = '\0';
     }
     return string->data;
 }
