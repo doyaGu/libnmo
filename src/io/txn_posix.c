@@ -68,7 +68,7 @@ static int get_dir_path(const char *path, char *dir_buf, size_t dir_size) {
         return -1;
     }
 
-    strcpy(dir_buf, dir);
+    snprintf(dir_buf, dir_size, "%s", dir);
     free(path_copy);
     return 0;
 }
@@ -93,7 +93,7 @@ static int get_base_name(const char *path, char *base_buf, size_t base_size) {
         return -1;
     }
 
-    strcpy(base_buf, base);
+    snprintf(base_buf, base_size, "%s", base);
     free(path_copy);
     return 0;
 }
@@ -163,7 +163,7 @@ static int create_temp_file(const char *dir, const char *basename,
             errno = ENAMETOOLONG;
             return -1;
         }
-        strcpy(temp_path_buf, final_temp);
+        snprintf(temp_path_buf, temp_path_size, "%s", final_temp);
     }
 
     return fd;
@@ -202,7 +202,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
         nmo_free(&allocator, txn);
         return NULL;
     }
-    strcpy(txn->final_path, desc->path);
+    memcpy(txn->final_path, desc->path, path_len + 1);
 
     // Determine staging directory
     char staging_dir[PATH_MAX];
@@ -211,7 +211,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
             errno = ENAMETOOLONG;
             goto error;
         }
-        strcpy(staging_dir, desc->staging_dir);
+        snprintf(staging_dir, sizeof(staging_dir), "%s", desc->staging_dir);
     } else {
         // Use directory of final path
         if (get_dir_path(desc->path, staging_dir, sizeof(staging_dir)) != 0) {
@@ -240,7 +240,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
         unlink(temp_path);
         goto error;
     }
-    strcpy(txn->temp_path, temp_path);
+    memcpy(txn->temp_path, temp_path, temp_len + 1);
 
     // Set permissions (try to match final file if it exists, else 0644)
     struct stat st;

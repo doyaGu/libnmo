@@ -114,14 +114,14 @@ static int get_dir_path(const char *path, char *dir_buf, size_t dir_size) {
             free(path_copy);
             return -1;
         }
-        strcpy(dir_buf, path_copy);
+        snprintf(dir_buf, dir_size, "%s", path_copy);
     } else {
         // No directory, use current directory
         if (dir_size < 2) {
             free(path_copy);
             return -1;
         }
-        strcpy(dir_buf, ".");
+        snprintf(dir_buf, dir_size, ".");
     }
 
     free(path_copy);
@@ -164,7 +164,7 @@ static int get_base_name(const char *path, char *base_buf, size_t base_size) {
         return -1;
     }
 
-    strcpy(base_buf, base);
+    snprintf(base_buf, base_size, "%s", base);
     return 0;
 }
 
@@ -273,7 +273,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
         nmo_free(&allocator, txn);
         return NULL;
     }
-    strcpy(txn->final_path, desc->path);
+    memcpy(txn->final_path, desc->path, path_len + 1);
 
     // Determine staging directory
     char staging_dir[MAX_PATH];
@@ -282,7 +282,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
             SetLastError(ERROR_BUFFER_OVERFLOW);
             goto error;
         }
-        strcpy(staging_dir, desc->staging_dir);
+        snprintf(staging_dir, sizeof(staging_dir), "%s", desc->staging_dir);
     } else {
         // Use directory of final path
         if (get_dir_path(desc->path, staging_dir, sizeof(staging_dir)) != 0) {
@@ -316,7 +316,7 @@ nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc) {
         }
         goto error;
     }
-    strcpy(txn->temp_path, temp_path);
+    memcpy(txn->temp_path, temp_path, temp_len + 1);
 
     txn->state = NMO_TXN_STATE_ACTIVE;
     return txn;
