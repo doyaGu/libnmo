@@ -48,11 +48,15 @@ static size_t object_system_build_create_plan(
 
     if (schema_type->ext == NULL ||
         schema_type->ext->hierarchy == NULL ||
-        schema_type->ext->hierarchy_depth == 0 ||
-        schema_type->ext->hierarchy_depth > layer_cap) {
+        schema_type->ext->hierarchy_depth == 0) {
         layers[0].type = schema_type;
         layers[0].offset = 0;
         return 1;
+    }
+
+    if (schema_type->ext->hierarchy_depth > layer_cap) {
+        /* Hierarchy too deep for static buffer; caller should log warning */
+        return 0;
     }
 
     size_t count = 0;
@@ -240,6 +244,20 @@ nmo_status_t nmo_object_system_deserialize_repository(
         object_system_created_layer_t created_layers[OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH];
         size_t plan_count = object_system_build_create_plan(
             schema_type, create_plan, OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH);
+
+        if (plan_count == 0) {
+            /* Hierarchy too deep; fall back to single-layer */
+            if (logger) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "  Object %zu (schema=%s): hierarchy depth exceeds %u, using single-layer fallback",
+                        i, schema_type->name ? schema_type->name : "<unnamed>",
+                        (unsigned)OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH);
+            }
+            create_plan[0].type = schema_type;
+            create_plan[0].offset = 0;
+            plan_count = 1;
+        }
+
         size_t created_count = 0;
 
         nmo_status_t create_result = object_system_create_state_layers(

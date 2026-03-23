@@ -1134,7 +1134,7 @@ nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
     }
 
     if (session->reference_resolver_arena == NULL) {
-        session->reference_resolver_arena = nmo_arena_create(NULL, 4096);
+        session->reference_resolver_arena = nmo_arena_create(&session->allocator, 4096);
         if (session->reference_resolver_arena == NULL) {
             return NULL;
         }

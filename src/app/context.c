@@ -42,6 +42,7 @@
     #define NMO_ATOMIC_FETCH_SUB(ptr, val) __sync_fetch_and_sub(ptr, val)
 #else
     /* Fallback: non-atomic (not thread-safe) */
+    #pragma message("WARNING: No atomic primitives available; nmo_context refcounting is NOT thread-safe")
     #define NMO_ATOMIC_INT int
     #define NMO_ATOMIC_FETCH_ADD(ptr, val) (*(ptr) += (val), *(ptr) - (val))
     #define NMO_ATOMIC_FETCH_SUB(ptr, val) (*(ptr) -= (val), *(ptr) + (val))
