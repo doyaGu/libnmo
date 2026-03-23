@@ -115,13 +115,14 @@ static int nmo_hash_table_allocate_storage(nmo_hash_table_t *table, size_t capac
     return NMO_OK;
 }
 
-static void nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key, const void *value);
+static nmo_status_t nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key, const void *value);
 
 static int nmo_hash_table_rehash_internal(nmo_hash_table_t *table, size_t new_capacity) {
     uint8_t *old_states = table->states;
     uint8_t *old_keys = table->keys;
     uint8_t *old_values = table->values;
     size_t old_capacity = table->capacity;
+    size_t old_count = table->count;
 
     int alloc_result = nmo_hash_table_allocate_storage(table, new_capacity);
     if (alloc_result != NMO_OK) {
@@ -138,7 +139,19 @@ static int nmo_hash_table_rehash_internal(nmo_hash_table_t *table, size_t new_ca
             if (old_states[i] == NMO_HASH_ENTRY_OCCUPIED) {
                 const void *key_ptr = old_keys + (i * table->key_size);
                 const void *value_ptr = old_values + (i * table->value_size);
-                nmo_hash_table_place_entry(table, key_ptr, value_ptr);
+                nmo_status_t place_result = nmo_hash_table_place_entry(table, key_ptr, value_ptr);
+                if (place_result != NMO_OK) {
+                    /* Restore old state on failure */
+                    nmo_free(&table->allocator, table->states);
+                    nmo_free(&table->allocator, table->keys);
+                    nmo_free(&table->allocator, table->values);
+                    table->states = old_states;
+                    table->keys = old_keys;
+                    table->values = old_values;
+                    table->capacity = old_capacity;
+                    table->count = old_count;
+                    return (int)place_result;
+                }
             }
         }
     }
@@ -191,11 +204,11 @@ static int nmo_hash_table_find_slot(const nmo_hash_table_t *table,
     }
 }
 
-static void nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key, const void *value) {
+static nmo_status_t nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key, const void *value) {
     int found = 0;
     int slot = nmo_hash_table_find_slot(table, key, &found);
     if (slot < 0) {
-        return;
+        return NMO_ERR_INVALID_STATE;
     }
 
     uint8_t *key_dest = table->keys + ((size_t)slot * table->key_size);
@@ -204,6 +217,7 @@ static void nmo_hash_table_place_entry(nmo_hash_table_t *table, const void *key,
     nmo_hash_table_move_value(table, value_dest, (void *)value);
     table->states[slot] = NMO_HASH_ENTRY_OCCUPIED;
     table->count++;
+    return NMO_OK;
 }
 
 static void nmo_hash_table_dispose_entry(nmo_hash_table_t *table, size_t index) {
