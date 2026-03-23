@@ -77,7 +77,7 @@ typedef struct nmo_file_stats {
  * @param out_stats Output statistics structure
  * @return NMO_OK on success, error code on failure
  */
-NMO_API int nmo_stats_collect(
+NMO_API nmo_status_t nmo_stats_collect(
     nmo_session_t *session,
     nmo_file_stats_t *out_stats
 );
@@ -104,7 +104,7 @@ NMO_API void nmo_stats_print(
  * @param output_path Output file path
  * @return NMO_OK on success
  */
-NMO_API int nmo_stats_export_json(
+NMO_API nmo_status_t nmo_stats_export_json(
     const nmo_file_stats_t *stats,
     const char *output_path
 );

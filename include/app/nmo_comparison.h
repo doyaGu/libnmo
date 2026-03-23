@@ -137,10 +137,10 @@ NMO_API void nmo_comparison_result_init(nmo_comparison_result_t *result);
  * @param result Output: comparison result (caller must initialize)
  * @return NMO_OK on success (even if sessions differ), error code on failure
  */
-NMO_API int nmo_session_compare(const nmo_session_t *session1,
-                                const nmo_session_t *session2,
-                                nmo_compare_flags_t flags,
-                                nmo_comparison_result_t *result);
+NMO_API nmo_status_t nmo_session_compare(const nmo_session_t *session1,
+                                         const nmo_session_t *session2,
+                                         nmo_compare_flags_t flags,
+                                         nmo_comparison_result_t *result);
 
 /**
  * @brief Compare file info between sessions

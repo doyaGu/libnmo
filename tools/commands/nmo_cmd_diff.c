@@ -210,7 +210,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    int cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
 
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
@@ -731,7 +731,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    int cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
 
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);
@@ -889,7 +889,7 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_comparison_result_t result;
     nmo_comparison_result_init(&result);
-    int cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
+    nmo_status_t cmp_result = nmo_session_compare(ses1, ses2, flags, &result);
 
     if (cmp_result != NMO_OK) {
         fprintf(stderr, "Error: Comparison failed with code %d\n", cmp_result);

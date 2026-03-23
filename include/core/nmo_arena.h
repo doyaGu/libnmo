@@ -139,7 +139,7 @@ NMO_API size_t nmo_arena_bytes_used(nmo_arena_t *arena);
  * @param out_mark Output marker snapshot
  * @return NMO_OK on success
  */
-NMO_API int nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark);
+NMO_API nmo_status_t nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark);
 
 /**
  * @brief Rewind arena allocations back to a previous marker.
@@ -151,7 +151,7 @@ NMO_API int nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark);
  * @param mark Marker previously captured by nmo_arena_mark
  * @return NMO_OK on success
  */
-NMO_API int nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark);
+NMO_API nmo_status_t nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark);
 
 /**
  * @brief Reserve capacity (preallocate memory) - Phase 5 optimization
@@ -163,7 +163,7 @@ NMO_API int nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark);
  * @param total_size Total size to reserve (in bytes)
  * @return NMO_OK on success, error code on failure
  */
-NMO_API int nmo_arena_reserve(nmo_arena_t *arena, size_t total_size);
+NMO_API nmo_status_t nmo_arena_reserve(nmo_arena_t *arena, size_t total_size);
 
 /**
  * @brief Get arena configuration
@@ -172,7 +172,7 @@ NMO_API int nmo_arena_reserve(nmo_arena_t *arena, size_t total_size);
  * @param config Output: configuration structure
  * @return NMO_OK on success
  */
-NMO_API int nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config);
+NMO_API nmo_status_t nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config);
 
 /**
  * @brief Duplicate a string into arena memory

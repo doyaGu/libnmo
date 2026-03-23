@@ -301,7 +301,7 @@ size_t nmo_arena_bytes_used(nmo_arena_t *arena) {
     return arena ? arena->bytes_used : 0;
 }
 
-int nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
+nmo_status_t nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
     if (arena == NULL || out_mark == NULL || arena->current == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -315,7 +315,7 @@ int nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
     return NMO_OK;
 }
 
-int nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) {
+nmo_status_t nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) {
     if (arena == NULL || mark == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -358,7 +358,7 @@ int nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) {
 /**
  * Reserve capacity (preallocate memory) - Phase 5
  */
-int nmo_arena_reserve(nmo_arena_t *arena, size_t total_size) {
+nmo_status_t nmo_arena_reserve(nmo_arena_t *arena, size_t total_size) {
     if (arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -409,7 +409,7 @@ int nmo_arena_reserve(nmo_arena_t *arena, size_t total_size) {
 /**
  * Get arena configuration
  */
-int nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config) {
+nmo_status_t nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_config_t *config) {
     if (arena == NULL || config == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

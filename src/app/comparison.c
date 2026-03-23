@@ -939,10 +939,10 @@ static int nmo_session_compare_shadow(const nmo_session_t *session1,
  * Full Session Comparison
  * ============================================================================ */
 
-int nmo_session_compare(const nmo_session_t *session1,
-                        const nmo_session_t *session2,
-                        nmo_compare_flags_t flags,
-                        nmo_comparison_result_t *result) {
+nmo_status_t nmo_session_compare(const nmo_session_t *session1,
+                                 const nmo_session_t *session2,
+                                 nmo_compare_flags_t flags,
+                                 nmo_comparison_result_t *result) {
     if (session1 == NULL || session2 == NULL || result == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }

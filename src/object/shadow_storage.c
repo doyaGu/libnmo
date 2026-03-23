@@ -62,7 +62,7 @@ static int shadow_storage_clear_included_files_scope(nmo_shadow_storage_t *stora
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    int rewind_result = NMO_OK;
+    nmo_status_t rewind_result = NMO_OK;
     if (storage->included_files_scope_active) {
         if (shadow_storage_mark_can_rewind(storage)) {
             rewind_result = nmo_arena_rewind(storage->arena, &storage->included_files_mark);
@@ -179,7 +179,7 @@ int nmo_shadow_capture_included_files(nmo_shadow_storage_t *storage,
         return clear_result;
     }
 
-    int mark_result = nmo_arena_mark(storage->arena, &storage->included_files_mark);
+    nmo_status_t mark_result = nmo_arena_mark(storage->arena, &storage->included_files_mark);
     if (mark_result != NMO_OK) {
         return mark_result;
     }

@@ -157,7 +157,7 @@ static void collect_reference_stats(
     stats->references.unresolved = resolver_stats.unresolved_count;
 }
 
-int nmo_stats_collect(
+nmo_status_t nmo_stats_collect(
     nmo_session_t *session,
     nmo_file_stats_t *out_stats
 ) {
@@ -268,7 +268,7 @@ void nmo_stats_print_summary(
                : 0.0);
 }
 
-int nmo_stats_export_json(
+nmo_status_t nmo_stats_export_json(
     const nmo_file_stats_t *stats,
     const char *output_path
 ) {
