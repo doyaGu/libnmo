@@ -210,10 +210,14 @@ TEST(dynamic_types_integration, struct_with_multiple_field_types) {
 TEST(dynamic_types_integration, large_struct_with_many_fields) {
     setup();
     
-    /* Create struct with 10 fields */
+    /* Create struct with 10 fields (unique names required) */
+    static const char *field_names[10] = {
+        "field_0", "field_1", "field_2", "field_3", "field_4",
+        "field_5", "field_6", "field_7", "field_8", "field_9"
+    };
     nmo_struct_field_def_t fields[10];
     for (int i = 0; i < 10; i++) {
-        fields[i].name = (i % 2 == 0) ? "int_field" : "float_field";
+        fields[i].name = field_names[i];
         fields[i].type_name = (i % 2 == 0) ? "int" : "float";
         fields[i].type_guid = NMO_NULL_GUID;
         fields[i].description = NULL;

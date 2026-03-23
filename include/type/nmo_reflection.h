@@ -352,6 +352,9 @@ NMO_API nmo_status_t nmo_type_foreach_field(
  * @param user_data User context
  * @return NMO_OK on success
  * @note Does not allocate; visitor must not free field pointers.
+ * @note Only iterates top-level fields with NMO_FIELD_REFERENCE flag.
+ *       Nested struct fields containing object references are NOT traversed.
+ *       For deep traversal, call this function recursively on nested types.
  */
 NMO_API nmo_status_t nmo_type_foreach_ref_field(
     const nmo_type_descriptor_t *type,

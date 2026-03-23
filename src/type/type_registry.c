@@ -590,6 +590,9 @@ static nmo_status_t validate_type_descriptor(
     }
 
     if (descriptor->fields && descriptor->field_count > 0) {
+        const bool is_union =
+            (descriptor->category & NMO_TYPE_CATEGORY_UNION) != 0u;
+
         for (size_t i = 0; i < descriptor->field_count; i++) {
             const nmo_type_field_t *field = &descriptor->fields[i];
             if (!field->name || field->name[0] == '\0') {
@@ -607,6 +610,30 @@ static nmo_status_t validate_type_descriptor(
             if ((uint64_t)field->offset + (uint64_t)field->size > (uint64_t)descriptor->size) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                  "Field '%s' exceeds type size", field->name);
+            }
+
+            /* Check for duplicate field names */
+            for (size_t j = 0; j < i; j++) {
+                if (strcmp(field->name, descriptor->fields[j].name) == 0) {
+                    NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                     "Duplicate field name '%s'", field->name);
+                }
+            }
+
+            /* Check for field overlap (skip for unions where overlap is expected) */
+            if (!is_union) {
+                uint64_t a_start = field->offset;
+                uint64_t a_end = (uint64_t)field->offset + (uint64_t)field->size;
+                for (size_t j = 0; j < i; j++) {
+                    uint64_t b_start = descriptor->fields[j].offset;
+                    uint64_t b_end = (uint64_t)descriptor->fields[j].offset +
+                                     (uint64_t)descriptor->fields[j].size;
+                    if (a_start < b_end && b_start < a_end) {
+                        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                         "Field '%s' overlaps with '%s'",
+                                         field->name, descriptor->fields[j].name);
+                    }
+                }
             }
         }
     }
