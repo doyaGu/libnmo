@@ -3,6 +3,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_utils.h"
 #include <miniz.h>
 #include <string.h>
 #include <stdlib.h>
@@ -62,7 +63,10 @@ static nmo_status_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
                                                     size_t compressed_size,
                                                     size_t original_dwords) {
     size_t dest_dwords = (compressed_size + sizeof(uint32_t) - 1) / sizeof(uint32_t);
-    size_t dest_bytes = dest_dwords * sizeof(uint32_t);
+    size_t dest_bytes;
+    if (!nmo_safe_mul_size(dest_dwords, sizeof(uint32_t), &dest_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Compressed payload size overflow");
+    }
 
     nmo_status_t result = nmo_arena_array_resize(&chunk->data, dest_dwords);
     NMO_RETURN_IF_ERROR(result);
@@ -77,7 +81,11 @@ static nmo_status_t chunk_commit_compressed_payload(nmo_chunk_t *chunk,
     chunk->chunk_options |= NMO_CHUNK_OPTION_PACKED;
     chunk->unpack_size = original_dwords;
     chunk->compressed_size = compressed_size;
-    chunk->uncompressed_size = original_dwords * sizeof(uint32_t);
+    size_t uncompressed_bytes;
+    if (!nmo_safe_mul_size(original_dwords, sizeof(uint32_t), &uncompressed_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Uncompressed size overflow");
+    }
+    chunk->uncompressed_size = uncompressed_bytes;
     chunk->is_compressed = 1;
 
     NMO_RETURN_OK();
@@ -129,7 +137,10 @@ nmo_status_t nmo_chunk_compress_if_beneficial(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t original_size = chunk->data.count * sizeof(uint32_t);
+    size_t original_size;
+    if (!nmo_safe_mul_size(chunk->data.count, sizeof(uint32_t), &original_size)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Original data size overflow");
+    }
     if (original_size == 0) {
         NMO_RETURN_OK();
     }
@@ -174,14 +185,21 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     }
 
     const uint32_t *src_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    size_t available_bytes = chunk->data.count * sizeof(uint32_t);
+    size_t available_bytes;
+    if (!nmo_safe_mul_size(chunk->data.count, sizeof(uint32_t), &available_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Chunk data size overflow");
+    }
     size_t used_bytes = (chunk->compressed_size > 0) ? chunk->compressed_size : available_bytes;
     if (used_bytes > available_bytes) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Compressed size exceeds buffer");
     }
     mz_ulong src_len = (mz_ulong) used_bytes;
 
-    mz_ulong dest_len = chunk->unpack_size * sizeof(uint32_t);
+    size_t dest_len_check;
+    if (!nmo_safe_mul_size(chunk->unpack_size, sizeof(uint32_t), &dest_len_check)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Decompression buffer size overflow");
+    }
+    mz_ulong dest_len = (mz_ulong)dest_len_check;
     uint32_t *decompressed = (uint32_t *) nmo_arena_alloc(chunk->arena,
                                                           dest_len, sizeof(uint32_t));
     if (!decompressed) {
@@ -197,7 +215,7 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     }
 
     // Verify decompressed size
-    if (dest_len != chunk->unpack_size * sizeof(uint32_t)) {
+    if (dest_len != (mz_ulong)dest_len_check) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Decompressed size mismatch");
     }
 
@@ -205,7 +223,11 @@ nmo_status_t nmo_chunk_decompress(nmo_chunk_t *chunk) {
     NMO_RETURN_IF_ERROR(set_result);
     chunk->chunk_options &= ~NMO_CHUNK_OPTION_PACKED;
     chunk->compressed_size = 0;
-    chunk->uncompressed_size = chunk->data.count * sizeof(uint32_t);
+    size_t final_size;
+    if (!nmo_safe_mul_size(chunk->data.count, sizeof(uint32_t), &final_size)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Final decompressed size overflow");
+    }
+    chunk->uncompressed_size = final_size;
     chunk->is_compressed = 0;
     chunk->unpack_size = 0;
 
