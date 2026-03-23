@@ -205,16 +205,19 @@ static int file_io_close(void *handle) {
     }
 
     nmo_file_handle_t *fh = (nmo_file_handle_t *) handle;
+    int result = NMO_OK;
 
     if (fh->fp != NULL) {
-        fclose(fh->fp);
+        if (fclose(fh->fp) != 0) {
+            result = NMO_ERR_CANT_WRITE_FILE;
+        }
         fh->fp = NULL;
     }
 
     nmo_allocator_t alloc = nmo_allocator_default();
     nmo_free(&alloc, fh);
 
-    return NMO_OK;
+    return result;
 }
 
 /**

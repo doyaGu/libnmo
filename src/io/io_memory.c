@@ -38,6 +38,7 @@ typedef struct nmo_memory_write_handle {
     size_t size;     // Current size of written data
     size_t capacity; // Total allocated capacity
     size_t position; // Current read/write position
+    int failed;      // Set on write failure; poisons subsequent operations
 } nmo_memory_write_handle_t;
 
 /**
@@ -171,8 +172,13 @@ static int memory_write_io_write(void *handle, const void *buffer, size_t size) 
 
     nmo_memory_write_handle_t *mh = (nmo_memory_write_handle_t *) handle;
 
+    if (mh->failed) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
     // Overflow guard: position + size
     if (size > SIZE_MAX - mh->position) {
+        mh->failed = 1;
         return NMO_ERR_NOMEM;
     }
 
@@ -198,6 +204,7 @@ static int memory_write_io_write(void *handle, const void *buffer, size_t size) 
         nmo_allocator_t alloc = nmo_allocator_default();
         uint8_t *new_data = (uint8_t *) nmo_alloc(&alloc, new_capacity, 1);
         if (new_data == NULL) {
+            mh->failed = 1;
             return NMO_ERR_NOMEM;
         }
 
@@ -239,6 +246,9 @@ static int memory_write_io_seek(void *handle, int64_t offset, nmo_seek_origin_t 
     }
 
     nmo_memory_write_handle_t *mh = (nmo_memory_write_handle_t *) handle;
+    if (mh->failed) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     int64_t new_pos = 0;
     switch (origin) {
@@ -347,6 +357,7 @@ nmo_io_interface_t *nmo_memory_io_open_write(size_t initial_capacity) {
     if (mh == NULL) {
         return NULL;
     }
+    memset(mh, 0, sizeof(*mh));
 
     // Initialize with capacity if specified
     if (initial_capacity > 0) {
