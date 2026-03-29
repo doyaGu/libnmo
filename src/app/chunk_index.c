@@ -4,6 +4,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 static int cmp_chunk_ptr_index(const void *a, const void *b) {
@@ -29,6 +30,9 @@ static bool chunk_entries_push(nmo_chunk_index_entry_t **entries,
 
     if (*count == *capacity) {
         size_t new_cap = (*capacity == 0) ? 128 : (*capacity * 2);
+        if (new_cap < *capacity || new_cap > SIZE_MAX / sizeof(nmo_chunk_index_entry_t)) {
+            return false;
+        }
         nmo_chunk_index_entry_t *new_entries = (nmo_chunk_index_entry_t *)realloc(
             *entries, new_cap * sizeof(nmo_chunk_index_entry_t));
         if (!new_entries) {
@@ -152,6 +156,9 @@ bool nmo_chunk_index_build_map(const nmo_chunk_index_entry_t *entries,
         return true;
     }
 
+    if (entry_count > SIZE_MAX / sizeof(nmo_chunk_ptr_index_t)) {
+        return false;
+    }
     nmo_chunk_ptr_index_t *map = (nmo_chunk_ptr_index_t *)malloc(
         entry_count * sizeof(nmo_chunk_ptr_index_t));
     if (!map) {
