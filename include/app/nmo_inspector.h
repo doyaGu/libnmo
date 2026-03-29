@@ -72,9 +72,9 @@ void nmo_inspector_init_options(nmo_inspector_options_t *options);
  * @param chunk Chunk to dump
  * @param stream Output stream (stdout, stderr, or file)
  * @param options Dump options
- * @return 0 on success, negative on error
+ * @return NMO_OK on success, negative on error
  */
-int nmo_inspector_dump_chunk(
+nmo_status_t nmo_inspector_dump_chunk(
     const nmo_chunk_t *chunk,
     FILE *stream,
     const nmo_inspector_options_t *options
@@ -91,9 +91,9 @@ int nmo_inspector_dump_chunk(
  * 
  * @param chunk Chunk to validate
  * @param result Validation result (output)
- * @return 0 on success (check result->is_valid for validity)
+ * @return NMO_OK on success (check result->is_valid for validity)
  */
-int nmo_inspector_validate_chunk(
+nmo_status_t nmo_inspector_validate_chunk(
     const nmo_chunk_t *chunk,
     nmo_chunk_validation_t *result
 );
@@ -124,9 +124,9 @@ int nmo_inspector_hex_dump(
  * 
  * @param chunk Chunk to summarize
  * @param stream Output stream
- * @return 0 on success, negative on error
+ * @return NMO_OK on success, negative on error
  */
-int nmo_inspector_print_summary(
+nmo_status_t nmo_inspector_print_summary(
     const nmo_chunk_t *chunk,
     FILE *stream
 );
@@ -155,9 +155,9 @@ int nmo_inspector_compare_chunks(
  * @param chunk Chunk to export
  * @param stream Output stream
  * @param include_data Include base64-encoded data
- * @return 0 on success, negative on error
+ * @return NMO_OK on success, negative on error
  */
-int nmo_inspector_export_json(
+nmo_status_t nmo_inspector_export_json(
     const nmo_chunk_t *chunk,
     FILE *stream,
     bool include_data

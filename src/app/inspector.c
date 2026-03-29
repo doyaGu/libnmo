@@ -1,7 +1,7 @@
 ﻿/**
  * @file inspector.c
  * @brief Implementation of chunk inspection and debugging utilities
- * 
+ *
  * Reference: CKStateChunk debugging helpers in reference implementation
  */
 
@@ -9,6 +9,7 @@
 #include "app/nmo_ansi.h"
 #include "app/nmo_hexdump.h"
 #include "app/nmo_json_stream.h"
+#include "core/nmo_error.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_parser.h"
@@ -66,21 +67,21 @@ static void print_indent(FILE *stream, size_t depth) {
 /**
  * @brief Dump chunk recursively
  */
-static int dump_chunk_recursive(
+static nmo_status_t dump_chunk_recursive(
     const nmo_chunk_t *chunk,
     FILE *stream,
     const nmo_inspector_options_t *options,
     size_t depth
 ) {
     if (chunk == NULL || stream == NULL || options == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     /* Check depth limit */
     if (options->max_depth > 0 && depth >= options->max_depth) {
         print_indent(stream, depth);
         fprintf(stream, "(max depth reached)\n");
-        return 0;
+        return NMO_OK;
     }
     
     bool colorize = options->colorize;
@@ -170,34 +171,34 @@ static int dump_chunk_recursive(
     
     print_indent(stream, depth);
     fprintf(stream, "}\n");
-    
-    return 0;
+
+    return NMO_OK;
 }
 
-int nmo_inspector_dump_chunk(
+nmo_status_t nmo_inspector_dump_chunk(
     const nmo_chunk_t *chunk,
     FILE *stream,
     const nmo_inspector_options_t *options
 ) {
     if (chunk == NULL || stream == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     nmo_inspector_options_t default_opts;
     if (options == NULL) {
         nmo_inspector_init_options(&default_opts);
         options = &default_opts;
     }
-    
+
     return dump_chunk_recursive(chunk, stream, options, 0);
 }
 
-int nmo_inspector_validate_chunk(
+nmo_status_t nmo_inspector_validate_chunk(
     const nmo_chunk_t *chunk,
     nmo_chunk_validation_t *result
 ) {
     if (chunk == NULL || result == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
     
     memset(result, 0, sizeof(nmo_chunk_validation_t));
@@ -217,9 +218,9 @@ int nmo_inspector_validate_chunk(
         result->error_count++;
         snprintf(result->error_message, sizeof(result->error_message),
                 "Data size is %zu but data pointer is NULL", data_size);
-        return 0;
+        return NMO_OK;
     }
-    
+
     /* Validate sub-chunks recursively */
     uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
     for (uint32_t i = 0; i < sub_count; i++) {
@@ -230,17 +231,17 @@ int nmo_inspector_validate_chunk(
             result->error_count++;
             snprintf(result->error_message, sizeof(result->error_message),
                     "Sub-chunk %u is NULL", i);
-            return 0;
+            return NMO_OK;
         }
-        
+
         nmo_chunk_validation_t sub_result;
-        if (nmo_inspector_validate_chunk(sub, &sub_result) != 0) {
+        if (nmo_inspector_validate_chunk(sub, &sub_result) != NMO_OK) {
             result->is_valid = false;
             result->sub_chunks_valid = false;
             result->error_count++;
-            return 0;
+            return NMO_OK;
         }
-        
+
         if (!sub_result.is_valid) {
             result->is_valid = false;
             result->sub_chunks_valid = false;
@@ -254,11 +255,11 @@ int nmo_inspector_validate_chunk(
                         "Sub-chunk %u validation failed: %.*s", i, (int)avail,
                         sub_result.error_message);
             }
-            return 0;
+            return NMO_OK;
         }
     }
-    
-    return 0;
+
+    return NMO_OK;
 }
 
 int nmo_inspector_hex_dump(
@@ -298,29 +299,29 @@ int nmo_inspector_hex_dump(
     return (int)dump_size;
 }
 
-int nmo_inspector_print_summary(
+nmo_status_t nmo_inspector_print_summary(
     const nmo_chunk_t *chunk,
     FILE *stream
 ) {
     if (chunk == NULL || stream == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    
+
     nmo_class_id_t class_id = nmo_chunk_get_class_id(chunk);
     size_t data_size = 0;
     nmo_chunk_get_data(chunk, &data_size);
     size_t id_count = nmo_chunk_get_id_count(chunk);
     uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
-    
+
     fprintf(stream, "Class=%d IDs=[%zu] Data=%zu bytes Sub=[%u]",
            class_id, id_count, data_size, sub_count);
-    
+
     if (nmo_chunk_is_compressed(chunk)) {
         fprintf(stream, " [COMPRESSED]");
     }
-    
+
     fprintf(stream, "\n");
-    return 0;
+    return NMO_OK;
 }
 
 int nmo_inspector_compare_chunks(
@@ -399,15 +400,15 @@ int nmo_inspector_compare_chunks(
     return 1;
 }
 
-static int json_write_chunk(nmo_json_stream_t *writer,
+static nmo_status_t json_write_chunk(nmo_json_stream_t *writer,
                             const nmo_chunk_t *chunk,
                             bool include_data) {
     if (!writer || !chunk) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     if (!nmo_json_stream_begin_object(writer)) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     size_t data_size = 0;
@@ -415,30 +416,30 @@ static int json_write_chunk(nmo_json_stream_t *writer,
 
     if (!nmo_json_stream_key(writer, "class_id") ||
         !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_class_id(chunk))) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     if (!nmo_json_stream_key(writer, "data_size") ||
         !nmo_json_stream_value_uint(writer, (uint64_t)data_size)) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     if (!nmo_json_stream_key(writer, "id_count") ||
         !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_id_count(chunk))) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     if (nmo_chunk_is_compressed(chunk)) {
         if (!nmo_json_stream_key(writer, "compressed") ||
             !nmo_json_stream_value_bool(writer, true)) {
-            return -1;
+            return NMO_ERR_INVALID_ARGUMENT;
         }
     }
 
     if (include_data && data && data_size > 0) {
         if (!nmo_json_stream_key(writer, "data_hex") ||
             !nmo_json_stream_value_hex_bytes(writer, data, data_size, false)) {
-            return -1;
+            return NMO_ERR_INVALID_ARGUMENT;
         }
     }
 
@@ -446,7 +447,7 @@ static int json_write_chunk(nmo_json_stream_t *writer,
     if (sub_count > 0) {
         if (!nmo_json_stream_key(writer, "sub_chunks") ||
             !nmo_json_stream_begin_array(writer)) {
-            return -1;
+            return NMO_ERR_INVALID_ARGUMENT;
         }
 
         for (uint32_t i = 0; i < sub_count; ++i) {
@@ -454,40 +455,40 @@ static int json_write_chunk(nmo_json_stream_t *writer,
             if (!sub) {
                 continue;
             }
-            if (json_write_chunk(writer, sub, include_data) != 0) {
-                return -1;
+            if (json_write_chunk(writer, sub, include_data) != NMO_OK) {
+                return NMO_ERR_INVALID_ARGUMENT;
             }
         }
 
         if (!nmo_json_stream_end_array(writer)) {
-            return -1;
+            return NMO_ERR_INVALID_ARGUMENT;
         }
     }
 
     if (!nmo_json_stream_end_object(writer)) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    return 0;
+    return NMO_OK;
 }
 
-int nmo_inspector_export_json(
+nmo_status_t nmo_inspector_export_json(
     const nmo_chunk_t *chunk,
     FILE *stream,
     bool include_data
 ) {
     if (chunk == NULL || stream == NULL) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_json_stream_t writer;
     nmo_json_stream_init(&writer, stream, true);
 
-    if (json_write_chunk(&writer, chunk, include_data) != 0) {
-        return -1;
+    if (json_write_chunk(&writer, chunk, include_data) != NMO_OK) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
     if (fputc('\n', stream) == EOF) {
-        return -1;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    return 0;
+    return NMO_OK;
 }

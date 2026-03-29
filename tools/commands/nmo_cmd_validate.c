@@ -88,8 +88,8 @@ static int validate_all_single(const char *file_path,
         }
 
         nmo_chunk_validation_t result;
-        int rc = nmo_inspector_validate_chunk(chunk, &result);
-        if (rc != 0 || !result.is_valid) {
+        nmo_status_t rc = nmo_inspector_validate_chunk(chunk, &result);
+        if (rc != NMO_OK || !result.is_valid) {
             error_count++;
             if (!doc) {
                 fprintf(out, "Error: Object %u chunk validation failed: %s\n",
@@ -300,8 +300,8 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
         }
 
         nmo_chunk_validation_t result;
-        int rc = nmo_inspector_validate_chunk(chunk, &result);
-        if (rc != 0 || !result.is_valid) {
+        nmo_status_t rc = nmo_inspector_validate_chunk(chunk, &result);
+        if (rc != NMO_OK || !result.is_valid) {
             error_count++;
             if (is_json) {
                 yyjson_mut_val *issue = yyjson_mut_obj(doc);

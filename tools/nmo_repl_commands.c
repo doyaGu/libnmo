@@ -477,7 +477,11 @@ static int cmd_dump(nmo_repl_context_t *repl, int argc, char **argv) {
     options.show_hex = (level >= NMO_DUMP_FULL);
     options.show_sub_chunks = true;
     options.colorize = repl->colorize;
-    nmo_inspector_dump_chunk(chunk, stdout, &options);
+    nmo_status_t rc = nmo_inspector_dump_chunk(chunk, stdout, &options);
+    if (rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to dump chunk\n");
+        return -1;
+    }
     printf("\n");
     return 0;
 }
@@ -953,7 +957,7 @@ static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv) {
         }
 
         nmo_chunk_validation_t result;
-        if (nmo_inspector_validate_chunk(chunk, &result) != 0 || !result.is_valid) {
+        if (nmo_inspector_validate_chunk(chunk, &result) != NMO_OK || !result.is_valid) {
             errors++;
                  printf("  [%zu] ID=%u Class=%d: verify result %zu\n",
                    i,
