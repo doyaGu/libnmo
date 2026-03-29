@@ -14,6 +14,11 @@ char *nmo_hex_bytes_to_string(const void *bytes, size_t len, bool uppercase) {
         return NULL;
     }
 
+    /* Overflow protection: len * 2 + 1 must not wrap */
+    if (len > (SIZE_MAX - 1) / 2) {
+        return NULL;
+    }
+
     char *hex = (char *)malloc(len * 2 + 1);
     if (!hex) {
         return NULL;
