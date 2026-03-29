@@ -408,7 +408,7 @@ static nmo_status_t json_write_chunk(nmo_json_stream_t *writer,
     }
 
     if (!nmo_json_stream_begin_object(writer)) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
 
     size_t data_size = 0;
@@ -416,30 +416,30 @@ static nmo_status_t json_write_chunk(nmo_json_stream_t *writer,
 
     if (!nmo_json_stream_key(writer, "class_id") ||
         !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_class_id(chunk))) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
 
     if (!nmo_json_stream_key(writer, "data_size") ||
         !nmo_json_stream_value_uint(writer, (uint64_t)data_size)) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
 
     if (!nmo_json_stream_key(writer, "id_count") ||
         !nmo_json_stream_value_uint(writer, (uint64_t)nmo_chunk_get_id_count(chunk))) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
 
     if (nmo_chunk_is_compressed(chunk)) {
         if (!nmo_json_stream_key(writer, "compressed") ||
             !nmo_json_stream_value_bool(writer, true)) {
-            return NMO_ERR_INVALID_ARGUMENT;
+            return NMO_ERR_CANT_WRITE_FILE;
         }
     }
 
     if (include_data && data && data_size > 0) {
         if (!nmo_json_stream_key(writer, "data_hex") ||
             !nmo_json_stream_value_hex_bytes(writer, data, data_size, false)) {
-            return NMO_ERR_INVALID_ARGUMENT;
+            return NMO_ERR_CANT_WRITE_FILE;
         }
     }
 
@@ -447,7 +447,7 @@ static nmo_status_t json_write_chunk(nmo_json_stream_t *writer,
     if (sub_count > 0) {
         if (!nmo_json_stream_key(writer, "sub_chunks") ||
             !nmo_json_stream_begin_array(writer)) {
-            return NMO_ERR_INVALID_ARGUMENT;
+            return NMO_ERR_CANT_WRITE_FILE;
         }
 
         for (uint32_t i = 0; i < sub_count; ++i) {
@@ -456,17 +456,17 @@ static nmo_status_t json_write_chunk(nmo_json_stream_t *writer,
                 continue;
             }
             if (json_write_chunk(writer, sub, include_data) != NMO_OK) {
-                return NMO_ERR_INVALID_ARGUMENT;
+                return NMO_ERR_CANT_WRITE_FILE;
             }
         }
 
         if (!nmo_json_stream_end_array(writer)) {
-            return NMO_ERR_INVALID_ARGUMENT;
+            return NMO_ERR_CANT_WRITE_FILE;
         }
     }
 
     if (!nmo_json_stream_end_object(writer)) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
 
     return NMO_OK;
@@ -485,10 +485,10 @@ nmo_status_t nmo_inspector_export_json(
     nmo_json_stream_init(&writer, stream, true);
 
     if (json_write_chunk(&writer, chunk, include_data) != NMO_OK) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
     if (fputc('\n', stream) == EOF) {
-        return NMO_ERR_INVALID_ARGUMENT;
+        return NMO_ERR_CANT_WRITE_FILE;
     }
     return NMO_OK;
 }

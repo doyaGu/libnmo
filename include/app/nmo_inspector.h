@@ -72,7 +72,7 @@ void nmo_inspector_init_options(nmo_inspector_options_t *options);
  * @param chunk Chunk to dump
  * @param stream Output stream (stdout, stderr, or file)
  * @param options Dump options
- * @return NMO_OK on success, negative on error
+ * @return NMO_OK on success, non-zero error code on failure
  */
 nmo_status_t nmo_inspector_dump_chunk(
     const nmo_chunk_t *chunk,
@@ -124,7 +124,7 @@ int nmo_inspector_hex_dump(
  * 
  * @param chunk Chunk to summarize
  * @param stream Output stream
- * @return NMO_OK on success, negative on error
+ * @return NMO_OK on success, non-zero error code on failure
  */
 nmo_status_t nmo_inspector_print_summary(
     const nmo_chunk_t *chunk,
@@ -155,7 +155,7 @@ int nmo_inspector_compare_chunks(
  * @param chunk Chunk to export
  * @param stream Output stream
  * @param include_data Include base64-encoded data
- * @return NMO_OK on success, negative on error
+ * @return NMO_OK on success, non-zero error code on failure
  */
 nmo_status_t nmo_inspector_export_json(
     const nmo_chunk_t *chunk,
