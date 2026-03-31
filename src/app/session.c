@@ -143,11 +143,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
         return NULL;
     }
 
-    /* Initialize file info to zero */
-    /* file_state already zeroed by memset above */
-
-    /* Initialize file state */
-    memset(&session->file_state, 0, sizeof(session->file_state));
+    /* file_state zeroed by memset(session, 0, ...) above */
     session->chunk_pool = NULL;
     session->chunk_pool_capacity = 0;
 

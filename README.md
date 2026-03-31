@@ -140,8 +140,8 @@ int main(int argc, char **argv) {
     }
 
     /* Query */
-    nmo_file_info_t info = nmo_session_get_file_info(session);
-    printf("Object count: %u\n", info.object_count);
+    const nmo_file_state_t *fs = nmo_session_get_file_state(session);
+    printf("Object count: %u\n", fs->info.object_count);
 
     /* Cleanup */
     nmo_session_destroy(session);
