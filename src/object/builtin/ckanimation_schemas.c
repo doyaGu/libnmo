@@ -665,7 +665,7 @@ static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
 
     size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, remaining_bytes);
     if (bytes_read != remaining_bytes) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read raw tail buffer");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read raw tail buffer");
     }
 
     *out_data = data;

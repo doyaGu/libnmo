@@ -15,7 +15,7 @@
     NMO_PARSER_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, (message))
 #define NMO_PARSER_RETURN_INVALID_OFFSET(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, (message))
-#define NMO_PARSER_RETURN_EOF(message) \
+#define NMO_PARSER_RETURN_TRUNCATED(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, (message))
 #define NMO_PARSER_RETURN_NOMEM(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_NOMEM, (message))
@@ -42,7 +42,7 @@
         NMO_PARSER_RETURN_ERROR((code), (message)); \
     } while (0)
 
-#define NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, message) \
+#define NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, message) \
     NMO_PARSER_RETURN_ERROR_ROLLBACK((p), (start_pos), NMO_ERR_TRUNCATED_CHUNK, (message))
 
 #define NMO_PARSER_RETURN_NOMEM_ROLLBACK(p, start_pos, message) \
@@ -88,7 +88,7 @@ static inline nmo_status_t parser_read_u32_rollback(nmo_chunk_parser_t *p,
 
     if (!check_bounds(p, 1)) {
         NMO_PARSER_RESTORE_CURSOR(p, start_pos);
-        NMO_PARSER_RETURN_EOF(eof_message);
+        NMO_PARSER_RETURN_TRUNCATED(eof_message);
     }
 
     *out_value = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -105,7 +105,7 @@ static inline nmo_status_t parser_read_guid_rollback(nmo_chunk_parser_t *p,
 
     if (!check_bounds(p, 2)) {
         NMO_PARSER_RESTORE_CURSOR(p, start_pos);
-        NMO_PARSER_RETURN_EOF(eof_message);
+        NMO_PARSER_RETURN_TRUNCATED(eof_message);
     }
 
     out_guid->d1 = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -226,7 +226,7 @@ nmo_status_t nmo_chunk_parser_read_byte(nmo_chunk_parser_t *p, uint8_t *out) {
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read byte");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read byte");
     }
 
     // Read byte from current DWORD (little-endian)
@@ -243,7 +243,7 @@ nmo_status_t nmo_chunk_parser_read_word(nmo_chunk_parser_t *p, uint16_t *out) {
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read word");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read word");
     }
 
     // Read word from current DWORD (little-endian)
@@ -260,7 +260,7 @@ nmo_status_t nmo_chunk_parser_read_dword(nmo_chunk_parser_t *p, uint32_t *out) {
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read dword");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read dword");
     }
 
     *out = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
@@ -275,7 +275,7 @@ nmo_status_t nmo_chunk_parser_read_int(nmo_chunk_parser_t *p, int32_t *out) {
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read int");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read int");
     }
 
     // Reinterpret uint32 as int32
@@ -292,7 +292,7 @@ nmo_status_t nmo_chunk_parser_read_float(nmo_chunk_parser_t *p, float *out) {
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read float");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read float");
     }
 
     // Reinterpret uint32 as float
@@ -309,7 +309,7 @@ nmo_status_t nmo_chunk_parser_read_guid(nmo_chunk_parser_t *p, nmo_guid_t *out) 
     }
 
     if (!check_bounds(p, 2)) {
-        NMO_PARSER_RETURN_EOF("Cannot read guid");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read guid");
     }
 
     out->d1 = NMO_CHUNK_PARSER_DATA(p)[p->cursor];
@@ -338,7 +338,7 @@ nmo_status_t nmo_chunk_parser_read_manager_int(nmo_chunk_parser_t *p,
 
     // Need 3 DWORDs for [GUID.d1][GUID.d2][value]
     if (!check_bounds(p, 3)) {
-        NMO_PARSER_RETURN_EOF("Cannot read manager int");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read manager int");
     }
 
     // Read GUID if requested
@@ -375,7 +375,7 @@ nmo_status_t nmo_chunk_parser_read_manager_int_sequence(nmo_chunk_parser_t *p,
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read manager sequence value");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read manager sequence value");
     }
 
     *out_value = (int32_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -479,7 +479,7 @@ nmo_status_t nmo_chunk_parser_read_array_lendian(nmo_chunk_parser_t *p,
 
     // Bounds check before allocation
     if (!check_bounds(p, dword_count)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read array data");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read array data");
     }
 
     // Allocate array data
@@ -542,7 +542,7 @@ nmo_status_t nmo_chunk_parser_read_array_lendian16(nmo_chunk_parser_t *p,
 
     size_t dword_count = nmo_bytes_to_dwords((size_t)data_size_bytes);
     if (!check_bounds(p, dword_count)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read array data");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read array data");
     }
 
     void *array_data = nmo_arena_alloc(arena, (size_t)data_size_bytes, 1);
@@ -592,7 +592,7 @@ nmo_status_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size
     size_t dwords_needed = nmo_align_dword(bytes) / 4;
 
     if (!check_bounds(p, dwords_needed)) {
-        NMO_PARSER_RETURN_EOF("Cannot read bytes");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read bytes");
     }
 
     // Copy bytes from DWORD buffer
@@ -720,7 +720,7 @@ nmo_status_t nmo_chunk_parser_read_buffer_nosize(nmo_chunk_parser_t *p, size_t b
 
     // Check bounds
     if (!check_bounds(p, dwords_needed)) {
-        NMO_PARSER_RETURN_EOF("Cannot read buffer");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read buffer");
     }
 
     // Copy bytes from DWORD buffer
@@ -746,7 +746,7 @@ nmo_status_t nmo_chunk_parser_read_buffer_nosize_lendian16(nmo_chunk_parser_t *p
     }
 
     if (!check_bounds(p, value_count)) {
-        NMO_PARSER_RETURN_EOF("Cannot read buffer");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read buffer");
     }
 
     uint16_t *out = (uint16_t *)buffer;
@@ -768,7 +768,7 @@ nmo_status_t nmo_chunk_parser_read_dword_as_words(nmo_chunk_parser_t *p, uint32_
     }
 
     if (!check_bounds(p, 2)) {
-        NMO_PARSER_RETURN_EOF("Cannot read dword as words");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read dword as words");
     }
 
     uint32_t low_word = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -852,7 +852,7 @@ nmo_status_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
 
     // Check bounds
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot read object id");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read object id");
     }
 
     uint32_t raw_id = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -865,7 +865,7 @@ nmo_status_t nmo_chunk_parser_read_object_id(nmo_chunk_parser_t *p, nmo_object_i
             // Legacy format: [flag][skip][skip][actual_id]
             // Need 3 more DWORDs after the flag
             if (!check_bounds(p, 3)) {
-                NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read legacy object id");
+                NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read legacy object id");
             }
             p->cursor += 2;  // Skip 2 DWORDs
             resolved_id = (nmo_object_id_t) NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -910,7 +910,7 @@ nmo_status_t nmo_chunk_parser_start_object_sequence(nmo_chunk_parser_t *p, size_
     }
 
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot start object sequence");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot start object sequence");
     }
 
     uint32_t count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
@@ -935,7 +935,7 @@ nmo_status_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *i
 
     // Check bounds (need 2 DWORDs for [ID][NextPos])
     if (p->cursor + 2 > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-        NMO_PARSER_RETURN_EOF("Cannot read identifier");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read identifier");
     }
 
     // Save current position as previous identifier position
@@ -964,7 +964,7 @@ nmo_status_t nmo_chunk_parser_read_identifier(nmo_chunk_parser_t *p, uint32_t *i
  *
  * @param p Parser context
  * @param identifier Target identifier to find
- * @return NMO_OK if found, NMO_ERR_EOF if not found
+ * @return NMO_OK if found, NMO_ERR_TRUNCATED_CHUNK if not found
  */
 nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier) {
     if (p == NULL || p->chunk == NULL) {
@@ -974,17 +974,17 @@ nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
     // Check for empty chunk first
     // Reference: if (!m_Data || m_ChunkSize == 0) return FALSE;
     if (NMO_CHUNK_PARSER_DATA_SIZE(p) == 0 || NMO_CHUNK_PARSER_DATA(p) == NULL) {
-        NMO_PARSER_RETURN_EOF("Identifier list is empty");
+        NMO_PARSER_RETURN_TRUNCATED("Identifier list is empty");
     }
 
     // Read the start position from previous identifier's next pointer
     // Reference: int startPos = m_Data[m_ChunkParser->PrevIdentifierPos + 1];
     if (p->prev_identifier_pos + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-        NMO_PARSER_RETURN_EOF("Invalid identifier chain start");
+        NMO_PARSER_RETURN_TRUNCATED("Invalid identifier chain start");
     }
     size_t start_pos = NMO_CHUNK_PARSER_DATA(p)[p->prev_identifier_pos + 1];
     if (start_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-        NMO_PARSER_RETURN_EOF("Identifier chain start out of bounds");
+        NMO_PARSER_RETURN_TRUNCATED("Identifier chain start out of bounds");
     }
     size_t current_pos = start_pos;
     size_t steps = 0;
@@ -995,16 +995,16 @@ nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
         // Search following the chain
         while (NMO_CHUNK_PARSER_DATA(p)[current_pos] != identifier) {
             if (current_pos + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-                NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+                NMO_PARSER_RETURN_TRUNCATED("Identifier chain out of bounds");
             }
             current_pos = NMO_CHUNK_PARSER_DATA(p)[current_pos + 1];
             if (current_pos == 0)
                 break;
             if (current_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-                NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+                NMO_PARSER_RETURN_TRUNCATED("Identifier chain out of bounds");
             }
             if (++steps > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-                NMO_PARSER_RETURN_EOF("Identifier chain cycle detected");
+                NMO_PARSER_RETURN_TRUNCATED("Identifier chain cycle detected");
             }
         }
 
@@ -1022,18 +1022,18 @@ nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t id
     steps = 0;
     while (NMO_CHUNK_PARSER_DATA(p)[current_pos] != identifier) {
         if (current_pos + 1 >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-            NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+            NMO_PARSER_RETURN_TRUNCATED("Identifier chain out of bounds");
         }
         current_pos = NMO_CHUNK_PARSER_DATA(p)[current_pos + 1];
         // Cycle detection: back to start means not found
         // Reference: if (currentPos == startPos) return FALSE;
         if (current_pos == start_pos)
-                NMO_PARSER_RETURN_EOF("Identifier not found");
+                NMO_PARSER_RETURN_TRUNCATED("Identifier not found");
         if (current_pos >= NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-            NMO_PARSER_RETURN_EOF("Identifier chain out of bounds");
+            NMO_PARSER_RETURN_TRUNCATED("Identifier chain out of bounds");
         }
         if (++steps > NMO_CHUNK_PARSER_DATA_SIZE(p)) {
-            NMO_PARSER_RETURN_EOF("Identifier chain cycle detected");
+            NMO_PARSER_RETURN_TRUNCATED("Identifier chain cycle detected");
         }
     }
 
@@ -1107,7 +1107,7 @@ nmo_status_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t 
 
     // Check bounds
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF("Cannot start read sequence");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot start read sequence");
     }
 
     // Read the count
@@ -1138,7 +1138,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     }
 
     if (p->in_subchunk_sequence && p->subchunk_sequence_remaining == 0) {
-        NMO_PARSER_RETURN_EOF("No remaining subchunks");
+        NMO_PARSER_RETURN_TRUNCATED("No remaining subchunks");
     }
 
     size_t start_pos = p->cursor;
@@ -1147,7 +1147,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
 
     // Check if we have enough data
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk size");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk size");
     }
 
     // Read size (in DWORDs, includes the size field itself - so actual data is size-1)
@@ -1161,12 +1161,12 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
 
     // Check if we have enough data for the header
     if (!check_bounds(p, size_dwords)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Subchunk header out of bounds");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Subchunk header out of bounds");
     }
 
     // Read class ID
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk class id");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk class id");
     }
     nmo_class_id_t class_id = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
@@ -1181,7 +1181,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
 
     // Read version info
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk version");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk version");
     }
     uint32_t version_info = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     sub->data_version = version_info & 0xFFFFu;
@@ -1190,26 +1190,26 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
 
     // Read chunk size
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk size");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk size");
     }
     uint32_t chunk_size = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Read hasFile flag
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk file flag");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk file flag");
     }
     uint32_t has_file = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
     (void) has_file; // Not used in non-file context
 
     // Read ID count
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk id count");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk id count");
     }
     uint32_t id_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
     // Read chunk count
     if (!check_bounds(p, 1)) {
-        NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk chunk count");
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk chunk count");
     }
     uint32_t chunk_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
@@ -1237,7 +1237,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
         size_t payload_remaining = payload_capacity - payload_consumed;
         if (payload_remaining > 0) {
             if (!check_bounds(p, 1)) {
-                NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk manager count");
+                NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk manager count");
             }
             manager_count = NMO_CHUNK_PARSER_DATA(p)[p->cursor++];
 
@@ -1254,7 +1254,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     // Allocate and read data buffer
     if (chunk_size > 0) {
         if (!check_bounds(p, chunk_size)) {
-            NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk data");
+            NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk data");
         }
 
         nmo_status_t result = nmo_arena_array_resize(&sub->data, chunk_size);
@@ -1270,7 +1270,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     // Allocate and read IDs buffer
     if (id_count > 0) {
         if (!check_bounds(p, id_count)) {
-            NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk ids");
+            NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk ids");
         }
 
         nmo_status_t result = nmo_arena_array_resize(&sub->ids, id_count);
@@ -1286,7 +1286,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     // Allocate and read chunks buffer (positions)
     if (chunk_count > 0) {
         if (!check_bounds(p, chunk_count)) {
-            NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk refs");
+            NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk refs");
         }
 
         nmo_status_t result = nmo_arena_array_resize(&sub->chunk_refs, chunk_count);
@@ -1302,7 +1302,7 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     // Allocate and read managers buffer
     if (manager_count > 0) {
         if (!check_bounds(p, manager_count)) {
-            NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, "Cannot read subchunk managers");
+            NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(p, start_pos, "Cannot read subchunk managers");
         }
 
         nmo_status_t result = nmo_arena_array_resize(&sub->managers, manager_count);
@@ -1333,7 +1333,7 @@ nmo_status_t nmo_chunk_parser_read_vector2(nmo_chunk_parser_t *p, nmo_vector2_t 
     }
 
     if (!check_bounds(p, 2)) {
-        NMO_PARSER_RETURN_EOF("Cannot read vector2");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read vector2");
     }
 
     // Read 2 floats
@@ -1351,7 +1351,7 @@ nmo_status_t nmo_chunk_parser_read_vector(nmo_chunk_parser_t *p, nmo_vector_t *o
     }
 
     if (!check_bounds(p, 3)) {
-        NMO_PARSER_RETURN_EOF("Cannot read vector");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read vector");
     }
 
     // Read 3 floats
@@ -1370,7 +1370,7 @@ nmo_status_t nmo_chunk_parser_read_vector4(nmo_chunk_parser_t *p, nmo_vector4_t 
     }
 
     if (!check_bounds(p, 4)) {
-        NMO_PARSER_RETURN_EOF("Cannot read vector4");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read vector4");
     }
 
     // Read 4 floats
@@ -1390,7 +1390,7 @@ nmo_status_t nmo_chunk_parser_read_matrix(nmo_chunk_parser_t *p, nmo_matrix_t *o
     }
 
     if (!check_bounds(p, 16)) {
-        NMO_PARSER_RETURN_EOF("Cannot read matrix");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read matrix");
     }
 
     // Read 16 floats (4x4 matrix)
@@ -1406,7 +1406,7 @@ nmo_status_t nmo_chunk_parser_read_quaternion(nmo_chunk_parser_t *p, nmo_quatern
     }
 
     if (!check_bounds(p, 4)) {
-        NMO_PARSER_RETURN_EOF("Cannot read quaternion");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read quaternion");
     }
 
     // Read 4 floats (quaternion)
@@ -1426,7 +1426,7 @@ nmo_status_t nmo_chunk_parser_read_color(nmo_chunk_parser_t *p, nmo_color_t *out
     }
 
     if (!check_bounds(p, 4)) {
-        NMO_PARSER_RETURN_EOF("Cannot read color");
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read color");
     }
 
     // Read 4 floats (RGBA color)
