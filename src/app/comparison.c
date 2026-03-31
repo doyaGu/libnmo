@@ -3,6 +3,14 @@
  * @brief DOM comparison implementation for round-trip testing (Phase 2.4)
  */
 
+/* Diff context strings intentionally truncate when composing multiple
+   NMO_DIFF_CONTEXT_MAX buffers into a single NMO_DIFF_CONTEXT_MAX output.
+   Truncation is safe -- snprintf always NUL-terminates. */
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+#endif
+
 #include "app/nmo_comparison.h"
 #include "app/nmo_session.h"
 #include "object/nmo_object_repository.h"
@@ -189,8 +197,10 @@ int nmo_session_compare_file_info(const nmo_session_t *session1,
         return 0;
     }
     
-    nmo_file_info_t info1 = nmo_session_get_file_info(session1);
-    nmo_file_info_t info2 = nmo_session_get_file_info(session2);
+    const nmo_file_state_t *fs1 = nmo_session_get_file_state(session1);
+    const nmo_file_state_t *fs2 = nmo_session_get_file_state(session2);
+    nmo_file_info_t info1 = fs1 ? fs1->info : (nmo_file_info_t){0};
+    nmo_file_info_t info2 = fs2 ? fs2->info : (nmo_file_info_t){0};
     
     int match = 1;
     
@@ -640,8 +650,12 @@ static int nmo_session_compare_managers(const nmo_session_t *session1,
 
     uint32_t count1 = 0;
     uint32_t count2 = 0;
-    nmo_manager_data_t *managers1 = nmo_session_get_manager_data(session1, &count1);
-    nmo_manager_data_t *managers2 = nmo_session_get_manager_data(session2, &count2);
+    const nmo_file_state_t *mfs1 = nmo_session_get_file_state(session1);
+    const nmo_file_state_t *mfs2 = nmo_session_get_file_state(session2);
+    nmo_manager_data_t *managers1 = mfs1 ? mfs1->manager_data : NULL;
+    nmo_manager_data_t *managers2 = mfs2 ? mfs2->manager_data : NULL;
+    count1 = mfs1 ? mfs1->manager_data_count : 0;
+    count2 = mfs2 ? mfs2->manager_data_count : 0;
 
     result->managers_compared = (count1 > count2) ? count1 : count2;
 
@@ -1066,3 +1080,7 @@ void nmo_comparison_result_format_report(nmo_comparison_result_t *result) {
         }
     }
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
