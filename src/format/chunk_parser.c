@@ -16,7 +16,7 @@
 #define NMO_PARSER_RETURN_INVALID_OFFSET(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, (message))
 #define NMO_PARSER_RETURN_EOF(message) \
-    NMO_PARSER_RETURN_ERROR(NMO_ERR_EOF, (message))
+    NMO_PARSER_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, (message))
 #define NMO_PARSER_RETURN_NOMEM(message) \
     NMO_PARSER_RETURN_ERROR(NMO_ERR_NOMEM, (message))
 
@@ -43,7 +43,7 @@
     } while (0)
 
 #define NMO_PARSER_RETURN_EOF_ROLLBACK(p, start_pos, message) \
-    NMO_PARSER_RETURN_ERROR_ROLLBACK((p), (start_pos), NMO_ERR_EOF, (message))
+    NMO_PARSER_RETURN_ERROR_ROLLBACK((p), (start_pos), NMO_ERR_TRUNCATED_CHUNK, (message))
 
 #define NMO_PARSER_RETURN_NOMEM_ROLLBACK(p, start_pos, message) \
     NMO_PARSER_RETURN_ERROR_ROLLBACK((p), (start_pos), NMO_ERR_NOMEM, (message))

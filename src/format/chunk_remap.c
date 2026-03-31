@@ -113,13 +113,13 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
      * followed by: data[data_size], ids[id_count], chunk_refs[chunk_count], managers[manager_count]
      */
     if (header_pos + header_dwords > parent_dwords) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk header out of bounds");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk header out of bounds");
     }
 
     uint32_t payload_dwords = parent_data[header_pos];
     size_t total_dwords = 1u + (size_t)payload_dwords;
     if (header_pos + total_dwords > parent_dwords) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk payload out of bounds");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk payload out of bounds");
     }
 
     uint32_t version_info = parent_data[header_pos + 2];
@@ -173,7 +173,7 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
 
                 size_t seq_abs = data_start + (size_t)seq_pos;
                 if (seq_abs + 1 > data_end) {
-                    NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds");
+                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds");
                 }
 
                 uint32_t seq_count = parent_data[seq_abs];
@@ -181,13 +181,13 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
 
                 for (uint32_t s = 0; s < seq_count; ++s) {
                     if (cursor >= data_end) {
-                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
+                        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
                     }
 
                     uint32_t payload_dwords = parent_data[cursor];
                     size_t total_dwords = 1u + (size_t)payload_dwords;
                     if (cursor + total_dwords > data_end) {
-                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
+                        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
                     }
 
                     nmo_status_t result = remap_embedded_subchunk_recursive(parent_data,
@@ -306,7 +306,7 @@ static nmo_status_t remap_object_ids_recursive(nmo_chunk_t *chunk,
 
                 size_t seq_abs = (size_t)seq_pos;
                 if (seq_abs + 1 > data_size) {
-                    NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds");
+                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence header out of bounds");
                 }
 
                 uint32_t seq_count = chunk_data[seq_abs];
@@ -314,13 +314,13 @@ static nmo_status_t remap_object_ids_recursive(nmo_chunk_t *chunk,
 
                 for (uint32_t s = 0; s < seq_count; ++s) {
                     if (cursor >= data_size) {
-                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
+                        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
                     }
 
                     uint32_t payload_dwords = chunk_data[cursor];
                     size_t total_dwords = 1u + (size_t)payload_dwords;
                     if (cursor + total_dwords > data_size) {
-                        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
+                        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
                     }
 
                     result = remap_embedded_subchunk_recursive(chunk_data,

@@ -45,13 +45,13 @@ nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state || state->current_pos >= chunk->data.count) {
         *out_id = 0;
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_INFO,
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_INFO,
                          "No identifier available at current position");
     }
 
     if (state->current_pos + 1 >= chunk->data.count) {
         *out_id = 0;
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Truncated identifier entry");
     }
 
@@ -100,7 +100,7 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
         size_t guard = 0;
         while (current_pos < chunk->data.count && data[current_pos] != id) {
             if (current_pos + 1 >= chunk->data.count) {
-                NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                        "Corrupt identifier chain");
             }
             current_pos = data[current_pos + 1];
@@ -115,7 +115,7 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
 
         if (current_pos != 0 && current_pos < chunk->data.count) {
             if (current_pos + 1 >= chunk->data.count) {
-                NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                        "Truncated identifier entry");
             }
             state->prev_identifier_pos = current_pos;
@@ -128,7 +128,7 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     size_t guard = 0;
     while (current_pos < chunk->data.count && data[current_pos] != id) {
         if (current_pos + 1 >= chunk->data.count) {
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                    "Corrupt identifier chain");
         }
         current_pos = data[current_pos + 1];
@@ -148,7 +148,7 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     }
 
     if (current_pos + 1 >= chunk->data.count) {
-        NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                "Truncated identifier entry");
     }
 

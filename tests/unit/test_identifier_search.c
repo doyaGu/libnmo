@@ -90,7 +90,7 @@ TEST(identifier_search, basic) {
 
     // Test seeking to non-existent identifier
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x99999999);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -182,7 +182,7 @@ TEST(identifier_search, single) {
 
     // Try to seek to non-existent identifier
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x12345678);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -249,7 +249,7 @@ TEST(identifier_search, empty_chunk) {
     ASSERT_NOT_NULL(parser);
 
     nmo_status_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x00000001);
-    ASSERT_TRUE(parse_result == NMO_ERR_EOF || parse_result == NMO_ERR_NOT_FOUND);  // Should return EOF or NOT_FOUND for empty chunk
+    ASSERT_TRUE(parse_result == NMO_ERR_TRUNCATED_CHUNK || parse_result == NMO_ERR_NOT_FOUND);  // Should return EOF or NOT_FOUND for empty chunk
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);

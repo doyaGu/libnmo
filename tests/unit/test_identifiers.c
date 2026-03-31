@@ -94,7 +94,7 @@ TEST(identifiers, write_and_read_identifiers) {
 
     // Try seeking to non-existent identifier (should fail)
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0x9999);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     // Cleanup
     nmo_chunk_parser_destroy(parser);
@@ -132,7 +132,7 @@ TEST(identifiers, seek_nonexistent_identifier) {
 
     // Try seeking to non-existent identifier (should fail)
     nmo_status_t parse_result = nmo_chunk_parser_seek_identifier(parser, 0x9999);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     // Cleanup
     nmo_chunk_parser_destroy(parser);

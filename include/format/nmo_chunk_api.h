@@ -94,7 +94,7 @@ static inline nmo_chunk_parser_state_t *nmo_chunk_get_parser_state(
 
 #define NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, message) \
     NMO_CHUNK_CHECK_BOUNDS_OR((chunk), (dwords), \
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "%s", (message)));
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "%s", (message)));
 
 #define NMO_CHUNK_CHECK_BOUNDS(chunk, dwords) \
     NMO_CHUNK_CHECK_BOUNDS_MSG((chunk), (dwords), "Cannot read beyond data")

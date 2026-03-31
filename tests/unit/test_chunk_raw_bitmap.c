@@ -246,7 +246,7 @@ TEST(chunk_raw_bitmap, truncated_plane_keeps_position) {
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
     result = nmo_chunk_read_raw_bitmap(chunk, &decoded, &decoded_pixels);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(decoded_pixels);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 

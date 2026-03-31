@@ -405,7 +405,7 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     size_t dwords = (size + 3) / 4;
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
-        NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                "Cannot read beyond data");
     }
 

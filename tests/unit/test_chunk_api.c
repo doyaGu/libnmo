@@ -180,7 +180,7 @@ TEST(chunk_api, buffer_truncated_payload) {
     size_t out_size = 0;
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
     result = nmo_chunk_read_buffer(chunk, &out_data, &out_size);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 
     nmo_arena_destroy(arena);
@@ -440,7 +440,7 @@ TEST(chunk_api, navigation_read_bounds) {
 
     nmo_chunk_start_read(chunk);
     nmo_status_t result = nmo_chunk_skip(chunk, 3);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0);
 
     result = nmo_chunk_goto(chunk, 3);
@@ -541,7 +541,7 @@ TEST(chunk_api, read_identifier_eof) {
 
     uint32_t identifier = 0;
     result = nmo_chunk_read_identifier(chunk, &identifier);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
 
     nmo_arena_destroy(arena);
 }
@@ -613,7 +613,7 @@ TEST(chunk_api, manager_sequence_truncated_guid_keeps_position) {
     nmo_guid_t manager_guid = {0u, 0u};
     size_t count = 0;
     result = nmo_chunk_start_manager_read_sequence(chunk, &manager_guid, &count);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 
     nmo_arena_destroy(arena);
@@ -707,7 +707,7 @@ TEST(chunk_api, sub_chunk_truncated_header) {
 
     nmo_chunk_t* sub = (nmo_chunk_t*)1;
     result = nmo_chunk_read_sub_chunk(chunk, &sub);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(sub);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 
@@ -907,7 +907,7 @@ TEST(chunk_api, arrays_reject_inconsistent_header) {
 
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
     result = nmo_chunk_read_array(chunk, &read_array, &count, &elem_size);
-    ASSERT_EQ(result, NMO_ERR_EOF);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 
     nmo_arena_destroy(arena);

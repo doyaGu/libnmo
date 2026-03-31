@@ -193,7 +193,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (!nmo_chunk_has_read_capacity(chunk, (size_t) total_size)) {
         state->current_pos = start_pos;
         *out_sub = NULL;
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Sub-chunk out of bounds");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk out of bounds");
     }
 
     // CK2 reads class_id as full DWORD, not WORD
@@ -287,7 +287,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (data_size > 0) {
         if (!nmo_chunk_has_read_capacity(chunk, data_size)) {
             state->current_pos = start_pos;
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                    "Insufficient data");
         }
 
@@ -309,7 +309,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (id_count > 0) {
         if (!nmo_chunk_has_read_capacity(chunk, id_count)) {
             state->current_pos = start_pos;
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                    "Insufficient IDs data");
         }
 
@@ -331,7 +331,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (chunk_count > 0) {
         if (!nmo_chunk_has_read_capacity(chunk, chunk_count)) {
             state->current_pos = start_pos;
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                    "Insufficient chunk refs data");
         }
 
@@ -353,7 +353,7 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (manager_count > 0) {
         if (!nmo_chunk_has_read_capacity(chunk, manager_count)) {
             state->current_pos = start_pos;
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                    "Insufficient manager refs data");
         }
 

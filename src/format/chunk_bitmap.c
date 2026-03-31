@@ -29,7 +29,7 @@ static nmo_status_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
 
     size_t dwords = nmo_bytes_to_dwords(size);
     NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
-        return make_error(NMO_ERR_EOF, "Insufficient chunk data");
+        return make_error(NMO_ERR_TRUNCATED_CHUNK, "Insufficient chunk data");
     });
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
@@ -59,7 +59,7 @@ static nmo_status_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
     size_t start_pos = state->current_pos;
 
     if (!nmo_chunk_has_read_capacity(chunk, 1u)) {
-        return make_error(NMO_ERR_EOF, label ? label : "Insufficient chunk data");
+        return make_error(NMO_ERR_TRUNCATED_CHUNK, label ? label : "Insufficient chunk data");
     }
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -72,7 +72,7 @@ static nmo_status_t nmo_chunk_bitmap_read_buffer_in_arena(nmo_chunk_t *chunk,
     size_t dwords = nmo_bytes_to_dwords(size);
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
-        return make_error(NMO_ERR_EOF, label ? label : "Insufficient chunk data");
+        return make_error(NMO_ERR_TRUNCATED_CHUNK, label ? label : "Insufficient chunk data");
     }
 
     void *buffer = nmo_arena_alloc(arena, size, 1);

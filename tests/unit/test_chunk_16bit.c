@@ -335,7 +335,7 @@ TEST(chunk_16bit, error_handling) {
 
     // Try to read beyond end
     parse_result = nmo_chunk_parser_read_dword_as_words(parser, &val);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     // Test NULL pointer checks
     parse_result = nmo_chunk_parser_read_dword_as_words(NULL, &val);

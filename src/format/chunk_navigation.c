@@ -50,7 +50,7 @@ nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
 
     if (state->data_size == chunk->data.count) {
         if (new_pos > chunk->data.count) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR,
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Cannot skip beyond readable data");
         }
         state->current_pos = new_pos;

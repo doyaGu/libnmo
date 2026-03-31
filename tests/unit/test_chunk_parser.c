@@ -182,7 +182,7 @@ TEST(chunk_parser, string_truncated_keeps_position) {
 
     char* read_str = NULL;
     nmo_status_t parse_result = nmo_chunk_parser_read_string(parser, &read_str, arena);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(read_str);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
 
@@ -262,7 +262,7 @@ TEST(chunk_parser, legacy_object_id_truncated_keeps_position) {
 
     nmo_object_id_t obj_id = 0;
     nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &obj_id);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
 
     nmo_chunk_parser_destroy(parser);
@@ -337,7 +337,7 @@ TEST(chunk_parser, manager_sequence_truncated_guid_keeps_position) {
     nmo_guid_t guid = {0u, 0u};
     size_t count = 0;
     nmo_status_t parse_result = nmo_chunk_parser_start_manager_sequence(parser, &guid, &count);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
 
     nmo_chunk_parser_destroy(parser);
@@ -363,7 +363,7 @@ TEST(chunk_parser, subchunk_truncated_header_keeps_position) {
 
     nmo_chunk_t *sub = (nmo_chunk_t *)1;
     nmo_status_t parse_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(sub);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
 
@@ -448,7 +448,7 @@ TEST(chunk_parser, identifier_navigation) {
 
     // Try to seek a non-existent ID
     parse_result = nmo_chunk_parser_seek_identifier(parser, 0xBADBAD);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
@@ -478,7 +478,7 @@ TEST(chunk_parser, bounds_checking) {
 
     // Second read should fail (EOF)
     parse_result = nmo_chunk_parser_read_dword(parser, &val);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
 
     // at_end should return true
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
@@ -512,7 +512,7 @@ TEST(chunk_parser, array_lendian_overflow) {
     if (SIZE_MAX == UINT32_MAX) {
         ASSERT_EQ(parse_result, NMO_ERR_INVALID_FORMAT);
     } else {
-        ASSERT_EQ(parse_result, NMO_ERR_EOF);
+        ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     }
     ASSERT_NULL(array);
     ASSERT_EQ(count, 0u);
@@ -545,7 +545,7 @@ TEST(chunk_parser, array_lendian_truncated_keeps_position) {
     void *array = NULL;
     size_t count = 0;
     nmo_status_t parse_result = nmo_chunk_parser_read_array_lendian(parser, &array, &count, arena);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(array);
     ASSERT_EQ(count, 0u);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
@@ -576,7 +576,7 @@ TEST(chunk_parser, buffer_truncated_keeps_position) {
     void *buffer = NULL;
     size_t size = 0;
     nmo_status_t parse_result = nmo_chunk_parser_read_buffer(parser, &buffer, &size, arena);
-    ASSERT_EQ(parse_result, NMO_ERR_EOF);
+    ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(buffer);
     ASSERT_EQ(size, 8u);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
