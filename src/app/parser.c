@@ -11,6 +11,7 @@
 #include "app/nmo_session.h"
 #include "session/nmo_session_internal.h"
 #include "extension/nmo_extension_registry.h"
+#include "extension/nmo_extension_diagnostics.h"
 #include "app/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
@@ -44,21 +45,6 @@
 
 #define NMO_PARSER_MAX_HEADER1_SIZE (64u * 1024u * 1024u)
 
-/**
- * @brief Get plugin category label for logging
- */
-static const char *nmo_plugin_category_label(uint32_t category) {
-    switch (category) {
-        case NMO_PLUGIN_MANAGER_DLL:  return "Manager";
-        case NMO_PLUGIN_BEHAVIOR_DLL: return "Behavior";
-        case NMO_PLUGIN_RENDER_DLL:   return "Render";
-        case NMO_PLUGIN_SOUND_DLL:    return "Sound";
-        case NMO_PLUGIN_INPUT_DLL:    return "Input";
-        case NMO_PLUGIN_OBJECT_READER_DLL: return "ObjectReader";
-        case NMO_PLUGIN_CUSTOM_DLL: return "Custom";
-        default: return "Unknown";
-    }
-}
 
 /**
  * @brief Register included file with metadata only (for Header1 metadata entries)
@@ -596,7 +582,7 @@ static int nmo_load_file_with_io(
                         "  Missing plugin %zu: guid=%s category=%s version=%u",
                         i,
                         guid_buffer,
-                        nmo_plugin_category_label(entry->category),
+                        nmo_extension_category_label(entry->category),
                         entry->required_version);
                 continue;
             }

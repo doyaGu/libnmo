@@ -83,6 +83,18 @@ NMO_API size_t nmo_extension_check_dependencies(
     size_t count,
     nmo_extension_dependency_result_t *out_results);
 
+/* ============================================================================
+ * Category Labels
+ * ============================================================================ */
+
+/**
+ * @brief Get human-readable label for a plugin category
+ *
+ * @param category Plugin category enum value
+ * @return Static string label (e.g. "Manager", "Behavior", "Render")
+ */
+NMO_API const char *nmo_extension_category_label(nmo_plugin_category_t category);
+
 #ifdef __cplusplus
 }
 #endif
