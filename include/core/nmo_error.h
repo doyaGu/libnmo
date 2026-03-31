@@ -38,6 +38,7 @@ typedef enum nmo_error_code {
     NMO_ERR_INVALID_FORMAT,       /**< Invalid format */
     NMO_ERR_INVALID_OFFSET,       /**< Invalid offset */
     NMO_ERR_EOF,                  /**< Unexpected end of file */
+    NMO_ERR_TRUNCATED_CHUNK,      /**< Chunk data truncated (overread) */
     NMO_ERR_INVALID_ARGUMENT,     /**< Invalid argument */
     NMO_ERR_INVALID_STATE,        /**< Invalid state */
     NMO_ERR_NOT_IMPLEMENTED,      /**< Not implemented */
