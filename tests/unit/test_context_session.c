@@ -267,13 +267,14 @@ TEST(context_session, session_file_info) {
     nmo_session_t* session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
 
-    /* Get default file info (should be all zeros) */
-    nmo_file_info_t info = nmo_session_get_file_info(session);
-    ASSERT_EQ(0, info.file_version);
-    ASSERT_EQ(0, info.file_version2);
-    ASSERT_EQ(0, info.product_version);
-    ASSERT_EQ(0, info.product_build);
-    ASSERT_EQ(0, info.object_count);
+    /* Get default file state (should be all zeros) */
+    const nmo_file_state_t *fs = nmo_session_get_file_state(session);
+    ASSERT_NOT_NULL(fs);
+    ASSERT_EQ(0, fs->info.file_version);
+    ASSERT_EQ(0, fs->info.file_version2);
+    ASSERT_EQ(0, fs->info.product_version);
+    ASSERT_EQ(0, fs->info.product_build);
+    ASSERT_EQ(0, fs->info.object_count);
 
     /* Set file info */
     nmo_file_info_t new_info = {
@@ -292,16 +293,17 @@ TEST(context_session, session_file_info) {
     ASSERT_EQ(NMO_OK, result);
 
     /* Verify file info was set */
-    info = nmo_session_get_file_info(session);
-    ASSERT_EQ(8, info.file_version);
-    ASSERT_EQ(1, info.file_version2);
-    ASSERT_EQ(0x13022002, info.ck_version);
-    ASSERT_EQ(0x01020304, info.product_version);
-    ASSERT_EQ(0x55667788, info.product_build);
-    ASSERT_EQ(12345, info.file_size);
-    ASSERT_EQ(42, info.object_count);
-    ASSERT_EQ(3, info.manager_count);
-    ASSERT_EQ(0x01, info.write_mode);
+    fs = nmo_session_get_file_state(session);
+    ASSERT_NOT_NULL(fs);
+    ASSERT_EQ(8, fs->info.file_version);
+    ASSERT_EQ(1, fs->info.file_version2);
+    ASSERT_EQ(0x13022002, fs->info.ck_version);
+    ASSERT_EQ(0x01020304, fs->info.product_version);
+    ASSERT_EQ(0x55667788, fs->info.product_build);
+    ASSERT_EQ(12345, fs->info.file_size);
+    ASSERT_EQ(42, fs->info.object_count);
+    ASSERT_EQ(3, fs->info.manager_count);
+    ASSERT_EQ(0x01, fs->info.write_mode);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

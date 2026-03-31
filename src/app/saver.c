@@ -375,8 +375,11 @@ nmo_save_context_t *nmo_save_context_create(
         save_ctx->options = nmo_save_options_default();
     }
 
-    /* Get file info from session */
-    save_ctx->file_info = nmo_session_get_file_info(session);
+    /* Get file info from session file state */
+    const nmo_file_state_t *fstate = nmo_session_get_file_state(session);
+    if (fstate != NULL) {
+        save_ctx->file_info = fstate->info;
+    }
 
     return save_ctx;
 }
@@ -567,7 +570,8 @@ nmo_status_t nmo_save_file(
         resolved = nmo_save_options_default();
 
         /* Inherit compression from the session's original file */
-        nmo_file_info_t fi = nmo_session_get_file_info(session);
+        const nmo_file_state_t *fs = nmo_session_get_file_state(session);
+        nmo_file_info_t fi = fs ? fs->info : (nmo_file_info_t){0};
         resolved.compress_header = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
         resolved.compress_data   = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_DATA)   != 0;
     } else {
@@ -730,9 +734,9 @@ static nmo_status_t save_serialize_managers(nmo_save_context_t *ctx) {
     nmo_id_remap_table_t *remap_table = ctx->file_index_remap;
 
     /* Get session manager data for round-trip preservation */
-    uint32_t session_manager_count = 0;
-    nmo_manager_data_t *session_managers = nmo_session_get_manager_data(
-        ctx->session, &session_manager_count);
+    const nmo_file_state_t *mgr_fstate = nmo_session_get_file_state(ctx->session);
+    uint32_t session_manager_count = mgr_fstate ? mgr_fstate->manager_data_count : 0;
+    nmo_manager_data_t *session_managers = mgr_fstate ? mgr_fstate->manager_data : NULL;
 
     uint32_t registered_count = 0;
     if (ctx->manager_reg != NULL) {
@@ -1043,9 +1047,9 @@ static nmo_status_t save_build_header1(nmo_save_context_t *ctx) {
 
     /* Build plugin dependencies */
     {
-        uint32_t stored_plugin_count = 0;
-        nmo_plugin_dep_t *stored_plugin_deps = nmo_session_get_plugin_dependencies(
-            ctx->session, &stored_plugin_count);
+        const nmo_file_state_t *dep_fstate = nmo_session_get_file_state(ctx->session);
+        uint32_t stored_plugin_count = dep_fstate ? dep_fstate->plugin_dep_count : 0;
+        nmo_plugin_dep_t *stored_plugin_deps = dep_fstate ? dep_fstate->plugin_deps : NULL;
 
         if (stored_plugin_deps != NULL && stored_plugin_count > 0) {
             ctx->plugin_deps = stored_plugin_deps;

@@ -54,20 +54,12 @@ typedef struct nmo_session {
     nmo_shadow_storage_t *shadow_storage;
 
 
-    /* File information */
-    nmo_file_info_t file_info;
-    
+    /* Consolidated file round-trip state */
+    nmo_file_state_t file_state;
+
     /* File header (stored opaquely in arena to avoid format layer dependency) */
     void *file_header;
     size_t file_header_size;
-
-    /* Manager data for round-trip */
-    nmo_manager_data_t *manager_data;
-    uint32_t manager_data_count;
-
-    /* Plugin dependency data */
-    nmo_plugin_dep_t *plugin_deps;
-    uint32_t plugin_dep_count;
 
     /* Included files */
     nmo_arena_array_t included_files;
@@ -152,13 +144,10 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     }
 
     /* Initialize file info to zero */
-    memset(&session->file_info, 0, sizeof(nmo_file_info_t));
+    /* file_state already zeroed by memset above */
 
-    /* Initialize manager data */
-    session->manager_data = NULL;
-    session->manager_data_count = 0;
-    session->plugin_deps = NULL;
-    session->plugin_dep_count = 0;
+    /* Initialize file state */
+    memset(&session->file_state, 0, sizeof(session->file_state));
     session->chunk_pool = NULL;
     session->chunk_pool_capacity = 0;
 
@@ -318,16 +307,13 @@ nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
 }
 
 /**
- * Get file info
+ * Get consolidated file state
  */
-nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session) {
-    if (session) {
-        return session->file_info;
+const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *session) {
+    if (session == NULL) {
+        return NULL;
     }
-
-    nmo_file_info_t empty;
-    memset(&empty, 0, sizeof(nmo_file_info_t));
-    return empty;
+    return &session->file_state;
 }
 
 /**
@@ -338,7 +324,7 @@ int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *inf
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    session->file_info = *info;
+    session->file_state.info = *info;
     return NMO_OK;
 }
 
@@ -347,28 +333,14 @@ int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *inf
  */
 void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_data_t *data, uint32_t count) {
     if (session != NULL) {
-        session->manager_data = data;
-        session->manager_data_count = count;
+        session->file_state.manager_data = data;
+        session->file_state.manager_data_count = count;
     }
 }
 
 /**
- * Get manager data
+ * Set plugin dependencies
  */
-nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, uint32_t *out_count) {
-    if (session == NULL) {
-        if (out_count != NULL) {
-            *out_count = 0;
-        }
-        return NULL;
-    }
-
-    if (out_count != NULL) {
-        *out_count = session->manager_data_count;
-    }
-    return session->manager_data;
-}
-
 int nmo_session_set_plugin_dependencies(
     nmo_session_t *session,
     nmo_plugin_dep_t *deps,
@@ -378,8 +350,8 @@ int nmo_session_set_plugin_dependencies(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    session->plugin_deps = deps;
-    session->plugin_dep_count = count;
+    session->file_state.plugin_deps = deps;
+    session->file_state.plugin_dep_count = count;
 
     if (deps == NULL || count == 0) {
         nmo_context_t *ctx = nmo_session_get_context(session);
@@ -393,24 +365,6 @@ int nmo_session_set_plugin_dependencies(
     }
 
     return nmo_session_refresh_plugin_diagnostics(session);
-}
-
-nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(
-    const nmo_session_t *session,
-    uint32_t *out_count
-) {
-    if (session == NULL) {
-        if (out_count != NULL) {
-            *out_count = 0;
-        }
-        return NULL;
-    }
-
-    if (out_count != NULL) {
-        *out_count = session->plugin_dep_count;
-    }
-
-    return session->plugin_deps;
 }
 
 static int nmo_session_copy_owner_ids(
@@ -980,8 +934,8 @@ int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session) {
 
     return nmo_session_build_plugin_diagnostics(
         session,
-        session->plugin_deps,
-        session->plugin_dep_count,
+        session->file_state.plugin_deps,
+        session->file_state.plugin_dep_count,
         NULL,
         NULL);
 }

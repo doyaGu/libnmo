@@ -280,7 +280,8 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    nmo_file_info_t info = nmo_session_get_file_info(repl->session);
+    const nmo_file_state_t *fst = nmo_session_get_file_state(repl->session);
+    nmo_file_info_t info = fst ? fst->info : (nmo_file_info_t){0};
     size_t object_count = 0;
     nmo_object_t **objects = NULL;
     nmo_session_get_objects(repl->session, &objects, &object_count);

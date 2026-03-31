@@ -50,6 +50,24 @@ typedef struct nmo_file_info {
     uint32_t write_mode;      /**< Write mode flags */
 } nmo_file_info_t;
 
+/* Forward declaration for format-layer types used in file state */
+typedef struct nmo_manager_data nmo_manager_data_t;
+
+/**
+ * @brief Consolidated file round-trip state
+ *
+ * Groups all format-layer metadata that must be preserved for lossless
+ * round-trip serialization: file info, manager data, and plugin dependencies.
+ * All pointer fields are borrowed (arena-allocated during load).
+ */
+typedef struct nmo_file_state {
+    nmo_file_info_t info;                   /**< File header metadata */
+    nmo_manager_data_t *manager_data;       /**< Manager serialization data (borrowed) */
+    uint32_t manager_data_count;            /**< Number of manager entries */
+    nmo_plugin_dep_t *plugin_deps;          /**< Plugin dependency table (borrowed) */
+    uint32_t plugin_dep_count;              /**< Number of plugin dependencies */
+} nmo_file_state_t;
+
 /**
  * @brief Create session
  *
@@ -203,20 +221,18 @@ NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
     size_t initial_capacity_hint);
 
 /**
- * @brief Get file info
+ * @brief Get consolidated file round-trip state
  *
- * Returns information about the file associated with this session.
- * Valid after a successful load operation.
+ * Returns a read-only view of all format-layer metadata needed for
+ * lossless round-trip: file info, manager data, and plugin dependencies.
  *
  * @param session Session
- * @return File information
+ * @return File state pointer, or NULL if no file has been loaded
  */
-NMO_API nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session);
+NMO_API const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *session);
 
 /**
  * @brief Set file info
- *
- * Sets file information for the session. Used during load/save operations.
  *
  * @param session Session
  * @param info File information to set
@@ -224,43 +240,21 @@ NMO_API nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session);
  */
 NMO_API int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info);
 
-/* Forward declaration for manager data */
-typedef struct nmo_manager_data nmo_manager_data_t;
-
 /**
- * @brief Set manager data
- *
- * Sets manager data for the session (for round-trip serialization).
- *
- * @param session Session
- * @param data Manager data array (borrowed, not owned)
- * @param count Number of managers
+ * @brief Set manager data (borrowed pointers, arena-allocated)
  */
 NMO_API void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_data_t *data, uint32_t count);
 
 /**
- * @brief Get manager data
+ * @brief Set plugin dependencies (borrowed pointers, arena-allocated)
  *
- * Gets manager data from the session.
- *
- * @param session Session
- * @param out_count Output manager count (optional)
- * @return Manager data array or NULL
- */
-NMO_API nmo_manager_data_t *nmo_session_get_manager_data(const nmo_session_t *session, uint32_t *out_count);
-
-/**
- * @brief Store plugin dependency metadata (borrowed pointer)
+ * Also triggers plugin dependency diagnostics refresh.
+ * @return NMO_OK on success
  */
 NMO_API int nmo_session_set_plugin_dependencies(nmo_session_t *session, nmo_plugin_dep_t *deps, uint32_t count);
 
 /**
- * @brief Retrieve plugin dependency metadata from session
- */
-NMO_API nmo_plugin_dep_t *nmo_session_get_plugin_dependencies(const nmo_session_t *session, uint32_t *out_count);
-
-/**
- * @brief Rebuild plugin dependency diagnostics based on current metadata.
+ * @brief Rebuild plugin dependency diagnostics based on current file state.
  */
 NMO_API int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session);
 
