@@ -38,6 +38,9 @@ add_integration_test(test_type_invalidation)
 # Phase 6.7: Complete Type System Integration Test
 add_integration_test(test_type_system_complete)
 
+# Phase 3: Object type coverage verification
+add_integration_test(test_object_type_coverage)
+
 # Runtime clean-break integration tests
 add_integration_test(test_runtime_load_pipeline)
 add_integration_test(test_runtime_copy_behavior_graph)
