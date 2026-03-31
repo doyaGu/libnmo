@@ -65,8 +65,7 @@ NMO_API int nmo_object_repository_add(nmo_object_repository_t *repository, nmo_o
 
 /**
  * @brief Find object by ID
- * @param repository Repository
- * @param id Object ID
+ * @ownership borrowed (owned by repository)
  * @return Object or NULL if not found
  */
 NMO_API nmo_object_t *nmo_object_repository_find_by_id(const nmo_object_repository_t *repository,
@@ -74,8 +73,7 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_id(const nmo_object_reposito
 
 /**
  * @brief Find object by name
- * @param repository Repository
- * @param name Object name
+ * @ownership borrowed (owned by repository)
  * @return Object or NULL if not found
  */
 NMO_API nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_repository_t *repository,
@@ -124,8 +122,7 @@ NMO_API nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *re
 
 /**
  * @brief Get object by index
- * @param repository Repository
- * @param index Object index
+ * @ownership borrowed (owned by repository)
  * @return Object or NULL if index out of bounds
  */
 NMO_API nmo_object_t *nmo_object_repository_get_by_index(const nmo_object_repository_t *repository,

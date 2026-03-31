@@ -91,36 +91,25 @@ NMO_API void nmo_session_destroy(nmo_session_t *session);
 
 /**
  * @brief Get context
- *
- * Returns the retained context pointer.
- *
- * @param session Session
- * @return Context
+ * @ownership borrowed (retained by session until destroy)
  */
 NMO_API nmo_context_t *nmo_session_get_context(const nmo_session_t *session);
 
 /**
- * @brief Get extension registry (borrowed from context)
+ * @brief Get extension registry
+ * @ownership borrowed (owned by context)
  */
 NMO_API nmo_extension_registry_t *nmo_session_get_extension_registry(const nmo_session_t *session);
 
 /**
- * @brief Get arena
- *
- * Returns the session-owned arena for temporary allocations.
- *
- * @param session Session
- * @return Arena
+ * @brief Get arena for temporary allocations
+ * @ownership borrowed (owned by session)
  */
 NMO_API nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session);
 
 /**
  * @brief Get object repository
- *
- * Returns the session-owned object repository.
- *
- * @param session Session
- * @return Object repository
+ * @ownership borrowed (owned by session)
  */
 NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session);
 
