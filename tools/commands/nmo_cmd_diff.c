@@ -220,10 +220,8 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Get file info from both sessions */
-    const nmo_file_state_t *fst1 = nmo_session_get_file_state(ses1);
-    const nmo_file_state_t *fst2 = nmo_session_get_file_state(ses2);
-    nmo_file_info_t info1 = fst1 ? fst1->info : (nmo_file_info_t){0};
-    nmo_file_info_t info2 = fst2 ? fst2->info : (nmo_file_info_t){0};
+    nmo_file_info_t info1 = nmo_session_get_file_info(ses1);
+    nmo_file_info_t info2 = nmo_session_get_file_info(ses2);
 
     /* Build per-class breakdown */
     nmo_object_repository_t *repo1 = nmo_session_get_repository(ses1);

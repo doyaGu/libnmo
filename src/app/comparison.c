@@ -197,10 +197,8 @@ int nmo_session_compare_file_info(const nmo_session_t *session1,
         return 0;
     }
     
-    const nmo_file_state_t *fs1 = nmo_session_get_file_state(session1);
-    const nmo_file_state_t *fs2 = nmo_session_get_file_state(session2);
-    nmo_file_info_t info1 = fs1 ? fs1->info : (nmo_file_info_t){0};
-    nmo_file_info_t info2 = fs2 ? fs2->info : (nmo_file_info_t){0};
+    nmo_file_info_t info1 = nmo_session_get_file_info(session1);
+    nmo_file_info_t info2 = nmo_session_get_file_info(session2);
     
     int match = 1;
     

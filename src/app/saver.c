@@ -375,11 +375,8 @@ nmo_save_context_t *nmo_save_context_create(
         save_ctx->options = nmo_save_options_default();
     }
 
-    /* Get file info from session file state */
-    const nmo_file_state_t *fstate = nmo_session_get_file_state(session);
-    if (fstate != NULL) {
-        save_ctx->file_info = fstate->info;
-    }
+    /* Get file info from session */
+    save_ctx->file_info = nmo_session_get_file_info(session);
 
     return save_ctx;
 }
@@ -570,8 +567,7 @@ nmo_status_t nmo_save_file(
         resolved = nmo_save_options_default();
 
         /* Inherit compression from the session's original file */
-        const nmo_file_state_t *fs = nmo_session_get_file_state(session);
-        nmo_file_info_t fi = fs ? fs->info : (nmo_file_info_t){0};
+        nmo_file_info_t fi = nmo_session_get_file_info(session);
         resolved.compress_header = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
         resolved.compress_data   = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_DATA)   != 0;
     } else {

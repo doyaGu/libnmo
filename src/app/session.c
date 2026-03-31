@@ -312,9 +312,15 @@ const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *session)
     return &session->file_state;
 }
 
-/**
- * Set file info
- */
+nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session) {
+    if (session) {
+        return session->file_state.info;
+    }
+    nmo_file_info_t empty;
+    memset(&empty, 0, sizeof(empty));
+    return empty;
+}
+
 int nmo_session_set_file_info(nmo_session_t *session, const nmo_file_info_t *info) {
     if (session == NULL || info == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;

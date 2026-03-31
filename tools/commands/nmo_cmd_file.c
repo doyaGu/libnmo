@@ -41,8 +41,7 @@ static int file_info_single(const char *file_path,
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
-    const nmo_file_state_t *fst = nmo_session_get_file_state(session);
-    nmo_file_info_t info = fst ? fst->info : (nmo_file_info_t){0};
+    nmo_file_info_t info = nmo_session_get_file_info(session);
 
     if (doc && data) {
         yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);

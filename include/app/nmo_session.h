@@ -221,6 +221,13 @@ NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
 NMO_API const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *session);
 
 /**
+ * @brief Get file info
+ * @ownership borrowed (embedded in session file state)
+ * @return File information (zero-initialized if no file loaded)
+ */
+NMO_API nmo_file_info_t nmo_session_get_file_info(const nmo_session_t *session);
+
+/**
  * @brief Set file info
  *
  * @param session Session

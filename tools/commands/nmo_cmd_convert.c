@@ -189,8 +189,7 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
     }
 
     /* Get file info */
-    const nmo_file_state_t *fst = nmo_session_get_file_state(session);
-    nmo_file_info_t info = fst ? fst->info : (nmo_file_info_t){0};
+    nmo_file_info_t info = nmo_session_get_file_info(session);
 
     /* If no output, just show version info */
     if (!output_path) {
