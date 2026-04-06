@@ -15,6 +15,7 @@
 
 #include "nmo.h"
 #include "app/nmo_behavior_graph.h"
+#include "app/nmo_script_walker.h"
 #include "app/nmo_context.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
@@ -937,5 +938,101 @@ cleanup:
         nmo_cli_close_output_stream(global, out);
     }
     return exit_code;
+}
+
+/* ============================================================================
+ * behavior dump — dump behavior tree with decoded parameter values
+ * ============================================================================ */
+
+int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    const char *id_str = NULL;
+    const char *file_path = NULL;
+    bool dump_all = false;
+
+    int non_opt = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--all") == 0 || strcmp(argv[i], "-a") == 0) {
+            dump_all = true;
+            continue;
+        }
+        if (argv[i][0] != '-') {
+            non_opt++;
+            if (non_opt == 1) id_str = argv[i];
+            if (non_opt == 2) file_path = argv[i];
+        }
+    }
+
+    if (dump_all) {
+        /* --all mode: id_str is actually the file path */
+        if (!id_str) {
+            fprintf(stderr, "Usage: nmo behavior dump --all <file>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        file_path = id_str;
+        id_str = NULL;
+    } else if (!id_str || !file_path) {
+        fprintf(stderr, "Usage: nmo behavior dump [--all] [<id>] <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256];
+    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    char out_err[128];
+    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!out) {
+        nmo_tool_close_session(ctx, session);
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    if (dump_all) {
+        /* Find and dump all scripts */
+        nmo_array_t scripts;
+        nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 16, NULL);
+
+        nmo_script_walker_find_scripts(ctx, session, &scripts);
+
+        size_t count = scripts.count;
+        fprintf(out, "Scripts found: %zu\n\n", count);
+
+        for (size_t i = 0; i < count; ++i) {
+            const nmo_script_entry_t *entry =
+                (const nmo_script_entry_t *)nmo_array_get(&scripts, i);
+            fprintf(out, "=== Script #%u", entry->script_id);
+            if (entry->script_name && entry->script_name[0]) {
+                fprintf(out, " \"%s\"", entry->script_name);
+            }
+            fprintf(out, " (owner: #%u", entry->owner_id);
+            if (entry->owner_name && entry->owner_name[0]) {
+                fprintf(out, " \"%s\"", entry->owner_name);
+            }
+            fprintf(out, ") ===\n");
+
+            nmo_script_walker_dump_text(ctx, session, entry->script_id, out);
+            fprintf(out, "\n");
+        }
+
+        nmo_array_dispose(&scripts);
+    } else {
+        uint32_t object_id;
+        if (!nmo_tool_parse_u32(id_str, &object_id)) {
+            fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+            nmo_tool_close_session(ctx, session);
+            nmo_cli_close_output_stream(global, out);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+
+        nmo_script_walker_dump_text(ctx, session, object_id, out);
+    }
+
+    nmo_tool_close_session(ctx, session);
+    nmo_cli_close_output_stream(global, out);
+    return NMO_CLI_EXIT_SUCCESS;
 }
 

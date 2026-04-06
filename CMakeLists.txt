@@ -322,6 +322,8 @@ set(NMO_APP_SOURCES
     src/app/object_hierarchy.c
     src/app/behavior_graph.c
     src/app/object_diff.c
+    src/app/param_value.c
+    src/app/script_walker.c
 )
 
 set(NMO_JSON_SOURCES

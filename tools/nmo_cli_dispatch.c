@@ -391,6 +391,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage},
     {"show", "s", "Show behavior object", nmo_cmd_behavior_show, behavior_show_usage},
     {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage},
+    {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL},
 };
 
 /* parameter group actions */

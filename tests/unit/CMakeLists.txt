@@ -156,6 +156,12 @@ else()
     message(STATUS "Skipping test_app_util/test_object_summary_api (nmo_json target unavailable)")
 endif()
 
+# Parameter value decoding
+add_unit_test(test_param_value)
+
+# Script walker
+add_unit_test(test_script_walker)
+
 # Context and session integration
 add_unit_test(test_context_session)
 add_unit_test(test_context_threadsafe)  # Thread-safety tests

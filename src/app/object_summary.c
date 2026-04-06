@@ -1191,7 +1191,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         return true;
     }
 
-    /* Skip base class embedding fields ï¿?these are handled by the flattening
+    /* Skip base class embedding fields -- these are handled by the flattening
      * walker in nmo_summary_emit_reflection_fields_recursive(). */
     if (!(field->flags & NMO_FIELD_REPEATED) &&
         !nmo_guid_is_null(ctx->owner_type->base_type))
