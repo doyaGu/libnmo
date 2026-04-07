@@ -115,7 +115,7 @@ TEST(script_walker, walk_with_file) {
     /* Walk the first script — NULL visitor should fail */
     nmo_status_t st = nmo_script_walker_walk(
         ctx, session, entry->script_id,
-        /* visitor: */ (nmo_behavior_visitor_fn)(void *)NULL, NULL);
+        /* visitor: */ NULL, NULL);
     /* NULL visitor should be caught */
     ASSERT_NE(NMO_OK, st);
 
