@@ -58,6 +58,7 @@ typedef struct {
 typedef struct {
     nmo_opt_val_t *vals;     /**< Array parallel to defs[], caller-allocated */
     const char **pos_args;   /**< Positional arguments (points into argv) */
+    size_t pos_capacity;     /**< Capacity of pos_args array */
     size_t pos_count;        /**< Number of positional arguments */
 } nmo_opt_result_t;
 

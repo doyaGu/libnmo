@@ -532,7 +532,7 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     const char *token = argv[1];
 
     /* Buffer for regex pattern extraction (must outlive filter) */
-    static char regex_buf[256];
+    char regex_buf[256];
 
     if (strcmp(token, "class") == 0 && argc > 2) {
         const char *arg = argv[2];

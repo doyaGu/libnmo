@@ -49,6 +49,10 @@ int nmo_opt_parse(int argc, char **argv,
 
         /* Positional argument */
         if (stop_options || arg[0] != '-') {
+            if (result->pos_capacity > 0 && result->pos_count >= result->pos_capacity) {
+                fprintf(stderr, "Error: Too many positional arguments\n");
+                return -1;
+            }
             result->pos_args[result->pos_count++] = arg;
             continue;
         }

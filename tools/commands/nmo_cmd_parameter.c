@@ -28,7 +28,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-static int is_parameter_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
         return 0;
     }
@@ -137,7 +137,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!is_parameter_class((nmo_type_registry_t *)c.registry, class_id)) {
+            if (!is_parameter_class(c.registry, class_id)) {
                 continue;
             }
 
@@ -176,7 +176,7 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_parameter_class((nmo_type_registry_t *)c.registry, class_id)) {
+            if (!is_parameter_class(c.registry, class_id)) {
                 continue;
             }
 
@@ -238,7 +238,7 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    if (!is_parameter_class((nmo_type_registry_t *)c.registry, cid)) {
+    if (!is_parameter_class(c.registry, cid)) {
         /* Fall back to generic object show for non-parameter objects */
         nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
         return nmo_cmd_object_show(argc, argv, global);
@@ -587,7 +587,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool dump_all = vals[0].val.flag;
@@ -646,7 +646,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!is_parameter_class((nmo_type_registry_t *)c.registry, class_id)) {
+            if (!is_parameter_class(c.registry, class_id)) {
                 continue;
             }
 
@@ -678,7 +678,7 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
 
         nmo_class_id_t cid = nmo_object_get_class_id(obj);
-        if (!is_parameter_class((nmo_type_registry_t *)c.registry, cid)) {
+        if (!is_parameter_class(c.registry, cid)) {
             fprintf(stderr, "Error: Object #%u is not a parameter (class %u)\n", object_id, cid);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }

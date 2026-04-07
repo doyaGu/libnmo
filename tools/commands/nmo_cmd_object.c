@@ -77,7 +77,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
@@ -634,7 +634,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
@@ -821,7 +821,7 @@ static int cli_refs_text_visitor(const nmo_core_ref_info_t *info,
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_opt_val_t vals[1]; /* no named options currently */
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     /* Parse with empty option table to collect positional args */
     if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 

@@ -419,7 +419,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     };
     nmo_opt_val_t vals[3];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *index_str = vals[0].present ? vals[0].val.str : NULL;
@@ -717,7 +717,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter = vals[0].present ? vals[0].val.str : NULL;

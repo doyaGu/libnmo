@@ -217,7 +217,7 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *index_str = vals[0].present ? vals[0].val.str : NULL;
@@ -367,7 +367,7 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     };
     nmo_opt_val_t vals[4];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *out_dir = vals[0].present ? vals[0].val.str : NULL;

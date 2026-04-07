@@ -35,7 +35,7 @@
 #include <string.h>
 #include <ctype.h>
 
-static int is_behavior_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
+static int is_behavior_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
         return 0;
     }
@@ -60,7 +60,7 @@ static bool parse_behavior_graph_args(int argc, char **argv,
     };
     nmo_opt_val_t vals[3];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return false;
 
     if (r.pos_count < 2) return false;
@@ -161,7 +161,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!is_behavior_class((nmo_type_registry_t *)c.registry, class_id)) {
+            if (!is_behavior_class(c.registry, class_id)) {
                 continue;
             }
 
@@ -200,7 +200,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_behavior_class((nmo_type_registry_t *)c.registry, class_id)) {
+            if (!is_behavior_class(c.registry, class_id)) {
                 continue;
             }
 
@@ -274,7 +274,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
         nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-        if (!is_behavior_class((nmo_type_registry_t *)c.registry, class_id)) {
+        if (!is_behavior_class(c.registry, class_id)) {
             continue;
         }
         total++;
@@ -810,7 +810,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool dump_all = vals[0].val.flag;
