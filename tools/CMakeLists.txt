@@ -17,6 +17,9 @@ add_executable(nmo_cli
     nmo_tool_session.c
     nmo_tool_common.c
 
+    # Command framework
+    nmo_cmd_ctx.c
+
     # REPL support
     nmo_repl_session.c
     nmo_repl_repl.c
