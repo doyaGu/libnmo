@@ -5,11 +5,9 @@
 
 #include "nmo_cmd_type.h"
 
-#include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
-#include "../nmo_cli_json.h"
 #include "../nmo_tool_common.h"
-#include "../nmo_tool_session.h"
 
 #include "nmo.h"
 #include "app/nmo_context.h"
@@ -148,28 +146,22 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     (void)argc;
     (void)argv;
 
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (rc) return rc;
+
     /* For type list, we don't need a file - we use a temporary context */
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (!ctx) {
         fprintf(stderr, "Error: Failed to create context\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     size_t class_count = 0;
     nmo_cli_class_entry_t *entries = collect_class_entries(ctx, &class_count);
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        free(entries);
-        nmo_context_release(ctx);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
-
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *classes = yyjson_mut_arr(doc);
@@ -192,10 +184,10 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
         yyjson_mut_obj_add_val(doc, data, "classes", classes);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "type.list", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "type.list");
     } else {
-        nmo_cli_print_heading(out, "Registered Classes", colorize);
-        fprintf(out, "\n");
+        nmo_cli_print_heading(c.out, "Registered Classes", c.colorize);
+        fprintf(c.out, "\n");
 
         static const nmo_cli_table_col_t columns[] = {
             {"ID", NMO_CLI_ALIGN_RIGHT, 4, 0},
@@ -215,14 +207,13 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
             nmo_cli_table_add_row(&table, cells, 3);
         }
 
-        nmo_cli_table_print(&table, out, colorize);
+        nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
 
-    nmo_cli_close_output_stream(global, out);
     free(entries);
     nmo_context_release(ctx);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -275,20 +266,18 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (rc) {
         nmo_context_release(ctx);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return rc;
     }
-    bool colorize = nmo_cli_should_colorize(global, out);
 
     nmo_class_id_t parent_id = nmo_cli_class_get_parent(ctx, class_id);
     const char *parent_name = parent_id ? nmo_cli_class_name_from_id(ctx, parent_id) : NULL;
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "id", class_id);
@@ -313,40 +302,39 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         }
         yyjson_mut_obj_add_val(doc, data, "inheritance_chain", chain);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "type.show", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "type.show");
     } else {
-        nmo_cli_print_heading(out, "Class Details", colorize);
+        nmo_cli_print_heading(c.out, "Class Details", c.colorize);
 
         char buf[32];
         snprintf(buf, sizeof(buf), "%u", class_id);
-        nmo_cli_print_kv(out, "ID", buf, 12, colorize);
-        nmo_cli_print_kv(out, "Name", class_name, 12, colorize);
+        nmo_cli_print_kv(c.out, "ID", buf, 12, c.colorize);
+        nmo_cli_print_kv(c.out, "Name", class_name, 12, c.colorize);
 
         if (parent_id) {
             snprintf(buf, sizeof(buf), "%u", parent_id);
-            nmo_cli_print_kv(out, "Parent ID", buf, 12, colorize);
-            nmo_cli_print_kv(out, "Parent Name", parent_name ? parent_name : "-", 12, colorize);
+            nmo_cli_print_kv(c.out, "Parent ID", buf, 12, c.colorize);
+            nmo_cli_print_kv(c.out, "Parent Name", parent_name ? parent_name : "-", 12, c.colorize);
         }
 
         /* Show inheritance chain */
-        fprintf(out, "\nInheritance Chain:\n  ");
+        fprintf(c.out, "\nInheritance Chain:\n  ");
         nmo_class_id_t cid = class_id;
         bool first = true;
         while (cid) {
             const char *n = nmo_cli_class_name_from_id(ctx, cid);
             if (n) {
-                if (!first) fprintf(out, " -> ");
-                fprintf(out, "%s", n);
+                if (!first) fprintf(c.out, " -> ");
+                fprintf(c.out, "%s", n);
                 first = false;
             }
             cid = nmo_cli_class_get_parent(ctx, cid);
         }
-        fprintf(out, "\n");
+        fprintf(c.out, "\n");
     }
 
-    nmo_cli_close_output_stream(global, out);
     nmo_context_release(ctx);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -371,18 +359,16 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (rc) {
         free(entries);
         nmo_context_release(ctx);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return rc;
     }
-    bool colorize = nmo_cli_should_colorize(global, out);
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
 
@@ -409,9 +395,9 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         }
 
         yyjson_mut_obj_add_val(doc, data, "roots", roots);
-        nmo_cli_json_write_enveloped_and_free(doc, data, "type.class-tree", NULL, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "type.class-tree");
     } else {
-        fprintf(out, "Class Tree: %zu classes\n\n", class_count);
+        fprintf(c.out, "Class Tree: %zu classes\n\n", class_count);
 
         typedef struct {
             nmo_cli_tree_node_t node;
@@ -423,7 +409,7 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
             free(entries);
             nmo_context_release(ctx);
             fprintf(stderr, "Error: Out of memory\n");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         for (size_t i = 0; i < class_count; ++i) {
@@ -470,8 +456,8 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
                 }
             }
             if (!has_parent) {
-                nmo_cli_print_tree(&nodes[i].node, out, colorize, NULL);
-                fprintf(out, "\n");
+                nmo_cli_print_tree(&nodes[i].node, c.out, c.colorize, NULL);
+                fprintf(c.out, "\n");
             }
         }
 
@@ -481,9 +467,8 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         free(nodes);
     }
 
-    nmo_cli_close_output_stream(global, out);
     free(entries);
     nmo_context_release(ctx);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 

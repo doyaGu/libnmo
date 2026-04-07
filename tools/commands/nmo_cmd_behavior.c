@@ -7,10 +7,8 @@
 
 #include "nmo_cmd_object.h"
 
-#include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
-#include "../nmo_cli_json.h"
-#include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
@@ -201,49 +199,26 @@ static const nmo_cli_graph_node_t *find_graph_node(
 }
 
 int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo behavior list <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    if (!registry) {
-        nmo_tool_close_session(ctx, session);
+    if (!c.registry) {
         fprintf(stderr, "Error: Type registry unavailable\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
+    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
         fprintf(stderr, "Error: Failed to get objects\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
 
     size_t behavior_count = 0;
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
@@ -251,7 +226,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
-            if (!is_behavior_class(registry, class_id)) {
+            if (!is_behavior_class((nmo_type_registry_t *)c.registry, class_id)) {
                 continue;
             }
 
@@ -259,7 +234,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
             yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
             if (class_name) {
                 yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
             }
@@ -276,7 +251,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)behavior_count);
         yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "behavior.list", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.list");
     } else {
         static const nmo_cli_table_col_t columns[] = {
             {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
@@ -290,14 +265,14 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-            if (!is_behavior_class(registry, class_id)) {
+            if (!is_behavior_class((nmo_type_registry_t *)c.registry, class_id)) {
                 continue;
             }
 
             char id_buf[16];
             snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
             const char *name = nmo_object_get_name(obj);
 
             const char *cells[] = {
@@ -309,14 +284,12 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             behavior_count++;
         }
 
-        fprintf(out, "Behaviors: %zu\n\n", behavior_count);
-        nmo_cli_table_print(&table, out, colorize);
+        fprintf(c.out, "Behaviors: %zu\n\n", behavior_count);
+        nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
 
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -342,34 +315,20 @@ static int class_count_cmp_desc(const void *a, const void *b) {
 }
 
 int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo behavior stats <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    if (!registry) {
-        nmo_tool_close_session(ctx, session);
+    if (!c.registry) {
         fprintf(stderr, "Error: Type registry unavailable\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
+    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
         fprintf(stderr, "Error: Failed to get objects\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     nmo_cli_class_count_t *by_class = NULL;
@@ -380,7 +339,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
         nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-        if (!is_behavior_class(registry, class_id)) {
+        if (!is_behavior_class((nmo_type_registry_t *)c.registry, class_id)) {
             continue;
         }
         total++;
@@ -402,9 +361,8 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_class_count_t *new_arr = (nmo_cli_class_count_t *)realloc(by_class, new_cap * sizeof(*by_class));
             if (!new_arr) {
                 free(by_class);
-                nmo_tool_close_session(ctx, session);
                 fprintf(stderr, "Error: Out of memory\n");
-                return NMO_CLI_EXIT_INTERNAL_ERROR;
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
             }
             by_class = new_arr;
             by_class_cap = new_cap;
@@ -414,18 +372,8 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     qsort(by_class, by_class_count, sizeof(*by_class), class_count_cmp_desc);
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        free(by_class);
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
-
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)total);
@@ -436,7 +384,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             yyjson_mut_obj_add_uint(doc, item, "class_id", (uint64_t)by_class[i].class_id);
             yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)by_class[i].count);
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, by_class[i].class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, by_class[i].class_id);
             if (class_name) {
                 yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
             }
@@ -445,15 +393,15 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         yyjson_mut_obj_add_val(doc, data, "by_class", arr);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "behavior.stats", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.stats");
     } else {
-        nmo_cli_print_heading(out, "Behavior Statistics", colorize);
-        fprintf(out, "\n");
+        nmo_cli_print_heading(c.out, "Behavior Statistics", c.colorize);
+        fprintf(c.out, "\n");
 
         char buf[64];
         snprintf(buf, sizeof(buf), "%zu", total);
-        nmo_cli_print_kv(out, "Total", buf, 16, colorize);
-        fprintf(out, "\n");
+        nmo_cli_print_kv(c.out, "Total", buf, 16, c.colorize);
+        fprintf(c.out, "\n");
 
         static const nmo_cli_table_col_t columns[] = {
             {"Class ID", NMO_CLI_ALIGN_RIGHT, 8, 0},
@@ -469,7 +417,7 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             snprintf(class_id_buf, sizeof(class_id_buf), "%u", (unsigned)by_class[i].class_id);
             snprintf(count_buf, sizeof(count_buf), "%zu", by_class[i].count);
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, by_class[i].class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, by_class[i].class_id);
             const char *cells[] = {
                 class_id_buf,
                 class_name ? class_name : "-",
@@ -478,14 +426,12 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_table_add_row(&table, cells, 3);
         }
 
-        nmo_cli_table_print(&table, out, colorize);
+        nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
 
     free(by_class);
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -496,14 +442,11 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t max_edges = 0;
     int exit_code = NMO_CLI_EXIT_SUCCESS;
 
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
     nmo_behavior_graph_t graph = {0};
 
     nmo_object_id_t *emit_node_ids = NULL;
     size_t *emit_edge_indices = NULL;
 
-    FILE *out = NULL;
     if (!parse_behavior_graph_args(argc, argv, &behavior_id, &file_path,
                                    &emit_dot, &max_nodes, &max_edges)) {
         fprintf(stderr, "Error: Missing or invalid arguments\n");
@@ -511,14 +454,11 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    char errbuf[256];
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        exit_code = NMO_CLI_EXIT_IO_ERROR;
-        goto cleanup;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
-    if (!nmo_behavior_graph_build(ctx, session, behavior_id, &graph)) {
+    if (!nmo_behavior_graph_build(c.ctx, c.session, behavior_id, &graph)) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
         nmo_error_code_t code = nmo_last_error_code();
@@ -541,15 +481,6 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t edge_count = graph.edge_count;
     size_t broken_links = graph.broken_links;
     size_t missing_nodes = graph.missing_nodes;
-
-    char out_err[128];
-    out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
-        exit_code = NMO_CLI_EXIT_IO_ERROR;
-        goto cleanup;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
 
     size_t node_behavior = 0;
     size_t node_parameter = 0;
@@ -660,8 +591,8 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     bool edges_truncated = edges_limited || nodes_truncated;
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "behavior_id", behavior_id);
@@ -771,38 +702,38 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         yyjson_mut_obj_add_val(doc, data, "graph", graph);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "behavior.graph", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.graph");
     } else {
-        nmo_cli_print_heading(out, "Behavior Graph", colorize);
-        fprintf(out, "\n");
+        nmo_cli_print_heading(c.out, "Behavior Graph", c.colorize);
+        fprintf(c.out, "\n");
         const char *behavior_name = graph.behavior_name;
         const char *behavior_class = graph.behavior_class_name;
-        fprintf(out, "Behavior %u: %s [%s]\n\n",
+        fprintf(c.out, "Behavior %u: %s [%s]\n\n",
                 behavior_id,
                 (behavior_name && behavior_name[0]) ? behavior_name : "(unnamed)",
                 behavior_class ? behavior_class : "?");
 
-        fprintf(out, "Nodes: %zu (behavior %zu, parameter %zu, operation %zu, io %zu, unknown %zu)\n",
+        fprintf(c.out, "Nodes: %zu (behavior %zu, parameter %zu, operation %zu, io %zu, unknown %zu)\n",
                 node_count, node_behavior, node_parameter, node_operation, node_io, node_unknown);
-        fprintf(out, "Edges: %zu (behavior links %zu, io links %zu, param %zu, op %zu)\n",
+        fprintf(c.out, "Edges: %zu (behavior links %zu, io links %zu, param %zu, op %zu)\n",
                 edge_count,
                 edge_behavior_link,
                 edge_io_link,
                 (edge_param_in + edge_param_out + edge_param_local + edge_param_dest + edge_param_source),
                 (edge_op_in1 + edge_op_in2 + edge_op_out));
         if (nodes_truncated) {
-            fprintf(out, "Note: Nodes truncated to %zu (use --max-nodes 0 to disable)\n", emit_node_count);
+            fprintf(c.out, "Note: Nodes truncated to %zu (use --max-nodes 0 to disable)\n", emit_node_count);
         }
         if (edges_truncated) {
-            fprintf(out, "Note: Edges truncated to %zu (use --max-edges 0 to disable)\n", emit_edge_count);
+            fprintf(c.out, "Note: Edges truncated to %zu (use --max-edges 0 to disable)\n", emit_edge_count);
         }
         if (broken_links > 0) {
-            fprintf(out, "Broken links: %zu\n", broken_links);
+            fprintf(c.out, "Broken links: %zu\n", broken_links);
         }
         if (missing_nodes > 0) {
-            fprintf(out, "Missing objects: %zu\n", missing_nodes);
+            fprintf(c.out, "Missing objects: %zu\n", missing_nodes);
         }
-        fprintf(out, "\n");
+        fprintf(c.out, "\n");
 
         static const nmo_cli_table_col_t node_columns[] = {
             {"ID", NMO_CLI_ALIGN_RIGHT, 6, 0},
@@ -825,9 +756,9 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_table_add_row(&node_table, cells, 4);
         }
 
-        nmo_cli_table_print(&node_table, out, colorize);
+        nmo_cli_table_print(&node_table, c.out, c.colorize);
         nmo_cli_table_free(&node_table);
-        fprintf(out, "\n");
+        fprintf(c.out, "\n");
 
         static const nmo_cli_table_col_t edge_columns[] = {
             {"From", NMO_CLI_ALIGN_LEFT, 18, 32},
@@ -898,32 +829,32 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_table_add_row(&edge_table, cells, 6);
         }
 
-        nmo_cli_table_print(&edge_table, out, colorize);
+        nmo_cli_table_print(&edge_table, c.out, c.colorize);
         nmo_cli_table_free(&edge_table);
 
         if (emit_dot) {
-            fprintf(out, "\n");
-            nmo_cli_print_heading(out, "DOT Graph", colorize);
-            fprintf(out, "\n");
-            fprintf(out, "digraph behavior_graph {\n");
-            fprintf(out, "  node [shape=box, fontname=\"Courier\"];\n");
+            fprintf(c.out, "\n");
+            nmo_cli_print_heading(c.out, "DOT Graph", c.colorize);
+            fprintf(c.out, "\n");
+            fprintf(c.out, "digraph behavior_graph {\n");
+            fprintf(c.out, "  node [shape=box, fontname=\"Courier\"];\n");
             for (size_t i = 0; i < emit_node_count; ++i) {
                 const char *label = (nodes[i].name && nodes[i].name[0]) ? nodes[i].name :
                     (nodes[i].class_name && nodes[i].class_name[0]) ? nodes[i].class_name :
                     (nodes[i].kind ? nodes[i].kind : "node");
-                fprintf(out, "  n%u [label=\"", nodes[i].id);
-                dot_write_label(out, label);
-                fprintf(out, "\"];\n");
+                fprintf(c.out, "  n%u [label=\"", nodes[i].id);
+                dot_write_label(c.out, label);
+                fprintf(c.out, "\"];\n");
             }
             for (size_t i = 0; i < emit_edge_count; ++i) {
                 size_t edge_index = emit_edge_indices ? emit_edge_indices[i] : i;
                 const nmo_cli_graph_edge_t edge_ref = edges[edge_index];
                 const char *edge_label = edge_ref.kind ? edge_ref.kind : "link";
-                fprintf(out, "  n%u -> n%u [label=\"", edge_ref.from_id, edge_ref.to_id);
-                dot_write_label(out, edge_label);
-                fprintf(out, "\"];\n");
+                fprintf(c.out, "  n%u -> n%u [label=\"", edge_ref.from_id, edge_ref.to_id);
+                dot_write_label(c.out, edge_label);
+                fprintf(c.out, "\"];\n");
             }
-            fprintf(out, "}\n");
+            fprintf(c.out, "}\n");
         }
     }
 
@@ -931,13 +862,7 @@ cleanup:
     free(emit_edge_indices);
     free(emit_node_ids);
     nmo_behavior_graph_free(&graph);
-    if (ctx || session) {
-        nmo_tool_close_session(ctx, session);
-    }
-    if (out) {
-        nmo_cli_close_output_stream(global, out);
-    }
-    return exit_code;
+    return nmo_cmd_ctx_done(&c, exit_code);
 }
 
 /* ============================================================================
@@ -975,47 +900,35 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     if (dump_all) {
         /* Find and dump all scripts */
         nmo_array_t scripts;
         nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 16, NULL);
 
-        nmo_script_walker_find_scripts(ctx, session, &scripts);
+        nmo_script_walker_find_scripts(c.ctx, c.session, &scripts);
 
         size_t count = scripts.count;
-        fprintf(out, "Scripts found: %zu\n\n", count);
+        fprintf(c.out, "Scripts found: %zu\n\n", count);
 
         for (size_t i = 0; i < count; ++i) {
             const nmo_script_entry_t *entry =
                 (const nmo_script_entry_t *)nmo_array_get(&scripts, i);
-            fprintf(out, "=== Script #%u", entry->script_id);
+            fprintf(c.out, "=== Script #%u", entry->script_id);
             if (entry->script_name && entry->script_name[0]) {
-                fprintf(out, " \"%s\"", entry->script_name);
+                fprintf(c.out, " \"%s\"", entry->script_name);
             }
-            fprintf(out, " (owner: #%u", entry->owner_id);
+            fprintf(c.out, " (owner: #%u", entry->owner_id);
             if (entry->owner_name && entry->owner_name[0]) {
-                fprintf(out, " \"%s\"", entry->owner_name);
+                fprintf(c.out, " \"%s\"", entry->owner_name);
             }
-            fprintf(out, ") ===\n");
+            fprintf(c.out, ") ===\n");
 
-            nmo_script_walker_dump_text(ctx, session, entry->script_id, out);
-            fprintf(out, "\n");
+            nmo_script_walker_dump_text(c.ctx, c.session, entry->script_id, c.out);
+            fprintf(c.out, "\n");
         }
 
         nmo_array_dispose(&scripts);
@@ -1023,16 +936,12 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         uint32_t object_id;
         if (!nmo_tool_parse_u32(id_str, &object_id)) {
             fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
-            nmo_tool_close_session(ctx, session);
-            nmo_cli_close_output_stream(global, out);
-            return NMO_CLI_EXIT_ARG_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
-        nmo_script_walker_dump_text(ctx, session, object_id, out);
+        nmo_script_walker_dump_text(c.ctx, c.session, object_id, c.out);
     }
 
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 

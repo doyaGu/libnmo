@@ -5,10 +5,8 @@
 
 #include "nmo_cmd_chunk.h"
 
-#include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
-#include "../nmo_cli_json.h"
-#include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
@@ -172,44 +170,21 @@ static bool collect_all_chunk_entries(nmo_session_t *session,
  * ============================================================================ */
 
 int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = nmo_tool_find_file_arg(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo chunk list <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     /* Collect all chunks (including sub-chunks) */
     nmo_cli_chunk_entry_t *entries = NULL;
     size_t entry_count = 0;
     size_t object_count = 0;
-    if (!collect_all_chunk_entries(session, &entries, &entry_count, &object_count)) {
-        nmo_tool_close_session(ctx, session);
+    if (!collect_all_chunk_entries(c.session, &entries, &entry_count, &object_count)) {
         fprintf(stderr, "Error: Failed to collect chunks\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
-
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
         yyjson_mut_obj_add_uint(doc, data, "total_chunks", (uint64_t)entry_count);
@@ -231,7 +206,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
             yyjson_mut_obj_add_uint(doc, item, "owner_class_id", e->owner_class_id);
             {
-                const char *owner_class_name = nmo_cli_class_name_from_id(ctx, e->owner_class_id);
+                const char *owner_class_name = nmo_cli_class_name_from_id(c.ctx, e->owner_class_id);
                 if (owner_class_name) {
                     yyjson_mut_obj_add_str(doc, item, "owner_class_name", owner_class_name);
                 }
@@ -239,7 +214,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
             yyjson_mut_obj_add_uint(doc, item, "class_id", chunk->class_id);
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
             if (class_name) {
                 yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
             }
@@ -256,9 +231,9 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
         yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.list", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.list");
     } else {
-        fprintf(out, "Chunks: %zu (including sub-chunks; from %zu objects)\n\n", entry_count, object_count);
+        fprintf(c.out, "Chunks: %zu (including sub-chunks; from %zu objects)\n\n", entry_count, object_count);
 
         /* Table output */
         static const nmo_cli_table_col_t columns[] = {
@@ -286,7 +261,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
             }
             snprintf(size_buf, sizeof(size_buf), "%zu", nmo_chunk_get_data_size(chunk));
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
             const char *owner_name = e->owner_object_name;
 
             char owner_buf[128];
@@ -318,15 +293,13 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
             nmo_cli_table_add_row(&table, cells, 6);
         }
 
-        nmo_cli_table_print(&table, out, colorize);
+        nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
 
     nmo_chunk_index_free_entries(entries);
 
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -334,53 +307,30 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * ============================================================================ */
 
 int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = nmo_tool_find_file_arg(argc, argv);
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo chunk tree <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     /* Get objects */
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
+    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
         fprintf(stderr, "Error: Failed to get objects\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
 
     /* Pre-collect flat index map to attach stable indices in JSON */
     nmo_cli_chunk_entry_t *flat_entries = NULL;
     size_t flat_count = 0;
-    (void)collect_all_chunk_entries(session, &flat_entries, &flat_count, NULL);
+    (void)collect_all_chunk_entries(c.session, &flat_entries, &flat_count, NULL);
     nmo_cli_chunk_ptr_index_t *index_map = NULL;
     size_t index_map_count = 0;
     if (flat_entries) {
         (void)build_chunk_index_map(flat_entries, flat_count, &index_map, &index_map_count);
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
@@ -403,24 +353,24 @@ int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *globa
                 nmo_cli_json_add_str_safe(doc, root, "owner_object_name", owner_name);
             }
 
-            const char *owner_class = nmo_cli_class_name_from_id(ctx, nmo_object_get_class_id(obj));
+            const char *owner_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
             if (owner_class) {
                 yyjson_mut_obj_add_str(doc, root, "owner_class_name", owner_class);
             }
             yyjson_mut_obj_add_uint(doc, root, "owner_class_id", nmo_object_get_class_id(obj));
 
             yyjson_mut_obj_add_val(doc, root, "chunk",
-                                   build_chunk_json_tree(doc, ctx, chunk, index_map, index_map_count));
+                                   build_chunk_json_tree(doc, c.ctx, chunk, index_map, index_map_count));
             yyjson_mut_arr_add_val(roots, root);
         }
 
         yyjson_mut_obj_add_val(doc, data, "roots", roots);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.tree", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.tree");
     } else {
-        fprintf(out, "Chunk Tree (sub-chunks): %zu objects\n\n", object_count);
+        fprintf(c.out, "Chunk Tree (sub-chunks): %zu objects\n\n", object_count);
 
-        nmo_arena_t *arena = nmo_session_get_arena(session);
+        nmo_arena_t *arena = nmo_session_get_arena(c.session);
         for (size_t i = 0; i < object_count; ++i) {
             nmo_object_t *obj = objects[i];
             nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
@@ -429,29 +379,27 @@ int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *globa
             }
 
             const char *owner_name = nmo_object_get_name(obj);
-            const char *owner_class = nmo_cli_class_name_from_id(ctx, nmo_object_get_class_id(obj));
-            fprintf(out, "Object %u: %s [%s]\n",
+            const char *owner_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
+            fprintf(c.out, "Object %u: %s [%s]\n",
                     nmo_object_get_id(obj),
                     (owner_name && owner_name[0]) ? owner_name : "(unnamed)",
                     owner_class ? owner_class : "?");
 
-            nmo_cli_tree_node_t *tree = build_chunk_tree_node(ctx, chunk, arena);
+            nmo_cli_tree_node_t *tree = build_chunk_tree_node(c.ctx, chunk, arena);
             if (!tree) {
-                fprintf(out, "  (alloc failed)\n\n");
+                fprintf(c.out, "  (alloc failed)\n\n");
                 continue;
             }
 
-            nmo_cli_print_tree(tree, out, colorize, chunk_tree_render);
-            fprintf(out, "\n");
+            nmo_cli_print_tree(tree, c.out, c.colorize, chunk_tree_render);
+            fprintf(c.out, "\n");
         }
     }
 
     nmo_chunk_index_free_map(index_map);
     nmo_chunk_index_free_entries(flat_entries);
 
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -562,15 +510,9 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
     }
 
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     nmo_object_t *target = NULL;
     nmo_chunk_t *chunk = NULL;
@@ -578,17 +520,15 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     if (use_index) {
         nmo_cli_chunk_entry_t *entries = NULL;
         size_t entry_count = 0;
-        if (!collect_all_chunk_entries(session, &entries, &entry_count, NULL)) {
-            nmo_tool_close_session(ctx, session);
+        if (!collect_all_chunk_entries(c.session, &entries, &entry_count, NULL)) {
             fprintf(stderr, "Error: Failed to collect chunks\n");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
         if ((size_t)chunk_index >= entry_count) {
             nmo_chunk_index_free_entries(entries);
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Chunk index %u out of range (0..%zu)\n",
                     chunk_index, entry_count ? (entry_count - 1) : 0);
-            return NMO_CLI_EXIT_ARG_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
         const nmo_cli_chunk_entry_t selected = entries[chunk_index];
         chunk = selected.chunk;
@@ -603,7 +543,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         /* Best-effort resolve owner object for name */
         nmo_object_t **objects = NULL;
         size_t object_count = 0;
-        if (nmo_session_get_objects(session, &objects, &object_count) == NMO_OK) {
+        if (nmo_session_get_objects(c.session, &objects, &object_count) == NMO_OK) {
             for (size_t i = 0; i < object_count; ++i) {
                 if (nmo_object_get_id(objects[i]) == object_id) {
                     target = objects[i];
@@ -615,10 +555,9 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         /* Get objects and find the target */
         nmo_object_t **objects = NULL;
         size_t object_count = 0;
-        if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-            nmo_tool_close_session(ctx, session);
+        if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
             fprintf(stderr, "Error: Failed to get objects\n");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         for (size_t i = 0; i < object_count; ++i) {
@@ -629,22 +568,20 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
 
         if (!target) {
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Object %u not found\n", object_id);
-            return NMO_CLI_EXIT_ARG_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
         chunk = nmo_object_get_chunk(target);
         if (!chunk) {
-            nmo_tool_close_session(ctx, session);
             fprintf(stderr, "Error: Object %u has no chunk data\n", object_id);
-            return NMO_CLI_EXIT_ARG_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
         /* Provide stable index info when possible */
         nmo_cli_chunk_entry_t *entries = NULL;
         size_t entry_count = 0;
-        if (collect_all_chunk_entries(session, &entries, &entry_count, NULL) && entries) {
+        if (collect_all_chunk_entries(c.session, &entries, &entry_count, NULL) && entries) {
             nmo_cli_chunk_ptr_index_t *map = NULL;
             size_t map_count = 0;
             if (build_chunk_index_map(entries, entry_count, &map, &map_count) && map) {
@@ -662,17 +599,8 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
     }
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
-
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         if (flat_index_known) {
@@ -693,7 +621,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
 
         yyjson_mut_obj_add_uint(doc, data, "class_id", chunk->class_id);
-        const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
+        const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
         if (class_name) {
             yyjson_mut_obj_add_str(doc, data, "class_name", class_name);
         }
@@ -716,9 +644,9 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_uint(doc, data, "subchunk_count", (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
         yyjson_mut_obj_add_uint(doc, data, "manager_count", (uint64_t)chunk->managers.count);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.show", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.show");
     } else {
-        nmo_cli_print_heading(out, "Chunk Details", colorize);
+        nmo_cli_print_heading(c.out, "Chunk Details", c.colorize);
 
         char buf[64];
         if (flat_index_known) {
@@ -726,13 +654,13 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         } else {
             snprintf(buf, sizeof(buf), "-");
         }
-        nmo_cli_print_kv(out, "Flat Index", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Flat Index", buf, 18, c.colorize);
         if (parent_index >= 0) {
             snprintf(buf, sizeof(buf), "%lld", (long long)parent_index);
-            nmo_cli_print_kv(out, "Parent Index", buf, 18, colorize);
+            nmo_cli_print_kv(c.out, "Parent Index", buf, 18, c.colorize);
         }
         snprintf(buf, sizeof(buf), "%u", depth);
-        nmo_cli_print_kv(out, "Depth", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Depth", buf, 18, c.colorize);
 
         if (target) {
             const char *obj_name = nmo_object_get_name(target);
@@ -741,22 +669,22 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         } else {
             snprintf(buf, sizeof(buf), "%u", object_id);
         }
-        nmo_cli_print_kv(out, "Object", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Object", buf, 18, c.colorize);
 
         snprintf(buf, sizeof(buf), "%u", chunk->class_id);
-        nmo_cli_print_kv(out, "Class ID", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Class ID", buf, 18, c.colorize);
 
-        const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
-        nmo_cli_print_kv(out, "Class Name", class_name ? class_name : "-", 18, colorize);
+        const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
+        nmo_cli_print_kv(c.out, "Class Name", class_name ? class_name : "-", 18, c.colorize);
 
-        fprintf(out, "\n");
-        nmo_cli_print_heading(out, "Format", colorize);
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Format", c.colorize);
 
         snprintf(buf, sizeof(buf), "%u", chunk->data_version);
-        nmo_cli_print_kv(out, "Data Version", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Data Version", buf, 18, c.colorize);
 
         snprintf(buf, sizeof(buf), "%u", chunk->chunk_version);
-        nmo_cli_print_kv(out, "Chunk Version", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Chunk Version", buf, 18, c.colorize);
 
         {
             char opt_flags[128];
@@ -764,63 +692,61 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
                                                               opt_flags,
                                                               sizeof(opt_flags));
             snprintf(buf, sizeof(buf), "%s (0x%04X)", opt, (unsigned int)chunk->chunk_options);
-            nmo_cli_print_kv(out, "Options", buf, 18, colorize);
+            nmo_cli_print_kv(c.out, "Options", buf, 18, c.colorize);
         }
 
-        fprintf(out, "\n");
-        nmo_cli_print_heading(out, "Size", colorize);
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Size", c.colorize);
 
         snprintf(buf, sizeof(buf), "%zu bytes", nmo_chunk_get_data_size(chunk));
-        nmo_cli_print_kv(out, "Data Size", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Data Size", buf, 18, c.colorize);
 
         snprintf(buf, sizeof(buf), "%zu bytes", chunk->compressed_size);
-        nmo_cli_print_kv(out, "Compressed Size", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Compressed Size", buf, 18, c.colorize);
 
         snprintf(buf, sizeof(buf), "%zu bytes", chunk->uncompressed_size);
-        nmo_cli_print_kv(out, "Uncompressed Size", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Uncompressed Size", buf, 18, c.colorize);
 
         if (include_hexdump) {
             size_t data_size = 0;
             const uint8_t *raw = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
-            fprintf(out, "\n");
-            nmo_cli_print_heading(out, "Hexdump", colorize);
+            fprintf(c.out, "\n");
+            nmo_cli_print_heading(c.out, "Hexdump", c.colorize);
             if (!raw || data_size == 0) {
-                nmo_cli_print_kv(out, "Data", "(empty)", 18, colorize);
+                nmo_cli_print_kv(c.out, "Data", "(empty)", 18, c.colorize);
             } else {
                 size_t emit_size = (max_bytes > 0 && data_size > max_bytes) ? max_bytes : data_size;
                 if (emit_size < data_size) {
                     snprintf(buf, sizeof(buf), "showing %zu/%zu bytes", emit_size, data_size);
-                    nmo_cli_print_kv(out, "Data", buf, 18, colorize);
+                    nmo_cli_print_kv(c.out, "Data", buf, 18, c.colorize);
                 }
 
                 nmo_hexdump_options_t hd;
                 nmo_hexdump_init_options(&hd);
-                hd.colorize = colorize;
+                hd.colorize = c.colorize;
                 hd.ansi.offset = NMO_CLI_COLOR_DIM;
                 hd.ansi.hex = NMO_CLI_COLOR_CYAN;
                 hd.ansi.ascii = NMO_CLI_COLOR_GREEN;
                 hd.ansi.delim = NMO_CLI_COLOR_DIM;
                 hd.ansi.reset = NMO_CLI_COLOR_RESET;
-                nmo_hexdump_canonical(out, raw, emit_size, &hd);
+                nmo_hexdump_canonical(c.out, raw, emit_size, &hd);
             }
         }
 
-        fprintf(out, "\n");
-        nmo_cli_print_heading(out, "References", colorize);
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "References", c.colorize);
 
         snprintf(buf, sizeof(buf), "%zu", chunk->ids.count);
-        nmo_cli_print_kv(out, "Object IDs", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Object IDs", buf, 18, c.colorize);
 
         snprintf(buf, sizeof(buf), "%u", nmo_chunk_get_sub_chunk_count(chunk));
-        nmo_cli_print_kv(out, "Sub-chunks", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Sub-chunks", buf, 18, c.colorize);
 
         snprintf(buf, sizeof(buf), "%zu", chunk->managers.count);
-        nmo_cli_print_kv(out, "Manager Refs", buf, 18, colorize);
+        nmo_cli_print_kv(c.out, "Manager Refs", buf, 18, c.colorize);
     }
 
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -840,21 +766,6 @@ static const char *parse_class_filter(int argc, char **argv) {
 }
 
 int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *file_path = NULL;
-    /* File is last non-option argument */
-    for (int i = argc - 1; i >= 1; --i) {
-        if (argv[i][0] != '-') {
-            file_path = argv[i];
-            break;
-        }
-    }
-
-    if (!file_path) {
-        fprintf(stderr, "Error: No file specified\n");
-        fprintf(stderr, "Usage: nmo chunk find --class <name> <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     const char *class_filter = parse_class_filter(argc, argv);
     if (!class_filter) {
         fprintf(stderr, "Error: --class filter required\n");
@@ -862,44 +773,27 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Open session */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[256];
-
-    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     /* Resolve class filter */
-    nmo_class_id_t filter_class_id = nmo_cli_class_id_from_name(ctx, class_filter);
+    nmo_class_id_t filter_class_id = nmo_cli_class_id_from_name(c.ctx, class_filter);
     if (!filter_class_id) {
-        nmo_tool_close_session(ctx, session);
         fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
-        return NMO_CLI_EXIT_ARG_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
     /* Get objects */
     nmo_object_t **objects = NULL;
     size_t object_count = 0;
-    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
-        nmo_tool_close_session(ctx, session);
+    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
         fprintf(stderr, "Error: Failed to get objects\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-    bool colorize = nmo_cli_should_colorize(global, out);
-
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_str(doc, data, "class_filter", class_filter);
@@ -913,14 +807,14 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             if (!chunk) continue;
 
             /* Check if chunk class matches filter (including derived classes) */
-            if (!nmo_cli_class_is_derived_from(ctx, chunk->class_id, filter_class_id)) {
+            if (!nmo_cli_class_is_derived_from(c.ctx, chunk->class_id, filter_class_id)) {
                 continue;
             }
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, item, "object_id", nmo_object_get_id(obj));
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
             if (class_name) {
                 yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
             }
@@ -939,7 +833,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)match_count);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "chunk.find", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.find");
     } else {
         /* Table output */
         static const nmo_cli_table_col_t columns[] = {
@@ -958,7 +852,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
             if (!chunk) continue;
 
-            if (!nmo_cli_class_is_derived_from(ctx, chunk->class_id, filter_class_id)) {
+            if (!nmo_cli_class_is_derived_from(c.ctx, chunk->class_id, filter_class_id)) {
                 continue;
             }
 
@@ -966,7 +860,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             snprintf(oid_buf, sizeof(oid_buf), "%u", nmo_object_get_id(obj));
             snprintf(size_buf, sizeof(size_buf), "%zu", nmo_chunk_get_data_size(chunk));
 
-            const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
+            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
             const char *name = nmo_object_get_name(obj);
 
             const char *cells[] = {
@@ -979,13 +873,11 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             match_count++;
         }
 
-        fprintf(out, "Found: %zu chunks (class: %s)\n\n", match_count, class_filter);
-        nmo_cli_table_print(&table, out, colorize);
+        fprintf(c.out, "Found: %zu chunks (class: %s)\n\n", match_count, class_filter);
+        nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
 
-    nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 

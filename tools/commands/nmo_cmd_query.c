@@ -4,10 +4,8 @@
  */
 
 #include "nmo_cmd_query.h"
-#include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
-#include "../nmo_cli_json.h"
-#include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -507,34 +505,32 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         free(stdin_buffer);
         nmo_dsl_value_destroy(&result);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         add_dsl_value_to_json(doc, data, "result", &result);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.eval", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.eval", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
         format_dsl_value(&result, value_buf, sizeof(value_buf));
-        fprintf(out, "%s\n", value_buf);
+        fprintf(c.out, "%s\n", value_buf);
     }
 
     free(stdin_buffer);
     nmo_dsl_value_destroy(&result);
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -625,17 +621,16 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         nmo_dsl_value_destroy(&result);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         add_dsl_value_to_json(doc, data, "result", &result);
@@ -643,20 +638,19 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.script", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.script", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
         format_dsl_value(&result, value_buf, sizeof(value_buf));
-        fprintf(out, "Result: %s\n", value_buf);
+        fprintf(c.out, "Result: %s\n", value_buf);
         if (output_path) {
-            fprintf(out, "Saved to: %s\n", output_path);
+            fprintf(c.out, "Saved to: %s\n", output_path);
         }
     }
 
     nmo_dsl_value_destroy(&result);
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -717,28 +711,26 @@ int nmo_cmd_query_schema(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         nmo_context_release(ctx);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_str(doc, data, "status", "applied");
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.schema", schema_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.schema", schema_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
-        fprintf(out, "Schema applied successfully\n");
+        fprintf(c.out, "Schema applied successfully\n");
     }
 
     nmo_context_release(ctx);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -829,17 +821,16 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         nmo_dsl_value_destroy(&result);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         add_dsl_value_to_json(doc, data, "result", &result);
@@ -847,19 +838,18 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.module", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.module", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
         format_dsl_value(&result, value_buf, sizeof(value_buf));
-        fprintf(out, "Result: %s\n", value_buf);
+        fprintf(c.out, "Result: %s\n", value_buf);
         if (output_path) {
-            fprintf(out, "Saved to: %s\n", output_path);
+            fprintf(c.out, "Saved to: %s\n", output_path);
         }
     }
 
     nmo_dsl_value_destroy(&result);
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
