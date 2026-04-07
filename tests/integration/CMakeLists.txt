@@ -41,6 +41,9 @@ add_integration_test(test_type_system_complete)
 # Phase 3: Object type coverage verification
 add_integration_test(test_object_type_coverage)
 
+# Object layer acceptance test - comprehensive round-trip validation
+add_integration_test(test_object_layer_acceptance)
+
 # Runtime clean-break integration tests
 add_integration_test(test_runtime_load_pipeline)
 add_integration_test(test_runtime_copy_behavior_graph)
