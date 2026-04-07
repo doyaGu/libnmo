@@ -29,8 +29,6 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  */
 typedef struct nmo_sceneobject_state {
     nmo_object_state_t base;  /**< Inherited CKObject state */
-    uint8_t *raw_tail;           /**< Unknown/future data */
-    size_t raw_tail_size;        /**< Size of unknown data */
 } nmo_sceneobject_state_t;
 
 /* =============================================================================

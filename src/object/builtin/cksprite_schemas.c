@@ -586,9 +586,6 @@ static nmo_status_t nmo_sprite_copy(
     const nmo_sprite_state_t *s = src;
     nmo_sprite_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->entity.base.base.base.raw_tail,
-                                              s->entity.base.base.base.raw_tail,
-                                              s->entity.base.base.base.raw_tail_size));
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.script_ids,
                                          &d->entity.base.base.script_ids,
                                          &s->entity.base.base.script_ids.allocator));

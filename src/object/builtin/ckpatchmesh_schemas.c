@@ -494,8 +494,6 @@ static nmo_status_t nmo_patchmesh_copy(
     nmo_patchmesh_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
 
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.beobject.base.raw_tail,
-                                              s->base.beobject.base.raw_tail, s->base.beobject.base.raw_tail_size));
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.beobject.script_ids,
                                         &d->base.beobject.script_ids,
                                         &s->base.beobject.script_ids.allocator));

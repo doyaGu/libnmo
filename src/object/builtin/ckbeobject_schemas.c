@@ -528,8 +528,6 @@ static nmo_status_t nmo_beobject_copy(
     const nmo_beobject_state_t *s = src;
     nmo_beobject_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->base.raw_tail,
-                                              s->base.raw_tail, s->base.raw_tail_size));
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->script_ids, &d->script_ids, &s->script_ids.allocator));
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->attribute_parameter_ids, &d->attribute_parameter_ids,
                                         &s->attribute_parameter_ids.allocator));
