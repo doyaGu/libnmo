@@ -10,6 +10,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
+#include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "app/nmo_behavior_graph.h"
@@ -52,97 +53,31 @@ static bool parse_behavior_graph_args(int argc, char **argv,
                                       size_t *out_max_nodes,
                                       size_t *out_max_edges)
 {
-    const char *id_str = NULL;
-    const char *file_path = NULL;
-    bool dot = false;
-    size_t max_nodes = 0;
-    size_t max_edges = 0;
+    static const nmo_opt_def_t opts[] = {
+        {"--dot",       NULL, NMO_OPT_FLAG, "Emit DOT graph output"},
+        {"--max-nodes", NULL, NMO_OPT_UINT, "Max nodes to display"},
+        {"--max-edges", NULL, NMO_OPT_UINT, "Max edges to display"},
+    };
+    nmo_opt_val_t vals[3];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return false;
 
-    bool *consumed = (bool *)calloc((size_t)argc, sizeof(bool));
-    if (!consumed) {
-        return false;
-    }
+    if (r.pos_count < 2) return false;
 
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--dot") == 0) {
-            dot = true;
-            consumed[i] = true;
-            continue;
-        }
-        if (strcmp(argv[i], "--max-nodes") == 0) {
-            if ((i + 1) >= argc) {
-                free(consumed);
-                return false;
-            }
-            uint32_t tmp = 0;
-            if (!nmo_tool_parse_u32(argv[i + 1], &tmp)) {
-                free(consumed);
-                return false;
-            }
-            max_nodes = (size_t)tmp;
-            consumed[i] = true;
-            consumed[i + 1] = true;
-            ++i;
-            continue;
-        }
-        if (strcmp(argv[i], "--max-edges") == 0) {
-            if ((i + 1) >= argc) {
-                free(consumed);
-                return false;
-            }
-            uint32_t tmp = 0;
-            if (!nmo_tool_parse_u32(argv[i + 1], &tmp)) {
-                free(consumed);
-                return false;
-            }
-            max_edges = (size_t)tmp;
-            consumed[i] = true;
-            consumed[i + 1] = true;
-            ++i;
-            continue;
-        }
-    }
-
-    int non_opt_count = 0;
-    for (int i = 1; i < argc; ++i) {
-        if (consumed[i] || argv[i][0] == '-') {
-            continue;
-        }
-        non_opt_count++;
-        if (non_opt_count == 1) {
-            id_str = argv[i];
-        } else if (non_opt_count == 2) {
-            file_path = argv[i];
-            break;
-        }
-    }
-
-    free(consumed);
-
-    if (!id_str || !file_path) {
-        return false;
-    }
+    const char *id_str = r.pos_args[0];
+    const char *file_path = r.pos_args[1];
 
     uint32_t id = 0;
     if (!nmo_tool_parse_u32(id_str, &id) || id == 0) {
         return false;
     }
 
-    if (out_id) {
-        *out_id = (nmo_object_id_t)id;
-    }
-    if (out_file) {
-        *out_file = file_path;
-    }
-    if (out_dot) {
-        *out_dot = dot;
-    }
-    if (out_max_nodes) {
-        *out_max_nodes = max_nodes;
-    }
-    if (out_max_edges) {
-        *out_max_edges = max_edges;
-    }
+    if (out_id) *out_id = (nmo_object_id_t)id;
+    if (out_file) *out_file = file_path;
+    if (out_dot) *out_dot = vals[0].val.flag;
+    if (out_max_nodes) *out_max_nodes = vals[1].present ? (size_t)vals[1].val.u : 0;
+    if (out_max_edges) *out_max_edges = vals[2].present ? (size_t)vals[2].val.u : 0;
     return true;
 }
 
@@ -870,34 +805,30 @@ cleanup:
  * ============================================================================ */
 
 int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *id_str = NULL;
-    const char *file_path = NULL;
-    bool dump_all = false;
+    static const nmo_opt_def_t opts[] = {
+        {"--all", "-a", NMO_OPT_FLAG, "Dump all behaviors"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    int non_opt = 0;
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--all") == 0 || strcmp(argv[i], "-a") == 0) {
-            dump_all = true;
-            continue;
-        }
-        if (argv[i][0] != '-') {
-            non_opt++;
-            if (non_opt == 1) id_str = argv[i];
-            if (non_opt == 2) file_path = argv[i];
-        }
-    }
+    bool dump_all = vals[0].val.flag;
+
+    const char *id_str = NULL;
 
     if (dump_all) {
-        /* --all mode: id_str is actually the file path */
-        if (!id_str) {
+        /* --all mode: only positional is the file */
+        if (r.pos_count < 1) {
             fprintf(stderr, "Usage: nmo behavior dump --all <file>\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        file_path = id_str;
-        id_str = NULL;
-    } else if (!id_str || !file_path) {
-        fprintf(stderr, "Usage: nmo behavior dump [--all] [<id>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    } else {
+        if (r.pos_count < 2) {
+            fprintf(stderr, "Usage: nmo behavior dump [--all] [<id>] <file>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        id_str = r.pos_args[0];
     }
 
     nmo_cmd_ctx_t c;

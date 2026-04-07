@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
+#include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "app/nmo_chunk_index.h"
@@ -411,73 +412,30 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
        - nmo chunk show --index <n> <file> (supports sub-chunks)
        - nmo chunk show <object-id> <file> (root chunk for object)
     */
+    static const nmo_opt_def_t opts[] = {
+        {"--index",     "-i", NMO_OPT_STRING, "Chunk index"},
+        {"--hexdump",   NULL, NMO_OPT_FLAG,   "Include hex dump"},
+        {"--max-bytes", "-m", NMO_OPT_UINT,   "Max bytes for hexdump"},
+    };
+    nmo_opt_val_t vals[3];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *index_str = vals[0].present ? vals[0].val.str : NULL;
+    bool include_hexdump = vals[1].val.flag;
+    size_t max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
+
+    /* Positional args: [object-id] <file>
+       File is the last positional; object-id (if present) is the first. */
     const char *file_path = NULL;
-    const char *index_str = NULL;
     const char *obj_id_str = NULL;
-    bool include_hexdump = false;
-    size_t max_bytes = 256;
-
-    bool *consumed = (bool *)calloc((size_t)argc, sizeof(bool));
-    if (!consumed) {
-        fprintf(stderr, "Error: Out of memory\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (r.pos_count >= 2) {
+        obj_id_str = r.pos_args[0];
+        file_path = r.pos_args[r.pos_count - 1];
+    } else if (r.pos_count == 1) {
+        file_path = r.pos_args[0];
     }
-
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--index") == 0 || strcmp(argv[i], "-i") == 0) {
-            if ((i + 1) >= argc) {
-                continue;
-            }
-            index_str = argv[i + 1];
-            consumed[i] = true;
-            consumed[i + 1] = true;
-            ++i;
-            continue;
-        }
-        if (strcmp(argv[i], "--hexdump") == 0) {
-            include_hexdump = true;
-            consumed[i] = true;
-            continue;
-        }
-        if (strcmp(argv[i], "--max-bytes") == 0 || strcmp(argv[i], "-m") == 0) {
-            if ((i + 1) >= argc) {
-                continue;
-            }
-            uint32_t tmp = 0;
-            if (!nmo_tool_parse_u32(argv[i + 1], &tmp)) {
-                fprintf(stderr, "Error: Invalid --max-bytes '%s'\n", argv[i + 1]);
-                free(consumed);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            max_bytes = (size_t)tmp;
-            consumed[i] = true;
-            consumed[i + 1] = true;
-            ++i;
-            continue;
-        }
-    }
-
-    /* File is last positional (non-option) argument that is not an option value. */
-    for (int i = argc - 1; i >= 1; --i) {
-        if (!consumed[i] && argv[i][0] != '-') {
-            file_path = argv[i];
-            consumed[i] = true;
-            break;
-        }
-    }
-
-    /* Object-id form: first remaining positional argument. */
-    if (!index_str) {
-        for (int i = 1; i < argc; ++i) {
-            if (!consumed[i] && argv[i][0] != '-') {
-                obj_id_str = argv[i];
-                consumed[i] = true;
-                break;
-            }
-        }
-    }
-
-    free(consumed);
 
     if (!file_path) {
         fprintf(stderr, "Error: No file specified\n");
@@ -753,20 +711,16 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
  * chunk find - Find chunks by class
  * ============================================================================ */
 
-/**
- * Parse --class filter
- */
-static const char *parse_class_filter(int argc, char **argv) {
-    for (int i = 1; i < argc - 1; ++i) {
-        if (strcmp(argv[i], "--class") == 0 || strcmp(argv[i], "-c") == 0) {
-            return argv[i + 1];
-        }
-    }
-    return NULL;
-}
-
 int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *class_filter = parse_class_filter(argc, argv);
+    static const nmo_opt_def_t opts[] = {
+        {"--class", "-c", NMO_OPT_STRING, "Class name filter"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
     if (!class_filter) {
         fprintf(stderr, "Error: --class filter required\n");
         fprintf(stderr, "Usage: nmo chunk find --class <name> <file>\n");

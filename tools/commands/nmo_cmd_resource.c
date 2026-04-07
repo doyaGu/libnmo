@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
+#include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -26,26 +27,6 @@
 #include <sys/stat.h>
 #define NMO_PATH_SEP '/'
 #endif
-
-static const char *find_positional_arg_excluding_file(int argc, char **argv, const char *file_path) {
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] == '-') {
-            /* Skip option and its value if it looks like an option with arg */
-            if ((strcmp(argv[i], "--index") == 0 || strcmp(argv[i], "-i") == 0 ||
-                 strcmp(argv[i], "--name") == 0 || strcmp(argv[i], "-n") == 0 ||
-                 strcmp(argv[i], "--out-dir") == 0 || strcmp(argv[i], "-d") == 0) &&
-                i + 1 < argc) {
-                i++;
-            }
-            continue;
-        }
-        if (file_path && strcmp(argv[i], file_path) == 0) {
-            continue;
-        }
-        return argv[i];
-    }
-    return NULL;
-}
 
 static int ensure_dir_exists(const char *dir_path, char *errbuf, size_t errbuf_size) {
     if (!dir_path || !*dir_path) {
@@ -230,20 +211,30 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *index_str = nmo_tool_find_opt_value(argc, argv, "--index", "-i");
-    const char *name_str = nmo_tool_find_opt_value(argc, argv, "--name", "-n");
+    static const nmo_opt_def_t opts[] = {
+        {"--index", "-i", NMO_OPT_STRING, "Resource index"},
+        {"--name",  "-n", NMO_OPT_STRING, "Resource name"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *index_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *name_str = vals[1].present ? vals[1].val.str : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    const char *pos = find_positional_arg_excluding_file(argc, argv, c.file_path);
-    if (!index_str && !name_str && pos) {
+    /* If no --index/--name, check first positional (excluding file) as shorthand */
+    if (!index_str && !name_str && r.pos_count >= 2) {
+        const char *first_pos = r.pos_args[0];
         uint32_t idx_tmp;
-        if (nmo_tool_parse_u32_dec(pos, &idx_tmp)) {
-            index_str = pos;
+        if (nmo_tool_parse_u32_dec(first_pos, &idx_tmp)) {
+            index_str = first_pos;
         } else {
-            name_str = pos;
+            name_str = first_pos;
         }
     }
 
@@ -368,16 +359,27 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *out_dir = nmo_tool_find_opt_value(argc, argv, "--out-dir", "-d");
+    static const nmo_opt_def_t opts[] = {
+        {"--out-dir",   "-d", NMO_OPT_STRING, "Output directory"},
+        {"--index",     "-i", NMO_OPT_STRING, "Resource index"},
+        {"--name",      "-n", NMO_OPT_STRING, "Resource name"},
+        {"--overwrite", NULL, NMO_OPT_FLAG,   "Overwrite existing files"},
+    };
+    nmo_opt_val_t vals[4];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *out_dir = vals[0].present ? vals[0].val.str : NULL;
     if (!out_dir || !*out_dir) {
         fprintf(stderr, "Error: Missing --out-dir\n");
         fprintf(stderr, "Usage: nmo resource extract --out-dir <dir> [--index <n> | --name <name>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *index_str = nmo_tool_find_opt_value(argc, argv, "--index", "-i");
-    const char *name_str = nmo_tool_find_opt_value(argc, argv, "--name", "-n");
-    const bool overwrite = nmo_tool_has_flag(argc, argv, "--overwrite", NULL);
+    const char *index_str = vals[1].present ? vals[1].val.str : NULL;
+    const char *name_str = vals[2].present ? vals[2].val.str : NULL;
+    const bool overwrite = vals[3].val.flag;
 
     char dir_err[256];
     if (ensure_dir_exists(out_dir, dir_err, sizeof(dir_err)) != 0) {

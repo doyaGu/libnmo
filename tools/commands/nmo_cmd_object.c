@@ -7,6 +7,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "app/nmo_object_summary.h"
 
@@ -30,30 +31,6 @@
 #else
 #include <strings.h>
 #endif
-
-/**
- * Parse --class filter
- */
-static const char *parse_class_filter(int argc, char **argv) {
-    for (int i = 1; i < argc - 1; ++i) {
-        if (strcmp(argv[i], "--class") == 0 || strcmp(argv[i], "-c") == 0) {
-            return argv[i + 1];
-        }
-    }
-    return NULL;
-}
-
-/**
- * Parse --filter expression
- */
-static const char *parse_filter_expr(int argc, char **argv) {
-    for (int i = 1; i < argc - 1; ++i) {
-        if (strcmp(argv[i], "--filter") == 0 || strcmp(argv[i], "-f") == 0) {
-            return argv[i + 1];
-        }
-    }
-    return NULL;
-}
 
 /**
  * Evaluate a DSL value as truthy/falsy.
@@ -115,8 +92,17 @@ static bool object_matches_filter(
  * ============================================================================ */
 
 int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *class_filter = parse_class_filter(argc, argv);
-    const char *filter_expr = parse_filter_expr(argc, argv);
+    static const nmo_opt_def_t opts[] = {
+        {"--class",  "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--filter", "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    const char *filter_expr  = vals[1].present ? vals[1].val.str : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -692,18 +678,6 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 /**
- * Parse --name filter
- */
-static const char *parse_name_filter(int argc, char **argv) {
-    for (int i = 1; i < argc - 1; ++i) {
-        if (strcmp(argv[i], "--name") == 0 || strcmp(argv[i], "-n") == 0) {
-            return argv[i + 1];
-        }
-    }
-    return NULL;
-}
-
-/**
  * Simple wildcard match (* at start/end only)
  */
 static bool simple_pattern_match(const char *pattern, const char *str) {
@@ -739,8 +713,17 @@ static bool simple_pattern_match(const char *pattern, const char *str) {
 }
 
 int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    const char *class_filter = parse_class_filter(argc, argv);
-    const char *name_filter = parse_name_filter(argc, argv);
+    static const nmo_opt_def_t opts[] = {
+        {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--name",  "-n", NMO_OPT_STRING, "Filter by name pattern"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    const char *name_filter  = vals[1].present ? vals[1].val.str : NULL;
 
     if (!class_filter && !name_filter) {
         fprintf(stderr, "Error: At least one filter required (--name or --class)\n");
@@ -880,30 +863,27 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
-/**
- * Parse object ID from command line
- */
-static nmo_object_id_t parse_object_id(int argc, char **argv) {
-    /* Find first numeric argument (skip command, subcommand) */
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            /* Try to parse as object ID */
-            char *endptr = NULL;
-            unsigned long id = strtoul(argv[i], &endptr, 10);
-            if (endptr && *endptr == '\0' && id > 0 && id <= UINT32_MAX) {
-                return (nmo_object_id_t)id;
-            }
-        }
-    }
-    return 0;
-}
-
 /* ============================================================================
  * object refs
  * ============================================================================ */
 
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    nmo_object_id_t object_id = parse_object_id(argc, argv);
+    nmo_opt_val_t vals[1]; /* no named options currently */
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    /* Parse with empty option table to collect positional args */
+    if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    /* Find the object ID among positional args (first numeric value) */
+    nmo_object_id_t object_id = 0;
+    for (size_t i = 0; i < r.pos_count; ++i) {
+        char *endptr = NULL;
+        unsigned long id = strtoul(r.pos_args[i], &endptr, 10);
+        if (endptr && *endptr == '\0' && id > 0 && id <= UINT32_MAX) {
+            object_id = (nmo_object_id_t)id;
+            break;
+        }
+    }
     if (object_id == 0) {
         fprintf(stderr, "Error: No valid object ID specified\n");
         fprintf(stderr, "Usage: nmo object refs <id> <file>\n");

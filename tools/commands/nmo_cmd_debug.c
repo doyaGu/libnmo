@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
+#include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "app/nmo_stats.h"
@@ -318,20 +319,17 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
  * ============================================================================ */
 
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    bool include_data = false;
-    size_t max_bytes = 4096;
+    static const nmo_opt_def_t opts[] = {
+        {"--data",      "--include-data", NMO_OPT_FLAG, "Include chunk data"},
+        {"--max-bytes", NULL,             NMO_OPT_UINT, "Max bytes for data dump"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--data") == 0 || strcmp(argv[i], "--include-data") == 0) {
-            include_data = true;
-        } else if (strcmp(argv[i], "--max-bytes") == 0 && (i + 1) < argc) {
-            size_t value = 0;
-            if (nmo_tool_parse_size(argv[i + 1], &value) && value > 0) {
-                max_bytes = value;
-            }
-            i++;
-        }
-    }
+    bool include_data = vals[0].val.flag;
+    size_t max_bytes = vals[1].present ? (size_t)vals[1].val.u : 4096;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);

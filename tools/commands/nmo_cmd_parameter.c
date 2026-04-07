@@ -10,6 +10,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
+#include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "app/nmo_context.h"
@@ -580,33 +581,32 @@ static void dump_parameter_details(nmo_object_t *obj,
 }
 
 int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    bool dump_all = false;
-    const char *type_guid_str = NULL;
+    static const nmo_opt_def_t opts[] = {
+        {"--all",  "-a", NMO_OPT_FLAG,   "Dump all parameters"},
+        {"--type", NULL, NMO_OPT_STRING, "Filter by type GUID"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool dump_all = vals[0].val.flag;
+    const char *type_guid_str = vals[1].present ? vals[1].val.str : NULL;
     const char *id_str = NULL;
-    const char *file_path = NULL;
 
-    /* Parse arguments */
-    int non_opt = 0;
-    for (int i = 1; i < argc; ++i) {
-        if (nmo_tool_streq_ci(argv[i], "--all")) {
-            dump_all = true;
-        } else if (nmo_tool_streq_ci(argv[i], "--type") && i + 1 < argc) {
-            type_guid_str = argv[++i];
-        } else if (argv[i][0] != '-') {
-            non_opt++;
-            if (dump_all) {
-                if (non_opt == 1) file_path = argv[i];
-            } else {
-                if (non_opt == 1) id_str = argv[i];
-                else if (non_opt == 2) file_path = argv[i];
-            }
+    if (dump_all) {
+        if (r.pos_count < 1) {
+            fprintf(stderr, "Usage: nmo parameter dump [--all] [--type <guid>] <id> <file>\n");
+            fprintf(stderr, "       nmo parameter dump --all [--type <guid>] <file>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
         }
-    }
-
-    if (!file_path) {
-        fprintf(stderr, "Usage: nmo parameter dump [--all] [--type <guid>] <id> <file>\n");
-        fprintf(stderr, "       nmo parameter dump --all [--type <guid>] <file>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
+    } else {
+        if (r.pos_count < 2) {
+            fprintf(stderr, "Usage: nmo parameter dump [--all] [--type <guid>] <id> <file>\n");
+            fprintf(stderr, "       nmo parameter dump --all [--type <guid>] <file>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        id_str = r.pos_args[0];
     }
 
     uint32_t object_id = 0;
