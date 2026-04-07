@@ -330,7 +330,6 @@ TEST(runtime_kernel, copy_preserves_internal_group_references) {
     ASSERT_EQ(sizeof(nmo_object_id_t), group_state->base.attribute_parameter_ids.element_size);
     ASSERT_EQ(sizeof(uint32_t), group_state->base.attribute_types.element_size);
     ASSERT_EQ(sizeof(nmo_chunk_t *), group_state->base.attribute_chunks.element_size);
-    ASSERT_EQ(sizeof(uint8_t), group_state->base.legacy_attributes_raw.element_size);
 
     nmo_object_id_t copy_ids[3] = {group_id, member_ids[0], member_ids[1]};
     nmo_runtime_report_t report = {0};

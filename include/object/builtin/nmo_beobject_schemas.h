@@ -15,6 +15,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_array.h"
+#include "core/nmo_guid.h"
 #include "object/builtin/nmo_sceneobject_schemas.h"
 #include "object/nmo_object_type_common.h"
 
@@ -61,8 +62,14 @@ typedef struct nmo_beobject_state {
     uint8_t has_single_activity;               /**< True if single activity flags exist */
     uint32_t single_activity_flags;            /**< Scene object activity flags */
 
-    /* Legacy attribute payload (CK_STATESAVE_ATTRIBUTES) */
-    nmo_array_t legacy_attributes_raw;         /**< Legacy attribute payload (uint8_t) */
+    /* Legacy attributes (CK_STATESAVE_ATTRIBUTES, old format) */
+    uint32_t legacy_attr_count;
+    uint8_t  legacy_attr_old_version;          /**< True if very old format (no compatibleCid) */
+    int32_t *legacy_attr_cids;                 /**< Per-attribute compatible class ID */
+    char   **legacy_attr_names;                /**< Per-attribute name (arena-allocated strings) */
+    char   **legacy_attr_categories;           /**< Per-attribute category (NULL if none) */
+    nmo_guid_t *legacy_attr_param_guids;       /**< Per-attribute parameter GUID */
+    nmo_object_id_t *legacy_attr_param_ids;    /**< Per-attribute parameter object ID */
 } nmo_beobject_state_t;
 
 /* =============================================================================

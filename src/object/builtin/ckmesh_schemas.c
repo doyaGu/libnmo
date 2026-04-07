@@ -1515,9 +1515,6 @@ static nmo_status_t nmo_mesh_copy(
                                         &s->beobject.attribute_types.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->beobject.attribute_chunks,
                                                      &s->beobject.attribute_chunks));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.legacy_attributes_raw,
-                                        &d->beobject.legacy_attributes_raw,
-                                        &s->beobject.legacy_attributes_raw.allocator));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
                                               s->faces, sizeof(nmo_face_t), s->face_count));

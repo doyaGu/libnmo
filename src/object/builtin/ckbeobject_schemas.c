@@ -50,8 +50,13 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         result = nmo_array_init(&state->attribute_chunks, sizeof(nmo_chunk_t *), 0, NULL);
         if (result != NMO_OK) return result;
         nmo_object_array_set_chunk_lifecycle(&state->attribute_chunks);
-        result = nmo_array_init(&state->legacy_attributes_raw, sizeof(uint8_t), 0, NULL);
-        if (result != NMO_OK) return result;
+        state->legacy_attr_count = 0;
+        state->legacy_attr_old_version = 0;
+        state->legacy_attr_cids = NULL;
+        state->legacy_attr_names = NULL;
+        state->legacy_attr_categories = NULL;
+        state->legacy_attr_param_guids = NULL;
+        state->legacy_attr_param_ids = NULL;
     } while (0),
     ((void)0))
 
@@ -72,7 +77,9 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
     NMO_FIELD_REF_ARRAY(nmo_beobject_state_t, attribute_parameter_ids),
     NMO_FIELD_ARRAY(nmo_beobject_state_t, attribute_types, CKPGUID_UINT32),
     NMO_FIELD_ARRAY(nmo_beobject_state_t, attribute_chunks, CKPGUID_STATECHUNK),
-    NMO_FIELD_ARRAY(nmo_beobject_state_t, legacy_attributes_raw, CKPGUID_UINT8),
+    /* Legacy attributes */
+    NMO_FIELD(nmo_beobject_state_t, legacy_attr_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_beobject_state_t, legacy_attr_old_version, CKPGUID_BOOL),
     /* Single activity */
     NMO_FIELD(nmo_beobject_state_t, has_single_activity, CKPGUID_BOOL),
     NMO_FIELD(nmo_beobject_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS)
@@ -107,23 +114,6 @@ static size_t nmo_beobject_identifier_remaining_dwords(nmo_chunk_t *chunk)
     }
 
     return next_pos - state->current_pos;
-}
-
-static nmo_status_t nmo_beobject_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, size_t bytes)
-{
-    if (!chunk || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_beobject_read_raw_bytes");
-    }
-
-    size_t dwords = (bytes + 3) / 4;
-    NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, dwords, "Insufficient data for raw buffer");
-
-    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    memcpy(buffer, &data[state->current_pos], bytes);
-    state->current_pos += dwords;
-
-    NMO_RETURN_OK();
 }
 
 static nmo_status_t nmo_beobject_read_object_sequence(
@@ -348,16 +338,69 @@ load_attributes:
             out_state->attribute_types.count = attr_count;
         }
     } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES) == NMO_OK) {
-        /* Legacy attribute payload - preserve raw bytes for round-trip */
-        size_t remaining_dwords = nmo_beobject_identifier_remaining_dwords(chunk);
-        size_t remaining_bytes = remaining_dwords * 4;
-        if (remaining_bytes > 0) {
-            nmo_array_clear(&out_state->legacy_attributes_raw);
-            result = nmo_array_alloc(&out_state->legacy_attributes_raw, sizeof(uint8_t), remaining_bytes, NULL);
-            if (result == NMO_OK) {
-                (void)nmo_beobject_read_raw_bytes(chunk,
-                                                  out_state->legacy_attributes_raw.data,
-                                                  remaining_bytes);
+        /* Legacy attributes: two-pass parsing per reference (CKBeObject.cpp:582-647) */
+        uint8_t old_version = 0;
+        int32_t count_check = 0;
+        (void)nmo_chunk_read_int(chunk, &count_check);
+        if (count_check > 0) {
+            int32_t a = 0, b = 0;
+            (void)nmo_chunk_read_int(chunk, &a);
+            (void)nmo_chunk_read_int(chunk, &b);
+            if (a < 0 || a >= 0x36 || b <= 0 || b > 0x41) {
+                old_version = 1;
+            }
+        }
+
+        /* Second pass: re-seek and parse each attribute */
+        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES) == NMO_OK) {
+            int32_t attr_count = 0;
+            (void)nmo_chunk_read_int(chunk, &attr_count);
+            if (attr_count > 0 && attr_count < 100000) {  /* Sanity check */
+                /* Allocate all arrays from arena */
+                out_state->legacy_attr_cids = (int32_t *)nmo_arena_alloc(
+                    arena, (size_t)attr_count * sizeof(int32_t), alignof(int32_t));
+                out_state->legacy_attr_names = (char **)nmo_arena_alloc(
+                    arena, (size_t)attr_count * sizeof(char *), alignof(char *));
+                out_state->legacy_attr_categories = (char **)nmo_arena_alloc(
+                    arena, (size_t)attr_count * sizeof(char *), alignof(char *));
+                out_state->legacy_attr_param_guids = (nmo_guid_t *)nmo_arena_alloc(
+                    arena, (size_t)attr_count * sizeof(nmo_guid_t), alignof(nmo_guid_t));
+                out_state->legacy_attr_param_ids = (nmo_object_id_t *)nmo_arena_alloc(
+                    arena, (size_t)attr_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
+
+                if (out_state->legacy_attr_cids && out_state->legacy_attr_names &&
+                    out_state->legacy_attr_categories && out_state->legacy_attr_param_guids &&
+                    out_state->legacy_attr_param_ids) {
+
+                    /* Parse each attribute */
+                    for (int32_t i = 0; i < attr_count; ++i) {
+                        /* Read compatibleCid if new version */
+                        if (!old_version) {
+                            (void)nmo_chunk_read_int(chunk, &out_state->legacy_attr_cids[i]);
+                        } else {
+                            out_state->legacy_attr_cids[i] = 0;
+                        }
+
+                        /* Read name (chunk's arena manages the string) */
+                        char *name = NULL;
+                        (void)nmo_chunk_read_string(chunk, &name);
+                        out_state->legacy_attr_names[i] = name;
+
+                        /* Read category (chunk's arena manages the string) */
+                        char *category = NULL;
+                        (void)nmo_chunk_read_string(chunk, &category);
+                        out_state->legacy_attr_categories[i] = category;
+
+                        /* Read parameter GUID */
+                        (void)nmo_chunk_read_guid(chunk, &out_state->legacy_attr_param_guids[i]);
+
+                        /* Read parameter object ID */
+                        (void)nmo_chunk_read_object_id(chunk, &out_state->legacy_attr_param_ids[i]);
+                    }
+
+                    out_state->legacy_attr_count = (uint32_t)attr_count;
+                    out_state->legacy_attr_old_version = old_version;
+                }
             }
         }
     }
@@ -441,14 +484,40 @@ nmo_status_t nmo_beobject_serialize(
     }
 
     /* Write legacy attributes if no modern attributes were decoded */
-    if (in_state->legacy_attributes_raw.data && in_state->legacy_attributes_raw.count > 0 &&
-        in_state->attribute_parameter_ids.count == 0) {
+    if (in_state->legacy_attr_count > 0 && in_state->attribute_parameter_ids.count == 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTES);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_buffer_no_size(out_chunk,
-                                                in_state->legacy_attributes_raw.data,
-                                                in_state->legacy_attributes_raw.count);
+
+        /* Write count */
+        result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->legacy_attr_count);
         if (result != NMO_OK) return result;
+
+        /* Write each attribute */
+        for (uint32_t i = 0; i < in_state->legacy_attr_count; ++i) {
+            /* Write compatibleCid if new version */
+            if (!in_state->legacy_attr_old_version) {
+                result = nmo_chunk_write_int(out_chunk, in_state->legacy_attr_cids[i]);
+                if (result != NMO_OK) return result;
+            }
+
+            /* Write name */
+            const char *name = in_state->legacy_attr_names ? in_state->legacy_attr_names[i] : NULL;
+            result = nmo_chunk_write_string(out_chunk, name ? name : "");
+            if (result != NMO_OK) return result;
+
+            /* Write category */
+            const char *category = in_state->legacy_attr_categories ? in_state->legacy_attr_categories[i] : NULL;
+            result = nmo_chunk_write_string(out_chunk, category ? category : "");
+            if (result != NMO_OK) return result;
+
+            /* Write parameter GUID */
+            result = nmo_chunk_write_guid(out_chunk, in_state->legacy_attr_param_guids[i]);
+            if (result != NMO_OK) return result;
+
+            /* Write parameter object ID */
+            result = nmo_chunk_write_object_id(out_chunk, in_state->legacy_attr_param_ids[i]);
+            if (result != NMO_OK) return result;
+        }
     }
 
     /* Write attributes if present */
@@ -535,8 +604,68 @@ static nmo_status_t nmo_beobject_copy(
                                         &s->attribute_types.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->attribute_chunks,
                                                      &s->attribute_chunks));
-    return nmo_array_clone(&s->legacy_attributes_raw, &d->legacy_attributes_raw,
-                           &s->legacy_attributes_raw.allocator);
+
+    /* Deep copy legacy attributes */
+    d->legacy_attr_count = s->legacy_attr_count;
+    d->legacy_attr_old_version = s->legacy_attr_old_version;
+    if (s->legacy_attr_count > 0) {
+        /* Allocate arrays */
+        d->legacy_attr_cids = (int32_t *)nmo_arena_alloc(
+            arena, (size_t)s->legacy_attr_count * sizeof(int32_t), alignof(int32_t));
+        d->legacy_attr_names = (char **)nmo_arena_alloc(
+            arena, (size_t)s->legacy_attr_count * sizeof(char *), alignof(char *));
+        d->legacy_attr_categories = (char **)nmo_arena_alloc(
+            arena, (size_t)s->legacy_attr_count * sizeof(char *), alignof(char *));
+        d->legacy_attr_param_guids = (nmo_guid_t *)nmo_arena_alloc(
+            arena, (size_t)s->legacy_attr_count * sizeof(nmo_guid_t), alignof(nmo_guid_t));
+        d->legacy_attr_param_ids = (nmo_object_id_t *)nmo_arena_alloc(
+            arena, (size_t)s->legacy_attr_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
+
+        if (!d->legacy_attr_cids || !d->legacy_attr_names || !d->legacy_attr_categories ||
+            !d->legacy_attr_param_guids || !d->legacy_attr_param_ids) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate legacy attribute arrays");
+        }
+
+        /* Copy arrays */
+        memcpy(d->legacy_attr_cids, s->legacy_attr_cids,
+               (size_t)s->legacy_attr_count * sizeof(int32_t));
+        memcpy(d->legacy_attr_param_guids, s->legacy_attr_param_guids,
+               (size_t)s->legacy_attr_count * sizeof(nmo_guid_t));
+        memcpy(d->legacy_attr_param_ids, s->legacy_attr_param_ids,
+               (size_t)s->legacy_attr_count * sizeof(nmo_object_id_t));
+
+        /* Deep copy strings */
+        for (uint32_t i = 0; i < s->legacy_attr_count; ++i) {
+            if (s->legacy_attr_names[i]) {
+                size_t len = strlen(s->legacy_attr_names[i]) + 1;
+                d->legacy_attr_names[i] = (char *)nmo_arena_alloc(arena, len, 1);
+                if (d->legacy_attr_names[i]) {
+                    memcpy(d->legacy_attr_names[i], s->legacy_attr_names[i], len);
+                }
+            } else {
+                d->legacy_attr_names[i] = NULL;
+            }
+
+            if (s->legacy_attr_categories[i]) {
+                size_t len = strlen(s->legacy_attr_categories[i]) + 1;
+                d->legacy_attr_categories[i] = (char *)nmo_arena_alloc(arena, len, 1);
+                if (d->legacy_attr_categories[i]) {
+                    memcpy(d->legacy_attr_categories[i], s->legacy_attr_categories[i], len);
+                }
+            } else {
+                d->legacy_attr_categories[i] = NULL;
+            }
+        }
+    } else {
+        d->legacy_attr_cids = NULL;
+        d->legacy_attr_names = NULL;
+        d->legacy_attr_categories = NULL;
+        d->legacy_attr_param_guids = NULL;
+        d->legacy_attr_param_ids = NULL;
+    }
+
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t nmo_beobject_validate(
@@ -552,8 +681,16 @@ static nmo_status_t nmo_beobject_validate(
                        "attribute_parameter_ids");
     NMO_VALIDATE_COUNT(s->attribute_types.data, s->attribute_types.count, "attribute_types");
     NMO_VALIDATE_COUNT(s->attribute_chunks.data, s->attribute_chunks.count, "attribute_chunks");
-    NMO_VALIDATE_BYTES(s->legacy_attributes_raw.data, s->legacy_attributes_raw.count,
-                       "legacy_attributes_raw");
+
+    /* Validate legacy attributes structure */
+    if (s->legacy_attr_count > 0) {
+        if (!s->legacy_attr_cids || !s->legacy_attr_names || !s->legacy_attr_categories ||
+            !s->legacy_attr_param_guids || !s->legacy_attr_param_ids) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Legacy attributes count > 0 but arrays are NULL");
+        }
+    }
+
     NMO_RETURN_OK();
 }
 
@@ -682,7 +819,14 @@ nmo_status_t nmo_beobject_remap_dependencies(
     }
 
     if (state->attribute_parameter_ids.count > 0) {
-        nmo_array_clear(&state->legacy_attributes_raw);
+        /* Clear legacy attributes if modern attributes exist */
+        state->legacy_attr_count = 0;
+        state->legacy_attr_old_version = 0;
+        state->legacy_attr_cids = NULL;
+        state->legacy_attr_names = NULL;
+        state->legacy_attr_categories = NULL;
+        state->legacy_attr_param_guids = NULL;
+        state->legacy_attr_param_ids = NULL;
     }
 
     if (!state->has_single_activity) {

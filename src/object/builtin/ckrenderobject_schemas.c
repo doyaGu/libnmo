@@ -136,9 +136,6 @@ static nmo_status_t nmo_renderobject_copy(
                                         &s->base.attribute_types.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
                                                      &s->base.attribute_chunks));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.legacy_attributes_raw,
-                                        &d->base.legacy_attributes_raw,
-                                        &s->base.legacy_attributes_raw.allocator));
     NMO_RETURN_OK();
 }
 
@@ -153,8 +150,6 @@ static nmo_status_t nmo_renderobject_validate(
     size_t script_count = nmo_array_size(&s->base.script_ids);
     size_t attribute_count = nmo_array_size(&s->base.attribute_parameter_ids);
     size_t chunk_count = nmo_array_size(&s->base.attribute_chunks);
-    size_t legacy_bytes = nmo_array_size(&s->base.legacy_attributes_raw) *
-                          nmo_array_element_size(&s->base.legacy_attributes_raw);
 
     NMO_VALIDATE_COUNT(nmo_array_data(&s->base.script_ids), (uint32_t)script_count,
                        "script_ids");
@@ -164,8 +159,6 @@ static nmo_status_t nmo_renderobject_validate(
                        "attribute_types");
     NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_chunks), (uint32_t)chunk_count,
                        "attribute_chunks");
-    NMO_VALIDATE_BYTES(nmo_array_data(&s->base.legacy_attributes_raw), legacy_bytes,
-                       "legacy_attributes_raw");
     NMO_RETURN_OK();
 }
 

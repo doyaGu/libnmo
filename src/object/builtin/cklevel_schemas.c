@@ -389,9 +389,6 @@ static nmo_status_t nmo_level_copy(
                                         &s->base.attribute_types.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
                                                      &s->base.attribute_chunks));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.legacy_attributes_raw,
-                                        &d->base.legacy_attributes_raw,
-                                        &s->base.legacy_attributes_raw.allocator));
 
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->scene_ids, &d->scene_ids, &s->scene_ids.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->level_scene_chunk, s->level_scene_chunk));

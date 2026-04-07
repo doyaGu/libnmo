@@ -597,9 +597,6 @@ static nmo_status_t nmo_sprite_copy(
                                          &s->entity.base.base.attribute_types.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->entity.base.base.attribute_chunks,
                                                     &s->entity.base.base.attribute_chunks));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.legacy_attributes_raw,
-                                         &d->entity.base.base.legacy_attributes_raw,
-                                         &s->entity.base.base.legacy_attributes_raw.allocator));
 
     if (s->has_bitmap_data) {
         NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &d->bitmap_data, &s->bitmap_data));
