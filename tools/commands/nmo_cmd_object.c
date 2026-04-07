@@ -6,6 +6,7 @@
 #include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -23,68 +24,46 @@
 #include <string.h>
 #include <stdlib.h>
 
-/* For strcasecmp */
-#ifdef _WIN32
-#include <string.h>
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
-#else
-#include <strings.h>
-#endif
+/* ============================================================================
+ * object list - visitor callbacks
+ * ============================================================================ */
 
-/**
- * Evaluate a DSL value as truthy/falsy.
- */
-static bool dsl_value_is_truthy(const nmo_dsl_value_t *val) {
-    switch (val->kind) {
-        case NMO_DSL_VALUE_BOOL:   return val->as.b;
-        case NMO_DSL_VALUE_INT:    return val->as.i != 0;
-        case NMO_DSL_VALUE_UINT:   return val->as.u != 0;
-        case NMO_DSL_VALUE_REAL:   return val->as.r != 0.0;
-        case NMO_DSL_VALUE_STRING: return val->as.s != NULL && val->as.s[0] != '\0';
-        case NMO_DSL_VALUE_NULL:   return false;
-        default:                   return true;
-    }
+typedef struct {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    const nmo_cmd_ctx_t *ctx;
+} list_json_data_t;
+
+static int list_json_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
+    (void)index;
+    list_json_data_t *d = (list_json_data_t *)user;
+    yyjson_mut_val *item = yyjson_mut_obj(d->doc);
+    yyjson_mut_obj_add_uint(d->doc, item, "id", nmo_object_get_id(obj));
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    yyjson_mut_obj_add_uint(d->doc, item, "class_id", class_id);
+    const char *class_name = nmo_core_class_name(c, class_id);
+    if (class_name) yyjson_mut_obj_add_str(d->doc, item, "class_name", class_name);
+    const char *name = nmo_object_get_name(obj);
+    if (name && name[0]) nmo_cli_json_add_str_safe(d->doc, item, "name", name);
+    yyjson_mut_arr_add_val(d->arr, item);
+    return 0;
 }
 
-/**
- * Evaluate a DSL filter expression against a single object.
- * Returns true if the object matches (expression is truthy).
- */
-static bool object_matches_filter(
-    nmo_object_t *obj,
-    const nmo_type_registry_t *registry,
-    nmo_dsl_program_t *program)
-{
-    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-    if (!chunk) {
-        return false;
-    }
+typedef struct {
+    nmo_cli_table_t *table;
+    const nmo_cmd_ctx_t *ctx;
+} list_table_data_t;
 
-    nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(
-        registry, (uint32_t)nmo_object_get_class_id(obj));
-    const nmo_type_descriptor_t *type_desc = NULL;
-    if (type_id != NMO_TYPE_ID_INVALID) {
-        type_desc = nmo_type_registry_get_by_id(registry, type_id);
-    }
-
-    size_t data_size = 0;
-    const void *instance = nmo_chunk_get_data(chunk, &data_size);
-
-    nmo_dsl_eval_context_t eval_ctx;
-    memset(&eval_ctx, 0, sizeof(eval_ctx));
-    eval_ctx.registry = registry;
-    eval_ctx.root_type = type_desc;
-    eval_ctx.root_instance = (void *)instance;
-    eval_ctx.current_type = type_desc;
-    eval_ctx.current_instance = instance;
-
-    nmo_dsl_value_t result = {0};
-    nmo_status_t st = nmo_dsl_eval_expr(program, &eval_ctx, &result);
-
-    bool match = (st == NMO_OK) && dsl_value_is_truthy(&result);
-    nmo_dsl_value_destroy(&result);
-    return match;
+static int list_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
+    (void)index;
+    list_table_data_t *d = (list_table_data_t *)user;
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+    const char *class_name = nmo_core_class_name(c, nmo_object_get_class_id(obj));
+    const char *name = nmo_object_get_name(obj);
+    const char *cells[] = { id_buf, class_name ? class_name : "-", (name && name[0]) ? name : "-" };
+    nmo_cli_table_add_row(d->table, cells, 3);
+    return 0;
 }
 
 /* ============================================================================
@@ -101,83 +80,43 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
-    const char *filter_expr  = vals[1].present ? vals[1].val.str : NULL;
+    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *filter_expr      = vals[1].present ? vals[1].val.str : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Get objects */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Resolve class filter if specified */
-    nmo_class_id_t filter_class_id = 0;
-    if (class_filter) {
-        filter_class_id = nmo_cli_class_id_from_name(c.ctx, class_filter);
-        if (!filter_class_id) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
+    /* Build filter */
+    nmo_core_object_filter_t filter = {0};
+    if (class_filter_str) {
+        filter.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!filter.class_id) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        filter.class_derived = true;
     }
-
-    /* Compile DSL filter if specified */
-    nmo_dsl_program_t *filter_program = NULL;
     if (filter_expr) {
-        nmo_dsl_compile_options_t opts = { .mode = NMO_DSL_MODE_EXPRESSION };
-        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &opts, &filter_program);
+        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
         if (st != NMO_OK) {
             fprintf(stderr, "Error: Failed to compile filter expression: %s\n", filter_expr);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
 
+    nmo_core_iter_result_t result;
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
-        yyjson_mut_val *objs = yyjson_mut_arr(doc);
-        size_t filtered_count = 0;
+        list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
+        nmo_core_iter_objects(&c, &filter, list_json_visitor, &jd, &result);
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-
-            /* Apply class filter */
-            if (filter_class_id && !nmo_cli_class_is_derived_from(c.ctx, class_id, filter_class_id)) {
-                continue;
-            }
-
-            /* Apply DSL filter */
-            if (filter_program && !object_matches_filter(obj, c.registry, filter_program)) {
-                continue;
-            }
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
-            }
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "name", name);
-            }
-
-            yyjson_mut_arr_add_val(objs, item);
-            filtered_count++;
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)filtered_count);
-        yyjson_mut_obj_add_val(doc, data, "objects", objs);
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
+        yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.list");
     } else {
@@ -191,39 +130,12 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        size_t filtered_count = 0;
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+        list_table_data_t td = { .table = &table, .ctx = &c };
+        nmo_core_iter_objects(&c, &filter, list_table_visitor, &td, &result);
 
-            /* Apply class filter */
-            if (filter_class_id && !nmo_cli_class_is_derived_from(c.ctx, class_id, filter_class_id)) {
-                continue;
-            }
-
-            /* Apply DSL filter */
-            if (filter_program && !object_matches_filter(obj, c.registry, filter_program)) {
-                continue;
-            }
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-            const char *name = nmo_object_get_name(obj);
-
-            const char *cells[] = {
-                id_buf,
-                class_name ? class_name : "-",
-                (name && name[0]) ? name : "-"
-            };
-            nmo_cli_table_add_row(&table, cells, 3);
-            filtered_count++;
-        }
-
-        fprintf(c.out, "Objects: %zu", filtered_count);
-        if (class_filter) {
-            fprintf(c.out, " (filtered by class: %s)", class_filter);
+        fprintf(c.out, "Objects: %zu", result.matched);
+        if (class_filter_str) {
+            fprintf(c.out, " (filtered by class: %s)", class_filter_str);
         }
         if (filter_expr) {
             fprintf(c.out, " (filtered by: %s)", filter_expr);
@@ -234,8 +146,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_free(&table);
     }
 
-    if (filter_program) {
-        nmo_dsl_program_destroy(filter_program);
+    if (filter.dsl_filter) {
+        nmo_dsl_program_destroy(filter.dsl_filter);
     }
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
@@ -674,42 +586,45 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 /* ============================================================================
- * object find
+ * object find - visitor callbacks
  * ============================================================================ */
 
-/**
- * Simple wildcard match (* at start/end only)
- */
-static bool simple_pattern_match(const char *pattern, const char *str) {
-    if (!pattern || !str) return false;
+typedef struct {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *arr;
+    const nmo_cmd_ctx_t *ctx;
+} find_json_data_t;
 
-    size_t plen = strlen(pattern);
-    size_t slen = strlen(str);
+static int find_json_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
+    (void)index;
+    find_json_data_t *d = (find_json_data_t *)user;
+    yyjson_mut_val *item = yyjson_mut_obj(d->doc);
+    yyjson_mut_obj_add_uint(d->doc, item, "id", nmo_object_get_id(obj));
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    yyjson_mut_obj_add_uint(d->doc, item, "class_id", class_id);
+    const char *class_name = nmo_core_class_name(c, class_id);
+    if (class_name) yyjson_mut_obj_add_str(d->doc, item, "class_name", class_name);
+    const char *name = nmo_object_get_name(obj);
+    if (name && name[0]) nmo_cli_json_add_str_safe(d->doc, item, "name", name);
+    yyjson_mut_arr_add_val(d->arr, item);
+    return 0;
+}
 
-    /* "*" matches everything */
-    if (plen == 1 && pattern[0] == '*') return true;
+typedef struct {
+    nmo_cli_table_t *table;
+    const nmo_cmd_ctx_t *ctx;
+} find_table_data_t;
 
-    /* "*suffix" */
-    if (pattern[0] == '*') {
-        const char *suffix = pattern + 1;
-        size_t suffix_len = plen - 1;
-        if (slen >= suffix_len) {
-            return strcasecmp(str + slen - suffix_len, suffix) == 0;
-        }
-        return false;
-    }
-
-    /* "prefix*" */
-    if (pattern[plen - 1] == '*') {
-        size_t prefix_len = plen - 1;
-        if (slen >= prefix_len) {
-            return strncasecmp(str, pattern, prefix_len) == 0;
-        }
-        return false;
-    }
-
-    /* Exact match (case-insensitive) */
-    return strcasecmp(pattern, str) == 0;
+static int find_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
+    (void)index;
+    find_table_data_t *d = (find_table_data_t *)user;
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+    const char *class_name = nmo_core_class_name(c, nmo_object_get_class_id(obj));
+    const char *name = nmo_object_get_name(obj);
+    const char *cells[] = { id_buf, class_name ? class_name : "-", (name && name[0]) ? name : "-" };
+    nmo_cli_table_add_row(d->table, cells, 3);
+    return 0;
 }
 
 int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -722,10 +637,10 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos };
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
-    const char *name_filter  = vals[1].present ? vals[1].val.str : NULL;
+    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *name_filter      = vals[1].present ? vals[1].val.str : NULL;
 
-    if (!class_filter && !name_filter) {
+    if (!class_filter_str && !name_filter) {
         fprintf(stderr, "Error: At least one filter required (--name or --class)\n");
         fprintf(stderr, "Usage: nmo object find [--name <pattern>] [--class <name>] <file>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -735,32 +650,29 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    /* Get objects */
-    nmo_object_t **objects = NULL;
-    size_t object_count = 0;
-    if (nmo_session_get_objects(c.session, &objects, &object_count) != NMO_OK) {
-        fprintf(stderr, "Error: Failed to get objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Resolve class filter if specified */
-    nmo_class_id_t filter_class_id = 0;
-    if (class_filter) {
-        filter_class_id = nmo_cli_class_id_from_name(c.ctx, class_filter);
-        if (!filter_class_id) {
-            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
+    /* Build filter */
+    nmo_core_object_filter_t filter = {0};
+    if (class_filter_str) {
+        filter.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!filter.class_id) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        filter.class_derived = true;
+    }
+    if (name_filter) {
+        filter.name_pattern = name_filter;
     }
 
+    nmo_core_iter_result_t result;
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         /* Record query */
         yyjson_mut_val *query = yyjson_mut_obj(doc);
-        if (class_filter) {
-            yyjson_mut_obj_add_str(doc, query, "class", class_filter);
+        if (class_filter_str) {
+            yyjson_mut_obj_add_str(doc, query, "class", class_filter_str);
         }
         if (name_filter) {
             yyjson_mut_obj_add_str(doc, query, "name_pattern", name_filter);
@@ -768,41 +680,11 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_obj_add_val(doc, data, "query", query);
 
         yyjson_mut_val *matches = yyjson_mut_arr(doc);
-        size_t match_count = 0;
 
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+        find_json_data_t jd = { .doc = doc, .arr = matches, .ctx = &c };
+        nmo_core_iter_objects(&c, &filter, find_json_visitor, &jd, &result);
 
-            /* Apply class filter */
-            if (filter_class_id && !nmo_cli_class_is_derived_from(c.ctx, class_id, filter_class_id)) {
-                continue;
-            }
-
-            /* Apply name filter */
-            const char *name = nmo_object_get_name(obj);
-            if (name_filter && !simple_pattern_match(name_filter, name ? name : "")) {
-                continue;
-            }
-
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
-            }
-
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "name", name);
-            }
-
-            yyjson_mut_arr_add_val(matches, item);
-            match_count++;
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)match_count);
+        yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.find");
@@ -817,39 +699,12 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        size_t match_count = 0;
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+        find_table_data_t td = { .table = &table, .ctx = &c };
+        nmo_core_iter_objects(&c, &filter, find_table_visitor, &td, &result);
 
-            /* Apply class filter */
-            if (filter_class_id && !nmo_cli_class_is_derived_from(c.ctx, class_id, filter_class_id)) {
-                continue;
-            }
-
-            /* Apply name filter */
-            const char *name = nmo_object_get_name(obj);
-            if (name_filter && !simple_pattern_match(name_filter, name ? name : "")) {
-                continue;
-            }
-
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-
-            const char *cells[] = {
-                id_buf,
-                class_name ? class_name : "-",
-                (name && name[0]) ? name : "-"
-            };
-            nmo_cli_table_add_row(&table, cells, 3);
-            match_count++;
-        }
-
-        fprintf(c.out, "Found: %zu objects", match_count);
-        if (class_filter) {
-            fprintf(c.out, " (class: %s)", class_filter);
+        fprintf(c.out, "Found: %zu objects", result.matched);
+        if (class_filter_str) {
+            fprintf(c.out, " (class: %s)", class_filter_str);
         }
         if (name_filter) {
             fprintf(c.out, " (name: %s)", name_filter);
@@ -864,8 +719,104 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
 }
 
 /* ============================================================================
- * object refs
+ * object refs - visitor callbacks for nmo_core_iter_refs
  * ============================================================================ */
+
+/** Visitor data for JSON ref output */
+typedef struct {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *outgoing;
+    yyjson_mut_val *incoming;
+} cli_refs_json_data_t;
+
+static int cli_refs_json_visitor(const nmo_core_ref_info_t *info,
+                                 const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    cli_refs_json_data_t *d = (cli_refs_json_data_t *)user;
+    yyjson_mut_doc *doc = d->doc;
+
+    yyjson_mut_val *edge = yyjson_mut_obj(doc);
+
+    if (info->is_incoming) {
+        yyjson_mut_obj_add_uint(doc, edge, "source_id", info->edge->from);
+    } else {
+        yyjson_mut_obj_add_uint(doc, edge, "target_id", info->edge->to);
+    }
+
+    yyjson_mut_obj_add_str(doc, edge, "kind",
+                           nmo_ref_kind_name(info->edge->kind));
+    yyjson_mut_obj_add_str(doc, edge, "field",
+                           info->edge->field_path ? info->edge->field_path : "unknown");
+    if (info->edge->index > 0) {
+        yyjson_mut_obj_add_uint(doc, edge, "index", info->edge->index);
+    }
+
+    if (info->peer) {
+        if (info->peer_class_name) {
+            yyjson_mut_obj_add_str(doc, edge,
+                info->is_incoming ? "source_class" : "target_class",
+                info->peer_class_name);
+        }
+        if (info->peer_name && info->peer_name[0]) {
+            nmo_cli_json_add_str_safe(doc, edge,
+                info->is_incoming ? "source_name" : "target_name",
+                info->peer_name);
+        }
+    } else if (!info->is_incoming) {
+        yyjson_mut_obj_add_bool(doc, edge, "broken", true);
+    }
+
+    yyjson_mut_arr_add_val(
+        info->is_incoming ? d->incoming : d->outgoing, edge);
+    return 0;
+}
+
+/** Visitor data for text ref output */
+typedef struct {
+    nmo_cli_table_t *out_table;
+    nmo_cli_table_t *in_table;
+} cli_refs_text_data_t;
+
+static int cli_refs_text_visitor(const nmo_core_ref_info_t *info,
+                                 const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    cli_refs_text_data_t *d = (cli_refs_text_data_t *)user;
+
+    nmo_object_id_t peer_id = info->is_incoming ? info->edge->from : info->edge->to;
+    char id_buf[16];
+    snprintf(id_buf, sizeof(id_buf), "%u", peer_id);
+
+    char field_buf[32];
+    const char *field_name = info->edge->field_path ? info->edge->field_path : "unknown";
+    if (info->edge->index > 0) {
+        snprintf(field_buf, sizeof(field_buf), "%s[%u]",
+                 field_name, info->edge->index);
+    } else {
+        snprintf(field_buf, sizeof(field_buf), "%s", field_name);
+    }
+
+    const char *peer_class = "-";
+    const char *peer_name = "-";
+
+    if (info->peer) {
+        if (info->peer_class_name) peer_class = info->peer_class_name;
+        if (info->peer_name && info->peer_name[0]) peer_name = info->peer_name;
+    } else if (!info->is_incoming) {
+        peer_name = "(BROKEN)";
+    }
+
+    const char *cells[] = {
+        id_buf,
+        nmo_ref_kind_name(info->edge->kind),
+        field_buf,
+        peer_class,
+        peer_name
+    };
+
+    nmo_cli_table_t *table = info->is_incoming ? d->in_table : d->out_table;
+    nmo_cli_table_add_row(table, cells, 5);
+    return 0;
+}
 
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     nmo_opt_val_t vals[1]; /* no named options currently */
@@ -895,36 +846,11 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (rc) return rc;
 
     /* Find the object */
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
+    nmo_object_t *obj = nmo_core_find_by_id(&c, object_id);
     if (!obj) {
         fprintf(stderr, "Error: Object %u not found\n", object_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
-
-    /* Create reference graph */
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, c.registry, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-
-    /* Get outgoing edges */
-    nmo_ref_edge_t *out_edges = NULL;
-    size_t out_count = 0;
-    nmo_ref_graph_get_object_edges(graph, object_id, NMO_REF_DIR_OUTGOING, &out_edges, &out_count);
-
-    /* Get incoming edges */
-    nmo_ref_edge_t *in_edges = NULL;
-    size_t in_count = 0;
-    nmo_ref_graph_get_object_edges(graph, object_id, NMO_REF_DIR_INCOMING, &in_edges, &in_count);
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -932,7 +858,7 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         /* Object info */
         yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
+        const char *class_name = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
         if (class_name) {
             yyjson_mut_obj_add_str(doc, data, "class_name", class_name);
         }
@@ -941,192 +867,85 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
             nmo_cli_json_add_str_safe(doc, data, "name", name);
         }
 
-        /* Outgoing references */
-        yyjson_mut_val *outgoing = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < out_count; ++i) {
-            yyjson_mut_val *edge = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, edge, "target_id", out_edges[i].to);
-            yyjson_mut_obj_add_str(doc, edge, "kind", nmo_ref_kind_name(out_edges[i].kind));
-            yyjson_mut_obj_add_str(doc, edge, "field",
-                                   out_edges[i].field_path ? out_edges[i].field_path : "unknown");
-            if (out_edges[i].index > 0) {
-                yyjson_mut_obj_add_uint(doc, edge, "index", out_edges[i].index);
-            }
+        cli_refs_json_data_t jd = {
+            .doc = doc,
+            .outgoing = yyjson_mut_arr(doc),
+            .incoming = yyjson_mut_arr(doc),
+        };
 
-            /* Add target object info if available */
-            nmo_object_t *target = nmo_object_repository_find_by_id(repo, out_edges[i].to);
-            if (target) {
-                const char *target_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(target));
-                if (target_class) {
-                    yyjson_mut_obj_add_str(doc, edge, "target_class", target_class);
-                }
-                const char *target_name = nmo_object_get_name(target);
-                if (target_name && target_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, edge, "target_name", target_name);
-                }
-            } else {
-                yyjson_mut_obj_add_bool(doc, edge, "broken", true);
-            }
+        nmo_core_ref_result_t ref_result = {0};
+        nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
+                           cli_refs_json_visitor, &jd, &ref_result);
 
-            yyjson_mut_arr_add_val(outgoing, edge);
-        }
-        yyjson_mut_obj_add_val(doc, data, "outgoing", outgoing);
-        yyjson_mut_obj_add_uint(doc, data, "outgoing_count", (uint64_t)out_count);
-
-        /* Incoming references */
-        yyjson_mut_val *incoming = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < in_count; ++i) {
-            yyjson_mut_val *edge = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, edge, "source_id", in_edges[i].from);
-            yyjson_mut_obj_add_str(doc, edge, "kind", nmo_ref_kind_name(in_edges[i].kind));
-            yyjson_mut_obj_add_str(doc, edge, "field",
-                                   in_edges[i].field_path ? in_edges[i].field_path : "unknown");
-            if (in_edges[i].index > 0) {
-                yyjson_mut_obj_add_uint(doc, edge, "index", in_edges[i].index);
-            }
-
-            /* Add source object info */
-            nmo_object_t *source = nmo_object_repository_find_by_id(repo, in_edges[i].from);
-            if (source) {
-                const char *source_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(source));
-                if (source_class) {
-                    yyjson_mut_obj_add_str(doc, edge, "source_class", source_class);
-                }
-                const char *source_name = nmo_object_get_name(source);
-                if (source_name && source_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, edge, "source_name", source_name);
-                }
-            }
-
-            yyjson_mut_arr_add_val(incoming, edge);
-        }
-        yyjson_mut_obj_add_val(doc, data, "incoming", incoming);
-        yyjson_mut_obj_add_uint(doc, data, "incoming_count", (uint64_t)in_count);
+        yyjson_mut_obj_add_val(doc, data, "outgoing", jd.outgoing);
+        yyjson_mut_obj_add_uint(doc, data, "outgoing_count",
+                                (uint64_t)ref_result.outgoing);
+        yyjson_mut_obj_add_val(doc, data, "incoming", jd.incoming);
+        yyjson_mut_obj_add_uint(doc, data, "incoming_count",
+                                (uint64_t)ref_result.incoming);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "object.refs");
     } else {
         /* Text output */
         const char *obj_name = nmo_object_get_name(obj);
-        const char *obj_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
+        const char *obj_class = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
         fprintf(c.out, "References for object %u: %s [%s]\n\n",
                 object_id,
                 (obj_name && obj_name[0]) ? obj_name : "(unnamed)",
                 obj_class ? obj_class : "?");
 
+        static const nmo_cli_table_col_t out_cols[] = {
+            {"Target", NMO_CLI_ALIGN_RIGHT, 8, 0},
+            {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
+            {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
+            {"Target Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+            {"Target Name", NMO_CLI_ALIGN_LEFT, 25, 0},
+        };
+        static const nmo_cli_table_col_t in_cols[] = {
+            {"Source", NMO_CLI_ALIGN_RIGHT, 8, 0},
+            {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
+            {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
+            {"Source Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+            {"Source Name", NMO_CLI_ALIGN_LEFT, 25, 0},
+        };
+
+        nmo_cli_table_t out_table;
+        nmo_cli_table_init(&out_table, out_cols,
+                           sizeof(out_cols) / sizeof(out_cols[0]));
+        nmo_cli_table_t in_table;
+        nmo_cli_table_init(&in_table, in_cols,
+                           sizeof(in_cols) / sizeof(in_cols[0]));
+
+        cli_refs_text_data_t td = {
+            .out_table = &out_table,
+            .in_table = &in_table,
+        };
+
+        nmo_core_ref_result_t ref_result = {0};
+        nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
+                           cli_refs_text_visitor, &td, &ref_result);
+
         /* Outgoing references */
-        fprintf(c.out, "Outgoing references (%zu):\n", out_count);
-        if (out_count == 0) {
+        fprintf(c.out, "Outgoing references (%zu):\n", ref_result.outgoing);
+        if (ref_result.outgoing == 0) {
             fprintf(c.out, "  (none)\n");
         } else {
-            static const nmo_cli_table_col_t out_cols[] = {
-                {"Target", NMO_CLI_ALIGN_RIGHT, 8, 0},
-                {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
-                {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
-                {"Target Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-                {"Target Name", NMO_CLI_ALIGN_LEFT, 25, 0},
-            };
-
-            nmo_cli_table_t table;
-            nmo_cli_table_init(&table, out_cols, sizeof(out_cols) / sizeof(out_cols[0]));
-
-            for (size_t i = 0; i < out_count; ++i) {
-                char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", out_edges[i].to);
-
-                char field_buf[32];
-                const char *field_name = out_edges[i].field_path ? out_edges[i].field_path : "unknown";
-                if (out_edges[i].index > 0) {
-                    snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                             field_name, out_edges[i].index);
-                } else {
-                    snprintf(field_buf, sizeof(field_buf), "%s", field_name);
-                }
-
-                nmo_object_t *target = nmo_object_repository_find_by_id(repo, out_edges[i].to);
-                const char *target_class = "-";
-                const char *target_name = "-";
-
-                if (target) {
-                    const char *tc = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(target));
-                    if (tc) target_class = tc;
-                    const char *tn = nmo_object_get_name(target);
-                    if (tn && tn[0]) target_name = tn;
-                } else {
-                    target_name = "(BROKEN)";
-                }
-
-                const char *cells[] = {
-                    id_buf,
-                    nmo_ref_kind_name(out_edges[i].kind),
-                    field_buf,
-                    target_class,
-                    target_name
-                };
-                nmo_cli_table_add_row(&table, cells, 5);
-            }
-
-            nmo_cli_table_print(&table, c.out, c.colorize);
-            nmo_cli_table_free(&table);
+            nmo_cli_table_print(&out_table, c.out, c.colorize);
         }
+        nmo_cli_table_free(&out_table);
 
         fprintf(c.out, "\n");
 
         /* Incoming references */
-        fprintf(c.out, "Incoming references (%zu):\n", in_count);
-        if (in_count == 0) {
+        fprintf(c.out, "Incoming references (%zu):\n", ref_result.incoming);
+        if (ref_result.incoming == 0) {
             fprintf(c.out, "  (none)\n");
         } else {
-            static const nmo_cli_table_col_t in_cols[] = {
-                {"Source", NMO_CLI_ALIGN_RIGHT, 8, 0},
-                {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
-                {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
-                {"Source Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-                {"Source Name", NMO_CLI_ALIGN_LEFT, 25, 0},
-            };
-
-            nmo_cli_table_t table;
-            nmo_cli_table_init(&table, in_cols, sizeof(in_cols) / sizeof(in_cols[0]));
-
-            for (size_t i = 0; i < in_count; ++i) {
-                char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", in_edges[i].from);
-
-                char field_buf[32];
-                const char *field_name = in_edges[i].field_path ? in_edges[i].field_path : "unknown";
-                if (in_edges[i].index > 0) {
-                    snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                             field_name, in_edges[i].index);
-                } else {
-                    snprintf(field_buf, sizeof(field_buf), "%s", field_name);
-                }
-
-                nmo_object_t *source = nmo_object_repository_find_by_id(repo, in_edges[i].from);
-                const char *source_class = "-";
-                const char *source_name = "-";
-
-                if (source) {
-                    const char *sc = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(source));
-                    if (sc) source_class = sc;
-                    const char *sn = nmo_object_get_name(source);
-                    if (sn && sn[0]) source_name = sn;
-                }
-
-                const char *cells[] = {
-                    id_buf,
-                    nmo_ref_kind_name(in_edges[i].kind),
-                    field_buf,
-                    source_class,
-                    source_name
-                };
-                nmo_cli_table_add_row(&table, cells, 5);
-            }
-
-            nmo_cli_table_print(&table, c.out, c.colorize);
-            nmo_cli_table_free(&table);
+            nmo_cli_table_print(&in_table, c.out, c.colorize);
         }
+        nmo_cli_table_free(&in_table);
     }
 
-    nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
