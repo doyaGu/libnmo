@@ -4,10 +4,8 @@
  */
 
 #include "nmo_cmd_convert.h"
-#include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
-#include "../nmo_cli_json.h"
-#include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -49,15 +47,7 @@ static bool parse_compression_level(const char *str, int *out_level)
 
 int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Find input file (last positional arg) */
-    const char *input_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!input_path) {
-        fprintf(stderr, "Error: No input file specified\n");
-        fprintf(stderr, "Usage: nmo convert copy [options] -o <output> <input>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    /* Parse options */
+    /* Parse options before init (need output_path for validation) */
     const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
@@ -69,22 +59,10 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     bool no_managers = nmo_tool_has_flag(argc, argv, "--no-managers", NULL);
     bool strip_resources = nmo_tool_has_flag(argc, argv, "--strip-resources", NULL);
     bool validate = nmo_tool_has_flag(argc, argv, "--validate", NULL);
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
 
-    /* Load file */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[512];
-    if (!nmo_tool_open_session(input_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error loading file: %s\n", errbuf);
-        nmo_cli_close_output_stream(global, out);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     /* Build save options */
     nmo_save_options_t save_opts = nmo_save_options_default();
@@ -93,9 +71,7 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
         int level = 0;
         if (!parse_compression_level(compress_str, &level)) {
             fprintf(stderr, "Error: Invalid compression level '%s' (must be 0-9)\n", compress_str);
-            nmo_cli_close_output_stream(global, out);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_ARG_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
         save_opts.compression_level = level;
         save_opts.flags |= NMO_SAVE_COMPRESSED;
@@ -118,41 +94,31 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Save file */
-    int result = nmo_save_file(session, output_path, &save_opts);
+    int result = nmo_save_file(c.session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        nmo_cli_close_output_stream(global, out);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Output results */
-    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
-                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-
-    if (is_json) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
-            nmo_cli_close_output_stream(global, out);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "input_file", input_path);
+        nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
         nmo_cli_json_add_uint_safe(doc, data, "flags", save_opts.flags);
         nmo_cli_json_add_int_safe(doc, data, "compression_level", save_opts.compression_level);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.copy", input_path,
-                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "convert.copy");
     } else {
-        fprintf(out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Saved to %s\n", output_path);
     }
 
-    nmo_cli_close_output_stream(global, out);
-    nmo_tool_close_session(ctx, session);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -161,47 +127,22 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
 int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Find input file */
-    const char *input_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!input_path) {
-        fprintf(stderr, "Error: No input file specified\n");
-        fprintf(stderr, "Usage: nmo convert version [options] <input>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
     /* Check if output specified */
     const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
 
-    /* Load file */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[512];
-    if (!nmo_tool_open_session(input_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error loading file: %s\n", errbuf);
-        nmo_cli_close_output_stream(global, out);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     /* Get file info */
-    nmo_file_info_t info = nmo_session_get_file_info(session);
+    nmo_file_info_t info = nmo_session_get_file_info(c.session);
 
     /* If no output, just show version info */
     if (!output_path) {
-        bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
-                        global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-
-        if (is_json) {
-            yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+        if (c.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
             if (!doc) {
-                nmo_cli_close_output_stream(global, out);
-                nmo_tool_close_session(ctx, session);
-                return NMO_CLI_EXIT_INTERNAL_ERROR;
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
             }
 
             yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -213,57 +154,44 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
             nmo_cli_json_add_uint_safe(doc, data, "object_count", (uint64_t)info.object_count);
             nmo_cli_json_add_uint_safe(doc, data, "manager_count", (uint64_t)info.manager_count);
 
-            nmo_cli_json_write_enveloped_and_free(doc, data, "convert.version", input_path,
-                                                  out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+            nmo_cmd_ctx_json_end(&c, doc, data, "convert.version");
         } else {
-            fprintf(out, "File version:    %u\n", info.file_version);
-            fprintf(out, "File version2:   %u\n", info.file_version2);
-            fprintf(out, "CK version:      %u\n", info.ck_version);
-            fprintf(out, "Product version: %u\n", info.product_version);
-            fprintf(out, "Product build:   %u\n", info.product_build);
-            fprintf(out, "Object count:    %u\n", info.object_count);
-            fprintf(out, "Manager count:   %u\n", info.manager_count);
+            fprintf(c.out, "File version:    %u\n", info.file_version);
+            fprintf(c.out, "File version2:   %u\n", info.file_version2);
+            fprintf(c.out, "CK version:      %u\n", info.ck_version);
+            fprintf(c.out, "Product version: %u\n", info.product_version);
+            fprintf(c.out, "Product build:   %u\n", info.product_build);
+            fprintf(c.out, "Object count:    %u\n", info.object_count);
+            fprintf(c.out, "Manager count:   %u\n", info.manager_count);
         }
 
-        nmo_cli_close_output_stream(global, out);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_SUCCESS;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
     /* If output specified, save the file (equivalent to copy) */
     nmo_save_options_t save_opts = nmo_save_options_default();
-    int result = nmo_save_file(session, output_path, &save_opts);
+    int result = nmo_save_file(c.session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        nmo_cli_close_output_stream(global, out);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
-    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
-                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-
-    if (is_json) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
-            nmo_cli_close_output_stream(global, out);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "input_file", input_path);
+        nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.version", input_path,
-                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "convert.version");
     } else {
-        fprintf(out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Saved to %s\n", output_path);
     }
 
-    nmo_cli_close_output_stream(global, out);
-    nmo_tool_close_session(ctx, session);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -272,15 +200,7 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 
 int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Find input file */
-    const char *input_path = nmo_tool_find_file_arg_last(argc, argv);
-    if (!input_path) {
-        fprintf(stderr, "Error: No input file specified\n");
-        fprintf(stderr, "Usage: nmo convert strip [options] -o <output> <input>\n");
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-
-    /* Parse options */
+    /* Parse options before init */
     const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
@@ -289,39 +209,24 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     const char *class_name = nmo_tool_find_opt_value(argc, argv, "--class", NULL);
     const char *name_pattern = nmo_tool_find_opt_value(argc, argv, "--name", NULL);
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
 
     if (!class_name && !name_pattern) {
         fprintf(stderr, "Error: Must specify --class or --name filter\n");
-        nmo_cli_close_output_stream(global, out);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Load file */
-    nmo_context_t *ctx = NULL;
-    nmo_session_t *session = NULL;
-    char errbuf[512];
-    if (!nmo_tool_open_session(input_path, &ctx, &session, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error loading file: %s\n", errbuf);
-        nmo_cli_close_output_stream(global, out);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
 
     /* Get repository */
-    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
     size_t total_count = 0;
     nmo_object_t **all_objects = nmo_object_repository_get_all(repo, &total_count);
 
     if (!all_objects && total_count > 0) {
         fprintf(stderr, "Error: Failed to get object list\n");
-        nmo_cli_close_output_stream(global, out);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     /* Collect matching object IDs */
@@ -335,9 +240,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         ids_to_remove = (nmo_object_id_t *)malloc(remove_capacity * sizeof(nmo_object_id_t));
         if (!ids_to_remove) {
             fprintf(stderr, "Error: Failed to allocate removal list\n");
-            nmo_cli_close_output_stream(global, out);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         /* Filter by class or name */
@@ -347,17 +250,15 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
             if (class_name) {
                 /* Check class match (including derived classes) */
-                nmo_class_id_t filter_class = nmo_cli_class_id_from_name(ctx, class_name);
+                nmo_class_id_t filter_class = nmo_cli_class_id_from_name(c.ctx, class_name);
                 if (filter_class == 0) {
                     fprintf(stderr, "Warning: Unknown class '%s'\n", class_name);
                     free(ids_to_remove);
-                    nmo_cli_close_output_stream(global, out);
-                    nmo_tool_close_session(ctx, session);
-                    return NMO_CLI_EXIT_ARG_ERROR;
+                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
                 }
 
                 nmo_class_id_t obj_class = nmo_object_get_class_id(obj);
-                if (nmo_cli_class_is_derived_from(ctx, obj_class, filter_class) ||
+                if (nmo_cli_class_is_derived_from(c.ctx, obj_class, filter_class) ||
                     obj_class == filter_class) {
                     matches = true;
                 }
@@ -382,14 +283,12 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     memset(&report, 0, sizeof(report));
 
     if (remove_count > 0) {
-        int result = nmo_session_destroy_objects(session, ids_to_remove, remove_count,
+        int result = nmo_session_destroy_objects(c.session, ids_to_remove, remove_count,
                                                  NMO_RUNTIME_REQUEST_CASCADE, &report);
         if (result != NMO_OK) {
             fprintf(stderr, "Error destroying objects: %s\n", nmo_error_string(result));
             free(ids_to_remove);
-            nmo_cli_close_output_stream(global, out);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_IO_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
         }
     }
 
@@ -397,28 +296,21 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Save file */
     nmo_save_options_t save_opts = nmo_save_options_default();
-    int result = nmo_save_file(session, output_path, &save_opts);
+    int result = nmo_save_file(c.session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        nmo_cli_close_output_stream(global, out);
-        nmo_tool_close_session(ctx, session);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Output results */
-    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
-                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-
-    if (is_json) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
-            nmo_cli_close_output_stream(global, out);
-            nmo_tool_close_session(ctx, session);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "input_file", input_path);
+        nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
         nmo_cli_json_add_uint_safe(doc, data, "objects_removed", (uint64_t)report.deleted_objects);
         if (class_name) {
@@ -428,16 +320,13 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
             nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
         }
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.strip", input_path,
-                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cmd_ctx_json_end(&c, doc, data, "convert.strip");
     } else {
-        fprintf(out, "Removed %zu object(s)\n", report.deleted_objects);
-        fprintf(out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Removed %zu object(s)\n", report.deleted_objects);
+        fprintf(c.out, "Saved to %s\n", output_path);
     }
 
-    nmo_cli_close_output_stream(global, out);
-    nmo_tool_close_session(ctx, session);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -467,12 +356,11 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
+
+    /* Use init_no_file since we manage two sessions manually */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (rc) return rc;
 
     /* Load source file */
     nmo_context_t *src_ctx = NULL;
@@ -480,8 +368,7 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     char errbuf[512];
     if (!nmo_tool_open_session(source_path, &src_ctx, &src_session, errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error loading source file: %s\n", errbuf);
-        nmo_cli_close_output_stream(global, out);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Load target file */
@@ -489,9 +376,8 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_session_t *tgt_session = NULL;
     if (!nmo_tool_open_session(target_path, &tgt_ctx, &tgt_session, errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error loading target file: %s\n", errbuf);
-        nmo_cli_close_output_stream(global, out);
         nmo_tool_close_session(src_ctx, src_session);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Get all objects from source */
@@ -501,10 +387,9 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     if (!src_objects && src_count > 0) {
         fprintf(stderr, "Error: Failed to get source object list\n");
-        nmo_cli_close_output_stream(global, out);
         nmo_tool_close_session(src_ctx, src_session);
         nmo_tool_close_session(tgt_ctx, tgt_session);
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     /* Collect source object IDs */
@@ -513,10 +398,9 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         src_ids = (nmo_object_id_t *)malloc(src_count * sizeof(nmo_object_id_t));
         if (!src_ids) {
             fprintf(stderr, "Error: Failed to allocate ID list\n");
-            nmo_cli_close_output_stream(global, out);
             nmo_tool_close_session(src_ctx, src_session);
             nmo_tool_close_session(tgt_ctx, tgt_session);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         for (size_t i = 0; i < src_count; ++i) {
@@ -534,10 +418,9 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (result != NMO_OK) {
             fprintf(stderr, "Error copying objects: %s\n", nmo_error_string(result));
             free(src_ids);
-            nmo_cli_close_output_stream(global, out);
             nmo_tool_close_session(src_ctx, src_session);
             nmo_tool_close_session(tgt_ctx, tgt_session);
-            return NMO_CLI_EXIT_IO_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
         }
     }
 
@@ -548,23 +431,18 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int result = nmo_save_file(tgt_session, output_path, &save_opts);
     if (result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(result));
-        nmo_cli_close_output_stream(global, out);
         nmo_tool_close_session(src_ctx, src_session);
         nmo_tool_close_session(tgt_ctx, tgt_session);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
     /* Output results */
-    bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
-                    global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-
-    if (is_json) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
-            nmo_cli_close_output_stream(global, out);
             nmo_tool_close_session(src_ctx, src_session);
             nmo_tool_close_session(tgt_ctx, tgt_session);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -573,15 +451,15 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
         nmo_cli_json_add_uint_safe(doc, data, "objects_copied", (uint64_t)report.copied_objects);
 
+        /* Use manual write since c.file_path is NULL for no_file init */
         nmo_cli_json_write_enveloped_and_free(doc, data, "convert.merge", source_path,
-                                              out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+                                              c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
-        fprintf(out, "Copied %zu object(s) from source to target\n", report.copied_objects);
-        fprintf(out, "Saved to %s\n", output_path);
+        fprintf(c.out, "Copied %zu object(s) from source to target\n", report.copied_objects);
+        fprintf(c.out, "Saved to %s\n", output_path);
     }
 
-    nmo_cli_close_output_stream(global, out);
     nmo_tool_close_session(src_ctx, src_session);
     nmo_tool_close_session(tgt_ctx, tgt_session);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }

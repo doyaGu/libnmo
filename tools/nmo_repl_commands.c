@@ -1,5 +1,7 @@
 #include "nmo_repl_commands.h"
 
+#include "nmo_cmd_core.h"
+#include "nmo_cmd_ctx.h"
 #include "nmo_repl_util.h"
 
 #include "nmo_repl_session.h"
@@ -8,11 +10,9 @@
 #include "app/nmo_saver.h"
 #include "app/nmo_stats.h"
 #include "app/nmo_param_value.h"
-#include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "dsl/nmo_dsl.h"
-#include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
@@ -310,8 +310,30 @@ static int cmd_info(nmo_repl_context_t *repl, int argc, char **argv) {
     return 0;
 }
 
+/** Visitor for REPL list command */
+typedef struct {
+    nmo_repl_context_t *repl;
+    size_t displayed;
+    size_t limit;
+} repl_list_data_t;
+
+static int repl_list_visitor(size_t index, nmo_object_t *obj,
+                             const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    repl_list_data_t *d = (repl_list_data_t *)user;
+    bool selected = d->repl->has_selection && d->repl->selected_index == index;
+    nmo_repl_print_object_summary_marked(d->repl, index, obj, selected);
+    d->displayed++;
+    if (!nmo_repl_paginate_if_needed(d->repl, d->displayed)) return 1;
+    if (d->limit > 0 && d->displayed >= d->limit) return 1;
+    return 0;
+}
+
 static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
-    int filter = -1;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
+
+    nmo_core_object_filter_t filter = {0};
     size_t limit = 0;
 
     if (argc > 1) {
@@ -322,16 +344,16 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
 
         if (token && token[0] != '\0') {
             if (isdigit((unsigned char)token[0]) || token[0] == '-') {
-                filter = atoi(token);
+                filter.class_id = (nmo_class_id_t)atoi(token);
             } else {
-                nmo_class_id_t class_id = 0;
-                if (!nmo_repl_class_id_from_name(repl, token, &class_id)) {
+                filter.class_id = nmo_core_class_id(&c, token);
+                if (filter.class_id == 0) {
                     fprintf(stderr, "Unknown class: %s\n", token);
                     fprintf(stderr, "Tip: use a numeric class_id or a known type name (e.g. CKCamera).\n");
                     return -1;
                 }
-                filter = (int)class_id;
             }
+            filter.class_derived = false; /* REPL uses exact class match */
         }
     }
 
@@ -339,40 +361,23 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
         (void)nmo_repl_parse_size(argv[2], &limit);
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
-
     printf("\nObjects:\n");
-    size_t displayed = 0;
 
-    for (size_t i = 0; i < object_count; i++) {
-        nmo_class_id_t class_id = nmo_object_get_class_id(objects[i]);
+    repl_list_data_t ld = { .repl = repl, .displayed = 0, .limit = limit };
+    nmo_core_iter_result_t result;
+    nmo_core_iter_objects(&c, filter.class_id ? &filter : NULL,
+                          repl_list_visitor, &ld, &result);
 
-        if (filter != -1 && class_id != (nmo_class_id_t)filter) {
-            continue;
-        }
-
-        bool selected = repl->has_selection && repl->selected_index == i;
-        nmo_repl_print_object_summary_marked(repl, i, objects[i], selected);
-
-        displayed++;
-        if (!nmo_repl_paginate_if_needed(repl, displayed)) {
-            break;
-        }
-        if (limit > 0 && displayed >= limit) {
-            break;
-        }
-    }
-
-    if (filter != -1) {
+    if (filter.class_id) {
         char class_buf[64];
-        const char *class_name = nmo_repl_class_name_from_id(repl, (nmo_class_id_t)filter, class_buf, sizeof(class_buf));
-        printf("\n%zu/%zu objects shown (class %d, %s)\n", displayed, object_count, filter, class_name);
+        const char *class_name = nmo_core_class_name_or(&c, filter.class_id,
+                                                         class_buf, sizeof(class_buf));
+        printf("\n%zu/%zu objects shown (class %d, %s)\n",
+               ld.displayed, result.total, (int)filter.class_id, class_name);
     } else {
-        printf("\n%zu/%zu objects shown\n", displayed, object_count);
+        printf("\n%zu/%zu objects shown\n", ld.displayed, result.total);
     }
-    if (!repl->has_selection && displayed > 0) {
+    if (!repl->has_selection && ld.displayed > 0) {
         printf("Tip: use 'select <index>' then 'show'/'dump'.\n");
     }
 
@@ -425,8 +430,10 @@ static int cmd_show(nmo_repl_context_t *repl, int argc, char **argv) {
     const char *name = nmo_object_get_name(obj);
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
 
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
     char class_buf[64];
-    const char *class_name = nmo_repl_class_name_from_id(repl, class_id, class_buf, sizeof(class_buf));
+    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
     printf("\nObject Details:\n");
     printf("  Index: %zu\n", index);
@@ -496,97 +503,95 @@ static int cmd_dump(nmo_repl_context_t *repl, int argc, char **argv) {
     return 0;
 }
 
+/** Visitor for REPL find command */
+typedef struct {
+    nmo_repl_context_t *repl;
+    size_t found;
+} repl_find_data_t;
+
+static int repl_find_visitor(size_t index, nmo_object_t *obj,
+                             const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    repl_find_data_t *d = (repl_find_data_t *)user;
+    nmo_repl_print_object_summary(d->repl, index, obj);
+    d->found++;
+    if (!nmo_repl_paginate_if_needed(d->repl, d->found)) return 1;
+    return 0;
+}
+
 static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: find <substr>|/<regex>/ | class <id|name> | id <id>\n");
         return -1;
     }
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
+    nmo_core_object_filter_t filter = {0};
     const char *token = argv[1];
-    bool use_regex = false;
-    const char *pattern = NULL;
-    const char *name_substr = NULL;
-    int class_filter = -1;
-    uint32_t id_filter = 0;
-    bool use_id = false;
+
+    /* Buffer for regex pattern extraction (must outlive filter) */
+    char regex_buf[256];
 
     if (strcmp(token, "class") == 0 && argc > 2) {
         const char *arg = argv[2];
         if (isdigit((unsigned char)arg[0]) || arg[0] == '-') {
-            class_filter = atoi(arg);
+            filter.class_id = (nmo_class_id_t)atoi(arg);
         } else {
-            nmo_class_id_t class_id = 0;
-            if (!nmo_repl_class_id_from_name(repl, arg, &class_id)) {
+            filter.class_id = nmo_core_class_id(&c, arg);
+            if (filter.class_id == 0) {
                 fprintf(stderr, "Unknown class: %s\n", arg);
                 return -1;
             }
-            class_filter = (int)class_id;
         }
+        filter.class_derived = false; /* REPL uses exact match */
     } else if (strcmp(token, "id") == 0 && argc > 2) {
-        use_id = nmo_repl_parse_u32(argv[2], &id_filter);
+        uint32_t id_val = 0;
+        if (nmo_repl_parse_u32(argv[2], &id_val)) {
+            filter.object_id = (nmo_object_id_t)id_val;
+        }
     } else {
         size_t len = strlen(token);
         if (len >= 2 && token[0] == '/' && token[len - 1] == '/') {
-            use_regex = true;
-            pattern = token + 1;
+            /* Regex pattern */
             len -= 2;
-            if (len >= 256) {
-                len = 255;
+            if (len >= sizeof(regex_buf)) {
+                len = sizeof(regex_buf) - 1;
             }
-            static char buf[256];
-            memcpy(buf, token + 1, len);
-            buf[len] = '\0';
-            pattern = buf;
+            memcpy(regex_buf, token + 1, len);
+            regex_buf[len] = '\0';
+            filter.name_regex = regex_buf;
+            filter.regex_icase = repl->regex_icase;
         } else {
-            name_substr = token;
+            filter.name_substr = token;
         }
     }
 
-    size_t found = 0;
     printf("\nMatches:\n");
 
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
+    repl_find_data_t fd = { .repl = repl, .found = 0 };
+    nmo_core_iter_objects(&c, &filter, repl_find_visitor, &fd, NULL);
 
-        if (class_filter != -1) {
-            if ((int)nmo_object_get_class_id(obj) != class_filter) {
-                continue;
-            }
-        }
-
-        if (use_id) {
-            if (nmo_object_get_id(obj) != id_filter) {
-                continue;
-            }
-        }
-
-        if (use_regex) {
-            const char *name = nmo_object_get_name(obj);
-            if (!name || !nmo_repl_regex_matches(name, pattern, repl->regex_icase)) {
-                continue;
-            }
-        } else if (name_substr) {
-            const char *name = nmo_object_get_name(obj);
-            if (!name || !strstr(name, name_substr)) {
-                continue;
-            }
-        }
-
-        nmo_repl_print_object_summary(repl, i, obj);
-        found++;
-        if (!nmo_repl_paginate_if_needed(repl, found)) {
-            break;
-        }
-    }
-
-    if (!found) {
+    if (!fd.found) {
         printf("No matches.\n");
     }
     printf("\n");
+    return 0;
+}
+
+/** Shared REPL ref visitor for trace and refs commands */
+static int repl_ref_visitor(const nmo_core_ref_info_t *info,
+                            const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    (void)user;
+    nmo_object_id_t peer_id = info->is_incoming ? info->edge->from : info->edge->to;
+    const char *arrow = info->is_incoming ? "<-" : "->";
+    const char *name = info->peer_name ? info->peer_name : "(unknown)";
+    printf("    %s ID=%u %s", arrow, peer_id, name);
+    if (info->edge->field_path && info->edge->field_path[0])
+        printf(" (via %s)", info->edge->field_path);
+    printf(" [%s]\n", nmo_ref_kind_name(info->edge->kind));
     return 0;
 }
 
@@ -597,18 +602,14 @@ static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv) {
     }
 
     /* Parse direction flag (default: show both) */
-    bool show_outgoing = true;
-    bool show_incoming = true;
+    unsigned dir = NMO_CORE_REFS_BOTH;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--incoming") == 0 || strcmp(argv[i], "-i") == 0) {
-            show_outgoing = false;
-            show_incoming = true;
+            dir = NMO_CORE_REFS_IN;
         } else if (strcmp(argv[i], "--outgoing") == 0 || strcmp(argv[i], "-o") == 0) {
-            show_outgoing = true;
-            show_incoming = false;
+            dir = NMO_CORE_REFS_OUT;
         } else if (strcmp(argv[i], "--both") == 0 || strcmp(argv[i], "-b") == 0) {
-            show_outgoing = true;
-            show_incoming = true;
+            dir = NMO_CORE_REFS_BOTH;
         }
     }
 
@@ -625,93 +626,23 @@ static int cmd_trace(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
     const char *obj_name = nmo_object_get_name(obj);
 
-    /* Build reference graph */
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    nmo_type_registry_t *type_reg = nmo_context_get_type_registry(repl->ctx);
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
-        return -1;
-    }
-
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, type_reg, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
-        return -1;
-    }
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
     printf("\nReferences for [%zu] ID=%u %s:\n", index, obj_id,
            (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
 
-    size_t total_displayed = 0;
+    nmo_core_ref_result_t ref_result = {0};
+    nmo_core_iter_refs(&c, obj_id, dir, repl_ref_visitor, NULL, &ref_result);
 
-    /* Show outgoing references */
-    if (show_outgoing) {
-        nmo_ref_edge_t *out_edges = NULL;
-        size_t out_count = 0;
-        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_OUTGOING, &out_edges, &out_count);
+    size_t total = 0;
+    if (dir & NMO_CORE_REFS_OUT) total += ref_result.outgoing;
+    if (dir & NMO_CORE_REFS_IN) total += ref_result.incoming;
 
-        if (out_count > 0) {
-            printf("\n  Outgoing (%zu):\n", out_count);
-            for (size_t i = 0; i < out_count; ++i) {
-                const nmo_ref_edge_t *e = &out_edges[i];
-                /* Find peer name */
-                const char *peer_name = "(unknown)";
-                for (size_t j = 0; j < object_count; ++j) {
-                    if (nmo_object_get_id(objects[j]) == e->to) {
-                        const char *n = nmo_object_get_name(objects[j]);
-                        if (n && n[0]) {
-                            peer_name = n;
-                        }
-                        break;
-                    }
-                }
-                printf("    -> ID=%u %s", e->to, peer_name);
-                if (e->field_path && e->field_path[0]) {
-                    printf(" (via %s)", e->field_path);
-                }
-                printf("\n");
-                total_displayed++;
-            }
-        }
-    }
-
-    /* Show incoming references */
-    if (show_incoming) {
-        nmo_ref_edge_t *in_edges = NULL;
-        size_t in_count = 0;
-        nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_INCOMING, &in_edges, &in_count);
-
-        if (in_count > 0) {
-            printf("\n  Incoming (%zu):\n", in_count);
-            for (size_t i = 0; i < in_count; ++i) {
-                const nmo_ref_edge_t *e = &in_edges[i];
-                const char *peer_name = "(unknown)";
-                for (size_t j = 0; j < object_count; ++j) {
-                    if (nmo_object_get_id(objects[j]) == e->from) {
-                        const char *n = nmo_object_get_name(objects[j]);
-                        if (n && n[0]) {
-                            peer_name = n;
-                        }
-                        break;
-                    }
-                }
-                printf("    <- ID=%u %s", e->from, peer_name);
-                if (e->field_path && e->field_path[0]) {
-                    printf(" (via %s)", e->field_path);
-                }
-                printf("\n");
-                total_displayed++;
-            }
-        }
-    }
-
-    if (total_displayed == 0) {
+    if (total == 0) {
         printf("  (no references found)\n");
     }
 
-    nmo_arena_destroy(arena);
     printf("\n");
     return 0;
 }
@@ -773,8 +704,10 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
 
     const char *name = nmo_object_get_name(obj);
     nmo_object_id_t obj_id = nmo_object_get_id(obj);
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, false);
     char class_buf[64];
-    const char *class_name = nmo_repl_class_name_from_id(repl, class_id, class_buf, sizeof(class_buf));
+    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
     printf("\nParameter Details:\n");
     printf("  Index: %zu\n", index);
@@ -837,86 +770,22 @@ static int cmd_refs(nmo_repl_context_t *repl, int argc, char **argv) {
     const char *obj_name = nmo_object_get_name(obj);
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
 
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
     char class_buf[64];
-    const char *class_name = nmo_repl_class_name_from_id(repl, class_id, class_buf, sizeof(class_buf));
-
-    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
-    nmo_type_registry_t *type_reg = nmo_context_get_type_registry(repl->ctx);
-    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
-    if (!arena) {
-        fprintf(stderr, "Error: Failed to create arena\n");
-        return -1;
-    }
-
-    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, type_reg, arena);
-    if (!graph) {
-        nmo_arena_destroy(arena);
-        fprintf(stderr, "Error: Failed to create reference graph\n");
-        return -1;
-    }
+    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
     printf("\nReferences for [%zu] ID=%u %s (%s):\n", index, obj_id,
            (obj_name && obj_name[0]) ? obj_name : "(unnamed)", class_name);
 
-    nmo_ref_edge_t *out_edges = NULL;
-    size_t out_count = 0;
-    nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_OUTGOING, &out_edges, &out_count);
+    nmo_core_ref_result_t ref_result = {0};
+    nmo_core_iter_refs(&c, obj_id, NMO_CORE_REFS_BOTH,
+                       repl_ref_visitor, NULL, &ref_result);
 
-    nmo_ref_edge_t *in_edges = NULL;
-    size_t in_count = 0;
-    nmo_ref_graph_get_object_edges(graph, obj_id, NMO_REF_DIR_INCOMING, &in_edges, &in_count);
-
-    if (out_count > 0) {
-        printf("\n  Outgoing (%zu):\n", out_count);
-        for (size_t i = 0; i < out_count; ++i) {
-            const nmo_ref_edge_t *e = &out_edges[i];
-            const char *peer_name = "(unknown)";
-            for (size_t j = 0; j < object_count; ++j) {
-                if (nmo_object_get_id(objects[j]) == e->to) {
-                    const char *n = nmo_object_get_name(objects[j]);
-                    if (n && n[0]) {
-                        peer_name = n;
-                    }
-                    break;
-                }
-            }
-            printf("    -> ID=%u %s", e->to, peer_name);
-            if (e->field_path && e->field_path[0]) {
-                printf(" (via %s)", e->field_path);
-            }
-            printf(" [%s]", nmo_ref_kind_name(e->kind));
-            printf("\n");
-        }
-    }
-
-    if (in_count > 0) {
-        printf("\n  Incoming (%zu):\n", in_count);
-        for (size_t i = 0; i < in_count; ++i) {
-            const nmo_ref_edge_t *e = &in_edges[i];
-            const char *peer_name = "(unknown)";
-            for (size_t j = 0; j < object_count; ++j) {
-                if (nmo_object_get_id(objects[j]) == e->from) {
-                    const char *n = nmo_object_get_name(objects[j]);
-                    if (n && n[0]) {
-                        peer_name = n;
-                    }
-                    break;
-                }
-            }
-            printf("    <- ID=%u %s", e->from, peer_name);
-            if (e->field_path && e->field_path[0]) {
-                printf(" (via %s)", e->field_path);
-            }
-            printf(" [%s]", nmo_ref_kind_name(e->kind));
-            printf("\n");
-        }
-    }
-
-    if (out_count == 0 && in_count == 0) {
+    if (ref_result.outgoing == 0 && ref_result.incoming == 0) {
         printf("  (no references found)\n");
     }
 
-    nmo_arena_destroy(arena);
     printf("\n");
     return 0;
 }
@@ -959,53 +828,39 @@ static int cmd_eval(nmo_repl_context_t *repl, int argc, char **argv) {
     expr_buf[pos] = '\0';
 
     nmo_object_t *obj = objects[repl->selected_index];
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
 
-    /* Look up the type descriptor for the object's class */
-    nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(
-        registry, (uint32_t)nmo_object_get_class_id(obj));
-    const nmo_type_descriptor_t *type_desc = NULL;
-    if (type_id != NMO_TYPE_ID_INVALID) {
-        type_desc = nmo_type_registry_get_by_id(registry, type_id);
-    }
-
-    /* Set up DSL eval context */
-    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-    const void *instance = NULL;
-    size_t data_size = 0;
-    if (chunk) {
-        instance = nmo_chunk_get_data(chunk, &data_size);
-    }
-
-    nmo_dsl_eval_context_t eval_ctx;
-    memset(&eval_ctx, 0, sizeof(eval_ctx));
-    eval_ctx.registry = registry;
-    eval_ctx.root_type = type_desc;
-    eval_ctx.root_instance = (void *)instance;
-    eval_ctx.current_type = type_desc;
-    eval_ctx.current_instance = instance;
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
     nmo_dsl_value_t result = {0};
-    nmo_status_t st = nmo_dsl_eval_one(registry, &eval_ctx, expr_buf, &result);
+    nmo_status_t st = nmo_core_dsl_eval(&c, obj, expr_buf, &result);
 
     if (st != NMO_OK) {
         fprintf(stderr, "Error: DSL evaluation failed: %s\n", nmo_error_string(st));
         return -1;
     }
 
-    /* Format and display result */
-    printf("=> ");
-    switch (result.kind) {
-        case NMO_DSL_VALUE_NULL:    printf("null\n"); break;
-        case NMO_DSL_VALUE_BOOL:    printf("%s\n", result.as.b ? "true" : "false"); break;
-        case NMO_DSL_VALUE_INT:     printf("%lld\n", (long long)result.as.i); break;
-        case NMO_DSL_VALUE_UINT:    printf("%llu\n", (unsigned long long)result.as.u); break;
-        case NMO_DSL_VALUE_REAL:    printf("%g\n", result.as.r); break;
-        case NMO_DSL_VALUE_STRING:  printf("\"%s\"\n", result.as.s ? result.as.s : ""); break;
-        default:                    printf("<value kind=%d>\n", result.kind); break;
-    }
+    char buf[512];
+    nmo_core_dsl_format(&result, buf, sizeof(buf));
+    printf("=> %s\n", buf);
 
     nmo_dsl_value_destroy(&result);
+    return 0;
+}
+
+/** Visitor for REPL query command - prints matching objects with pagination */
+typedef struct {
+    nmo_repl_context_t *repl;
+    size_t found;
+} repl_query_data_t;
+
+static int repl_query_visitor(size_t index, nmo_object_t *obj,
+                              const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    repl_query_data_t *d = (repl_query_data_t *)user;
+    nmo_repl_print_object_summary(d->repl, index, obj);
+    d->found++;
+    if (!nmo_repl_paginate_if_needed(d->repl, d->found)) return 1;
     return 0;
 }
 
@@ -1032,73 +887,33 @@ static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
     }
     expr_buf[pos] = '\0';
 
-    size_t object_count = 0;
-    nmo_object_t **objects = NULL;
-    nmo_repl_get_objects(repl, &objects, &object_count);
+    nmo_cmd_ctx_t c;
+    nmo_cmd_ctx_init_from_repl(&c, repl->ctx, repl->session, repl->colorize);
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(repl->ctx);
-
-    printf("\nQuery matches:\n");
-    size_t found = 0;
-
-    for (size_t i = 0; i < object_count; ++i) {
-        nmo_object_t *obj = objects[i];
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        if (!chunk) {
-            continue;
-        }
-
-        /* Set up per-object DSL context */
-        nmo_type_id_t type_id = nmo_type_registry_class_id_to_type_id(
-            registry, (uint32_t)nmo_object_get_class_id(obj));
-        const nmo_type_descriptor_t *type_desc = NULL;
-        if (type_id != NMO_TYPE_ID_INVALID) {
-            type_desc = nmo_type_registry_get_by_id(registry, type_id);
-        }
-
-        size_t data_size = 0;
-        const void *instance = nmo_chunk_get_data(chunk, &data_size);
-
-        nmo_dsl_eval_context_t eval_ctx;
-        memset(&eval_ctx, 0, sizeof(eval_ctx));
-        eval_ctx.registry = registry;
-        eval_ctx.root_type = type_desc;
-        eval_ctx.root_instance = (void *)instance;
-        eval_ctx.current_type = type_desc;
-        eval_ctx.current_instance = instance;
-
-        nmo_dsl_value_t result = {0};
-        nmo_status_t st = nmo_dsl_eval_one(registry, &eval_ctx, expr_buf, &result);
-
-        /* Check if result is truthy */
-        bool is_match = false;
-        if (st == NMO_OK) {
-            switch (result.kind) {
-                case NMO_DSL_VALUE_BOOL: is_match = result.as.b; break;
-                case NMO_DSL_VALUE_INT:  is_match = result.as.i != 0; break;
-                case NMO_DSL_VALUE_UINT: is_match = result.as.u != 0; break;
-                case NMO_DSL_VALUE_REAL: is_match = result.as.r != 0.0; break;
-                case NMO_DSL_VALUE_STRING: is_match = (result.as.s != NULL && result.as.s[0] != '\0'); break;
-                case NMO_DSL_VALUE_NULL: is_match = false; break;
-                default: is_match = true; break;
-            }
-        }
-
-        nmo_dsl_value_destroy(&result);
-
-        if (is_match) {
-            nmo_repl_print_object_summary(repl, i, obj);
-            found++;
-            if (!nmo_repl_paginate_if_needed(repl, found)) {
-                break;
-            }
-        }
+    /* Compile DSL filter */
+    nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+    nmo_dsl_program_t *program = NULL;
+    nmo_status_t st = nmo_dsl_compile(c.registry, NULL, expr_buf, &compile_opts, &program);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: Failed to compile expression: %s\n", expr_buf);
+        return -1;
     }
 
-    if (!found) {
+    nmo_core_object_filter_t filter = {0};
+    filter.dsl_filter = program;
+
+    printf("\nQuery matches:\n");
+
+    repl_query_data_t qd = { .repl = repl, .found = 0 };
+    nmo_core_iter_result_t result;
+    nmo_core_iter_objects(&c, &filter, repl_query_visitor, &qd, &result);
+
+    nmo_dsl_program_destroy(program);
+
+    if (!qd.found) {
         printf("No matches.\n");
     } else {
-        printf("\n%zu match(es)\n", found);
+        printf("\n%zu match(es)\n", qd.found);
     }
     printf("\n");
     return 0;

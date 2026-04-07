@@ -4,10 +4,9 @@
  */
 
 #include "nmo_cmd_query.h"
-#include "../nmo_cli_common.h"
+#include "../nmo_cmd_ctx.h"
+#include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
-#include "../nmo_cli_json.h"
-#include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -17,170 +16,11 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_type_guids.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
-/* ============================================================================
- * Helper: Format DSL value for output
- * ============================================================================ */
-
-/**
- * Format a DSL value into a buffer for text output.
- * Returns false if the value type is not displayable in text mode.
- */
-static bool format_dsl_value(const nmo_dsl_value_t *value, char *buf, size_t buf_size) {
-    if (!value || !buf || buf_size == 0) {
-        return false;
-    }
-
-    switch (value->kind) {
-        case NMO_DSL_VALUE_NULL:
-            snprintf(buf, buf_size, "null");
-            return true;
-
-        case NMO_DSL_VALUE_BOOL:
-            snprintf(buf, buf_size, "%s", value->as.b ? "true" : "false");
-            return true;
-
-        case NMO_DSL_VALUE_INT:
-            snprintf(buf, buf_size, "%lld", (long long)value->as.i);
-            return true;
-
-        case NMO_DSL_VALUE_UINT:
-            snprintf(buf, buf_size, "%llu", (unsigned long long)value->as.u);
-            return true;
-
-        case NMO_DSL_VALUE_REAL:
-            snprintf(buf, buf_size, "%g", value->as.r);
-            return true;
-
-        case NMO_DSL_VALUE_STRING:
-            if (value->as.s) {
-                snprintf(buf, buf_size, "\"%s\"", value->as.s);
-            } else {
-                snprintf(buf, buf_size, "\"\"");
-            }
-            return true;
-
-        case NMO_DSL_VALUE_BYREF: {
-            if (!value->as.byref.ptr) {
-                snprintf(buf, buf_size, "null");
-                return true;
-            }
-            nmo_guid_t g = value->as.byref.type
-                ? value->as.byref.type->guid : value->as.byref.guid;
-            size_t sz = value->as.byref.size;
-            if (sz == 0 && value->as.byref.type)
-                sz = (size_t)value->as.byref.type->size;
-            const void *p = value->as.byref.ptr;
-
-            /* Decode common primitive types */
-            if (nmo_guid_equals(g, CKPGUID_BOOL) && sz >= 1) {
-                snprintf(buf, buf_size, "%s",
-                         (*(const uint8_t *)p) ? "true" : "false");
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_INT) && sz >= 4) {
-                snprintf(buf, buf_size, "%d", *(const int32_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_UINT32) && sz >= 4) {
-                snprintf(buf, buf_size, "%u", *(const uint32_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_FLOAT) && sz >= 4) {
-                snprintf(buf, buf_size, "%g", (double)*(const float *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_DOUBLE) && sz >= 8) {
-                snprintf(buf, buf_size, "%g", *(const double *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_STRING)) {
-                const char *s = *(const char *const *)p;
-                snprintf(buf, buf_size, "%s", s ? s : "(null)");
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_ID) && sz >= 4) {
-                snprintf(buf, buf_size, "#%u", *(const uint32_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_INT64) && sz >= 8) {
-                snprintf(buf, buf_size, "%lld", (long long)*(const int64_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_UINT64) && sz >= 8) {
-                snprintf(buf, buf_size, "%llu",
-                         (unsigned long long)*(const uint64_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_INT16) && sz >= 2) {
-                snprintf(buf, buf_size, "%d", (int)*(const int16_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_UINT16) && sz >= 2) {
-                snprintf(buf, buf_size, "%u", (unsigned)*(const uint16_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_INT8) && sz >= 1) {
-                snprintf(buf, buf_size, "%d", (int)*(const int8_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_UINT8) && sz >= 1) {
-                snprintf(buf, buf_size, "%u", (unsigned)*(const uint8_t *)p);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_VECTOR) && sz >= 12) {
-                const float *v = (const float *)p;
-                snprintf(buf, buf_size, "(%g, %g, %g)",
-                         (double)v[0], (double)v[1], (double)v[2]);
-                return true;
-            }
-            if (nmo_guid_equals(g, CKPGUID_GUID) && sz >= 8) {
-                const nmo_guid_t *gv = (const nmo_guid_t *)p;
-                snprintf(buf, buf_size, "{%08X-%08X}", gv->d1, gv->d2);
-                return true;
-            }
-            /* Fallback: show hex bytes for small values */
-            if (sz <= 8 && sz > 0) {
-                const uint8_t *bytes = (const uint8_t *)p;
-                char *pos = buf;
-                size_t rem = buf_size;
-                int n = snprintf(pos, rem, "0x");
-                pos += n; rem -= (size_t)n;
-                for (size_t i = 0; i < sz && rem > 2; i++) {
-                    n = snprintf(pos, rem, "%02X", bytes[i]);
-                    pos += n; rem -= (size_t)n;
-                }
-                return true;
-            }
-            snprintf(buf, buf_size, "<byref:%zu bytes>", sz);
-            return true;
-        }
-
-        case NMO_DSL_VALUE_OBJECT:
-            snprintf(buf, buf_size, "<object:%p>", value->as.object.instance);
-            return true;
-
-        case NMO_DSL_VALUE_SEQ: {
-            uint64_t count = nmo_dsl_seq_count(value->as.seq);
-            snprintf(buf, buf_size, "<seq:%llu>", (unsigned long long)count);
-            return true;
-        }
-
-        case NMO_DSL_VALUE_TYPE:
-            snprintf(buf, buf_size, "<type>");
-            return true;
-
-        default:
-            snprintf(buf, buf_size, "<unknown>");
-            return false;
-    }
-}
 
 /**
  * Add a DSL value to a JSON document.
@@ -225,7 +65,7 @@ static void add_dsl_value_to_json(yyjson_mut_doc *doc, yyjson_mut_val *parent,
         case NMO_DSL_VALUE_OBJECT:
         case NMO_DSL_VALUE_TYPE: {
             char buf[64];
-            format_dsl_value(value, buf, sizeof(buf));
+            nmo_core_dsl_format(value, buf, sizeof(buf));
             yyjson_mut_obj_add_str(doc, parent, key, buf);
             break;
         }
@@ -255,7 +95,7 @@ static void add_dsl_value_to_json(yyjson_mut_doc *doc, yyjson_mut_val *parent,
                             break;
                         default: {
                             char elem_buf[64];
-                            format_dsl_value(&elem, elem_buf, sizeof(elem_buf));
+                            nmo_core_dsl_format(&elem, elem_buf, sizeof(elem_buf));
                             yyjson_mut_arr_add_str(doc, arr, elem_buf);
                             break;
                         }
@@ -268,7 +108,7 @@ static void add_dsl_value_to_json(yyjson_mut_doc *doc, yyjson_mut_val *parent,
 
         default: {
             char buf[64];
-            format_dsl_value(value, buf, sizeof(buf));
+            nmo_core_dsl_format(value, buf, sizeof(buf));
             yyjson_mut_obj_add_str(doc, parent, key, buf);
             break;
         }
@@ -507,34 +347,32 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         free(stdin_buffer);
         nmo_dsl_value_destroy(&result);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         add_dsl_value_to_json(doc, data, "result", &result);
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.eval", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.eval", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
-        format_dsl_value(&result, value_buf, sizeof(value_buf));
-        fprintf(out, "%s\n", value_buf);
+        nmo_core_dsl_format(&result, value_buf, sizeof(value_buf));
+        fprintf(c.out, "%s\n", value_buf);
     }
 
     free(stdin_buffer);
     nmo_dsl_value_destroy(&result);
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -625,17 +463,16 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         nmo_dsl_value_destroy(&result);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         add_dsl_value_to_json(doc, data, "result", &result);
@@ -643,20 +480,19 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.script", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.script", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
-        format_dsl_value(&result, value_buf, sizeof(value_buf));
-        fprintf(out, "Result: %s\n", value_buf);
+        nmo_core_dsl_format(&result, value_buf, sizeof(value_buf));
+        fprintf(c.out, "Result: %s\n", value_buf);
         if (output_path) {
-            fprintf(out, "Saved to: %s\n", output_path);
+            fprintf(c.out, "Saved to: %s\n", output_path);
         }
     }
 
     nmo_dsl_value_destroy(&result);
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -717,28 +553,26 @@ int nmo_cmd_query_schema(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         nmo_context_release(ctx);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         yyjson_mut_obj_add_str(doc, data, "status", "applied");
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.schema", schema_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.schema", schema_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
-        fprintf(out, "Schema applied successfully\n");
+        fprintf(c.out, "Schema applied successfully\n");
     }
 
     nmo_context_release(ctx);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 /* ============================================================================
@@ -829,17 +663,16 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output result */
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!out) {
+    nmo_cmd_ctx_t c;
+    int out_rc = nmo_cmd_ctx_init_no_file(&c, global);
+    if (out_rc) {
         nmo_dsl_value_destroy(&result);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
+        return out_rc;
     }
 
-    if (global->format == NMO_CLI_FORMAT_JSON || global->format == NMO_CLI_FORMAT_JSON_PRETTY) {
-        yyjson_mut_doc *doc = nmo_cli_json_create_doc();
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         add_dsl_value_to_json(doc, data, "result", &result);
@@ -847,19 +680,18 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_obj_add_str(doc, data, "saved_to", output_path);
         }
 
-        nmo_cli_json_write_enveloped_and_free(doc, data, "query.module", file_path, out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "query.module", file_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
     } else {
         char value_buf[256];
-        format_dsl_value(&result, value_buf, sizeof(value_buf));
-        fprintf(out, "Result: %s\n", value_buf);
+        nmo_core_dsl_format(&result, value_buf, sizeof(value_buf));
+        fprintf(c.out, "Result: %s\n", value_buf);
         if (output_path) {
-            fprintf(out, "Saved to: %s\n", output_path);
+            fprintf(c.out, "Saved to: %s\n", output_path);
         }
     }
 
     nmo_dsl_value_destroy(&result);
     nmo_tool_close_session(ctx, session);
-    nmo_cli_close_output_stream(global, out);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
