@@ -14,6 +14,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
@@ -131,6 +132,13 @@ nmo_status_t nmo_layer_deserialize(
         void *raw = NULL;
         size_t raw_size = 0;
         if (nmo_chunk_read_buffer(chunk, &raw, &raw_size) == NMO_OK) {
+            /* Convert LE DWORD array to host endianness (no-op on LE,
+               matches reference CKConvertEndianArray32 call). */
+            uint32_t *dwords = (uint32_t *)raw;
+            size_t dword_count = raw_size / 4;
+            for (size_t i = 0; i < dword_count; i++) {
+                dwords[i] = nmo_le32toh(dwords[i]);
+            }
             out_state->square_data = raw;
             out_state->square_data_size = raw_size;
             out_state->has_square_data = 1;
@@ -196,6 +204,8 @@ nmo_status_t nmo_layer_serialize(
     }
 
     if (in_state->format == 0 && in_state->has_square_data) {
+        /* State holds host-endian DWORDs; convert to LE for serialization.
+           On LE platforms nmo_htole32 is a no-op so the buffer is unchanged. */
         return nmo_chunk_write_buffer(out_chunk, in_state->square_data, in_state->square_data_size);
     }
 

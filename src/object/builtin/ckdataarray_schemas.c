@@ -308,7 +308,9 @@ nmo_status_t nmo_dataarray_serialize(
         result = nmo_chunk_write_string(out_chunk, fmt->name ? fmt->name : "");
         if (result != NMO_OK) return result;
 
-        result = nmo_chunk_write_dword(out_chunk, (uint32_t)fmt->type);
+        /* Reference writes WriteDword but reads ReadInt; use int for
+           consistency since array type values are small enum constants. */
+        result = nmo_chunk_write_int(out_chunk, (int32_t)fmt->type);
         if (result != NMO_OK) return result;
 
         if (fmt->type == CKARRAYTYPE_PARAMETER) {
