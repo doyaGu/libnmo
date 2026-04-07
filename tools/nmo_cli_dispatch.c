@@ -237,7 +237,20 @@ static void parameter_list_usage(FILE *out) {
 
 static void parameter_show_usage(FILE *out) {
     fprintf(out, "Usage: nmo parameter show <id> <file>\n\n");
-    fprintf(out, "Show a parameter object (same output as 'nmo object show').\n");
+    fprintf(out, "Show a parameter object with decoded value and type details.\n");
+}
+
+static void parameter_dump_usage(FILE *out) {
+    fprintf(out, "Usage: nmo parameter dump [--all] [--type <guid>] <id> <file>\n");
+    fprintf(out, "       nmo parameter dump --all [--type <guid>] <file>\n\n");
+    fprintf(out, "Dump parameter details with decoded values and raw hex.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --all               Dump all parameters in the file\n");
+    fprintf(out, "  --type <guid>       Filter by parameter type GUID\n\n");
+    fprintf(out, "Examples:\n");
+    fprintf(out, "  nmo parameter dump 100 data/Balls.nmo\n");
+    fprintf(out, "  nmo parameter dump --all data/Balls.nmo\n");
+    fprintf(out, "  nmo parameter dump --all --type {guid} data/Balls.nmo\n");
 }
 
 static void type_class_tree_usage(FILE *out) {
@@ -398,6 +411,7 @@ static const nmo_cli_action_t behavior_actions[] = {
 static const nmo_cli_action_t parameter_actions[] = {
     {"list", "ls", "List parameters", nmo_cmd_parameter_list, parameter_list_usage},
     {"show", "s", "Show parameter object", nmo_cmd_parameter_show, parameter_show_usage},
+    {"dump", "d", "Dump parameter with decoded value", nmo_cmd_parameter_dump, parameter_dump_usage},
 };
 
 /* resource group actions */
