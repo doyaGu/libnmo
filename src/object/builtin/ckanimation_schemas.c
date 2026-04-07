@@ -112,6 +112,14 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD(nmo_objectanimation_state_t, has_morph_counts, CKPGUID_UINT8),
     NMO_FIELD(nmo_objectanimation_state_t, morph_vertex_count, CKPGUID_INT),
     NMO_FIELD(nmo_objectanimation_state_t, morph_key_count, CKPGUID_INT),
+    NMO_FIELD(nmo_objectanimation_state_t, controller_count, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_objectanimation_state_t, controllers, CKPGUID_POINTER),
+    NMO_FIELD(nmo_objectanimation_state_t, morph_key_parsed_count, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_keys, CKPGUID_POINTER),
+    NMO_FIELD(nmo_objectanimation_state_t, morph_normals_id, CKPGUID_UINT32),
+    NMO_FIELD(nmo_objectanimation_state_t, morph_normals_count, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_sizes, CKPGUID_POINTER),
+    NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_data, CKPGUID_POINTER),
     NMO_FIELD_ARRAY_NAMED("raw_tail", offsetof(nmo_objectanimation_state_t, raw_tail),
                           sizeof(void *), CKPGUID_UINT8, NMO_FIELD_OPTIONAL, 0),
     NMO_FIELD(nmo_objectanimation_state_t, raw_tail_size, CKPGUID_UINT64)
@@ -237,6 +245,89 @@ static nmo_status_t nmo_objectanimation_copy(
     const nmo_objectanimation_state_t *s = src;
     nmo_objectanimation_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+
+    /* Deep copy controllers */
+    if (s->controller_count > 0 && s->controllers != NULL) {
+        nmo_objanim_controller_t *controllers = nmo_arena_alloc(
+            arena, sizeof(nmo_objanim_controller_t) * s->controller_count,
+            _Alignof(nmo_objanim_controller_t));
+        if (!controllers) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate controllers array for copy");
+        }
+        memcpy(controllers, s->controllers, sizeof(nmo_objanim_controller_t) * s->controller_count);
+        for (uint32_t i = 0; i < s->controller_count; ++i) {
+            if (s->controllers[i].data_size > 0 && s->controllers[i].data != NULL) {
+                void *data = nmo_arena_alloc(arena, s->controllers[i].data_size, 1);
+                if (!data) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate controller data for copy");
+                }
+                memcpy(data, s->controllers[i].data, s->controllers[i].data_size);
+                controllers[i].data = data;
+            }
+        }
+        d->controllers = controllers;
+    }
+
+    /* Deep copy morph keys */
+    if (s->morph_key_parsed_count > 0 && s->morph_keys != NULL) {
+        nmo_objanim_morph_key_t *morph_keys = nmo_arena_alloc(
+            arena, sizeof(nmo_objanim_morph_key_t) * s->morph_key_parsed_count,
+            _Alignof(nmo_objanim_morph_key_t));
+        if (!morph_keys) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate morph keys array for copy");
+        }
+        memcpy(morph_keys, s->morph_keys, sizeof(nmo_objanim_morph_key_t) * s->morph_key_parsed_count);
+        for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
+            if (s->morph_keys[i].data_size > 0 && s->morph_keys[i].data != NULL) {
+                void *data = nmo_arena_alloc(arena, s->morph_keys[i].data_size, 1);
+                if (!data) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate morph key data for copy");
+                }
+                memcpy(data, s->morph_keys[i].data, s->morph_keys[i].data_size);
+                morph_keys[i].data = data;
+            }
+        }
+        d->morph_keys = morph_keys;
+    }
+
+    /* Deep copy morph normals (both arrays must be present together) */
+    if (s->morph_normals_count > 0 &&
+        s->morph_normals_sizes != NULL && s->morph_normals_data != NULL) {
+        uint32_t *sizes = nmo_arena_alloc(arena, sizeof(uint32_t) * s->morph_normals_count,
+                                          _Alignof(uint32_t));
+        if (!sizes) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate morph normals sizes for copy");
+        }
+        memcpy(sizes, s->morph_normals_sizes, sizeof(uint32_t) * s->morph_normals_count);
+        d->morph_normals_sizes = sizes;
+
+        void **data_ptrs = nmo_arena_alloc(arena, sizeof(void *) * s->morph_normals_count,
+                                           _Alignof(void *));
+        if (!data_ptrs) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate morph normals data array for copy");
+        }
+        for (uint32_t i = 0; i < s->morph_normals_count; ++i) {
+            if (s->morph_normals_sizes[i] > 0 && s->morph_normals_data[i] != NULL) {
+                void *data = nmo_arena_alloc(arena, s->morph_normals_sizes[i], 4);
+                if (!data) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate morph normals data for copy");
+                }
+                memcpy(data, s->morph_normals_data[i], s->morph_normals_sizes[i]);
+                data_ptrs[i] = data;
+            } else {
+                data_ptrs[i] = NULL;
+            }
+        }
+        d->morph_normals_data = data_ptrs;
+    }
+
     return nmo_object_copy_bytes(arena, (void **)&d->raw_tail,
                                  s->raw_tail, s->raw_tail_size);
 }
@@ -249,6 +340,10 @@ static nmo_status_t nmo_objectanimation_validate(
     (void)type;
     (void)context;
     const nmo_objectanimation_state_t *s = instance;
+    NMO_VALIDATE_COUNT(s->controllers, s->controller_count, "controllers");
+    NMO_VALIDATE_COUNT(s->morph_keys, s->morph_key_parsed_count, "morph_keys");
+    NMO_VALIDATE_COUNT(s->morph_normals_sizes, s->morph_normals_count, "morph_normals_sizes");
+    NMO_VALIDATE_COUNT(s->morph_normals_data, s->morph_normals_count, "morph_normals_data");
     NMO_VALIDATE_BYTES(s->raw_tail, s->raw_tail_size, "raw_tail");
     NMO_RETURN_OK();
 }
@@ -644,6 +739,35 @@ static nmo_status_t write_object_id_array(
     return nmo_chunk_write_object_id_array(chunk, ids, count);
 }
 
+/* Animation controller type constants */
+#define CKANIMATION_LINPOS_CONTROL      0x637c4301u
+#define CKANIMATION_LINROT_CONTROL      0x49ed4002u
+#define CKANIMATION_LINSCL_CONTROL      0x654a3a04u
+#define CKANIMATION_LINSCLAXIS_CONTROL  0x2f200b08u
+#define CKANIMATION_TCBPOS_CONTROL      0x347e4a01u
+#define CKANIMATION_TCBROT_CONTROL      0x45b52a02u
+#define CKANIMATION_TCBSCL_CONTROL      0x1b545904u
+#define CKANIMATION_TCBSCLAXIS_CONTROL  0x32595908u
+#define CKANIMATION_BEZIERPOS_CONTROL   0x921ab801u
+#define CKANIMATION_BEZIERSCL_CONTROL   0x18ab4404u
+
+uint32_t nmo_objanim_controller_key_size(uint32_t type)
+{
+    switch (type) {
+    case CKANIMATION_LINPOS_CONTROL:      return 16;
+    case CKANIMATION_LINROT_CONTROL:      return 20;
+    case CKANIMATION_LINSCL_CONTROL:      return 16;
+    case CKANIMATION_LINSCLAXIS_CONTROL:  return 20;
+    case CKANIMATION_TCBPOS_CONTROL:      return 36;
+    case CKANIMATION_TCBROT_CONTROL:      return 40;
+    case CKANIMATION_TCBSCL_CONTROL:      return 36;
+    case CKANIMATION_TCBSCLAXIS_CONTROL:  return 40;
+    case CKANIMATION_BEZIERPOS_CONTROL:   return 44;
+    case CKANIMATION_BEZIERSCL_CONTROL:   return 44;
+    default: return 0;
+    }
+}
+
 static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
                                   void **out_data, size_t *out_size)
 {
@@ -670,6 +794,466 @@ static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
 
     *out_data = data;
     *out_size = remaining_bytes;
+    NMO_RETURN_OK();
+}
+
+/* Read controllers in CONTROLLERS format: loop of {type(DWORD), size_dwords(DWORD), data[]} until type==0 */
+static nmo_status_t read_controllers_loop(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_objectanimation_state_t *out_state)
+{
+    nmo_objanim_controller_t local_controllers[8];
+    uint32_t count = 0;
+
+    while (count < 8) {
+        uint32_t type = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &type));
+        if (type == 0) {
+            break;
+        }
+
+        uint32_t size_dwords = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_dwords));
+        uint32_t data_size = size_dwords * 4;
+
+        void *data = NULL;
+        if (data_size > 0) {
+            data = nmo_arena_alloc(arena, data_size, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate controller data buffer");
+            }
+            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, data_size);
+            if (bytes_read != data_size) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Failed to read controller data");
+            }
+        }
+
+        local_controllers[count].type = type;
+        local_controllers[count].key_count = 0;
+        local_controllers[count].data_size = data_size;
+        local_controllers[count].data = data;
+        count++;
+    }
+
+    if (count > 0) {
+        nmo_objanim_controller_t *controllers = nmo_arena_alloc(
+            arena, sizeof(nmo_objanim_controller_t) * count,
+            _Alignof(nmo_objanim_controller_t));
+        if (!controllers) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate controllers array");
+        }
+        memcpy(controllers, local_controllers, sizeof(nmo_objanim_controller_t) * count);
+        out_state->controllers = controllers;
+        out_state->controller_count = count;
+    }
+
+    NMO_RETURN_OK();
+}
+
+/* Read controllers in NEWDATA format: morph keys + 4 inline controllers + optional morph normals */
+static nmo_status_t read_newdata_controllers(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_objectanimation_state_t *out_state)
+{
+    nmo_objanim_controller_t local_controllers[8];
+    uint32_t count = 0;
+
+    /* 1. Read morph keys if present */
+    if (out_state->morph_key_count > 0) {
+        int32_t morph_key_count = out_state->morph_key_count;
+        if (morph_key_count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Invalid morph key count");
+        }
+        nmo_objanim_morph_key_t *morph_keys = nmo_arena_alloc(
+            arena, sizeof(nmo_objanim_morph_key_t) * (uint32_t)morph_key_count,
+            _Alignof(nmo_objanim_morph_key_t));
+        if (!morph_keys) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate morph keys array");
+        }
+
+        for (int32_t i = 0; i < morph_key_count; ++i) {
+            float time_step = 0.0f;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &time_step));
+            morph_keys[i].time_step = time_step;
+
+            uint32_t size_bytes = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
+            morph_keys[i].data_size = size_bytes;
+
+            if (size_bytes > 0) {
+                void *data = nmo_arena_alloc(arena, size_bytes, 4);
+                if (!data) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate morph key data");
+                }
+                size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
+                if (bytes_read != size_bytes) {
+                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                     "Failed to read morph key data");
+                }
+                morph_keys[i].data = data;
+            } else {
+                morph_keys[i].data = NULL;
+            }
+        }
+
+        out_state->morph_keys = morph_keys;
+        out_state->morph_key_parsed_count = (uint32_t)morph_key_count;
+    }
+
+    /* 2. Read 4 controllers: position, scale, rotation, scaleAxis */
+    static const uint32_t controller_types[4] = {
+        CKANIMATION_LINPOS_CONTROL,
+        CKANIMATION_LINSCL_CONTROL,
+        CKANIMATION_LINROT_CONTROL,
+        CKANIMATION_LINSCLAXIS_CONTROL
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        uint32_t buf_size = 0;
+        uint32_t key_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+
+        if (key_count > 0 && buf_size > 0) {
+            void *data = nmo_arena_alloc(arena, buf_size, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate controller data");
+            }
+            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, buf_size);
+            if (bytes_read != buf_size) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Failed to read controller data");
+            }
+
+            local_controllers[count].type = controller_types[i];
+            local_controllers[count].key_count = key_count;
+            local_controllers[count].data_size = buf_size;
+            local_controllers[count].data = data;
+            count++;
+        }
+    }
+
+    /* 3. Check for optional morph normals */
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHCOMP) == NMO_OK &&
+        out_state->morph_key_parsed_count > 0) {
+        out_state->morph_normals_id = CK_STATESAVE_OBJANIMMORPHCOMP;
+        out_state->morph_normals_count = out_state->morph_key_parsed_count;
+
+        uint32_t *sizes = nmo_arena_alloc(arena, sizeof(uint32_t) * out_state->morph_normals_count,
+                                          _Alignof(uint32_t));
+        void **data_ptrs = nmo_arena_alloc(arena, sizeof(void *) * out_state->morph_normals_count,
+                                           _Alignof(void *));
+        if (!sizes || !data_ptrs) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate morph normals arrays");
+        }
+
+        for (uint32_t i = 0; i < out_state->morph_normals_count; ++i) {
+            uint32_t size_bytes = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
+            sizes[i] = size_bytes;
+
+            if (size_bytes > 0) {
+                void *data = nmo_arena_alloc(arena, size_bytes, 4);
+                if (!data) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate morph normal data");
+                }
+                size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
+                if (bytes_read != size_bytes) {
+                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                     "Failed to read morph normal data");
+                }
+                data_ptrs[i] = data;
+            } else {
+                data_ptrs[i] = NULL;
+            }
+        }
+
+        out_state->morph_normals_sizes = sizes;
+        out_state->morph_normals_data = data_ptrs;
+    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHNORMALS) == NMO_OK &&
+               out_state->morph_key_parsed_count > 0) {
+        out_state->morph_normals_id = CK_STATESAVE_OBJANIMMORPHNORMALS;
+        out_state->morph_normals_count = out_state->morph_key_parsed_count;
+
+        uint32_t *sizes = nmo_arena_alloc(arena, sizeof(uint32_t) * out_state->morph_normals_count,
+                                          _Alignof(uint32_t));
+        void **data_ptrs = nmo_arena_alloc(arena, sizeof(void *) * out_state->morph_normals_count,
+                                           _Alignof(void *));
+        if (!sizes || !data_ptrs) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate morph normals arrays");
+        }
+
+        for (uint32_t i = 0; i < out_state->morph_normals_count; ++i) {
+            uint32_t size_bytes = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
+            sizes[i] = size_bytes;
+
+            if (size_bytes > 0) {
+                void *data = nmo_arena_alloc(arena, size_bytes, 4);
+                if (!data) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "Failed to allocate morph normal data");
+                }
+                size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
+                if (bytes_read != size_bytes) {
+                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                     "Failed to read morph normal data");
+                }
+                data_ptrs[i] = data;
+            } else {
+                data_ptrs[i] = NULL;
+            }
+        }
+
+        out_state->morph_normals_sizes = sizes;
+        out_state->morph_normals_data = data_ptrs;
+    }
+
+    /* Copy controllers to arena-allocated array */
+    if (count > 0) {
+        nmo_objanim_controller_t *controllers = nmo_arena_alloc(
+            arena, sizeof(nmo_objanim_controller_t) * count,
+            _Alignof(nmo_objanim_controller_t));
+        if (!controllers) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate controllers array");
+        }
+        memcpy(controllers, local_controllers, sizeof(nmo_objanim_controller_t) * count);
+        out_state->controllers = controllers;
+        out_state->controller_count = count;
+    }
+
+    NMO_RETURN_OK();
+}
+
+/* Read controllers in LEGACY format: identifier-based sections */
+static nmo_status_t read_legacy_controllers(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_objectanimation_state_t *out_state)
+{
+    nmo_objanim_controller_t local_controllers[8];
+    uint32_t count = 0;
+
+    /* Skip old morphkeys identifier if present */
+    (void)nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHKEYS);
+
+    /* Read morph keys (legacy format) */
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHKEYS2) == NMO_OK) {
+        int32_t morph_key_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &morph_key_count));
+        if (morph_key_count > 0) {
+            int32_t morph_vertex_count = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &morph_vertex_count));
+
+            out_state->has_morph_counts = 1;
+            out_state->morph_key_count = morph_key_count;
+            out_state->morph_vertex_count = morph_vertex_count;
+
+            nmo_objanim_morph_key_t *morph_keys = nmo_arena_alloc(
+                arena, sizeof(nmo_objanim_morph_key_t) * (uint32_t)morph_key_count,
+                _Alignof(nmo_objanim_morph_key_t));
+            if (!morph_keys) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate morph keys array");
+            }
+
+            for (int32_t i = 0; i < morph_key_count; ++i) {
+                float time_step = 0.0f;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &time_step));
+                morph_keys[i].time_step = time_step;
+
+                uint32_t size_bytes = 0;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
+                morph_keys[i].data_size = size_bytes;
+
+                if (size_bytes > 0) {
+                    void *data = nmo_arena_alloc(arena, size_bytes, 4);
+                    if (!data) {
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "Failed to allocate morph key data");
+                    }
+                    size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
+                    if (bytes_read != size_bytes) {
+                        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                         "Failed to read morph key data");
+                    }
+                    morph_keys[i].data = data;
+                } else {
+                    morph_keys[i].data = NULL;
+                }
+            }
+
+            out_state->morph_keys = morph_keys;
+            out_state->morph_key_parsed_count = (uint32_t)morph_key_count;
+        }
+    }
+
+    /* Read position controller */
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMPOSKEYS) == NMO_OK) {
+        uint32_t buf_size = 0;
+        uint32_t key_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+
+        if (key_count > 0 && buf_size > 0) {
+            void *data = nmo_arena_alloc(arena, buf_size, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate position controller data");
+            }
+            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, buf_size);
+            if (bytes_read != buf_size) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Failed to read position controller data");
+            }
+
+            local_controllers[count].type = CKANIMATION_LINPOS_CONTROL;
+            local_controllers[count].key_count = key_count;
+            local_controllers[count].data_size = buf_size;
+            local_controllers[count].data = data;
+            count++;
+        }
+    }
+
+    /* Read rotation controller + scale axis controller */
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMROTKEYS) == NMO_OK) {
+        uint32_t rot_buf_size = 0;
+        uint32_t rot_key_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_buf_size));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_key_count));
+
+        if (rot_key_count > 0 && rot_buf_size > 0) {
+            void *data = nmo_arena_alloc(arena, rot_buf_size, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate rotation controller data");
+            }
+            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, rot_buf_size);
+            if (bytes_read != rot_buf_size) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Failed to read rotation controller data");
+            }
+
+            local_controllers[count].type = CKANIMATION_LINROT_CONTROL;
+            local_controllers[count].key_count = rot_key_count;
+            local_controllers[count].data_size = rot_buf_size;
+            local_controllers[count].data = data;
+            count++;
+        }
+
+        uint32_t axis_buf_size = 0;
+        uint32_t axis_key_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_buf_size));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_key_count));
+
+        if (axis_key_count > 0 && axis_buf_size > 0) {
+            void *data = nmo_arena_alloc(arena, axis_buf_size, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate scale axis controller data");
+            }
+            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, axis_buf_size);
+            if (bytes_read != axis_buf_size) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Failed to read scale axis controller data");
+            }
+
+            local_controllers[count].type = CKANIMATION_LINSCLAXIS_CONTROL;
+            local_controllers[count].key_count = axis_key_count;
+            local_controllers[count].data_size = axis_buf_size;
+            local_controllers[count].data = data;
+            count++;
+        }
+    }
+
+    /* Read scale controller */
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMSCLKEYS) == NMO_OK) {
+        uint32_t buf_size = 0;
+        uint32_t key_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+
+        if (key_count > 0 && buf_size > 0) {
+            void *data = nmo_arena_alloc(arena, buf_size, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate scale controller data");
+            }
+            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, buf_size);
+            if (bytes_read != buf_size) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Failed to read scale controller data");
+            }
+
+            local_controllers[count].type = CKANIMATION_LINSCL_CONTROL;
+            local_controllers[count].key_count = key_count;
+            local_controllers[count].data_size = buf_size;
+            local_controllers[count].data = data;
+            count++;
+        }
+    }
+
+    /* Read legacy header fields */
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMFLAGS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->flags));
+    }
+
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMENTITY) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->entity_id));
+    }
+
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMLENGTH) == NMO_OK) {
+        out_state->has_length = 1;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->length));
+    }
+
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMERGE) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->merge_factor));
+        int32_t merged = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &merged));
+        if (merged) {
+            out_state->flags |= 0x80u;
+            out_state->has_merge = 1;
+        } else {
+            out_state->flags &= ~0x80u;
+            out_state->has_merge = 0;
+        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->anim1_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->anim2_id));
+    }
+
+    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMNEWDATA) == NMO_OK) {
+        out_state->has_root_pos = 1;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->root_pos));
+    }
+
+    /* Copy controllers to arena-allocated array */
+    if (count > 0) {
+        nmo_objanim_controller_t *controllers = nmo_arena_alloc(
+            arena, sizeof(nmo_objanim_controller_t) * count,
+            _Alignof(nmo_objanim_controller_t));
+        if (!controllers) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate controllers array");
+        }
+        memcpy(controllers, local_controllers, sizeof(nmo_objanim_controller_t) * count);
+        out_state->controllers = controllers;
+        out_state->controller_count = count;
+    }
+
     NMO_RETURN_OK();
 }
 
@@ -994,6 +1578,14 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     out_state->has_morph_counts = 0;
     out_state->morph_vertex_count = 0;
     out_state->morph_key_count = 0;
+    out_state->controller_count = 0;
+    out_state->controllers = NULL;
+    out_state->morph_key_parsed_count = 0;
+    out_state->morph_keys = NULL;
+    out_state->morph_normals_id = 0;
+    out_state->morph_normals_count = 0;
+    out_state->morph_normals_sizes = NULL;
+    out_state->morph_normals_data = NULL;
     out_state->raw_tail = NULL;
     out_state->raw_tail_size = 0;
 
@@ -1025,6 +1617,7 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
             result = nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
             if (result != NMO_OK) return result;
         }
+        /* SHARED format has no controller data, keep raw_tail for any remainder */
         result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
         if (result != NMO_OK) return result;
         NMO_RETURN_OK();
@@ -1056,7 +1649,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
             result = nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
             if (result != NMO_OK) return result;
         }
-        result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        /* CONTROLLERS format: parse controller loop */
+        result = read_controllers_loop(chunk, arena, out_state);
         if (result != NMO_OK) return result;
         NMO_RETURN_OK();
     }
@@ -1092,7 +1686,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
             result = nmo_chunk_read_object_id(chunk, &out_state->anim2_id);
             if (result != NMO_OK) return result;
         }
-        result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        /* NEWDATA format: parse morph keys + 4 inline controllers */
+        result = read_newdata_controllers(chunk, arena, out_state);
         if (result != NMO_OK) return result;
         NMO_RETURN_OK();
     }
@@ -1100,9 +1695,14 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     if (out_state->format == CKOBJANIM_FORMAT_NONE) {
         if (data_version < 1) {
             out_state->format = CKOBJANIM_FORMAT_LEGACY;
+            /* LEGACY format: parse identifier-based sections */
+            nmo_status_t result = read_legacy_controllers(chunk, arena, out_state);
+            if (result != NMO_OK) return result;
+        } else {
+            /* Unknown format or empty, use raw_tail as fallback */
+            nmo_status_t result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+            if (result != NMO_OK) return result;
         }
-        nmo_status_t result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
-        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();
@@ -1212,11 +1812,223 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         break;
     }
 
-    if (in_state->raw_tail && in_state->raw_tail_size > 0) {
-        nmo_status_t result = nmo_chunk_write_buffer_no_size(out_chunk,
-                                                             in_state->raw_tail,
-                                                             in_state->raw_tail_size);
+    /* Write controller data based on format */
+    if (in_state->format == CKOBJANIM_FORMAT_CONTROLLERS) {
+        /* CONTROLLERS format: write {type, data_size/4, data} per controller + terminator 0 */
+        for (uint32_t i = 0; i < in_state->controller_count; ++i) {
+            const nmo_objanim_controller_t *ctrl = &in_state->controllers[i];
+            nmo_status_t result = nmo_chunk_write_dword(out_chunk, ctrl->type);
+            if (result != NMO_OK) return result;
+            uint32_t size_dwords = ctrl->data_size / 4;
+            result = nmo_chunk_write_dword(out_chunk, size_dwords);
+            if (result != NMO_OK) return result;
+            if (ctrl->data_size > 0 && ctrl->data != NULL) {
+                result = nmo_chunk_write_buffer_no_size(out_chunk, ctrl->data, ctrl->data_size);
+                if (result != NMO_OK) return result;
+            }
+        }
+        /* Write terminator */
+        nmo_status_t result = nmo_chunk_write_dword(out_chunk, 0);
         if (result != NMO_OK) return result;
+    } else if (in_state->format == CKOBJANIM_FORMAT_NEWDATA) {
+        /* NEWDATA format: write morph keys, then 4 controllers as {bufSize, keyCount, data} */
+        if (in_state->morph_key_parsed_count > 0 && in_state->morph_keys != NULL) {
+            for (uint32_t i = 0; i < in_state->morph_key_parsed_count; ++i) {
+                const nmo_objanim_morph_key_t *key = &in_state->morph_keys[i];
+                nmo_status_t result = nmo_chunk_write_float(out_chunk, key->time_step);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_write_dword(out_chunk, key->data_size);
+                if (result != NMO_OK) return result;
+                if (key->data_size > 0 && key->data != NULL) {
+                    result = nmo_chunk_write_buffer_no_size(out_chunk, key->data, key->data_size);
+                    if (result != NMO_OK) return result;
+                }
+            }
+        }
+
+        /* Write 4 controllers in fixed order: position, scale, rotation, scaleAxis */
+        static const uint32_t expected_types[4] = {
+            CKANIMATION_LINPOS_CONTROL,
+            CKANIMATION_LINSCL_CONTROL,
+            CKANIMATION_LINROT_CONTROL,
+            CKANIMATION_LINSCLAXIS_CONTROL
+        };
+
+        for (int slot = 0; slot < 4; ++slot) {
+            const nmo_objanim_controller_t *ctrl = NULL;
+            for (uint32_t i = 0; i < in_state->controller_count; ++i) {
+                if (in_state->controllers[i].type == expected_types[slot]) {
+                    ctrl = &in_state->controllers[i];
+                    break;
+                }
+            }
+
+            uint32_t buf_size = ctrl ? ctrl->data_size : 0;
+            uint32_t key_count = ctrl ? ctrl->key_count : 0;
+            nmo_status_t result = nmo_chunk_write_dword(out_chunk, buf_size);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(out_chunk, key_count);
+            if (result != NMO_OK) return result;
+            if (ctrl && buf_size > 0 && ctrl->data != NULL) {
+                result = nmo_chunk_write_buffer_no_size(out_chunk, ctrl->data, buf_size);
+                if (result != NMO_OK) return result;
+            }
+        }
+
+        /* Write optional morph normals if present */
+        if (in_state->morph_normals_id != 0 && in_state->morph_normals_count > 0) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, in_state->morph_normals_id);
+            if (result != NMO_OK) return result;
+            for (uint32_t i = 0; i < in_state->morph_normals_count; ++i) {
+                uint32_t size_bytes = in_state->morph_normals_sizes[i];
+                result = nmo_chunk_write_dword(out_chunk, size_bytes);
+                if (result != NMO_OK) return result;
+                if (size_bytes > 0 && in_state->morph_normals_data[i] != NULL) {
+                    result = nmo_chunk_write_buffer_no_size(out_chunk,
+                                                            in_state->morph_normals_data[i],
+                                                            size_bytes);
+                    if (result != NMO_OK) return result;
+                }
+            }
+        }
+    } else if (in_state->format == CKOBJANIM_FORMAT_LEGACY) {
+        /* LEGACY format: write identifier-based sections */
+
+        /* Morph keys */
+        if (in_state->morph_key_parsed_count > 0 && in_state->morph_keys != NULL) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMMORPHKEYS2);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->morph_key_parsed_count);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_int(out_chunk, in_state->morph_vertex_count);
+            if (result != NMO_OK) return result;
+            for (uint32_t i = 0; i < in_state->morph_key_parsed_count; ++i) {
+                const nmo_objanim_morph_key_t *mk = &in_state->morph_keys[i];
+                result = nmo_chunk_write_float(out_chunk, mk->time_step);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_write_dword(out_chunk, mk->data_size);
+                if (result != NMO_OK) return result;
+                if (mk->data_size > 0 && mk->data != NULL) {
+                    result = nmo_chunk_write_buffer_no_size(out_chunk, mk->data, mk->data_size);
+                    if (result != NMO_OK) return result;
+                }
+            }
+        }
+
+        /* Write controllers with their legacy identifiers */
+        for (uint32_t i = 0; i < in_state->controller_count; ++i) {
+            const nmo_objanim_controller_t *ctrl = &in_state->controllers[i];
+            uint32_t id = 0;
+            if (ctrl->type == CKANIMATION_LINPOS_CONTROL)
+                id = CK_STATESAVE_OBJANIMPOSKEYS;
+            else if (ctrl->type == CKANIMATION_LINROT_CONTROL)
+                id = CK_STATESAVE_OBJANIMROTKEYS;
+            else if (ctrl->type == CKANIMATION_LINSCL_CONTROL)
+                id = CK_STATESAVE_OBJANIMSCLKEYS;
+            else if (ctrl->type == CKANIMATION_LINSCLAXIS_CONTROL)
+                id = CK_STATESAVE_OBJANIMROTKEYS; /* packed with rotation */
+
+            /* ScaleAxis is packed inside ROTKEYS section, skip standalone write */
+            if (ctrl->type == CKANIMATION_LINSCLAXIS_CONTROL)
+                continue;
+
+            if (id != 0) {
+                nmo_status_t result = nmo_chunk_write_identifier(out_chunk, id);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_write_dword(out_chunk, ctrl->data_size);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_write_dword(out_chunk, ctrl->key_count);
+                if (result != NMO_OK) return result;
+                if (ctrl->data_size > 0 && ctrl->data != NULL) {
+                    result = nmo_chunk_write_buffer_no_size(out_chunk, ctrl->data, ctrl->data_size);
+                    if (result != NMO_OK) return result;
+                }
+
+                /* If this is rotation, append scale axis controller data */
+                if (ctrl->type == CKANIMATION_LINROT_CONTROL) {
+                    const nmo_objanim_controller_t *axis = NULL;
+                    for (uint32_t j = 0; j < in_state->controller_count; ++j) {
+                        if (in_state->controllers[j].type == CKANIMATION_LINSCLAXIS_CONTROL) {
+                            axis = &in_state->controllers[j];
+                            break;
+                        }
+                    }
+                    if (axis != NULL) {
+                        result = nmo_chunk_write_dword(out_chunk, axis->data_size);
+                        if (result != NMO_OK) return result;
+                        result = nmo_chunk_write_dword(out_chunk, axis->key_count);
+                        if (result != NMO_OK) return result;
+                        if (axis->data_size > 0 && axis->data != NULL) {
+                            result = nmo_chunk_write_buffer_no_size(out_chunk, axis->data, axis->data_size);
+                            if (result != NMO_OK) return result;
+                        }
+                    } else {
+                        result = nmo_chunk_write_dword(out_chunk, 0);
+                        if (result != NMO_OK) return result;
+                        result = nmo_chunk_write_dword(out_chunk, 0);
+                        if (result != NMO_OK) return result;
+                    }
+                }
+            }
+        }
+
+        /* Legacy header fields */
+        if (in_state->flags != 0) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMFLAGS);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(out_chunk, in_state->flags);
+            if (result != NMO_OK) return result;
+        }
+
+        if (in_state->entity_id != 0) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMENTITY);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_object_id(out_chunk, in_state->entity_id);
+            if (result != NMO_OK) return result;
+        }
+
+        if (in_state->has_length) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMLENGTH);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_float(out_chunk, in_state->length);
+            if (result != NMO_OK) return result;
+        }
+
+        if (in_state->has_merge) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMMERGE);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_float(out_chunk, in_state->merge_factor);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_int(out_chunk, (in_state->flags & 0x80u) ? 1 : 0);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_object_id(out_chunk, in_state->anim1_id);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_object_id(out_chunk, in_state->anim2_id);
+            if (result != NMO_OK) return result;
+        }
+
+        if (in_state->has_root_pos) {
+            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMNEWDATA);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_vector3(out_chunk, &in_state->root_pos);
+            if (result != NMO_OK) return result;
+        }
+
+        /* Fallback raw_tail for any remaining unparsed data */
+        if (in_state->raw_tail && in_state->raw_tail_size > 0) {
+            nmo_status_t result = nmo_chunk_write_buffer_no_size(out_chunk,
+                                                                 in_state->raw_tail,
+                                                                 in_state->raw_tail_size);
+            if (result != NMO_OK) return result;
+        }
+    } else {
+        /* Fallback: write raw_tail if present */
+        if (in_state->raw_tail && in_state->raw_tail_size > 0) {
+            nmo_status_t result = nmo_chunk_write_buffer_no_size(out_chunk,
+                                                                 in_state->raw_tail,
+                                                                 in_state->raw_tail_size);
+            if (result != NMO_OK) return result;
+        }
     }
 
     NMO_RETURN_OK();

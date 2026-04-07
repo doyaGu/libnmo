@@ -1,0 +1,299 @@
+/**
+ * @file test_objanim_controllers.c
+ * @brief Unit tests for CKObjectAnimation controller parsing
+ */
+
+#include "test_framework.h"
+#include "type/nmo_operations.h"
+#include "object/nmo_object_types.h"
+#include "object/nmo_object_guids.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "type/nmo_type_system.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_guid.h"
+#include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
+#include "object/nmo_statesave_ids.h"
+#include <string.h>
+
+/* Controller type constants (matching ckanimation_schemas.c) */
+#define CKANIMATION_LINPOS_CONTROL      0x637c4301u
+#define CKANIMATION_LINROT_CONTROL      0x49ed4002u
+#define CKANIMATION_LINSCL_CONTROL      0x654a3a04u
+#define CKANIMATION_LINSCLAXIS_CONTROL  0x2f200b08u
+
+static nmo_status_t register_test_types(nmo_type_registry_t *registry) {
+    nmo_status_t result = nmo_register_builtin_types(registry);
+    if (result != NMO_OK) return result;
+    return nmo_register_object_types(registry);
+}
+
+/* ========================================================================
+ * Test: CONTROLLERS format round-trip
+ * ======================================================================== */
+TEST(objanim_controllers, controllers_roundtrip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    nmo_status_t result = register_test_types(registry);
+    ASSERT_EQ(NMO_OK, result);
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(
+        registry, CKPGUID_OBJECTANIMATION);
+    ASSERT_NE(NULL, type);
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* Build state with 2 controllers */
+    nmo_objectanimation_state_t state_out;
+    memset(&state_out, 0, sizeof(state_out));
+    state_out.base.base.visibility_flags = 1;
+    state_out.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state_out.flags = 0x01;
+    state_out.has_length = 1;
+    state_out.length = 10.0f;
+
+    /* Fake position key data: 2 keys x 16 bytes = 32 bytes */
+    float pos_keys[8] = {
+        0.0f, 1.0f, 2.0f, 3.0f,   /* key0: time=0, pos=(1,2,3) */
+        5.0f, 4.0f, 5.0f, 6.0f    /* key1: time=5, pos=(4,5,6) */
+    };
+    /* Fake rotation key data: 1 key x 20 bytes = 20 bytes */
+    float rot_keys[5] = {
+        0.0f, 0.0f, 0.0f, 0.0f, 1.0f  /* time=0, quat=(0,0,0,1) */
+    };
+
+    nmo_objanim_controller_t controllers[2];
+    controllers[0].type = CKANIMATION_LINPOS_CONTROL;
+    controllers[0].key_count = 0;  /* CONTROLLERS format doesn't store key_count */
+    controllers[0].data_size = 32;
+    controllers[0].data = pos_keys;
+    controllers[1].type = CKANIMATION_LINROT_CONTROL;
+    controllers[1].key_count = 0;
+    controllers[1].data_size = 20;
+    controllers[1].data = rot_keys;
+
+    state_out.controller_count = 2;
+    state_out.controllers = controllers;
+
+    /* Serialize */
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    nmo_chunk_start_write(chunk);
+    result = type->vtable->serialize(&state_out, chunk, type, &ser_ctx);
+    ASSERT_EQ(NMO_OK, result);
+    nmo_chunk_close(chunk);
+
+    /* Deserialize */
+    nmo_chunk_start_read(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_objectanimation_state_t state_in;
+    memset(&state_in, 0, sizeof(state_in));
+    result = type->vtable->deserialize(&state_in, chunk, type, &des_ctx);
+    ASSERT_EQ(NMO_OK, result);
+
+    /* Verify format */
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, state_in.format);
+
+    /* Verify controllers parsed */
+    ASSERT_EQ(2, state_in.controller_count);
+    ASSERT_NE(NULL, state_in.controllers);
+
+    /* Verify controller 0: position */
+    ASSERT_EQ(CKANIMATION_LINPOS_CONTROL, state_in.controllers[0].type);
+    ASSERT_EQ(32, state_in.controllers[0].data_size);
+    ASSERT_NE(NULL, state_in.controllers[0].data);
+    ASSERT_EQ(0, memcmp(pos_keys, state_in.controllers[0].data, 32));
+
+    /* Verify controller 1: rotation */
+    ASSERT_EQ(CKANIMATION_LINROT_CONTROL, state_in.controllers[1].type);
+    ASSERT_EQ(20, state_in.controllers[1].data_size);
+    ASSERT_NE(NULL, state_in.controllers[1].data);
+    ASSERT_EQ(0, memcmp(rot_keys, state_in.controllers[1].data, 20));
+
+    /* Verify header fields */
+    ASSERT_EQ(1, state_in.has_length);
+    ASSERT_EQ(10.0f, state_in.length);
+
+    /* No raw_tail should remain */
+    ASSERT_EQ(0, state_in.raw_tail_size);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ========================================================================
+ * Test: CONTROLLERS format empty (just terminator)
+ * ======================================================================== */
+TEST(objanim_controllers, controllers_empty) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    nmo_status_t result = register_test_types(registry);
+    ASSERT_EQ(NMO_OK, result);
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(
+        registry, CKPGUID_OBJECTANIMATION);
+    ASSERT_NE(NULL, type);
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* State with no controllers */
+    nmo_objectanimation_state_t state_out;
+    memset(&state_out, 0, sizeof(state_out));
+    state_out.base.base.visibility_flags = 1;
+    state_out.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state_out.has_length = 1;
+    state_out.length = 5.0f;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    nmo_chunk_start_write(chunk);
+    result = type->vtable->serialize(&state_out, chunk, type, &ser_ctx);
+    ASSERT_EQ(NMO_OK, result);
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_objectanimation_state_t state_in;
+    memset(&state_in, 0, sizeof(state_in));
+    result = type->vtable->deserialize(&state_in, chunk, type, &des_ctx);
+    ASSERT_EQ(NMO_OK, result);
+
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, state_in.format);
+    ASSERT_EQ(0, state_in.controller_count);
+    ASSERT_EQ(0, state_in.raw_tail_size);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ========================================================================
+ * Test: SHARED format -- no controllers
+ * ======================================================================== */
+TEST(objanim_controllers, shared_no_controllers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    nmo_status_t result = register_test_types(registry);
+    ASSERT_EQ(NMO_OK, result);
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(
+        registry, CKPGUID_OBJECTANIMATION);
+    ASSERT_NE(NULL, type);
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_objectanimation_state_t state_out;
+    memset(&state_out, 0, sizeof(state_out));
+    state_out.base.base.visibility_flags = 1;
+    state_out.format = CKOBJANIM_FORMAT_SHARED;
+    state_out.has_shared_anim = 1;
+    state_out.shared_anim_id = 42;
+    state_out.flags = 0x01;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    nmo_chunk_start_write(chunk);
+    result = type->vtable->serialize(&state_out, chunk, type, &ser_ctx);
+    ASSERT_EQ(NMO_OK, result);
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_objectanimation_state_t state_in;
+    memset(&state_in, 0, sizeof(state_in));
+    result = type->vtable->deserialize(&state_in, chunk, type, &des_ctx);
+    ASSERT_EQ(NMO_OK, result);
+
+    ASSERT_EQ(CKOBJANIM_FORMAT_SHARED, state_in.format);
+    ASSERT_EQ(0, state_in.controller_count);
+    ASSERT_EQ(0, state_in.morph_key_parsed_count);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ========================================================================
+ * Test: key size helper
+ * ======================================================================== */
+TEST(objanim_controllers, key_size_helper) {
+    ASSERT_EQ(16, nmo_objanim_controller_key_size(CKANIMATION_LINPOS_CONTROL));
+    ASSERT_EQ(20, nmo_objanim_controller_key_size(CKANIMATION_LINROT_CONTROL));
+    ASSERT_EQ(16, nmo_objanim_controller_key_size(CKANIMATION_LINSCL_CONTROL));
+    ASSERT_EQ(20, nmo_objanim_controller_key_size(CKANIMATION_LINSCLAXIS_CONTROL));
+    ASSERT_EQ(0, nmo_objanim_controller_key_size(0));          /* unknown */
+    ASSERT_EQ(0, nmo_objanim_controller_key_size(0xDEADBEEF)); /* unknown */
+}
+
+/* ========================================================================
+ * Test: deep copy preserves controller data
+ * ======================================================================== */
+TEST(objanim_controllers, copy_controllers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 131072);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    nmo_status_t result = register_test_types(registry);
+    ASSERT_EQ(NMO_OK, result);
+
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(
+        registry, CKPGUID_OBJECTANIMATION);
+    ASSERT_NE(NULL, type);
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* Build state with 1 controller */
+    float pos_keys[4] = { 0.0f, 1.0f, 2.0f, 3.0f };
+    nmo_objanim_controller_t ctrl;
+    ctrl.type = CKANIMATION_LINPOS_CONTROL;
+    ctrl.key_count = 0;
+    ctrl.data_size = 16;
+    ctrl.data = pos_keys;
+
+    nmo_objectanimation_state_t state_out;
+    memset(&state_out, 0, sizeof(state_out));
+    state_out.base.base.visibility_flags = 1;
+    state_out.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    state_out.has_length = 1;
+    state_out.length = 1.0f;
+    state_out.controller_count = 1;
+    state_out.controllers = &ctrl;
+
+    /* Serialize -> deserialize to get arena-owned state */
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    nmo_chunk_start_write(chunk);
+    result = type->vtable->serialize(&state_out, chunk, type, &ser_ctx);
+    ASSERT_EQ(NMO_OK, result);
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_objectanimation_state_t src;
+    memset(&src, 0, sizeof(src));
+    result = type->vtable->deserialize(&src, chunk, type, &des_ctx);
+    ASSERT_EQ(NMO_OK, result);
+    ASSERT_EQ(1, src.controller_count);
+
+    /* Copy */
+    nmo_objectanimation_state_t dst;
+    memset(&dst, 0, sizeof(dst));
+    result = type->vtable->copy(&src, &dst, type, arena);
+    ASSERT_EQ(NMO_OK, result);
+
+    /* Verify deep copy */
+    ASSERT_EQ(src.controller_count, dst.controller_count);
+    ASSERT_NE(src.controllers, dst.controllers); /* different pointers */
+    ASSERT_EQ(src.controllers[0].type, dst.controllers[0].type);
+    ASSERT_EQ(src.controllers[0].data_size, dst.controllers[0].data_size);
+    ASSERT_NE(src.controllers[0].data, dst.controllers[0].data); /* different buffers */
+    ASSERT_EQ(0, memcmp(src.controllers[0].data, dst.controllers[0].data,
+                        src.controllers[0].data_size));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(objanim_controllers, controllers_roundtrip);
+    REGISTER_TEST(objanim_controllers, controllers_empty);
+    REGISTER_TEST(objanim_controllers, shared_no_controllers);
+    REGISTER_TEST(objanim_controllers, key_size_helper);
+    REGISTER_TEST(objanim_controllers, copy_controllers);
+TEST_MAIN_END()

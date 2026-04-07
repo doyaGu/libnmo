@@ -69,6 +69,29 @@ typedef struct nmo_keyedanimation_state {
 typedef CK_OBJECTANIMATION_FORMAT nmo_objectanimation_format_t;
 
 /**
+ * @brief A single animation controller's raw key data.
+ *
+ * The internal layout of keys depends on the controller type
+ * (e.g., LINPOS = 16 bytes/key, LINROT = 20 bytes/key).
+ * Use nmo_objanim_controller_key_size() to determine key size.
+ */
+typedef struct nmo_objanim_controller {
+    uint32_t type;       /**< CKANIMATION_CONTROLLER enum value */
+    uint32_t key_count;  /**< Explicit key count (NEWDATA/LEGACY); 0 for CONTROLLERS format */
+    uint32_t data_size;  /**< Raw key data size in bytes */
+    void    *data;       /**< Arena-allocated raw key bytes */
+} nmo_objanim_controller_t;
+
+/**
+ * @brief Morph key with per-key variable-length vertex data (NEWDATA/LEGACY).
+ */
+typedef struct nmo_objanim_morph_key {
+    float    time_step;  /**< Key time */
+    uint32_t data_size;  /**< Vertex position data size in bytes */
+    void    *data;       /**< Arena-allocated vertex positions */
+} nmo_objanim_morph_key_t;
+
+/**
  * @brief CKObjectAnimation state
  */
 typedef struct nmo_objectanimation_state {
@@ -97,9 +120,30 @@ typedef struct nmo_objectanimation_state {
     int32_t morph_vertex_count;
     int32_t morph_key_count;
 
+    /* Parsed controller data */
+    uint32_t controller_count;
+    nmo_objanim_controller_t *controllers;
+
+    /* Morph keys (NEWDATA/LEGACY formats) */
+    uint32_t morph_key_parsed_count;
+    nmo_objanim_morph_key_t *morph_keys;
+
+    /* Morph normals (NEWDATA only, optional) */
+    uint32_t morph_normals_id;      /**< 0, CK_STATESAVE_OBJANIMMORPHCOMP, or _MORPHNORMALS */
+    uint32_t morph_normals_count;
+    uint32_t *morph_normals_sizes;  /**< Per-key data sizes */
+    void   **morph_normals_data;    /**< Per-key arena-allocated buffers */
+
+    /* Fallback for unparseable remainder */
     void *raw_tail;
     size_t raw_tail_size;
 } nmo_objectanimation_state_t;
+
+/**
+ * @brief Get the size of a single key for a given controller type.
+ * @return Key size in bytes, or 0 if the type is unknown/variable.
+ */
+NMO_API uint32_t nmo_objanim_controller_key_size(uint32_t controller_type);
 
 NMO_API nmo_status_t nmo_animation_deserialize(
     void *instance,

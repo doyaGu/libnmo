@@ -118,6 +118,8 @@ add_unit_test(test_custom_managers)
 # Phase 6.7: Object types system tests
 add_unit_test(test_object_types)
 add_unit_test(test_object_types_conformance)
+add_unit_test(test_object_serialization)
+add_unit_test(test_objanim_controllers)
 
 # Extension layer tests
 # Extension registry tests still target ABI v1/v2 callback layout.
