@@ -3,22 +3,21 @@
  * @brief CK3dEntity schema definitions
  *
  * Implements schema for CK3dEntity and related 3D entity types.
- * 
- * Based on Virtools SDK reference:
- * - CK3dEntity is the base class for all 3D positioned objects
- * - Stores transformation matrix (position, rotation, scale)
- * - Manages parent-child hierarchy for scene graph
- * - Handles world/local transform computations
- * 
- * Format structure (from reference Load/Save):
- * - World Matrix (VxMatrix 4x4 = 64 bytes)
- * - Flags (DWORD)
- * - Optional: Parent object ID (if parented)
- * - Optional: Z-order data (rendering priority)
- * - Optional: Additional transform data (pivot, bounding box)
- * 
- * This is a PARTIAL schema as mentioned in TODO - we preserve unknown
- * data via raw_tail fields for future math/render schema integration.
+ * Verified complete against RenderEngine reference (CK3dEntity Load/Save).
+ *
+ * Serialized chunk identifiers (all optional via SeekIdentifier):
+ *   CK_STATESAVE_ANIMATION      (0x2000)   -- object animation ID array
+ *   CK_STATESAVE_MESHS           (0x4000)   -- current mesh + mesh ID array
+ *   CK_STATESAVE_3DENTITYNDATA   (0x100000) -- flags, moveable_flags,
+ *       4x VxVector row (3x3 rotation + translation), optional place/parent/z_order
+ *   CK_STATESAVE_PARENT          (0x8000)   -- legacy parent reference
+ *   CK_STATESAVE_3DENTITYFLAGS   (0x10000)  -- legacy entity + moveable flags
+ *   CK_STATESAVE_3DENTITYMATRIX  (0x20000)  -- legacy full 4x4 matrix
+ *   CK_STATESAVE_3DENTITYSKINDATA (0x200000) -- skin bones/vertices/normals
+ *
+ * Note: Bounding box and pivot are NOT serialized fields.  They are
+ * runtime-computed in the Virtools engine (bbox from mesh, pivot from
+ * world matrix row 3).
  */
 
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -74,6 +73,16 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
 
 /* =============================================================================
  * CK_3DENTITY FLAGS (subset)
+ *
+ * Runtime flag sanitization (reference, NOT applied here -- raw values kept
+ * for round-trip fidelity):
+ *   entity_flags:   reference clears RESERVED0 (0x20) and
+ *                   UPDATELASTFRAME (0x1000) during new-format load.
+ *   moveable_flags (new format): reference clears UPTODATE | USERBOX |
+ *                   BOXVALID | HASMOVED | INVERSEWORLDMATVALID |
+ *                   DONTUPDATEFROMPARENT | STENCILONLY | RESERVED2.
+ *   moveable_flags (legacy):     reference clears UPTODATE | USERBOX |
+ *                   INVERSEWORLDMATVALID | DONTUPDATEFROMPARENT | 0xFF00.
  * ============================================================================= */
 
 #define CK_3DENTITY_PLACEVALID              0x00010000u
@@ -142,25 +151,17 @@ static nmo_status_t nmo_3dentity_identifier_payload_size_bytes(nmo_chunk_t *chun
 
 /**
  * @brief Deserialize CK3dEntity state from chunk
- * 
- * Reads the 3D entity transformation data and parent references.
- * This is a PARTIAL implementation - some fields are preserved in raw_tail
- * for future schema refinement.
- * 
- * Chunk format (version 7):
- * - DWORD flags (visibility, activity, etc from CKBeObject)
- * - 16 floats: 4x4 world transformation matrix
- * - DWORD entity_flags (local/world transform, etc)
- * - Optional data (preserved as raw_tail):
- *   - Parent object reference
- *   - Z-order/rendering data
- *   - Bounding box
- *   - Pivot point
- * 
- * @param chunk Chunk containing CK3dEntity data
- * @param arena Arena for allocations
- * @param out_state Output structure to fill
- * @return Result indicating success or error
+ *
+ * Reads all serialized CK3dEntity data.  Each section is gated by a
+ * chunk identifier (SeekIdentifier); missing sections are normal.
+ *
+ * CK_STATESAVE_3DENTITYNDATA layout:
+ *   DWORD  entity_flags
+ *   DWORD  moveable_flags
+ *   4x VxVector  world matrix rows (3 floats each; [3]=0,0,0,1)
+ *   [if PLACEVALID]  object_id  place
+ *   [if PARENTVALID] object_id  parent
+ *   [if ZORDERVALID] int32      z_order
  */
 nmo_status_t nmo_3dentity_deserialize(
     void *instance,
