@@ -276,12 +276,6 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_object_show(argc, argv, global);
     }
 
-    /* Temporarily fall back to object show for ParameterLocal due to state access issues */
-    if (cid == NMO_CID_PARAMETERLOCAL) {
-        nmo_tool_close_session(ctx, session);
-        return nmo_cmd_object_show(argc, argv, global);
-    }
-
     char out_err[128];
     FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
     if (!out) {
@@ -293,10 +287,20 @@ int nmo_cmd_parameter_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     const char *name = nmo_object_get_name(obj);
     const char *class_name = nmo_cli_class_name_from_id(ctx, cid);
 
-    /* Get parameter state and decode value - only valid for Parameter, ParameterLocal, ParameterOut */
+    /* Get parameter base state via explicit struct access for each derived type */
     const nmo_parameter_state_t *pstate = NULL;
-    if (cid != NMO_CID_PARAMETERIN && cid != NMO_CID_PARAMETEROPERATION) {
-        pstate = (const nmo_parameter_state_t *)nmo_object_get_state(obj);
+    {
+        const void *raw_state = nmo_object_get_state(obj);
+        if (raw_state) {
+            if (cid == NMO_CID_PARAMETER) {
+                pstate = (const nmo_parameter_state_t *)raw_state;
+            } else if (cid == NMO_CID_PARAMETEROUT) {
+                pstate = &((const nmo_parameterout_state_t *)raw_state)->base;
+            } else if (cid == NMO_CID_PARAMETERLOCAL) {
+                pstate = &((const nmo_parameterlocal_state_t *)raw_state)->base;
+            }
+            /* ParameterIn and ParameterOperation have different base chains */
+        }
     }
 
     /* Dynamic value buffer - only for classes with valid Parameter state */

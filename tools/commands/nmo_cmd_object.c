@@ -526,7 +526,12 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 fprintf(stderr, "Error: Missing argument for --depth\n");
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
-            depth = atoi(argv[++i]);
+            uint32_t d = 0;
+            if (!nmo_tool_parse_u32_dec(argv[++i], &d)) {
+                fprintf(stderr, "Error: Invalid depth value '%s'\n", argv[i]);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            depth = (int)d;
             continue;
         }
 
