@@ -3,6 +3,7 @@
 #include "nmo_repl_commands.h"
 #include "nmo_repl_util.h"
 #include "nmo_tool_common.h"
+#include "core/nmo_error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -124,6 +125,14 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
         }
 
         int result = nmo_repl_dispatch_command(repl, argc, argv);
+        if (result < 0) {
+            /* Command failed - display error chain if available */
+            char err_chain[1024];
+            size_t err_len = nmo_last_error_chain_copy(err_chain, sizeof(err_chain));
+            if (err_len > 0) {
+                fprintf(stderr, "  Error: %s\n", err_chain);
+            }
+        }
         if (result > 0) {
             break;
         }

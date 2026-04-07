@@ -11,9 +11,9 @@
 extern "C" {
 #endif
 
-#define NMO_REPL_MAX_CMD_LEN 256
-#define NMO_REPL_MAX_ARGS 16
-#define NMO_REPL_HISTORY_SIZE 64
+#define NMO_REPL_MAX_CMD_LEN 4096
+#define NMO_REPL_MAX_ARGS 64
+#define NMO_REPL_HISTORY_SIZE 256
 
 typedef struct {
     nmo_context_t *ctx;

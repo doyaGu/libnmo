@@ -506,7 +506,7 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Parse: nmo object show [--select <path>]... [--expr <expr>]... <id> <file> */
+    /* Parse: nmo object show [--select <path>]... [--expr <expr>]... [--depth N] [--full] <id> <file> */
     const char *id_str = NULL;
     const char *file_path = NULL;
 
@@ -516,8 +516,25 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
     const char *exprs[64];
     size_t expr_count = 0;
 
+    int depth = -1; /* -1 = use default */
+    bool full_mode = false;
+
     int non_opt_count = 0;
     for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--depth") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: Missing argument for --depth\n");
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            depth = atoi(argv[++i]);
+            continue;
+        }
+
+        if (strcmp(argv[i], "--full") == 0) {
+            full_mode = true;
+            continue;
+        }
+
         if (strcmp(argv[i], "--select") == 0 || strcmp(argv[i], "-s") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
@@ -527,6 +544,8 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             }
             if (select_path_count < (sizeof(select_paths) / sizeof(select_paths[0]))) {
                 select_paths[select_path_count++] = argv[i + 1];
+            } else {
+                fprintf(stderr, "Warning: --select limit reached (64 max), extra paths ignored\n");
             }
             i++;
             continue;
@@ -541,6 +560,8 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             }
             if (expr_count < (sizeof(exprs) / sizeof(exprs[0]))) {
                 exprs[expr_count++] = argv[i + 1];
+            } else {
+                fprintf(stderr, "Warning: --expr limit reached (64 max), extra expressions ignored\n");
             }
             i++;
             continue;
@@ -641,6 +662,16 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         /* Semantic + reflection summary (JSON) */
         {
+            nmo_summary_config_t cfg = nmo_summary_config_default();
+            if (full_mode) {
+                cfg.max_depth = 8;
+                cfg.array_preview_max = 64;
+                cfg.text_preview_max = 64;
+            }
+            if (depth >= 0) {
+                cfg.max_depth = (uint32_t)depth;
+            }
+
             yyjson_mut_val *summary = yyjson_mut_obj(doc);
             nmo_summary_output_t sum_out = {
                 .stream = out,
@@ -653,13 +684,13 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             };
             bool ok = false;
             if (select_path_count > 0) {
-                ok |= nmo_object_summary_select(target, &sum_out, select_paths, select_path_count);
+                ok |= nmo_object_summary_select_with_config(target, &sum_out, &cfg, select_paths, select_path_count);
             }
             if (expr_count > 0) {
-                ok |= nmo_object_summary_expr(target, &sum_out, exprs, expr_count);
+                ok |= nmo_object_summary_expr_with_config(target, &sum_out, &cfg, exprs, expr_count);
             }
             if (select_path_count == 0 && expr_count == 0) {
-                ok |= nmo_object_summary(target, &sum_out);
+                ok |= nmo_object_summary_with_config(target, &sum_out, &cfg);
             }
             if (ok) {
                 yyjson_mut_obj_add_val(doc, data, "summary", summary);
@@ -694,6 +725,16 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         /* Semantic + reflection summary (text) */
         {
+            nmo_summary_config_t cfg = nmo_summary_config_default();
+            if (full_mode) {
+                cfg.max_depth = 8;
+                cfg.array_preview_max = 64;
+                cfg.text_preview_max = 32;
+            }
+            if (depth >= 0) {
+                cfg.max_depth = (uint32_t)depth;
+            }
+
             nmo_summary_output_t sum_out = {
                 .stream = out,
                 .json_doc = NULL,
@@ -704,13 +745,13 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 .session = session,
             };
             if (select_path_count > 0) {
-                (void)nmo_object_summary_select(target, &sum_out, select_paths, select_path_count);
+                (void)nmo_object_summary_select_with_config(target, &sum_out, &cfg, select_paths, select_path_count);
             }
             if (expr_count > 0) {
-                (void)nmo_object_summary_expr(target, &sum_out, exprs, expr_count);
+                (void)nmo_object_summary_expr_with_config(target, &sum_out, &cfg, exprs, expr_count);
             }
             if (select_path_count == 0 && expr_count == 0) {
-                (void)nmo_object_summary(target, &sum_out);
+                (void)nmo_object_summary_with_config(target, &sum_out, &cfg);
             }
         }
     }

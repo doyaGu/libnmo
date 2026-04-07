@@ -66,15 +66,42 @@ static int file_info_single(const char *file_path,
 int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     /* Batch mode */
     if (global->batch_mode) {
-        const char *paths[64];
-        size_t count = nmo_tool_find_file_args(argc, argv, paths, 64);
+        /* Count positional args first */
+        size_t initial_capacity = 64;
+        const char **paths = (const char **)malloc(initial_capacity * sizeof(const char *));
+        if (!paths) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+
+        size_t count = 0;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') {
+                if (count >= initial_capacity) {
+                    size_t new_capacity = initial_capacity * 2;
+                    const char **new_paths = (const char **)realloc(paths, new_capacity * sizeof(const char *));
+                    if (!new_paths) {
+                        free(paths);
+                        fprintf(stderr, "Error: Out of memory\n");
+                        return NMO_CLI_EXIT_INTERNAL_ERROR;
+                    }
+                    paths = new_paths;
+                    initial_capacity = new_capacity;
+                }
+                paths[count++] = argv[i];
+            }
+        }
+
         if (count == 0) {
+            free(paths);
             fprintf(stderr, "Error: No files specified\n");
             fprintf(stderr, "Usage: nmo --batch file info <file1> <file2> ...\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        return nmo_tool_batch_run(paths, count, global, "file.info",
-                                   file_info_single, NULL);
+        int result = nmo_tool_batch_run(paths, count, global, "file.info",
+                                        file_info_single, NULL);
+        free(paths);
+        return result;
     }
 
     /* Single file mode */
