@@ -238,7 +238,11 @@ void nmo_repl_print_banner(const nmo_repl_context_t *repl) {
     if (object_count) {
         printf("Objects: %zu\n", object_count);
     }
+#ifdef NMO_HAVE_ISOCLINE
+    printf("Tip: 'help' lists commands. Tab completes. Ctrl+R searches history.\n");
+#else
     printf("Tip: 'help' lists commands. Try: list, select 0, show, dump.\n");
+#endif
 }
 
 int nmo_repl_dispatch_command(nmo_repl_context_t *repl, int argc, char **argv) {
@@ -299,6 +303,17 @@ static int cmd_help(nmo_repl_context_t *repl, int argc, char **argv) {
             printf("      usage: %s\n", commands[i].usage);
         }
     }
+#ifdef NMO_HAVE_ISOCLINE
+    printf("\nNavigation:\n");
+    printf("  Tab             Complete command or argument\n");
+    printf("  Up/Down         Navigate command history\n");
+    printf("  Ctrl+R          Search command history\n");
+    printf("  !!              Repeat last command\n");
+#else
+    printf("\nHistory:\n");
+    printf("  !!              Repeat last command\n");
+    printf("  !N              Recall command N from history\n");
+#endif
     printf("\n");
     return 0;
 }
