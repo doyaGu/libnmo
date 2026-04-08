@@ -15,6 +15,7 @@
 #include "nmo.h"
 #include "app/nmo_context.h"
 #include "app/nmo_object_hierarchy.h"
+#include "app/nmo_saver.h"
 #include "core/nmo_arena.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_object_repository.h"
@@ -1143,6 +1144,144 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
             nmo_cli_table_print(&in_table, c.out, c.colorize);
         }
         nmo_cli_table_free(&in_table);
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * object rename - Rename an object and save to new file
+ * ============================================================================ */
+
+int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    /* Parse -o/--output */
+    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    if (!output_path) {
+        fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Parse positionals: <id> <new_name> <file>, skipping -o value */
+    const char *pos_args[8];
+    const char *const skip_opts[] = {"-o", "--output"};
+    size_t pos_count = nmo_tool_find_file_args_ex(argc, argv, pos_args, 8, skip_opts, 2);
+
+    if (pos_count < 3) {
+        fprintf(stderr, "Error: Expected <id> <new_name> <file>\n");
+        fprintf(stderr, "Usage: nmo object rename <id> <new_name> <file> -o <output>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *id_str = pos_args[0];
+    const char *new_name = pos_args[1];
+    const char *file_path = pos_args[pos_count - 1]; /* last positional is the file */
+
+    /* Parse object ID */
+    uint32_t object_id;
+    if (!nmo_tool_parse_u32(id_str, &object_id)) {
+        fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Open session manually (nmo_cmd_ctx_init would pick -o value as file) */
+    nmo_cmd_ctx_t c;
+    memset(&c, 0, sizeof(c));
+    c.global = global;
+    c.is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                 global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    c.file_path = file_path;
+
+    char errbuf[256];
+    if (!nmo_tool_open_session(file_path, &c.ctx, &c.session,
+                               errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c.registry = nmo_context_get_type_registry(c.ctx);
+
+    char out_err[128];
+    c.out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!c.out) {
+        nmo_tool_close_session(c.ctx, c.session);
+        c.ctx = NULL;
+        c.session = NULL;
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c.colorize = nmo_cli_should_colorize(global, c.out);
+
+    /* Get repository */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+
+    /* Find object by ID */
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
+    if (!obj) {
+        fprintf(stderr, "Error: Object %u not found\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    /* Save old name */
+    const char *old_name = nmo_object_get_name(obj);
+    char old_name_buf[256];
+    if (old_name && old_name[0]) {
+        snprintf(old_name_buf, sizeof(old_name_buf), "%s", old_name);
+    } else {
+        old_name_buf[0] = '\0';
+    }
+
+    /* Check for name collision */
+    bool name_collision = false;
+    nmo_object_t *existing = nmo_object_repository_find_by_name(repo, new_name);
+    if (existing && nmo_object_get_id(existing) != object_id) {
+        name_collision = true;
+        if (!c.is_json) {
+            fprintf(stderr, "Warning: Name '%s' already used by object %u\n",
+                    new_name, nmo_object_get_id(existing));
+        }
+    }
+
+    /* Perform rename */
+    int rename_rc = nmo_object_repository_rename(repo, object_id, new_name);
+    if (rename_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to rename object %u: %s\n",
+                object_id, nmo_error_string(rename_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Save file */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Output results */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) {
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_uint_safe(doc, data, "id", (uint64_t)object_id);
+        nmo_cli_json_add_str_safe(doc, data, "old_name",
+                                  old_name_buf[0] ? old_name_buf : "");
+        nmo_cli_json_add_str_safe(doc, data, "new_name", new_name);
+        nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        nmo_cli_json_add_bool_safe(doc, data, "name_collision", name_collision);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.rename");
+    } else {
+        fprintf(c.out, "Renamed: %s -> %s (ID %u)\n",
+                old_name_buf[0] ? old_name_buf : "(unnamed)", new_name, object_id);
+        fprintf(c.out, "Saved to: %s\n", output_path);
+        if (name_collision) {
+            fprintf(c.out, "Warning: Name collision with existing object\n");
+        }
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
