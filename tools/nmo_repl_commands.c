@@ -1259,6 +1259,13 @@ static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
+#ifdef NMO_HAVE_ISOCLINE
+    (void)repl;
+    printf("\nHistory is managed by the line editor.\n");
+    printf("  Use Up/Down arrows to navigate history.\n");
+    printf("  Use Ctrl+R to search history.\n");
+    printf("  Use !! to recall the last command.\n\n");
+#else
     if (repl->history_count == 0) {
         printf("No history.\n");
         return 0;
@@ -1270,6 +1277,7 @@ static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv) {
         printf("  %3zu  %s\n", i + 1, repl->history[idx] ? repl->history[idx] : "");
     }
     printf("\nTip: use !N to recall command N, !! to recall last.\n\n");
+#endif
     return 0;
 }
 

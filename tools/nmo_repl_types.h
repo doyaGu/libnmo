@@ -27,10 +27,12 @@ typedef struct {
     size_t page_size;
     bool regex_icase;
 
+#ifndef NMO_HAVE_ISOCLINE
     /* Command history (ring buffer) */
     char *history[NMO_REPL_HISTORY_SIZE];
     size_t history_count;         /**< Total entries stored */
     size_t history_start;         /**< Oldest entry index */
+#endif
 } nmo_repl_context_t;
 
 typedef int (*nmo_repl_command_handler_t)(nmo_repl_context_t *repl, int argc, char **argv);
