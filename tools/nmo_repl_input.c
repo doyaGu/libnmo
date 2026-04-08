@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef NMO_HAVE_ISOCLINE
+
 static const char *nmo_repl_get_history_path(void) {
     static char path[512];
 
@@ -18,8 +20,6 @@ static const char *nmo_repl_get_history_path(void) {
     snprintf(path, sizeof(path), "%s/.nmo_history", home);
     return path;
 }
-
-#ifdef NMO_HAVE_ISOCLINE
 
 void nmo_repl_input_init(nmo_repl_context_t *repl) {
     (void)repl;
