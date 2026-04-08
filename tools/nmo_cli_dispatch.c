@@ -22,6 +22,7 @@
 #include "commands/nmo_cmd_diff.h"
 #include "commands/nmo_cmd_query.h"
 #include "commands/nmo_cmd_extension.h"
+#include "commands/nmo_cmd_texture.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -368,6 +369,35 @@ static void extension_check_usage(FILE *out) {
     fprintf(out, "Check plugin dependencies for a file.\n");
 }
 
+/* Texture command usage */
+static void texture_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo texture list [options] <file>\n\n");
+    fprintf(out, "List all CKTexture objects with dimensions, format, and slot count.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --sort, -s <field>   Sort by: id, name, size\n");
+    fprintf(out, "  --top, -t <n>        Show only top N textures\n");
+    fprintf(out, "  --reverse, -r        Reverse sort order\n");
+}
+
+static void texture_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo texture show <id> <file>\n\n");
+    fprintf(out, "Show detailed texture metadata and per-slot information.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --id <n>             Texture object ID (alternative to positional)\n");
+}
+
+static void texture_extract_usage(FILE *out) {
+    fprintf(out, "Usage: nmo texture extract --out-dir <dir> [options] <file>\n\n");
+    fprintf(out, "Extract textures as image files (PNG, BMP, TGA, JPG).\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --out-dir, -d <dir>  Output directory (required)\n");
+    fprintf(out, "  --id <n>             Extract single texture by ID\n");
+    fprintf(out, "  --name, -n <pat>     Filter by name wildcard\n");
+    fprintf(out, "  --format, -f <fmt>   Output format: png, bmp, tga, jpg (default: png)\n");
+    fprintf(out, "  --quality, -q <n>    JPEG quality 1-100 (default: 90)\n");
+    fprintf(out, "  --overwrite          Overwrite existing files\n");
+}
+
 /* ============================================================================
  * Action definitions for each group
  * ============================================================================ */
@@ -468,6 +498,13 @@ static const nmo_cli_action_t extension_actions[] = {
     {"check", "ch", "Check plugin dependencies", nmo_cmd_extension_check, extension_check_usage},
 };
 
+/* texture group actions */
+static const nmo_cli_action_t texture_actions[] = {
+    {"list", "ls", "List textures", nmo_cmd_texture_list, texture_list_usage},
+    {"show", "s", "Show texture details", nmo_cmd_texture_show, texture_show_usage},
+    {"extract", "x", "Extract textures as images", nmo_cmd_texture_extract, texture_extract_usage},
+};
+
 /* debug group actions */
 static const nmo_cli_action_t debug_actions[] = {
     {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage},
@@ -494,6 +531,7 @@ static const nmo_cli_group_t groups[] = {
     {"behavior", "beh", "Behavior inspection", behavior_actions, ARRAY_SIZE(behavior_actions)},
     {"parameter", "param", "Parameter inspection", parameter_actions, ARRAY_SIZE(parameter_actions)},
     {"resource", "res", "Resource management", resource_actions, ARRAY_SIZE(resource_actions)},
+    {"texture", "tex", "Texture management", texture_actions, ARRAY_SIZE(texture_actions)},
     {"type", "t", "Type system information", type_actions, ARRAY_SIZE(type_actions)},
     {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions)},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions)},
