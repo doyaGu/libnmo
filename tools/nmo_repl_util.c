@@ -11,7 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-void nmo_repl_print_prompt(const nmo_repl_context_t *repl) {
+const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl) {
+    static char buf[256];
+
     const char *file_label = "";
     if (repl && repl->filename && repl->filename[0] != '\0') {
         file_label = nmo_path_basename(repl->filename);
@@ -24,21 +26,20 @@ void nmo_repl_print_prompt(const nmo_repl_context_t *repl) {
         if (repl->selected_index < object_count) {
             nmo_object_id_t id = nmo_object_get_id(objects[repl->selected_index]);
             if (file_label[0]) {
-                printf("nmo(repl:%s idx=%zu id=%u)> ", file_label, repl->selected_index, id);
+                snprintf(buf, sizeof(buf), "nmo(repl:%s idx=%zu id=%u)> ", file_label, repl->selected_index, id);
             } else {
-                printf("nmo(repl idx=%zu id=%u)> ", repl->selected_index, id);
+                snprintf(buf, sizeof(buf), "nmo(repl idx=%zu id=%u)> ", repl->selected_index, id);
             }
-            fflush(stdout);
-            return;
+            return buf;
         }
     }
 
     if (file_label[0]) {
-        printf("nmo(repl:%s)> ", file_label);
+        snprintf(buf, sizeof(buf), "nmo(repl:%s)> ", file_label);
     } else {
-        printf("nmo(repl)> ");
+        snprintf(buf, sizeof(buf), "nmo(repl)> ");
     }
-    fflush(stdout);
+    return buf;
 }
 
 int nmo_repl_parse_command(char *line, char **argv, int max_args) {

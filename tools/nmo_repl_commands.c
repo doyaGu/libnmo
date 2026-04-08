@@ -201,6 +201,28 @@ static const nmo_repl_command_t *find_command(const char *name) {
     return NULL;
 }
 
+const char **nmo_repl_get_command_names(void) {
+    /* Count entries (names + non-empty aliases) */
+    size_t count = 0;
+    for (int i = 0; commands[i].name != NULL; i++) {
+        count++;
+        if (commands[i].alias && commands[i].alias[0]) {
+            count++;
+        }
+    }
+
+    static const char *names[128];
+    size_t idx = 0;
+    for (int i = 0; commands[i].name != NULL && idx < sizeof(names) / sizeof(names[0]) - 1; i++) {
+        names[idx++] = commands[i].name;
+        if (commands[i].alias && commands[i].alias[0] && idx < sizeof(names) / sizeof(names[0]) - 1) {
+            names[idx++] = commands[i].alias;
+        }
+    }
+    names[idx] = NULL;
+    return names;
+}
+
 void nmo_repl_print_banner(const nmo_repl_context_t *repl) {
     const char *path = (repl && repl->filename) ? repl->filename : NULL;
     const char *label = path && *path ? path : "(no file)";
@@ -216,7 +238,11 @@ void nmo_repl_print_banner(const nmo_repl_context_t *repl) {
     if (object_count) {
         printf("Objects: %zu\n", object_count);
     }
+#ifdef NMO_HAVE_ISOCLINE
+    printf("Tip: 'help' lists commands. Tab completes. Ctrl+R searches history.\n");
+#else
     printf("Tip: 'help' lists commands. Try: list, select 0, show, dump.\n");
+#endif
 }
 
 int nmo_repl_dispatch_command(nmo_repl_context_t *repl, int argc, char **argv) {
@@ -277,6 +303,17 @@ static int cmd_help(nmo_repl_context_t *repl, int argc, char **argv) {
             printf("      usage: %s\n", commands[i].usage);
         }
     }
+#ifdef NMO_HAVE_ISOCLINE
+    printf("\nNavigation:\n");
+    printf("  Tab             Complete command or argument\n");
+    printf("  Up/Down         Navigate command history\n");
+    printf("  Ctrl+R          Search command history\n");
+    printf("  !!              Repeat last command\n");
+#else
+    printf("\nHistory:\n");
+    printf("  !!              Repeat last command\n");
+    printf("  !N              Recall command N from history\n");
+#endif
     printf("\n");
     return 0;
 }
@@ -1259,6 +1296,13 @@ static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv) {
     (void)argc;
     (void)argv;
 
+#ifdef NMO_HAVE_ISOCLINE
+    (void)repl;
+    printf("\nHistory is managed by the line editor.\n");
+    printf("  Use Up/Down arrows to navigate history.\n");
+    printf("  Use Ctrl+R to search history.\n");
+    printf("  Use !! to recall the last command.\n\n");
+#else
     if (repl->history_count == 0) {
         printf("No history.\n");
         return 0;
@@ -1270,6 +1314,7 @@ static int cmd_history(nmo_repl_context_t *repl, int argc, char **argv) {
         printf("  %3zu  %s\n", i + 1, repl->history[idx] ? repl->history[idx] : "");
     }
     printf("\nTip: use !N to recall command N, !! to recall last.\n\n");
+#endif
     return 0;
 }
 

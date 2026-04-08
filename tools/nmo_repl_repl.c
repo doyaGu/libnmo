@@ -1,6 +1,7 @@
 #include "nmo_repl_repl.h"
 
 #include "nmo_repl_commands.h"
+#include "nmo_repl_input.h"
 #include "nmo_repl_util.h"
 #include "nmo_tool_common.h"
 #include "core/nmo_error.h"
@@ -9,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+#ifndef NMO_HAVE_ISOCLINE
 
 /**
  * Add a line to the history ring buffer.
@@ -50,49 +53,76 @@ static void repl_history_free(nmo_repl_context_t *repl) {
     repl->history_start = 0;
 }
 
+#endif /* !NMO_HAVE_ISOCLINE */
+
 void nmo_repl_loop(nmo_repl_context_t *repl) {
-    char line[NMO_REPL_MAX_CMD_LEN];
     char *argv[NMO_REPL_MAX_ARGS];
 
+    nmo_repl_input_init(repl);
     nmo_repl_print_banner(repl);
 
+#ifdef NMO_HAVE_ISOCLINE
+    static char last_command[NMO_REPL_MAX_CMD_LEN];
+    last_command[0] = '\0';
+#endif
+
     while (true) {
-        nmo_repl_print_prompt(repl);
-
-        if (fgets(line, sizeof(line), stdin) == NULL) {
-            break; /* EOF */
+        char *line = nmo_repl_readline(nmo_repl_format_prompt(repl));
+        if (!line) {
+            break; /* EOF or Ctrl+C */
         }
 
-        size_t len = strlen(line);
-        if (len > 0 && line[len - 1] == '\n') {
-            line[len - 1] = '\0';
-        }
-
+        /* Skip leading whitespace */
         const char *p = line;
         while (*p && isspace((unsigned char)*p)) {
             ++p;
         }
 
-        if (*p == '\0') {
+        if (*p == '\0' || *p == '#' || *p == ';') {
+            nmo_repl_free_line(line);
             continue;
         }
 
-        if (*p == '#' || *p == ';') {
-            continue;
-        }
-
-        /* Handle history recall: !<n> or !! */
+        /* Handle history recall */
         if (*p == '!') {
+#ifdef NMO_HAVE_ISOCLINE
+            if (p[1] == '!') {
+                if (last_command[0] != '\0') {
+                    printf("%s\n", last_command);
+                    ic_history_remove_last();
+                    nmo_repl_free_line(line);
+                    /* Use last_command as the input */
+                    line = nmo_tool_strdup(last_command);
+                    if (!line) {
+                        break;
+                    }
+                    p = line;
+                } else {
+                    fprintf(stderr, "No history.\n");
+                    nmo_repl_free_line(line);
+                    continue;
+                }
+            } else if (p[1] == 'N' || isdigit((unsigned char)p[1])) {
+                fprintf(stderr, "Use Ctrl+R to search history or Up/Down arrows to navigate.\n");
+                ic_history_remove_last();
+                nmo_repl_free_line(line);
+                continue;
+            }
+#else
             if (p[1] == '!') {
                 /* Recall most recent */
                 if (repl->history_count > 0) {
                     size_t last = (repl->history_start + repl->history_count - 1) % NMO_REPL_HISTORY_SIZE;
-                    strncpy(line, repl->history[last], sizeof(line) - 1);
-                    line[sizeof(line) - 1] = '\0';
+                    nmo_repl_free_line(line);
+                    line = nmo_tool_strdup(repl->history[last]);
+                    if (!line) {
+                        break;
+                    }
                     printf("%s\n", line);
                     p = line;
                 } else {
                     fprintf(stderr, "No history.\n");
+                    nmo_repl_free_line(line);
                     continue;
                 }
             } else if (isdigit((unsigned char)p[1])) {
@@ -100,24 +130,37 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
                 size_t n = (size_t)atoi(p + 1);
                 if (n > 0 && n <= repl->history_count) {
                     size_t idx = (repl->history_start + n - 1) % NMO_REPL_HISTORY_SIZE;
-                    strncpy(line, repl->history[idx], sizeof(line) - 1);
-                    line[sizeof(line) - 1] = '\0';
+                    nmo_repl_free_line(line);
+                    line = nmo_tool_strdup(repl->history[idx]);
+                    if (!line) {
+                        break;
+                    }
                     printf("%s\n", line);
                     p = line;
                 } else {
                     fprintf(stderr, "History index out of range (1-%zu).\n", repl->history_count);
+                    nmo_repl_free_line(line);
                     continue;
                 }
             }
+#endif
         }
 
-        /* Add to history before parsing (parse modifies buffer) */
+#ifdef NMO_HAVE_ISOCLINE
+        /* Save last command for !! recall */
+        strncpy(last_command, p, sizeof(last_command) - 1);
+        last_command[sizeof(last_command) - 1] = '\0';
+#else
+        /* Add to ring buffer history before parsing (parse modifies buffer) */
         repl_history_add(repl, p);
+#endif
 
         /* Make a mutable copy for parsing */
         char cmd_copy[NMO_REPL_MAX_CMD_LEN];
         strncpy(cmd_copy, p, sizeof(cmd_copy) - 1);
         cmd_copy[sizeof(cmd_copy) - 1] = '\0';
+
+        nmo_repl_free_line(line);
 
         int argc = nmo_repl_parse_command(cmd_copy, argv, NMO_REPL_MAX_ARGS);
         if (argc == 0) {
@@ -138,6 +181,9 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
         }
     }
 
+#ifndef NMO_HAVE_ISOCLINE
     repl_history_free(repl);
+#endif
+    nmo_repl_input_cleanup();
     printf("\nGoodbye!\n");
 }

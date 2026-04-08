@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-void nmo_repl_print_prompt(const nmo_repl_context_t *repl);
+const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl);
 
 int nmo_repl_parse_command(char *line, char **argv, int max_args);
 
