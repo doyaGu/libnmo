@@ -200,9 +200,12 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 
 int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
+    /* Parse --dry-run early */
+    bool dry_run = nmo_tool_has_flag(argc, argv, "--dry-run", NULL);
+
     /* Parse options before init */
     const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
-    if (!output_path) {
+    if (!output_path && !dry_run) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -229,17 +232,19 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    /* Collect matching object IDs */
+    /* Collect matching object IDs and object pointers */
     nmo_object_id_t *ids_to_remove = NULL;
+    nmo_object_t **matched_objects = NULL;
     size_t remove_count = 0;
-    size_t remove_capacity = 0;
 
     if (all_objects) {
-        /* Allocate initial capacity */
-        remove_capacity = total_count;
-        ids_to_remove = (nmo_object_id_t *)malloc(remove_capacity * sizeof(nmo_object_id_t));
-        if (!ids_to_remove) {
+        /* Allocate capacity for both arrays */
+        ids_to_remove = (nmo_object_id_t *)malloc(total_count * sizeof(nmo_object_id_t));
+        matched_objects = (nmo_object_t **)malloc(total_count * sizeof(nmo_object_t *));
+        if (!ids_to_remove || !matched_objects) {
             fprintf(stderr, "Error: Failed to allocate removal list\n");
+            free(ids_to_remove);
+            free(matched_objects);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
 
@@ -254,6 +259,7 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 if (filter_class == 0) {
                     fprintf(stderr, "Warning: Unknown class '%s'\n", class_name);
                     free(ids_to_remove);
+                    free(matched_objects);
                     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
                 }
 
@@ -273,10 +279,108 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
             }
 
             if (matches) {
-                ids_to_remove[remove_count++] = nmo_object_get_id(obj);
+                ids_to_remove[remove_count] = nmo_object_get_id(obj);
+                matched_objects[remove_count] = obj;
+                remove_count++;
             }
         }
     }
+
+    /* Dry-run: output preview and exit */
+    if (dry_run) {
+        if (c.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+            if (!doc) {
+                free(ids_to_remove);
+                free(matched_objects);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            nmo_cli_json_add_bool_safe(doc, data, "dry_run", true);
+            nmo_cli_json_add_uint_safe(doc, data, "match_count", (uint64_t)remove_count);
+
+            yyjson_mut_val *matches = yyjson_mut_arr(doc);
+            uint64_t total_match_size = 0;
+            for (size_t i = 0; i < remove_count; ++i) {
+                nmo_object_t *obj = matched_objects[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                nmo_cli_json_add_uint_safe(doc, item, "id",
+                                           (uint64_t)nmo_object_get_id(obj));
+                nmo_class_id_t cid = nmo_object_get_class_id(obj);
+                nmo_cli_json_add_uint_safe(doc, item, "class_id", (uint64_t)cid);
+                const char *cn = nmo_cli_class_name_from_id(c.ctx, cid);
+                if (cn) {
+                    nmo_cli_json_add_str_safe(doc, item, "class_name", cn);
+                }
+                nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+                uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+                nmo_cli_json_add_uint_safe(doc, item, "size", sz);
+                total_match_size += sz;
+                const char *name = nmo_object_get_name(obj);
+                if (name && name[0]) {
+                    nmo_cli_json_add_str_safe(doc, item, "name", name);
+                }
+                yyjson_mut_arr_add_val(matches, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "matches", matches);
+            nmo_cli_json_add_uint_safe(doc, data, "total_match_size", total_match_size);
+
+            if (class_name) {
+                nmo_cli_json_add_str_safe(doc, data, "filter_class", class_name);
+            }
+            if (name_pattern) {
+                nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
+            }
+
+            nmo_cmd_ctx_json_end(&c, doc, data, "convert.strip");
+        } else {
+            fprintf(c.out, "=== Dry Run: Strip Preview ===\n\n");
+            if (remove_count == 0) {
+                fprintf(c.out, "No objects matched the filter.\n");
+            } else {
+                static const nmo_cli_table_col_t columns[] = {
+                    {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+                    {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+                    {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+                    {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+                };
+
+                nmo_cli_table_t table;
+                nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+                for (size_t i = 0; i < remove_count; ++i) {
+                    nmo_object_t *obj = matched_objects[i];
+                    char id_buf[16];
+                    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+                    const char *cn = nmo_cli_class_name_from_id(c.ctx,
+                                                                nmo_object_get_class_id(obj));
+                    const char *name = nmo_object_get_name(obj);
+                    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+                    char size_buf[32];
+                    snprintf(size_buf, sizeof(size_buf), "%zu",
+                             chunk ? nmo_chunk_get_data_size(chunk) : (size_t)0);
+                    const char *cells[] = {
+                        id_buf, cn ? cn : "-", size_buf,
+                        (name && name[0]) ? name : "-"
+                    };
+                    nmo_cli_table_add_row(&table, cells, 4);
+                }
+
+                fprintf(c.out, "Matched %zu object(s):\n\n", remove_count);
+                nmo_cli_table_print(&table, c.out, c.colorize);
+                nmo_cli_table_free(&table);
+
+                fprintf(c.out, "\nNote: Cascade deletions may occur\n");
+            }
+        }
+
+        free(ids_to_remove);
+        free(matched_objects);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+
+    free(matched_objects);
 
     /* Destroy matched objects */
     nmo_runtime_report_t report;
