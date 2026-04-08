@@ -1,4 +1,5 @@
 #include "session/nmo_runtime_kernel.h"
+#include "session/runtime_kernel_internal.h"
 
 #include "app/nmo_context.h"
 #include "app/nmo_parser.h"
@@ -657,6 +658,42 @@ static int runtime_collect_delete_set(
         }
     } while (added);
 
+    return NMO_OK;
+}
+
+int runtime_kernel_preview_delete(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_object_id_t **out_ids,
+    size_t *out_count)
+{
+    if (repo == NULL || arena == NULL || object_ids == NULL || object_count == 0 ||
+        out_ids == NULL || out_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *out_ids = NULL;
+    *out_count = 0;
+
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_DELETE;
+    request.flags = flags;
+    request.payload.destroy.ids = object_ids;
+    request.payload.destroy.count = object_count;
+
+    runtime_id_set_t delete_set;
+    int result = runtime_collect_delete_set(repo, type_rt, arena, &request, &delete_set);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    *out_ids = delete_set.ids;
+    *out_count = delete_set.count;
     return NMO_OK;
 }
 

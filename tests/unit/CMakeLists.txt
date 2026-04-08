@@ -176,6 +176,7 @@ add_unit_test(test_context_threadsafe)  # Thread-safety tests
 add_unit_test(test_runtime_kernel)
 add_unit_test(test_runtime_graph)
 add_unit_test(test_runtime_copy_delete)
+add_unit_test(test_strip_preview)
 add_unit_test(test_manager_event_bus)
 add_unit_test(test_type_runtime_hook_coverage)
 add_unit_test(test_no_legacy_runtime_api_exports)
