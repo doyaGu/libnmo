@@ -50,6 +50,20 @@ target_link_libraries(nmo_cli PRIVATE nmo nmo_json yyjson)
 # Include commands subdirectory
 target_include_directories(nmo_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+option(NMO_USE_ISOCLINE "Use isocline for REPL line editing" ON)
+if(NMO_USE_ISOCLINE AND EXISTS "${CMAKE_SOURCE_DIR}/deps/isocline/CMakeLists.txt")
+    add_subdirectory(${CMAKE_SOURCE_DIR}/deps/isocline ${CMAKE_BINARY_DIR}/deps/isocline)
+    # Suppress warnings in vendored isocline (third-party code)
+    if(TARGET isocline)
+        target_compile_options(isocline PRIVATE -w)
+    endif()
+    target_link_libraries(nmo_cli PRIVATE isocline)
+    target_compile_definitions(nmo_cli PRIVATE NMO_HAVE_ISOCLINE)
+    message(STATUS "isocline enabled for REPL line editing")
+else()
+    message(STATUS "isocline not found or disabled, REPL will use basic fgets input")
+endif()
+
 # Installation
 install(TARGETS nmo_cli
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
