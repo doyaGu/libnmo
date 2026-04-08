@@ -113,6 +113,13 @@ static void object_refs_usage(FILE *out) {
     fprintf(out, "Show incoming and outgoing references for a specific object.\n");
 }
 
+static void object_rename_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object rename <id> <new_name> <file> -o <output>\n\n");
+    fprintf(out, "Rename an object and save to a new file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+}
+
 static void debug_load_phases_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug load-phases <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
@@ -281,9 +288,10 @@ static void convert_strip_usage(FILE *out) {
     fprintf(out, "Usage: nmo convert strip -o <output> [options] <file>\n\n");
     fprintf(out, "Remove objects by class or name pattern and save.\n\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
     fprintf(out, "  --class, -c <name>     Strip objects of this class\n");
     fprintf(out, "  --name <pattern>       Strip objects matching name pattern\n");
+    fprintf(out, "  --dry-run              Preview matching objects without modifying\n");
 }
 
 static void convert_merge_usage(FILE *out) {
@@ -396,6 +404,7 @@ static const nmo_cli_action_t object_actions[] = {
     {"show", "s", "Show object details", nmo_cmd_object_show, object_show_usage},
     {"find", "f", "Find objects by query", nmo_cmd_object_find, object_find_usage},
     {"refs", "r", "Show object references", nmo_cmd_object_refs, object_refs_usage},
+    {"rename", "ren", "Rename an object", nmo_cmd_object_rename, object_rename_usage},
 };
 
 /* behavior group actions */

@@ -11,6 +11,11 @@
 #include "../../tools/nmo_cli_common.h"
 #include "yyjson.h"
 
+#include "app/nmo_context.h"
+#include "app/nmo_session.h"
+#include "app/nmo_saver.h"
+#include "object/nmo_object_repository.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -999,6 +1004,346 @@ TEST(cli, json_schema_envelope) {
 }
 
 /* ============================================================================
+ * object rename
+ * ============================================================================ */
+
+/**
+ * Create a minimal NMO test fixture with 2 objects for rename tests.
+ * Object 1: "Alpha" (CKObject, class_id=1)
+ * Object 2: "Beta"  (CKObject, class_id=1)
+ */
+static bool create_rename_test_fixture(const char *path) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    if (!ctx) return false;
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (!session) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_runtime_report_t report = {0};
+    nmo_object_id_t id1 = 0, id2 = 0;
+
+    if (nmo_session_create_object(session, 1, "Alpha", (nmo_guid_t){0, 0}, &id1, &report) != NMO_OK) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return false;
+    }
+    if (nmo_session_create_object(session, 1, "Beta", (nmo_guid_t){0, 0}, &id2, &report) != NMO_OK) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int rc = nmo_save_file(session, path, &save_opts);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return rc == NMO_OK;
+}
+
+TEST(cli, object_rename_json) {
+    const char *fixture = "test_rename_fixture.nmo";
+    const char *output = "test_rename_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    /* Find the ID of "Alpha" */
+    char list_args[512];
+    snprintf(list_args, sizeof(list_args), "object list \"%s\"", fixture);
+    yyjson_doc *list_doc = run_cli_json(list_args);
+    ASSERT_NOT_NULL(list_doc);
+    yyjson_val *list_data = json_envelope_data(list_doc);
+    yyjson_val *objects = yyjson_obj_get(list_data, "objects");
+    ASSERT_NOT_NULL(objects);
+
+    /* Find Alpha's ID */
+    uint64_t alpha_id = 0;
+    size_t idx, max;
+    yyjson_val *obj;
+    yyjson_arr_foreach(objects, idx, max, obj) {
+        yyjson_val *name = yyjson_obj_get(obj, "name");
+        if (name && strcmp(yyjson_get_str(name), "Alpha") == 0) {
+            alpha_id = yyjson_get_uint(yyjson_obj_get(obj, "id"));
+            break;
+        }
+    }
+    yyjson_doc_free(list_doc);
+    ASSERT_TRUE(alpha_id > 0);
+
+    /* Rename Alpha -> NewAlpha */
+    char args[1024];
+    snprintf(args, sizeof(args), "object rename %u NewAlpha \"%s\" -o \"%s\"",
+             (unsigned)alpha_id, fixture, output);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    const char *cmd = json_envelope_command(doc);
+    ASSERT_NOT_NULL(cmd);
+    ASSERT_STR_EQ(cmd, "object.rename");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_STR_EQ(yyjson_get_str(yyjson_obj_get(data, "old_name")), "Alpha");
+    ASSERT_STR_EQ(yyjson_get_str(yyjson_obj_get(data, "new_name")), "NewAlpha");
+    ASSERT_TRUE(yyjson_get_uint(yyjson_obj_get(data, "id")) == alpha_id);
+    ASSERT_NOT_NULL(yyjson_obj_get(data, "output"));
+    yyjson_doc_free(doc);
+
+    /* Reload output and verify rename took effect */
+    char verify_args[512];
+    snprintf(verify_args, sizeof(verify_args), "object list \"%s\"", output);
+    yyjson_doc *verify_doc = run_cli_json(verify_args);
+    ASSERT_NOT_NULL(verify_doc);
+    yyjson_val *verify_data = json_envelope_data(verify_doc);
+    yyjson_val *verify_objects = yyjson_obj_get(verify_data, "objects");
+    ASSERT_NOT_NULL(verify_objects);
+
+    bool found_new = false;
+    yyjson_arr_foreach(verify_objects, idx, max, obj) {
+        yyjson_val *name = yyjson_obj_get(obj, "name");
+        if (name && strcmp(yyjson_get_str(name), "NewAlpha") == 0) {
+            found_new = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found_new);
+    yyjson_doc_free(verify_doc);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, object_rename_text) {
+    const char *fixture = "test_rename_text_fixture.nmo";
+    const char *output = "test_rename_text_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    /* Find Alpha's ID */
+    char list_args[512];
+    snprintf(list_args, sizeof(list_args), "object list \"%s\"", fixture);
+    yyjson_doc *list_doc = run_cli_json(list_args);
+    ASSERT_NOT_NULL(list_doc);
+    yyjson_val *list_data = json_envelope_data(list_doc);
+    yyjson_val *objects = yyjson_obj_get(list_data, "objects");
+    uint64_t alpha_id = 0;
+    size_t idx, max;
+    yyjson_val *obj;
+    yyjson_arr_foreach(objects, idx, max, obj) {
+        yyjson_val *name = yyjson_obj_get(obj, "name");
+        if (name && strcmp(yyjson_get_str(name), "Alpha") == 0) {
+            alpha_id = yyjson_get_uint(yyjson_obj_get(obj, "id"));
+            break;
+        }
+    }
+    yyjson_doc_free(list_doc);
+    ASSERT_TRUE(alpha_id > 0);
+
+    char args[1024];
+    snprintf(args, sizeof(args), "object rename %u RenamedAlpha \"%s\" -o \"%s\"",
+             (unsigned)alpha_id, fixture, output);
+    char *text_output = run_cli(args);
+    ASSERT_NOT_NULL(text_output);
+    ASSERT_STR_CONTAINS(text_output, "Renamed");
+    ASSERT_STR_CONTAINS(text_output, "Alpha");
+    ASSERT_STR_CONTAINS(text_output, "RenamedAlpha");
+    free(text_output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, object_rename_name_collision) {
+    const char *fixture = "test_rename_collision_fixture.nmo";
+    const char *output = "test_rename_collision_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    /* Find Alpha's and Beta's IDs */
+    char list_args[512];
+    snprintf(list_args, sizeof(list_args), "object list \"%s\"", fixture);
+    yyjson_doc *list_doc = run_cli_json(list_args);
+    ASSERT_NOT_NULL(list_doc);
+    yyjson_val *list_data = json_envelope_data(list_doc);
+    yyjson_val *objects = yyjson_obj_get(list_data, "objects");
+    uint64_t alpha_id = 0;
+    size_t idx, max;
+    yyjson_val *obj;
+    yyjson_arr_foreach(objects, idx, max, obj) {
+        yyjson_val *name = yyjson_obj_get(obj, "name");
+        if (name && strcmp(yyjson_get_str(name), "Alpha") == 0) {
+            alpha_id = yyjson_get_uint(yyjson_obj_get(obj, "id"));
+            break;
+        }
+    }
+    yyjson_doc_free(list_doc);
+    ASSERT_TRUE(alpha_id > 0);
+
+    /* Rename Alpha -> Beta (collision with existing Beta) */
+    char args[1024];
+    snprintf(args, sizeof(args), "object rename %u Beta \"%s\" -o \"%s\"",
+             (unsigned)alpha_id, fixture, output);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *collision = yyjson_obj_get(data, "name_collision");
+    ASSERT_NOT_NULL(collision);
+    ASSERT_TRUE(yyjson_get_bool(collision));
+    yyjson_doc_free(doc);
+
+    /* File should still be saved */
+    ASSERT_TRUE(file_exists(output));
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, object_rename_nonexistent_id) {
+    const char *fixture = "test_rename_notfound_fixture.nmo";
+    const char *output = "test_rename_notfound_output.nmo";
+    remove(fixture);
+    remove(output);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args), "object rename 9999 NewName \"%s\" -o \"%s\"",
+             fixture, output);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "not found");
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, object_rename_missing_output) {
+    const char *fixture = "test_rename_noout_fixture.nmo";
+    remove(fixture);
+
+    ASSERT_TRUE(create_rename_test_fixture(fixture));
+
+    char args[1024];
+    snprintf(args, sizeof(args), "object rename 1 NewName \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "output");
+    free(result.output);
+
+    remove(fixture);
+}
+
+/* ============================================================================
+ * convert strip --dry-run
+ * ============================================================================ */
+
+TEST(cli, convert_strip_dry_run_json) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "convert strip --dry-run --name \"Cam_OrientRef\" \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    const char *cmd = json_envelope_command(doc);
+    ASSERT_NOT_NULL(cmd);
+    ASSERT_STR_EQ(cmd, "convert.strip");
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+
+    yyjson_val *dry_run_val = yyjson_obj_get(data, "dry_run");
+    ASSERT_NOT_NULL(dry_run_val);
+    ASSERT_TRUE(yyjson_get_bool(dry_run_val));
+
+    yyjson_val *match_count = yyjson_obj_get(data, "match_count");
+    ASSERT_NOT_NULL(match_count);
+    ASSERT_TRUE(yyjson_get_uint(match_count) == 1);
+
+    yyjson_val *matches = yyjson_obj_get(data, "matches");
+    ASSERT_NOT_NULL(matches);
+    ASSERT_TRUE(yyjson_is_arr(matches));
+    ASSERT_TRUE(yyjson_arr_size(matches) == 1);
+
+    yyjson_val *first = yyjson_arr_get_first(matches);
+    yyjson_val *name = yyjson_obj_get(first, "name");
+    ASSERT_NOT_NULL(name);
+    ASSERT_STR_EQ(yyjson_get_str(name), "Cam_OrientRef");
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, convert_strip_dry_run_no_file_written) {
+    const char *output = "test_strip_dry_run_no_write.nmo";
+    remove(output);
+
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "convert strip --dry-run --name \"Cam_*\" -o \"%s\" \"%s\"",
+             output, NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    /* Dry-run should not write output file */
+    ASSERT_FALSE(file_exists(output));
+
+    free(result.output);
+    remove(output);
+}
+
+TEST(cli, convert_strip_dry_run_no_output_required) {
+    /* --dry-run should not require -o */
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "convert strip --dry-run --name \"Cam_*\" \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+}
+
+TEST(cli, convert_strip_dry_run_text) {
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "convert strip --dry-run --name \"Cam_OrientRef\" \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    char *output = run_cli(args);
+    ASSERT_NOT_NULL(output);
+    ASSERT_STR_CONTAINS(output, "Dry Run");
+    ASSERT_STR_CONTAINS(output, "Cam_OrientRef");
+    free(output);
+}
+
+TEST(cli, convert_strip_dry_run_no_matches_exit_0) {
+    /* --dry-run with no matches should still exit 0 */
+    char args[1024];
+    snprintf(args, sizeof(args),
+             "convert strip --dry-run --name \"NonexistentObject_XYZ_12345\" \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+}
+
+/* ============================================================================
  * help / usage
  * ============================================================================ */
 
@@ -1081,6 +1426,20 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, file_info_output_open_failure);
     REGISTER_TEST(cli, validate_all_output_open_failure);
     REGISTER_TEST(cli, convert_copy_output_open_failure);
+
+    /* object rename */
+    REGISTER_TEST(cli, object_rename_json);
+    REGISTER_TEST(cli, object_rename_text);
+    REGISTER_TEST(cli, object_rename_name_collision);
+    REGISTER_TEST(cli, object_rename_nonexistent_id);
+    REGISTER_TEST(cli, object_rename_missing_output);
+
+    /* convert strip --dry-run */
+    REGISTER_TEST(cli, convert_strip_dry_run_json);
+    REGISTER_TEST(cli, convert_strip_dry_run_no_file_written);
+    REGISTER_TEST(cli, convert_strip_dry_run_no_output_required);
+    REGISTER_TEST(cli, convert_strip_dry_run_text);
+    REGISTER_TEST(cli, convert_strip_dry_run_no_matches_exit_0);
 
     /* resource list --sort */
     REGISTER_TEST(cli, resource_list_sort_by_size);
