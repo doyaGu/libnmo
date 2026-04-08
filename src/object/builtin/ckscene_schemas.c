@@ -27,6 +27,8 @@
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_system.h"
+#include "session/nmo_ref_graph.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -538,6 +540,99 @@ static void nmo_scene_post_delete(
 }
 
 /* ============================================================================
+ * Reference enumeration
+ * ============================================================================ */
+
+/**
+ * @brief Enumerate all object references from CKScene state
+ *
+ * The default field-walk enumerator cannot recurse into struct arrays,
+ * so scene member object IDs inside object_descs are missed. This custom
+ * enumerator reports them explicitly.
+ */
+static nmo_status_t nmo_scene_enumerate_refs(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)type;
+    const nmo_scene_state_t *s = (const nmo_scene_state_t *)instance;
+    if (!s || !visitor) {
+        NMO_RETURN_OK();
+    }
+
+    /* level_id -> NMO_REF_KIND_SCENE */
+    if (s->level_id != 0) {
+        if (!visitor(user_data, s->level_id, NMO_REF_KIND_SCENE,
+                     "level_id", 0)) {
+            NMO_RETURN_OK();
+        }
+    }
+
+    /* object_descs array -> each object_id as NMO_REF_KIND_SCENE */
+    if (s->object_descs.count > 0 && s->object_descs.data != NULL) {
+        const nmo_scene_object_desc_t *descs =
+            NMO_ARRAY_DATA(nmo_scene_object_desc_t, &s->object_descs);
+        for (uint32_t i = 0; i < s->object_descs.count; ++i) {
+            if (descs[i].object_id != 0) {
+                if (!visitor(user_data, descs[i].object_id,
+                             NMO_REF_KIND_SCENE, "object_descs", i)) {
+                    NMO_RETURN_OK();
+                }
+            }
+        }
+    }
+
+    /* background_texture_id -> NMO_REF_KIND_TEXTURE */
+    if (s->background_texture_id != 0) {
+        if (!visitor(user_data, s->background_texture_id,
+                     NMO_REF_KIND_TEXTURE, "background_texture_id", 0)) {
+            NMO_RETURN_OK();
+        }
+    }
+
+    /* starting_camera_id -> NMO_REF_KIND_UNKNOWN */
+    if (s->starting_camera_id != 0) {
+        if (!visitor(user_data, s->starting_camera_id,
+                     NMO_REF_KIND_UNKNOWN, "starting_camera_id", 0)) {
+            NMO_RETURN_OK();
+        }
+    }
+
+    /* Base CKBeObject: script_ids -> NMO_REF_KIND_SCRIPT */
+    if (s->base.script_ids.count > 0 && s->base.script_ids.data != NULL) {
+        const nmo_object_id_t *ids =
+            NMO_ARRAY_DATA(nmo_object_id_t, &s->base.script_ids);
+        for (uint32_t i = 0; i < s->base.script_ids.count; ++i) {
+            if (ids[i] != 0) {
+                if (!visitor(user_data, ids[i], NMO_REF_KIND_SCRIPT,
+                             "script_ids", i)) {
+                    NMO_RETURN_OK();
+                }
+            }
+        }
+    }
+
+    /* Base CKBeObject: attribute_parameter_ids -> NMO_REF_KIND_PARAMETER */
+    if (s->base.attribute_parameter_ids.count > 0 &&
+        s->base.attribute_parameter_ids.data != NULL) {
+        const nmo_object_id_t *ids =
+            NMO_ARRAY_DATA(nmo_object_id_t, &s->base.attribute_parameter_ids);
+        for (uint32_t i = 0; i < s->base.attribute_parameter_ids.count; ++i) {
+            if (ids[i] != 0) {
+                if (!visitor(user_data, ids[i], NMO_REF_KIND_PARAMETER,
+                             "attribute_parameter_ids", i)) {
+                    NMO_RETURN_OK();
+                }
+            }
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
+/* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
@@ -548,7 +643,7 @@ nmo_type_vtable_t nmo_scene_vtable = {
     .remap_dependencies = nmo_scene_remap_dependencies,
     .pre_delete = nmo_scene_pre_delete,
     .post_delete = nmo_scene_post_delete,
-    NMO_OBJECT_VTABLE(
+    NMO_OBJECT_VTABLE_EX(
         nmo_scene_create,
         nmo_scene_destroy,
         nmo_scene_serialize,
@@ -556,7 +651,8 @@ nmo_type_vtable_t nmo_scene_vtable = {
         nmo_scene_copy,
         nmo_scene_validate,
         nmo_scene_equals,
-        nmo_scene_hash)
+        nmo_scene_hash,
+        nmo_scene_enumerate_refs)
 };
 
 NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(

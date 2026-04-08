@@ -32,6 +32,11 @@ int nmo_cmd_validate_references(int argc, char **argv, const nmo_cli_global_opts
  */
 int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo validate orphans - Find unreferenced objects
+ */
+int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif
