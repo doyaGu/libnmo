@@ -171,6 +171,16 @@ static bool collect_all_chunk_entries(nmo_session_t *session,
  * ============================================================================ */
 
 int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--top", NULL, NMO_OPT_UINT, "Limit output to first N entries"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    uint32_t top_n = vals[0].present ? vals[0].val.u : 0;
+
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
@@ -184,6 +194,12 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
+    /* Determine how many entries to emit */
+    size_t emit_count = entry_count;
+    if (top_n > 0 && (size_t)top_n < emit_count) {
+        emit_count = (size_t)top_n;
+    }
+
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
@@ -191,7 +207,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
         yyjson_mut_obj_add_uint(doc, data, "total_chunks", (uint64_t)entry_count);
 
         yyjson_mut_val *chunks = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < entry_count; ++i) {
+        for (size_t i = 0; i < emit_count; ++i) {
             const nmo_cli_chunk_entry_t *e = &entries[i];
             nmo_chunk_t *chunk = e->chunk;
             yyjson_mut_val *item = yyjson_mut_obj(doc);
@@ -249,7 +265,7 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (size_t i = 0; i < entry_count; ++i) {
+        for (size_t i = 0; i < emit_count; ++i) {
             const nmo_cli_chunk_entry_t *e = &entries[i];
             nmo_chunk_t *chunk = e->chunk;
 
