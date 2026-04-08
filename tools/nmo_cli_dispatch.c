@@ -179,6 +179,14 @@ static void validate_resources_usage(FILE *out) {
     fprintf(out, "  --fail-on-warning   Exit with code 4 if warnings exist\n");
 }
 
+static void validate_orphans_usage(FILE *out) {
+    fprintf(out, "Usage: nmo validate orphans [options] <file>\n\n");
+    fprintf(out, "Find unreferenced (orphan) objects with zero incoming references.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --class, -c <name>  Filter by class (includes derived classes)\n");
+    fprintf(out, "  --strict            Exit with code 3 if orphans found\n");
+}
+
 static void debug_export_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug export [--data] [--max-bytes <n>] <file>\n\n");
     fprintf(out, "Export a JSON snapshot for debugging (object list + chunk metadata).\n\n");
@@ -434,6 +442,7 @@ static const nmo_cli_action_t validate_actions[] = {
     {"structure", "st", "Validate file structure", nmo_cmd_validate_structure, validate_structure_usage},
     {"references", "ref", "Validate object references", nmo_cmd_validate_references, validate_references_usage},
     {"resources", "res", "Validate embedded resources", nmo_cmd_validate_resources, validate_resources_usage},
+    {"orphans", "orp", "Find unreferenced objects", nmo_cmd_validate_orphans, validate_orphans_usage},
 };
 
 /* convert group actions */
