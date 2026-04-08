@@ -27,6 +27,7 @@ add_executable(nmo_cli
     nmo_repl_repl.c
     nmo_repl_util.c
     nmo_repl_commands.c
+    nmo_repl_input.c
 
     # Command groups
     commands/nmo_cmd_file.c
