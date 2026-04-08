@@ -785,6 +785,191 @@ TEST(cli, convert_copy_output_open_failure) {
 }
 
 /* ============================================================================
+ * object list SIZE column
+ * ============================================================================ */
+
+TEST(cli, object_list_has_size_json) {
+    char args[512];
+    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *objects = yyjson_obj_get(data, "objects");
+    ASSERT_NOT_NULL(objects);
+    ASSERT_TRUE(yyjson_arr_size(objects) > 0);
+
+    yyjson_val *first = yyjson_arr_get_first(objects);
+    ASSERT_NOT_NULL(first);
+    yyjson_val *size_val = yyjson_obj_get(first, "size");
+    ASSERT_NOT_NULL(size_val);
+    ASSERT_TRUE(yyjson_is_uint(size_val));
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, object_list_has_size_text) {
+    char args[512];
+    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    char *output = run_cli(args);
+    ASSERT_NOT_NULL(output);
+
+    ASSERT_STR_CONTAINS(output, "SIZE");
+    ASSERT_STR_CONTAINS(output, "ID");
+    ASSERT_STR_CONTAINS(output, "CLASS");
+    ASSERT_STR_CONTAINS(output, "NAME");
+
+    free(output);
+}
+
+/* ============================================================================
+ * object list --sort / --top / --reverse
+ * ============================================================================ */
+
+TEST(cli, object_list_sort_by_size_json) {
+    char args[512];
+    snprintf(args, sizeof(args), "object list --sort=size --reverse \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *objects = yyjson_obj_get(data, "objects");
+    size_t count = yyjson_arr_size(objects);
+    ASSERT_TRUE(count >= 2);
+
+    uint64_t prev_size = UINT64_MAX;
+    size_t idx, max;
+    yyjson_val *obj;
+    yyjson_arr_foreach(objects, idx, max, obj) {
+        uint64_t sz = yyjson_get_uint(yyjson_obj_get(obj, "size"));
+        ASSERT_TRUE(sz <= prev_size);
+        prev_size = sz;
+    }
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, object_list_top_limits_output) {
+    char args[512];
+    snprintf(args, sizeof(args), "object list --top 3 \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *objects = yyjson_obj_get(data, "objects");
+    ASSERT_TRUE(yyjson_arr_size(objects) == 3);
+
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, object_list_sort_and_top_combined) {
+    char args[512];
+    snprintf(args, sizeof(args), "object list --sort=size --reverse --top 5 \"%s\"",
+             NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *objects = yyjson_obj_get(data, "objects");
+    ASSERT_TRUE(yyjson_arr_size(objects) <= 5);
+
+    uint64_t prev_size = UINT64_MAX;
+    size_t idx, max;
+    yyjson_val *obj;
+    yyjson_arr_foreach(objects, idx, max, obj) {
+        uint64_t sz = yyjson_get_uint(yyjson_obj_get(obj, "size"));
+        ASSERT_TRUE(sz <= prev_size);
+        prev_size = sz;
+    }
+
+    yyjson_doc_free(doc);
+}
+
+/* ============================================================================
+ * file classes SIZE columns and --sort
+ * ============================================================================ */
+
+TEST(cli, file_classes_has_size_json) {
+    char args[512];
+    snprintf(args, sizeof(args), "file classes \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *classes = yyjson_obj_get(data, "classes");
+    ASSERT_NOT_NULL(classes);
+    ASSERT_TRUE(yyjson_arr_size(classes) > 0);
+    yyjson_val *first = yyjson_arr_get_first(classes);
+    ASSERT_NOT_NULL(yyjson_obj_get(first, "total_size"));
+    ASSERT_NOT_NULL(yyjson_obj_get(first, "avg_size"));
+    ASSERT_NOT_NULL(yyjson_obj_get(first, "percentage"));
+    yyjson_doc_free(doc);
+}
+
+TEST(cli, file_classes_sort_by_size) {
+    char args[512];
+    snprintf(args, sizeof(args), "file classes --sort=size \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *classes = yyjson_obj_get(data, "classes");
+    size_t count = yyjson_arr_size(classes);
+    ASSERT_TRUE(count >= 2);
+    uint64_t prev = UINT64_MAX;
+    size_t idx, max;
+    yyjson_val *cls;
+    yyjson_arr_foreach(classes, idx, max, cls) {
+        uint64_t sz = yyjson_get_uint(yyjson_obj_get(cls, "total_size"));
+        ASSERT_TRUE(sz <= prev);
+        prev = sz;
+    }
+    yyjson_doc_free(doc);
+}
+
+/* ============================================================================
+ * resource list --sort
+ * ============================================================================ */
+
+TEST(cli, resource_list_sort_by_size) {
+    char args[512];
+    snprintf(args, sizeof(args), "resource list --sort=size \"%s\"", NMO_TEST_DATA_FILE("Balls.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *resources = yyjson_obj_get(data, "resources");
+    if (resources && yyjson_arr_size(resources) >= 2) {
+        uint64_t prev = UINT64_MAX;
+        size_t idx, max;
+        yyjson_val *res;
+        yyjson_arr_foreach(resources, idx, max, res) {
+            uint64_t sz = yyjson_get_uint(yyjson_obj_get(res, "size"));
+            ASSERT_TRUE(sz <= prev);
+            prev = sz;
+        }
+    }
+    yyjson_doc_free(doc);
+}
+
+/* ============================================================================
+ * chunk list --top
+ * ============================================================================ */
+
+TEST(cli, chunk_list_top_limits_output) {
+    char args[512];
+    snprintf(args, sizeof(args), "chunk list --top 5 \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *chunks = yyjson_obj_get(data, "chunks");
+    ASSERT_NOT_NULL(chunks);
+    ASSERT_TRUE(yyjson_arr_size(chunks) <= 5);
+    yyjson_doc_free(doc);
+}
+
+/* ============================================================================
  * JSON schema envelope
  * ============================================================================ */
 
@@ -851,11 +1036,18 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, file_stats_text);
     REGISTER_TEST(cli, file_stats_verbose);
     REGISTER_TEST(cli, file_stats_json);
+    REGISTER_TEST(cli, file_classes_has_size_json);
+    REGISTER_TEST(cli, file_classes_sort_by_size);
 
     /* object commands */
     REGISTER_TEST(cli, object_list_text);
     REGISTER_TEST(cli, object_list_class_filter);
     REGISTER_TEST(cli, object_list_json);
+    REGISTER_TEST(cli, object_list_has_size_json);
+    REGISTER_TEST(cli, object_list_has_size_text);
+    REGISTER_TEST(cli, object_list_sort_by_size_json);
+    REGISTER_TEST(cli, object_list_top_limits_output);
+    REGISTER_TEST(cli, object_list_sort_and_top_combined);
 
     /* validate commands */
     REGISTER_TEST(cli, validate_all_text);
@@ -889,6 +1081,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, file_info_output_open_failure);
     REGISTER_TEST(cli, validate_all_output_open_failure);
     REGISTER_TEST(cli, convert_copy_output_open_failure);
+
+    /* resource list --sort */
+    REGISTER_TEST(cli, resource_list_sort_by_size);
+
+    /* chunk list --top */
+    REGISTER_TEST(cli, chunk_list_top_limits_output);
 
     /* JSON envelope */
     REGISTER_TEST(cli, json_schema_envelope);

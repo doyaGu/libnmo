@@ -45,6 +45,9 @@ static int list_json_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_
     if (class_name) yyjson_mut_obj_add_str(d->doc, item, "class_name", class_name);
     const char *name = nmo_object_get_name(obj);
     if (name && name[0]) nmo_cli_json_add_str_safe(d->doc, item, "name", name);
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    uint64_t size = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+    yyjson_mut_obj_add_uint(d->doc, item, "size", size);
     yyjson_mut_arr_add_val(d->arr, item);
     return 0;
 }
@@ -61,9 +64,117 @@ static int list_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx
     snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
     const char *class_name = nmo_core_class_name(c, nmo_object_get_class_id(obj));
     const char *name = nmo_object_get_name(obj);
-    const char *cells[] = { id_buf, class_name ? class_name : "-", (name && name[0]) ? name : "-" };
-    nmo_cli_table_add_row(d->table, cells, 3);
+    char size_buf[32];
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    snprintf(size_buf, sizeof(size_buf), "%zu", chunk ? nmo_chunk_get_data_size(chunk) : (size_t)0);
+    const char *cells[] = { id_buf, class_name ? class_name : "-", size_buf, (name && name[0]) ? name : "-" };
+    nmo_cli_table_add_row(d->table, cells, 4);
     return 0;
+}
+
+/* ============================================================================
+ * object list - sort infrastructure
+ * ============================================================================ */
+
+typedef enum {
+    OBJ_SORT_NONE,
+    OBJ_SORT_ID,
+    OBJ_SORT_NAME,
+    OBJ_SORT_CLASS,
+    OBJ_SORT_SIZE,
+} obj_sort_key_t;
+
+static obj_sort_key_t parse_obj_sort_key(const char *s) {
+    if (!s) return OBJ_SORT_NONE;
+    if (strcmp(s, "id")    == 0) return OBJ_SORT_ID;
+    if (strcmp(s, "name")  == 0) return OBJ_SORT_NAME;
+    if (strcmp(s, "class") == 0) return OBJ_SORT_CLASS;
+    if (strcmp(s, "size")  == 0) return OBJ_SORT_SIZE;
+    return OBJ_SORT_NONE;
+}
+
+/** Dynamic array for collecting objects */
+typedef struct {
+    nmo_object_t **objects;
+    size_t count;
+    size_t capacity;
+} obj_collect_t;
+
+static int obj_collect_visitor(size_t index, nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c, void *user) {
+    (void)index;
+    (void)c;
+    obj_collect_t *col = (obj_collect_t *)user;
+    if (col->count >= col->capacity) {
+        size_t new_cap = col->capacity ? col->capacity * 2 : 64;
+        nmo_object_t **tmp = (nmo_object_t **)realloc(col->objects, new_cap * sizeof(*tmp));
+        if (!tmp) return -1;
+        col->objects = tmp;
+        col->capacity = new_cap;
+    }
+    col->objects[col->count++] = obj;
+    return 0;
+}
+
+/** File-static sort context for qsort comparators */
+static const nmo_cmd_ctx_t *s_sort_ctx;
+static bool s_sort_reverse;
+
+static size_t obj_chunk_size(nmo_object_t *obj) {
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    return chunk ? nmo_chunk_get_data_size(chunk) : 0;
+}
+
+typedef int (*obj_compare_fn)(const void *, const void *);
+
+static int compare_obj_id(const void *a, const void *b) {
+    nmo_object_t *oa = *(nmo_object_t *const *)a;
+    nmo_object_t *ob = *(nmo_object_t *const *)b;
+    uint32_t ia = nmo_object_get_id(oa);
+    uint32_t ib = nmo_object_get_id(ob);
+    int cmp = (ia > ib) - (ia < ib);
+    return s_sort_reverse ? -cmp : cmp;
+}
+
+static int compare_obj_name(const void *a, const void *b) {
+    nmo_object_t *oa = *(nmo_object_t *const *)a;
+    nmo_object_t *ob = *(nmo_object_t *const *)b;
+    const char *na = nmo_object_get_name(oa);
+    const char *nb = nmo_object_get_name(ob);
+    if (!na) na = "";
+    if (!nb) nb = "";
+    int cmp = strcmp(na, nb);
+    return s_sort_reverse ? -cmp : cmp;
+}
+
+static int compare_obj_class(const void *a, const void *b) {
+    nmo_object_t *oa = *(nmo_object_t *const *)a;
+    nmo_object_t *ob = *(nmo_object_t *const *)b;
+    const char *ca = nmo_core_class_name(s_sort_ctx, nmo_object_get_class_id(oa));
+    const char *cb = nmo_core_class_name(s_sort_ctx, nmo_object_get_class_id(ob));
+    if (!ca) ca = "";
+    if (!cb) cb = "";
+    int cmp = strcmp(ca, cb);
+    return s_sort_reverse ? -cmp : cmp;
+}
+
+static int compare_obj_size(const void *a, const void *b) {
+    nmo_object_t *oa = *(nmo_object_t *const *)a;
+    nmo_object_t *ob = *(nmo_object_t *const *)b;
+    size_t sa = obj_chunk_size(oa);
+    size_t sb = obj_chunk_size(ob);
+    int cmp = (sa > sb) - (sa < sb);
+    return s_sort_reverse ? -cmp : cmp;
+}
+
+static obj_compare_fn obj_sort_comparator(obj_sort_key_t key) {
+    switch (key) {
+        case OBJ_SORT_ID:    return compare_obj_id;
+        case OBJ_SORT_NAME:  return compare_obj_name;
+        case OBJ_SORT_CLASS: return compare_obj_class;
+        case OBJ_SORT_SIZE:  return compare_obj_size;
+        default:             return NULL;
+    }
 }
 
 /* ============================================================================
@@ -72,16 +183,29 @@ static int list_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx
 
 int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--class",  "-c", NMO_OPT_STRING, "Filter by class name"},
-        {"--filter", "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--sort",    NULL,  NMO_OPT_STRING, "Sort by: id, name, class, size"},
+        {"--reverse", "-r",  NMO_OPT_FLAG,   "Reverse sort direction"},
+        {"--top",     NULL,  NMO_OPT_UINT,   "Show only first N results"},
     };
-    nmo_opt_val_t vals[2];
+    nmo_opt_val_t vals[5];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
     const char *filter_expr      = vals[1].present ? vals[1].val.str : NULL;
+    const char *sort_key_str     = vals[2].present ? vals[2].val.str : NULL;
+    bool reverse                 = vals[3].present && vals[3].val.flag;
+    uint32_t top_n               = vals[4].present ? vals[4].val.u : 0;
+
+    /* Validate sort key early */
+    obj_sort_key_t sort_key = parse_obj_sort_key(sort_key_str);
+    if (sort_key_str && sort_key == OBJ_SORT_NONE) {
+        fprintf(stderr, "Error: Invalid sort key '%s' (use: id, name, class, size)\n", sort_key_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -106,44 +230,119 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
+    bool needs_collect = (sort_key != OBJ_SORT_NONE) || (top_n > 0);
     nmo_core_iter_result_t result;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
-        list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-        nmo_core_iter_objects(&c, &filter, list_json_visitor, &jd, &result);
+    if (needs_collect) {
+        /* Path A: collect → sort → truncate → output */
+        obj_collect_t col = {0};
+        nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &result);
 
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
-        yyjson_mut_obj_add_val(doc, data, "objects", arr);
+        /* Sort if requested */
+        if (sort_key != OBJ_SORT_NONE && col.count > 1) {
+            s_sort_ctx = &c;
+            s_sort_reverse = reverse;
+            obj_compare_fn cmp = obj_sort_comparator(sort_key);
+            if (cmp) {
+                qsort(col.objects, col.count, sizeof(nmo_object_t *), cmp);
+            }
+        }
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.list");
+        /* Compute output count */
+        size_t output_count = col.count;
+        if (top_n > 0 && (size_t)top_n < output_count) {
+            output_count = (size_t)top_n;
+        }
+
+        if (c.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+
+            for (size_t i = 0; i < output_count; ++i) {
+                list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
+                list_json_visitor(i, col.objects[i], &c, &jd);
+            }
+
+            yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)output_count);
+            yyjson_mut_obj_add_val(doc, data, "objects", arr);
+
+            nmo_cmd_ctx_json_end(&c, doc, data, "object.list");
+        } else {
+            /* Table output */
+            static const nmo_cli_table_col_t columns[] = {
+                {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+                {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+                {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+                {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+            };
+
+            nmo_cli_table_t table;
+            nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+            for (size_t i = 0; i < output_count; ++i) {
+                list_table_data_t td = { .table = &table, .ctx = &c };
+                list_table_visitor(i, col.objects[i], &c, &td);
+            }
+
+            fprintf(c.out, "Objects: %zu", result.matched);
+            if (class_filter_str) {
+                fprintf(c.out, " (filtered by class: %s)", class_filter_str);
+            }
+            if (filter_expr) {
+                fprintf(c.out, " (filtered by: %s)", filter_expr);
+            }
+            if (top_n > 0) {
+                fprintf(c.out, " (showing top %u)", top_n);
+            }
+            fprintf(c.out, "\n\n");
+
+            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_free(&table);
+        }
+
+        free(col.objects);
     } else {
-        /* Table output */
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
-        };
+        /* Path B: streaming (no sort, no top) */
+        if (c.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+            list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
+            nmo_core_iter_objects(&c, &filter, list_json_visitor, &jd, &result);
 
-        list_table_data_t td = { .table = &table, .ctx = &c };
-        nmo_core_iter_objects(&c, &filter, list_table_visitor, &td, &result);
+            yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
+            yyjson_mut_obj_add_val(doc, data, "objects", arr);
 
-        fprintf(c.out, "Objects: %zu", result.matched);
-        if (class_filter_str) {
-            fprintf(c.out, " (filtered by class: %s)", class_filter_str);
+            nmo_cmd_ctx_json_end(&c, doc, data, "object.list");
+        } else {
+            /* Table output */
+            static const nmo_cli_table_col_t columns[] = {
+                {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+                {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+                {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+                {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+            };
+
+            nmo_cli_table_t table;
+            nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+            list_table_data_t td = { .table = &table, .ctx = &c };
+            nmo_core_iter_objects(&c, &filter, list_table_visitor, &td, &result);
+
+            fprintf(c.out, "Objects: %zu", result.matched);
+            if (class_filter_str) {
+                fprintf(c.out, " (filtered by class: %s)", class_filter_str);
+            }
+            if (filter_expr) {
+                fprintf(c.out, " (filtered by: %s)", filter_expr);
+            }
+            fprintf(c.out, "\n\n");
+
+            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_free(&table);
         }
-        if (filter_expr) {
-            fprintf(c.out, " (filtered by: %s)", filter_expr);
-        }
-        fprintf(c.out, "\n\n");
-
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
     }
 
     if (filter.dsl_filter) {
