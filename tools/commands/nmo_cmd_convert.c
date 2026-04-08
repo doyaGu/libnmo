@@ -11,8 +11,10 @@
 #include "app/nmo_session.h"
 #include "app/nmo_saver.h"
 #include "app/nmo_context.h"
+#include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -288,9 +290,54 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Dry-run: output preview and exit */
     if (dry_run) {
+        /* Compute cascade impact via preview API */
+        nmo_arena_t *preview_arena = nmo_arena_create(NULL, 0);
+        nmo_object_id_t *expanded_ids = NULL;
+        size_t expanded_count = 0;
+        bool have_cascade = false;
+
+        if (preview_arena && remove_count > 0) {
+            int prev_rc = nmo_session_preview_destroy(
+                c.session, ids_to_remove, remove_count,
+                NMO_RUNTIME_REQUEST_CASCADE, preview_arena,
+                &expanded_ids, &expanded_count);
+            have_cascade = (prev_rc == NMO_OK && expanded_ids != NULL);
+        }
+
+        /* Partition expanded set into cascade-only IDs */
+        nmo_object_t **cascade_objects = NULL;
+        size_t cascade_count = 0;
+
+        if (have_cascade && expanded_count > remove_count) {
+            cascade_objects = (nmo_object_t **)malloc(
+                expanded_count * sizeof(nmo_object_t *));
+            if (cascade_objects) {
+                for (size_t ei = 0; ei < expanded_count; ++ei) {
+                    nmo_object_id_t eid = expanded_ids[ei];
+                    /* Check if this ID was directly matched */
+                    bool is_direct = false;
+                    for (size_t di = 0; di < remove_count; ++di) {
+                        if (ids_to_remove[di] == eid) {
+                            is_direct = true;
+                            break;
+                        }
+                    }
+                    if (!is_direct) {
+                        nmo_object_t *cobj =
+                            nmo_object_repository_find_by_id(repo, eid);
+                        if (cobj) {
+                            cascade_objects[cascade_count++] = cobj;
+                        }
+                    }
+                }
+            }
+        }
+
         if (c.is_json) {
             yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
             if (!doc) {
+                free(cascade_objects);
+                nmo_arena_destroy(preview_arena);
                 free(ids_to_remove);
                 free(matched_objects);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -326,6 +373,34 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
             yyjson_mut_obj_add_val(doc, data, "matches", matches);
             nmo_cli_json_add_uint_safe(doc, data, "total_match_size", total_match_size);
 
+            /* Cascade objects */
+            nmo_cli_json_add_uint_safe(doc, data, "cascade_count", (uint64_t)cascade_count);
+            yyjson_mut_val *cascade_arr = yyjson_mut_arr(doc);
+            uint64_t cascade_size = 0;
+            for (size_t i = 0; i < cascade_count; ++i) {
+                nmo_object_t *obj = cascade_objects[i];
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                nmo_cli_json_add_uint_safe(doc, item, "id",
+                                           (uint64_t)nmo_object_get_id(obj));
+                nmo_class_id_t cid = nmo_object_get_class_id(obj);
+                const char *cn = nmo_cli_class_name_from_id(c.ctx, cid);
+                if (cn) {
+                    nmo_cli_json_add_str_safe(doc, item, "class_name", cn);
+                }
+                nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+                uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+                nmo_cli_json_add_uint_safe(doc, item, "size", sz);
+                cascade_size += sz;
+                const char *name = nmo_object_get_name(obj);
+                if (name && name[0]) {
+                    nmo_cli_json_add_str_safe(doc, item, "name", name);
+                }
+                yyjson_mut_arr_add_val(cascade_arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "cascade_objects", cascade_arr);
+            nmo_cli_json_add_uint_safe(doc, data, "cascade_size", cascade_size);
+            nmo_cli_json_add_uint_safe(doc, data, "total_size", total_match_size + cascade_size);
+
             if (class_name) {
                 nmo_cli_json_add_str_safe(doc, data, "filter_class", class_name);
             }
@@ -346,9 +421,11 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
                 };
 
+                /* Matched objects table */
                 nmo_cli_table_t table;
                 nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
+                uint64_t match_size = 0;
                 for (size_t i = 0; i < remove_count; ++i) {
                     nmo_object_t *obj = matched_objects[i];
                     char id_buf[16];
@@ -357,9 +434,10 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                                                                 nmo_object_get_class_id(obj));
                     const char *name = nmo_object_get_name(obj);
                     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+                    uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+                    match_size += sz;
                     char size_buf[32];
-                    snprintf(size_buf, sizeof(size_buf), "%zu",
-                             chunk ? nmo_chunk_get_data_size(chunk) : (size_t)0);
+                    snprintf(size_buf, sizeof(size_buf), "%" PRIu64, sz);
                     const char *cells[] = {
                         id_buf, cn ? cn : "-", size_buf,
                         (name && name[0]) ? name : "-"
@@ -371,10 +449,52 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 nmo_cli_table_print(&table, c.out, c.colorize);
                 nmo_cli_table_free(&table);
 
-                fprintf(c.out, "\nNote: Cascade deletions may occur\n");
+                /* Cascade impact section */
+                if (cascade_count > 0) {
+                    fprintf(c.out, "\nCascade impact: %zu additional object(s):\n",
+                            cascade_count);
+
+                    nmo_cli_table_t ctable;
+                    nmo_cli_table_init(&ctable, columns,
+                                       sizeof(columns) / sizeof(columns[0]));
+
+                    uint64_t casc_size = 0;
+                    for (size_t i = 0; i < cascade_count; ++i) {
+                        nmo_object_t *obj = cascade_objects[i];
+                        char id_buf[16];
+                        snprintf(id_buf, sizeof(id_buf), "%u",
+                                 nmo_object_get_id(obj));
+                        const char *cn = nmo_cli_class_name_from_id(
+                            c.ctx, nmo_object_get_class_id(obj));
+                        const char *name = nmo_object_get_name(obj);
+                        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+                        uint64_t sz = chunk
+                            ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+                        casc_size += sz;
+                        char size_buf[32];
+                        snprintf(size_buf, sizeof(size_buf), "%" PRIu64, sz);
+                        const char *cells[] = {
+                            id_buf, cn ? cn : "-", size_buf,
+                            (name && name[0]) ? name : "-"
+                        };
+                        nmo_cli_table_add_row(&ctable, cells, 4);
+                    }
+
+                    nmo_cli_table_print(&ctable, c.out, c.colorize);
+                    nmo_cli_table_free(&ctable);
+
+                    fprintf(c.out, "\nTotal: %zu objects, %" PRIu64 " bytes\n",
+                            remove_count + cascade_count,
+                            match_size + casc_size);
+                } else {
+                    fprintf(c.out, "\nTotal: %zu objects, %" PRIu64 " bytes\n",
+                            remove_count, match_size);
+                }
             }
         }
 
+        free(cascade_objects);
+        nmo_arena_destroy(preview_arena);
         free(ids_to_remove);
         free(matched_objects);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
