@@ -4,9 +4,12 @@
  */
 
 #include "format/nmo_image.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_error.h"
 #include "core/nmo_utils.h"
 
 #include <limits.h>
+#include <stdbool.h>
 #include <string.h>
 
 static void analyze_mask(uint32_t mask,
@@ -128,4 +131,49 @@ size_t nmo_image_calc_size(const nmo_image_desc_t *desc) {
     }
 
     return (size_t)desc->bytes_per_line * (size_t)desc->height;
+}
+
+nmo_status_t nmo_image_reconstruct_pixels(
+    const uint8_t *red, const uint8_t *green,
+    const uint8_t *blue, const uint8_t *alpha,
+    uint32_t red_size, uint32_t green_size,
+    uint32_t blue_size, uint32_t alpha_size,
+    int width, int height, int bpp,
+    nmo_arena_t *arena,
+    uint8_t **out_pixels, int *out_channels)
+{
+    if (!out_pixels || !out_channels || width <= 0 || height <= 0 || !arena) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    /* Only handle 32bpp (1 byte per channel) for now */
+    if (bpp != 32) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    size_t pixel_count = (size_t)width * (size_t)height;
+    bool has_red   = (red   && red_size   >= pixel_count);
+    bool has_green = (green && green_size >= pixel_count);
+    bool has_blue  = (blue  && blue_size  >= pixel_count);
+    bool has_alpha = (alpha && alpha_size >= pixel_count);
+
+    if (!has_red && !has_green && !has_blue) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    uint8_t *rgba = (uint8_t *)nmo_arena_alloc(arena, pixel_count * 4, 1);
+    if (!rgba) {
+        return NMO_ERR_OUT_OF_BOUNDS;
+    }
+
+    for (size_t i = 0; i < pixel_count; ++i) {
+        rgba[i * 4 + 0] = has_red   ? red[i]   : 0;
+        rgba[i * 4 + 1] = has_green ? green[i]  : 0;
+        rgba[i * 4 + 2] = has_blue  ? blue[i]   : 0;
+        rgba[i * 4 + 3] = has_alpha ? alpha[i]  : 255;
+    }
+
+    *out_pixels = rgba;
+    *out_channels = 4;
+    return NMO_OK;
 }
