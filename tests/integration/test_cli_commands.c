@@ -929,6 +929,47 @@ TEST(cli, file_classes_sort_by_size) {
 }
 
 /* ============================================================================
+ * resource list --sort
+ * ============================================================================ */
+
+TEST(cli, resource_list_sort_by_size) {
+    char args[512];
+    snprintf(args, sizeof(args), "resource list --sort=size \"%s\"", NMO_TEST_DATA_FILE("Balls.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    yyjson_val *resources = yyjson_obj_get(data, "resources");
+    if (resources && yyjson_arr_size(resources) >= 2) {
+        uint64_t prev = UINT64_MAX;
+        size_t idx, max;
+        yyjson_val *res;
+        yyjson_arr_foreach(resources, idx, max, res) {
+            uint64_t sz = yyjson_get_uint(yyjson_obj_get(res, "size"));
+            ASSERT_TRUE(sz <= prev);
+            prev = sz;
+        }
+    }
+    yyjson_doc_free(doc);
+}
+
+/* ============================================================================
+ * chunk list --top
+ * ============================================================================ */
+
+TEST(cli, chunk_list_top_limits_output) {
+    char args[512];
+    snprintf(args, sizeof(args), "chunk list --top 5 \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    yyjson_val *chunks = yyjson_obj_get(data, "chunks");
+    ASSERT_NOT_NULL(chunks);
+    ASSERT_TRUE(yyjson_arr_size(chunks) <= 5);
+    yyjson_doc_free(doc);
+}
+
+/* ============================================================================
  * JSON schema envelope
  * ============================================================================ */
 
@@ -1040,6 +1081,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, file_info_output_open_failure);
     REGISTER_TEST(cli, validate_all_output_open_failure);
     REGISTER_TEST(cli, convert_copy_output_open_failure);
+
+    /* resource list --sort */
+    REGISTER_TEST(cli, resource_list_sort_by_size);
+
+    /* chunk list --top */
+    REGISTER_TEST(cli, chunk_list_top_limits_output);
 
     /* JSON envelope */
     REGISTER_TEST(cli, json_schema_envelope);

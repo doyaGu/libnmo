@@ -131,12 +131,72 @@ static nmo_object_t *find_object_by_id(nmo_object_t **objects, size_t object_cou
  * ============================================================================ */
 
 int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--sort", NULL, NMO_OPT_STRING, "Sort by: index (default), size, name"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *sort_by = vals[0].present ? vals[0].val.str : NULL;
+
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
     uint32_t count = 0;
     nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+
+    /* Build index array for sorting */
+    uint32_t *indices = NULL;
+    if (count > 0) {
+        indices = (uint32_t *)malloc(count * sizeof(uint32_t));
+        if (!indices) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        for (uint32_t i = 0; i < count; ++i) {
+            indices[i] = i;
+        }
+    }
+
+    /* Sort indices if requested */
+    if (sort_by && count > 1) {
+        if (strcmp(sort_by, "size") == 0) {
+            /* Selection sort by size descending */
+            for (uint32_t i = 0; i < count - 1; ++i) {
+                uint32_t max_idx = i;
+                for (uint32_t j = i + 1; j < count; ++j) {
+                    if (files[indices[j]].size > files[indices[max_idx]].size) {
+                        max_idx = j;
+                    }
+                }
+                if (max_idx != i) {
+                    uint32_t tmp = indices[i];
+                    indices[i] = indices[max_idx];
+                    indices[max_idx] = tmp;
+                }
+            }
+        } else if (strcmp(sort_by, "name") == 0) {
+            /* Selection sort by name ascending */
+            for (uint32_t i = 0; i < count - 1; ++i) {
+                uint32_t min_idx = i;
+                for (uint32_t j = i + 1; j < count; ++j) {
+                    const char *a = files[indices[j]].name ? files[indices[j]].name : "";
+                    const char *b = files[indices[min_idx]].name ? files[indices[min_idx]].name : "";
+                    if (strcmp(a, b) < 0) {
+                        min_idx = j;
+                    }
+                }
+                if (min_idx != i) {
+                    uint32_t tmp = indices[i];
+                    indices[i] = indices[min_idx];
+                    indices[min_idx] = tmp;
+                }
+            }
+        }
+    }
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
@@ -145,7 +205,8 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         yyjson_mut_obj_add_uint(doc, data, "count", count);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
-        for (uint32_t i = 0; i < count; ++i) {
+        for (uint32_t k = 0; k < count; ++k) {
+            uint32_t i = indices[k];
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             add_resource_json(doc, item, &files[i], i, false);
             yyjson_mut_arr_add_val(arr, item);
@@ -165,7 +226,9 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        for (uint32_t i = 0; i < count; ++i) {
+        for (uint32_t k = 0; k < count; ++k) {
+            uint32_t i = indices[k];
+
             char idx_buf[16];
             snprintf(idx_buf, sizeof(idx_buf), "%u", i);
 
@@ -202,6 +265,8 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
+
+    free(indices);
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
