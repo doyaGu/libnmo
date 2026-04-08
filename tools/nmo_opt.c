@@ -14,14 +14,25 @@
 
 /**
  * Find the definition index matching an argv token.
+ * Supports both "--key value" and "--key=value" forms.
+ * If the token contains '=' after a long option name, *eq_value is set
+ * to point at the character after '='; otherwise *eq_value is NULL.
  * Returns def index, or (size_t)-1 if not found.
  */
 static size_t find_def(const char *token,
-                       const nmo_opt_def_t *defs, size_t def_count)
+                       const nmo_opt_def_t *defs, size_t def_count,
+                       const char **eq_value)
 {
+    *eq_value = NULL;
     for (size_t i = 0; i < def_count; i++) {
         if (strcmp(token, defs[i].long_name) == 0) return i;
         if (defs[i].short_name && strcmp(token, defs[i].short_name) == 0) return i;
+        /* Support --key=value form for long options */
+        size_t llen = strlen(defs[i].long_name);
+        if (strncmp(token, defs[i].long_name, llen) == 0 && token[llen] == '=') {
+            *eq_value = token + llen + 1;
+            return i;
+        }
     }
     return (size_t)-1;
 }
@@ -58,7 +69,8 @@ int nmo_opt_parse(int argc, char **argv,
         }
 
         /* Look up option */
-        size_t idx = find_def(arg, defs, def_count);
+        const char *eq_value = NULL;
+        size_t idx = find_def(arg, defs, def_count, &eq_value);
         if (idx == (size_t)-1) {
             fprintf(stderr, "Error: Unknown option '%s'\n", arg);
             return -1;
@@ -68,26 +80,41 @@ int nmo_opt_parse(int argc, char **argv,
 
         switch (defs[idx].type) {
         case NMO_OPT_FLAG:
+            if (eq_value) {
+                fprintf(stderr, "Error: %s does not accept a value\n", defs[idx].long_name);
+                return -1;
+            }
             result->vals[idx].val.flag = true;
             break;
 
-        case NMO_OPT_STRING:
-            if (i + 1 >= argc) {
+        case NMO_OPT_STRING: {
+            const char *val_str;
+            if (eq_value) {
+                val_str = eq_value;
+            } else if (i + 1 >= argc) {
                 fprintf(stderr, "Error: %s requires a value\n", arg);
                 return -1;
+            } else {
+                val_str = argv[++i];
             }
-            result->vals[idx].val.str = argv[++i];
+            result->vals[idx].val.str = val_str;
             break;
+        }
 
         case NMO_OPT_UINT: {
-            if (i + 1 >= argc) {
+            const char *val_str;
+            if (eq_value) {
+                val_str = eq_value;
+            } else if (i + 1 >= argc) {
                 fprintf(stderr, "Error: %s requires a value\n", arg);
                 return -1;
+            } else {
+                val_str = argv[++i];
             }
             uint32_t v;
-            if (!nmo_tool_parse_u32(argv[++i], &v)) {
+            if (!nmo_tool_parse_u32(val_str, &v)) {
                 fprintf(stderr, "Error: Invalid value for %s: '%s'\n",
-                        defs[idx].long_name, argv[i]);
+                        defs[idx].long_name, val_str);
                 return -1;
             }
             result->vals[idx].val.u = v;
@@ -95,11 +122,15 @@ int nmo_opt_parse(int argc, char **argv,
         }
 
         case NMO_OPT_INT: {
-            if (i + 1 >= argc) {
+            const char *val_str;
+            if (eq_value) {
+                val_str = eq_value;
+            } else if (i + 1 >= argc) {
                 fprintf(stderr, "Error: %s requires a value\n", arg);
                 return -1;
+            } else {
+                val_str = argv[++i];
             }
-            const char *val_str = argv[++i];
             char *end = NULL;
             errno = 0;
             long lv = strtol(val_str, &end, 0);

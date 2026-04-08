@@ -6,7 +6,9 @@
 #include "nmo_cmd_file.h"
 
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
@@ -357,9 +359,30 @@ int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *globa
 typedef struct nmo_class_count_entry {
     uint32_t class_id;
     size_t count;
+    size_t total_size;
 } nmo_class_count_entry_t;
 
-static int compare_class_count_entry(const void *a, const void *b) {
+/* Sort key enum and parser */
+typedef enum {
+    CLASS_SORT_ID = 0,
+    CLASS_SORT_SIZE,
+    CLASS_SORT_COUNT,
+    CLASS_SORT_NAME,
+} class_sort_key_t;
+
+static class_sort_key_t parse_class_sort_key(const char *s) {
+    if (!s) return CLASS_SORT_ID;
+    if (strcmp(s, "id")    == 0) return CLASS_SORT_ID;
+    if (strcmp(s, "size")  == 0) return CLASS_SORT_SIZE;
+    if (strcmp(s, "count") == 0) return CLASS_SORT_COUNT;
+    if (strcmp(s, "name")  == 0) return CLASS_SORT_NAME;
+    return CLASS_SORT_ID;
+}
+
+/* File-static registry pointer for name comparator (qsort can't take context) */
+static const nmo_type_registry_t *s_class_sort_registry;
+
+static int compare_class_by_id(const void *a, const void *b) {
     const nmo_class_count_entry_t *ea = (const nmo_class_count_entry_t *)a;
     const nmo_class_count_entry_t *eb = (const nmo_class_count_entry_t *)b;
     if (ea->class_id < eb->class_id) return -1;
@@ -367,7 +390,76 @@ static int compare_class_count_entry(const void *a, const void *b) {
     return 0;
 }
 
+static int compare_class_by_size(const void *a, const void *b) {
+    const nmo_class_count_entry_t *ea = (const nmo_class_count_entry_t *)a;
+    const nmo_class_count_entry_t *eb = (const nmo_class_count_entry_t *)b;
+    /* Descending */
+    if (ea->total_size > eb->total_size) return -1;
+    if (ea->total_size < eb->total_size) return 1;
+    return 0;
+}
+
+static int compare_class_by_count(const void *a, const void *b) {
+    const nmo_class_count_entry_t *ea = (const nmo_class_count_entry_t *)a;
+    const nmo_class_count_entry_t *eb = (const nmo_class_count_entry_t *)b;
+    /* Descending */
+    if (ea->count > eb->count) return -1;
+    if (ea->count < eb->count) return 1;
+    return 0;
+}
+
+static int compare_class_by_name(const void *a, const void *b) {
+    const nmo_class_count_entry_t *ea = (const nmo_class_count_entry_t *)a;
+    const nmo_class_count_entry_t *eb = (const nmo_class_count_entry_t *)b;
+    const char *na = NULL;
+    const char *nb = NULL;
+    if (s_class_sort_registry) {
+        const nmo_type_descriptor_t *da =
+            nmo_type_registry_find_by_class_id(s_class_sort_registry, ea->class_id);
+        const nmo_type_descriptor_t *db =
+            nmo_type_registry_find_by_class_id(s_class_sort_registry, eb->class_id);
+        if (da) na = da->name;
+        if (db) nb = db->name;
+    }
+    if (!na) na = "";
+    if (!nb) nb = "";
+    return strcmp(na, nb);
+}
+
+typedef int (*class_compare_fn)(const void *, const void *);
+
+static class_compare_fn class_sort_comparator(class_sort_key_t key) {
+    switch (key) {
+        case CLASS_SORT_ID:    return compare_class_by_id;
+        case CLASS_SORT_SIZE:  return compare_class_by_size;
+        case CLASS_SORT_COUNT: return compare_class_by_count;
+        case CLASS_SORT_NAME:  return compare_class_by_name;
+        default:               return compare_class_by_id;
+    }
+}
+
 int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--sort", NULL, NMO_OPT_STRING, "Sort by: id (default), size, count, name"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *sort_key_str = vals[0].present ? vals[0].val.str : NULL;
+
+    /* Validate sort key early */
+    class_sort_key_t sort_key = parse_class_sort_key(sort_key_str);
+    if (sort_key_str &&
+        strcmp(sort_key_str, "id") != 0 &&
+        strcmp(sort_key_str, "size") != 0 &&
+        strcmp(sort_key_str, "count") != 0 &&
+        strcmp(sort_key_str, "name") != 0) {
+        fprintf(stderr, "Error: Invalid sort key '%s' (use: id, size, count, name)\n", sort_key_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
@@ -379,6 +471,7 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_class_count_entry_t *entries = NULL;
     size_t entry_count = 0;
     size_t entry_capacity = 0;
+    size_t grand_total_size = 0;
 
     for (size_t i = 0; i < object_count; i++) {
         nmo_object_t *obj = objects[i];
@@ -387,6 +480,10 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
 
         uint32_t class_id = nmo_object_get_class_id(obj);
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        size_t obj_size = chunk ? nmo_chunk_get_data_size(chunk) : 0;
+        grand_total_size += obj_size;
+
         size_t found = (size_t)-1;
         for (size_t j = 0; j < entry_count; j++) {
             if (entries[j].class_id == class_id) {
@@ -410,14 +507,19 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
             }
             entries[entry_count].class_id = class_id;
             entries[entry_count].count = 1;
+            entries[entry_count].total_size = obj_size;
             entry_count++;
         } else {
             entries[found].count++;
+            entries[found].total_size += obj_size;
         }
     }
 
+    /* Sort entries */
     if (entry_count > 1) {
-        qsort(entries, entry_count, sizeof(nmo_class_count_entry_t), compare_class_count_entry);
+        s_class_sort_registry = c.registry;
+        class_compare_fn cmp = class_sort_comparator(sort_key);
+        qsort(entries, entry_count, sizeof(nmo_class_count_entry_t), cmp);
     }
 
     if (c.is_json) {
@@ -434,6 +536,13 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, item, "class_id", entry->class_id);
             yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)entry->count);
+            yyjson_mut_obj_add_uint(doc, item, "total_size", (uint64_t)entry->total_size);
+            size_t avg = (entry->count > 0) ? entry->total_size / entry->count : 0;
+            yyjson_mut_obj_add_uint(doc, item, "avg_size", (uint64_t)avg);
+            double pct = (grand_total_size > 0)
+                ? (double)entry->total_size * 100.0 / (double)grand_total_size
+                : 0.0;
+            yyjson_mut_obj_add_real(doc, item, "percentage", pct);
             if (type_desc != NULL && type_desc->name != NULL) {
                 yyjson_mut_obj_add_str(doc, item, "name", type_desc->name);
             }
@@ -441,14 +550,16 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
 
         yyjson_mut_obj_add_val(doc, data, "classes", classes);
+        yyjson_mut_obj_add_uint(doc, data, "grand_total_size", (uint64_t)grand_total_size);
         nmo_cmd_ctx_json_end(&c, doc, data, "file.classes");
     } else {
         nmo_cli_print_heading(c.out, "File Class IDs", c.colorize);
         nmo_cli_print_kv(c.out, "File", c.file_path, 8, c.colorize);
         fprintf(c.out, "\n");
 
-        fprintf(c.out, "%-12s %-8s %s\n", "Class ID", "Count", "Name");
-        fprintf(c.out, "----------------------------------------\n");
+        fprintf(c.out, "%-12s %-8s %-12s %-10s %-6s %s\n",
+                "CLASS ID", "COUNT", "TOTAL SIZE", "AVG SIZE", "%", "NAME");
+        fprintf(c.out, "--------------------------------------------------------------\n");
         for (size_t i = 0; i < entry_count; i++) {
             const nmo_class_count_entry_t *entry = &entries[i];
             const nmo_type_descriptor_t *type_desc =
@@ -456,8 +567,14 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
                     ? nmo_type_registry_find_by_class_id(c.registry, entry->class_id)
                     : NULL;
             const char *name = (type_desc != NULL && type_desc->name != NULL) ? type_desc->name : "";
-            fprintf(c.out, "0x%08X %-8zu %s\n", entry->class_id, entry->count, name);
+            size_t avg = (entry->count > 0) ? entry->total_size / entry->count : 0;
+            double pct = (grand_total_size > 0)
+                ? (double)entry->total_size * 100.0 / (double)grand_total_size
+                : 0.0;
+            fprintf(c.out, "0x%08X %-8zu %-12zu %-10zu %5.1f%% %s\n",
+                    entry->class_id, entry->count, entry->total_size, avg, pct, name);
         }
+        fprintf(c.out, "\nTotal data size: %zu bytes\n", grand_total_size);
     }
 
     free(entries);
