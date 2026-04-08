@@ -9,6 +9,7 @@ extern "C" {
 
 void nmo_repl_print_banner(const nmo_repl_context_t *repl);
 int nmo_repl_dispatch_command(nmo_repl_context_t *repl, int argc, char **argv);
+const char **nmo_repl_get_command_names(void);
 
 #ifdef __cplusplus
 }

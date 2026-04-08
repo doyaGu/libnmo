@@ -201,6 +201,28 @@ static const nmo_repl_command_t *find_command(const char *name) {
     return NULL;
 }
 
+const char **nmo_repl_get_command_names(void) {
+    /* Count entries (names + non-empty aliases) */
+    size_t count = 0;
+    for (int i = 0; commands[i].name != NULL; i++) {
+        count++;
+        if (commands[i].alias && commands[i].alias[0]) {
+            count++;
+        }
+    }
+
+    static const char *names[128];
+    size_t idx = 0;
+    for (int i = 0; commands[i].name != NULL && idx < sizeof(names) / sizeof(names[0]) - 1; i++) {
+        names[idx++] = commands[i].name;
+        if (commands[i].alias && commands[i].alias[0] && idx < sizeof(names) / sizeof(names[0]) - 1) {
+            names[idx++] = commands[i].alias;
+        }
+    }
+    names[idx] = NULL;
+    return names;
+}
+
 void nmo_repl_print_banner(const nmo_repl_context_t *repl) {
     const char *path = (repl && repl->filename) ? repl->filename : NULL;
     const char *label = path && *path ? path : "(no file)";
