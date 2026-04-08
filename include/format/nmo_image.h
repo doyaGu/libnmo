@@ -12,6 +12,9 @@
 extern "C" {
 #endif
 
+/* Forward declarations */
+typedef struct nmo_arena nmo_arena_t;
+
 /**
  * @brief Supported pixel formats.
  */
@@ -150,6 +153,37 @@ NMO_API int32_t nmo_image_calc_bytes_per_line(
 
 NMO_API size_t nmo_image_calc_size(
     const nmo_image_desc_t *desc);
+
+/**
+ * @brief Reconstruct interleaved RGBA pixels from separated channel buffers.
+ *
+ * Handles the common 32bpp case where each channel is a 1-byte-per-pixel
+ * buffer. Non-32bpp formats return NMO_ERR_NOT_SUPPORTED.
+ *
+ * @param red       Red channel buffer (NULL = fill zeros)
+ * @param green     Green channel buffer (NULL = fill zeros)
+ * @param blue      Blue channel buffer (NULL = fill zeros)
+ * @param alpha     Alpha channel buffer (NULL = fill 0xFF)
+ * @param red_size  Size of red buffer in bytes
+ * @param green_size Size of green buffer in bytes
+ * @param blue_size Size of blue buffer in bytes
+ * @param alpha_size Size of alpha buffer in bytes
+ * @param width     Image width
+ * @param height    Image height
+ * @param bpp       Bits per pixel (must be 32 for now)
+ * @param arena     Arena for output allocation
+ * @param out_pixels Output: interleaved RGBA pixel buffer
+ * @param out_channels Output: channel count (always 4)
+ * @return NMO_OK on success, NMO_ERR_NOT_SUPPORTED for non-32bpp
+ */
+NMO_API nmo_status_t nmo_image_reconstruct_pixels(
+    const uint8_t *red, const uint8_t *green,
+    const uint8_t *blue, const uint8_t *alpha,
+    uint32_t red_size, uint32_t green_size,
+    uint32_t blue_size, uint32_t alpha_size,
+    int width, int height, int bpp,
+    nmo_arena_t *arena,
+    uint8_t **out_pixels, int *out_channels);
 
 #ifdef __cplusplus
 }

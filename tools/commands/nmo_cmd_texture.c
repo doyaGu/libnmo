@@ -695,34 +695,19 @@ static uint8_t *decode_raw_slot(nmo_arena_t *arena,
                                 int *out_w, int *out_h, int *out_ch) {
     if (rs->width <= 0 || rs->height <= 0) return NULL;
 
-    /* Only handle the simple case: 32bpp with separate 1-byte channels */
-    if (rs->bits_per_pixel != 32) return NULL;
-
-    size_t pixel_count = (size_t)rs->width * (size_t)rs->height;
-    size_t expected = pixel_count;
-
-    /* Verify channel data sizes */
-    bool has_red   = (rs->red_data   && rs->red_size   >= expected);
-    bool has_green = (rs->green_data && rs->green_size >= expected);
-    bool has_blue  = (rs->blue_data  && rs->blue_size  >= expected);
-    bool has_alpha = (rs->alpha_data && rs->alpha_size >= expected);
-
-    if (!has_red && !has_green && !has_blue) return NULL;
-
-    uint8_t *rgba = (uint8_t *)nmo_arena_alloc(arena, pixel_count * 4, 1);
-    if (!rgba) return NULL;
-
-    for (size_t i = 0; i < pixel_count; ++i) {
-        rgba[i * 4 + 0] = has_red   ? rs->red_data[i]   : 0;
-        rgba[i * 4 + 1] = has_green ? rs->green_data[i] : 0;
-        rgba[i * 4 + 2] = has_blue  ? rs->blue_data[i]  : 0;
-        rgba[i * 4 + 3] = has_alpha ? rs->alpha_data[i] : 255;
-    }
+    uint8_t *pixels = NULL;
+    int channels = 0;
+    nmo_status_t st = nmo_image_reconstruct_pixels(
+        rs->red_data, rs->green_data, rs->blue_data, rs->alpha_data,
+        rs->red_size, rs->green_size, rs->blue_size, rs->alpha_size,
+        rs->width, rs->height, rs->bits_per_pixel,
+        arena, &pixels, &channels);
+    if (st != NMO_OK) return NULL;
 
     *out_w = rs->width;
     *out_h = rs->height;
-    *out_ch = 4;
-    return rgba;
+    *out_ch = channels;
+    return pixels;
 }
 
 /**
