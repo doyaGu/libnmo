@@ -501,6 +501,9 @@ nmo_status_t nmo_image_decode_dxt(
     }
 
     /* Check output size doesn't overflow */
+    if (width > INT_MAX / 4) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     size_t pixel_count = (size_t)width * (size_t)height;
     if (pixel_count > SIZE_MAX / 4u) {
         return NMO_ERR_INVALID_ARGUMENT;

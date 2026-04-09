@@ -356,11 +356,11 @@ static bool id_in_sorted(const nmo_object_id_t *arr, size_t count,
 
 /**
  * @brief Insert an ID into a sorted array if not already present
- * @return true if inserted, false if already present or allocation failed
+ * @return 1 if inserted, 0 if already present, -1 on allocation failure
  */
-static bool id_set_insert(nmo_object_id_t **arr, size_t *count,
-                           size_t *capacity, nmo_arena_t *arena,
-                           nmo_object_id_t id) {
+static int id_set_insert(nmo_object_id_t **arr, size_t *count,
+                          size_t *capacity, nmo_arena_t *arena,
+                          nmo_object_id_t id) {
     /* Binary search for insertion point */
     size_t lo = 0, hi = *count;
     while (lo < hi) {
@@ -370,7 +370,7 @@ static bool id_set_insert(nmo_object_id_t **arr, size_t *count,
         } else if ((*arr)[mid] > id) {
             hi = mid;
         } else {
-            return false; /* already present */
+            return 0; /* already present */
         }
     }
 
@@ -380,7 +380,7 @@ static bool id_set_insert(nmo_object_id_t **arr, size_t *count,
         nmo_object_id_t *new_arr = nmo_arena_alloc(
             arena, new_cap * sizeof(nmo_object_id_t),
             _Alignof(nmo_object_id_t));
-        if (!new_arr) return false;
+        if (!new_arr) return -1;
         if (*arr && *count > 0) {
             memcpy(new_arr, *arr, *count * sizeof(nmo_object_id_t));
         }
@@ -395,7 +395,7 @@ static bool id_set_insert(nmo_object_id_t **arr, size_t *count,
     }
     (*arr)[lo] = id;
     (*count)++;
-    return true;
+    return 1;
 }
 
 nmo_status_t nmo_ref_graph_mark_reachable(
@@ -425,7 +425,11 @@ nmo_status_t nmo_ref_graph_mark_reachable(
 
     for (size_t i = 0; i < root_count; ++i) {
         if (root_ids[i] == NMO_OBJECT_ID_NONE) continue;
-        id_set_insert(&marked, &marked_count, &marked_cap, arena, root_ids[i]);
+        int irc = id_set_insert(&marked, &marked_count, &marked_cap, arena, root_ids[i]);
+        if (irc < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "allocation failure in mark_reachable");
+        }
     }
 
     /* Fixed-point iteration over all edges */
@@ -438,13 +442,27 @@ nmo_status_t nmo_ref_graph_mark_reachable(
             if (to == NMO_OBJECT_ID_NONE) continue;
             if (id_in_sorted(marked, marked_count, from) &&
                 !id_in_sorted(marked, marked_count, to)) {
-                if (id_set_insert(&marked, &marked_count, &marked_cap,
-                                  arena, to)) {
+                int irc = id_set_insert(&marked, &marked_count, &marked_cap,
+                                        arena, to);
+                if (irc < 0) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                     "allocation failure in mark_reachable");
+                }
+                if (irc == 1) {
                     changed = true;
                 }
             }
         }
     }
+
+    /* Filter out IDs not present in the repository (broken edge targets) */
+    size_t filtered = 0;
+    for (size_t i = 0; i < marked_count; ++i) {
+        if (nmo_object_repository_find_by_id(graph->repo, marked[i])) {
+            marked[filtered++] = marked[i];
+        }
+    }
+    marked_count = filtered;
 
     *out_reachable_ids = marked;
     *out_reachable_count = marked_count;

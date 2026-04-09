@@ -302,6 +302,9 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 NMO_RUNTIME_REQUEST_CASCADE, preview_arena,
                 &expanded_ids, &expanded_count);
             have_cascade = (prev_rc == NMO_OK && expanded_ids != NULL);
+            if (prev_rc != NMO_OK) {
+                fprintf(stderr, "Warning: Could not compute cascade impact\n");
+            }
         }
 
         /* Partition expanded set into cascade-only IDs */
@@ -311,6 +314,9 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (have_cascade && expanded_count > remove_count) {
             cascade_objects = (nmo_object_t **)malloc(
                 expanded_count * sizeof(nmo_object_t *));
+            if (!cascade_objects) {
+                fprintf(stderr, "Warning: Could not allocate cascade display buffer\n");
+            }
             if (cascade_objects) {
                 for (size_t ei = 0; ei < expanded_count; ++ei) {
                     nmo_object_id_t eid = expanded_ids[ei];

@@ -1339,6 +1339,7 @@ static int nmo_cmd_object_rename_batch(
     }
 
     /* Perform renames (unless dry-run) */
+    size_t rename_errors = 0;
     if (!dry_run) {
         for (size_t i = 0; i < entry_count; i++) {
             int rrc = nmo_object_repository_rename(
@@ -1346,11 +1347,13 @@ static int nmo_cmd_object_rename_batch(
             if (rrc != NMO_OK) {
                 fprintf(stderr, "Error: Failed to rename object %u: %s\n",
                         entries[i].id, nmo_error_string(rrc));
+                rename_errors++;
             }
         }
 
-        /* Save file */
-        if (entry_count > 0) {
+        /* Save file (only if at least one rename succeeded) */
+        size_t succeeded = entry_count - rename_errors;
+        if (succeeded > 0) {
             nmo_save_options_t save_opts = nmo_save_options_default();
             int save_rc = nmo_save_file(c.session, output_path, &save_opts);
             if (save_rc != NMO_OK) {
@@ -1359,6 +1362,10 @@ static int nmo_cmd_object_rename_batch(
                 free(entries);
                 return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
             }
+        }
+
+        if (rename_errors > 0) {
+            fprintf(stderr, "Warning: %zu rename(s) failed\n", rename_errors);
         }
     }
 
@@ -1454,7 +1461,8 @@ static int nmo_cmd_object_rename_batch(
     }
 
     free(entries);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    int exit_code = (rename_errors > 0) ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, exit_code);
 }
 
 int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global)
