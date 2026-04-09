@@ -129,6 +129,20 @@ typedef struct nmo_mask_shifts {
     uint32_t alpha_shift_msb;
 } nmo_mask_shifts_t;
 
+/**
+ * @brief Check whether a pixel format is DXT compressed.
+ */
+static inline bool nmo_pixel_format_is_dxt(nmo_pixel_format_t f) {
+    return f >= NMO_PIXEL_FORMAT_DXT1 && f <= NMO_PIXEL_FORMAT_DXT5;
+}
+
+/**
+ * @brief Check whether a pixel format is a bump map format.
+ */
+static inline bool nmo_pixel_format_is_bump(nmo_pixel_format_t f) {
+    return f >= NMO_PIXEL_FORMAT_16_V8U8 && f <= NMO_PIXEL_FORMAT_32_X8L8V8U8;
+}
+
 NMO_API void nmo_image_calculate_mask_shifts(
     uint32_t red_mask,
     uint32_t green_mask,
@@ -184,6 +198,46 @@ NMO_API nmo_status_t nmo_image_reconstruct_pixels(
     int width, int height, int bpp,
     nmo_arena_t *arena,
     uint8_t **out_pixels, int *out_channels);
+
+/**
+ * @brief Decode interleaved (non-planar) pixel data to RGBA32.
+ *
+ * Handles 8/16/24/32 bpp formats using mask-based channel extraction
+ * with full-range normalization. Rejects DXT, bump, and palette-indexed
+ * formats.
+ *
+ * @param desc      Source image descriptor (must have valid image_data)
+ * @param arena     Arena for output allocation
+ * @param out_rgba  Output: RGBA32 pixel buffer (4 bytes per pixel)
+ * @param out_width Output: image width
+ * @param out_height Output: image height
+ * @return NMO_OK on success, NMO_ERR_NOT_SUPPORTED for unsupported formats
+ */
+NMO_API nmo_status_t nmo_image_decode_interleaved_to_rgba32(
+    const nmo_image_desc_t *desc,
+    nmo_arena_t *arena,
+    uint8_t **out_rgba,
+    int *out_width,
+    int *out_height);
+
+/**
+ * @brief Decode DXT-compressed pixel data to RGBA32.
+ *
+ * @param data       Compressed DXT data
+ * @param data_size  Size of compressed data in bytes
+ * @param width      Image width
+ * @param height     Image height
+ * @param format     DXT pixel format (DXT1-DXT5)
+ * @param arena      Arena for output allocation
+ * @param out_rgba   Output: RGBA32 pixel buffer (4 bytes per pixel)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_image_decode_dxt(
+    const uint8_t *data, size_t data_size,
+    int width, int height,
+    nmo_pixel_format_t format,
+    nmo_arena_t *arena,
+    uint8_t **out_rgba);
 
 #ifdef __cplusplus
 }

@@ -133,6 +133,147 @@ size_t nmo_image_calc_size(const nmo_image_desc_t *desc) {
     return (size_t)desc->bytes_per_line * (size_t)desc->height;
 }
 
+/**
+ * Read a little-endian pixel of 1-4 bytes from memory.
+ */
+static inline uint32_t read_pixel_le(const uint8_t *ptr, int bytes_per_pixel) {
+    switch (bytes_per_pixel) {
+        case 1: return (uint32_t)ptr[0];
+        case 2: return (uint32_t)ptr[0] | ((uint32_t)ptr[1] << 8);
+        case 3: return (uint32_t)ptr[0] | ((uint32_t)ptr[1] << 8) |
+                       ((uint32_t)ptr[2] << 16);
+        case 4: {
+            uint32_t v;
+            memcpy(&v, ptr, sizeof(uint32_t));
+            return v;
+        }
+        default: return 0;
+    }
+}
+
+/**
+ * Normalize a channel value extracted from a bit field to 0-255 range.
+ * Uses rounding: (value * 255 + max/2) / max, where max = (1 << bits) - 1.
+ */
+static inline uint8_t normalize_channel(uint32_t raw_pixel,
+                                         uint32_t mask,
+                                         uint32_t lsb,
+                                         uint32_t bit_count) {
+    if (mask == 0 || bit_count == 0) {
+        return 0;
+    }
+    uint32_t value = (raw_pixel & mask) >> lsb;
+    if (bit_count >= 8) {
+        return (uint8_t)(value >> (bit_count - 8));
+    }
+    uint32_t max = (1u << bit_count) - 1u;
+    return (uint8_t)((value * 255u + max / 2u) / max);
+}
+
+nmo_status_t nmo_image_decode_interleaved_to_rgba32(
+    const nmo_image_desc_t *desc,
+    nmo_arena_t *arena,
+    uint8_t **out_rgba,
+    int *out_width,
+    int *out_height)
+{
+    if (!desc || !arena || !out_rgba || !out_width || !out_height) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Initialize outputs so callers can check on error */
+    *out_rgba = NULL;
+    *out_width = 0;
+    *out_height = 0;
+
+    /* Reject unsupported format categories */
+    if (nmo_pixel_format_is_dxt(desc->format)) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+    if (nmo_pixel_format_is_bump(desc->format)) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+    if (desc->color_map_entries > 0) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    if (desc->width <= 0 || desc->height <= 0 || !desc->image_data) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int bpp = desc->bits_per_pixel;
+    if (bpp <= 0 || bpp > 32) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    int bytes_per_pixel = bpp / 8;
+    if ((bpp % 8) != 0) {
+        bytes_per_pixel += 1;
+    }
+    if (bytes_per_pixel <= 0 || bytes_per_pixel > 4) {
+        return NMO_ERR_NOT_SUPPORTED;
+    }
+
+    /* Compute row stride */
+    int32_t row_stride = desc->bytes_per_line;
+    if (row_stride <= 0) {
+        row_stride = nmo_image_calc_bytes_per_line(desc->width, bpp);
+    }
+    if (row_stride <= 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Allocate output buffer */
+    size_t pixel_count = (size_t)desc->width * (size_t)desc->height;
+    if (pixel_count > SIZE_MAX / 4u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    uint8_t *rgba = (uint8_t *)nmo_arena_alloc(arena, pixel_count * 4, 16);
+    if (!rgba) {
+        return NMO_ERR_NOMEM;
+    }
+
+    /* Compute mask shifts and bit counts */
+    nmo_mask_shifts_t shifts;
+    nmo_image_calculate_mask_shifts(
+        desc->red_mask, desc->green_mask,
+        desc->blue_mask, desc->alpha_mask, &shifts);
+
+    /* Extract bit counts from shift info: lsb + bits = lsb + (8 - msb_shift)
+     * The msb_shift stored is 8 - bit_count (or 0 if bit_count >= 8). */
+    uint32_t r_bits = (shifts.red_shift_msb < 8u)   ? (8u - shifts.red_shift_msb)   : 0u;
+    uint32_t g_bits = (shifts.green_shift_msb < 8u)  ? (8u - shifts.green_shift_msb) : 0u;
+    uint32_t b_bits = (shifts.blue_shift_msb < 8u)   ? (8u - shifts.blue_shift_msb)  : 0u;
+    uint32_t a_bits = (shifts.alpha_shift_msb < 8u)  ? (8u - shifts.alpha_shift_msb) : 0u;
+
+    const bool has_alpha = desc->alpha_mask != 0;
+
+    for (int y = 0; y < desc->height; ++y) {
+        const uint8_t *row = desc->image_data + (size_t)y * (size_t)row_stride;
+        for (int x = 0; x < desc->width; ++x) {
+            const uint8_t *pp = row + (size_t)x * (size_t)bytes_per_pixel;
+            uint32_t raw = read_pixel_le(pp, bytes_per_pixel);
+            size_t idx = ((size_t)y * (size_t)desc->width + (size_t)x) * 4;
+
+            rgba[idx + 0] = normalize_channel(raw, desc->red_mask,
+                                               shifts.red_shift_lsb, r_bits);
+            rgba[idx + 1] = normalize_channel(raw, desc->green_mask,
+                                               shifts.green_shift_lsb, g_bits);
+            rgba[idx + 2] = normalize_channel(raw, desc->blue_mask,
+                                               shifts.blue_shift_lsb, b_bits);
+            rgba[idx + 3] = has_alpha
+                ? normalize_channel(raw, desc->alpha_mask,
+                                     shifts.alpha_shift_lsb, a_bits)
+                : 0xFFu;
+        }
+    }
+
+    *out_rgba = rgba;
+    *out_width = desc->width;
+    *out_height = desc->height;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_image_reconstruct_pixels(
     const uint8_t *red, const uint8_t *green,
     const uint8_t *blue, const uint8_t *alpha,
