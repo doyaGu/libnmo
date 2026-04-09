@@ -27,6 +27,7 @@ typedef enum {
     NMO_OPT_STRING,  /**< String value: --class CKMesh */
     NMO_OPT_UINT,    /**< Unsigned integer: --depth 4, --id 2032 */
     NMO_OPT_INT,     /**< Signed integer: --offset -1 */
+    NMO_OPT_FLOAT,   /**< Float value: --min-similarity 0.8 */
 } nmo_opt_type_t;
 
 /**
@@ -49,6 +50,7 @@ typedef struct {
         const char *str;    /**< NMO_OPT_STRING value (points into argv) */
         uint32_t u;         /**< NMO_OPT_UINT value */
         int32_t i;          /**< NMO_OPT_INT value */
+        float f;            /**< NMO_OPT_FLOAT value */
     } val;
 } nmo_opt_val_t;
 

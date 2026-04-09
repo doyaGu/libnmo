@@ -87,7 +87,7 @@ static yyjson_val *get_array_field(yyjson_val *obj, const char *key) {
 }
 
 TEST(cli, behavior_graph_json) {
-    const char *file_path = NMO_TEST_DATA_FILE("base.cmo");
+    const char *file_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "%s -f json behavior list \"%s\"", NMO_CLI_PATH, file_path);
@@ -167,7 +167,7 @@ TEST(cli, behavior_graph_json) {
 }
 
 TEST(cli, behavior_graph_dot) {
-    const char *file_path = NMO_TEST_DATA_FILE("base.cmo");
+    const char *file_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd), "%s -f json behavior list \"%s\"", NMO_CLI_PATH, file_path);

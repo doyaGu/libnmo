@@ -143,6 +143,28 @@ int nmo_opt_parse(int argc, char **argv,
             result->vals[idx].val.i = (int32_t)lv;
             break;
         }
+
+        case NMO_OPT_FLOAT: {
+            const char *val_str;
+            if (eq_value) {
+                val_str = eq_value;
+            } else if (i + 1 >= argc) {
+                fprintf(stderr, "Error: %s requires a value\n", arg);
+                return -1;
+            } else {
+                val_str = argv[++i];
+            }
+            char *end = NULL;
+            errno = 0;
+            float fv = strtof(val_str, &end);
+            if (end == val_str || *end != '\0' || errno == ERANGE) {
+                fprintf(stderr, "Error: Invalid value for %s: '%s'\n",
+                        defs[idx].long_name, val_str);
+                return -1;
+            }
+            result->vals[idx].val.f = fv;
+            break;
+        }
         }
     }
 

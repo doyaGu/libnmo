@@ -186,7 +186,7 @@ static const char *json_envelope_command(yyjson_doc *doc) {
 
 TEST(cli, file_info_text) {
     char args[512];
-    snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Objects");
@@ -197,7 +197,7 @@ TEST(cli, file_info_text) {
 
 TEST(cli, file_info_json) {
     char args[512];
-    snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -221,7 +221,7 @@ TEST(cli, file_info_output_file_text) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" file info \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -245,7 +245,7 @@ TEST(cli, file_info_output_file_json) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" -f json file info \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -270,7 +270,7 @@ TEST(cli, file_info_output_file_json) {
 
 TEST(cli, file_stats_text) {
     char args[512];
-    snprintf(args, sizeof(args), "file stats \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file stats \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "File Statistics");
@@ -285,7 +285,7 @@ TEST(cli, file_stats_text) {
 
 TEST(cli, file_stats_verbose) {
     char args[512];
-    snprintf(args, sizeof(args), "-v file stats \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "-v file stats \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Performance");
@@ -295,7 +295,7 @@ TEST(cli, file_stats_verbose) {
 
 TEST(cli, file_stats_json) {
     char args[512];
-    snprintf(args, sizeof(args), "file stats \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file stats \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -324,7 +324,7 @@ TEST(cli, file_stats_json) {
 
 TEST(cli, object_list_text) {
     char args[512];
-    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Objects:");
@@ -334,7 +334,7 @@ TEST(cli, object_list_text) {
 
 TEST(cli, object_list_class_filter) {
     char args[512];
-    snprintf(args, sizeof(args), "object list --class CKGroup \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "object list --class CKGroup \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "filtered by class");
@@ -344,7 +344,7 @@ TEST(cli, object_list_class_filter) {
 
 TEST(cli, object_list_json) {
     char args[512];
-    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -375,7 +375,7 @@ TEST(cli, object_list_json) {
 
 TEST(cli, validate_all_text) {
     char args[512];
-    snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Objects");
@@ -385,7 +385,7 @@ TEST(cli, validate_all_text) {
 
 TEST(cli, validate_all_json) {
     char args[512];
-    snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -405,7 +405,7 @@ TEST(cli, validate_all_output_file_text) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" validate all \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -430,7 +430,7 @@ TEST(cli, validate_all_output_file_json) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" -f json validate all \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -451,7 +451,7 @@ TEST(cli, validate_all_output_file_json) {
 
 TEST(cli, validate_structure_text) {
     char args[512];
-    snprintf(args, sizeof(args), "validate structure \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "validate structure \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Structure Validation");
@@ -461,7 +461,7 @@ TEST(cli, validate_structure_text) {
 
 TEST(cli, validate_structure_fix) {
     char args[512];
-    snprintf(args, sizeof(args), "validate structure --fix \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "validate structure --fix \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     /* Should run without error (Camera.nmo is valid so no fix suggestions shown) */
@@ -471,7 +471,7 @@ TEST(cli, validate_structure_fix) {
 
 TEST(cli, validate_references_text) {
     char args[512];
-    snprintf(args, sizeof(args), "validate references \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "validate references \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Reference Validation");
@@ -481,7 +481,7 @@ TEST(cli, validate_references_text) {
 
 TEST(cli, validate_references_json) {
     char args[512];
-    snprintf(args, sizeof(args), "validate references \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "validate references \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -500,7 +500,7 @@ TEST(cli, validate_references_json) {
 
 TEST(cli, type_list_text) {
     char args[512];
-    snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     /* Should list registered types */
@@ -510,7 +510,7 @@ TEST(cli, type_list_text) {
 
 TEST(cli, type_list_json) {
     char args[512];
-    snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -529,8 +529,8 @@ TEST(cli, batch_file_info) {
     char args[1024];
     snprintf(args, sizeof(args),
              "--batch file info \"%s\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"),
-             NMO_TEST_DATA_FILE("Balls.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Camera.nmo");
@@ -543,8 +543,8 @@ TEST(cli, batch_file_info_json) {
     char args[1024];
     snprintf(args, sizeof(args),
              "--batch file info \"%s\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"),
-             NMO_TEST_DATA_FILE("Balls.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -572,8 +572,8 @@ TEST(cli, batch_validate_all) {
     char args[1024];
     snprintf(args, sizeof(args),
              "--batch validate all \"%s\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"),
-             NMO_TEST_DATA_FILE("Balls.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Camera.nmo");
@@ -587,7 +587,7 @@ TEST(cli, batch_file_info_output_file_text) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" --batch file info \"%s\" \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"), NMO_TEST_DATA_FILE("Menu.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"), NMO_TEST_DATA_FILE("Ballance/Menu.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -611,7 +611,7 @@ TEST(cli, batch_validate_all_output_file_text) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" --batch validate all \"%s\" \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"), NMO_TEST_DATA_FILE("Menu.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"), NMO_TEST_DATA_FILE("Ballance/Menu.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -635,7 +635,7 @@ TEST(cli, convert_version_output_file_text) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" convert version \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -658,7 +658,7 @@ TEST(cli, convert_version_output_file_json) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" -f json convert version \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -685,7 +685,7 @@ TEST(cli, convert_copy_output_and_report_files) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" convert copy -o \"%s\" \"%s\"",
-             report_path, save_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, save_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -713,8 +713,8 @@ TEST(cli, convert_merge_option_values_not_treated_as_files) {
     snprintf(args, sizeof(args),
              "--output \"%s\" convert merge -o \"%s\" \"%s\" \"%s\"",
              report_path, save_path,
-             NMO_TEST_DATA_FILE("Camera.nmo"),
-             NMO_TEST_DATA_FILE("Menu.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/Menu.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -736,8 +736,8 @@ TEST(cli, diff_chunks_object_option_value_not_treated_as_file) {
     char args[1024];
     snprintf(args, sizeof(args),
              "diff chunks --object 1 \"%s\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"),
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -751,7 +751,7 @@ TEST(cli, file_info_output_open_failure) {
     const char *report_path = "test_cli_missing_dir_a8d74e/report.txt";
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" file info \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_IO_ERROR, result.exit_code);
@@ -763,7 +763,7 @@ TEST(cli, validate_all_output_open_failure) {
     const char *report_path = "test_cli_missing_dir_b19c52/report.txt";
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" validate all \"%s\"",
-             report_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_IO_ERROR, result.exit_code);
@@ -778,7 +778,7 @@ TEST(cli, convert_copy_output_open_failure) {
 
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" convert copy -o \"%s\" \"%s\"",
-             report_path, save_path, NMO_TEST_DATA_FILE("Camera.nmo"));
+             report_path, save_path, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_IO_ERROR, result.exit_code);
@@ -795,7 +795,7 @@ TEST(cli, convert_copy_output_open_failure) {
 
 TEST(cli, object_list_has_size_json) {
     char args[512];
-    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -816,7 +816,7 @@ TEST(cli, object_list_has_size_json) {
 
 TEST(cli, object_list_has_size_text) {
     char args[512];
-    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
 
@@ -835,7 +835,7 @@ TEST(cli, object_list_has_size_text) {
 TEST(cli, object_list_sort_by_size_json) {
     char args[512];
     snprintf(args, sizeof(args), "object list --sort=size --reverse \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -859,7 +859,7 @@ TEST(cli, object_list_sort_by_size_json) {
 TEST(cli, object_list_top_limits_output) {
     char args[512];
     snprintf(args, sizeof(args), "object list --top 3 \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -873,7 +873,7 @@ TEST(cli, object_list_top_limits_output) {
 TEST(cli, object_list_sort_and_top_combined) {
     char args[512];
     snprintf(args, sizeof(args), "object list --sort=size --reverse --top 5 \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -899,7 +899,7 @@ TEST(cli, object_list_sort_and_top_combined) {
 
 TEST(cli, file_classes_has_size_json) {
     char args[512];
-    snprintf(args, sizeof(args), "file classes \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file classes \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = json_envelope_data(doc);
@@ -915,7 +915,7 @@ TEST(cli, file_classes_has_size_json) {
 
 TEST(cli, file_classes_sort_by_size) {
     char args[512];
-    snprintf(args, sizeof(args), "file classes --sort=size \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file classes --sort=size \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = json_envelope_data(doc);
@@ -939,7 +939,7 @@ TEST(cli, file_classes_sort_by_size) {
 
 TEST(cli, resource_list_sort_by_size) {
     char args[512];
-    snprintf(args, sizeof(args), "resource list --sort=size \"%s\"", NMO_TEST_DATA_FILE("Balls.nmo"));
+    snprintf(args, sizeof(args), "resource list --sort=size \"%s\"", NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = json_envelope_data(doc);
@@ -964,7 +964,7 @@ TEST(cli, resource_list_sort_by_size) {
 
 TEST(cli, chunk_list_top_limits_output) {
     char args[512];
-    snprintf(args, sizeof(args), "chunk list --top 5 \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "chunk list --top 5 \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = json_envelope_data(doc);
@@ -980,7 +980,7 @@ TEST(cli, chunk_list_top_limits_output) {
 
 TEST(cli, json_schema_envelope) {
     char args[512];
-    snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Camera.nmo"));
+    snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -1256,7 +1256,7 @@ TEST(cli, convert_strip_dry_run_json) {
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"Cam_OrientRef\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
 
@@ -1295,7 +1295,7 @@ TEST(cli, convert_strip_dry_run_no_file_written) {
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"Cam_*\" -o \"%s\" \"%s\"",
-             output, NMO_TEST_DATA_FILE("Camera.nmo"));
+             output, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -1312,7 +1312,7 @@ TEST(cli, convert_strip_dry_run_no_output_required) {
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"Cam_*\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
@@ -1323,7 +1323,7 @@ TEST(cli, convert_strip_dry_run_text) {
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"Cam_OrientRef\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
     ASSERT_NOT_NULL(output);
     ASSERT_STR_CONTAINS(output, "Dry Run");
@@ -1336,7 +1336,7 @@ TEST(cli, convert_strip_dry_run_no_matches_exit_0) {
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"NonexistentObject_XYZ_12345\" \"%s\"",
-             NMO_TEST_DATA_FILE("Camera.nmo"));
+             NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);

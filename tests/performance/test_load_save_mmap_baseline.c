@@ -189,7 +189,7 @@ TEST(perf_baseline, load_save_mmap) {
     const double max_mmap_ms = read_env_double("NMO_BENCH_MAX_MMAP_MS", 1000.0);
 
     nmo_benchmark_sample_t samples[] = {
-        { "2D_Text", NMO_TEST_DATA_FILE("2D Text.nmo") },
+        { "2D_Text", NMO_TEST_DATA_FILE("Ballance/2D Text.nmo") },
         { "Nop", NMO_TEST_DATA_FILE("Nop.cmo") }
     };
 

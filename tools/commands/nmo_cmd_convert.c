@@ -6,6 +6,7 @@
 #include "nmo_cmd_convert.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -49,18 +50,31 @@ static bool parse_compression_level(const char *str, int *out_level)
 
 int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse options before init (need output_path for validation) */
-    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    static const nmo_opt_def_t opts[] = {
+        {"--output",          "-o", NMO_OPT_STRING, "Output file path"},
+        {"--compress",        NULL, NMO_OPT_STRING, "Compression level (0-9)"},
+        {"--sequential-ids",  NULL, NMO_OPT_FLAG,   "Renumber object IDs sequentially"},
+        {"--no-managers",     NULL, NMO_OPT_FLAG,   "Strip manager data"},
+        {"--strip-resources", NULL, NMO_OPT_FLAG,   "Strip embedded resources"},
+        {"--validate",        NULL, NMO_OPT_FLAG,   "Validate after copy"},
+    };
+    enum { OPT_OUTPUT, OPT_COMPRESS, OPT_SEQIDS, OPT_NOMGR, OPT_STRIPRES, OPT_VALIDATE, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path   = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *compress_str  = vals[OPT_COMPRESS].present ? vals[OPT_COMPRESS].val.str : NULL;
+    bool sequential_ids       = vals[OPT_SEQIDS].present && vals[OPT_SEQIDS].val.flag;
+    bool no_managers          = vals[OPT_NOMGR].present && vals[OPT_NOMGR].val.flag;
+    bool strip_resources      = vals[OPT_STRIPRES].present && vals[OPT_STRIPRES].val.flag;
+    bool validate             = vals[OPT_VALIDATE].present && vals[OPT_VALIDATE].val.flag;
+
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-
-    const char *compress_str = nmo_tool_find_opt_value(argc, argv, "--compress", NULL);
-    bool sequential_ids = nmo_tool_has_flag(argc, argv, "--sequential-ids", NULL);
-    bool no_managers = nmo_tool_has_flag(argc, argv, "--no-managers", NULL);
-    bool strip_resources = nmo_tool_has_flag(argc, argv, "--strip-resources", NULL);
-    bool validate = nmo_tool_has_flag(argc, argv, "--validate", NULL);
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -129,8 +143,15 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
 int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Check if output specified */
-    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[0].present ? vals[0].val.str : NULL;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -202,18 +223,27 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 
 int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse --dry-run early */
-    bool dry_run = nmo_tool_has_flag(argc, argv, "--dry-run", NULL);
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
+        {"--class",   NULL, NMO_OPT_STRING, "Filter by class name"},
+        {"--name",    NULL, NMO_OPT_STRING, "Filter by name pattern"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without modifying"},
+    };
+    enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DRYRUN, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    /* Parse options before init */
-    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *class_name  = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    const char *name_pattern = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
     if (!output_path && !dry_run) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-
-    const char *class_name = nmo_tool_find_opt_value(argc, argv, "--class", NULL);
-    const char *name_pattern = nmo_tool_find_opt_value(argc, argv, "--name", NULL);
 
     if (!class_name && !name_pattern) {
         fprintf(stderr, "Error: Must specify --class or --name filter\n");

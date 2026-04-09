@@ -259,11 +259,11 @@ static void test_parse_file(const char* filepath, const char* expected_signature
 }
 
 TEST(nmo_baseline, text_2d_nmo) {
-    test_parse_file("data/2D Text.nmo", "Nemo Fi\0");
+    test_parse_file(NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"), "Nemo Fi\0");
 }
 
 TEST(nmo_baseline, nop_cmo) {
-    test_parse_file("data/Nop.cmo", "Nemo Fi\0");
+    test_parse_file(NMO_TEST_DATA_FILE("Nop.cmo"), "Nemo Fi\0");
 }
 
 /* Note: Empty.cmo and Empty.vmo tests removed - files don't exist in data/ directory */
