@@ -1008,7 +1008,9 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
-    /* Create builder (reference-mode export — preserves metadata, no chunk data) */
+    /* Build output file via builder (reference-mode: metadata preserved,
+     * chunk data omitted). Full-data export requires library-level support
+     * for bulk object removal — see nmo_session_destroy_objects crash. */
     const nmo_type_runtime_t *runtime = nmo_context_get_type_runtime(c.ctx);
     nmo_builder_t *builder = nmo_builder_create(output_path, runtime);
     if (!builder) {
@@ -1019,7 +1021,6 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
-    /* Copy file version from source */
     nmo_file_info_t info = nmo_session_get_file_info(c.session);
     nmo_builder_set_file_version(builder, info.file_version, info.file_version2);
     nmo_builder_set_write_mode(builder, info.write_mode);
