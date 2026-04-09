@@ -808,6 +808,15 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
+    /* Validate compression level early (before any destructive session ops) */
+    int compress_level = 0;
+    if (compress_str) {
+        if (!parse_compression_level(compress_str, &compress_level)) {
+            fprintf(stderr, "Error: Invalid compression level '%s' (must be 0-9)\n", compress_str);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
@@ -1037,15 +1046,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     /* Save via saver pipeline (handles serialization, compression, ID remap) */
     nmo_save_options_t save_opts = nmo_save_options_default();
     if (compress_str) {
-        int level = 0;
-        if (!parse_compression_level(compress_str, &level)) {
-            fprintf(stderr, "Error: Invalid compression level '%s' (must be 0-9)\n", compress_str);
-            free(final_objects);
-            free(col.objects);
-            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
-        }
-        save_opts.compression_level = level;
+        save_opts.compression_level = compress_level;
         save_opts.flags |= NMO_SAVE_COMPRESSED;
     }
 

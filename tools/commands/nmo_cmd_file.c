@@ -758,6 +758,10 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) {
+            free(obj_entries);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
         nmo_cli_json_add_uint_safe(doc, data, "file_size", (uint64_t)info.file_size);

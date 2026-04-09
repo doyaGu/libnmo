@@ -1545,6 +1545,11 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) {
+            free(col.objects);
+            if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *objects_arr = yyjson_mut_arr(doc);
 

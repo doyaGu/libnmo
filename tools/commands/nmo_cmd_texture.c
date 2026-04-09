@@ -1007,7 +1007,12 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
                     /* stb_image failed — try interleaved raw pixel decode.
                      * Use reader dimensions and desired_video_format as hints. */
                     const nmo_texture_bitmap2_slot_t *bs = &ts->bitmap2_slots[0];
+                    int32_t expected_bpl = (ts->reader_width > 0 && ts->reader_bpp > 0)
+                        ? nmo_image_calc_bytes_per_line(ts->reader_width, ts->reader_bpp) : 0;
+                    size_t expected_size = (expected_bpl > 0 && ts->reader_height > 0)
+                        ? (size_t)expected_bpl * (size_t)ts->reader_height : 0;
                     if (bs->buffer && bs->buffer_size > 0 &&
+                        expected_size > 0 && bs->buffer_size >= expected_size &&
                         ts->reader_width > 0 && ts->reader_height > 0 &&
                         ts->reader_bpp > 0) {
                         nmo_image_desc_t desc;
