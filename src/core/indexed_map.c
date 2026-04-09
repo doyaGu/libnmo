@@ -32,6 +32,7 @@ struct nmo_indexed_map {
 
     uint8_t *states;        /**< Hash entry states */
     size_t *hash_to_dense;  /**< Mapping from hash slot to dense index */
+    int *dense_to_slot;     /**< Reverse mapping: dense index to hash slot (O(1) lookup) */
 
     uint8_t *dense_keys;    /**< Packed key storage for iteration */
     uint8_t *dense_values;  /**< Packed value storage */
@@ -168,10 +169,16 @@ static int indexed_map_allocate_dense(nmo_indexed_map_t *map, size_t capacity) {
         nmo_elem_alignment(map->key_size));
     uint8_t *values = (uint8_t *)nmo_arena_alloc(map->arena, value_bytes,
         nmo_elem_alignment(map->value_size));
+    int *d2s = (int *)nmo_arena_alloc(map->arena, capacity * sizeof(int),
+        _Alignof(int));
 
-    if (keys == NULL || values == NULL) {
+    if (keys == NULL || values == NULL || d2s == NULL) {
         return NMO_ERR_NOMEM;
     }
+
+    /* Initialize new slots to -1 (unmapped) */
+    for (size_t i = 0; i < capacity; i++)
+        d2s[i] = -1;
 
     if (map->dense_keys != NULL) {
         indexed_map_move_key_range(map, keys, map->dense_keys, map->count);
@@ -179,9 +186,15 @@ static int indexed_map_allocate_dense(nmo_indexed_map_t *map, size_t capacity) {
     if (map->dense_values != NULL) {
         indexed_map_move_value_range(map, values, map->dense_values, map->count);
     }
+    /* Copy existing reverse mapping */
+    if (map->dense_to_slot != NULL) {
+        for (size_t i = 0; i < map->count; i++)
+            d2s[i] = map->dense_to_slot[i];
+    }
 
     map->dense_keys = keys;
     map->dense_values = values;
+    map->dense_to_slot = d2s;
     map->array_capacity = capacity;
     return NMO_OK;
 }
@@ -223,10 +236,8 @@ static int indexed_map_find_slot(const nmo_indexed_map_t *map,
 }
 
 static int indexed_map_slot_for_dense(const nmo_indexed_map_t *map, size_t dense_index) {
-    for (size_t i = 0; i < map->capacity; ++i) {
-        if (map->states[i] == INDEXED_MAP_ENTRY_OCCUPIED && map->hash_to_dense[i] == dense_index) {
-            return (int)i;
-        }
+    if (map->dense_to_slot != NULL && dense_index < map->array_capacity) {
+        return map->dense_to_slot[dense_index];
     }
     return -1;
 }
@@ -250,6 +261,8 @@ static int indexed_map_rehash(nmo_indexed_map_t *map, size_t new_capacity) {
         int slot = indexed_map_find_slot(map, key, &found);
         map->states[slot] = INDEXED_MAP_ENTRY_OCCUPIED;
         map->hash_to_dense[slot] = i;
+        if (map->dense_to_slot != NULL)
+            map->dense_to_slot[i] = slot;
     }
 
     if (old_states != NULL) {
@@ -472,6 +485,8 @@ nmo_status_t nmo_indexed_map_insert(nmo_indexed_map_t *map, const void *key, con
     indexed_map_copy_value(map, map->dense_values + (dense_index * map->value_size), value);
     map->states[slot] = INDEXED_MAP_ENTRY_OCCUPIED;
     map->hash_to_dense[slot] = dense_index;
+    if (map->dense_to_slot != NULL)
+        map->dense_to_slot[dense_index] = slot;
     map->count++;
     NMO_RETURN_OK();
 }
@@ -522,8 +537,15 @@ nmo_status_t nmo_indexed_map_remove(nmo_indexed_map_t *map, const void *key) {
         int last_slot = indexed_map_slot_for_dense(map, last_index);
         if (last_slot >= 0) {
             map->hash_to_dense[last_slot] = dense_index;
+            /* Update reverse mapping: moved element is now at dense_index */
+            if (map->dense_to_slot != NULL)
+                map->dense_to_slot[dense_index] = last_slot;
         }
     }
+
+    /* Clear reverse mapping for removed/vacated slot */
+    if (map->dense_to_slot != NULL && last_index < map->array_capacity)
+        map->dense_to_slot[last_index] = -1;
 
     map->count--;
     map->states[slot] = INDEXED_MAP_ENTRY_TOMBSTONE;

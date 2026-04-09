@@ -15,7 +15,6 @@
 #include "app/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_builder.h"
 #include "session/nmo_ref_graph.h"
 #include "format/nmo_object.h"
 #include <inttypes.h>
@@ -1008,42 +1007,57 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
-    /* Build output file via builder (reference-mode: metadata preserved,
-     * chunk data omitted). Full-data export requires library-level support
-     * for bulk object removal — see nmo_session_destroy_objects crash. */
-    const nmo_type_runtime_t *runtime = nmo_context_get_type_runtime(c.ctx);
-    nmo_builder_t *builder = nmo_builder_create(output_path, runtime);
-    if (!builder) {
-        fprintf(stderr, "Error: Failed to create builder for '%s'\n", output_path);
+    /* Remove unwanted objects from repository, then save via saver pipeline.
+     * Uses repository-level removal (no runtime hooks) for reliability. */
+    nmo_object_id_t *keep_ids = (nmo_object_id_t *)malloc(final_count * sizeof(nmo_object_id_t));
+    if (!keep_ids) {
+        free(final_objects);
+        free(col.objects);
+        if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    for (size_t i = 0; i < final_count; i++)
+        keep_ids[i] = nmo_object_get_id(final_objects[i]);
+    qsort(keep_ids, final_count, sizeof(nmo_object_id_t), id_cmp);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    size_t total_count = 0;
+    nmo_object_t **all_objects = nmo_object_repository_get_all(repo, &total_count);
+
+    nmo_object_id_t *remove_ids = (nmo_object_id_t *)malloc(total_count * sizeof(nmo_object_id_t));
+    size_t remove_count = 0;
+    if (remove_ids && all_objects) {
+        for (size_t i = 0; i < total_count; i++) {
+            nmo_object_id_t oid = nmo_object_get_id(all_objects[i]);
+            if (!id_in_sorted(keep_ids, final_count, oid))
+                remove_ids[remove_count++] = oid;
+        }
+    }
+
+    for (size_t i = 0; i < remove_count; i++) {
+        nmo_object_t *detached = NULL;
+        nmo_object_repository_take(repo, remove_ids[i], &detached);
+        /* Intentionally leak — session arena cleans up on exit */
+    }
+
+    free(remove_ids);
+    free(keep_ids);
+
+    /* Save via saver pipeline (full chunk data, compression, ID remap) */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    if (compress_str) {
+        save_opts.compression_level = compress_level;
+        save_opts.flags |= NMO_SAVE_COMPRESSED;
+    }
+
+    int save_result = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_result != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_result));
         free(final_objects);
         free(col.objects);
         if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
-
-    nmo_file_info_t info = nmo_session_get_file_info(c.session);
-    nmo_builder_set_file_version(builder, info.file_version, info.file_version2);
-    nmo_builder_set_write_mode(builder, info.write_mode);
-    if (compress_str)
-        nmo_builder_set_compression(builder, 1, 1);
-
-    nmo_builder_start(builder);
-
-    for (size_t i = 0; i < final_count; i++) {
-        nmo_status_t add_st = nmo_builder_add_object_as_reference(builder, final_objects[i]);
-        if (add_st != NMO_OK) {
-            fprintf(stderr, "Warning: Failed to add object %u: %s\n",
-                    nmo_object_get_id(final_objects[i]), nmo_error_string(add_st));
-        }
-    }
-
-    nmo_status_t finish_st = nmo_builder_finish(builder);
-    if (finish_st != NMO_OK) {
-        const char *err = nmo_builder_get_error(builder);
-        fprintf(stderr, "Error: Builder failed: %s\n", err ? err : nmo_error_string(finish_st));
-    }
-
-    uint32_t built_count = nmo_builder_get_object_count(builder);
 
     /* Output results */
     if (c.is_json) {
@@ -1057,7 +1071,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
                 nmo_cli_json_add_bool_safe(doc, data, "deps", true);
                 nmo_cli_json_add_uint_safe(doc, data, "deps_resolved", (uint64_t)dep_count);
             }
-            nmo_cli_json_add_uint_safe(doc, data, "exported", (uint64_t)built_count);
+            nmo_cli_json_add_uint_safe(doc, data, "exported", (uint64_t)final_count);
             if (class_filter_str) nmo_cli_json_add_str_safe(doc, data, "filter_class", class_filter_str);
             if (name_pattern) nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
             if (filter_expr) nmo_cli_json_add_str_safe(doc, data, "filter_expr", filter_expr);
@@ -1065,16 +1079,15 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     } else {
         if (include_deps && dep_count > 0) {
-            fprintf(c.out, "Matched %zu, resolved %zu dep(s), exported %u object(s) to %s\n",
-                    seed_count, dep_count, built_count, output_path);
+            fprintf(c.out, "Matched %zu, resolved %zu dep(s), exported %zu object(s) to %s\n",
+                    seed_count, dep_count, final_count, output_path);
         } else {
-            fprintf(c.out, "Exported %u object(s) to %s\n", built_count, output_path);
+            fprintf(c.out, "Exported %zu object(s) to %s\n", final_count, output_path);
         }
     }
 
-    nmo_builder_destroy(builder);
     free(final_objects);
     free(col.objects);
     if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
-    return nmo_cmd_ctx_done(&c, finish_st == NMO_OK ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
