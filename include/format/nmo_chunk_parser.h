@@ -366,7 +366,7 @@ NMO_API nmo_status_t nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser
  *
  * @param p Parser
  * @param identifier Identifier to find
- * @return NMO_OK if found, NMO_ERR_EOF if not found
+ * @return NMO_OK if found, NMO_ERR_TRUNCATED_CHUNK if not found
  */
 NMO_API nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uint32_t identifier);
 
@@ -380,7 +380,7 @@ NMO_API nmo_status_t nmo_chunk_parser_seek_identifier(nmo_chunk_parser_t *p, uin
  * @param p Parser
  * @param identifier Identifier to find
  * @param out_size Output size in DWORDs until next identifier (can be NULL)
- * @return NMO_OK if found, NMO_ERR_EOF if not found
+ * @return NMO_OK if found, NMO_ERR_TRUNCATED_CHUNK if not found
  */
 NMO_API nmo_status_t nmo_chunk_parser_seek_identifier_with_size(nmo_chunk_parser_t *p,
 																uint32_t identifier,

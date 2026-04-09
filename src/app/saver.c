@@ -589,7 +589,19 @@ nmo_status_t nmo_save_file(
         return result;
     }
 
+    /* Mark arena before Phase 2 — compression buffers allocated during
+       Phase 2 will be reclaimed after the file is written.  Phase 1
+       results (serialized chunks, descriptors) are preserved. */
+    nmo_arena_mark_t phase2_mark;
+    nmo_status_t mark_st = nmo_arena_mark(ctx->arena, &phase2_mark);
+
     result = nmo_save_phase2_commit(ctx, path);
+
+    /* Rewind to reclaim Phase 2 temporaries regardless of outcome */
+    if (mark_st == NMO_OK) {
+        nmo_arena_rewind(ctx->arena, &phase2_mark);
+    }
+
     nmo_save_context_destroy(ctx);
 
     return result;

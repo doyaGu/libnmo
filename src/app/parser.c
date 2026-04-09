@@ -212,7 +212,7 @@ static int nmo_load_included_files(
             if (name_read != NMO_OK || bytes_read != name_len) {
                 nmo_log(logger, NMO_LOG_ERROR,
                         "Failed to read included filename payload");
-                result = (name_read != NMO_OK) ? name_read : NMO_ERR_EOF;
+                result = (name_read != NMO_OK) ? name_read : NMO_ERR_TRUNCATED_CHUNK;
                 goto cleanup;
             }
         }
@@ -231,7 +231,7 @@ static int nmo_load_included_files(
         if (nmo_io_read_u32(io, &data_size) != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to read included file size for '%s'", name_buf);
-            result = NMO_ERR_EOF;
+            result = NMO_ERR_TRUNCATED_CHUNK;
             goto cleanup;
         }
 
@@ -267,7 +267,7 @@ static int nmo_load_included_files(
             if (data_result != NMO_OK || bytes_read != data_size) {
                 nmo_log(logger, NMO_LOG_ERROR,
                         "Failed to read included payload for '%s'", name_buf);
-                result = (data_result != NMO_OK) ? data_result : NMO_ERR_EOF;
+                result = (data_result != NMO_OK) ? data_result : NMO_ERR_TRUNCATED_CHUNK;
                 goto cleanup;
             }
         }
@@ -321,7 +321,7 @@ static int nmo_load_included_files(
 
         if (has_authoritative_table) {
             /* Header1 provided an authoritative include table, but payload is incomplete. */
-            result = NMO_ERR_EOF;
+            result = NMO_ERR_TRUNCATED_CHUNK;
             goto cleanup;
         }
 

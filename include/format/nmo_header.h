@@ -108,7 +108,7 @@ NMO_API nmo_status_t nmo_header_validate(const nmo_header_t *header);
  * @param header Output header structure
  * @return NMO_OK on success, error code otherwise
  *         NMO_ERR_INVALID_ARGUMENT if io or header is NULL
- *         NMO_ERR_EOF if not enough data to read
+ *         NMO_ERR_TRUNCATED_CHUNK if not enough data to read
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
  *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9
  */
