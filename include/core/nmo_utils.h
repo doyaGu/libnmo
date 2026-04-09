@@ -382,6 +382,7 @@ static inline size_t nmo_padding_bytes(size_t size, size_t alignment) {
  * @brief Duplicate string, treating NULL as an empty string.
  *
  * @return Newly allocated string (caller frees with `free()`), or NULL on OOM.
+ * @ownership owned
  */
 NMO_API char *nmo_text_strdup_or_empty(const char *value);
 
@@ -392,6 +393,7 @@ NMO_API char *nmo_text_strdup_or_empty(const char *value);
  *
  * @return Newly allocated escaped string (caller frees with `free()`), or NULL
  *         on OOM.
+ * @ownership owned
  */
 NMO_API char *nmo_text_escape_bytes(const char *value);
 

@@ -50,6 +50,7 @@ typedef struct nmo_chunk_writer nmo_chunk_writer_t;
  *
  * @param arena Arena for allocations
  * @return Writer or NULL on allocation failure
+ * @ownership owned
  */
 NMO_API nmo_chunk_writer_t* nmo_chunk_writer_create(nmo_arena_t* arena);
 
@@ -663,6 +664,7 @@ NMO_API int nmo_chunk_writer_intlist_audit_active(const nmo_chunk_writer_t* w);
  *
  * @param w Writer
  * @return Context string if audit active (DEBUG mode), NULL otherwise
+ * @ownership borrowed
  */
 NMO_API const char* nmo_chunk_writer_intlist_audit_context(const nmo_chunk_writer_t* w);
 
@@ -675,6 +677,7 @@ NMO_API const char* nmo_chunk_writer_intlist_audit_context(const nmo_chunk_write
  *
  * @param w Writer
  * @return Completed chunk or NULL on error
+ * @ownership arena
  */
 NMO_API nmo_chunk_t* nmo_chunk_writer_finalize(nmo_chunk_writer_t* w);
 

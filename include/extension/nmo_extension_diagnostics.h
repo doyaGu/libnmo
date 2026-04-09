@@ -92,6 +92,7 @@ NMO_API size_t nmo_extension_check_dependencies(
  *
  * @param category Plugin category enum value
  * @return Static string label (e.g. "Manager", "Behavior", "Render")
+ * @ownership static
  */
 NMO_API const char *nmo_extension_category_label(nmo_plugin_category_t category);
 

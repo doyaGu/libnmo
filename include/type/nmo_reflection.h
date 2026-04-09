@@ -191,6 +191,7 @@ extern "C" {
  * @param name Field name to find
  * @return Field descriptor, or NULL if not found
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_type_field_t* nmo_type_get_field_by_name(
     const nmo_type_descriptor_t *type,
@@ -203,6 +204,7 @@ NMO_API const nmo_type_field_t* nmo_type_get_field_by_name(
  * @param index Field index (0-based)
  * @return Field descriptor, or NULL if out of range
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_type_field_t* nmo_type_get_field_by_index(
     const nmo_type_descriptor_t *type,
@@ -373,6 +375,7 @@ NMO_API nmo_status_t nmo_type_foreach_ref_field(
  * @param type_guid Field type GUID
  * @return Type name string (e.g., "int32", "float", "object_id")
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const char* nmo_field_type_name(
     const nmo_type_registry_t *registry,
@@ -385,6 +388,7 @@ NMO_API const char* nmo_field_type_name(
 /**
  * @brief Get specialized metadata for a type
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_specialized_metadata_t* nmo_type_get_specialized_metadata(
     const nmo_type_registry_t *registry,
@@ -415,6 +419,7 @@ typedef bool (*nmo_flags_bit_visitor_fn)(
 /**
  * @brief Get struct/union field by name
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_name(
     const nmo_type_registry_t *registry,
@@ -424,6 +429,7 @@ NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_name(
 /**
  * @brief Get struct/union field by index
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_struct_descriptor_t* nmo_type_get_struct_field_by_index(
     const nmo_type_registry_t *registry,
@@ -444,6 +450,7 @@ NMO_API nmo_status_t nmo_type_foreach_struct_field(
 /**
  * @brief Get enum value by name
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_name(
     const nmo_type_registry_t *registry,
@@ -453,6 +460,7 @@ NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_name(
 /**
  * @brief Get enum value by index
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_enum_descriptor_t* nmo_type_get_enum_value_by_index(
     const nmo_type_registry_t *registry,
@@ -472,6 +480,7 @@ NMO_API nmo_status_t nmo_type_foreach_enum_value(
 /**
  * @brief Get flags bit by name
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_name(
     const nmo_type_registry_t *registry,
@@ -481,6 +490,7 @@ NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_name(
 /**
  * @brief Get flags bit by index
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_flags_descriptor_t* nmo_type_get_flags_bit_by_index(
     const nmo_type_registry_t *registry,

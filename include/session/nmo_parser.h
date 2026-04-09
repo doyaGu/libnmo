@@ -41,6 +41,7 @@ typedef enum nmo_parse_stage {
  * @param io_context IO context to parse from
  * @return Parser or NULL on error
  * @note Returned parser is caller-owned.
+ * @ownership owned
  */
 NMO_API nmo_parser_t *nmo_parser_create(void *io_context);
 
@@ -90,6 +91,7 @@ NMO_API nmo_status_t nmo_parser_parse_objects(nmo_parser_t *parser);
  * @param parser Parser
  * @return Object repository
  * @note Returned pointer is parser-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API void *nmo_parser_get_repository(const nmo_parser_t *parser);
 
@@ -98,6 +100,7 @@ NMO_API void *nmo_parser_get_repository(const nmo_parser_t *parser);
  * @param parser Parser
  * @return Error message or NULL if no error
  * @note Returned pointer is parser-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const char *nmo_parser_get_error(const nmo_parser_t *parser);
 

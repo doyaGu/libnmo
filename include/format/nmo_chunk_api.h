@@ -266,6 +266,7 @@ NMO_API uint32_t nmo_chunk_get_size(const nmo_chunk_t *chunk);
  * @param chunk Chunk (required)
  * @param out_size Output size in bytes (optional, can be NULL)
  * @return Pointer to data buffer or NULL if chunk is NULL
+ * @ownership borrowed
  */
 NMO_API const void *nmo_chunk_get_data(const nmo_chunk_t *chunk, size_t *out_size);
 
@@ -1004,6 +1005,7 @@ NMO_API uint32_t nmo_chunk_get_sub_chunk_count(const nmo_chunk_t *chunk);
  * @param chunk Chunk (required)
  * @param index Sub-chunk index (0-based)
  * @return Sub-chunk pointer or NULL if index out of bounds or chunk is NULL
+ * @ownership borrowed
  */
 NMO_API nmo_chunk_t *nmo_chunk_get_sub_chunk(const nmo_chunk_t *chunk, uint32_t index);
 

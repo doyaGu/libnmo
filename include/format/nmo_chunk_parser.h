@@ -34,6 +34,7 @@ typedef struct nmo_chunk_parser nmo_chunk_parser_t;
  *
  * @param chunk Chunk to parse (must not be NULL)
  * @return Parser or NULL on allocation failure
+ * @ownership owned
  */
 NMO_API nmo_chunk_parser_t *nmo_chunk_parser_create(nmo_chunk_t *chunk);
 

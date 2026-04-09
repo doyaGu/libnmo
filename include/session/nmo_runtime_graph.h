@@ -32,6 +32,7 @@ typedef struct nmo_runtime_graph_stats {
     size_t self_edges;
 } nmo_runtime_graph_stats_t;
 
+/** @ownership owned */
 NMO_API nmo_runtime_graph_t *nmo_runtime_graph_create(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *type_registry,

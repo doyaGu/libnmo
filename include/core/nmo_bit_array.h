@@ -142,6 +142,7 @@ NMO_API void nmo_bit_array_not(nmo_bit_array_t *array);
  * @param buffer Destination buffer.
  * @param buffer_size Destination buffer size (must be >= capacity + 1).
  * @return buffer on success or NULL on failure.
+ * @ownership borrowed
  */
 NMO_API char *nmo_bit_array_to_string(const nmo_bit_array_t *array,
                                       char *buffer,

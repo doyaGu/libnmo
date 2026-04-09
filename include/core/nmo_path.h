@@ -17,6 +17,7 @@ extern "C" {
  *
  * @param path Input path, may be NULL.
  * @return Pointer into @p path (or empty string literal for NULL input).
+ * @ownership borrowed
  */
 NMO_API const char *nmo_path_basename(const char *path);
 

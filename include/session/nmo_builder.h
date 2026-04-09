@@ -45,6 +45,7 @@ typedef enum nmo_build_stage {
  * @param type_runtime Type runtime (required, borrowed)
  * @return Builder or NULL on error
  * @note Returned builder is caller-owned.
+ * @ownership owned
  */
 NMO_API nmo_builder_t *nmo_builder_create(
     const char *output_path,
@@ -167,6 +168,7 @@ NMO_API nmo_status_t nmo_builder_finish(nmo_builder_t *builder);
  * @param builder Builder
  * @return Error message or NULL if no error
  * @note Returned pointer is builder-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const char *nmo_builder_get_error(const nmo_builder_t *builder);
 

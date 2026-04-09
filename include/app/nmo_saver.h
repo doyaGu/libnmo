@@ -133,6 +133,7 @@ typedef struct nmo_save_stats {
  * @param session Session to save from
  * @param options Save options (NULL for defaults)
  * @return Save context, or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_save_context_t *nmo_save_context_create(
     nmo_session_t *session,

@@ -50,6 +50,7 @@ typedef struct nmo_checksummed_io_desc {
  *       Closing will also close the inner interface.
  * @note The inner interface should not be used directly after wrapping.
  * @note Use nmo_checksummed_io_get_checksum() to retrieve the computed checksum.
+ * @ownership owned
  */
 NMO_API nmo_io_interface_t *nmo_checksummed_io_wrap(nmo_io_interface_t *inner,
                                                     const nmo_checksummed_io_desc_t *desc);

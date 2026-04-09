@@ -14,8 +14,10 @@ extern "C" {
 #endif
 
 NMO_API void nmo_stb_set_arena(nmo_arena_t *arena);
+/** @ownership borrowed */
 NMO_API nmo_arena_t *nmo_stb_get_arena(void);
 
+/** @ownership arena */
 NMO_API uint8_t *nmo_stbi_load_from_memory(
     nmo_arena_t *arena,
     const uint8_t *buffer,
@@ -25,6 +27,7 @@ NMO_API uint8_t *nmo_stbi_load_from_memory(
     int *out_channels,
     int desired_channels);
 
+/** @ownership arena */
 NMO_API uint8_t *nmo_stbi_write_to_memory(
     nmo_arena_t *arena,
     nmo_bitmap_format_t format,

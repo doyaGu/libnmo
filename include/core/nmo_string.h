@@ -112,7 +112,9 @@ NMO_API void nmo_string_dispose(nmo_string_t *string);
 NMO_API size_t nmo_string_length(const nmo_string_t *string);
 NMO_API size_t nmo_string_capacity(const nmo_string_t *string);
 NMO_API int nmo_string_empty(const nmo_string_t *string);
+/** @ownership borrowed */
 NMO_API const char *nmo_string_c_str(const nmo_string_t *string);
+/** @ownership borrowed */
 NMO_API char *nmo_string_data(nmo_string_t *string);
 
 NMO_API nmo_status_t nmo_string_reserve(nmo_string_t *string, size_t capacity);

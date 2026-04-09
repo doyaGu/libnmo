@@ -76,6 +76,7 @@ typedef struct nmo_file_state {
  *
  * @param ctx Context to retain
  * @return Session or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_session_t *nmo_session_create(nmo_context_t *ctx);
 
@@ -199,6 +200,7 @@ NMO_API int nmo_session_preview_destroy(
  *
  * Returns the optional chunk pool owned by the session. May be NULL if the
  * pool has not been created yet or failed to initialize.
+ * @ownership borrowed
  */
 NMO_API nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session);
 
@@ -209,6 +211,7 @@ NMO_API nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *sessio
  *
  * @param session Session
  * @return ID sanitizer or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_id_sanitizer_t *nmo_session_get_id_sanitizer(const nmo_session_t *session);
 
@@ -219,6 +222,7 @@ NMO_API nmo_id_sanitizer_t *nmo_session_get_id_sanitizer(const nmo_session_t *se
  *
  * @param session Session
  * @return Shadow storage or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_shadow_storage_t *nmo_session_get_shadow_storage(const nmo_session_t *session);
 
@@ -228,6 +232,7 @@ NMO_API nmo_shadow_storage_t *nmo_session_get_shadow_storage(const nmo_session_t
  * Creates the chunk pool on-demand if it does not already exist. The
  * initial_capacity_hint parameter can be zero to use the default size.
  * Returns NULL on allocation failure.
+ * @ownership borrowed
  */
 NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
     nmo_session_t *session,
@@ -241,6 +246,7 @@ NMO_API nmo_chunk_pool_t *nmo_session_ensure_chunk_pool(
  *
  * @param session Session
  * @return File state pointer, or NULL if no file has been loaded
+ * @ownership borrowed
  */
 NMO_API const nmo_file_state_t *nmo_session_get_file_state(const nmo_session_t *session);
 
@@ -289,6 +295,7 @@ NMO_API int nmo_session_refresh_plugin_diagnostics(nmo_session_t *session);
  * @param ctx Context
  * @param filename Path to NMO file
  * @return Session with loaded data, or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_session_t *nmo_session_load(nmo_context_t *ctx, const char *filename);
 
@@ -332,6 +339,7 @@ NMO_API int nmo_session_get_objects(
  *
  * @param session Session
  * @return Header pointer or NULL if not loaded
+ * @ownership borrowed
  */
 NMO_API const nmo_header_t *nmo_session_get_header(const nmo_session_t *session);
 
@@ -355,6 +363,7 @@ NMO_API void nmo_session_set_object_index(nmo_session_t *session, nmo_object_ind
  *
  * @param session Session
  * @return Object index or NULL if not built
+ * @ownership borrowed
  */
 NMO_API nmo_object_index_t *nmo_session_get_object_index(const nmo_session_t *session);
 
@@ -443,6 +452,7 @@ NMO_API int nmo_session_set_included_file_owners(
     const nmo_object_id_t *owner_ids,
     uint32_t owner_count);
 
+/** @ownership borrowed */
 NMO_API nmo_included_file_t *nmo_session_get_included_files(
     const nmo_session_t *session,
     uint32_t *out_count);
@@ -514,6 +524,7 @@ NMO_API void nmo_session_set_plugin_diagnostics(
     size_t outdated_count,
     int extension_registry_available);
 
+/** @ownership borrowed */
 NMO_API const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     const nmo_session_t *session);
 
@@ -528,6 +539,7 @@ NMO_API const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnosti
  * @param name Object name to search for
  * @param class_id Optional class filter (0 = any class)
  * @return Object pointer or NULL if not found
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_session_find_by_name(
     nmo_session_t *session,
@@ -543,6 +555,7 @@ NMO_API nmo_object_t *nmo_session_find_by_name(
  * @param session Session
  * @param guid GUID to search for
  * @return Object pointer or NULL if not found
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_session_find_by_guid(
     nmo_session_t *session,
@@ -558,6 +571,7 @@ NMO_API nmo_object_t *nmo_session_find_by_guid(
  * @param class_id Class ID to search for
  * @param out_count Output: number of objects found
  * @return Array of object pointers, or NULL if none found
+ * @ownership borrowed
  */
 NMO_API nmo_object_t **nmo_session_get_objects_by_class(
     nmo_session_t *session,

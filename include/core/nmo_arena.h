@@ -75,6 +75,7 @@ NMO_API nmo_arena_config_t nmo_arena_default_config(void);
  * @param allocator Backing allocator (NULL for default)
  * @param config Arena configuration (NULL for defaults)
  * @return Arena allocator or NULL on failure
+ * @ownership owned
  */
 NMO_API nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_arena_config_t *config);
 
@@ -84,6 +85,7 @@ NMO_API nmo_arena_t *nmo_arena_create_ex(nmo_allocator_t *allocator, const nmo_a
  * @param allocator Backing allocator (NULL for default)
  * @param initial_size Initial chunk size in bytes (0 for default 64KB)
  * @return Arena allocator or NULL on failure
+ * @ownership owned
  */
 NMO_API nmo_arena_t *nmo_arena_create(nmo_allocator_t *allocator, size_t initial_size);
 
@@ -94,6 +96,7 @@ NMO_API nmo_arena_t *nmo_arena_create(nmo_allocator_t *allocator, size_t initial
  * @param size Number of bytes to allocate
  * @param alignment Alignment requirement (must be power of 2, max 16)
  * @return Pointer to allocated memory or NULL on failure
+ * @ownership arena
  */
 NMO_API void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment);
 
@@ -183,6 +186,7 @@ NMO_API nmo_status_t nmo_arena_get_config(const nmo_arena_t *arena, nmo_arena_co
  * @param arena Arena allocator
  * @param str String to duplicate (NULL returns NULL)
  * @return Pointer to duplicated string or NULL on failure/NULL input
+ * @ownership arena
  */
 NMO_API const char *nmo_arena_strdup(nmo_arena_t *arena, const char *str);
 

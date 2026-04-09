@@ -34,6 +34,7 @@ typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
  * - return value: caller-owned
  * - allocator: arena
  * - free: nmo_id_sanitizer_destroy()
+ * @ownership owned
  */
 NMO_API nmo_id_sanitizer_t *nmo_id_sanitizer_create(nmo_arena_t *arena);
 
