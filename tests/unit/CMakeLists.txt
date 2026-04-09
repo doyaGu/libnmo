@@ -187,3 +187,7 @@ add_unit_test(test_io_mmap)
 # Phase 2.4: DOM Comparison API tests
 add_unit_test(test_comparison)
 add_unit_test(test_object_diff)
+
+# Orphan reachability (mark-sweep via ref graph)
+add_unit_test(test_orphan_reachability)
+set_tests_properties(test_orphan_reachability PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

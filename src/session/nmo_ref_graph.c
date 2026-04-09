@@ -331,6 +331,126 @@ nmo_status_t nmo_ref_graph_validate(nmo_ref_graph_t *graph,
     NMO_RETURN_OK();
 }
 
+/* ============================================================================
+ * Mark-Reachable (fixed-point iteration)
+ * ============================================================================ */
+
+/**
+ * @brief Check if an ID is present in a sorted array (binary search)
+ */
+static bool id_in_sorted(const nmo_object_id_t *arr, size_t count,
+                          nmo_object_id_t id) {
+    size_t lo = 0, hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (arr[mid] < id) {
+            lo = mid + 1;
+        } else if (arr[mid] > id) {
+            hi = mid;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Insert an ID into a sorted array if not already present
+ * @return true if inserted, false if already present or allocation failed
+ */
+static bool id_set_insert(nmo_object_id_t **arr, size_t *count,
+                           size_t *capacity, nmo_arena_t *arena,
+                           nmo_object_id_t id) {
+    /* Binary search for insertion point */
+    size_t lo = 0, hi = *count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if ((*arr)[mid] < id) {
+            lo = mid + 1;
+        } else if ((*arr)[mid] > id) {
+            hi = mid;
+        } else {
+            return false; /* already present */
+        }
+    }
+
+    /* Grow if needed */
+    if (*count >= *capacity) {
+        size_t new_cap = *capacity == 0 ? 64 : *capacity * 2;
+        nmo_object_id_t *new_arr = nmo_arena_alloc(
+            arena, new_cap * sizeof(nmo_object_id_t),
+            _Alignof(nmo_object_id_t));
+        if (!new_arr) return false;
+        if (*arr && *count > 0) {
+            memcpy(new_arr, *arr, *count * sizeof(nmo_object_id_t));
+        }
+        *arr = new_arr;
+        *capacity = new_cap;
+    }
+
+    /* Shift elements to make room at position lo */
+    if (lo < *count) {
+        memmove(&(*arr)[lo + 1], &(*arr)[lo],
+                (*count - lo) * sizeof(nmo_object_id_t));
+    }
+    (*arr)[lo] = id;
+    (*count)++;
+    return true;
+}
+
+nmo_status_t nmo_ref_graph_mark_reachable(
+    nmo_ref_graph_t *graph,
+    const nmo_object_id_t *root_ids,
+    size_t root_count,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_reachable_ids,
+    size_t *out_reachable_count)
+{
+    if (!graph || !arena || !out_reachable_ids || !out_reachable_count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL argument to mark_reachable");
+    }
+
+    /* Empty root set */
+    if (root_count == 0 || !root_ids) {
+        *out_reachable_ids = NULL;
+        *out_reachable_count = 0;
+        NMO_RETURN_OK();
+    }
+
+    /* Build marked set, seeded with deduplicated roots */
+    nmo_object_id_t *marked = NULL;
+    size_t marked_count = 0;
+    size_t marked_cap = 0;
+
+    for (size_t i = 0; i < root_count; ++i) {
+        if (root_ids[i] == NMO_OBJECT_ID_NONE) continue;
+        id_set_insert(&marked, &marked_count, &marked_cap, arena, root_ids[i]);
+    }
+
+    /* Fixed-point iteration over all edges */
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (size_t i = 0; i < graph->edge_count; ++i) {
+            nmo_object_id_t from = graph->edges[i].from;
+            nmo_object_id_t to = graph->edges[i].to;
+            if (to == NMO_OBJECT_ID_NONE) continue;
+            if (id_in_sorted(marked, marked_count, from) &&
+                !id_in_sorted(marked, marked_count, to)) {
+                if (id_set_insert(&marked, &marked_count, &marked_cap,
+                                  arena, to)) {
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    *out_reachable_ids = marked;
+    *out_reachable_count = marked_count;
+    NMO_RETURN_OK();
+}
+
 const char *nmo_ref_kind_name(nmo_ref_kind_t kind) {
     if (kind >= NMO_REF_MAX) {
         return "unknown";
