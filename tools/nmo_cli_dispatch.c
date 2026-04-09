@@ -213,6 +213,8 @@ static void validate_orphans_usage(FILE *out) {
     fprintf(out, "Options:\n");
     fprintf(out, "  --class, -c <name>  Filter by class (includes derived classes)\n");
     fprintf(out, "  --strict            Exit with code 3 if orphans found\n");
+    fprintf(out, "  --summary           Summary only (no per-object listing)\n");
+    fprintf(out, "  --strip -o <file>   Remove orphans and save cleaned file\n");
 }
 
 static void debug_export_usage(FILE *out) {

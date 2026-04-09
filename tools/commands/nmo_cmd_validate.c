@@ -16,6 +16,8 @@
 
 #include "nmo.h"
 #include "app/nmo_inspector.h"
+#include "app/nmo_saver.h"
+#include "app/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
@@ -652,17 +654,28 @@ static bool id_is_reachable(const nmo_object_id_t *arr, size_t count,
 
 int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--class",  "-c", NMO_OPT_STRING, "Filter by class name"},
-        {"--strict", NULL,  NMO_OPT_FLAG,   "Exit code 3 if orphans found"},
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--strict",  NULL,  NMO_OPT_FLAG,   "Exit code 3 if orphans found"},
+        {"--summary", NULL,  NMO_OPT_FLAG,   "Summary only (no per-object listing)"},
+        {"--strip",   NULL,  NMO_OPT_FLAG,   "Remove orphans and save to --output"},
+        {"--output",  "-o",  NMO_OPT_STRING, "Output file for --strip"},
     };
-    enum { OPT_CLASS, OPT_STRICT };
-    nmo_opt_val_t vals[2];
+    enum { OPT_CLASS, OPT_STRICT, OPT_SUMMARY, OPT_STRIP, OPT_OUTPUT };
+    nmo_opt_val_t vals[5];
     const char *pos_arr[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
     bool strict = vals[OPT_STRICT].present || global->strict_mode;
+    bool summary_only = vals[OPT_SUMMARY].present && vals[OPT_SUMMARY].val.flag;
+    bool do_strip = vals[OPT_STRIP].present && vals[OPT_STRIP].val.flag;
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+
+    if (do_strip && !output_path) {
+        fprintf(stderr, "Error: --strip requires -o/--output\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -909,7 +922,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_cli_print_kv(c.out, "File", c.file_path, 18, c.colorize);
         fprintf(c.out, "\n");
 
-        if (likely_orphans > 0) {
+        if (likely_orphans > 0 && !summary_only) {
             static const nmo_cli_table_col_t cols[] = {
                 {"ID",       NMO_CLI_ALIGN_RIGHT, 6, 0},
                 {"CLASS",    NMO_CLI_ALIGN_LEFT, 18, 0},
@@ -974,7 +987,47 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
                 chain_orphan_count);
     }
 
-    nmo_arena_destroy(arena);
+    /* --strip: remove orphan objects and save cleaned file */
+    if (do_strip && likely_orphans > 0) {
+        if (likely_orphans >= object_count) {
+            if (!c.is_json) {
+                fprintf(c.out, "\nAll objects are orphans — nothing to save.\n");
+            }
+            if (arena) nmo_arena_destroy(arena);
+            return nmo_cmd_ctx_done(&c, exit_code);
+        }
+
+        nmo_object_id_t *orphan_ids = (nmo_object_id_t *)malloc(
+            likely_orphans * sizeof(nmo_object_id_t));
+        if (orphan_ids) {
+            for (size_t i = 0; i < likely_orphans && i < orphan_cap; i++)
+                orphan_ids[i] = nmo_object_get_id(orphan_list[i].obj);
+
+            /* Destroy arena before modifying session (arena owns graph data) */
+            nmo_arena_destroy(arena);
+            arena = NULL;
+
+            nmo_runtime_report_t report;
+            memset(&report, 0, sizeof(report));
+            nmo_session_destroy_objects(c.session, orphan_ids, likely_orphans, 0, &report);
+            free(orphan_ids);
+
+            nmo_save_options_t save_opts = nmo_save_options_default();
+            int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+            if (save_rc != NMO_OK) {
+                fprintf(stderr, "Error saving stripped file: %s\n",
+                        nmo_error_string(save_rc));
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+            }
+
+            if (!c.is_json) {
+                fprintf(c.out, "\nStripped %zu orphan(s), saved to %s\n",
+                        report.deleted_objects, output_path);
+            }
+        }
+    }
+
+    if (arena) nmo_arena_destroy(arena);
     return nmo_cmd_ctx_done(&c, exit_code);
 }
 
