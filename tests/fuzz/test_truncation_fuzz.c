@@ -132,22 +132,40 @@ static int fuzz_one_file(const char *path) {
 
 #ifdef _WIN32
 static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_count) {
+    /* Collect .nmo files in this directory */
     char pattern[512];
     snprintf(pattern, sizeof(pattern), "%s\\*.nmo", dir);
 
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+
+            char full_path[512];
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir, fd.cFileName);
+
+            *out_files = (char **)realloc(*out_files, (*out_count + 1) * sizeof(char *));
+            (*out_files)[*out_count] = strdup(full_path);
+            (*out_count)++;
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+
+    /* Recurse into subdirectories */
+    char dir_pattern[512];
+    snprintf(dir_pattern, sizeof(dir_pattern), "%s\\*", dir);
+
+    h = FindFirstFileA(dir_pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) return;
 
     do {
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
 
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir, fd.cFileName);
-
-        *out_files = (char **)realloc(*out_files, (*out_count + 1) * sizeof(char *));
-        (*out_files)[*out_count] = strdup(full_path);
-        (*out_count)++;
+        char subdir[512];
+        snprintf(subdir, sizeof(subdir), "%s/%s", dir, fd.cFileName);
+        collect_nmo_files(subdir, out_files, out_count);
     } while (FindNextFileA(h, &fd));
     FindClose(h);
 }
@@ -158,12 +176,22 @@ static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_co
 
     struct dirent *entry;
     while ((entry = readdir(d)) != NULL) {
-        size_t len = strlen(entry->d_name);
-        if (len < 4) continue;
-        if (strcmp(entry->d_name + len - 4, ".nmo") != 0) continue;
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
 
         char full_path[512];
         snprintf(full_path, sizeof(full_path), "%s/%s", dir, entry->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            collect_nmo_files(full_path, out_files, out_count);
+            continue;
+        }
+
+        size_t len = strlen(entry->d_name);
+        if (len < 4) continue;
+        if (strcmp(entry->d_name + len - 4, ".nmo") != 0) continue;
 
         *out_files = (char **)realloc(*out_files, (*out_count + 1) * sizeof(char *));
         (*out_files)[*out_count] = strdup(full_path);

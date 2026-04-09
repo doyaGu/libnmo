@@ -232,11 +232,8 @@ static int test_parse_single_file(const char* filepath) {
 
 TEST(reference_files, parse_all) {
     const char* files[] = {
-        NMO_TEST_DATA_FILE("2D Text.nmo"),
-        NMO_TEST_DATA_FILE("base.cmo"),
-        NMO_TEST_DATA_FILE("Empty.cmo"),
-        NMO_TEST_DATA_FILE("Empty.vmo"),
-        NMO_TEST_DATA_FILE("EmptyLevelScript.cmo"),
+        NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"),
+        NMO_TEST_DATA_FILE("Ballance/base.cmo"),
         NMO_TEST_DATA_FILE("Nop.cmo"),
         NMO_TEST_DATA_FILE("Nop1.cmo"),
         NMO_TEST_DATA_FILE("Nop2.cmo")

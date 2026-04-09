@@ -229,7 +229,7 @@ int main(void) {
 
     /* Test with 2D Text.nmo */
     printf("Test 1/3: 2D Text.nmo\n");
-    if (test_file_roundtrip(NMO_TEST_DATA_FILE("2D Text.nmo")) != 0) {
+    if (test_file_roundtrip(NMO_TEST_DATA_FILE("Ballance/2D Text.nmo")) != 0) {
         failed++;
     }
     printf("\n");
@@ -243,7 +243,7 @@ int main(void) {
 
     /* Test with base.cmo */
     printf("Test 3/3: base.cmo\n");
-    if (test_file_roundtrip(NMO_TEST_DATA_FILE("base.cmo")) != 0) {
+    if (test_file_roundtrip(NMO_TEST_DATA_FILE("Ballance/base.cmo")) != 0) {
         failed++;
     }
     printf("\n");

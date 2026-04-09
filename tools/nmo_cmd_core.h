@@ -71,13 +71,6 @@ nmo_object_t *nmo_core_find_by_id(const nmo_cmd_ctx_t *c, nmo_object_id_t id);
  */
 bool nmo_core_regex_match(const char *text, const char *pattern, bool icase);
 
-/**
- * @brief Simple wildcard match (* at start/end, case-insensitive)
- * @param pattern Wildcard pattern (e.g. "*foo", "bar*", "*baz*")
- * @param str     String to match against
- */
-bool nmo_core_wildcard_match(const char *pattern, const char *str);
-
 /* ============================================================================
  * 3. Object iteration with visitor pattern
  * ============================================================================ */

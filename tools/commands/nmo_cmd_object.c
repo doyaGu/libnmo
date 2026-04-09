@@ -547,44 +547,33 @@ int nmo_cmd_object_tree(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * ============================================================================ */
 
 int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Parse: nmo object show [--select <path>]... [--expr <expr>]... [--depth N] [--full] <id> <file> */
-    const char *id_str = NULL;
-
+    /* Parse: nmo object show [--select <path>]... [--expr <expr>]... [--depth N] [--full] <id> <file>
+     *
+     * Two-pass approach: first collect repeatable --select/--expr and build
+     * a cleaned argv, then use nmo_opt for --depth and --full.
+     */
     const char *select_paths[64];
     size_t select_path_count = 0;
 
     const char *exprs[64];
     size_t expr_count = 0;
 
-    int depth = -1; /* -1 = use default */
-    bool full_mode = false;
+    /* Pass 1: collect --select/--expr, build cleaned argv */
+    char **clean_argv = (char **)malloc((size_t)argc * sizeof(char *));
+    if (!clean_argv) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    int clean_argc = 0;
+    clean_argv[clean_argc++] = argv[0]; /* action name */
 
-    int non_opt_count = 0;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--depth") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: Missing argument for --depth\n");
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            uint32_t d = 0;
-            if (!nmo_tool_parse_u32_dec(argv[++i], &d)) {
-                fprintf(stderr, "Error: Invalid depth value '%s'\n", argv[i]);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            depth = (int)d;
-            continue;
-        }
-
-        if (strcmp(argv[i], "--full") == 0) {
-            full_mode = true;
-            continue;
-        }
-
-        if (strcmp(argv[i], "--select") == 0 || strcmp(argv[i], "-s") == 0) {
+        if ((strcmp(argv[i], "--select") == 0 || strcmp(argv[i], "-s") == 0)) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
                 fprintf(stderr,
                         "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
+                free(clean_argv);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
             if (select_path_count < (sizeof(select_paths) / sizeof(select_paths[0]))) {
@@ -592,15 +581,16 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             } else {
                 fprintf(stderr, "Warning: --select limit reached (64 max), extra paths ignored\n");
             }
-            i++;
+            i++; /* skip value */
             continue;
         }
 
-        if (strcmp(argv[i], "--expr") == 0 || strcmp(argv[i], "-e") == 0) {
+        if ((strcmp(argv[i], "--expr") == 0 || strcmp(argv[i], "-e") == 0)) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "Error: Missing argument for %s\n", argv[i]);
                 fprintf(stderr,
                         "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");
+                free(clean_argv);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
             if (expr_count < (sizeof(exprs) / sizeof(exprs[0]))) {
@@ -608,18 +598,32 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
             } else {
                 fprintf(stderr, "Warning: --expr limit reached (64 max), extra expressions ignored\n");
             }
-            i++;
+            i++; /* skip value */
             continue;
         }
 
-        if (argv[i][0] != '-') {
-            non_opt_count++;
-            if (non_opt_count == 1) {
-                id_str = argv[i];
-            }
-        }
+        clean_argv[clean_argc++] = argv[i];
     }
 
+    /* Pass 2: nmo_opt for --depth and --full on cleaned argv */
+    static const nmo_opt_def_t opts[] = {
+        {"--depth", NULL, NMO_OPT_UINT, "Recursion depth"},
+        {"--full",  NULL, NMO_OPT_FLAG, "Full detail mode"},
+    };
+    enum { OPT_DEPTH, OPT_FULL, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(clean_argc, clean_argv, opts, OPT_COUNT, &r) < 0) {
+        free(clean_argv);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    free(clean_argv);
+
+    int depth = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
+    bool full_mode = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
+
+    const char *id_str = r.pos_count > 0 ? r.pos_args[0] : NULL;
     if (!id_str) {
         fprintf(stderr, "Error: Missing arguments\n");
         fprintf(stderr, "Usage: nmo object show [--select <path>]... [--expr <expr>]... <id> <file>\n");

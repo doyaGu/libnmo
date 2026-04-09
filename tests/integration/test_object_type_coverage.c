@@ -21,6 +21,7 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <sys/stat.h>
 #endif
 
 /* Track which CIDs we've seen. Max CID in nmo_class_ids.h is 53. */
@@ -63,21 +64,41 @@ static int load_and_scan(const char *path) {
 
 #ifdef _WIN32
 static size_t collect_and_scan_ext(const char *dir, const char *ext) {
+    size_t loaded = 0;
+
+    /* Scan files matching *ext in this directory */
     char pattern[512];
     snprintf(pattern, sizeof(pattern), "%s\\*%s", dir, ext);
 
-    size_t loaded = 0;
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
-    if (h == INVALID_HANDLE_VALUE) return 0;
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            char full_path[512];
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir, fd.cFileName);
+            if (load_and_scan(full_path)) loaded++;
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
 
-    do {
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-        char full_path[512];
-        snprintf(full_path, sizeof(full_path), "%s/%s", dir, fd.cFileName);
-        if (load_and_scan(full_path)) loaded++;
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    /* Recurse into subdirectories */
+    char dir_pattern[512];
+    snprintf(dir_pattern, sizeof(dir_pattern), "%s\\*", dir);
+
+    h = FindFirstFileA(dir_pattern, &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+            if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+
+            char subdir[512];
+            snprintf(subdir, sizeof(subdir), "%s/%s", dir, fd.cFileName);
+            loaded += collect_and_scan_ext(subdir, ext);
+        } while (FindNextFileA(h, &fd));
+        FindClose(h);
+    }
+
     return loaded;
 }
 #else
@@ -89,10 +110,21 @@ static size_t collect_and_scan_ext(const char *dir, const char *ext) {
     size_t loaded = 0;
     struct dirent *entry;
     while ((entry = readdir(d)) != NULL) {
-        size_t nlen = strlen(entry->d_name);
-        if (nlen < elen || strcmp(entry->d_name + nlen - elen, ext) != 0) continue;
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+
         char full_path[512];
         snprintf(full_path, sizeof(full_path), "%s/%s", dir, entry->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) != 0) continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            loaded += collect_and_scan_ext(full_path, ext);
+            continue;
+        }
+
+        size_t nlen = strlen(entry->d_name);
+        if (nlen < elen || strcmp(entry->d_name + nlen - elen, ext) != 0) continue;
         if (load_and_scan(full_path)) loaded++;
     }
     closedir(d);

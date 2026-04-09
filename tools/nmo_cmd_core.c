@@ -5,6 +5,7 @@
 
 #include "nmo_cmd_core.h"
 #include "nmo_cli_common.h"
+#include "nmo_tool_common.h"
 #include "app/nmo_context.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_arena.h"
@@ -237,42 +238,6 @@ bool nmo_core_regex_match(const char *text, const char *pattern, bool icase) {
 }
 
 /* ============================================================================
- * 2c. Wildcard matching (* at start/end, case-insensitive)
- * ============================================================================ */
-
-bool nmo_core_wildcard_match(const char *pattern, const char *str) {
-    if (!pattern || !str) return false;
-
-    size_t plen = strlen(pattern);
-    size_t slen = strlen(str);
-
-    /* "*" matches everything */
-    if (plen == 1 && pattern[0] == '*') return true;
-
-    /* "*suffix" */
-    if (pattern[0] == '*') {
-        const char *suffix = pattern + 1;
-        size_t suffix_len = plen - 1;
-        if (slen >= suffix_len) {
-            return strcasecmp(str + slen - suffix_len, suffix) == 0;
-        }
-        return false;
-    }
-
-    /* "prefix*" */
-    if (pattern[plen - 1] == '*') {
-        size_t prefix_len = plen - 1;
-        if (slen >= prefix_len) {
-            return strncasecmp(str, pattern, prefix_len) == 0;
-        }
-        return false;
-    }
-
-    /* Exact match (case-insensitive) */
-    return strcasecmp(pattern, str) == 0;
-}
-
-/* ============================================================================
  * 3. Object iteration
  * ============================================================================ */
 
@@ -311,8 +276,8 @@ int nmo_core_iter_objects(const nmo_cmd_ctx_t *c,
             /* Name wildcard */
             if (filter->name_pattern) {
                 const char *name = nmo_object_get_name(obj);
-                if (!nmo_core_wildcard_match(filter->name_pattern,
-                                            name ? name : ""))
+                if (!nmo_tool_match_wildcard_ci(filter->name_pattern,
+                                               name ? name : ""))
                     continue;
             }
 

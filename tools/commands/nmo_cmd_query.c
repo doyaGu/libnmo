@@ -7,6 +7,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -174,40 +175,33 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
      * or: nmo query eval --expr "<expression>" <file>
      * or: nmo query eval --stdin <file>
      */
+    static const nmo_opt_def_t opts[] = {
+        {"--stdin",  NULL, NMO_OPT_FLAG,   "Read expression from stdin"},
+        {"--expr",   "-e", NMO_OPT_STRING, "Expression to evaluate"},
+        {"--object", NULL, NMO_OPT_STRING, "Object ID or name for context"},
+        {"--format", "-f", NMO_OPT_STRING, "Output format"},
+    };
+    enum { OPT_STDIN, OPT_EXPR, OPT_OBJECT, OPT_FMT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool use_stdin = vals[OPT_STDIN].present && vals[OPT_STDIN].val.flag;
     const char *expr_str = NULL;
     const char *file_path = NULL;
-    bool use_stdin = nmo_tool_has_flag(argc, argv, "--stdin", NULL);
 
-    const char *expr_opt = nmo_tool_find_opt_value(argc, argv, "--expr", "-e");
-    if (expr_opt) {
-        expr_str = expr_opt;
-        file_path = nmo_tool_find_file_arg_last(argc, argv);
+    if (vals[OPT_EXPR].present) {
+        expr_str = vals[OPT_EXPR].val.str;
+        file_path = r.pos_count > 0 ? r.pos_args[r.pos_count - 1] : NULL;
     } else if (use_stdin) {
-        file_path = nmo_tool_find_file_arg_last(argc, argv);
+        file_path = r.pos_count > 0 ? r.pos_args[r.pos_count - 1] : NULL;
     } else {
-        /* Collect positional args, skipping known --key value pairs */
-        const char *positionals[3];
-        size_t pos_count = 0;
-        for (int i = 1; i < argc && pos_count < 3; ++i) {
-            if (argv[i][0] == '-') {
-                /* Skip options that consume a value */
-                if (strcmp(argv[i], "--object") == 0 ||
-                    strcmp(argv[i], "--expr") == 0 ||
-                    strcmp(argv[i], "--format") == 0 ||
-                    strcmp(argv[i], "-e") == 0 ||
-                    strcmp(argv[i], "-o") == 0 ||
-                    strcmp(argv[i], "-f") == 0) {
-                    ++i; /* skip value */
-                }
-                continue;
-            }
-            positionals[pos_count++] = argv[i];
+        if (r.pos_count >= 1) {
+            expr_str = r.pos_args[0];
         }
-        if (pos_count >= 1) {
-            expr_str = positionals[0];
-        }
-        if (pos_count >= 2) {
-            file_path = positionals[1];
+        if (r.pos_count >= 2) {
+            file_path = r.pos_args[1];
         }
     }
 
@@ -276,7 +270,7 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     eval_ctx.ops = NULL;
 
     /* Check for --object flag to set type context */
-    const char *obj_opt = nmo_tool_find_opt_value(argc, argv, "--object", NULL);
+    const char *obj_opt = vals[OPT_OBJECT].present ? vals[OPT_OBJECT].val.str : NULL;
     nmo_object_t *target_obj = NULL;
     if (obj_opt) {
         /* Try as numeric ID first, then as name */
@@ -381,18 +375,23 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
 int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     /* Usage: nmo query script <script.nmodsl> <file> [-o <output>] */
-    const char *args[2];
-    size_t arg_count = nmo_tool_find_file_args(argc, argv, args, 2);
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    nmo_opt_val_t svals[1];
+    const char *spos[8];
+    nmo_opt_result_t sr = { .vals = svals, .pos_args = spos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &sr) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    if (arg_count < 2) {
+    if (sr.pos_count < 2) {
         fprintf(stderr, "Error: Missing arguments\n");
         fprintf(stderr, "Usage: nmo query script <script.nmodsl> <file> [-o <output>]\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *script_path = args[0];
-    const char *file_path = args[1];
-    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    const char *script_path = sr.pos_args[0];
+    const char *file_path = sr.pos_args[1];
+    const char *output_path = svals[0].present ? svals[0].val.str : NULL;
 
     /* Read script file */
     char errbuf[256];

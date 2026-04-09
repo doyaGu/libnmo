@@ -6,6 +6,7 @@
 #include "nmo_cmd_diff.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "app/nmo_session.h"
@@ -18,7 +19,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <errno.h>
 
 /* ============================================================================
  * Helper Functions
@@ -37,17 +37,6 @@ typedef struct {
     class_count_entry_t entries[MAX_CLASS_ENTRIES];
     size_t count;
 } class_histogram_t;
-
-static bool parse_float_01(const char *text, float *out) {
-    if (!text || !out) return false;
-    errno = 0;
-    char *end = NULL;
-    float v = strtof(text, &end);
-    if (errno != 0 || end == text || (end && *end != '\0')) return false;
-    if (v < 0.0f || v > 1.0f) return false;
-    *out = v;
-    return true;
-}
 
 static void class_histogram_init(class_histogram_t *h) {
     memset(h, 0, sizeof(*h));
@@ -175,19 +164,27 @@ static const char *diff_type_name(nmo_diff_type_t type)
 
 int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse file arguments */
-    const char *paths[2];
-    size_t path_count = nmo_tool_find_file_args(argc, argv, paths, 2);
-    if (path_count < 2) {
+    static const nmo_opt_def_t opts[] = {
+        {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"},
+        {"--verbose",      "-v", NMO_OPT_FLAG, "Show detailed differences"},
+        {"--strict",       NULL, NMO_OPT_FLAG, "Return failure exit code if differences found"},
+    };
+    enum { OPT_IGNORD, OPT_VERBOSE, OPT_STRICT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff summary [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Parse flags */
-    bool ignore_order = nmo_tool_has_flag(argc, argv, "--ignore-order", NULL);
-    bool verbose = nmo_tool_has_flag(argc, argv, "--verbose", "-v");
-    bool strict = nmo_tool_has_flag(argc, argv, "--strict", NULL);
+    const char *paths[2] = { r.pos_args[0], r.pos_args[1] };
+    bool ignore_order = vals[OPT_IGNORD].present && vals[OPT_IGNORD].val.flag;
+    bool verbose      = vals[OPT_VERBOSE].present && vals[OPT_VERBOSE].val.flag;
+    bool strict       = vals[OPT_STRICT].present && vals[OPT_STRICT].val.flag;
 
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
@@ -387,55 +384,30 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
 int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse file arguments */
-    const char *paths[2] = {0};
-    size_t path_count = 0;
-    for (int i = 1; i < argc && path_count < 2; ++i) {
-        const char *arg = argv[i];
-        if (arg[0] == '-') {
-            if (strcmp(arg, "--max-objects") == 0 ||
-                strcmp(arg, "--max-fields") == 0 ||
-                strcmp(arg, "--min-similarity") == 0 ||
-                strcmp(arg, "--rename-similarity") == 0 ||
-                strcmp(arg, "--format") == 0 ||
-                strcmp(arg, "-f") == 0) {
-                ++i; /* skip option value */
-            }
-            continue;
-        }
-        paths[path_count++] = arg;
-    }
-    if (path_count < 2) {
+    static const nmo_opt_def_t opts[] = {
+        {"--max-objects",       NULL, NMO_OPT_UINT,  "Maximum objects to show"},
+        {"--max-fields",        NULL, NMO_OPT_UINT,  "Maximum fields per object"},
+        {"--min-similarity",    NULL, NMO_OPT_FLOAT, "Minimum similarity threshold (0..1)"},
+        {"--rename-similarity", NULL, NMO_OPT_FLOAT, "Rename detection threshold (0..1)"},
+        {"--format",            "-f", NMO_OPT_STRING, "Output format"},
+    };
+    enum { OPT_MAXOBJ, OPT_MAXFLD, OPT_MINSIM, OPT_RENSIM, OPT_FMT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff objects [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Parse options */
-    uint32_t max_objects = 0; /* 0 = unlimited */
-    uint32_t max_fields = 0;  /* 0 = unlimited */
-    float min_similarity = -1.0f;
-    float rename_similarity = -1.0f;
-    const char *max_objects_opt = nmo_tool_find_opt_value(argc, argv, "--max-objects", NULL);
-    const char *max_fields_opt = nmo_tool_find_opt_value(argc, argv, "--max-fields", NULL);
-    const char *min_similarity_opt = nmo_tool_find_opt_value(argc, argv, "--min-similarity", NULL);
-    const char *rename_similarity_opt = nmo_tool_find_opt_value(argc, argv, "--rename-similarity", NULL);
-    if (max_objects_opt && !nmo_tool_parse_u32(max_objects_opt, &max_objects)) {
-        fprintf(stderr, "Error: Invalid --max-objects value: %s\n", max_objects_opt);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    if (max_fields_opt && !nmo_tool_parse_u32(max_fields_opt, &max_fields)) {
-        fprintf(stderr, "Error: Invalid --max-fields value: %s\n", max_fields_opt);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    if (min_similarity_opt && !parse_float_01(min_similarity_opt, &min_similarity)) {
-        fprintf(stderr, "Error: Invalid --min-similarity value: %s (expect 0..1)\n", min_similarity_opt);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
-    if (rename_similarity_opt && !parse_float_01(rename_similarity_opt, &rename_similarity)) {
-        fprintf(stderr, "Error: Invalid --rename-similarity value: %s (expect 0..1)\n", rename_similarity_opt);
-        return NMO_CLI_EXIT_ARG_ERROR;
-    }
+    const char *paths[2] = { r.pos_args[0], r.pos_args[1] };
+    uint32_t max_objects = vals[OPT_MAXOBJ].present ? vals[OPT_MAXOBJ].val.u : 0;
+    uint32_t max_fields  = vals[OPT_MAXFLD].present ? vals[OPT_MAXFLD].val.u : 0;
+    float min_similarity = vals[OPT_MINSIM].present ? vals[OPT_MINSIM].val.f : -1.0f;
+    float rename_similarity = vals[OPT_RENSIM].present ? vals[OPT_RENSIM].val.f : -1.0f;
 
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
@@ -684,27 +656,23 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
 int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse file arguments */
-    const char *paths[2];
-    size_t path_count = nmo_tool_find_file_args(argc, argv, paths, 2);
-    if (path_count < 2) {
+    static const nmo_opt_def_t opts[] = {
+        {"--object", "-o", NMO_OPT_UINT, "Filter by object ID"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff chunks [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Parse options */
-    const char *object_id_str = nmo_tool_find_opt_value(argc, argv, "--object", "-o");
-    uint32_t object_id = 0;
-    bool specific_object = false;
-
-    if (object_id_str) {
-        if (!nmo_tool_parse_u32(object_id_str, &object_id)) {
-            fprintf(stderr, "Error: Invalid object ID: %s\n", object_id_str);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        specific_object = true;
-    }
+    const char *paths[2] = { r.pos_args[0], r.pos_args[1] };
+    uint32_t object_id = vals[0].present ? vals[0].val.u : 0;
+    bool specific_object = vals[0].present;
 
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
@@ -846,17 +814,22 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
 int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse file arguments */
-    const char *paths[2];
-    size_t path_count = nmo_tool_find_file_args(argc, argv, paths, 2);
-    if (path_count < 2) {
+    static const nmo_opt_def_t opts[] = {
+        {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"},
+    };
+    nmo_opt_val_t vals[1];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    if (r.pos_count < 2) {
         fprintf(stderr, "Error: Need two files to compare\n");
         fprintf(stderr, "Usage: nmo diff full [options] <file1> <file2>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Parse flags */
-    bool ignore_order = nmo_tool_has_flag(argc, argv, "--ignore-order", NULL);
+    const char *paths[2] = { r.pos_args[0], r.pos_args[1] };
+    bool ignore_order = vals[0].present && vals[0].val.flag;
 
     /* Open both sessions */
     nmo_context_t *ctx1 = NULL, *ctx2 = NULL;
