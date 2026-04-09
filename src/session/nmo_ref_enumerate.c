@@ -261,6 +261,91 @@ static const void *nmo_ref_get_base_instance(
     return NULL;
 }
 
+/**
+ * Enumerate references inside struct array fields.
+ *
+ * Struct arrays (NMO_FIELD_REPEATED without NMO_FIELD_REFERENCE) may contain
+ * nested object ID fields (e.g. CKMesh material_groups[].material_id).
+ * The standard ref-field walker skips these because the array field itself
+ * is not tagged REFERENCE.  This function looks up the element type in the
+ * registry and, if any of its fields carry NMO_FIELD_REFERENCE, iterates
+ * each element and delegates to the normal field enumerator.
+ */
+static nmo_status_t nmo_ref_enumerate_struct_arrays(
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *type,
+    const void *instance,
+    nmo_ref_visitor_fn visitor,
+    void *user_data)
+{
+    if (!type->fields || type->field_count == 0) {
+        NMO_RETURN_OK();
+    }
+
+    for (size_t i = 0; i < type->field_count; ++i) {
+        const nmo_type_field_t *field = &type->fields[i];
+
+        /* Only repeated (array) fields that are NOT already reference fields */
+        if (!(field->flags & NMO_FIELD_REPEATED)) continue;
+        if (field->flags & NMO_FIELD_REFERENCE) continue;
+        if (nmo_guid_is_null(field->type_guid)) continue;
+
+        /* Look up the element type — must be a struct with fields */
+        const nmo_type_descriptor_t *elem_type =
+            nmo_type_registry_find_by_guid(types, field->type_guid);
+        if (!elem_type) continue;
+        if (!(elem_type->category & NMO_TYPE_CATEGORY_STRUCT)) continue;
+        if (!elem_type->fields || elem_type->field_count == 0) continue;
+
+        /* Quick check: does the struct have any reference fields? */
+        bool has_refs = false;
+        for (size_t j = 0; j < elem_type->field_count; ++j) {
+            if (elem_type->fields[j].flags & NMO_FIELD_REFERENCE) {
+                has_refs = true;
+                break;
+            }
+        }
+        if (!has_refs) continue;
+
+        const void *field_ptr = nmo_field_get_ptr_const(instance, field);
+        if (!field_ptr) continue;
+
+        /* nmo_array_t: inline dynamic array */
+        if (field->size == sizeof(nmo_array_t)) {
+            const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
+            if (!arr->data || arr->count == 0) continue;
+
+            for (size_t k = 0; k < arr->count; ++k) {
+                const void *elem =
+                    (const char *)arr->data + k * arr->element_size;
+                nmo_status_t st = nmo_ref_enumerate_fields(
+                    elem_type, elem, visitor, user_data);
+                if (st != NMO_OK) return st;
+            }
+        }
+        /* T* pointer array with companion _count field */
+        else if (field->size == sizeof(void *)) {
+            const void *ptr = *(const void *const *)field_ptr;
+            if (!ptr) continue;
+
+            uint32_t count = 0;
+            if (!nmo_ref_get_pointer_array_count(
+                    type, field->name, instance, &count))
+                continue;
+
+            for (uint32_t k = 0; k < count; ++k) {
+                const void *elem =
+                    (const char *)ptr + (size_t)k * elem_type->size;
+                nmo_status_t st = nmo_ref_enumerate_fields(
+                    elem_type, elem, visitor, user_data);
+                if (st != NMO_OK) return st;
+            }
+        }
+    }
+
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t nmo_ref_enumerate_type_chain(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *type,
@@ -275,6 +360,11 @@ static nmo_status_t nmo_ref_enumerate_type_chain(
 
     for (size_t depth = 0; current && current_instance && depth < 64; ++depth) {
         nmo_status_t status = nmo_ref_enumerate_fields(current, current_instance, visitor, user_data);
+        if (status != NMO_OK) {
+            return status;
+        }
+
+        status = nmo_ref_enumerate_struct_arrays(types, current, current_instance, visitor, user_data);
         if (status != NMO_OK) {
             return status;
         }

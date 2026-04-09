@@ -32,6 +32,11 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
  */
 int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo convert export - Export selected objects to new NMO file
+ */
+int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif

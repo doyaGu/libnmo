@@ -1469,6 +1469,173 @@ static int nmo_cmd_object_rename_batch(
     return nmo_cmd_ctx_done(&c, exit_code);
 }
 
+/* ============================================================================
+ * object export - Semantic JSON export
+ * ============================================================================ */
+
+int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--class",  "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--name",   "-n", NMO_OPT_STRING, "Filter by name pattern"},
+        {"--filter", "-f", NMO_OPT_STRING, "Filter by DSL expression"},
+        {"--depth",  "-d", NMO_OPT_UINT,   "Recursion depth (default: 4)"},
+        {"--full",   NULL, NMO_OPT_FLAG,   "Full detail mode (depth 8, more array elements)"},
+        {"--id",     NULL, NMO_OPT_UINT,   "Export specific object by ID"},
+    };
+    enum { OPT_CLASS, OPT_NAME, OPT_FILTER, OPT_DEPTH, OPT_FULL, OPT_ID, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    const char *name_pattern     = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    const char *filter_expr      = vals[OPT_FILTER].present ? vals[OPT_FILTER].val.str : NULL;
+    int depth                    = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
+    bool full_mode               = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
+    uint32_t id_filter           = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    /* Build filter */
+    nmo_core_object_filter_t filter = {0};
+    if (class_filter_str) {
+        filter.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!filter.class_id) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        filter.class_derived = true;
+    }
+    if (name_pattern) {
+        filter.name_pattern = name_pattern;
+    }
+    if (filter_expr) {
+        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
+        if (st != NMO_OK) {
+            fprintf(stderr, "Error: Failed to compile filter expression: %s\n", filter_expr);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+    if (id_filter) {
+        filter.object_id = id_filter;
+    }
+
+    /* Collect matching objects */
+    obj_collect_t col = {0};
+    nmo_core_iter_result_t iter_result;
+    nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &iter_result);
+
+    /* Summary config */
+    nmo_summary_config_t cfg = nmo_summary_config_default();
+    cfg.resolve_object_refs = true;
+    cfg.format_enum_names = true;
+    cfg.format_flags_names = true;
+    if (full_mode) {
+        cfg.max_depth = 8;
+        cfg.array_preview_max = 64;
+        cfg.text_preview_max = 64;
+    }
+    if (depth >= 0) {
+        cfg.max_depth = (uint32_t)depth;
+    }
+
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *objects_arr = yyjson_mut_arr(doc);
+
+        for (size_t i = 0; i < col.count; i++) {
+            nmo_object_t *obj = col.objects[i];
+            yyjson_mut_val *obj_json = yyjson_mut_obj(doc);
+
+            /* Basic metadata */
+            yyjson_mut_obj_add_uint(doc, obj_json, "id", nmo_object_get_id(obj));
+            nmo_class_id_t cid = nmo_object_get_class_id(obj);
+            yyjson_mut_obj_add_uint(doc, obj_json, "class_id", cid);
+            const char *cn = nmo_core_class_name(&c, cid);
+            if (cn) yyjson_mut_obj_add_str(doc, obj_json, "class_name", cn);
+            const char *oname = nmo_object_get_name(obj);
+            if (oname && oname[0]) nmo_cli_json_add_str_safe(doc, obj_json, "name", oname);
+
+            /* Semantic summary via reflection */
+            yyjson_mut_val *fields = yyjson_mut_obj(doc);
+            nmo_summary_output_t sum_out = {
+                .stream = c.out,
+                .json_doc = doc,
+                .json_data = fields,
+                .is_json = true,
+                .colorize = false,
+                .ctx = c.ctx,
+                .session = c.session,
+            };
+            if (nmo_object_summary_with_config(obj, &sum_out, &cfg)) {
+                yyjson_mut_obj_add_val(doc, obj_json, "fields", fields);
+            }
+
+            yyjson_mut_arr_add_val(objects_arr, obj_json);
+        }
+
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)col.count);
+        yyjson_mut_obj_add_val(doc, data, "objects", objects_arr);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.export");
+    } else {
+        /* Text output: structured summary for each object */
+        for (size_t i = 0; i < col.count; i++) {
+            nmo_object_t *obj = col.objects[i];
+            nmo_object_id_t oid = nmo_object_get_id(obj);
+            nmo_class_id_t cid = nmo_object_get_class_id(obj);
+            const char *cn = nmo_core_class_name(&c, cid);
+            const char *oname = nmo_object_get_name(obj);
+
+            if (i > 0) fprintf(c.out, "\n");
+
+            char heading[256];
+            snprintf(heading, sizeof(heading), "[%zu/%zu] #%u %s (%s)",
+                     i + 1, col.count, oid,
+                     (oname && oname[0]) ? oname : "(unnamed)",
+                     cn ? cn : "?");
+            nmo_cli_print_heading(c.out, heading, c.colorize);
+
+            nmo_summary_output_t sum_out = {
+                .stream = c.out,
+                .json_doc = NULL,
+                .json_data = NULL,
+                .is_json = false,
+                .colorize = c.colorize,
+                .ctx = c.ctx,
+                .session = c.session,
+            };
+            (void)nmo_object_summary_with_config(obj, &sum_out, &cfg);
+        }
+
+        if (col.count == 0) {
+            fprintf(c.out, "No objects matched.\n");
+        } else {
+            fprintf(c.out, "\n%zu object(s) exported.\n", col.count);
+        }
+    }
+
+    free(col.objects);
+    if (filter.dsl_filter) {
+        nmo_dsl_program_destroy(filter.dsl_filter);
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * object rename - Rename an object and save to new file
+ *
+ * Two modes:
+ *   Single:  nmo object rename <id> <new_name> <file> -o <output>
+ *   Batch:   nmo object rename --name <pattern> --to <template> [opts] <file> -o <output>
+ * ============================================================================ */
+
 int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     /* Unified option parsing for both single and batch modes */

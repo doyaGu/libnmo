@@ -42,6 +42,11 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
  */
 int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo object export - Export objects as semantic JSON
+ */
+int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif

@@ -121,6 +121,18 @@ static void object_rename_usage(FILE *out) {
     fprintf(out, "  -o, --output <path>    Output file (required)\n");
 }
 
+static void object_export_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object export [options] <file>\n\n");
+    fprintf(out, "Export object data using reflection (text or JSON).\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --class, -c <name>   Filter by class (includes derived classes)\n");
+    fprintf(out, "  --name, -n <pat>     Filter by name pattern\n");
+    fprintf(out, "  --filter, -f <expr>  Filter by DSL expression\n");
+    fprintf(out, "  --depth, -d <n>      Recursion depth (default: 4)\n");
+    fprintf(out, "  --full               Full detail mode (depth 8)\n");
+    fprintf(out, "  --id <n>             Export specific object by ID\n");
+}
+
 static void debug_load_phases_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug load-phases <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
@@ -310,6 +322,20 @@ static void convert_merge_usage(FILE *out) {
     fprintf(out, "  -o, --output <path>    Output file (required)\n");
 }
 
+static void convert_export_usage(FILE *out) {
+    fprintf(out, "Usage: nmo convert export [options] <file> -o <output>\n\n");
+    fprintf(out, "Export selected objects to a new NMO file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  --class, -c <name>     Filter by class (includes derived classes)\n");
+    fprintf(out, "  --name, -n <pattern>   Filter by name pattern\n");
+    fprintf(out, "  --filter, -f <expr>    Filter by DSL expression\n");
+    fprintf(out, "  --all                  Export all objects (no filter required)\n");
+    fprintf(out, "  --deps                 Include transitive dependencies\n");
+    fprintf(out, "  --dry-run              Preview matching objects without writing\n");
+    fprintf(out, "  --compress <0-9>       Compression level\n");
+}
+
 /* Diff command usage */
 static void diff_summary_usage(FILE *out) {
     fprintf(out, "Usage: nmo diff summary <file1> <file2>\n\n");
@@ -443,6 +469,7 @@ static const nmo_cli_action_t object_actions[] = {
     {"find", "f", "Find objects by query", nmo_cmd_object_find, object_find_usage},
     {"refs", "r", "Show object references", nmo_cmd_object_refs, object_refs_usage},
     {"rename", "ren", "Rename an object", nmo_cmd_object_rename, object_rename_usage},
+    {"export", "x", "Export objects as semantic JSON", nmo_cmd_object_export, object_export_usage},
 };
 
 /* behavior group actions */
@@ -490,6 +517,7 @@ static const nmo_cli_action_t convert_actions[] = {
     {"version", "v", "Show/modify file version metadata", nmo_cmd_convert_version, convert_version_usage},
     {"strip", "st", "Remove objects by class/name pattern", nmo_cmd_convert_strip, convert_strip_usage},
     {"merge", "m", "Merge objects from source into target", nmo_cmd_convert_merge, convert_merge_usage},
+    {"export", "x", "Export selected objects to new file", nmo_cmd_convert_export, convert_export_usage},
 };
 
 /* diff group actions */
