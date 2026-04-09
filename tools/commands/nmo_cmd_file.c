@@ -15,6 +15,7 @@
 #include "app/nmo_stats.h"
 #include "format/nmo_header.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -659,6 +660,256 @@ int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *glo
         }
     }
 
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * file space - byte-level space analysis
+ * ============================================================================ */
+
+typedef struct {
+    nmo_class_id_t class_id;
+    const char *class_name;
+    uint32_t count;
+    uint64_t data_size;
+    uint64_t pack_size;
+} space_class_entry_t;
+
+static int space_class_cmp_size(const void *a, const void *b) {
+    const space_class_entry_t *ea = (const space_class_entry_t *)a;
+    const space_class_entry_t *eb = (const space_class_entry_t *)b;
+    if (ea->data_size > eb->data_size) return -1;
+    if (ea->data_size < eb->data_size) return 1;
+    return 0;
+}
+
+int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--top", NULL, NMO_OPT_UINT, "Show top N objects by size (default: 15)"},
+    };
+    enum { OPT_TOP, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    uint32_t top_n = vals[OPT_TOP].present ? vals[OPT_TOP].val.u : 15;
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    nmo_file_info_t info = nmo_session_get_file_info(c.session);
+
+    /* Collect all objects */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    size_t obj_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &obj_count);
+
+    /* Per-class aggregation */
+    space_class_entry_t classes[256];
+    size_t class_count = 0;
+
+    /* Per-object data for top-N */
+    typedef struct { nmo_object_t *obj; uint64_t data_sz; uint64_t pack_sz; } obj_entry_t;
+    obj_entry_t *obj_entries = NULL;
+    if (obj_count > 0)
+        obj_entries = (obj_entry_t *)malloc(obj_count * sizeof(obj_entry_t));
+
+    uint64_t total_data = 0, total_pack = 0;
+    uint64_t compressed_count = 0;
+
+    for (size_t i = 0; i < obj_count; i++) {
+        nmo_object_t *obj = objects[i];
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        uint64_t data_sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+        uint64_t pack_sz = chunk ? (uint64_t)chunk->compressed_size : 0;
+        if (chunk && chunk->is_compressed) compressed_count++;
+
+        total_data += data_sz;
+        total_pack += pack_sz;
+
+        if (obj_entries)
+            obj_entries[i] = (obj_entry_t){ .obj = obj, .data_sz = data_sz, .pack_sz = pack_sz };
+
+        /* Accumulate into class bucket */
+        nmo_class_id_t cid = nmo_object_get_class_id(obj);
+        size_t ci;
+        for (ci = 0; ci < class_count; ci++) {
+            if (classes[ci].class_id == cid) break;
+        }
+        if (ci == class_count && class_count < 256) {
+            classes[class_count].class_id = cid;
+            classes[class_count].class_name = nmo_core_class_name(&c, cid);
+            classes[class_count].count = 0;
+            classes[class_count].data_size = 0;
+            classes[class_count].pack_size = 0;
+            class_count++;
+        }
+        if (ci < 256) {
+            classes[ci].count++;
+            classes[ci].data_size += data_sz;
+            classes[ci].pack_size += pack_sz;
+        }
+    }
+
+    /* Sort classes by data_size descending */
+    qsort(classes, class_count, sizeof(space_class_entry_t), space_class_cmp_size);
+
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        nmo_cli_json_add_uint_safe(doc, data, "file_size", (uint64_t)info.file_size);
+        nmo_cli_json_add_uint_safe(doc, data, "object_count", (uint64_t)obj_count);
+        nmo_cli_json_add_uint_safe(doc, data, "total_data_size", total_data);
+        nmo_cli_json_add_uint_safe(doc, data, "total_pack_size", total_pack);
+        nmo_cli_json_add_uint_safe(doc, data, "compressed_objects", compressed_count);
+
+        yyjson_mut_val *cls_arr = yyjson_mut_arr(doc);
+        uint64_t cumul = 0;
+        for (size_t i = 0; i < class_count; i++) {
+            cumul += classes[i].data_size;
+            yyjson_mut_val *e = yyjson_mut_obj(doc);
+            if (classes[i].class_name)
+                nmo_cli_json_add_str_safe(doc, e, "class", classes[i].class_name);
+            nmo_cli_json_add_uint_safe(doc, e, "count", classes[i].count);
+            nmo_cli_json_add_uint_safe(doc, e, "data_size", classes[i].data_size);
+            nmo_cli_json_add_uint_safe(doc, e, "pack_size", classes[i].pack_size);
+            if (total_data > 0) {
+                double pct = (double)classes[i].data_size / (double)total_data * 100.0;
+                double cum_pct = (double)cumul / (double)total_data * 100.0;
+                yyjson_mut_obj_add_real(doc, e, "percent", pct);
+                yyjson_mut_obj_add_real(doc, e, "cumulative_percent", cum_pct);
+            }
+            yyjson_mut_arr_add_val(cls_arr, e);
+        }
+        yyjson_mut_obj_add_val(doc, data, "classes", cls_arr);
+
+        /* Top objects */
+        if (obj_entries && obj_count > 0) {
+            for (size_t i = 0; i < obj_count - 1 && i < top_n; i++) {
+                for (size_t j = i + 1; j < obj_count; j++) {
+                    if (obj_entries[j].data_sz > obj_entries[i].data_sz) {
+                        obj_entry_t tmp = obj_entries[i];
+                        obj_entries[i] = obj_entries[j];
+                        obj_entries[j] = tmp;
+                    }
+                }
+            }
+            size_t show_n = obj_count < top_n ? obj_count : top_n;
+            yyjson_mut_val *top_arr = yyjson_mut_arr(doc);
+            for (size_t i = 0; i < show_n; i++) {
+                yyjson_mut_val *e = yyjson_mut_obj(doc);
+                nmo_cli_json_add_uint_safe(doc, e, "id",
+                    (uint64_t)nmo_object_get_id(obj_entries[i].obj));
+                const char *cn = nmo_core_class_name(&c,
+                    nmo_object_get_class_id(obj_entries[i].obj));
+                if (cn) nmo_cli_json_add_str_safe(doc, e, "class", cn);
+                const char *nm = nmo_object_get_name(obj_entries[i].obj);
+                if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, e, "name", nm);
+                nmo_cli_json_add_uint_safe(doc, e, "data_size", obj_entries[i].data_sz);
+                nmo_cli_json_add_uint_safe(doc, e, "pack_size", obj_entries[i].pack_sz);
+                yyjson_mut_arr_add_val(top_arr, e);
+            }
+            yyjson_mut_obj_add_val(doc, data, "top_objects", top_arr);
+        }
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "file.space");
+    } else {
+        nmo_cli_print_heading(c.out, "Space Analysis", c.colorize);
+
+        char buf[128];
+        snprintf(buf, sizeof(buf), "%zu bytes", info.file_size);
+        nmo_cli_print_kv(c.out, "File Size", buf, 20, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", obj_count);
+        nmo_cli_print_kv(c.out, "Objects", buf, 20, c.colorize);
+        snprintf(buf, sizeof(buf), "%" PRIu64 " bytes", total_data);
+        nmo_cli_print_kv(c.out, "Total Data", buf, 20, c.colorize);
+        snprintf(buf, sizeof(buf), "%" PRIu64 " bytes", total_pack);
+        nmo_cli_print_kv(c.out, "Total Packed", buf, 20, c.colorize);
+        if (total_data > 0) {
+            snprintf(buf, sizeof(buf), "%.1f%%",
+                     (double)total_pack / (double)total_data * 100.0);
+            nmo_cli_print_kv(c.out, "Compression", buf, 20, c.colorize);
+        }
+        snprintf(buf, sizeof(buf), "%" PRIu64 " / %zu",
+                 compressed_count, obj_count);
+        nmo_cli_print_kv(c.out, "Compressed", buf, 20, c.colorize);
+
+        /* Per-class breakdown with cumulative % and ASCII bar */
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Space by Class", c.colorize);
+        fprintf(c.out, "%-20s  %5s  %10s  %10s  %6s  %6s  %s\n",
+                "CLASS", "COUNT", "DATA", "PACKED", "%", "CUM%", "BAR");
+        fprintf(c.out, "%-20s  %5s  %10s  %10s  %6s  %6s  %s\n",
+                "--------------------", "-----", "----------", "----------",
+                "------", "------", "--------------------");
+
+        uint64_t cumul = 0;
+        for (size_t i = 0; i < class_count; i++) {
+            cumul += classes[i].data_size;
+            double pct = total_data > 0
+                ? (double)classes[i].data_size / (double)total_data * 100.0 : 0.0;
+            double cum_pct = total_data > 0
+                ? (double)cumul / (double)total_data * 100.0 : 0.0;
+
+            int bar_len = (int)(pct / 5.0 + 0.5);
+            if (bar_len > 20) bar_len = 20;
+            char bar[21];
+            for (int b = 0; b < bar_len; b++) bar[b] = '#';
+            bar[bar_len] = '\0';
+
+            fprintf(c.out, "%-20s  %5u  %10" PRIu64 "  %10" PRIu64 "  %5.1f%%  %5.1f%%  %s\n",
+                    classes[i].class_name ? classes[i].class_name : "?",
+                    classes[i].count,
+                    classes[i].data_size,
+                    classes[i].pack_size,
+                    pct, cum_pct, bar);
+        }
+
+        /* Top N objects */
+        if (obj_entries && obj_count > 0) {
+            for (size_t i = 0; i < obj_count - 1 && i < top_n; i++) {
+                for (size_t j = i + 1; j < obj_count; j++) {
+                    if (obj_entries[j].data_sz > obj_entries[i].data_sz) {
+                        obj_entry_t tmp = obj_entries[i];
+                        obj_entries[i] = obj_entries[j];
+                        obj_entries[j] = tmp;
+                    }
+                }
+            }
+
+            size_t show_n = obj_count < top_n ? obj_count : top_n;
+            fprintf(c.out, "\n");
+            snprintf(buf, sizeof(buf), "Top %zu Objects by Size", show_n);
+            nmo_cli_print_heading(c.out, buf, c.colorize);
+            fprintf(c.out, "%5s  %-20s  %10s  %10s  %6s  %-s\n",
+                    "ID", "CLASS", "DATA", "PACKED", "RATIO", "NAME");
+            fprintf(c.out, "%5s  %-20s  %10s  %10s  %6s  %-s\n",
+                    "-----", "--------------------", "----------", "----------",
+                    "------", "--------------------");
+
+            for (size_t i = 0; i < show_n; i++) {
+                nmo_object_t *obj = obj_entries[i].obj;
+                const char *cn = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
+                const char *nm = nmo_object_get_name(obj);
+                double ratio = obj_entries[i].data_sz > 0
+                    ? (double)obj_entries[i].pack_sz / (double)obj_entries[i].data_sz * 100.0
+                    : 0.0;
+
+                fprintf(c.out, "%5u  %-20s  %10" PRIu64 "  %10" PRIu64 "  %5.1f%%  %s\n",
+                        nmo_object_get_id(obj),
+                        cn ? cn : "?",
+                        obj_entries[i].data_sz,
+                        obj_entries[i].pack_sz,
+                        ratio,
+                        (nm && nm[0]) ? nm : "(unnamed)");
+            }
+        }
+    }
+
+    free(obj_entries);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 

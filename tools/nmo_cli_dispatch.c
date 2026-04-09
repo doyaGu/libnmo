@@ -56,6 +56,14 @@ static void file_plugins_usage(FILE *out) {
     fprintf(out, "Show plugin dependencies and their status.\n");
 }
 
+static void file_space_usage(FILE *out) {
+    fprintf(out, "Usage: nmo file space [--top <N>] <file>\n\n");
+    fprintf(out, "Analyze space usage: per-class breakdown with cumulative %%,\n");
+    fprintf(out, "per-object compression ratios, and top N largest objects.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --top <N>    Show top N objects by size (default: 15)\n");
+}
+
 static void chunk_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo chunk list <file>\n\n");
     fprintf(out, "List all chunks in the file (including sub-chunks) with a stable\n");
@@ -451,6 +459,7 @@ static const nmo_cli_action_t file_actions[] = {
     {"stats", "st", "Show file statistics", nmo_cmd_file_stats, file_stats_usage},
     {"classes", "cls", "Show class ID distribution", nmo_cmd_file_classes, file_classes_usage},
     {"plugins", "pl", "Show plugin dependencies", nmo_cmd_file_plugins, file_plugins_usage},
+    {"space", "sp", "Analyze space usage", nmo_cmd_file_space, file_space_usage},
 };
 
 /* chunk group actions */

@@ -37,6 +37,11 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
  */
 int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo file space - Space analysis with per-class and per-object breakdown
+ */
+int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif
