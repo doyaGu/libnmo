@@ -2,6 +2,7 @@
 
 #include "nmo_cmd_core.h"
 #include "nmo_cmd_ctx.h"
+#include "nmo_repl_input.h"
 #include "nmo_repl_util.h"
 
 #include "nmo_repl_session.h"
@@ -1269,6 +1270,7 @@ static int cmd_open(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
+    nmo_repl_input_invalidate_name_cache(repl);
     printf("Loaded %s\n", repl->filename);
     return 0;
 }
@@ -1288,6 +1290,7 @@ static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
+    nmo_repl_input_invalidate_name_cache(repl);
     printf("Reloaded %s\n", repl->filename);
     return 0;
 }

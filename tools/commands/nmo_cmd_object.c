@@ -1151,31 +1151,371 @@ int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
 /* ============================================================================
  * object rename - Rename an object and save to new file
+ *
+ * Two modes:
+ *   Single:  nmo object rename <id> <new_name> <file> -o <output>
+ *   Batch:   nmo object rename --name <pattern> --to <template> [opts] <file> -o <output>
  * ============================================================================ */
+
+/** Rename entry used by both batch text and JSON output */
+typedef struct {
+    nmo_object_id_t id;
+    nmo_class_id_t class_id;
+    char old_name[256];
+    char new_name[256];
+    bool collision;
+} rename_entry_t;
+
+/**
+ * Open a manual session context (shared by single and batch paths).
+ * Returns 0 on success, NMO_CLI_EXIT_* on error.
+ */
+static int rename_open_ctx(nmo_cmd_ctx_t *c, const char *file_path,
+                           const nmo_cli_global_opts_t *global)
+{
+    memset(c, 0, sizeof(*c));
+    c->global = global;
+    c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                  global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    c->file_path = file_path;
+
+    char errbuf[256];
+    if (!nmo_tool_open_session(file_path, &c->ctx, &c->session,
+                               errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c->registry = nmo_context_get_type_registry(c->ctx);
+
+    char out_err[128];
+    c->out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!c->out) {
+        nmo_tool_close_session(c->ctx, c->session);
+        c->ctx = NULL;
+        c->session = NULL;
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c->colorize = nmo_cli_should_colorize(global, c->out);
+    return 0;
+}
+
+/**
+ * Batch rename mode.
+ *
+ * Options already parsed by caller:
+ *   name_pattern, to_template, use_regex, class_filter, dry_run, output_path
+ *   file_path (last positional arg)
+ */
+static int nmo_cmd_object_rename_batch(
+    const char *name_pattern,
+    const char *to_template,
+    bool use_regex,
+    const char *class_filter,
+    bool dry_run,
+    const char *output_path,
+    const char *file_path,
+    const nmo_cli_global_opts_t *global)
+{
+    /* Validate required args */
+    if (!to_template) {
+        fprintf(stderr, "Error: --to is required for batch rename\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!dry_run && !output_path) {
+        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!file_path) {
+        fprintf(stderr, "Error: No input file specified\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Open session */
+    nmo_cmd_ctx_t c;
+    int rc = rename_open_ctx(&c, file_path, global);
+    if (rc) return rc;
+
+    /* Resolve class filter */
+    nmo_class_id_t filter_cid = 0;
+    if (class_filter) {
+        filter_cid = nmo_core_class_id(&c, class_filter);
+        if (!filter_cid) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    /* Get all objects */
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    size_t obj_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &obj_count);
+
+    /* Collect rename entries */
+    rename_entry_t *entries = NULL;
+    size_t entry_count = 0;
+    size_t entry_cap = 0;
+    size_t collision_count = 0;
+
+    for (size_t i = 0; i < obj_count; i++) {
+        nmo_object_t *obj = objects[i];
+        const char *name = nmo_object_get_name(obj);
+        if (!name || !name[0]) continue;
+
+        /* Class filter */
+        if (filter_cid) {
+            nmo_class_id_t ocid = nmo_object_get_class_id(obj);
+            if (ocid != filter_cid &&
+                !nmo_core_class_derives(&c, ocid, filter_cid)) {
+                continue;
+            }
+        }
+
+        /* Pattern match + template application */
+        char new_name_buf[256];
+        if (use_regex) {
+            /* Regex mode: match via lightweight regex, full name as {0} */
+            if (!nmo_core_regex_match(name, name_pattern, true))
+                continue;
+
+            char no_captures[1][256];
+            if (nmo_tool_apply_rename_template(to_template, name,
+                                               no_captures, 0,
+                                               new_name_buf,
+                                               sizeof(new_name_buf)) < 0) {
+                fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
+                        name);
+                continue;
+            }
+        } else {
+            /* Glob mode */
+            char captures[16][256];
+            size_t cap_count = 0;
+            if (!nmo_tool_wildcard_capture_ci(name_pattern, name,
+                                              captures, 16, &cap_count)) {
+                continue;
+            }
+            if (nmo_tool_apply_rename_template(to_template, name,
+                                               captures, cap_count,
+                                               new_name_buf,
+                                               sizeof(new_name_buf)) < 0) {
+                fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
+                        name);
+                continue;
+            }
+        }
+
+        /* Skip if name unchanged */
+        if (strcmp(name, new_name_buf) == 0) continue;
+
+        /* Grow entries array */
+        if (entry_count >= entry_cap) {
+            size_t new_cap = entry_cap ? entry_cap * 2 : 32;
+            rename_entry_t *tmp = (rename_entry_t *)realloc(
+                entries, new_cap * sizeof(rename_entry_t));
+            if (!tmp) {
+                fprintf(stderr, "Error: Out of memory\n");
+                free(entries);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            entries = tmp;
+            entry_cap = new_cap;
+        }
+
+        rename_entry_t *e = &entries[entry_count++];
+        e->id = nmo_object_get_id(obj);
+        e->class_id = nmo_object_get_class_id(obj);
+        snprintf(e->old_name, sizeof(e->old_name), "%s", name);
+        snprintf(e->new_name, sizeof(e->new_name), "%s", new_name_buf);
+
+        /* Collision check */
+        nmo_object_t *existing = nmo_object_repository_find_by_name(
+            repo, new_name_buf);
+        e->collision = (existing &&
+                        nmo_object_get_id(existing) != e->id);
+        if (e->collision) collision_count++;
+    }
+
+    /* Perform renames (unless dry-run) */
+    size_t rename_errors = 0;
+    if (!dry_run) {
+        for (size_t i = 0; i < entry_count; i++) {
+            int rrc = nmo_object_repository_rename(
+                repo, entries[i].id, entries[i].new_name);
+            if (rrc != NMO_OK) {
+                fprintf(stderr, "Error: Failed to rename object %u: %s\n",
+                        entries[i].id, nmo_error_string(rrc));
+                rename_errors++;
+            }
+        }
+
+        /* Save file (only if at least one rename succeeded) */
+        size_t succeeded = entry_count - rename_errors;
+        if (succeeded > 0) {
+            nmo_save_options_t save_opts = nmo_save_options_default();
+            int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+            if (save_rc != NMO_OK) {
+                fprintf(stderr, "Error saving file: %s\n",
+                        nmo_error_string(save_rc));
+                free(entries);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+            }
+        }
+
+        if (rename_errors > 0) {
+            fprintf(stderr, "Warning: %zu rename(s) failed\n", rename_errors);
+        }
+    }
+
+    /* Output results */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) {
+            free(entries);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        nmo_cli_json_add_uint_safe(doc, data, "match_count",
+                                   (uint64_t)entry_count);
+        nmo_cli_json_add_uint_safe(doc, data, "collision_count",
+                                   (uint64_t)collision_count);
+
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < entry_count; i++) {
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            nmo_cli_json_add_uint_safe(doc, item, "id",
+                                       (uint64_t)entries[i].id);
+            const char *cls = nmo_core_class_name(&c, entries[i].class_id);
+            nmo_cli_json_add_str_safe(doc, item, "class_name",
+                                      cls ? cls : "?");
+            nmo_cli_json_add_str_safe(doc, item, "old_name",
+                                      entries[i].old_name);
+            nmo_cli_json_add_str_safe(doc, item, "new_name",
+                                      entries[i].new_name);
+            if (entries[i].collision) {
+                nmo_cli_json_add_bool_safe(doc, item, "collision", true);
+            }
+            yyjson_mut_arr_add_val(arr, item);
+        }
+        yyjson_mut_obj_add_val(doc, data, "renames", arr);
+
+        if (!dry_run && output_path) {
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+        }
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.rename");
+    } else {
+        if (dry_run) {
+            fprintf(c.out, "=== Dry Run: Batch Rename ===\n\n");
+
+            if (entry_count > 0) {
+                static const nmo_cli_table_col_t cols[] = {
+                    {"ID",       NMO_CLI_ALIGN_RIGHT, 5,  0},
+                    {"CLASS",    NMO_CLI_ALIGN_LEFT,  15, 25},
+                    {"OLD NAME", NMO_CLI_ALIGN_LEFT,  20, 40},
+                    {"NEW NAME", NMO_CLI_ALIGN_LEFT,  20, 40},
+                };
+                nmo_cli_table_t table;
+                nmo_cli_table_init(&table, cols, 4);
+
+                for (size_t i = 0; i < entry_count; i++) {
+                    char id_buf[16];
+                    snprintf(id_buf, sizeof(id_buf), "%u", entries[i].id);
+                    const char *cls = nmo_core_class_name(&c,
+                                                          entries[i].class_id);
+                    const char *cells[] = {
+                        id_buf,
+                        cls ? cls : "?",
+                        entries[i].old_name,
+                        entries[i].new_name
+                    };
+                    nmo_cli_table_add_row(&table, cells, 4);
+                }
+
+                nmo_cli_table_print(&table, c.out, c.colorize);
+                nmo_cli_table_free(&table);
+                fprintf(c.out, "\n");
+            }
+
+            fprintf(c.out, "%zu object(s) would be renamed, %zu collisions\n",
+                    entry_count, collision_count);
+        } else {
+            fprintf(c.out, "%zu object(s) renamed, %zu collisions\n",
+                    entry_count, collision_count);
+            if (entry_count > 0 && output_path) {
+                fprintf(c.out, "Saved to: %s\n", output_path);
+            }
+        }
+
+        /* Print collision warnings */
+        for (size_t i = 0; i < entry_count; i++) {
+            if (entries[i].collision) {
+                fprintf(stderr, "Warning: Name '%s' collides with existing object\n",
+                        entries[i].new_name);
+            }
+        }
+    }
+
+    free(entries);
+    int exit_code = (rename_errors > 0) ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_done(&c, exit_code);
+}
 
 int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
-    /* Parse -o/--output */
-    const char *output_path = nmo_tool_find_opt_value(argc, argv, "-o", "--output");
+    /* Unified option parsing for both single and batch modes */
+    static const nmo_opt_def_t opts[] = {
+        {"--name",    "-n", NMO_OPT_STRING, "Glob/regex pattern to match object names (batch mode)"},
+        {"--to",      NULL, NMO_OPT_STRING, "Rename template with {0},{1}..{N} placeholders"},
+        {"--regex",   NULL, NMO_OPT_FLAG,   "Treat --name as POSIX regex instead of glob"},
+        {"--class",   "-c", NMO_OPT_STRING, "Restrict to objects of this class"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview renames without saving"},
+        {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    enum { OPT_NAME, OPT_TO, OPT_REGEX, OPT_CLASS, OPT_DRY_RUN, OPT_OUTPUT, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    /* Batch mode: --name is present */
+    if (vals[OPT_NAME].present) {
+        const char *file_path = r.pos_count > 0
+            ? r.pos_args[r.pos_count - 1] : NULL;
+        return nmo_cmd_object_rename_batch(
+            vals[OPT_NAME].val.str,
+            vals[OPT_TO].present ? vals[OPT_TO].val.str : NULL,
+            vals[OPT_REGEX].present && vals[OPT_REGEX].val.flag,
+            vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
+            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            file_path,
+            global);
+    }
+
+    /* Single mode: <id> <new_name> <file> -o <output> */
+    const char *output_path = vals[OPT_OUTPUT].present
+        ? vals[OPT_OUTPUT].val.str : NULL;
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Parse positionals: <id> <new_name> <file>, skipping -o value */
-    const char *pos_args[8];
-    const char *const skip_opts[] = {"-o", "--output"};
-    size_t pos_count = nmo_tool_find_file_args_ex(argc, argv, pos_args, 8, skip_opts, 2);
-
-    if (pos_count < 3) {
+    if (r.pos_count < 3) {
         fprintf(stderr, "Error: Expected <id> <new_name> <file>\n");
         fprintf(stderr, "Usage: nmo object rename <id> <new_name> <file> -o <output>\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *id_str = pos_args[0];
-    const char *new_name = pos_args[1];
-    const char *file_path = pos_args[pos_count - 1]; /* last positional is the file */
+    const char *id_str = r.pos_args[0];
+    const char *new_name = r.pos_args[1];
+    const char *file_path = r.pos_args[r.pos_count - 1];
 
     /* Parse object ID */
     uint32_t object_id;
@@ -1186,32 +1526,8 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     /* Open session manually (nmo_cmd_ctx_init would pick -o value as file) */
     nmo_cmd_ctx_t c;
-    memset(&c, 0, sizeof(c));
-    c.global = global;
-    c.is_json = (global->format == NMO_CLI_FORMAT_JSON ||
-                 global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    c.file_path = file_path;
-
-    char errbuf[256];
-    if (!nmo_tool_open_session(file_path, &c.ctx, &c.session,
-                               errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    c.registry = nmo_context_get_type_registry(c.ctx);
-
-    char out_err[128];
-    c.out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
-    if (!c.out) {
-        nmo_tool_close_session(c.ctx, c.session);
-        c.ctx = NULL;
-        c.session = NULL;
-        fprintf(stderr, "Error: %s\n", out_err);
-        return NMO_CLI_EXIT_IO_ERROR;
-    }
-
-    c.colorize = nmo_cli_should_colorize(global, c.out);
+    int rc = rename_open_ctx(&c, file_path, global);
+    if (rc) return rc;
 
     /* Get repository */
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);

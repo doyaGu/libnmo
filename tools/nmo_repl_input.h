@@ -10,7 +10,8 @@ extern "C" {
 #endif
 
 void nmo_repl_input_init(nmo_repl_context_t *repl);
-void nmo_repl_input_cleanup(void);
+void nmo_repl_input_cleanup(nmo_repl_context_t *repl);
+void nmo_repl_input_invalidate_name_cache(nmo_repl_context_t *repl);
 
 #ifdef NMO_HAVE_ISOCLINE
 #include <isocline.h>

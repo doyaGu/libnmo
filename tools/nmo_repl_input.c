@@ -6,6 +6,10 @@
 #ifdef NMO_HAVE_ISOCLINE
 
 #include "nmo_repl_commands.h"
+#include "app/nmo_session.h"
+#include "core/nmo_arena.h"
+#include "format/nmo_object.h"
+#include "object/nmo_object_repository.h"
 
 static const char *nmo_repl_get_history_path(void) {
     static char path[512];
@@ -42,6 +46,17 @@ static const char *ck_class_names[] = {
     "CKDataArray", "CKBodyPart",
     NULL
 };
+
+/* DSL keywords for eval/query completion */
+static const char *dsl_keywords[] = {
+    "true", "false", "null",
+    "id", "name", "class", "size", "cid",
+    "schema", "enum", "flags", "struct", "alias",
+    NULL
+};
+
+/* File-scoped pointer set before inner completion callback invocation */
+static nmo_repl_context_t *s_repl_for_completion;
 
 static const char *set_options[] = {
     "color", "level", "page", "regex-icase", NULL
@@ -115,6 +130,144 @@ static void complete_set_level(ic_completion_env_t *cenv, const char *word_prefi
 
 static void complete_class_names(ic_completion_env_t *cenv, const char *word_prefix) {
     ic_add_completions(cenv, word_prefix, ck_class_names);
+}
+
+static void complete_dsl_keywords(ic_completion_env_t *cenv, const char *prefix) {
+    ic_add_completions(cenv, prefix, dsl_keywords);
+}
+
+/* ---- Object name completion cache ---- */
+
+static int name_cmp_icase(const void *a, const void *b) {
+    const char *sa = *(const char *const *)a;
+    const char *sb = *(const char *const *)b;
+#ifdef _WIN32
+    return _stricmp(sa, sb);
+#else
+    return strcasecmp(sa, sb);
+#endif
+}
+
+/**
+ * Build (or rebuild) the sorted, deduplicated name cache from the session.
+ */
+static void rebuild_name_cache(nmo_repl_context_t *repl) {
+    /* Destroy old cache */
+    if (repl->name_cache_arena) {
+        nmo_arena_destroy(repl->name_cache_arena);
+        repl->name_cache_arena = NULL;
+    }
+    repl->name_cache = NULL;
+    repl->name_cache_count = 0;
+    repl->name_cache_dirty = false;
+
+    if (!repl->session) {
+        return;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(repl->session);
+    if (!repo) {
+        return;
+    }
+
+    size_t obj_count = 0;
+    nmo_object_t **objects = nmo_object_repository_get_all(repo, &obj_count);
+    if (!objects || obj_count == 0) {
+        return;
+    }
+
+    /* Create arena sized for names */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    if (!arena) {
+        return;
+    }
+
+    /* First pass: count non-empty names */
+    size_t name_count = 0;
+    for (size_t i = 0; i < obj_count; i++) {
+        const char *name = nmo_object_get_name(objects[i]);
+        if (name && name[0]) {
+            name_count++;
+        }
+    }
+
+    if (name_count == 0) {
+        nmo_arena_destroy(arena);
+        return;
+    }
+
+    /* Allocate pointer array in arena */
+    const char **names = (const char **)nmo_arena_alloc(
+        arena, name_count * sizeof(const char *), sizeof(void *));
+    if (!names) {
+        nmo_arena_destroy(arena);
+        return;
+    }
+
+    /* Second pass: deep-copy names into arena */
+    size_t idx = 0;
+    for (size_t i = 0; i < obj_count && idx < name_count; i++) {
+        const char *name = nmo_object_get_name(objects[i]);
+        if (name && name[0]) {
+            const char *dup = nmo_arena_strdup(arena, name);
+            if (dup) {
+                names[idx++] = dup;
+            }
+        }
+    }
+    name_count = idx;
+
+    /* Sort case-insensitively */
+    qsort(names, name_count, sizeof(const char *), name_cmp_icase);
+
+    /* Deduplicate in-place */
+    size_t unique = 0;
+    for (size_t i = 0; i < name_count; i++) {
+        if (unique == 0 || name_cmp_icase(&names[i], &names[unique - 1]) != 0) {
+            names[unique++] = names[i];
+        }
+    }
+
+    repl->name_cache_arena = arena;
+    repl->name_cache = names;
+    repl->name_cache_count = unique;
+}
+
+static void complete_object_names(ic_completion_env_t *cenv, const char *prefix) {
+    nmo_repl_context_t *repl = s_repl_for_completion;
+    if (!repl) {
+        return;
+    }
+
+    /* Build cache on first use or after invalidation */
+    if (!repl->name_cache || repl->name_cache_dirty) {
+        rebuild_name_cache(repl);
+    }
+
+    if (!repl->name_cache || repl->name_cache_count == 0) {
+        return;
+    }
+
+    size_t prefix_len = prefix ? strlen(prefix) : 0;
+    size_t added = 0;
+    static const size_t MAX_COMPLETIONS = 100;
+
+    for (size_t i = 0; i < repl->name_cache_count && added < MAX_COMPLETIONS; i++) {
+        const char *name = repl->name_cache[i];
+        if (prefix_len == 0) {
+            ic_add_completion(cenv, name);
+            added++;
+        } else {
+#ifdef _WIN32
+            if (_strnicmp(name, prefix, prefix_len) == 0) {
+#else
+            if (strncasecmp(name, prefix, prefix_len) == 0) {
+#endif
+                ic_add_completion(cenv, name);
+                added++;
+            }
+        }
+    }
 }
 
 static void nmo_repl_completer(ic_completion_env_t *cenv, const char *prefix) {
@@ -194,6 +347,27 @@ static void nmo_repl_completer(ic_completion_env_t *cenv, const char *prefix) {
         }
         return;
     }
+
+    /* eval/query <TAB> -> DSL keywords */
+    if (strcmp(cmd, "eval") == 0 || strcmp(cmd, "e") == 0 ||
+        strcmp(cmd, "query") == 0) {
+        ic_complete_word(cenv, prefix, &complete_dsl_keywords, NULL);
+        return;
+    }
+
+    /* show/trace/refs/param/dump/select <TAB> -> object names */
+    if (strcmp(cmd, "show") == 0 || strcmp(cmd, "s") == 0 ||
+        strcmp(cmd, "trace") == 0 || strcmp(cmd, "t") == 0 ||
+        strcmp(cmd, "refs") == 0 ||
+        strcmp(cmd, "param") == 0 || strcmp(cmd, "p") == 0 ||
+        strcmp(cmd, "dump") == 0 || strcmp(cmd, "d") == 0 ||
+        strcmp(cmd, "select") == 0 || strcmp(cmd, "sel") == 0) {
+        if (words == 2) {
+            s_repl_for_completion = (nmo_repl_context_t *)ic_completion_arg(cenv);
+            ic_complete_qword(cenv, prefix, &complete_object_names, NULL);
+        }
+        return;
+    }
 }
 
 void nmo_repl_input_init(nmo_repl_context_t *repl) {
@@ -210,8 +384,22 @@ void nmo_repl_input_init(nmo_repl_context_t *repl) {
     ic_set_default_completer(&nmo_repl_completer, (void *)repl);
 }
 
-void nmo_repl_input_cleanup(void) {
+void nmo_repl_input_cleanup(nmo_repl_context_t *repl) {
+    /* Destroy object name cache */
+    if (repl && repl->name_cache_arena) {
+        nmo_arena_destroy(repl->name_cache_arena);
+        repl->name_cache_arena = NULL;
+        repl->name_cache = NULL;
+        repl->name_cache_count = 0;
+    }
+    s_repl_for_completion = NULL;
     /* isocline auto-saves history on exit */
+}
+
+void nmo_repl_input_invalidate_name_cache(nmo_repl_context_t *repl) {
+    if (repl) {
+        repl->name_cache_dirty = true;
+    }
 }
 
 #else /* !NMO_HAVE_ISOCLINE */
@@ -220,7 +408,12 @@ void nmo_repl_input_init(nmo_repl_context_t *repl) {
     (void)repl;
 }
 
-void nmo_repl_input_cleanup(void) {
+void nmo_repl_input_cleanup(nmo_repl_context_t *repl) {
+    (void)repl;
+}
+
+void nmo_repl_input_invalidate_name_cache(nmo_repl_context_t *repl) {
+    (void)repl;
 }
 
 char *nmo_repl_readline_basic(const char *prompt) {

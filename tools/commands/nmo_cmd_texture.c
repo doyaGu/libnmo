@@ -711,6 +711,13 @@ static uint8_t *decode_raw_slot(nmo_arena_t *arena,
 }
 
 /**
+ * Check whether a raw slot holds compressed (e.g. DXT) data.
+ */
+static bool raw_slot_is_compressed(const nmo_texture_raw_slot_t *rs) {
+    return rs->compression != 0;
+}
+
+/**
  * Try to decode a bitmap2 slot via stb_image.
  * Returns arena-allocated RGBA buffer, or NULL on failure.
  */
@@ -893,11 +900,24 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
 
         case CKTEXTURE_BITMAP_RAW:
             if (ts->raw_slots) {
-                pixels = decode_raw_slot(arena, &ts->raw_slots[0], &w, &h, &ch);
-                if (!pixels) {
-                    skip_reason = (ts->raw_slots[0].bits_per_pixel != 32)
-                        ? "unsupported_raw_bpp"
-                        : "decode_failed";
+                const nmo_texture_raw_slot_t *rs0 = &ts->raw_slots[0];
+                if (raw_slot_is_compressed(rs0)) {
+                    /* TODO: DXT decode for raw slots. The compressed DXT data
+                     * is split across the four channel buffers (blue_data,
+                     * green_data, red_data, alpha_data) by the Virtools
+                     * serializer. Reconstituting a contiguous DXT block stream
+                     * from these separate buffers requires knowledge of the
+                     * original packing order, which is not yet determined.
+                     * When resolved, use nmo_image_decode_dxt() with format
+                     * derived from ts->desired_video_format. */
+                    skip_reason = "compressed";
+                } else {
+                    pixels = decode_raw_slot(arena, rs0, &w, &h, &ch);
+                    if (!pixels) {
+                        skip_reason = (rs0->bits_per_pixel != 32)
+                            ? "unsupported_raw_bpp"
+                            : "decode_failed";
+                    }
                 }
             } else {
                 skip_reason = "no_raw_data";
@@ -907,7 +927,17 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
         case CKTEXTURE_BITMAP_BITMAP2:
             if (ts->bitmap2_slots) {
                 pixels = decode_bitmap2_slot(arena, &ts->bitmap2_slots[0], &w, &h, &ch);
-                if (!pixels) skip_reason = "bitmap2_decode_failed";
+                if (!pixels) {
+                    /* TODO: Add interleaved fallback using
+                     * nmo_image_decode_interleaved_to_rgba32(). The Bitmap2
+                     * slot buffer is typically a container format (BMP/JPG/PNG)
+                     * that STB handles. For raw-pixel Bitmap2 buffers, we would
+                     * need to parse the header to extract width, height, bpp,
+                     * and channel masks, but the header format within
+                     * nmo_texture_bitmap2_slot_t.buffer is not yet
+                     * characterized. */
+                    skip_reason = "bitmap2_decode_failed";
+                }
             } else {
                 skip_reason = "no_bitmap2_data";
             }

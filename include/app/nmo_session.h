@@ -171,6 +171,30 @@ NMO_API int nmo_session_destroy_objects(
     nmo_runtime_report_t *out_report);
 
 /**
+ * @brief Preview which objects would be destroyed without actually deleting.
+ *
+ * Computes the expanded delete set (including cascade when flags contain
+ * NMO_RUNTIME_REQUEST_CASCADE) and returns the IDs. No objects are removed.
+ *
+ * @param session           Session
+ * @param object_ids        Array of object IDs to preview-delete
+ * @param object_count      Number of IDs
+ * @param flags             Runtime request flags (e.g. NMO_RUNTIME_REQUEST_CASCADE)
+ * @param arena             Arena for output allocation
+ * @param out_expanded_ids  Output: arena-allocated array of expanded IDs
+ * @param out_expanded_count Output: number of expanded IDs
+ * @return NMO_OK on success
+ */
+NMO_API int nmo_session_preview_destroy(
+    nmo_session_t *session,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_expanded_ids,
+    size_t *out_expanded_count);
+
+/**
  * @brief Get chunk pool used for chunk allocations
  *
  * Returns the optional chunk pool owned by the session. May be NULL if the

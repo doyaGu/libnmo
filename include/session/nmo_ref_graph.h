@@ -193,6 +193,29 @@ NMO_API nmo_status_t nmo_ref_graph_validate(
 );
 
 /**
+ * @brief Mark all objects reachable from a root set via BFS
+ *
+ * Performs fixed-point iteration over graph edges to find all objects
+ * transitively reachable from the given root IDs. Useful for orphan
+ * detection: objects not in the returned set are unreachable.
+ *
+ * @param graph Reference graph (required)
+ * @param root_ids Array of root object IDs (NULL with count=0 is ok)
+ * @param root_count Number of root IDs
+ * @param arena Arena for result allocation (required)
+ * @param out_reachable_ids Output array of reachable IDs (required)
+ * @param out_reachable_count Output count of reachable IDs (required)
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_ref_graph_mark_reachable(
+    nmo_ref_graph_t *graph,
+    const nmo_object_id_t *root_ids,
+    size_t root_count,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_reachable_ids,
+    size_t *out_reachable_count);
+
+/**
  * @brief Get string name for reference kind
  *
  * @param kind Reference kind

@@ -1,0 +1,218 @@
+#compdef nmo
+#
+# Zsh completion for nmo - Virtools NMO file tool
+#
+# Installation:
+#   Option 1: Copy to a directory in your $fpath:
+#     cp _nmo /usr/local/share/zsh/site-functions/_nmo
+#
+#   Option 2: Add completions directory to fpath in .zshrc (before compinit):
+#     fpath=(/path/to/completions $fpath)
+#     autoload -Uz compinit && compinit
+#
+#   Option 3: Source manually (not recommended, use fpath instead):
+#     Place in any $fpath directory and run: autoload -Uz compinit && compinit
+
+local -a groups actions flags
+local state line context
+typeset -A opt_args
+
+flags=(
+    '--json[Output in JSON format]'
+    '--no-color[Disable colored output]'
+    '--no-pager[Disable paging]'
+    '-v[Verbose output]'
+    '--batch[Batch mode]'
+    '--sort[Sort output]:sort key:'
+    '--top[Show top N results]:count:'
+    '--reverse[Reverse sort order]'
+    '--class[Filter by class]:class name:'
+    '--name[Filter by name]:name pattern:'
+    '--id[Filter by ID]:object ID:'
+    '-o[Output file]:output file:_files'
+    '--out-dir[Output directory]:output directory:_files -/'
+    '--format[Output format]:format:'
+    '--dry-run[Show what would be done without doing it]'
+    '--overwrite[Overwrite existing files]'
+    '--strict[Enable strict mode]'
+)
+
+groups=(
+    'file:Inspect NMO file metadata'
+    'f:Inspect NMO file metadata (alias for file)'
+    'chunk:Work with file chunks'
+    'ch:Work with file chunks (alias for chunk)'
+    'object:Work with objects'
+    'obj:Work with objects (alias for object)'
+    'behavior:Work with behaviors'
+    'beh:Work with behaviors (alias for behavior)'
+    'parameter:Work with parameters'
+    'param:Work with parameters (alias for parameter)'
+    'resource:Work with resources'
+    'res:Work with resources (alias for resource)'
+    'texture:Work with textures'
+    'tex:Work with textures (alias for texture)'
+    'type:Work with types'
+    't:Work with types (alias for type)'
+    'validate:Validate file integrity'
+    'val:Validate file integrity (alias for validate)'
+    'convert:Convert and transform files'
+    'conv:Convert and transform files (alias for convert)'
+    'diff:Compare NMO files'
+    'd:Compare NMO files (alias for diff)'
+    'query:Query and filter data'
+    'q:Query and filter data (alias for query)'
+    'extension:Manage extensions'
+    'ext:Manage extensions (alias for extension)'
+    'debug:Debug and diagnostics'
+    'dbg:Debug and diagnostics (alias for debug)'
+    'repl:Interactive REPL'
+)
+
+# Resolve alias to canonical group name
+_nmo_resolve_group() {
+    case "$1" in
+        f)     echo "file" ;;
+        ch)    echo "chunk" ;;
+        obj)   echo "object" ;;
+        beh)   echo "behavior" ;;
+        param) echo "parameter" ;;
+        res)   echo "resource" ;;
+        tex)   echo "texture" ;;
+        t)     echo "type" ;;
+        val)   echo "validate" ;;
+        conv)  echo "convert" ;;
+        d)     echo "diff" ;;
+        q)     echo "query" ;;
+        ext)   echo "extension" ;;
+        dbg)   echo "debug" ;;
+        *)     echo "$1" ;;
+    esac
+}
+
+# Get actions for a canonical group
+_nmo_actions() {
+    local -a acts
+    case "$1" in
+        file)
+            acts=(
+                'info:Show file information'
+                'header:Show file header'
+                'stats:Show file statistics'
+                'classes:List classes in file'
+                'plugins:List plugins in file'
+            ) ;;
+        chunk)
+            acts=(
+                'list:List chunks'
+                'tree:Show chunk tree'
+                'show:Show chunk details'
+                'find:Find chunks'
+            ) ;;
+        object)
+            acts=(
+                'list:List objects'
+                'tree:Show object tree'
+                'show:Show object details'
+                'find:Find objects'
+                'refs:Show object references'
+                'rename:Rename an object'
+            ) ;;
+        behavior)
+            acts=(
+                'list:List behaviors'
+                'stats:Show behavior statistics'
+                'show:Show behavior details'
+                'graph:Show behavior graph'
+                'dump:Dump behavior data'
+            ) ;;
+        parameter)
+            acts=(
+                'list:List parameters'
+                'show:Show parameter details'
+                'dump:Dump parameter data'
+            ) ;;
+        resource)
+            acts=(
+                'list:List resources'
+                'show:Show resource details'
+                'extract:Extract resources'
+            ) ;;
+        texture)
+            acts=(
+                'list:List textures'
+                'show:Show texture details'
+                'extract:Extract textures'
+            ) ;;
+        type)
+            acts=(
+                'list:List types'
+                'show:Show type details'
+                'class-tree:Show class hierarchy'
+            ) ;;
+        validate)
+            acts=(
+                'all:Run all validations'
+                'structure:Validate file structure'
+                'references:Validate references'
+                'resources:Validate resources'
+                'orphans:Find orphan objects'
+            ) ;;
+        convert)
+            acts=(
+                'copy:Copy file'
+                'version:Convert file version'
+                'strip:Strip data from file'
+                'merge:Merge files'
+            ) ;;
+        diff)
+            acts=(
+                'summary:Show diff summary'
+                'objects:Diff objects'
+                'chunks:Diff chunks'
+                'full:Show full diff'
+            ) ;;
+        query)
+            acts=(
+                'eval:Evaluate expression'
+                'script:Run query script'
+                'schema:Show schema'
+                'module:Manage query modules'
+            ) ;;
+        extension)
+            acts=(
+                'list:List extensions'
+                'load:Load extension'
+                'info:Show extension info'
+                'check:Check extension'
+            ) ;;
+        debug)
+            acts=(
+                'load-phases:Show load phases'
+                'chunks:Debug chunks'
+                'objects:Debug objects'
+                'export:Export debug data'
+            ) ;;
+        repl)
+            acts=(
+                'start:Start interactive REPL'
+            ) ;;
+    esac
+    _describe -t actions 'action' acts
+}
+
+_arguments -C $flags \
+    '1:group:->group' \
+    '2:action:->action' \
+    '*:file:_files -g "*.{nmo,cmo,vmo}"' && return
+
+case "$state" in
+    group)
+        _describe -t groups 'command group' groups
+        ;;
+    action)
+        local canonical
+        canonical=$(_nmo_resolve_group "$line[1]")
+        _nmo_actions "$canonical"
+        ;;
+esac

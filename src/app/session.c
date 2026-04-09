@@ -8,6 +8,7 @@
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
 #include "session/nmo_runtime_kernel.h"
+#include "session/runtime_kernel_internal.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -691,6 +692,42 @@ int nmo_session_destroy_objects(
     request.payload.destroy.ids = object_ids;
     request.payload.destroy.count = object_count;
     return nmo_session_execute(session, &request, out_report);
+}
+
+int nmo_session_preview_destroy(
+    nmo_session_t *session,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags,
+    nmo_arena_t *arena,
+    nmo_object_id_t **out_expanded_ids,
+    size_t *out_expanded_count)
+{
+    if (session == NULL || object_ids == NULL || object_count == 0 ||
+        out_expanded_ids == NULL || out_expanded_count == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    if (repo == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    const nmo_type_runtime_t *type_rt =
+        (ctx != NULL) ? nmo_context_get_type_runtime(ctx) : NULL;
+
+    if (arena == NULL) {
+        arena = nmo_session_get_arena(session);
+    }
+    if (arena == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    return runtime_kernel_preview_delete(
+        repo, type_rt, arena,
+        object_ids, object_count, flags,
+        out_expanded_ids, out_expanded_count);
 }
 
 /**
