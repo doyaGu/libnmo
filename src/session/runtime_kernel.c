@@ -7,6 +7,7 @@
 #include "app/nmo_session.h"
 #include "session/nmo_session_internal.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_bit_array.h"
 #include "core/nmo_logger.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
@@ -31,6 +32,7 @@ typedef struct runtime_id_set {
     size_t count;
     size_t capacity;
     nmo_arena_t *arena;
+    nmo_bit_array_t bits;   /**< Bit array for O(1) membership test */
 } runtime_id_set_t;
 
 typedef struct runtime_created_layer {
@@ -144,13 +146,7 @@ static bool runtime_id_set_contains(const runtime_id_set_t *set, nmo_object_id_t
         return false;
     }
 
-    for (size_t i = 0; i < set->count; i++) {
-        if (set->ids[i] == id) {
-            return true;
-        }
-    }
-
-    return false;
+    return nmo_bit_array_test(&set->bits, (size_t)id) != 0;
 }
 
 static int runtime_id_set_init(
@@ -176,6 +172,11 @@ static int runtime_id_set_init(
     }
 
     set->capacity = initial_capacity;
+
+    /* Initialize bit array for O(1) membership testing */
+    size_t bit_cap = initial_capacity > 1024 ? initial_capacity : 1024;
+    nmo_bit_array_init(&set->bits, bit_cap, NULL);
+
     return NMO_OK;
 }
 
@@ -307,6 +308,7 @@ static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
         return NMO_OK;
     }
 
+    /* Grow ID array if needed */
     if (set->count == set->capacity) {
         size_t new_capacity = set->capacity * 2;
         nmo_object_id_t *new_ids = (nmo_object_id_t *)nmo_arena_alloc(
@@ -321,6 +323,8 @@ static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
     }
 
     set->ids[set->count++] = id;
+    nmo_bit_array_set(&set->bits, (size_t)id);
+
     return NMO_OK;
 }
 
@@ -694,6 +698,7 @@ int runtime_kernel_preview_delete(
 
     *out_ids = delete_set.ids;
     *out_count = delete_set.count;
+    nmo_bit_array_dispose(&delete_set.bits);
     return NMO_OK;
 }
 
@@ -1079,6 +1084,8 @@ static int runtime_execute_delete(
             report->affected_objects++;
         }
     }
+
+    nmo_bit_array_dispose(&delete_set.bits);
 
     if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
         if (type_rt != NULL && type_rt->types != NULL) {
