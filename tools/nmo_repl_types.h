@@ -27,6 +27,13 @@ typedef struct {
     size_t page_size;
     bool regex_icase;
 
+#ifdef NMO_HAVE_ISOCLINE
+    struct nmo_arena *name_cache_arena;
+    const char **name_cache;
+    size_t name_cache_count;
+    bool name_cache_dirty;
+#endif
+
 #ifndef NMO_HAVE_ISOCLINE
     /* Command history (ring buffer) */
     char *history[NMO_REPL_HISTORY_SIZE];

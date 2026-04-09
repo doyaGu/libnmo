@@ -184,6 +184,6 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
 #ifndef NMO_HAVE_ISOCLINE
     repl_history_free(repl);
 #endif
-    nmo_repl_input_cleanup();
+    nmo_repl_input_cleanup(repl);
     printf("\nGoodbye!\n");
 }
