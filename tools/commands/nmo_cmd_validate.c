@@ -1046,7 +1046,12 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
 
         nmo_object_id_t *orphan_ids = (nmo_object_id_t *)malloc(
             likely_orphans * sizeof(nmo_object_id_t));
-        if (orphan_ids) {
+        if (!orphan_ids) {
+            fprintf(stderr, "Error: Out of memory for strip operation\n");
+            if (arena) nmo_arena_destroy(arena);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        {
             for (size_t i = 0; i < likely_orphans && i < orphan_cap; i++)
                 orphan_ids[i] = nmo_object_get_id(orphan_list[i].obj);
 

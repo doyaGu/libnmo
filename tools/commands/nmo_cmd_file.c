@@ -756,6 +756,20 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
     /* Sort classes by data_size descending */
     qsort(classes, class_count, sizeof(space_class_entry_t), space_class_cmp_size);
 
+    /* Partial sort for top-N objects (done once before output branches) */
+    if (obj_entries && obj_count > 1) {
+        size_t sort_limit = obj_count < top_n ? obj_count : top_n;
+        for (size_t i = 0; i < sort_limit; i++) {
+            for (size_t j = i + 1; j < obj_count; j++) {
+                if (obj_entries[j].data_sz > obj_entries[i].data_sz) {
+                    obj_entry_t tmp = obj_entries[i];
+                    obj_entries[i] = obj_entries[j];
+                    obj_entries[j] = tmp;
+                }
+            }
+        }
+    }
+
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         if (!doc) {
@@ -790,17 +804,8 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
         yyjson_mut_obj_add_val(doc, data, "classes", cls_arr);
 
-        /* Top objects */
+        /* Top objects (already sorted above) */
         if (obj_entries && obj_count > 0) {
-            for (size_t i = 0; i < obj_count - 1 && i < top_n; i++) {
-                for (size_t j = i + 1; j < obj_count; j++) {
-                    if (obj_entries[j].data_sz > obj_entries[i].data_sz) {
-                        obj_entry_t tmp = obj_entries[i];
-                        obj_entries[i] = obj_entries[j];
-                        obj_entries[j] = tmp;
-                    }
-                }
-            }
             size_t show_n = obj_count < top_n ? obj_count : top_n;
             yyjson_mut_val *top_arr = yyjson_mut_arr(doc);
             for (size_t i = 0; i < show_n; i++) {
@@ -872,18 +877,8 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
                     pct, cum_pct, bar);
         }
 
-        /* Top N objects */
+        /* Top N objects (already sorted above) */
         if (obj_entries && obj_count > 0) {
-            for (size_t i = 0; i < obj_count - 1 && i < top_n; i++) {
-                for (size_t j = i + 1; j < obj_count; j++) {
-                    if (obj_entries[j].data_sz > obj_entries[i].data_sz) {
-                        obj_entry_t tmp = obj_entries[i];
-                        obj_entries[i] = obj_entries[j];
-                        obj_entries[j] = tmp;
-                    }
-                }
-            }
-
             size_t show_n = obj_count < top_n ? obj_count : top_n;
             fprintf(c.out, "\n");
             snprintf(buf, sizeof(buf), "Top %zu Objects by Size", show_n);
