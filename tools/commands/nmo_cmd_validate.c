@@ -716,7 +716,16 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
 
     /* --- Mark-sweep orphan detection --- */
 
-    /* Step 1: Collect CKLevel root IDs */
+    /* Step 1: Collect root IDs using tiered strategy.
+     *
+     * Tier 1: CKLevel / CKScene  — scene graph roots (main level files)
+     * Tier 2: CKGroup             — container roots (component files)
+     * Tier 3: CK3dEntity/Object   — entity roots
+     * Tier 4: All zero-incoming   — fallback for unusual files
+     *
+     * Use the first non-empty tier. This ensures component NMO files
+     * (which lack CKLevel) still get meaningful orphan analysis.
+     */
     nmo_object_id_t *root_ids = NULL;
     size_t root_count = 0;
     if (object_count > 0) {
@@ -728,12 +737,50 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
             fprintf(stderr, "Error: Allocation failed\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
+
+        /* Tier 1: CKLevel / CKScene */
         for (size_t i = 0; i < object_count; ++i) {
             nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
-            if (cid == NMO_CID_LEVEL ||
-                nmo_type_registry_is_class_derived_from(c.registry, cid,
-                                                         NMO_CID_LEVEL)) {
+            if (cid == NMO_CID_LEVEL || cid == NMO_CID_SCENE ||
+                nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_LEVEL) ||
+                nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_SCENE)) {
                 root_ids[root_count++] = nmo_object_get_id(objects[i]);
+            }
+        }
+
+        /* Tier 2: CKGroup */
+        if (root_count == 0) {
+            for (size_t i = 0; i < object_count; ++i) {
+                nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+                if (cid == NMO_CID_GROUP ||
+                    nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_GROUP)) {
+                    root_ids[root_count++] = nmo_object_get_id(objects[i]);
+                }
+            }
+        }
+
+        /* Tier 3: CK3dEntity / CK3dObject */
+        if (root_count == 0) {
+            for (size_t i = 0; i < object_count; ++i) {
+                nmo_class_id_t cid = nmo_object_get_class_id(objects[i]);
+                if (cid == NMO_CID_3DENTITY || cid == NMO_CID_3DOBJECT ||
+                    nmo_type_registry_is_class_derived_from(c.registry, cid, NMO_CID_3DENTITY)) {
+                    root_ids[root_count++] = nmo_object_get_id(objects[i]);
+                }
+            }
+        }
+
+        /* Tier 4: all objects with zero incoming references */
+        if (root_count == 0) {
+            for (size_t i = 0; i < object_count; ++i) {
+                nmo_object_id_t oid = nmo_object_get_id(objects[i]);
+                nmo_ref_edge_t *in_edges = NULL;
+                size_t in_count = 0;
+                nmo_ref_graph_get_object_edges(graph, oid, NMO_REF_DIR_INCOMING,
+                                               &in_edges, &in_count);
+                if (in_count == 0) {
+                    root_ids[root_count++] = oid;
+                }
             }
         }
     }
