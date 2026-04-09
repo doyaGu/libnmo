@@ -33,6 +33,7 @@ typedef struct nmo_chunk_pool nmo_chunk_pool_t;
  * @param initial_capacity Initial pool capacity (recommended: 64-256)
  * @param arena Arena for pool memory allocation
  * @return Pool or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_chunk_pool_t *nmo_chunk_pool_create(
     size_t initial_capacity,
@@ -47,6 +48,7 @@ NMO_API nmo_chunk_pool_t *nmo_chunk_pool_create(
  *
  * @param pool Pool to acquire from
  * @return Chunk or NULL on allocation failure
+ * @ownership borrowed
  */
 NMO_API nmo_chunk_t *nmo_chunk_pool_acquire(
     nmo_chunk_pool_t *pool

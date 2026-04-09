@@ -135,6 +135,7 @@ NMO_API nmo_status_t nmo_arena_array_extend(nmo_arena_array_t *array,
  * @param array array to access (required)
  * @param index Element index
  * @return Pointer to element or NULL if out of bounds
+ * @ownership borrowed
  */
 NMO_API void *nmo_arena_array_get(const nmo_arena_array_t *array, size_t index);
 
@@ -185,11 +186,13 @@ NMO_API nmo_status_t nmo_arena_array_pop(nmo_arena_array_t *array, void *out_ele
 
 /**
  * @brief Get pointer to first element (or NULL if empty)
+ * @ownership borrowed
  */
 NMO_API void *nmo_arena_array_front(const nmo_arena_array_t *array);
 
 /**
  * @brief Get pointer to last element (or NULL if empty)
+ * @ownership borrowed
  */
 NMO_API void *nmo_arena_array_back(const nmo_arena_array_t *array);
 
@@ -303,6 +306,7 @@ NMO_API int nmo_arena_array_is_empty(const nmo_arena_array_t *array);
  * 
  * @param array Array to query (required)
  * @return Data pointer or NULL if empty
+ * @ownership borrowed
  */
 NMO_API void *nmo_arena_array_data(const nmo_arena_array_t *array);
 

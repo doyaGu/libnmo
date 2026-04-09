@@ -81,6 +81,7 @@ typedef struct nmo_reference_stats {
  * @param arena Arena for allocations (required)
  * @return New resolver or NULL on allocation failure
  * @note Returned resolver is caller-owned; arena owns internal allocations.
+ * @ownership owned
  */
 NMO_API nmo_reference_resolver_t *nmo_reference_resolver_create(
     nmo_object_repository_t *repo,
@@ -117,6 +118,7 @@ NMO_API int nmo_reference_resolver_register_strategy(
  * @param ref Reference descriptor (required, copied internally)
  * @return Pointer to registered reference copy, or NULL on failure
  * @note Returned pointer is resolver-owned; valid until resolver destruction.
+ * @ownership borrowed
  */
 NMO_API nmo_object_ref_t *nmo_reference_resolver_register_reference(
     nmo_reference_resolver_t *resolver,
@@ -137,6 +139,7 @@ NMO_API nmo_object_ref_t *nmo_reference_resolver_register_reference(
  * @param resolver Resolver instance (required)
  * @param ref Reference descriptor (required)
  * @return Resolved object or NULL if not found
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_reference_resolver_resolve(
     nmo_reference_resolver_t *resolver,
@@ -226,6 +229,7 @@ NMO_API void nmo_reference_resolver_destroy(
  * @param ref Reference to resolve
  * @param repo Repository to search
  * @return Matched object or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_resolve_strategy_default(
     void *context,
@@ -243,6 +247,7 @@ NMO_API nmo_object_t *nmo_resolve_strategy_default(
  * @param ref Reference to resolve (must have valid type_guid)
  * @param repo Repository to search
  * @return Matched parameter or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_resolve_strategy_parameter(
     void *context,
@@ -260,6 +265,7 @@ NMO_API nmo_object_t *nmo_resolve_strategy_parameter(
  * @param ref Reference to resolve (must have valid type_guid)
  * @param repo Repository to search
  * @return Matched object or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_resolve_strategy_guid(
     void *context,
@@ -277,6 +283,7 @@ NMO_API nmo_object_t *nmo_resolve_strategy_guid(
  * @param ref Reference to resolve
  * @param repo Repository to search
  * @return First matched object or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_resolve_strategy_fuzzy(
     void *context,

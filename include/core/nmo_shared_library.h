@@ -49,6 +49,7 @@ NMO_API nmo_status_t nmo_shared_library_get_symbol(
 
 /**
  * @brief Returns the path that was used to load the shared library.
+ * @ownership borrowed
  */
 NMO_API const char *nmo_shared_library_get_path(const nmo_shared_library_t *library);
 

@@ -40,7 +40,9 @@ typedef struct nmo_image_codec {
 } nmo_image_codec_t;
 
 NMO_API nmo_status_t nmo_image_codec_register(const nmo_image_codec_t *codec);
+/** @ownership borrowed */
 NMO_API const nmo_image_codec_t *nmo_image_codec_get(nmo_bitmap_format_t format);
+/** @ownership borrowed */
 NMO_API const nmo_image_codec_t *nmo_image_codec_find_by_extension(const char *extension);
 NMO_API void nmo_image_codec_register_defaults(void);
 

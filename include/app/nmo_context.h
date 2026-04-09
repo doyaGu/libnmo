@@ -46,6 +46,7 @@ typedef struct nmo_context_desc {
  *
  * @param desc Context descriptor (NULL for defaults)
  * @return Context or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc);
 
@@ -75,6 +76,7 @@ NMO_API void nmo_context_release(nmo_context_t *ctx);
  *
  * @param ctx Context
  * @return Type registry, or NULL if not initialized
+ * @ownership borrowed
  */
 NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx);
 
@@ -83,6 +85,7 @@ NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *
  *
  * @param ctx Context
  * @return Operation registry, or NULL if not initialized
+ * @ownership borrowed
  */
 NMO_API nmo_operation_registry_t *nmo_context_get_operation_registry(const nmo_context_t *ctx);
 
@@ -91,6 +94,7 @@ NMO_API nmo_operation_registry_t *nmo_context_get_operation_registry(const nmo_c
  *
  * @param ctx Context
  * @return Runtime view, or NULL if context is NULL
+ * @ownership borrowed
  */
 NMO_API const nmo_type_runtime_t *nmo_context_get_type_runtime(const nmo_context_t *ctx);
 
@@ -101,6 +105,7 @@ NMO_API const nmo_type_runtime_t *nmo_context_get_type_runtime(const nmo_context
  *
  * @param ctx Context
  * @return Manager registry or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_context_t *ctx);
 
@@ -111,6 +116,7 @@ NMO_API nmo_manager_registry_t *nmo_context_get_manager_registry(const nmo_conte
  *
  * @param ctx Context
  * @return Extension registry or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_extension_registry_t *nmo_context_get_extension_registry(const nmo_context_t *ctx);
 
@@ -119,6 +125,7 @@ NMO_API nmo_extension_registry_t *nmo_context_get_extension_registry(const nmo_c
  *
  * @param ctx Context
  * @return Allocator
+ * @ownership borrowed
  */
 NMO_API nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx);
 
@@ -127,6 +134,7 @@ NMO_API nmo_allocator_t *nmo_context_get_allocator(const nmo_context_t *ctx);
  *
  * @param ctx Context
  * @return Logger
+ * @ownership borrowed
  */
 NMO_API nmo_logger_t *nmo_context_get_logger(const nmo_context_t *ctx);
 
@@ -167,6 +175,7 @@ NMO_API void nmo_context_set_log_level(nmo_context_t *ctx, nmo_log_level_t level
  *
  * @param ctx Context
  * @return Arena pointer or NULL
+ * @ownership borrowed
  */
 NMO_API nmo_arena_t *nmo_context_get_arena(const nmo_context_t *ctx);
 

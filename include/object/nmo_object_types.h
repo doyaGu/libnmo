@@ -191,6 +191,7 @@ NMO_API nmo_status_t nmo_register_mesh_types(nmo_type_registry_t *registry);
  * @param registry Type registry
  * @param class_id Virtools class ID (e.g., NMO_CID_MESH = 32)
  * @return Type descriptor, or NULL if not found
+ * @ownership borrowed
  */
 NMO_API const nmo_type_descriptor_t* nmo_get_object_type_by_class_id(
     nmo_type_registry_t *registry,

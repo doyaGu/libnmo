@@ -24,6 +24,7 @@ typedef struct nmo_io_file nmo_io_file_t;
  * @param path File path
  * @param mode Open mode ("r", "w", "rb", "wb")
  * @return File IO context or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_file_t *nmo_io_file_create(const char *path, const char *mode);
 
@@ -79,6 +80,7 @@ NMO_API nmo_status_t nmo_io_file_close(nmo_io_file_t *io_file);
  * @param path File path
  * @param mode IO mode (NMO_IO_READ, NMO_IO_WRITE, NMO_IO_CREATE)
  * @return IO interface or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_interface_t *nmo_file_io_open(const char *path, nmo_io_mode_t mode);
 

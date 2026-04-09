@@ -62,7 +62,8 @@ typedef struct nmo_index_stats {
  * @param allocator Allocator for dynamic internal arrays (NULL = default)
  * @return New index or NULL on error
  * @note Returned index is caller-owned; arena owns internal allocations.
- * 
+ * @ownership owned
+ *
  * Reference: CKFile constructor initializes m_IndexByClassId
  */
 NMO_API nmo_object_index_t *nmo_object_index_create(
@@ -165,9 +166,10 @@ NMO_API uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *ind
  * @param out_count Output: number of objects found
  * @return Array of object pointers (valid until next rebuild), or NULL if none found
  * @note Returned array is index-owned; do not free.
- * 
+ * @ownership borrowed
+ *
  * Time complexity: O(1) average case with index, O(n) without index
- * 
+ *
  * Reference: CKFile::m_IndexByClassId usage
  */
 NMO_API nmo_object_t **nmo_object_index_get_by_class(
@@ -197,9 +199,10 @@ NMO_API size_t nmo_object_index_count_by_class(
  * @param name Object name
  * @param class_id Optional class filter (0 = any class)
  * @return First matching object, or NULL if not found
- * 
+ * @ownership borrowed
+ *
  * Time complexity: O(1) average case with index
- * 
+ *
  * Note: If multiple objects have the same name, returns the first one found.
  * Use nmo_object_index_get_by_name_all() to get all matches.
  */
@@ -222,6 +225,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name(
  *         next call to nmo_object_index_get_by_name_all() with a non-zero class_id, or until
  *         the index is destroyed.
  * @note Returned array is index-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API nmo_object_t **nmo_object_index_get_by_name_all(
     const nmo_object_index_t *index,
@@ -237,7 +241,8 @@ NMO_API nmo_object_t **nmo_object_index_get_by_name_all(
  * @param name Object name
  * @param class_id Optional class filter (0 = any class)
  * @return First matching object, or NULL if not found
- * 
+ * @ownership borrowed
+ *
  * Note: This is slower than exact match as it falls back to linear search
  */
 NMO_API nmo_object_t *nmo_object_index_find_by_name_fuzzy(
@@ -254,7 +259,8 @@ NMO_API nmo_object_t *nmo_object_index_find_by_name_fuzzy(
  * @param index Object index
  * @param guid Type GUID to search for
  * @return Object with matching GUID, or NULL if not found
- * 
+ * @ownership borrowed
+ *
  * Time complexity: O(1) average case with index, O(n) without index
  */
 NMO_API nmo_object_t *nmo_object_index_find_by_guid(
@@ -270,6 +276,7 @@ NMO_API nmo_object_t *nmo_object_index_find_by_guid(
  * @param out_count Output: number of objects found
  * @return Array of object pointers, or NULL if none found
  * @note Returned array is index-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API nmo_object_t **nmo_object_index_get_by_guid_all(
     const nmo_object_index_t *index,

@@ -50,6 +50,7 @@ typedef struct nmo_id_remap_plan nmo_id_remap_plan_t;
  * @param session Load session containing ID mappings
  * @return Remap table or NULL on error
  * @note Returned table is caller-owned; destroy via nmo_id_remap_table_destroy().
+ * @ownership owned
  */
 NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session);
 
@@ -100,6 +101,7 @@ NMO_API void nmo_id_remap_table_destroy(nmo_id_remap_table_t *table);
  * @param object_count Number of objects
  * @return Remap plan or NULL on error
  * @note Returned plan is caller-owned; destroy via nmo_id_remap_plan_destroy().
+ * @ownership owned
  */
 NMO_API nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *repo,
                                                     nmo_object_t **objects_to_save,
@@ -111,6 +113,7 @@ NMO_API nmo_id_remap_plan_t *nmo_id_remap_plan_create(nmo_object_repository_t *r
  * @param plan Remap plan
  * @return Remap table (runtime ID -> file ID)
  * @note Returned pointer is plan-owned; valid until plan destruction.
+ * @ownership borrowed
  */
 NMO_API nmo_id_remap_table_t *nmo_id_remap_plan_get_table(const nmo_id_remap_plan_t *plan);
 

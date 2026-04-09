@@ -25,6 +25,7 @@ typedef struct nmo_io_memory nmo_io_memory_t;
  * @param size Buffer size
  * @param copy_data Whether to copy buffer data
  * @return Memory IO context or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_memory_t *nmo_io_memory_create(const void *buffer, size_t size, int copy_data);
 
@@ -32,6 +33,7 @@ NMO_API nmo_io_memory_t *nmo_io_memory_create(const void *buffer, size_t size, i
  * Create an empty memory IO context for writing
  * @param initial_capacity Initial buffer capacity
  * @return Memory IO context or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_memory_t *nmo_io_memory_create_empty(size_t initial_capacity);
 
@@ -80,6 +82,7 @@ NMO_API int64_t nmo_io_memory_tell(nmo_io_memory_t *io_memory);
  * @param io_memory Memory IO context
  * @param out_size Output buffer size
  * @return Pointer to buffer
+ * @ownership borrowed
  */
 NMO_API const void *nmo_io_memory_get_buffer(const nmo_io_memory_t *io_memory, size_t *out_size);
 
@@ -95,6 +98,7 @@ NMO_API nmo_status_t nmo_io_memory_reset(nmo_io_memory_t *io_memory);
  * @param data Pointer to data buffer
  * @param size Size of buffer
  * @return IO interface or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_interface_t *nmo_memory_io_open_read(const void *data, size_t size);
 
@@ -102,6 +106,7 @@ NMO_API nmo_io_interface_t *nmo_memory_io_open_read(const void *data, size_t siz
  * Open a write-only memory buffer with dynamic growth and return an IO interface
  * @param initial_capacity Initial buffer capacity
  * @return IO interface or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_interface_t *nmo_memory_io_open_write(size_t initial_capacity);
 
@@ -110,6 +115,7 @@ NMO_API nmo_io_interface_t *nmo_memory_io_open_write(size_t initial_capacity);
  * @param io IO interface (must be from nmo_memory_io_open_write)
  * @param size Output parameter for data size
  * @return Pointer to data buffer or NULL on error
+ * @ownership borrowed
  */
 NMO_API const void *nmo_memory_io_get_data(nmo_io_interface_t *io, size_t *size);
 

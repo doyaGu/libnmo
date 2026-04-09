@@ -25,6 +25,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * @brief Get class name from class ID using the context's type registry.
  *
  * Falls back to inherited class descriptors when direct registration is absent.
+ * @ownership borrowed
  */
 NMO_API const char *nmo_type_query_class_name_from_id(nmo_context_t *ctx, nmo_class_id_t class_id);
 
@@ -49,6 +50,7 @@ NMO_API bool nmo_type_query_class_is_derived_from(nmo_context_t *ctx,
 
 /**
  * @brief Lookup type descriptor by type GUID.
+ * @ownership borrowed
  */
 NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_guid(
     const nmo_type_registry_t *registry,
@@ -56,6 +58,7 @@ NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_guid(
 
 /**
  * @brief Lookup type descriptor by class ID.
+ * @ownership borrowed
  */
 NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_class_id(
     const nmo_type_registry_t *registry,
@@ -71,6 +74,7 @@ NMO_API bool nmo_type_query_object_is_derived_from_guid(
 
 /**
  * @brief Get ancestor state pointer for object as viewed as @p base_guid type.
+ * @ownership borrowed
  */
 NMO_API void *nmo_type_query_object_get_ancestor_state_by_guid(
     const nmo_type_registry_t *registry,

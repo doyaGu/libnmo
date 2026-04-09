@@ -115,6 +115,7 @@ typedef struct nmo_ref_graph_stats {
  * @param arena Arena for edge allocations (required)
  * @return Reference graph or NULL on failure
  * @note Returned graph is caller-owned; arena owns edge storage.
+ * @ownership owned
  */
 NMO_API nmo_ref_graph_t *nmo_ref_graph_create(
     nmo_object_repository_t *repo,
@@ -220,6 +221,7 @@ NMO_API nmo_status_t nmo_ref_graph_mark_reachable(
  *
  * @param kind Reference kind
  * @return Human-readable name
+ * @ownership static
  */
 NMO_API const char *nmo_ref_kind_name(nmo_ref_kind_t kind);
 

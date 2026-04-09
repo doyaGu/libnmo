@@ -59,6 +59,7 @@ typedef struct nmo_compressed_io_desc {
  * @note The caller is responsible for closing the returned interface.
  *       Closing will also close the inner interface.
  * @note The inner interface should not be used directly after wrapping.
+ * @ownership owned
  */
 NMO_API nmo_io_interface_t *nmo_compressed_io_wrap(nmo_io_interface_t *inner,
                                                    const nmo_compressed_io_desc_t *desc);

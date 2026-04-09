@@ -28,6 +28,7 @@ typedef struct nmo_save_buffer nmo_save_buffer_t;
  * @param arena Arena for allocations (buffer data uses malloc for resizing)
  * @param initial_capacity Initial capacity in bytes (0 for default)
  * @return New buffer, or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_save_buffer_t *nmo_save_buffer_create(nmo_arena_t *arena, size_t initial_capacity);
 
@@ -66,6 +67,7 @@ NMO_API size_t nmo_save_buffer_capacity(const nmo_save_buffer_t *buffer);
  *
  * @param buffer Buffer
  * @return Pointer to data (valid until next write/resize)
+ * @ownership borrowed
  */
 NMO_API void *nmo_save_buffer_data(nmo_save_buffer_t *buffer);
 
@@ -74,6 +76,7 @@ NMO_API void *nmo_save_buffer_data(nmo_save_buffer_t *buffer);
  *
  * @param buffer Buffer
  * @return Const pointer to data
+ * @ownership borrowed
  */
 NMO_API const void *nmo_save_buffer_data_const(const nmo_save_buffer_t *buffer);
 
@@ -158,6 +161,7 @@ NMO_API int nmo_save_buffer_patch_u32(nmo_save_buffer_t *buffer, size_t offset, 
  * @param buffer Buffer
  * @param out_size Output: size of returned data
  * @return Pointer to data (caller owns), or NULL if empty
+ * @ownership owned
  */
 NMO_API void *nmo_save_buffer_detach(nmo_save_buffer_t *buffer, size_t *out_size);
 

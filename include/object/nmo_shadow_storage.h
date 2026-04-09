@@ -48,6 +48,7 @@ typedef struct nmo_shadow_buffer {
  *
  * @param arena Arena for allocations (required, not NULL)
  * @return New shadow storage, or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_shadow_storage_t *nmo_shadow_storage_create(nmo_arena_t *arena);
 
@@ -109,6 +110,7 @@ NMO_API int nmo_shadow_capture_chunk_tail(nmo_shadow_storage_t *storage,
  * @param out_size Output: size of returned data (may be NULL)
  * @return Pointer to data, or NULL if not captured
  * @note Returned pointer is storage-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const void *nmo_shadow_get_included_files(const nmo_shadow_storage_t *storage,
                                                    size_t *out_size);
@@ -121,6 +123,7 @@ NMO_API const void *nmo_shadow_get_included_files(const nmo_shadow_storage_t *st
  * @param out_size  Output: size of returned data (may be NULL)
  * @return Pointer to tail data, or NULL if not found
  * @note Returned pointer is storage-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const void *nmo_shadow_get_chunk_tail(const nmo_shadow_storage_t *storage,
                                                uint32_t chunk_id,

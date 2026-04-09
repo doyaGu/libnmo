@@ -237,6 +237,7 @@ typedef struct nmo_operation_registry {
  * @param arena Arena for allocations (must outlive registry)
  * @return Registry or NULL on error
  * @note Returned registry is caller-owned.
+ * @ownership owned
  */
 NMO_API nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena);
 
@@ -413,6 +414,7 @@ NMO_API nmo_status_t nmo_operation_registry_execute(
  * @param operation_guid Operation family GUID
  * @return Family pointer or NULL if not found
  * @note Returned pointer is registry-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API const nmo_operation_family_t *nmo_operation_registry_get_family(
     const nmo_operation_registry_t *registry,

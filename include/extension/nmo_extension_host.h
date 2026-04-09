@@ -70,6 +70,7 @@ typedef struct nmo_extension_host_context {
  * for the lifetime of the process.
  *
  * @return Pointer to the host API table
+ * @ownership static
  */
 NMO_API const nmo_extension_host_t *nmo_extension_host_get_api(void);
 

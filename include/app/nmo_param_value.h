@@ -58,6 +58,7 @@ NMO_API nmo_status_t nmo_param_value_to_string(
  * @param param     Parameter state
  * @param registry  Type registry
  * @return Type name string (registry-owned), or NULL if unknown
+ * @ownership borrowed
  */
 NMO_API const char *nmo_param_value_type_name(
     const nmo_parameter_state_t *param,
@@ -68,6 +69,7 @@ NMO_API const char *nmo_param_value_type_name(
  *
  * @param mode  Parameter storage mode
  * @return Static string ("buffer", "object", "subchunk", "manager", "none")
+ * @ownership static
  */
 NMO_API const char *nmo_param_mode_to_string(nmo_parameter_mode_t mode);
 

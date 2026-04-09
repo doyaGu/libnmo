@@ -104,6 +104,7 @@ typedef struct nmo_chunk_header {
  *
  * @param arena Arena for allocations (required)
  * @return New chunk or NULL on allocation failure
+ * @ownership arena
  */
 NMO_API nmo_chunk_t *nmo_chunk_create(nmo_arena_t *arena);
 
@@ -133,6 +134,7 @@ NMO_API void nmo_chunk_destroy(nmo_chunk_t *chunk);
  * @param src Source chunk to clone (required)
  * @param arena Arena for allocations (required)
  * @return New chunk or NULL on error
+ * @ownership arena
  */
 NMO_API nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena);
 
@@ -148,6 +150,7 @@ NMO_API void nmo_chunk_set_file_context(nmo_chunk_t *chunk,
 
 /**
  * @brief Get file context associated with a chunk (may be NULL).
+ * @ownership borrowed
  */
 NMO_API const struct nmo_chunk_file_context *nmo_chunk_get_file_context(const nmo_chunk_t *chunk);
 

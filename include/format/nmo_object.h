@@ -70,6 +70,7 @@ typedef struct nmo_object {
  * @param id Runtime object ID
  * @param class_id Object class ID
  * @return Object or NULL on allocation failure
+ * @ownership owned
  */
 NMO_API nmo_object_t *nmo_object_create(const nmo_allocator_t *allocator,
                                         nmo_object_id_t id,
@@ -98,6 +99,7 @@ NMO_API int nmo_object_set_name(nmo_object_t *object, const char *name);
  *
  * @param object Object (required)
  * @return Name string or NULL if not set
+ * @ownership borrowed
  */
 NMO_API const char *nmo_object_get_name(const nmo_object_t *object);
 
@@ -134,6 +136,7 @@ NMO_API uint32_t nmo_object_get_flags(const nmo_object_t *object);
  *
  * @param object Object (required)
  * @return Parent object or NULL if root
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_object_get_parent(const nmo_object_t *object);
 
@@ -150,6 +153,7 @@ NMO_API int nmo_object_add_child(nmo_object_t *parent, nmo_object_t *child);
  * @brief Get per-object storage arena
  *
  * The returned arena is owned by the object and destroyed in nmo_object_destroy().
+ * @ownership borrowed
  */
 NMO_API nmo_arena_t *nmo_object_get_storage_arena(const nmo_object_t *object);
 
@@ -168,6 +172,7 @@ NMO_API int nmo_object_remove_child(nmo_object_t *parent, nmo_object_t *child);
  * @param object Parent object (required)
  * @param index Child index
  * @return Child object or NULL if index out of bounds
+ * @ownership borrowed
  */
 NMO_API nmo_object_t *nmo_object_get_child(const nmo_object_t *object, size_t index);
 
@@ -200,6 +205,7 @@ NMO_API int nmo_object_set_chunk(nmo_object_t *object, nmo_chunk_t *chunk);
  *
  * @param object Object (required)
  * @return Chunk data or NULL if not set
+ * @ownership borrowed
  */
 NMO_API nmo_chunk_t *nmo_object_get_chunk(const nmo_object_t *object);
 
@@ -217,6 +223,7 @@ NMO_API int nmo_object_set_data(nmo_object_t *object, void *data);
  *
  * @param object Object (required)
  * @return Custom data pointer or NULL
+ * @ownership borrowed
  */
 NMO_API void *nmo_object_get_data(const nmo_object_t *object);
 
@@ -283,6 +290,7 @@ NMO_API nmo_status_t nmo_object_alloc_state(nmo_object_t *object, uint32_t size)
  *
  * @param object Object (required)
  * @return State buffer or NULL if not allocated
+ * @ownership borrowed
  */
 NMO_API void *nmo_object_get_state(const nmo_object_t *object);
 
@@ -304,6 +312,7 @@ NMO_API uint32_t nmo_object_get_state_size(const nmo_object_t *object);
  * @param type_desc Type descriptor of the ancestor type
  * @param derived_type_desc Type descriptor of the object's actual type (for offset lookup)
  * @return Pointer to ancestor's state, or NULL if not found
+ * @ownership borrowed
  */
 NMO_API void *nmo_object_get_ancestor_state(
     const nmo_object_t *object,

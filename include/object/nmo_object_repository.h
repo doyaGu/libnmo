@@ -35,6 +35,7 @@ typedef struct nmo_object_repository nmo_object_repository_t;
  * @brief Create object repository
  * @param allocator Allocator for repository-owned allocations (NULL for default)
  * @return Repository or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *allocator);
 
@@ -88,6 +89,7 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_reposi
  *         The returned array is owned by the repository and is valid until the
  *         next call to nmo_object_repository_find_by_class() or repository destruction.
  * @note Returned array is repository-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API nmo_object_t **nmo_object_repository_find_by_class(nmo_object_repository_t *repository,
                                                            nmo_class_id_t class_id,
@@ -116,6 +118,7 @@ NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository_t *re
  *         next call to nmo_object_repository_get_all() or repository destruction.
  *         Returns NULL on error or if repository is empty.
  * @note Returned array is repository-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API nmo_object_t **nmo_object_repository_get_all(nmo_object_repository_t *repository,
                                                      size_t *out_count);

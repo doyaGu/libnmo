@@ -39,6 +39,7 @@ typedef struct nmo_pool nmo_pool_t;
  * @param block_size Size of each block in bytes.
  * @param initial_capacity Initial number of blocks to allocate.
  * @return Pool instance or NULL on failure.
+ * @ownership owned
  */
 NMO_API nmo_pool_t *nmo_pool_create(const nmo_allocator_t *allocator,
                                     size_t block_size,
@@ -53,6 +54,7 @@ NMO_API void nmo_pool_destroy(nmo_pool_t *pool);
  * @brief Allocate a block from the pool.
  *
  * @return Pointer to block or NULL on failure.
+ * @ownership borrowed
  */
 NMO_API void *nmo_pool_alloc(nmo_pool_t *pool);
 

@@ -79,6 +79,7 @@ NMO_API nmo_status_t nmo_object_system_deserialize_repository(
  * - arena: owns any newly generated chunk
  *
  * @param file_ctx Optional file context for CKFile-style ID remap during write
+ * @ownership arena
  */
 NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,

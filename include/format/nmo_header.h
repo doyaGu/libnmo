@@ -59,6 +59,7 @@ typedef struct nmo_file_header {
 /**
  * Create header context
  * @return Header context or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_header_t *nmo_header_create(void);
 

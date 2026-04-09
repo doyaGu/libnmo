@@ -24,6 +24,7 @@ typedef struct nmo_manager_registry nmo_manager_registry_t;
  * Create manager registry using the provided arena
  * @param arena Arena used for allocations (required)
  * @return Registry or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_manager_registry_t *nmo_manager_registry_create(nmo_arena_t *arena);
 
@@ -56,6 +57,7 @@ NMO_API nmo_status_t nmo_manager_registry_unregister(nmo_manager_registry_t *reg
  * @param registry Registry
  * @param manager_id Manager ID
  * @return Manager or NULL if not found
+ * @ownership borrowed
  */
 NMO_API void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, uint32_t manager_id);
 
@@ -64,6 +66,7 @@ NMO_API void *nmo_manager_registry_get(const nmo_manager_registry_t *registry, u
  * @param registry Registry
  * @param guid Manager GUID
  * @return Manager or NULL if not found
+ * @ownership borrowed
  */
 NMO_API void *nmo_manager_registry_find_by_guid(
     const nmo_manager_registry_t *registry,

@@ -1,3 +1,16 @@
+/**
+ * @file nmo_ownership.h
+ * @brief Ownership tags and documentation convention
+ *
+ * Pointer-returning NMO_API functions document ownership via @ownership:
+ *
+ *   @ownership borrowed  -- Caller does NOT free. Valid while owner lives.
+ *   @ownership owned     -- Caller must destroy via *_destroy().
+ *   @ownership arena     -- Arena-allocated. Valid until arena reset/destroy.
+ *   @ownership clone     -- New copy. Caller must free.
+ *   @ownership static    -- Static/global data. Always valid.
+ */
+
 #ifndef NMO_OWNERSHIP_H
 #define NMO_OWNERSHIP_H
 

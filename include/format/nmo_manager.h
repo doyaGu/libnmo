@@ -82,6 +82,7 @@ typedef struct nmo_manager {
  * @param name Manager name
  * @param category Plugin category
  * @return Manager or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_manager_t *nmo_manager_create(nmo_guid_t guid, const char *name, nmo_plugin_category_t category);
 
@@ -130,6 +131,7 @@ NMO_API nmo_guid_t nmo_manager_get_guid(const nmo_manager_t *manager);
  * @brief Get manager name
  * @param manager Manager
  * @return Manager name (may be NULL)
+ * @ownership borrowed
  */
 NMO_API const char *nmo_manager_get_name(const nmo_manager_t *manager);
 

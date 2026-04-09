@@ -140,6 +140,7 @@ NMO_API void nmo_allocator_stats_reset(nmo_allocator_stats_t *stats);
  * @param size Number of bytes to allocate
  * @param alignment Alignment requirement (must be power of 2, 0 uses default)
  * @return Pointer to allocated memory or NULL on failure
+ * @ownership owned
  */
 NMO_API void *nmo_alloc(nmo_allocator_t *allocator, size_t size, size_t alignment);
 
@@ -157,6 +158,7 @@ NMO_API void nmo_free(nmo_allocator_t *allocator, void *ptr);
  * @param alloc Allocator to use
  * @param src Null-terminated string to duplicate
  * @return Pointer to duplicated string or NULL on failure
+ * @ownership owned
  */
 NMO_API char *nmo_strdup(nmo_allocator_t *alloc, const char *src);
 

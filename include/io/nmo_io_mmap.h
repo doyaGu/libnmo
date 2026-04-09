@@ -37,6 +37,7 @@ typedef struct nmo_io_mmap nmo_io_mmap_t;
  *
  * @param path File path to map
  * @return Memory-mapped context or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_mmap_t *nmo_io_mmap_open(const char *path);
 
@@ -55,6 +56,7 @@ NMO_API void nmo_io_mmap_close(nmo_io_mmap_t *mmap);
  *
  * @param mmap Memory-mapped context
  * @return Pointer to mapped data, or NULL on error
+ * @ownership borrowed
  */
 NMO_API const void *nmo_io_mmap_data(const nmo_io_mmap_t *mmap);
 
@@ -107,6 +109,7 @@ NMO_API int64_t nmo_io_mmap_tell(const nmo_io_mmap_t *mmap);
  * @param offset Offset from start of file
  * @param size Required size (for bounds checking)
  * @return Pointer to data, or NULL if out of bounds
+ * @ownership borrowed
  */
 NMO_API const void *nmo_io_mmap_ptr_at(const nmo_io_mmap_t *mmap, size_t offset, size_t size);
 
@@ -118,6 +121,7 @@ NMO_API const void *nmo_io_mmap_ptr_at(const nmo_io_mmap_t *mmap, size_t offset,
  *
  * @param path File path to map
  * @return IO interface or NULL on error
+ * @ownership owned
  */
 NMO_API nmo_io_interface_t *nmo_mmap_io_open(const char *path);
 

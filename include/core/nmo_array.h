@@ -95,6 +95,7 @@ NMO_API nmo_status_t nmo_array_extend(nmo_array_t *array,
 
 /**
  * @brief Get element at index
+ * @ownership borrowed
  */
 NMO_API void *nmo_array_get(const nmo_array_t *array, size_t index);
 
@@ -124,11 +125,13 @@ NMO_API nmo_status_t nmo_array_pop(nmo_array_t *array, void *out_element);
 
 /**
  * @brief Get pointer to first element
+ * @ownership borrowed
  */
 NMO_API void *nmo_array_front(const nmo_array_t *array);
 
 /**
  * @brief Get pointer to last element
+ * @ownership borrowed
  */
 NMO_API void *nmo_array_back(const nmo_array_t *array);
 
@@ -175,6 +178,7 @@ NMO_API size_t nmo_array_size(const nmo_array_t *array);
 NMO_API size_t nmo_array_capacity(const nmo_array_t *array);
 NMO_API size_t nmo_array_element_size(const nmo_array_t *array);
 NMO_API int nmo_array_is_empty(const nmo_array_t *array);
+/** @ownership borrowed */
 NMO_API void *nmo_array_data(const nmo_array_t *array);
 
 /**

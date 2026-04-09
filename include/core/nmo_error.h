@@ -67,6 +67,7 @@ typedef enum nmo_severity {
  * @brief Convert an error code to a human-readable string
  * @param code Error code
  * @return Error message string
+ * @ownership static
  */
 NMO_API const char *nmo_error_string(nmo_status_t code);
 
@@ -101,6 +102,7 @@ NMO_API nmo_severity_t nmo_last_error_severity(void);
  * @brief Get the source file where the last error occurred
  * @return File name, or NULL if no error is set
  * @note Valid until next libnmo call on this thread
+ * @ownership borrowed
  */
 NMO_API const char *nmo_last_error_file(void);
 
@@ -114,6 +116,7 @@ NMO_API int nmo_last_error_line(void);
  * @brief Get the last error message for this thread
  * @return Error message, or empty string if no error is set
  * @note Valid until next libnmo call on this thread
+ * @ownership borrowed
  */
 NMO_API const char *nmo_last_error_message(void);
 

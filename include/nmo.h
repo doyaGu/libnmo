@@ -152,6 +152,7 @@ extern "C" {
 /**
  * @brief Get library version string
  * @return Version string (e.g., "1.0.0")
+ * @ownership static
  */
 NMO_API const char *nmo_version(void);
 

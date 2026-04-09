@@ -94,6 +94,7 @@ typedef struct nmo_extension_plugin_info {
  * @param type_registry Type registry for type contributions (required)
  * @param manager_registry Manager registry for manager contributions (required)
  * @return New registry or NULL on failure
+ * @ownership owned
  */
 NMO_API nmo_extension_registry_t *nmo_extension_registry_create(
     nmo_allocator_t *allocator,
@@ -204,6 +205,7 @@ NMO_API nmo_status_t nmo_extension_registry_unload_by_guid(
  * @param registry Extension registry
  * @param out_count Receives number of plugins
  * @return Array of plugin info records, or NULL if empty/error
+ * @ownership borrowed
  */
 NMO_API const nmo_extension_plugin_info_t *nmo_extension_registry_list(
     const nmo_extension_registry_t *registry,
@@ -215,6 +217,7 @@ NMO_API const nmo_extension_plugin_info_t *nmo_extension_registry_list(
  * @param registry Extension registry
  * @param guid Plugin GUID to find
  * @return Plugin info or NULL if not found
+ * @ownership borrowed
  */
 NMO_API const nmo_extension_plugin_info_t *nmo_extension_registry_find(
     const nmo_extension_registry_t *registry,

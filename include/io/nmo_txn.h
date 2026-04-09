@@ -81,6 +81,7 @@ typedef struct nmo_txn_desc {
  *
  * @note The returned handle must be freed with nmo_txn_close()
  * @note If the final path exists, it will be replaced atomically on commit
+ * @ownership owned
  */
 NMO_API nmo_txn_handle_t *nmo_txn_open(const nmo_txn_desc_t *desc);
 

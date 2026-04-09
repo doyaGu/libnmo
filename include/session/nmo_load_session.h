@@ -40,6 +40,7 @@ typedef struct nmo_load_session nmo_load_session_t;
  * @param max_saved_id Maximum object ID from the file being loaded
  * @return Load session or NULL on error
  * @note Returned session is caller-owned; destroy with nmo_load_session_destroy().
+ * @ownership owned
  */
 NMO_API nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
                                                  nmo_object_id_t max_saved_id);
@@ -91,6 +92,7 @@ NMO_API int nmo_load_session_get_runtime_id(const nmo_load_session_t *session,
  * @param session Load session
  * @return Object repository
  * @note Returned pointer is session-owned; do not free.
+ * @ownership borrowed
  */
 NMO_API nmo_object_repository_t *nmo_load_session_get_repository(
     const nmo_load_session_t *session);

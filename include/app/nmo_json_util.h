@@ -24,6 +24,7 @@ typedef struct yyjson_mut_val yyjson_mut_val;
  * @brief Create a JSON string value with UTF-8 sanitization (U+FFFD replacement).
  *
  * Returns `yyjson_mut_null(doc)` for NULL input strings.
+ * @ownership borrowed
  */
 NMO_API yyjson_mut_val *nmo_json_make_str_safe(yyjson_mut_doc *doc, const char *str);
 
