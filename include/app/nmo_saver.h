@@ -88,6 +88,11 @@ typedef struct nmo_save_options {
     nmo_save_progress_callback_t progress_fn; /**< Progress callback (optional) */
     void *progress_user_data;     /**< User data for progress callback */
     bool allow_cancel;            /**< Allow cancellation via callback */
+
+    /** Object filter: if non-NULL, only save objects whose IDs appear
+     *  in this array. The array must remain valid until save completes. */
+    const nmo_object_id_t *include_ids; /**< Object IDs to include (NULL = all) */
+    size_t include_count;               /**< Number of entries in include_ids */
 } nmo_save_options_t;
 
 /**

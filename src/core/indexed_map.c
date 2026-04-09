@@ -602,6 +602,10 @@ void nmo_indexed_map_clear(nmo_indexed_map_t *map) {
     if (map->states != NULL) {
         memset(map->states, INDEXED_MAP_ENTRY_EMPTY, map->capacity);
     }
+    if (map->dense_to_slot != NULL) {
+        for (size_t i = 0; i < map->array_capacity; i++)
+            map->dense_to_slot[i] = -1;
+    }
 }
 
 void nmo_indexed_map_iterate(const nmo_indexed_map_t *map,

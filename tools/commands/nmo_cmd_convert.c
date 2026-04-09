@@ -1007,44 +1007,21 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
-    /* Remove unwanted objects from repository, then save via saver pipeline.
-     * Uses repository-level removal (no runtime hooks) for reliability. */
-    nmo_object_id_t *keep_ids = (nmo_object_id_t *)malloc(final_count * sizeof(nmo_object_id_t));
-    if (!keep_ids) {
+    /* Build include list for saver filter (no repository mutation needed) */
+    nmo_object_id_t *include_ids = (nmo_object_id_t *)malloc(final_count * sizeof(nmo_object_id_t));
+    if (!include_ids) {
         free(final_objects);
         free(col.objects);
         if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
     for (size_t i = 0; i < final_count; i++)
-        keep_ids[i] = nmo_object_get_id(final_objects[i]);
-    qsort(keep_ids, final_count, sizeof(nmo_object_id_t), id_cmp);
+        include_ids[i] = nmo_object_get_id(final_objects[i]);
 
-    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
-    size_t total_count = 0;
-    nmo_object_t **all_objects = nmo_object_repository_get_all(repo, &total_count);
-
-    nmo_object_id_t *remove_ids = (nmo_object_id_t *)malloc(total_count * sizeof(nmo_object_id_t));
-    size_t remove_count = 0;
-    if (remove_ids && all_objects) {
-        for (size_t i = 0; i < total_count; i++) {
-            nmo_object_id_t oid = nmo_object_get_id(all_objects[i]);
-            if (!id_in_sorted(keep_ids, final_count, oid))
-                remove_ids[remove_count++] = oid;
-        }
-    }
-
-    for (size_t i = 0; i < remove_count; i++) {
-        nmo_object_t *detached = NULL;
-        nmo_object_repository_take(repo, remove_ids[i], &detached);
-        /* Intentionally leak — session arena cleans up on exit */
-    }
-
-    free(remove_ids);
-    free(keep_ids);
-
-    /* Save via saver pipeline (full chunk data, compression, ID remap) */
+    /* Save via saver pipeline with object filter */
     nmo_save_options_t save_opts = nmo_save_options_default();
+    save_opts.include_ids = include_ids;
+    save_opts.include_count = final_count;
     if (compress_str) {
         save_opts.compression_level = compress_level;
         save_opts.flags |= NMO_SAVE_COMPRESSED;
@@ -1053,6 +1030,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     int save_result = nmo_save_file(c.session, output_path, &save_opts);
     if (save_result != NMO_OK) {
         fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_result));
+        free(include_ids);
         free(final_objects);
         free(col.objects);
         if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);
@@ -1086,6 +1064,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     }
 
+    free(include_ids);
     free(final_objects);
     free(col.objects);
     if (filter.dsl_filter) nmo_dsl_program_destroy(filter.dsl_filter);

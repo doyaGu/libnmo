@@ -614,7 +614,25 @@ nmo_status_t nmo_save_file(
 static nmo_status_t save_validate_session(nmo_save_context_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.1: Validating session state");
 
-    ctx->objects = nmo_object_repository_get_all(ctx->repo, &ctx->object_count);
+    /* Apply object filter if specified */
+    if (ctx->options.include_ids != NULL && ctx->options.include_count > 0) {
+        size_t cap = ctx->options.include_count;
+        ctx->objects = (nmo_object_t **)nmo_arena_alloc(
+            ctx->arena, cap * sizeof(nmo_object_t *), _Alignof(nmo_object_t *));
+        if (ctx->objects == NULL) {
+            return SAVE_ERR(NMO_ERR_NOMEM, "Object filter list allocation failed");
+        }
+        ctx->object_count = 0;
+        for (size_t i = 0; i < cap; i++) {
+            nmo_object_t *obj = nmo_object_repository_find_by_id(
+                ctx->repo, ctx->options.include_ids[i]);
+            if (obj != NULL) {
+                ctx->objects[ctx->object_count++] = obj;
+            }
+        }
+    } else {
+        ctx->objects = nmo_object_repository_get_all(ctx->repo, &ctx->object_count);
+    }
 
     if (ctx->object_count == 0) {
         nmo_log(ctx->logger, NMO_LOG_ERROR, "Cannot save empty session");
