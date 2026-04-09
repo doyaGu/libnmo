@@ -8,6 +8,7 @@
 #include "session/nmo_session_internal.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_bit_array.h"
+#include "session/nmo_ref_graph.h"
 #include "core/nmo_logger.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
@@ -15,7 +16,6 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
-#include "session/nmo_ref_enumerate.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
@@ -543,65 +543,6 @@ static int runtime_remap_object_copy_refs(
     return NMO_OK;
 }
 
-typedef struct runtime_ref_target_scan_ctx {
-    const runtime_id_set_t *targets;
-    bool found;
-} runtime_ref_target_scan_ctx_t;
-
-static bool runtime_ref_target_scan(
-    void *user_data,
-    uint32_t target_id,
-    nmo_ref_kind_t kind,
-    const char *field_name,
-    uint32_t index)
-{
-    (void)kind;
-    (void)field_name;
-    (void)index;
-
-    runtime_ref_target_scan_ctx_t *ctx = (runtime_ref_target_scan_ctx_t *)user_data;
-    if (ctx == NULL || ctx->targets == NULL) {
-        return false;
-    }
-
-    if (runtime_id_set_contains(ctx->targets, target_id)) {
-        ctx->found = true;
-        return false;
-    }
-
-    return true;
-}
-
-static bool runtime_object_references_targets(
-    const nmo_type_runtime_t *type_rt,
-    nmo_object_t *obj,
-    const runtime_id_set_t *targets)
-{
-    if (type_rt == NULL || type_rt->types == NULL || obj == NULL || targets == NULL) {
-        return false;
-    }
-
-    if (obj->state == NULL) {
-        return false;
-    }
-
-    runtime_ref_target_scan_ctx_t scan_ctx = {
-        .targets = targets,
-        .found = false
-    };
-
-    int enum_result = nmo_ref_enumerate_object(
-        type_rt->types,
-        obj,
-        runtime_ref_target_scan,
-        &scan_ctx);
-    if (enum_result != NMO_OK) {
-        return false;
-    }
-
-    return scan_ctx.found;
-}
-
 static int runtime_collect_delete_set(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
@@ -640,27 +581,44 @@ static int runtime_collect_delete_set(
         return NMO_OK;
     }
 
-    bool added = false;
-    do {
-        added = false;
+    /* Worklist-based cascade using reverse reference index.
+     * Build the ref graph once (O(E)), then for each deleted ID,
+     * find all incoming references (objects that depend on it) and
+     * add them to the delete set. Total work: O(E) vs O(rounds × N × E). */
+    nmo_ref_graph_t *cascade_graph = nmo_ref_graph_create(repo, type_rt->types, arena);
+    if (cascade_graph == NULL) {
+        /* Fallback: no cascade if graph creation fails */
+        return NMO_OK;
+    }
 
-        size_t object_count = 0;
-        nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
-        for (size_t i = 0; i < object_count; i++) {
-            nmo_object_t *obj = objects[i];
-            if (obj == NULL || runtime_id_set_contains(out_set, obj->id)) {
+    /* Worklist: indices into out_set->ids to process */
+    size_t worklist_head = 0; /* next to process = out_set->ids[worklist_head] */
+
+    while (worklist_head < out_set->count) {
+        nmo_object_id_t target_id = out_set->ids[worklist_head++];
+
+        nmo_ref_edge_t *in_edges = NULL;
+        size_t in_count = 0;
+        nmo_ref_graph_get_object_edges(cascade_graph, target_id,
+                                       NMO_REF_DIR_INCOMING, &in_edges, &in_count);
+
+        for (size_t e = 0; e < in_count; e++) {
+            nmo_object_id_t referrer_id = in_edges[e].from;
+            if (referrer_id == NMO_OBJECT_ID_NONE ||
+                runtime_id_set_contains(out_set, referrer_id)) {
                 continue;
             }
 
-            if (runtime_object_references_targets(type_rt, obj, out_set)) {
-                int add_result = runtime_id_set_add(out_set, obj->id);
-                if (add_result != NMO_OK) {
-                    return add_result;
-                }
-                added = true;
+            int add_result = runtime_id_set_add(out_set, referrer_id);
+            if (add_result != NMO_OK) {
+                nmo_ref_graph_destroy(cascade_graph);
+                return add_result;
             }
+            /* New ID appended to out_set->ids — worklist_head will reach it */
         }
-    } while (added);
+    }
+
+    nmo_ref_graph_destroy(cascade_graph);
 
     return NMO_OK;
 }
