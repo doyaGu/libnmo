@@ -444,7 +444,7 @@ NMO_API nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id
  *
  * @param chunk Chunk (required)
  * @param out_value Output value (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value);
 
@@ -453,7 +453,7 @@ NMO_API nmo_status_t nmo_chunk_read_byte(nmo_chunk_t *chunk, uint8_t *out_value)
  *
  * @param chunk Chunk (required)
  * @param out_value Output value (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value);
 
@@ -462,7 +462,7 @@ NMO_API nmo_status_t nmo_chunk_read_word(nmo_chunk_t *chunk, uint16_t *out_value
  *
  * @param chunk Chunk (required)
  * @param out_value Output value (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value);
 
@@ -471,7 +471,7 @@ NMO_API nmo_status_t nmo_chunk_read_int(nmo_chunk_t *chunk, int32_t *out_value);
  *
  * @param chunk Chunk (required)
  * @param out_value Output value (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_value);
 
@@ -480,7 +480,7 @@ NMO_API nmo_status_t nmo_chunk_read_dword(nmo_chunk_t *chunk, uint32_t *out_valu
  *
  * @param chunk Chunk (required)
  * @param out_value Output value (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value);
 
@@ -489,7 +489,7 @@ NMO_API nmo_status_t nmo_chunk_read_float(nmo_chunk_t *chunk, float *out_value);
  *
  * @param chunk Chunk (required)
  * @param out_value Output value (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value);
 
@@ -551,7 +551,7 @@ NMO_API size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
  *
  * @param chunk Chunk (required)
  * @param out_id Output ID (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
 
@@ -915,7 +915,7 @@ NMO_API nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, si
  *
  * @param chunk Chunk (required)
  * @param out_id Output ID (required)
- * @return NMO_OK on success, NMO_ERR_EOF if no data available
+ * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
 

@@ -107,7 +107,7 @@ nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *he
     /* Read Part0 - signature (8 bytes) */
     result = nmo_io_read_exact(io, header->signature, 8);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read file signature");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read file signature");
     }
 
     /* Validate signature immediately */
@@ -118,17 +118,17 @@ nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *he
     /* Read Part0 - remaining fields (24 bytes) */
     result = nmo_io_read_u32(io, &header->crc);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read CRC");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read CRC");
     }
 
     result = nmo_io_read_u32(io, &header->ck_version);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read CK version");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read CK version");
     }
 
     result = nmo_io_read_u32(io, &header->file_version);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read file version");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read file version");
     }
 
     /* Validate file version */
@@ -138,7 +138,7 @@ nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *he
 
     result = nmo_io_read_u32(io, &header->file_version2);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read file version2");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read file version2");
     }
 
     /* CK2 treats non-zero FileVersion2 as an incompatible/legacy header */
@@ -148,54 +148,54 @@ nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *he
 
     result = nmo_io_read_u32(io, &header->file_write_mode);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read file write mode");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read file write mode");
     }
 
     result = nmo_io_read_u32(io, &header->hdr1_pack_size);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read header1 packed size");
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read header1 packed size");
     }
 
     /* Read Part1 if file_version >= 5 */
     if (header->file_version >= 5) {
         result = nmo_io_read_u32(io, &header->data_pack_size);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read data packed size");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read data packed size");
         }
 
         result = nmo_io_read_u32(io, &header->data_unpack_size);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read data unpacked size");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read data unpacked size");
         }
 
         result = nmo_io_read_u32(io, &header->manager_count);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read manager count");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read manager count");
         }
 
         result = nmo_io_read_u32(io, &header->object_count);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read object count");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read object count");
         }
 
         result = nmo_io_read_u32(io, &header->max_id_saved);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read max ID saved");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read max ID saved");
         }
 
         result = nmo_io_read_u32(io, &header->product_version);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read product version");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read product version");
         }
 
         result = nmo_io_read_u32(io, &header->product_build);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read product build");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read product build");
         }
 
         result = nmo_io_read_u32(io, &header->hdr1_unpack_size);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, "Failed to read header1 unpacked size");
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read header1 unpacked size");
         }
     }
 

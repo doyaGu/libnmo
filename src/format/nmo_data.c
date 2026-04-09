@@ -15,7 +15,7 @@
 #define CHECK_BUFFER_SIZE(arena, pos, needed, total) \
     do { \
         if (!nmo_check_buffer_bounds((pos), (needed), (total))) { \
-            NMO_RETURN_ERROR(NMO_ERR_EOF, NMO_SEVERITY_ERROR, \
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, \
                 "Data section buffer overrun: pos=%zu needed=%zu total=%zu", \
                 (size_t)(pos), (size_t)(needed), (size_t)(total)); \
         } \
