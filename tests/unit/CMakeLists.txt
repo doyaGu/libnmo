@@ -158,6 +158,18 @@ else()
     message(STATUS "Skipping test_app_util/test_object_summary_api (nmo_json target unavailable)")
 endif()
 
+# Batch rename helpers (wildcard capture + template substitution)
+# Compiles tool common sources directly; needs CLI support files for linkage.
+add_executable(test_batch_rename test_batch_rename.c
+    ../../tools/nmo_tool_common.c
+    ../../tools/nmo_cli_common.c
+    ../../tools/nmo_cli_output.c
+    ../../tools/nmo_cli_json.c
+)
+target_link_libraries(test_batch_rename PRIVATE nmo nmo_json test_framework yyjson)
+target_include_directories(test_batch_rename PRIVATE ../../tools)
+add_test(NAME test_batch_rename COMMAND test_batch_rename)
+
 # Parameter value decoding
 add_unit_test(test_param_value)
 

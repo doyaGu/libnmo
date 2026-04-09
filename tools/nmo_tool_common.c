@@ -72,6 +72,180 @@ bool nmo_tool_match_wildcard_ci(const char *pattern, const char *value) {
     return nmo_tool_match_wildcard_ci(pattern + 1, value + 1);
 }
 
+/* ----------------------------------------------------------------------------
+ * Wildcard capture (case-insensitive)
+ * -------------------------------------------------------------------------- */
+
+static bool wildcard_capture_impl(const char *pattern, const char *value,
+                                  char captures[][256], size_t max_captures,
+                                  size_t *count) {
+    if (!*pattern) {
+        return *value == '\0';
+    }
+
+    char pc = *pattern;
+    if (pc == '*') {
+        /* Allocate a capture slot for this star */
+        size_t idx = *count;
+        if (idx >= max_captures) {
+            return false;
+        }
+        (*count)++;
+        pattern++;
+
+        /* Try matching star against 0..N characters */
+        const char *start = value;
+        const char *end = value;
+        while (1) {
+            /* Save captured text so far */
+            size_t len = (size_t)(end - start);
+            if (len >= 256) {
+                (*count) = idx;
+                return false;
+            }
+            memcpy(captures[idx], start, len);
+            captures[idx][len] = '\0';
+
+            size_t saved_count = *count;
+            if (wildcard_capture_impl(pattern, end,
+                                      captures, max_captures, count)) {
+                return true;
+            }
+            /* Backtrack: restore capture count */
+            *count = saved_count;
+
+            if (*end == '\0') {
+                break;
+            }
+            end++;
+        }
+        /* No match found; undo capture slot */
+        *count = idx;
+        return false;
+    }
+
+    if (pc == '?') {
+        if (*value == '\0') {
+            return false;
+        }
+        return wildcard_capture_impl(pattern + 1, value + 1,
+                                     captures, max_captures, count);
+    }
+
+    if (tolower((unsigned char)pc) != tolower((unsigned char)*value)) {
+        return false;
+    }
+    return wildcard_capture_impl(pattern + 1, value + 1,
+                                 captures, max_captures, count);
+}
+
+bool nmo_tool_wildcard_capture_ci(const char *pattern, const char *value,
+                                  char captures[][256], size_t max_captures,
+                                  size_t *out_capture_count) {
+    if (!out_capture_count) {
+        return false;
+    }
+    *out_capture_count = 0;
+
+    if (!pattern || !*pattern) {
+        return true;
+    }
+    if (!value) {
+        value = "";
+    }
+
+    size_t count = 0;
+    bool ok = wildcard_capture_impl(pattern, value,
+                                    captures, max_captures, &count);
+    if (ok) {
+        *out_capture_count = count;
+    }
+    return ok;
+}
+
+/* ----------------------------------------------------------------------------
+ * Template substitution
+ * -------------------------------------------------------------------------- */
+
+int nmo_tool_apply_rename_template(const char *tmpl,
+                                   const char *full_match,
+                                   char captures[][256], size_t capture_count,
+                                   char *out, size_t out_size) {
+    if (!tmpl || !out || out_size == 0) {
+        return -1;
+    }
+
+    size_t pos = 0;
+    const char *p = tmpl;
+
+    while (*p) {
+        if (*p == '{') {
+            if (*(p + 1) == '{') {
+                /* Escaped literal brace: {{ -> { */
+                if (pos + 1 >= out_size) {
+                    return -1;
+                }
+                out[pos++] = '{';
+                p += 2;
+                continue;
+            }
+            /* Parse placeholder: {N} */
+            p++;
+            if (*p < '0' || *p > '9') {
+                return -1;
+            }
+            size_t ref = 0;
+            while (*p >= '0' && *p <= '9') {
+                ref = ref * 10 + (size_t)(*p - '0');
+                p++;
+            }
+            if (*p != '}') {
+                return -1;
+            }
+            p++; /* skip closing brace */
+
+            /* Resolve reference */
+            const char *replacement;
+            if (ref == 0) {
+                replacement = full_match ? full_match : "";
+            } else {
+                if (ref > capture_count) {
+                    return -1;
+                }
+                replacement = captures[ref - 1];
+            }
+
+            size_t rlen = strlen(replacement);
+            if (pos + rlen >= out_size) {
+                return -1;
+            }
+            memcpy(out + pos, replacement, rlen);
+            pos += rlen;
+        } else if (*p == '}') {
+            if (*(p + 1) == '}') {
+                /* Escaped literal brace: }} -> } */
+                if (pos + 1 >= out_size) {
+                    return -1;
+                }
+                out[pos++] = '}';
+                p += 2;
+                continue;
+            }
+            /* Stray closing brace */
+            return -1;
+        } else {
+            if (pos + 1 >= out_size) {
+                return -1;
+            }
+            out[pos++] = *p;
+            p++;
+        }
+    }
+
+    out[pos] = '\0';
+    return 0;
+}
+
 char *nmo_tool_strdup(const char *src) {
     if (!src) {
         return NULL;

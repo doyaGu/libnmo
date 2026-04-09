@@ -19,6 +19,42 @@ bool nmo_tool_streq_ci(const char *a, const char *b);
 /** Simple wildcard matcher supporting '*' and '?' (case-insensitive ASCII). */
 bool nmo_tool_match_wildcard_ci(const char *pattern, const char *value);
 
+/**
+ * Glob matching with capture groups (case-insensitive ASCII).
+ *
+ * Each '*' match text is stored in captures[]. '?' matches one char but is
+ * not captured. Returns true on match, false otherwise.
+ *
+ * @param pattern        Glob pattern with '*' and '?' wildcards
+ * @param value          String to match against
+ * @param captures       Output array for captured '*' match text
+ * @param max_captures   Maximum number of captures (array size)
+ * @param out_capture_count  Number of captures written (set on success)
+ * @return true if pattern matches value
+ */
+bool nmo_tool_wildcard_capture_ci(const char *pattern, const char *value,
+                                  char captures[][256], size_t max_captures,
+                                  size_t *out_capture_count);
+
+/**
+ * Template substitution for batch rename.
+ *
+ * Placeholders: {0} = full_match, {1}-{N} = captures[0]-captures[N-1].
+ * Literal braces: {{ produces {, }} produces }.
+ *
+ * @param tmpl           Template string
+ * @param full_match     Original matched name ({0})
+ * @param captures       Captured wildcard segments
+ * @param capture_count  Number of valid captures
+ * @param out            Output buffer
+ * @param out_size       Size of output buffer
+ * @return 0 on success, -1 on error (buffer overflow, invalid ref)
+ */
+int nmo_tool_apply_rename_template(const char *tmpl,
+                                   const char *full_match,
+                                   char captures[][256], size_t capture_count,
+                                   char *out, size_t out_size);
+
 /** Heap-duplicate a string (malloc). Returns NULL on OOM or if src is NULL. */
 char *nmo_tool_strdup(const char *src);
 
