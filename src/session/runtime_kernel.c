@@ -1019,6 +1019,19 @@ static int runtime_execute_delete(
         return collect_result;
     }
 
+    /* Two-pass delete: separate detach from destroy to prevent pre_delete
+     * hooks from accessing state data of objects already freed in an earlier
+     * iteration. Pass 1 runs hooks and detaches all; pass 2 destroys. */
+
+    /* Pass 1: pre_delete hooks + detach from repository */
+    nmo_object_t **detached_objects = (nmo_object_t **)nmo_arena_alloc(
+        arena, delete_set.count * sizeof(nmo_object_t *),
+        _Alignof(nmo_object_t *));
+    if (detached_objects == NULL && delete_set.count > 0) {
+        return NMO_ERR_NOMEM;
+    }
+    size_t detached_count = 0;
+
     for (size_t i = 0; i < delete_set.count; i++) {
         nmo_object_id_t object_id = delete_set.ids[i];
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
@@ -1044,18 +1057,26 @@ static int runtime_execute_delete(
         }
 
         if (remove_result == NMO_OK && detached != NULL) {
-            if (type != NULL &&
-                type->vtable != NULL &&
-                type->vtable->post_delete != NULL &&
-                detached->state != NULL) {
-                type->vtable->post_delete(detached->state, type, repo);
-            }
-            nmo_object_destroy(detached);
+            detached_objects[detached_count++] = detached;
+        }
+    }
 
-            if (report != NULL) {
-                report->deleted_objects++;
-                report->affected_objects++;
-            }
+    /* Pass 2: post_delete hooks + destroy (all objects already detached) */
+    for (size_t i = 0; i < detached_count; i++) {
+        nmo_object_t *detached = detached_objects[i];
+        const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, detached);
+
+        if (type != NULL &&
+            type->vtable != NULL &&
+            type->vtable->post_delete != NULL &&
+            detached->state != NULL) {
+            type->vtable->post_delete(detached->state, type, repo);
+        }
+        nmo_object_destroy(detached);
+
+        if (report != NULL) {
+            report->deleted_objects++;
+            report->affected_objects++;
         }
     }
 
