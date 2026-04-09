@@ -130,9 +130,99 @@ TEST(image_decode, rejects_bump) {
     nmo_arena_destroy(arena);
 }
 
+/* ---- DXT decode tests ---- */
+
+TEST(image_decode, dxt1_solid_red) {
+    /* DXT1 block: c0=0xF800 (red), c1=0x0000, all indices=00.
+     * All 16 pixels should be (255,0,0,255). */
+    uint8_t block[8];
+    /* c0 = 0xF800 LE */
+    block[0] = 0x00;
+    block[1] = 0xF8;
+    /* c1 = 0x0000 LE */
+    block[2] = 0x00;
+    block[3] = 0x00;
+    /* 4 bytes of indices, all zero (select c0) */
+    block[4] = 0x00;
+    block[5] = 0x00;
+    block[6] = 0x00;
+    block[7] = 0x00;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t *rgba = NULL;
+    nmo_status_t st = nmo_image_decode_dxt(
+        block, sizeof(block), 4, 4,
+        NMO_PIXEL_FORMAT_DXT1, arena, &rgba);
+
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_NOT_NULL(rgba);
+
+    /* Check all 16 pixels are solid red */
+    for (int i = 0; i < 16; i++) {
+        ASSERT_EQ(255, (int)rgba[i * 4 + 0]); /* R */
+        ASSERT_EQ(0,   (int)rgba[i * 4 + 1]); /* G */
+        ASSERT_EQ(0,   (int)rgba[i * 4 + 2]); /* B */
+        ASSERT_EQ(255, (int)rgba[i * 4 + 3]); /* A */
+    }
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(image_decode, dxt_rejects_invalid_format) {
+    uint8_t block[8] = {0};
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t *rgba = NULL;
+    nmo_status_t st = nmo_image_decode_dxt(
+        block, sizeof(block), 4, 4,
+        NMO_PIXEL_FORMAT_16_RGB565, arena, &rgba);
+
+    ASSERT_NE(NMO_OK, st);
+    nmo_arena_destroy(arena);
+}
+
+TEST(image_decode, dxt_rejects_truncated) {
+    /* DXT1 4x4 needs 8 bytes, pass only 4 */
+    uint8_t block[4] = {0};
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t *rgba = NULL;
+    nmo_status_t st = nmo_image_decode_dxt(
+        block, sizeof(block), 4, 4,
+        NMO_PIXEL_FORMAT_DXT1, arena, &rgba);
+
+    ASSERT_NE(NMO_OK, st);
+    nmo_arena_destroy(arena);
+}
+
+TEST(image_decode, dxt_rejects_zero_dims) {
+    uint8_t block[8] = {0};
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t *rgba = NULL;
+    nmo_status_t st = nmo_image_decode_dxt(
+        block, sizeof(block), 0, 4,
+        NMO_PIXEL_FORMAT_DXT1, arena, &rgba);
+
+    ASSERT_NE(NMO_OK, st);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(image_decode, rgb565_decode);
     REGISTER_TEST(image_decode, argb1555_decode);
     REGISTER_TEST(image_decode, rejects_dxt);
     REGISTER_TEST(image_decode, rejects_bump);
+    REGISTER_TEST(image_decode, dxt1_solid_red);
+    REGISTER_TEST(image_decode, dxt_rejects_invalid_format);
+    REGISTER_TEST(image_decode, dxt_rejects_truncated);
+    REGISTER_TEST(image_decode, dxt_rejects_zero_dims);
 TEST_MAIN_END()
