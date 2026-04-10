@@ -236,6 +236,11 @@ void nmo_session_destroy(nmo_session_t *session) {
             session->chunk_pool_capacity = 0;
         }
 
+        if (session->behavior_index != NULL) {
+            nmo_behavior_index_destroy(session->behavior_index);
+            session->behavior_index = NULL;
+        }
+
         if (session->arena != NULL) {
             nmo_arena_destroy(session->arena);
         }

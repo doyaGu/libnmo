@@ -364,28 +364,34 @@ nmo_status_t nmo_virtools_load_data_dir(
     if (!data_dir)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null data_dir");
 
-    char path[1024];
+    size_t dir_len = strlen(data_dir);
+    size_t path_cap = dir_len + 64; /* enough for any filename */
+    char *path = (char *)malloc(path_cap);
+    if (!path)
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "path alloc failed");
     int loaded = 0;
 
     if (registry) {
-        snprintf(path, sizeof(path), "%s/virtools_parameter_types.json", data_dir);
+        snprintf(path, path_cap, "%s/virtools_parameter_types.json", data_dir);
         if (nmo_virtools_load_param_types(registry, path) == NMO_OK)
             loaded++;
 
-        snprintf(path, sizeof(path), "%s/virtools_operation_types.json", data_dir);
+        snprintf(path, path_cap, "%s/virtools_operation_types.json", data_dir);
         if (nmo_virtools_load_operations(registry, path) == NMO_OK)
             loaded++;
     }
 
     if (bb_registry) {
-        snprintf(path, sizeof(path), "%s/virtools_building_blocks.json", data_dir);
+        snprintf(path, path_cap, "%s/virtools_building_blocks.json", data_dir);
         if (nmo_virtools_load_building_blocks(bb_registry, path) == NMO_OK)
             loaded++;
 
         /* Also try extended BBs */
-        snprintf(path, sizeof(path), "%s/virtools_building_blocks_ext.json", data_dir);
+        snprintf(path, path_cap, "%s/virtools_building_blocks_ext.json", data_dir);
         nmo_virtools_load_building_blocks(bb_registry, path); /* optional */
     }
+
+    free(path);
 
     if (loaded == 0)
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_WARNING, "no Virtools data files found in %s", data_dir);
