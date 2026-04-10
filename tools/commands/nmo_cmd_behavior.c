@@ -39,6 +39,12 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Forward declarations */
+static nmo_object_id_t find_io_owner(
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *parent_bs,
+    nmo_object_id_t io_id);
+
 static int is_behavior_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
         return 0;
@@ -441,9 +447,13 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const nmo_behaviorlink_state_t *ls =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
             /* in_io_id = source (SDK naming is backwards), out_io_id = target */
-            fprintf(c.out, "  %s -> %s",
-                    resolve_name(repo, ls->in_io_id),
-                    resolve_name(repo, ls->out_io_id));
+            nmo_object_id_t src_owner = find_io_owner(repo, bs, ls->in_io_id);
+            nmo_object_id_t tgt_owner = find_io_owner(repo, bs, ls->out_io_id);
+            const char *so = (src_owner == 0) ? name : resolve_name(repo, src_owner);
+            const char *to = (tgt_owner == 0) ? name : resolve_name(repo, tgt_owner);
+            fprintf(c.out, "  %s.%s -> %s.%s",
+                    (so && so[0]) ? so : "?", resolve_name(repo, ls->in_io_id),
+                    (to && to[0]) ? to : "?", resolve_name(repo, ls->out_io_id));
             if (ls->activation_delay != 0) {
                 fprintf(c.out, "  (delay: %d)", ls->activation_delay);
             }
