@@ -680,7 +680,7 @@ TEST(builtin_operations, trigonometry_asin_domain_error) {
 TEST(builtin_operations, vector_add_vector3) {
     setup_registries();
 
-    const nmo_guid_t op_guid = NMO_OP_GUID_VECTOR_ADD;
+    const nmo_guid_t op_guid = NMO_OP_GUID_ADD; /* Vector add is a type variant of Addition */
     const nmo_type_descriptor_t *vec3_type = get_type(CKPGUID_VECTOR);
     ASSERT_NE(NULL, vec3_type);
 

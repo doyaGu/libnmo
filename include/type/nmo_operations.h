@@ -75,13 +75,11 @@ extern "C" {
 #define NMO_OP_GUID_ACOS       NMO_GUID(0x7EED1D16, 0x345B7184) /* Arc Cosine */
 #define NMO_OP_GUID_ATAN       NMO_GUID(0x30547441, 0x611F682C) /* Arc Tangent 2 */
 
-/* Vector operations — libnmo extensions (no Virtools equivalent) */
-#define NMO_OP_GUID_VECTOR_ADD   NMO_GUID(0x6FED1C05, 0x00000001)
-#define NMO_OP_GUID_VECTOR_SUB   NMO_GUID(0x6FED1C05, 0x00000002)
-#define NMO_OP_GUID_VECTOR_MUL   NMO_GUID(0x6FED1C05, 0x00000003)
-#define NMO_OP_GUID_VECTOR_DIV   NMO_GUID(0x6FED1C05, 0x00000004)
-#define NMO_OP_GUID_VECTOR_DOT   NMO_GUID(0x6FED1C05, 0x00000005)
-#define NMO_OP_GUID_VECTOR_CROSS NMO_GUID(0x6FED1C05, 0x00000006)
+/* Vector operations — merged into Virtools arithmetic or own Virtools GUIDs.
+ * VectorAdd/Sub/Mul/Div are type variants of Addition/Subtraction/etc.
+ * DotProduct and CrossProduct have their own Virtools operation GUIDs. */
+#define NMO_OP_GUID_VECTOR_DOT   NMO_GUID(0x229F54E2, 0x751350BD) /* Dot Product */
+#define NMO_OP_GUID_VECTOR_CROSS NMO_GUID(0x3BE05DF3, 0x143A49E0) /* Cross Product */
 
 /* ============================================================================
  * Registration Functions

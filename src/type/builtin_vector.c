@@ -281,43 +281,43 @@ nmo_status_t nmo_register_vector_operations(
     }
 
     nmo_operation_desc_t operations[] = {
-        /* Vector2 */
-        {NMO_OP_GUID_VECTOR_ADD, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
-         op_vector2_add, NULL, NMO_OP_BINARY, 100, "VectorAdd", "Vector2 addition"},
-        {NMO_OP_GUID_VECTOR_SUB, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
-         op_vector2_sub, NULL, NMO_OP_BINARY, 100, "VectorSub", "Vector2 subtraction"},
-        {NMO_OP_GUID_VECTOR_MUL, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
-         op_vector2_mul, NULL, NMO_OP_BINARY, 100, "VectorMul", "Vector2 component-wise multiply"},
-        {NMO_OP_GUID_VECTOR_DIV, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
-         op_vector2_div, NULL, NMO_OP_BINARY, 100, "VectorDiv", "Vector2 component-wise divide"},
+        /* Vector2 — add/sub/mul/div are type variants of Virtools arithmetic ops */
+        {NMO_OP_GUID_ADD, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
+         op_vector2_add, NULL, NMO_OP_BINARY, 100, "Addition", "Vector2 addition"},
+        {NMO_OP_GUID_SUBTRACT, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
+         op_vector2_sub, NULL, NMO_OP_BINARY, 100, "Subtraction", "Vector2 subtraction"},
+        {NMO_OP_GUID_MULTIPLY, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
+         op_vector2_mul, NULL, NMO_OP_BINARY, 100, "Multiplication", "Vector2 component-wise multiply"},
+        {NMO_OP_GUID_DIVIDE, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2,
+         op_vector2_div, NULL, NMO_OP_BINARY, 100, "Division", "Vector2 component-wise divide"},
         {NMO_OP_GUID_VECTOR_DOT, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_VECTOR2, NMO_TYPE_GUID_FLOAT,
-         op_vector2_dot, NULL, NMO_OP_BINARY, 100, "VectorDot", "Vector2 dot product"},
+         op_vector2_dot, NULL, NMO_OP_BINARY, 100, "Dot Product", "Vector2 dot product"},
 
         /* Vector3 */
-        {NMO_OP_GUID_VECTOR_ADD, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
-         op_vector3_add, NULL, NMO_OP_BINARY, 100, "VectorAdd", "Vector3 addition"},
-        {NMO_OP_GUID_VECTOR_SUB, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
-         op_vector3_sub, NULL, NMO_OP_BINARY, 100, "VectorSub", "Vector3 subtraction"},
-        {NMO_OP_GUID_VECTOR_MUL, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
-         op_vector3_mul, NULL, NMO_OP_BINARY, 100, "VectorMul", "Vector3 component-wise multiply"},
-        {NMO_OP_GUID_VECTOR_DIV, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
-         op_vector3_div, NULL, NMO_OP_BINARY, 100, "VectorDiv", "Vector3 component-wise divide"},
+        {NMO_OP_GUID_ADD, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
+         op_vector3_add, NULL, NMO_OP_BINARY, 100, "Addition", "Vector3 addition"},
+        {NMO_OP_GUID_SUBTRACT, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
+         op_vector3_sub, NULL, NMO_OP_BINARY, 100, "Subtraction", "Vector3 subtraction"},
+        {NMO_OP_GUID_MULTIPLY, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
+         op_vector3_mul, NULL, NMO_OP_BINARY, 100, "Multiplication", "Vector3 component-wise multiply"},
+        {NMO_OP_GUID_DIVIDE, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
+         op_vector3_div, NULL, NMO_OP_BINARY, 100, "Division", "Vector3 component-wise divide"},
         {NMO_OP_GUID_VECTOR_DOT, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_FLOAT,
-         op_vector3_dot, NULL, NMO_OP_BINARY, 100, "VectorDot", "Vector3 dot product"},
+         op_vector3_dot, NULL, NMO_OP_BINARY, 100, "Dot Product", "Vector3 dot product"},
         {NMO_OP_GUID_VECTOR_CROSS, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3, NMO_TYPE_GUID_VECTOR3,
-         op_vector3_cross, NULL, NMO_OP_BINARY, 100, "VectorCross", "Vector3 cross product"},
+         op_vector3_cross, NULL, NMO_OP_BINARY, 100, "Cross Product", "Vector3 cross product"},
 
         /* Vector4 */
-        {NMO_OP_GUID_VECTOR_ADD, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
-         op_vector4_add, NULL, NMO_OP_BINARY, 100, "VectorAdd", "Vector4 addition"},
-        {NMO_OP_GUID_VECTOR_SUB, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
-         op_vector4_sub, NULL, NMO_OP_BINARY, 100, "VectorSub", "Vector4 subtraction"},
-        {NMO_OP_GUID_VECTOR_MUL, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
-         op_vector4_mul, NULL, NMO_OP_BINARY, 100, "VectorMul", "Vector4 component-wise multiply"},
-        {NMO_OP_GUID_VECTOR_DIV, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
-         op_vector4_div, NULL, NMO_OP_BINARY, 100, "VectorDiv", "Vector4 component-wise divide"},
+        {NMO_OP_GUID_ADD, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
+         op_vector4_add, NULL, NMO_OP_BINARY, 100, "Addition", "Vector4 addition"},
+        {NMO_OP_GUID_SUBTRACT, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
+         op_vector4_sub, NULL, NMO_OP_BINARY, 100, "Subtraction", "Vector4 subtraction"},
+        {NMO_OP_GUID_MULTIPLY, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
+         op_vector4_mul, NULL, NMO_OP_BINARY, 100, "Multiplication", "Vector4 component-wise multiply"},
+        {NMO_OP_GUID_DIVIDE, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4,
+         op_vector4_div, NULL, NMO_OP_BINARY, 100, "Division", "Vector4 component-wise divide"},
         {NMO_OP_GUID_VECTOR_DOT, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_VECTOR4, NMO_TYPE_GUID_FLOAT,
-         op_vector4_dot, NULL, NMO_OP_BINARY, 100, "VectorDot", "Vector4 dot product"}
+         op_vector4_dot, NULL, NMO_OP_BINARY, 100, "Dot Product", "Vector4 dot product"}
     };
 
     return nmo_operation_registry_register_bulk(
