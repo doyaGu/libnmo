@@ -177,6 +177,17 @@ add_unit_test(test_param_value)
 # Script walker
 add_unit_test(test_script_walker)
 
+# BB prototype registry
+add_unit_test(test_bb_registry)
+
+# Virtools CK2 type/operation registration
+add_unit_test(test_virtools_types)
+
+# Behavior ownership index
+add_unit_test(test_behavior_index)
+set_tests_properties(test_behavior_index PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+
 # Context and session integration
 add_unit_test(test_context_session)
 add_unit_test(test_context_threadsafe)  # Thread-safety tests

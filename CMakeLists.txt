@@ -270,6 +270,7 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
     src/type/nmo_reflection.c
+    src/type/type_registry_virtools.c
 )
 
 # DSL System sources
@@ -324,6 +325,8 @@ set(NMO_APP_SOURCES
     src/app/object_diff.c
     src/app/param_value.c
     src/app/script_walker.c
+    src/app/bb_registry.c
+    src/app/behavior_index.c
 )
 
 set(NMO_JSON_SOURCES
