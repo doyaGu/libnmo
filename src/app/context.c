@@ -192,21 +192,8 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     /* Create BB prototype registry */
     ctx->bb_registry = nmo_bb_registry_create(ctx->arena);
 
-    /* Load Virtools plugin data (param types, operations, BBs) from JSON.
-     * This happens BEFORE finalize so no begin_update hack is needed.
-     * data_dir is resolved from: desc->data_dir > NMO_DATA_DIR env > NULL (skip). */
-    {
-        const char *data_dir = (desc != NULL) ? desc->data_dir : NULL;
-        if (data_dir == NULL)
-            data_dir = getenv("NMO_DATA_DIR");
-        if (data_dir != NULL) {
-            nmo_virtools_load_data_dir(ctx->type_registry, ctx->bb_registry, data_dir);
-        }
-    }
-
-    /* Compute state layouts for all types (ECS support) */
-    nmo_type_registry_compute_state_layouts(ctx->type_registry);
-
+    /* Create operation registry early — virtools_load will register
+     * Virtools operation signatures (function=NULL) into it. */
     ctx->operation_registry = nmo_operation_registry_create(ctx->arena);
     if (ctx->operation_registry == NULL) {
         nmo_type_registry_destroy(ctx->type_registry);
@@ -215,6 +202,26 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
+    /* Load Virtools plugin data (param types, operations, BBs) from JSON.
+     * This happens BEFORE finalize so no begin_update hack is needed.
+     * Operations get both GUID→name in type_registry AND full signatures
+     * (p1/p2/result types, function=NULL) in operation_registry.
+     * data_dir is resolved from: desc->data_dir > NMO_DATA_DIR env > NULL (skip). */
+    {
+        const char *data_dir = (desc != NULL) ? desc->data_dir : NULL;
+        if (data_dir == NULL)
+            data_dir = getenv("NMO_DATA_DIR");
+        if (data_dir != NULL) {
+            nmo_virtools_load_data_dir(ctx->type_registry, ctx->operation_registry,
+                                       ctx->bb_registry, data_dir);
+        }
+    }
+
+    /* Compute state layouts for all types (ECS support) */
+    nmo_type_registry_compute_state_layouts(ctx->type_registry);
+
+    /* Register builtin operations with C implementations.
+     * These may override signature-only entries from JSON. */
     nmo_status_t op_result = nmo_register_builtin_operations(
         ctx->operation_registry,
         ctx->type_registry);

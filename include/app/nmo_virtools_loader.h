@@ -22,6 +22,7 @@ extern "C" {
 #endif
 
 typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_operation_registry nmo_operation_registry_t;
 typedef struct nmo_bb_registry nmo_bb_registry_t;
 
 /**
@@ -41,15 +42,19 @@ NMO_API nmo_status_t nmo_virtools_load_param_types(
 /**
  * @brief Load operation types from JSON file.
  *
- * Reads virtools_operation_types.json and registers operations as
- * NMO_TYPE_CATEGORY_OPERATION entries in the type registry.
+ * Reads virtools_operation_types.json and registers:
+ * - Operation GUID→name as NMO_TYPE_CATEGORY_OPERATION in type_registry
+ * - Full signatures (p1/p2/result type) in operation_registry (function=NULL)
  *
- * @param registry  Type registry
- * @param path      JSON file path
+ * @param type_registry  Type registry (for GUID→name)
+ * @param op_registry    Operation registry (for signatures, may be NULL to skip)
+ * @param path           JSON file path
  * @return NMO_OK on success
  */
 NMO_API nmo_status_t nmo_virtools_load_operations(
-    nmo_type_registry_t *registry, const char *path);
+    nmo_type_registry_t *type_registry,
+    nmo_operation_registry_t *op_registry,
+    const char *path);
 
 /**
  * @brief Load building block prototypes from JSON file.
@@ -71,13 +76,15 @@ NMO_API nmo_status_t nmo_virtools_load_building_blocks(
  * and virtools_building_blocks.json (+ _ext.json) in the given directory.
  * Missing files are silently skipped.
  *
- * @param registry     Type registry (for param types + operations)
- * @param bb_registry  BB registry (for building blocks)
- * @param data_dir     Directory containing JSON files
+ * @param type_registry  Type registry (for param types + operation names)
+ * @param op_registry    Operation registry (for operation signatures, may be NULL)
+ * @param bb_registry    BB registry (for building blocks)
+ * @param data_dir       Directory containing JSON files
  * @return NMO_OK if at least one file loaded successfully
  */
 NMO_API nmo_status_t nmo_virtools_load_data_dir(
-    nmo_type_registry_t *registry,
+    nmo_type_registry_t *type_registry,
+    nmo_operation_registry_t *op_registry,
     nmo_bb_registry_t *bb_registry,
     const char *data_dir);
 

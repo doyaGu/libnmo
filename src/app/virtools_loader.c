@@ -8,6 +8,7 @@
 #include "app/nmo_virtools_loader.h"
 #include "app/nmo_bb_registry.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_operation_system.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
 
@@ -206,8 +207,12 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
  * Operation types
  * ============================================================================ */
 
-nmo_status_t nmo_virtools_load_operations(nmo_type_registry_t *registry, const char *path) {
-    if (!registry || !path)
+nmo_status_t nmo_virtools_load_operations(
+    nmo_type_registry_t *type_registry,
+    nmo_operation_registry_t *op_registry,
+    const char *path)
+{
+    if (!type_registry || !path)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
     yyjson_read_err err;
@@ -228,13 +233,44 @@ nmo_status_t nmo_virtools_load_operations(nmo_type_registry_t *registry, const c
         nmo_guid_t guid = get_guid(item, "guid");
         if (nmo_guid_is_null(guid)) continue;
 
+        const char *name = get_str(item, "name");
+
+        /* Register GUID→name in type_registry */
         nmo_type_descriptor_t desc;
         memset(&desc, 0, sizeof(desc));
         desc.guid = guid;
-        desc.name = get_str(item, "name");
+        desc.name = name;
         desc.category = NMO_TYPE_CATEGORY_OPERATION;
         desc.valid = true;
-        nmo_type_registry_register(registry, &desc);
+        nmo_type_registry_register(type_registry, &desc);
+
+        /* Register signatures in operation_registry (function=NULL) */
+        if (!op_registry) continue;
+        yyjson_val *sigs = yyjson_obj_get(item, "signatures");
+        if (!yyjson_is_arr(sigs)) continue;
+
+        yyjson_val *sig;
+        yyjson_arr_iter sig_iter;
+        yyjson_arr_iter_init(sigs, &sig_iter);
+        while ((sig = yyjson_arr_iter_next(&sig_iter)) != NULL) {
+            nmo_guid_t p1 = get_guid(sig, "p1_guid");
+            nmo_guid_t p2 = get_guid(sig, "p2_guid");
+            nmo_guid_t result = get_guid(sig, "result_guid");
+            if (nmo_guid_is_null(p1) || nmo_guid_is_null(result)) continue;
+
+            nmo_operation_desc_t op;
+            memset(&op, 0, sizeof(op));
+            op.operation_guid = guid;
+            op.p1_type_guid = p1;
+            op.p2_type_guid = p2;
+            op.result_type_guid = result;
+            op.function = NULL; /* signature-only, no implementation */
+            op.name = name;
+            /* Detect unary: p2 is CKPGUID_NONE {0x1CA1B823, 0x41A80E45} */
+            if (p2.d1 == 0x1CA1B823 && p2.d2 == 0x41A80E45)
+                op.flags = NMO_OP_UNARY;
+            nmo_operation_registry_register(op_registry, &op, type_registry);
+        }
     }
 
     yyjson_doc_free(doc);
@@ -357,7 +393,8 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
  * ============================================================================ */
 
 nmo_status_t nmo_virtools_load_data_dir(
-    nmo_type_registry_t *registry,
+    nmo_type_registry_t *type_registry,
+    nmo_operation_registry_t *op_registry,
     nmo_bb_registry_t *bb_registry,
     const char *data_dir)
 {
@@ -371,13 +408,13 @@ nmo_status_t nmo_virtools_load_data_dir(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "path alloc failed");
     int loaded = 0;
 
-    if (registry) {
+    if (type_registry) {
         snprintf(path, path_cap, "%s/virtools_parameter_types.json", data_dir);
-        if (nmo_virtools_load_param_types(registry, path) == NMO_OK)
+        if (nmo_virtools_load_param_types(type_registry, path) == NMO_OK)
             loaded++;
 
         snprintf(path, path_cap, "%s/virtools_operation_types.json", data_dir);
-        if (nmo_virtools_load_operations(registry, path) == NMO_OK)
+        if (nmo_virtools_load_operations(type_registry, op_registry, path) == NMO_OK)
             loaded++;
     }
 

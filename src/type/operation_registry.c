@@ -450,12 +450,6 @@ nmo_status_t nmo_operation_registry_register(
                          "Operation registry is finalized; cannot register operations");
     }
     
-    /* Validate operation descriptor */
-    if (!desc->function) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                                "Operation function is NULL");
-    }
-    
     /* Resolve type descriptors from type registry */
     const nmo_type_descriptor_t *p1_type = nmo_type_registry_find_by_guid(
         type_registry, desc->p1_type_guid
@@ -1085,11 +1079,16 @@ nmo_status_t nmo_operation_registry_execute(
         return result;
     }
     
-    if (!cell || !cell->desc.function) {
+    if (!cell) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                 "Operation not found");
     }
-    
+    if (!cell->desc.function) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
+                                "Operation '%s' has no implementation",
+                                cell->desc.name ? cell->desc.name : "<unnamed>");
+    }
+
     /* Execute operation */
     return cell->desc.function(
         p1_data, p1_type,
