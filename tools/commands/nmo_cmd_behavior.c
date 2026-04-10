@@ -440,9 +440,10 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (!link_obj || !link_obj->state) continue;
             const nmo_behaviorlink_state_t *ls =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
+            /* in_io_id = source (SDK naming is backwards), out_io_id = target */
             fprintf(c.out, "  %s -> %s",
-                    resolve_name(repo, ls->out_io_id),
-                    resolve_name(repo, ls->in_io_id));
+                    resolve_name(repo, ls->in_io_id),
+                    resolve_name(repo, ls->out_io_id));
             if (ls->activation_delay != 0) {
                 fprintf(c.out, "  (delay: %d)", ls->activation_delay);
             }
@@ -1497,8 +1498,15 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     const char *beh_name = nmo_object_get_name(beh);
 
-    /* Build link table */
-    typedef struct { nmo_object_id_t out_io; nmo_object_id_t in_io; int16_t delay; } trace_link_t;
+    /* Build link table. IMPORTANT: Virtools SDK naming is backwards:
+     * in_io_id = activation SOURCE (GetInBehaviorIO)
+     * out_io_id = activation TARGET (GetOutBehaviorIO)
+     * Direction: source_io → target_io */
+    typedef struct {
+        nmo_object_id_t source_io; /* in_io_id: where activation comes FROM */
+        nmo_object_id_t target_io; /* out_io_id: where activation goes TO */
+        int16_t delay;
+    } trace_link_t;
     trace_link_t *links = (trace_link_t *)malloc(bs->sub_behavior_links.count * sizeof(trace_link_t));
     if (!links) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     size_t link_count = 0;
@@ -1508,8 +1516,8 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_object_t *lo = nmo_object_repository_find_by_id(repo, link_ids[i]);
         if (!lo || !lo->state) continue;
         const nmo_behaviorlink_state_t *ls = (const nmo_behaviorlink_state_t *)lo->state;
-        links[link_count].out_io = ls->out_io_id;
-        links[link_count].in_io = ls->in_io_id;
+        links[link_count].source_io = ls->in_io_id;  /* source */
+        links[link_count].target_io = ls->out_io_id;  /* target */
         links[link_count].delay = ls->activation_delay;
         link_count++;
     }
@@ -1545,72 +1553,30 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
      * BB ownership context. Use BFS from all entry IOs (those that appear
      * as out_io but are not themselves targets of any link). */
 
-    /* Entry points: root behavior's own bIn ports + sub-behavior output
-     * IOs that have outgoing links but whose owning BB has no incoming
-     * behavior links (true graph roots). Start with root's bIn ports. */
+    /* Entry points: the root behavior's bIn ports that appear as source_io
+     * in any link. These are the activation entry points of the script. */
     nmo_object_id_t entry_ios[64];
     size_t entry_count = 0;
 
-    /* Collect ALL IOs that appear as out_io in links */
-    for (size_t i = 0; i < link_count && entry_count < 64; i++) {
-        nmo_object_id_t candidate = links[i].out_io;
-        bool dup = false;
-        for (size_t e = 0; e < entry_count; e++) {
-            if (entry_ios[e] == candidate) { dup = true; break; }
-        }
-        if (!dup) entry_ios[entry_count++] = candidate;
-    }
-
-    /* Remove IOs that are reachable via chain: if an IO's owning BB has
-     * any input IO that appears as in_io of any link, then this BB is
-     * mid-chain (not an entry). Keep only IOs from BBs with no incoming. */
-    size_t filtered = 0;
-    for (size_t e = 0; e < entry_count; e++) {
-        nmo_object_id_t owner = find_io_owner(repo, bs, entry_ios[e]);
-        if (owner == 0) {
-            /* Root behavior's IO — always an entry */
-            entry_ios[filtered++] = entry_ios[e];
-            continue;
-        }
-
-        /* Check if this owner BB has ANY input IO that's a link target */
-        bool bb_has_incoming = false;
-        if (owner != NMO_OBJECT_ID_NONE) {
-            nmo_object_t *oobj = nmo_object_repository_find_by_id(repo, owner);
-            if (oobj && oobj->state) {
-                const nmo_behavior_state_t *obs = (const nmo_behavior_state_t *)oobj->state;
-                if (obs->inputs.data) {
-                    const nmo_object_id_t *iids = (const nmo_object_id_t *)obs->inputs.data;
-                    for (size_t ii = 0; ii < obs->inputs.count && !bb_has_incoming; ii++) {
-                        for (size_t li = 0; li < link_count; li++) {
-                            if (links[li].in_io == iids[ii]) {
-                                bb_has_incoming = true; break;
-                            }
-                        }
-                    }
+    if (bs->inputs.data) {
+        const nmo_object_id_t *root_ins = (const nmo_object_id_t *)bs->inputs.data;
+        for (size_t i = 0; i < bs->inputs.count && entry_count < 64; i++) {
+            /* Check if this root bIn is a source in any link */
+            for (size_t li = 0; li < link_count; li++) {
+                if (links[li].source_io == root_ins[i]) {
+                    entry_ios[entry_count++] = root_ins[i];
+                    break;
                 }
             }
         }
-
-        if (!bb_has_incoming) {
-            entry_ios[filtered++] = entry_ios[e];
-        }
     }
-    entry_count = filtered;
 
-    /* If --from specified, filter to matching entry */
+    /* If --from specified, filter to matching entry by IO name */
     if (from_name) {
         size_t matched = 0;
         for (size_t e = 0; e < entry_count; e++) {
-            nmo_object_id_t owner = find_io_owner(repo, bs, entry_ios[e]);
-            const char *oname = (owner == 0) ? beh_name : resolve_name(repo, owner);
             const char *ion = resolve_name(repo, entry_ios[e]);
-            /* Match against "owner.io" or just "io" */
-            char full_name[256];
-            snprintf(full_name, sizeof(full_name), "%s.%s",
-                     (oname && oname[0]) ? oname : "?", ion ? ion : "?");
-            if (nmo_tool_match_wildcard_ci(from_name, ion ? ion : "") ||
-                nmo_tool_match_wildcard_ci(from_name, full_name)) {
+            if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
                 entry_ios[matched++] = entry_ios[e];
             }
         }
@@ -1658,9 +1624,9 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
             if (d > 12) continue;
 
             for (size_t li = 0; li < link_count; li++) {
-                if (links[li].out_io != cur.io) continue;
+                if (links[li].source_io != cur.io) continue;
 
-                nmo_object_id_t tgt = links[li].in_io;
+                nmo_object_id_t tgt = links[li].target_io;
                 nmo_object_id_t tgt_owner = find_io_owner(repo, bs, tgt);
                 const char *tname = (tgt_owner == 0) ? beh_name : resolve_name(repo, tgt_owner);
                 const char *tio = resolve_name(repo, tgt);
