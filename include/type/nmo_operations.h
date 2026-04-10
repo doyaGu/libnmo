@@ -8,7 +8,7 @@
  * - Comparison: Less, LessEqual, Greater, GreaterEqual, Min, Max
  * - Bitwise: BitAnd, BitOr, BitXor, BitNot, ShiftLeft, ShiftRight, RotateLeft, RotateRight
  * - Trigonometry: Sin, Cos, Tan, Asin, Acos, Atan
- * - Vector: VectorAdd, VectorSub, VectorMul, VectorDiv, VectorDot, VectorCross
+ * - Vector: Add/Sub/Mul/Div (type variants of arithmetic), DotProduct, CrossProduct
  */
 
 #ifndef NMO_OPERATIONS_H

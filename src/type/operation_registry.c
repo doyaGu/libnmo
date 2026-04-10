@@ -522,12 +522,11 @@ nmo_status_t nmo_operation_registry_register(
     );
     
     if (result == NMO_OK) {
-        /* Update family metadata */
         if (!family->name) {
             family->name = desc->name;
             family->description = desc->description;
         }
-        family->total_operations++;
+        family->total_operations++; /* registration events, may count overrides */
         registry->registry_version++;
     }
     
