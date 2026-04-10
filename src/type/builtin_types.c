@@ -982,7 +982,7 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .size = sizeof(bool),
         .alignment = alignof(bool),
         .class_id = 0,
-        .base_type = {0, 0},
+        .base_type = CKPGUID_INT, /* Virtools: Boolean derived from Integer */
         .category = NMO_TYPE_CATEGORY_SCALAR,
         .flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD,
         .id = NMO_TYPE_ID_INVALID,
@@ -1451,7 +1451,7 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
         .size = sizeof(nmo_eulerangles_t),
         .alignment = alignof(nmo_eulerangles_t),
         .class_id = 0,
-        .base_type = {0, 0},
+        .base_type = CKPGUID_VECTOR, /* Virtools: Euler Angles derived from Vector */
         .category = NMO_TYPE_CATEGORY_STRUCT,
         .flags = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD,
         .id = NMO_TYPE_ID_INVALID,
