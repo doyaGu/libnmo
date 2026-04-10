@@ -33,6 +33,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
+#include "app/nmo_bb_registry.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -355,8 +356,15 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool is_script = (bs->flags & 0x2) != 0; /* CKBEHAVIOR_SCRIPT */
     fprintf(c.out, "  Type: %s\n", is_script ? "Script" : is_bb ? "Building Block" : "Graph");
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-        fprintf(c.out, "  GUID: {%08X-%08X}  Version: %u\n",
-                bs->block_guid.d1, bs->block_guid.d2, bs->block_version);
+
+        const char *proto_name = nmo_bb_builtin_get_name(bs->block_guid);
+        if (proto_name) {
+            fprintf(c.out, "  Prototype: %s  {%08X-%08X}  v%u\n",
+                    proto_name, bs->block_guid.d1, bs->block_guid.d2, bs->block_version);
+        } else {
+            fprintf(c.out, "  GUID: {%08X-%08X}  Version: %u\n",
+                    bs->block_guid.d1, bs->block_guid.d2, bs->block_version);
+        }
     }
     if (bs->compatible_class_id > 0) {
         const char *cls = nmo_core_class_name(&c, (nmo_class_id_t)bs->compatible_class_id);
@@ -428,11 +436,28 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         fprintf(c.out, "\n");
         nmo_cli_print_heading(c.out, "Sub-Behaviors", c.colorize);
         const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->sub_behaviors.data;
+
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
             nmo_object_t *sub = nmo_object_repository_find_by_id(repo, ids[i]);
-            const char *sname = sub ? nmo_object_get_name(sub) : "?";
-            fprintf(c.out, "  [%zu] #%u %s\n", i, ids[i],
-                    (sname && sname[0]) ? sname : "(unnamed)");
+            const char *sname = sub ? nmo_object_get_name(sub) : NULL;
+            /* Resolve BB prototype name */
+            const char *proto_name = NULL;
+            if (sub && sub->state) {
+                const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
+                if ((sub_bs->flags & 0x8000) && !nmo_guid_is_null(sub_bs->block_guid)) {
+                    proto_name = nmo_bb_builtin_get_name(sub_bs->block_guid);
+                }
+            }
+            if (proto_name) {
+                fprintf(c.out, "  [%zu] #%u %s", i, ids[i], proto_name);
+                if (sname && sname[0] && strcmp(sname, proto_name) != 0) {
+                    fprintf(c.out, " (%s)", sname);
+                }
+            } else {
+                fprintf(c.out, "  [%zu] #%u %s", i, ids[i],
+                        (sname && sname[0]) ? sname : "(unnamed)");
+            }
+            fprintf(c.out, "\n");
         }
     }
 
@@ -1365,7 +1390,7 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     static const nmo_cli_table_col_t columns[] = {
         {"ID",   NMO_CLI_ALIGN_RIGHT, 5, 0},
         {"TYPE", NMO_CLI_ALIGN_LEFT,  6, 0},
-        {"GUID", NMO_CLI_ALIGN_LEFT, 19, 0},
+        {"PROTOTYPE", NMO_CLI_ALIGN_LEFT, 28, 0},
         {"NAME", NMO_CLI_ALIGN_LEFT, 28, 50},
     };
     nmo_cli_table_t table;
@@ -1401,16 +1426,23 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
             char id_buf[16];
             snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(all[i]));
 
-            char guid_buf[24] = "-";
-            if (!nmo_guid_is_null(bs->block_guid)) {
-                snprintf(guid_buf, sizeof(guid_buf), "{%08X-%08X}",
-                         bs->block_guid.d1, bs->block_guid.d2);
+            /* Resolve BB prototype name */
+            char proto_buf[64] = "-";
+            if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+        
+                const char *proto_name = nmo_bb_builtin_get_name(bs->block_guid);
+                if (proto_name) {
+                    snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
+                } else {
+                    snprintf(proto_buf, sizeof(proto_buf), "{%08X-%08X}",
+                             bs->block_guid.d1, bs->block_guid.d2);
+                }
             }
 
             const char *cells[] = {
                 id_buf,
                 is_script ? "Script" : is_bb ? "BB" : "Graph",
-                guid_buf,
+                proto_buf,
                 (name && name[0]) ? name : "-",
             };
             nmo_cli_table_add_row(&table, cells, 4);
