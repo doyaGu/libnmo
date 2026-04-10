@@ -1172,3 +1172,147 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+/* ============================================================================
+ * behavior find — search behaviors by name/GUID/parameter type
+ * ============================================================================ */
+
+static bool guid_str_match(nmo_guid_t guid, const char *pattern) {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%08X-%08X", guid.d1, guid.d2);
+    for (const char *p = buf; *p; p++) {
+        const char *a = p, *b = pattern;
+        while (*a && *b) {
+            char ca = (*a >= 'a' && *a <= 'z') ? (char)(*a - 32) : *a;
+            char cb = (*b >= 'a' && *b <= 'z') ? (char)(*b - 32) : *b;
+            if (ca != cb) break;
+            a++; b++;
+        }
+        if (*b == '\0') return true;
+    }
+    return false;
+}
+
+static bool behavior_has_param_type(
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *reg,
+    const nmo_behavior_state_t *bs,
+    const char *type_pattern)
+{
+    if (bs->in_parameters.data) {
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->in_parameters.data;
+        for (size_t i = 0; i < bs->in_parameters.count; i++) {
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            if (!p) continue;
+            nmo_guid_t tg = get_param_type_guid(p);
+            const char *tn = resolve_type(reg, tg);
+            if (tn && nmo_tool_match_wildcard_ci(type_pattern, tn)) return true;
+        }
+    }
+    if (bs->out_parameters.data) {
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->out_parameters.data;
+        for (size_t i = 0; i < bs->out_parameters.count; i++) {
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            if (!p) continue;
+            nmo_guid_t tg = get_param_type_guid(p);
+            const char *tn = resolve_type(reg, tg);
+            if (tn && nmo_tool_match_wildcard_ci(type_pattern, tn)) return true;
+        }
+    }
+    return false;
+}
+
+int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--name",       "-n", NMO_OPT_STRING, "Filter by name pattern"},
+        {"--guid",       "-g", NMO_OPT_STRING, "Filter by BB GUID (substring)"},
+        {"--param-type", "-t", NMO_OPT_STRING, "Filter by parameter type name"},
+        {"--scripts",    NULL, NMO_OPT_FLAG,   "Show only scripts"},
+        {"--bbs",        NULL, NMO_OPT_FLAG,   "Show only building blocks"},
+    };
+    enum { OPT_NAME, OPT_GUID, OPT_PTYPE, OPT_SCRIPTS, OPT_BBS, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *name_pat  = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    const char *guid_pat  = vals[OPT_GUID].present ? vals[OPT_GUID].val.str : NULL;
+    const char *ptype_pat = vals[OPT_PTYPE].present ? vals[OPT_PTYPE].val.str : NULL;
+    bool only_scripts     = vals[OPT_SCRIPTS].present && vals[OPT_SCRIPTS].val.flag;
+    bool only_bbs         = vals[OPT_BBS].present && vals[OPT_BBS].val.flag;
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    size_t total = 0;
+    nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
+
+    size_t match_count = 0;
+
+    static const nmo_cli_table_col_t columns[] = {
+        {"ID",   NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"TYPE", NMO_CLI_ALIGN_LEFT,  6, 0},
+        {"GUID", NMO_CLI_ALIGN_LEFT, 19, 0},
+        {"NAME", NMO_CLI_ALIGN_LEFT, 28, 50},
+    };
+    nmo_cli_table_t table;
+    if (!c.is_json) {
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+    }
+
+    for (size_t i = 0; i < total; i++) {
+        nmo_class_id_t cid = nmo_object_get_class_id(all[i]);
+        if (!is_behavior_class(c.registry, cid)) continue;
+
+        const nmo_behavior_state_t *bs =
+            (const nmo_behavior_state_t *)nmo_object_get_state(all[i]);
+        if (!bs) continue;
+
+        bool is_script = (bs->flags & 0x2) != 0;
+        bool is_bb = (bs->flags & 0x8000) != 0;
+
+        if (only_scripts && !is_script) continue;
+        if (only_bbs && !is_bb) continue;
+
+        const char *name = nmo_object_get_name(all[i]);
+        if (name_pat && (!name || !nmo_tool_match_wildcard_ci(name_pat, name))) continue;
+
+        if (guid_pat) {
+            if (nmo_guid_is_null(bs->block_guid) || !guid_str_match(bs->block_guid, guid_pat))
+                continue;
+        }
+
+        if (ptype_pat && !behavior_has_param_type(repo, c.registry, bs, ptype_pat)) continue;
+
+        if (!c.is_json) {
+            char id_buf[16];
+            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(all[i]));
+
+            char guid_buf[24] = "-";
+            if (!nmo_guid_is_null(bs->block_guid)) {
+                snprintf(guid_buf, sizeof(guid_buf), "{%08X-%08X}",
+                         bs->block_guid.d1, bs->block_guid.d2);
+            }
+
+            const char *cells[] = {
+                id_buf,
+                is_script ? "Script" : is_bb ? "BB" : "Graph",
+                guid_buf,
+                (name && name[0]) ? name : "-",
+            };
+            nmo_cli_table_add_row(&table, cells, 4);
+        }
+        match_count++;
+    }
+
+    if (!c.is_json) {
+        fprintf(c.out, "Found: %zu behavior(s)\n\n", match_count);
+        nmo_cli_table_print(&table, c.out, c.colorize);
+        nmo_cli_table_free(&table);
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
