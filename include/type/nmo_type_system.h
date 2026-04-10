@@ -55,7 +55,8 @@ typedef enum nmo_type_category {
     NMO_TYPE_CATEGORY_OBJECT_REF   = 0x0020,  /* Reference to CKObject */
     NMO_TYPE_CATEGORY_ARRAY        = 0x0040,  /* Array type */
     NMO_TYPE_CATEGORY_POINTER      = 0x0080,  /* Pointer type */
-    
+    NMO_TYPE_CATEGORY_OPERATION    = 0x0100,  /* Operation type (GUID->name only) */
+
     /* Plugin extensibility */
     NMO_TYPE_CATEGORY_PLUGIN_BASE  = 0x1000,  /* Plugin-defined types start here */
     
