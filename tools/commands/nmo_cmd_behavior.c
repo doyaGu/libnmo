@@ -193,9 +193,13 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.list");
     } else {
         static const nmo_cli_table_col_t columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
+            {"ID",   NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"TYPE", NMO_CLI_ALIGN_LEFT,  6, 0},
+            {"IO",   NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"PIN",  NMO_CLI_ALIGN_RIGHT, 4, 0},
+            {"POUT", NMO_CLI_ALIGN_RIGHT, 4, 0},
+            {"SUB",  NMO_CLI_ALIGN_RIGHT, 4, 0},
+            {"NAME", NMO_CLI_ALIGN_LEFT, 24, 50},
         };
 
         nmo_cli_table_t table;
@@ -208,18 +212,35 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 continue;
             }
 
+            const nmo_behavior_state_t *bs =
+                (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+
             char id_buf[16];
             snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
 
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
+            const char *type_str = "Graph";
+            if (bs) {
+                if (bs->flags & 0x2) type_str = "Script";
+                else if (bs->flags & 0x8000) type_str = "BB";
+            }
+
+            char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
+            size_t n_io = bs ? (bs->inputs.count + bs->outputs.count) : 0;
+            snprintf(io_buf, sizeof(io_buf), "%zu", n_io);
+            snprintf(pin_buf, sizeof(pin_buf), "%zu",
+                     bs ? bs->in_parameters.count : 0);
+            snprintf(pout_buf, sizeof(pout_buf), "%zu",
+                     bs ? bs->out_parameters.count : 0);
+            snprintf(sub_buf, sizeof(sub_buf), "%zu",
+                     bs ? bs->sub_behaviors.count : 0);
+
             const char *name = nmo_object_get_name(obj);
 
             const char *cells[] = {
-                id_buf,
-                class_name ? class_name : "-",
+                id_buf, type_str, io_buf, pin_buf, pout_buf, sub_buf,
                 (name && name[0]) ? name : "-",
             };
-            nmo_cli_table_add_row(&table, cells, 3);
+            nmo_cli_table_add_row(&table, cells, 7);
             behavior_count++;
         }
 
