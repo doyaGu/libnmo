@@ -13,11 +13,13 @@
 #include "type/nmo_operations.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_types.h"
+#include "type/nmo_type_virtools.h"
 #include "format/nmo_manager_registry.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "app/nmo_session.h"
+#include "app/nmo_bb_registry.h"
 #include "object/nmo_object_repository.h"
 #include <stdlib.h>
 #include <string.h>
@@ -66,6 +68,7 @@ typedef struct nmo_context {
     nmo_type_runtime_t type_runtime;
     nmo_manager_registry_t *manager_registry;
     nmo_extension_registry_t *extension_registry;
+    nmo_bb_registry_t *bb_registry;
     nmo_arena_t *arena;
 
     /* Configuration */
@@ -183,7 +186,11 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         nmo_free(&effective_allocator, ctx);
         return NULL;
     }
-    
+
+    /* Register CK2 parameter types and operation types from Virtools data export */
+    nmo_register_virtools_types(ctx->type_registry);
+    /* Non-fatal: best-effort enrichment of type names */
+
     /* Compute state layouts for all types (ECS support) */
     nmo_type_registry_compute_state_layouts(ctx->type_registry);
 
@@ -309,6 +316,10 @@ nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *ctx) {
 
 nmo_operation_registry_t *nmo_context_get_operation_registry(const nmo_context_t *ctx) {
     return ctx ? ctx->operation_registry : NULL;
+}
+
+nmo_bb_registry_t *nmo_context_get_bb_registry(const nmo_context_t *ctx) {
+    return ctx ? ctx->bb_registry : NULL;
 }
 
 const nmo_type_runtime_t *nmo_context_get_type_runtime(const nmo_context_t *ctx) {

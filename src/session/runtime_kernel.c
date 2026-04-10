@@ -18,6 +18,7 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "type/nmo_reflection.h"
+#include "app/nmo_behavior_index.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
@@ -640,7 +641,7 @@ int runtime_kernel_preview_delete(
     return NMO_OK;
 }
 
-static int runtime_safe_detach_remaining(
+static int runtime_remap_all_objects(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
     uint32_t request_flags)
@@ -1030,7 +1031,7 @@ static int runtime_execute_delete(
 
     if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
         if (type_rt != NULL && type_rt->types != NULL) {
-            int detach_result = runtime_safe_detach_remaining(repo, type_rt, request->flags);
+            int detach_result = runtime_remap_all_objects(repo, type_rt, request->flags);
             if (detach_result != NMO_OK) {
                 return detach_result;
             }
@@ -1126,6 +1127,9 @@ int nmo_runtime_kernel_finalize_load(
             }
         }
     }
+
+    /* Build behavior ownership index now that all objects are remapped */
+    nmo_session_build_behavior_index(session);
 
     uint32_t manager_errors = 0;
     (void)runtime_dispatch_manager_event(

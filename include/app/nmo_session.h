@@ -26,6 +26,7 @@ typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_plugin_dep nmo_plugin_dep_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
+typedef struct nmo_behavior_index nmo_behavior_index_t;
 
 /**
  * @brief Session structure
@@ -113,6 +114,14 @@ NMO_API nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session);
  * @ownership borrowed (owned by session)
  */
 NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session);
+
+/**
+ * @brief Get behavior ownership index.
+ *
+ * Built automatically during file loading. Returns NULL if no file loaded.
+ * @ownership borrowed (owned by session)
+ */
+NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session);
 
 /**
  * @brief Execute unified runtime operation.

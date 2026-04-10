@@ -20,6 +20,7 @@ typedef struct nmo_allocator nmo_allocator_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_arena nmo_arena_t;
+typedef struct nmo_bb_registry nmo_bb_registry_t;
 
 /**
  * @brief Global context structure
@@ -88,6 +89,15 @@ NMO_API nmo_type_registry_t *nmo_context_get_type_registry(const nmo_context_t *
  * @ownership borrowed
  */
 NMO_API nmo_operation_registry_t *nmo_context_get_operation_registry(const nmo_context_t *ctx);
+
+/**
+ * @brief Get BB prototype registry
+ *
+ * @param ctx Context
+ * @return BB registry, or NULL if not initialized
+ * @ownership borrowed
+ */
+NMO_API nmo_bb_registry_t *nmo_context_get_bb_registry(const nmo_context_t *ctx);
 
 /**
  * @brief Get aggregated type runtime view

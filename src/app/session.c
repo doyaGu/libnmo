@@ -21,6 +21,7 @@
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
+#include "app/nmo_behavior_index.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -79,6 +80,9 @@ typedef struct nmo_session {
 
     /* Backing store for plugin diagnostics entries (arena-backed) */
     nmo_arena_array_t plugin_diag_entries;
+
+    /* Behavior ownership index (built after load) */
+    nmo_behavior_index_t *behavior_index;
 } nmo_session_t;
 
 /**
@@ -271,6 +275,19 @@ nmo_arena_t *nmo_session_get_arena(const nmo_session_t *session) {
  */
 nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t *session) {
     return session ? session->repository : NULL;
+}
+
+nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session) {
+    return session ? session->behavior_index : NULL;
+}
+
+void nmo_session_build_behavior_index(nmo_session_t *session) {
+    if (!session || !session->context || session->behavior_index != NULL)
+        return;
+    session->behavior_index = nmo_behavior_index_create(session->arena);
+    if (session->behavior_index != NULL) {
+        nmo_behavior_index_build(session->behavior_index, session->context, session);
+    }
 }
 
 nmo_chunk_pool_t *nmo_session_get_chunk_pool(const nmo_session_t *session) {
@@ -797,7 +814,7 @@ int nmo_session_rebuild_indexes(nmo_session_t *session, uint32_t flags) {
         }
     }
     
-    /* Rebuild */
+    /* Rebuild object index */
     return nmo_object_index_rebuild(session->object_index, flags);
 }
 
