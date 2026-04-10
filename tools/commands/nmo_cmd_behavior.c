@@ -8,6 +8,7 @@
 #include "nmo_cmd_object.h"
 
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
@@ -25,6 +26,9 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
+#include "type/nmo_reflection.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
@@ -227,9 +231,206 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+/* Helper: resolve an object ID to name, return "(unnamed)" if NULL/empty */
+static const char *resolve_name(nmo_object_repository_t *repo, nmo_object_id_t id) {
+    if (id == 0) return "(none)";
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
+    if (!obj) return "(missing)";
+    const char *n = nmo_object_get_name(obj);
+    return (n && n[0]) ? n : "(unnamed)";
+}
+
+/* Helper: resolve parameter type GUID to name */
+static const char *resolve_type(const nmo_type_registry_t *reg, nmo_guid_t guid) {
+    if (nmo_guid_is_null(guid)) return "?";
+    const char *n = nmo_field_type_name(reg, guid);
+    return n ? n : "?";
+}
+
+/* Helper: get parameter type GUID from any parameter object */
+static nmo_guid_t get_param_type_guid(nmo_object_t *obj) {
+    if (!obj || !obj->state) return (nmo_guid_t){0, 0};
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    if (cid == NMO_CID_PARAMETERIN) {
+        const nmo_parameterin_state_t *s = (const nmo_parameterin_state_t *)obj->state;
+        return s->type_guid;
+    }
+    if (cid == NMO_CID_PARAMETEROUT || cid == NMO_CID_PARAMETERLOCAL) {
+        const nmo_parameter_state_t *s = (const nmo_parameter_state_t *)obj->state;
+        return s->type_guid;
+    }
+    return (nmo_guid_t){0, 0};
+}
+
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
-    /* Reuse object show output contract. */
-    return nmo_cmd_object_show(argc, argv, global);
+    static const nmo_opt_def_t opts[] = {
+        {"--raw", NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
+    };
+    enum { OPT_RAW, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    bool raw_mode = vals[OPT_RAW].present && vals[OPT_RAW].val.flag;
+    if (raw_mode) {
+        return nmo_cmd_object_show(argc, argv, global);
+    }
+
+    const char *id_str = r.pos_count > 0 ? r.pos_args[0] : NULL;
+    if (!id_str) {
+        fprintf(stderr, "Usage: nmo behavior show <id> <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    uint32_t target_id;
+    if (!nmo_tool_parse_u32(id_str, &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", id_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, target_id);
+    if (!beh) {
+        fprintf(stderr, "Error: Object %u not found\n", target_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    if (!is_behavior_class(c.registry, nmo_object_get_class_id(beh))) {
+        fprintf(stderr, "Error: Object %u is not a CKBehavior\n", target_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)nmo_object_get_state(beh);
+    if (!bs) {
+        fprintf(stderr, "Error: No state for behavior %u\n", target_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    const char *name = nmo_object_get_name(beh);
+
+    if (c.is_json) {
+        /* For JSON, delegate to object show for now */
+        return nmo_cmd_object_show(argc, argv, global);
+    }
+
+    /* Text output: BB signature view */
+    char heading[256];
+    snprintf(heading, sizeof(heading), "Behavior #%u: %s",
+             target_id, (name && name[0]) ? name : "(unnamed)");
+    nmo_cli_print_heading(c.out, heading, c.colorize);
+
+    /* Flags and identity */
+    bool is_bb = (bs->flags & 0x8000) != 0; /* CKBEHAVIOR_BUILDINGBLOCK */
+    bool is_script = (bs->flags & 0x2) != 0; /* CKBEHAVIOR_SCRIPT */
+    fprintf(c.out, "  Type: %s\n", is_script ? "Script" : is_bb ? "Building Block" : "Graph");
+    if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+        fprintf(c.out, "  GUID: {%08X-%08X}  Version: %u\n",
+                bs->block_guid.d1, bs->block_guid.d2, bs->block_version);
+    }
+    if (bs->compatible_class_id > 0) {
+        const char *cls = nmo_core_class_name(&c, (nmo_class_id_t)bs->compatible_class_id);
+        fprintf(c.out, "  Target Class: %s (#%d)\n",
+                cls ? cls : "?", bs->compatible_class_id);
+    }
+
+    /* IO Ports */
+    if (bs->inputs.count > 0 || bs->outputs.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "IO Ports", c.colorize);
+        const nmo_object_id_t *in_ids = (const nmo_object_id_t *)bs->inputs.data;
+        for (size_t i = 0; i < bs->inputs.count; i++) {
+            fprintf(c.out, "  bIn  %zu: %s\n", i, resolve_name(repo, in_ids[i]));
+        }
+        const nmo_object_id_t *out_ids = (const nmo_object_id_t *)bs->outputs.data;
+        for (size_t i = 0; i < bs->outputs.count; i++) {
+            fprintf(c.out, "  bOut %zu: %s\n", i, resolve_name(repo, out_ids[i]));
+        }
+    }
+
+    /* Input Parameters */
+    if (bs->in_parameters.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Input Parameters", c.colorize);
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->in_parameters.data;
+        for (size_t i = 0; i < bs->in_parameters.count; i++) {
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            const char *pname = p ? nmo_object_get_name(p) : "?";
+            nmo_guid_t tg = get_param_type_guid(p);
+            const char *tname = resolve_type(c.registry, tg);
+            fprintf(c.out, "  pIn  %zu: %-24s  [%s]\n", i,
+                    (pname && pname[0]) ? pname : "(unnamed)", tname);
+        }
+    }
+
+    /* Output Parameters */
+    if (bs->out_parameters.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Output Parameters", c.colorize);
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->out_parameters.data;
+        for (size_t i = 0; i < bs->out_parameters.count; i++) {
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            const char *pname = p ? nmo_object_get_name(p) : "?";
+            nmo_guid_t tg = get_param_type_guid(p);
+            const char *tname = resolve_type(c.registry, tg);
+            fprintf(c.out, "  pOut %zu: %-24s  [%s]\n", i,
+                    (pname && pname[0]) ? pname : "(unnamed)", tname);
+        }
+    }
+
+    /* Local Parameters */
+    if (bs->local_parameters.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Local Parameters", c.colorize);
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->local_parameters.data;
+        for (size_t i = 0; i < bs->local_parameters.count; i++) {
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            const char *pname = p ? nmo_object_get_name(p) : "?";
+            nmo_guid_t tg = get_param_type_guid(p);
+            const char *tname = resolve_type(c.registry, tg);
+            fprintf(c.out, "  local %zu: %-24s  [%s]\n", i,
+                    (pname && pname[0]) ? pname : "(unnamed)", tname);
+        }
+    }
+
+    /* Sub-behaviors */
+    if (bs->sub_behaviors.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Sub-Behaviors", c.colorize);
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, ids[i]);
+            const char *sname = sub ? nmo_object_get_name(sub) : "?";
+            fprintf(c.out, "  [%zu] #%u %s\n", i, ids[i],
+                    (sname && sname[0]) ? sname : "(unnamed)");
+        }
+    }
+
+    /* Behavior Links */
+    if (bs->sub_behavior_links.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Links", c.colorize);
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->sub_behavior_links.data;
+        for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
+            nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, ids[i]);
+            if (!link_obj || !link_obj->state) continue;
+            const nmo_behaviorlink_state_t *ls =
+                (const nmo_behaviorlink_state_t *)link_obj->state;
+            fprintf(c.out, "  [%zu] %s -> %s",
+                    i,
+                    resolve_name(repo, ls->out_io_id),
+                    resolve_name(repo, ls->in_io_id));
+            if (ls->activation_delay != 0) {
+                fprintf(c.out, "  (delay: %d)", ls->activation_delay);
+            }
+            fprintf(c.out, "\n");
+        }
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
 typedef struct {
