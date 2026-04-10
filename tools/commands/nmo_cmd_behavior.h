@@ -18,6 +18,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
 int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }

@@ -1415,3 +1415,241 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+/* ============================================================================
+ * behavior trace — execution path tracing from IO
+ * ============================================================================ */
+
+static nmo_object_id_t find_io_owner(
+    nmo_object_repository_t *repo,
+    const nmo_behavior_state_t *parent_bs,
+    nmo_object_id_t io_id)
+{
+    if (parent_bs->inputs.data) {
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)parent_bs->inputs.data;
+        for (size_t i = 0; i < parent_bs->inputs.count; i++)
+            if (ids[i] == io_id) return 0;
+    }
+    if (parent_bs->outputs.data) {
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)parent_bs->outputs.data;
+        for (size_t i = 0; i < parent_bs->outputs.count; i++)
+            if (ids[i] == io_id) return 0;
+    }
+    if (parent_bs->sub_behaviors.data) {
+        const nmo_object_id_t *subs = (const nmo_object_id_t *)parent_bs->sub_behaviors.data;
+        for (size_t si = 0; si < parent_bs->sub_behaviors.count; si++) {
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, subs[si]);
+            if (!sub || !sub->state) continue;
+            const nmo_behavior_state_t *sbs = (const nmo_behavior_state_t *)sub->state;
+            if (sbs->inputs.data) {
+                const nmo_object_id_t *ids = (const nmo_object_id_t *)sbs->inputs.data;
+                for (size_t i = 0; i < sbs->inputs.count; i++)
+                    if (ids[i] == io_id) return subs[si];
+            }
+            if (sbs->outputs.data) {
+                const nmo_object_id_t *ids = (const nmo_object_id_t *)sbs->outputs.data;
+                for (size_t i = 0; i < sbs->outputs.count; i++)
+                    if (ids[i] == io_id) return subs[si];
+            }
+        }
+    }
+    return NMO_OBJECT_ID_NONE;
+}
+
+int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--from", NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
+    };
+    enum { OPT_FROM, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *from_name = vals[OPT_FROM].present ? vals[OPT_FROM].val.str : NULL;
+
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Usage: nmo behavior trace [--from <io>] <id> <file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t beh_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &beh_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, beh_id);
+    if (!beh || !beh->state) {
+        fprintf(stderr, "Error: Behavior %u not found\n", beh_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)beh->state;
+    if (!bs->sub_behavior_links.data || bs->sub_behavior_links.count == 0) {
+        fprintf(c.out, "No behavior links to trace.\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+
+    /* Build link table */
+    typedef struct { nmo_object_id_t out_io; nmo_object_id_t in_io; int16_t delay; } trace_link_t;
+    trace_link_t *links = (trace_link_t *)malloc(bs->sub_behavior_links.count * sizeof(trace_link_t));
+    if (!links) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    size_t link_count = 0;
+
+    const nmo_object_id_t *link_ids = (const nmo_object_id_t *)bs->sub_behavior_links.data;
+    for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
+        nmo_object_t *lo = nmo_object_repository_find_by_id(repo, link_ids[i]);
+        if (!lo || !lo->state) continue;
+        const nmo_behaviorlink_state_t *ls = (const nmo_behaviorlink_state_t *)lo->state;
+        links[link_count].out_io = ls->out_io_id;
+        links[link_count].in_io = ls->in_io_id;
+        links[link_count].delay = ls->activation_delay;
+        link_count++;
+    }
+
+    /* Find starting IO */
+    nmo_object_id_t start_io = NMO_OBJECT_ID_NONE;
+    if (from_name) {
+        if (bs->inputs.data) {
+            const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->inputs.data;
+            for (size_t i = 0; i < bs->inputs.count; i++) {
+                const char *ion = resolve_name(repo, ids[i]);
+                if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
+                    start_io = ids[i]; break;
+                }
+            }
+        }
+        if (start_io == NMO_OBJECT_ID_NONE) {
+            fprintf(stderr, "Error: IO '%s' not found\n", from_name);
+            free(links);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    } else {
+        if (bs->inputs.data && bs->inputs.count > 0) {
+            start_io = ((const nmo_object_id_t *)bs->inputs.data)[0];
+        } else {
+            fprintf(stderr, "Error: Behavior has no input IOs\n");
+            free(links);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    /* Display execution chains: for each link, show the complete path with
+     * BB ownership context. Use BFS from all entry IOs (those that appear
+     * as out_io but are not themselves targets of any link). */
+
+    /* Find entry IOs: out_ios that have no link targeting them as in_io */
+    nmo_object_id_t entry_ios[64];
+    size_t entry_count = 0;
+    for (size_t i = 0; i < link_count && entry_count < 64; i++) {
+        nmo_object_id_t candidate = links[i].out_io;
+        bool is_target = false;
+        for (size_t j = 0; j < link_count; j++) {
+            if (links[j].in_io == candidate) { is_target = true; break; }
+        }
+        if (!is_target) {
+            bool dup = false;
+            for (size_t e = 0; e < entry_count; e++) {
+                if (entry_ios[e] == candidate) { dup = true; break; }
+            }
+            if (!dup) entry_ios[entry_count++] = candidate;
+        }
+    }
+
+    /* If --from specified, filter to matching entry */
+    if (from_name) {
+        size_t matched = 0;
+        for (size_t e = 0; e < entry_count; e++) {
+            const char *ion = resolve_name(repo, entry_ios[e]);
+            if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
+                entry_ios[matched++] = entry_ios[e];
+            }
+        }
+        entry_count = matched;
+        if (entry_count == 0) {
+            fprintf(stderr, "Error: No entry IO matching '%s'\n", from_name);
+            free(links);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    const char *beh_name = nmo_object_get_name(beh);
+    fprintf(c.out, "Execution Trace: %s [#%u]\n",
+            (beh_name && beh_name[0]) ? beh_name : "(unnamed)", beh_id);
+    fprintf(c.out, "Entry points: %zu, Links: %zu\n\n", entry_count, link_count);
+
+    /* BFS from each entry IO */
+    nmo_object_id_t *queue = (nmo_object_id_t *)malloc(512 * sizeof(nmo_object_id_t));
+    nmo_object_id_t *visited = (nmo_object_id_t *)malloc(512 * sizeof(nmo_object_id_t));
+    if (!queue || !visited) {
+        free(links); free(queue); free(visited);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    size_t vis_count = 0;
+
+    for (size_t ei = 0; ei < entry_count; ei++) {
+        nmo_object_id_t entry = entry_ios[ei];
+        nmo_object_id_t entry_owner = find_io_owner(repo, bs, entry);
+        const char *eowner = (entry_owner == 0) ? beh_name : resolve_name(repo, entry_owner);
+
+        fprintf(c.out, "── %s.%s\n",
+                (eowner && eowner[0]) ? eowner : "?",
+                resolve_name(repo, entry));
+
+        size_t q_head = 0, q_tail = 0;
+        queue[q_tail++] = entry;
+
+        while (q_head < q_tail) {
+            nmo_object_id_t cur = queue[q_head++];
+
+            for (size_t li = 0; li < link_count; li++) {
+                if (links[li].out_io != cur) continue;
+
+                nmo_object_id_t tgt = links[li].in_io;
+                nmo_object_id_t tgt_owner = find_io_owner(repo, bs, tgt);
+                const char *tname = (tgt_owner == 0) ? beh_name : resolve_name(repo, tgt_owner);
+                const char *tio = resolve_name(repo, tgt);
+
+                fprintf(c.out, "   → %s.%s",
+                        (tname && tname[0]) ? tname : "?", tio);
+                if (links[li].delay != 0)
+                    fprintf(c.out, "  (delay: %d)", links[li].delay);
+                fprintf(c.out, "\n");
+
+                /* Continue from target behavior's output IOs */
+                if (tgt_owner != 0 && tgt_owner != NMO_OBJECT_ID_NONE) {
+                    nmo_object_t *to = nmo_object_repository_find_by_id(repo, tgt_owner);
+                    if (to && to->state) {
+                        const nmo_behavior_state_t *tbs = (const nmo_behavior_state_t *)to->state;
+                        if (tbs->outputs.data) {
+                            const nmo_object_id_t *oids = (const nmo_object_id_t *)tbs->outputs.data;
+                            for (size_t oi = 0; oi < tbs->outputs.count; oi++) {
+                                bool seen = false;
+                                for (size_t v = 0; v < vis_count; v++) {
+                                    if (visited[v] == oids[oi]) { seen = true; break; }
+                                }
+                                if (!seen && q_tail < 512) {
+                                    queue[q_tail++] = oids[oi];
+                                    if (vis_count < 512) visited[vis_count++] = oids[oi];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        fprintf(c.out, "\n");
+    }
+
+    free(queue);
+    free(visited);
+    free(links);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+

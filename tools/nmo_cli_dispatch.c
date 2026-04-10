@@ -494,6 +494,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage},
     {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL},
     {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, NULL},
+    {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, NULL},
 };
 
 /* parameter group actions */
