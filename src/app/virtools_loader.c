@@ -2,7 +2,7 @@
  * @file virtools_loader.c
  * @brief Load Virtools data from JSON files into registries
  *
- * Uses yyjson for parsing. Part of nmo_json target.
+ * Uses yyjson for parsing.
  */
 
 #include "app/nmo_virtools_loader.h"
@@ -210,8 +210,6 @@ nmo_status_t nmo_virtools_load_operations(nmo_type_registry_t *registry, const c
     if (!registry || !path)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
-    nmo_type_registry_begin_update(registry);
-
     yyjson_read_err err;
     yyjson_doc *doc = yyjson_read_file(path, 0, NULL, &err);
     if (!doc)
@@ -247,17 +245,39 @@ nmo_status_t nmo_virtools_load_operations(nmo_type_registry_t *registry, const c
  * Building blocks
  * ============================================================================ */
 
-static void read_string_array(yyjson_val *arr, const char **out, uint32_t *out_count, uint32_t max) {
-    if (!arr || !yyjson_is_arr(arr)) { *out_count = 0; return; }
+static uint32_t read_json_string_array(yyjson_val *arr, const char ***out) {
+    *out = NULL;
+    if (!arr || !yyjson_is_arr(arr)) return 0;
     uint32_t n = (uint32_t)yyjson_arr_size(arr);
-    if (n > max) n = max;
-    *out_count = n;
+    if (n == 0) return 0;
+    const char **ptrs = (const char **)calloc(n, sizeof(const char *));
+    if (!ptrs) return 0;
     yyjson_arr_iter iter;
     yyjson_arr_iter_init(arr, &iter);
     for (uint32_t i = 0; i < n; i++) {
         yyjson_val *v = yyjson_arr_iter_next(&iter);
-        out[i] = (v && yyjson_is_str(v)) ? yyjson_get_str(v) : "";
+        ptrs[i] = (v && yyjson_is_str(v)) ? yyjson_get_str(v) : "";
     }
+    *out = ptrs;
+    return n;
+}
+
+static uint32_t read_json_param_array(yyjson_val *arr, nmo_bb_param_desc_t **out) {
+    *out = NULL;
+    if (!arr || !yyjson_is_arr(arr)) return 0;
+    uint32_t n = (uint32_t)yyjson_arr_size(arr);
+    if (n == 0) return 0;
+    nmo_bb_param_desc_t *descs = (nmo_bb_param_desc_t *)calloc(n, sizeof(*descs));
+    if (!descs) return 0;
+    yyjson_arr_iter iter;
+    yyjson_arr_iter_init(arr, &iter);
+    for (uint32_t i = 0; i < n; i++) {
+        yyjson_val *p = yyjson_arr_iter_next(&iter);
+        descs[i].name = get_str(p, "name");
+        descs[i].type_guid = get_guid(p, "type_guid");
+    }
+    *out = descs;
+    return n;
 }
 
 nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, const char *path) {
@@ -282,34 +302,17 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
         nmo_guid_t guid = get_guid(item, "guid");
         if (nmo_guid_is_null(guid)) continue;
 
-        /* Read IO names (max 16 each) */
-        const char *inputs[16], *outputs[16];
-        uint32_t in_count = 0, out_count = 0;
-        read_string_array(yyjson_obj_get(item, "inputs"), inputs, &in_count, 16);
-        read_string_array(yyjson_obj_get(item, "outputs"), outputs, &out_count, 16);
+        /* Read IO names */
+        const char **inputs = NULL, **outputs = NULL;
+        uint32_t in_count = read_json_string_array(yyjson_obj_get(item, "inputs"), &inputs);
+        uint32_t out_count = read_json_string_array(yyjson_obj_get(item, "outputs"), &outputs);
 
-        /* Read parameter descs (max 32 each) */
-        nmo_bb_param_desc_t ip[32], op[32], lp[32], st[32];
-        uint32_t ip_n = 0, op_n = 0, lp_n = 0, st_n = 0;
-
-        const char *param_keys[] = {"input_params", "output_params", "local_params", "settings"};
-        nmo_bb_param_desc_t *param_arrs[] = {ip, op, lp, st};
-        uint32_t *param_counts[] = {&ip_n, &op_n, &lp_n, &st_n};
-
-        for (int k = 0; k < 4; k++) {
-            yyjson_val *arr = yyjson_obj_get(item, param_keys[k]);
-            if (!arr || !yyjson_is_arr(arr)) continue;
-            uint32_t n = (uint32_t)yyjson_arr_size(arr);
-            if (n > 32) n = 32;
-            *param_counts[k] = n;
-            yyjson_arr_iter piter;
-            yyjson_arr_iter_init(arr, &piter);
-            for (uint32_t j = 0; j < n; j++) {
-                yyjson_val *p = yyjson_arr_iter_next(&piter);
-                param_arrs[k][j].name = get_str(p, "name");
-                param_arrs[k][j].type_guid = get_guid(p, "type_guid");
-            }
-        }
+        /* Read parameter descs */
+        nmo_bb_param_desc_t *ip = NULL, *op = NULL, *lp = NULL, *st = NULL;
+        uint32_t ip_n = read_json_param_array(yyjson_obj_get(item, "input_params"), &ip);
+        uint32_t op_n = read_json_param_array(yyjson_obj_get(item, "output_params"), &op);
+        uint32_t lp_n = read_json_param_array(yyjson_obj_get(item, "local_params"), &lp);
+        uint32_t st_n = read_json_param_array(yyjson_obj_get(item, "settings"), &st);
 
         nmo_bb_proto_t proto;
         memset(&proto, 0, sizeof(proto));
@@ -334,7 +337,15 @@ nmo_status_t nmo_virtools_load_building_blocks(nmo_bb_registry_t *bb_registry, c
         proto.settings = st;
         proto.setting_count = st_n;
 
-        nmo_bb_registry_add(bb_registry, &proto);
+        nmo_bb_registry_add(bb_registry, &proto); /* deep-copies all data */
+
+        /* Free temp arrays (strings point into yyjson doc, still valid) */
+        free(inputs);
+        free(outputs);
+        free(ip);
+        free(op);
+        free(lp);
+        free(st);
     }
 
     yyjson_doc_free(doc);

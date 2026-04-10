@@ -19,8 +19,13 @@ int nmo_guid_is_null(nmo_guid_t guid) {
 }
 
 uint32_t nmo_guid_hash(nmo_guid_t guid) {
-    // Simple hash combining both values
-    return guid.d1 ^ guid.d2;
+    /* Murmur-ish mixing for better distribution */
+    uint32_t h = guid.d1;
+    h ^= guid.d2;
+    h ^= h >> 16;
+    h *= 0x45d9f3b;
+    h ^= h >> 16;
+    return h;
 }
 
 static int hex_char_to_int(char c) {

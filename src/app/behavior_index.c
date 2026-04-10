@@ -21,7 +21,7 @@
  * Hash table (linear probing, arena-allocated)
  * ============================================================================ */
 
-#define INDEX_INITIAL_CAP 512
+#define INDEX_INITIAL_CAP 4096
 #define INDEX_LOAD_FACTOR 70 /* percent */
 
 typedef struct index_slot {

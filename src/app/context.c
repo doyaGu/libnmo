@@ -308,6 +308,10 @@ void nmo_context_release(nmo_context_t *ctx) {
             nmo_operation_registry_destroy(ctx->operation_registry);
         }
 
+        if (ctx->bb_registry != NULL) {
+            nmo_bb_registry_destroy(ctx->bb_registry);
+        }
+
         /* Destroy type registry */
         if (ctx->type_registry != NULL) {
             nmo_type_registry_destroy(ctx->type_registry);

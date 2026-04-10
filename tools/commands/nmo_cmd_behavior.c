@@ -40,6 +40,10 @@
 #include <string.h>
 #include <ctype.h>
 
+/* Behavior flag constants */
+#define CKBEHAVIOR_SCRIPT          0x00000002u
+#define CKBEHAVIOR_BUILDINGBLOCK   0x00008000u
+
 /* Forward declarations */
 static nmo_object_id_t find_io_owner(
     nmo_object_repository_t *repo,
@@ -228,7 +232,7 @@ int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *type_str = "Graph";
             if (bs) {
                 if (bs->flags & 0x2) type_str = "Script";
-                else if (bs->flags & 0x8000) type_str = "BB";
+                else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) type_str = "BB";
             }
 
             char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
@@ -352,8 +356,8 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_cli_print_heading(c.out, heading, c.colorize);
 
     /* Flags and identity */
-    bool is_bb = (bs->flags & 0x8000) != 0; /* CKBEHAVIOR_BUILDINGBLOCK */
-    bool is_script = (bs->flags & 0x2) != 0; /* CKBEHAVIOR_SCRIPT */
+    bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+    bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
     fprintf(c.out, "  Type: %s\n", is_script ? "Script" : is_bb ? "Building Block" : "Graph");
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
 
@@ -444,7 +448,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *proto_name = NULL;
             if (sub && sub->state) {
                 const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
-                if ((sub_bs->flags & 0x8000) && !nmo_guid_is_null(sub_bs->block_guid)) {
+                if ((sub_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) && !nmo_guid_is_null(sub_bs->block_guid)) {
                     proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),sub_bs->block_guid);
                 }
             }
@@ -1180,7 +1184,7 @@ static void dump_behavior_tree(
     if (!bs) return;
 
     const char *name = nmo_object_get_name(obj);
-    bool is_bb = (bs->flags & 0x8000) != 0;
+    bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
     bool is_script = (bs->flags & 0x2) != 0;
 
     /* Draw tree connectors */
@@ -1407,7 +1411,7 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (!bs) continue;
 
         bool is_script = (bs->flags & 0x2) != 0;
-        bool is_bb = (bs->flags & 0x8000) != 0;
+        bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
 
         if (only_scripts && !is_script) continue;
         if (only_bbs && !is_bb) continue;
