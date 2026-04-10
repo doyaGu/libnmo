@@ -400,8 +400,19 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *pname = p ? nmo_object_get_name(p) : "?";
             nmo_guid_t tg = get_param_type_guid(p);
             const char *tname = resolve_type(c.registry, tg);
-            fprintf(c.out, "  pIn  %zu: %-24s  [%s]\n", i,
+            fprintf(c.out, "  pIn  %zu: %-24s  [%s]", i,
                     (pname && pname[0]) ? pname : "(unnamed)", tname);
+            /* Show source */
+            if (p && nmo_object_get_class_id(p) == NMO_CID_PARAMETERIN) {
+                const nmo_parameterin_state_t *pin =
+                    (const nmo_parameterin_state_t *)nmo_object_get_state(p);
+                if (pin && pin->source_id != 0) {
+                    const char *src = resolve_name(repo, pin->source_id);
+                    fprintf(c.out, "  <- %s", src ? src : "?");
+                    if (pin->is_shared) fprintf(c.out, " (shared)");
+                }
+            }
+            fprintf(c.out, "\n");
         }
     }
 
@@ -432,6 +443,38 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *tname = resolve_type(c.registry, tg);
             fprintf(c.out, "  local %zu: %-24s  [%s]\n", i,
                     (pname && pname[0]) ? pname : "(unnamed)", tname);
+        }
+    }
+
+    /* Operations */
+    if (bs->operations.count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Operations", c.colorize);
+        const nmo_object_id_t *op_ids = (const nmo_object_id_t *)bs->operations.data;
+        for (size_t i = 0; i < bs->operations.count; i++) {
+            nmo_object_t *op_obj = nmo_object_repository_find_by_id(repo, op_ids[i]);
+            if (!op_obj || !op_obj->state) {
+                fprintf(c.out, "  pOp %zu: #%u (missing)\n", i, op_ids[i]);
+                continue;
+            }
+            const nmo_parameteroperation_state_t *op_state =
+                (const nmo_parameteroperation_state_t *)op_obj->state;
+            const char *op_name = nmo_type_registry_guid_to_name(c.registry, op_state->operation_guid);
+            fprintf(c.out, "  pOp %zu: %s", i,
+                    op_name ? op_name : "(unknown op)");
+            if (op_state->has_in1) {
+                const char *n1 = resolve_name(repo, op_state->in1_id);
+                fprintf(c.out, "  in1=%s", n1 ? n1 : "?");
+            }
+            if (op_state->has_in2) {
+                const char *n2 = resolve_name(repo, op_state->in2_id);
+                fprintf(c.out, "  in2=%s", n2 ? n2 : "?");
+            }
+            if (op_state->has_out) {
+                const char *no = resolve_name(repo, op_state->out_id);
+                fprintf(c.out, "  out=%s", no ? no : "?");
+            }
+            fprintf(c.out, "\n");
         }
     }
 

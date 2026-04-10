@@ -21,6 +21,7 @@
 #include "format/nmo_object.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_guid.h"
+#include "app/nmo_bb_registry.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -310,11 +311,22 @@ static bool dump_visitor(
     print_indent(dctx->out, depth);
 
     if (is_building_block && state) {
-        char guid_buf[24];
-        nmo_guid_format(state->block_guid, guid_buf, sizeof(guid_buf));
-        fprintf(dctx->out, "[BB] #%u", behavior_id);
-        if (name && name[0]) fprintf(dctx->out, " \"%s\"", name);
-        fprintf(dctx->out, " {%s}", guid_buf);
+        const char *proto_name = NULL;
+        nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(dctx->ctx);
+        if (bb_reg) {
+            proto_name = nmo_bb_registry_get_name(bb_reg, state->block_guid);
+        }
+        if (proto_name) {
+            fprintf(dctx->out, "[BB] #%u %s", behavior_id, proto_name);
+            if (name && name[0] && strcmp(name, proto_name) != 0)
+                fprintf(dctx->out, " (%s)", name);
+        } else {
+            char guid_buf[24];
+            nmo_guid_format(state->block_guid, guid_buf, sizeof(guid_buf));
+            fprintf(dctx->out, "[BB] #%u", behavior_id);
+            if (name && name[0]) fprintf(dctx->out, " \"%s\"", name);
+            fprintf(dctx->out, " {%s}", guid_buf);
+        }
     } else {
         bool is_script = state && (state->flags & CKBEHAVIOR_SCRIPT);
         fprintf(dctx->out, "[%s] #%u",
