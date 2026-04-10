@@ -1,0 +1,4637 @@
+[
+  {
+    "name": "None",
+    "guid": [
+      481363808,
+      1100959941
+    ],
+    "guid_hex": "0x1CB10760-0x419F50C5",
+    "index": 0,
+    "size": 0,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Buffer",
+    "guid": [
+      1292381328,
+      209926562
+    ],
+    "guid_hex": "0x4D082C90-0x0C8339A2",
+    "index": 1,
+    "size": 10,
+    "flags": 133,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Copy Dependencies",
+    "guid": [
+      1955417613,
+      1006049627
+    ],
+    "guid_hex": "0x748D4E0D-0x3BF7195B",
+    "index": 2,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Delete Dependencies",
+    "guid": [
+      1767443584,
+      817239600
+    ],
+    "guid_hex": "0x69590C80-0x30B61630",
+    "index": 3,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Replace Dependencies",
+    "guid": [
+      2133746109,
+      8218768
+    ],
+    "guid_hex": "0x7F2E61BD-0x007D6890",
+    "index": 4,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Save Dependencies",
+    "guid": [
+      202931311,
+      1425569425
+    ],
+    "guid_hex": "0x0C187C6F-0x54F87691",
+    "index": 5,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Float",
+    "guid": [
+      1200114751,
+      1126968352
+    ],
+    "guid_hex": "0x47884C3F-0x432C2C20",
+    "index": 6,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Angle",
+    "guid": [
+      287714549,
+      816849722
+    ],
+    "guid_hex": "0x11262CF5-0x30B0233A",
+    "index": 7,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": [
+      1200114751,
+      1126968352
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Integer",
+    "guid": [
+      1515656957,
+      1155692247
+    ],
+    "guid_hex": "0x5A5716FD-0x44E276D7",
+    "index": 8,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Time",
+    "guid": [
+      1421099563,
+      1930366799
+    ],
+    "guid_hex": "0x54B4422B-0x730F0F4F",
+    "index": 9,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": [
+      1200114751,
+      1126968352
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Boolean",
+    "guid": [
+      450177678,
+      1584666912
+    ],
+    "guid_hex": "0x1AD52A8E-0x5E741920",
+    "index": 10,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "String",
+    "guid": [
+      1808797922,
+      290854890
+    ],
+    "guid_hex": "0x6BD010E2-0x115617EA",
+    "index": 11,
+    "size": 64,
+    "flags": 129,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Vector",
+    "guid": [
+      1216499374,
+      803502432
+    ],
+    "guid_hex": "0x48824EAE-0x2FE47960",
+    "index": 12,
+    "size": 12,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Euler Angles",
+    "guid": [
+      330308412,
+      423778366
+    ],
+    "guid_hex": "0x13B01B3C-0x1942583E",
+    "index": 13,
+    "size": 12,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": [
+      1216499374,
+      803502432
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Quaternion",
+    "guid": [
+      113523182,
+      1169493954
+    ],
+    "guid_hex": "0x06C439EE-0x45B50FC2",
+    "index": 14,
+    "size": 16,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Rectangle",
+    "guid": [
+      2058489120,
+      1764770985
+    ],
+    "guid_hex": "0x7AB20D20-0x693044A9",
+    "index": 15,
+    "size": 16,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Vector 2D",
+    "guid": [
+      1325183818,
+      1618601007
+    ],
+    "guid_hex": "0x4EFCB34A-0x6079E42F",
+    "index": 16,
+    "size": 8,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Matrix",
+    "guid": [
+      1681851502,
+      1696668529
+    ],
+    "guid_hex": "0x643F046E-0x65211B71",
+    "index": 17,
+    "size": 64,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Color",
+    "guid": [
+      1473523694,
+      2092645265
+    ],
+    "guid_hex": "0x57D42FEE-0x7CBB3B91",
+    "index": 18,
+    "size": 16,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Box",
+    "guid": [
+      1720076744,
+      675163873
+    ],
+    "guid_hex": "0x668649C8-0x283E2EE1",
+    "index": 19,
+    "size": 24,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Collection",
+    "guid": [
+      1910468930,
+      3291943738
+    ],
+    "guid_hex": "0x71DF7142-0xC437133A",
+    "index": 20,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Percentage",
+    "guid": [
+      4089989966,
+      268094516
+    ],
+    "guid_hex": "0xF3C84B4E-0x0FFACC34",
+    "index": 21,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": [
+      1200114751,
+      1126968352
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Message",
+    "guid": [
+      59252242,
+      1537429035
+    ],
+    "guid_hex": "0x03881E12-0x5BA34E2B",
+    "index": 22,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "2D Curve",
+    "guid": [
+      548222045,
+      452666801
+    ],
+    "guid_hex": "0x20AD345D-0x1AFB25B1",
+    "index": 23,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Attribute",
+    "guid": [
+      1050889961,
+      167400294
+    ],
+    "guid_hex": "0x3EA34EE9-0x09FA5366",
+    "index": 24,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Script",
+    "guid": [
+      2124683117,
+      457202992
+    ],
+    "guid_hex": "0x7EA4176D-0x1B405D30",
+    "index": 25,
+    "size": 4,
+    "flags": 0,
+    "class_id": 8,
+    "derived_from": [
+      820781227,
+      1844859261
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "State Chunk",
+    "guid": [
+      2679497532,
+      323794814
+    ],
+    "guid_hex": "0x9FB5E33C-0x134CB77E",
+    "index": 26,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Pointer",
+    "guid": [
+      1349935193,
+      362630110
+    ],
+    "guid_hex": "0x50766059-0x159D4BDE",
+    "index": 27,
+    "size": 4,
+    "flags": 4,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Direction",
+    "guid": [
+      42362157,
+      1588005314
+    ],
+    "guid_hex": "0x0286652D-0x5EA709C2",
+    "index": 28,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "X",
+        "value": 1
+      },
+      {
+        "name": "-X",
+        "value": 2
+      },
+      {
+        "name": "Y",
+        "value": 3
+      },
+      {
+        "name": "-Y",
+        "value": 4
+      },
+      {
+        "name": "Z",
+        "value": 5
+      },
+      {
+        "name": "-Z",
+        "value": 6
+      }
+    ]
+  },
+  {
+    "name": "Texture Blend Mode",
+    "guid": [
+      1009412810,
+      1863211109
+    ],
+    "guid_hex": "0x3C2A6ACA-0x6F0E5865",
+    "index": 29,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Decal",
+        "value": 1
+      },
+      {
+        "name": "Modulate",
+        "value": 2
+      },
+      {
+        "name": "DecalAlpha",
+        "value": 3
+      },
+      {
+        "name": "ModulateAlpha",
+        "value": 4
+      },
+      {
+        "name": "DecalMask",
+        "value": 5
+      },
+      {
+        "name": "ModulateMask",
+        "value": 6
+      },
+      {
+        "name": "Copy",
+        "value": 7
+      },
+      {
+        "name": "Add",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Filter Mode",
+    "guid": [
+      735531955,
+      1446924645
+    ],
+    "guid_hex": "0x2BD753B3-0x563E5165",
+    "index": 30,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Nearest",
+        "value": 1
+      },
+      {
+        "name": "Linear",
+        "value": 2
+      },
+      {
+        "name": "MipNearest",
+        "value": 3
+      },
+      {
+        "name": "MipLinear",
+        "value": 4
+      },
+      {
+        "name": "LinearMipNearest",
+        "value": 5
+      },
+      {
+        "name": "LinearMipLinear",
+        "value": 6
+      },
+      {
+        "name": "Anisotropic",
+        "value": 7
+      }
+    ]
+  },
+  {
+    "name": "Blend Factor",
+    "guid": [
+      144582868,
+      787493330
+    ],
+    "guid_hex": "0x089E28D4-0x2EF031D2",
+    "index": 31,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Zero",
+        "value": 1
+      },
+      {
+        "name": "One",
+        "value": 2
+      },
+      {
+        "name": "Source Color",
+        "value": 3
+      },
+      {
+        "name": "Inverse Source Color",
+        "value": 4
+      },
+      {
+        "name": "Source Alpha",
+        "value": 5
+      },
+      {
+        "name": "Inverse Source Alpha",
+        "value": 6
+      },
+      {
+        "name": "Destination Alpha",
+        "value": 7
+      },
+      {
+        "name": "Inverse Destination Alpha",
+        "value": 8
+      },
+      {
+        "name": "Destination Color",
+        "value": 9
+      },
+      {
+        "name": "Inverse Destination Color",
+        "value": 10
+      },
+      {
+        "name": "Source Alpha Saturation",
+        "value": 11
+      },
+      {
+        "name": "Both Source Alpha",
+        "value": 12
+      },
+      {
+        "name": "Both Inverse Source Alpha",
+        "value": 13
+      }
+    ]
+  },
+  {
+    "name": "Fill Mode",
+    "guid": [
+      722408983,
+      1406016270
+    ],
+    "guid_hex": "0x2B0F1617-0x53CE1B0E",
+    "index": 32,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Point",
+        "value": 1
+      },
+      {
+        "name": "WireFrame",
+        "value": 2
+      },
+      {
+        "name": "Solid",
+        "value": 3
+      },
+      {
+        "name": "OnlyZ",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Lit Mode",
+    "guid": [
+      1842548490,
+      1952914734
+    ],
+    "guid_hex": "0x6DD30F0A-0x74671D2E",
+    "index": 33,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Prelit",
+        "value": 0
+      },
+      {
+        "name": "Lit",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "name": "Shade Mode",
+    "guid": [
+      2039489935,
+      1613914961
+    ],
+    "guid_hex": "0x7990258F-0x60326351",
+    "index": 34,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Flat",
+        "value": 1
+      },
+      {
+        "name": "Gouraud",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Global Shade Mode",
+    "guid": [
+      39414175,
+      1859799392
+    ],
+    "guid_hex": "0x0259699F-0x6EDA4960",
+    "index": 35,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Wireframe",
+        "value": 0
+      },
+      {
+        "name": "Flat",
+        "value": 1
+      },
+      {
+        "name": "Gouraud",
+        "value": 2
+      },
+      {
+        "name": "Material Default",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Z Compare Function",
+    "guid": [
+      1372396789,
+      492580251
+    ],
+    "guid_hex": "0x51CD1CF5-0x1D5C2D9B",
+    "index": 36,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Never",
+        "value": 1
+      },
+      {
+        "name": "Less",
+        "value": 2
+      },
+      {
+        "name": "Equal",
+        "value": 3
+      },
+      {
+        "name": "Less Equal",
+        "value": 4
+      },
+      {
+        "name": "Greater",
+        "value": 5
+      },
+      {
+        "name": "Not Equal",
+        "value": 6
+      },
+      {
+        "name": "Greater Equal",
+        "value": 7
+      },
+      {
+        "name": "Always",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Address Mode",
+    "guid": [
+      135084245,
+      47151664
+    ],
+    "guid_hex": "0x080D38D5-0x02CF7A30",
+    "index": 37,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Wrap",
+        "value": 1
+      },
+      {
+        "name": "Mirror",
+        "value": 2
+      },
+      {
+        "name": "Clamp",
+        "value": 3
+      },
+      {
+        "name": "Border",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Wrap Mode",
+    "guid": [
+      350309336,
+      849819879
+    ],
+    "guid_hex": "0x14E14BD8-0x32A738E7",
+    "index": 38,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "None",
+        "value": 0
+      },
+      {
+        "name": "V Looping",
+        "value": 1
+      },
+      {
+        "name": "U Looping",
+        "value": 2
+      },
+      {
+        "name": "UV Looping",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "3DSprite Mode",
+    "guid": [
+      488256515,
+      1398698578
+    ],
+    "guid_hex": "0x1D1A3403-0x535E7252",
+    "index": 39,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Billboard",
+        "value": 0
+      },
+      {
+        "name": "XRotate",
+        "value": 1
+      },
+      {
+        "name": "YRotate",
+        "value": 2
+      },
+      {
+        "name": "Orientable",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Fog Mode",
+    "guid": [
+      1752115439,
+      1590458214
+    ],
+    "guid_hex": "0x686F28EF-0x5ECC7766",
+    "index": 40,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "None",
+        "value": 0
+      },
+      {
+        "name": "Exponential",
+        "value": 1
+      },
+      {
+        "name": "Exponential Squared",
+        "value": 2
+      },
+      {
+        "name": "Linear",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Light Type",
+    "guid": [
+      1326401681,
+      873072081
+    ],
+    "guid_hex": "0x4F0F4891-0x340A05D1",
+    "index": 41,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Point",
+        "value": 1
+      },
+      {
+        "name": "Spot",
+        "value": 2
+      },
+      {
+        "name": "Directional",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Comparison Operator",
+    "guid": [
+      2042169430,
+      1976594687
+    ],
+    "guid_hex": "0x79B90856-0x75D070FF",
+    "index": 42,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Equal",
+        "value": 1
+      },
+      {
+        "name": "Not Equal",
+        "value": 2
+      },
+      {
+        "name": "Less than",
+        "value": 3
+      },
+      {
+        "name": "Less or equal",
+        "value": 4
+      },
+      {
+        "name": "Greater than",
+        "value": 5
+      },
+      {
+        "name": "Greater or equal",
+        "value": 6
+      }
+    ]
+  },
+  {
+    "name": "Binary Operator",
+    "guid": [
+      753167493,
+      1266225970
+    ],
+    "guid_hex": "0x2CE46C85-0x4B791332",
+    "index": 43,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "+",
+        "value": 1
+      },
+      {
+        "name": "-",
+        "value": 2
+      },
+      {
+        "name": "*",
+        "value": 3
+      },
+      {
+        "name": "/",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Sets Operator",
+    "guid": [
+      33627033,
+      519768977
+    ],
+    "guid_hex": "0x02011B99-0x1EFB0B91",
+    "index": 44,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Union",
+        "value": 1
+      },
+      {
+        "name": "Intersection",
+        "value": 2
+      },
+      {
+        "name": "Subtraction",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Sprite Text Alignment",
+    "guid": [
+      1850298522,
+      788952101
+    ],
+    "guid_hex": "0x6E49509A-0x2F067425",
+    "index": 45,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Center",
+        "value": 1
+      },
+      {
+        "name": "Left",
+        "value": 2
+      },
+      {
+        "name": "Right",
+        "value": 4
+      },
+      {
+        "name": "Top",
+        "value": 8
+      },
+      {
+        "name": "Bottom",
+        "value": 16
+      },
+      {
+        "name": "VCenter",
+        "value": 32
+      },
+      {
+        "name": "HCenter",
+        "value": 64
+      }
+    ]
+  },
+  {
+    "name": "Array Column Type",
+    "guid": [
+      1633485180,
+      1420382799
+    ],
+    "guid_hex": "0x615D017C-0x54A9524F",
+    "index": 46,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Integer",
+        "value": 1
+      },
+      {
+        "name": "Float",
+        "value": 2
+      },
+      {
+        "name": "String",
+        "value": 3
+      },
+      {
+        "name": "Object",
+        "value": 4
+      },
+      {
+        "name": "Parameter",
+        "value": 5
+      }
+    ]
+  },
+  {
+    "name": "Filter",
+    "guid": [
+      1247627619,
+      1294501951
+    ],
+    "guid_hex": "0x4A5D4963-0x4D28883F",
+    "index": 47,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "1",
+        "value": 1
+      },
+      {
+        "name": "2",
+        "value": 2
+      },
+      {
+        "name": "3",
+        "value": 4
+      },
+      {
+        "name": "4",
+        "value": 8
+      },
+      {
+        "name": "5",
+        "value": 16
+      },
+      {
+        "name": "6",
+        "value": 32
+      },
+      {
+        "name": "7",
+        "value": 64
+      },
+      {
+        "name": "8",
+        "value": 128
+      },
+      {
+        "name": "9",
+        "value": 256
+      },
+      {
+        "name": "10",
+        "value": 512
+      },
+      {
+        "name": "11",
+        "value": 1024
+      },
+      {
+        "name": "12",
+        "value": 2048
+      },
+      {
+        "name": "13",
+        "value": 4096
+      },
+      {
+        "name": "14",
+        "value": 8192
+      },
+      {
+        "name": "15",
+        "value": 16384
+      },
+      {
+        "name": "16",
+        "value": 32768
+      },
+      {
+        "name": "17",
+        "value": 65536
+      },
+      {
+        "name": "18",
+        "value": 131072
+      },
+      {
+        "name": "19",
+        "value": 262144
+      },
+      {
+        "name": "20",
+        "value": 524288
+      },
+      {
+        "name": "21",
+        "value": 1048576
+      },
+      {
+        "name": "22",
+        "value": 2097152
+      },
+      {
+        "name": "23",
+        "value": 4194304
+      },
+      {
+        "name": "24",
+        "value": 8388608
+      },
+      {
+        "name": "25",
+        "value": 16777216
+      },
+      {
+        "name": "26",
+        "value": 33554432
+      },
+      {
+        "name": "27",
+        "value": 67108864
+      },
+      {
+        "name": "28",
+        "value": 134217728
+      },
+      {
+        "name": "29",
+        "value": 268435456
+      },
+      {
+        "name": "30",
+        "value": 536870912
+      },
+      {
+        "name": "31",
+        "value": 1073741824
+      },
+      {
+        "name": "32",
+        "value": -2147483648
+      }
+    ]
+  },
+  {
+    "name": "Scene Activity Options",
+    "guid": [
+      483541569,
+      1396445071
+    ],
+    "guid_hex": "0x1CD24241-0x533C0F8F",
+    "index": 48,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Scene Defaults",
+        "value": 0
+      },
+      {
+        "name": "Force activate",
+        "value": 1
+      },
+      {
+        "name": "Force deactivate",
+        "value": 2
+      },
+      {
+        "name": "Do nothing",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Scene Reset Options",
+    "guid": [
+      404163323,
+      1753046439
+    ],
+    "guid_hex": "0x18170AFB-0x687D5DA7",
+    "index": 49,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Scene Defaults",
+        "value": 0
+      },
+      {
+        "name": "Force Reset",
+        "value": 1
+      },
+      {
+        "name": "Do nothing",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Render Options",
+    "guid": [
+      1951815081,
+      1639655841
+    ],
+    "guid_hex": "0x745655A9-0x61BB29A1",
+    "index": 50,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Background Sprites",
+        "value": 1
+      },
+      {
+        "name": "Foreground Sprites",
+        "value": 2
+      },
+      {
+        "name": "Use Camera Ratio",
+        "value": 8
+      },
+      {
+        "name": "Clear ZBuffer",
+        "value": 16
+      },
+      {
+        "name": "Clear Back Buffer",
+        "value": 32
+      },
+      {
+        "name": "Clear Stencil Buffer",
+        "value": 64
+      },
+      {
+        "name": "Buffer Swapping",
+        "value": 128
+      },
+      {
+        "name": "Clear Only Viewport",
+        "value": 256
+      },
+      {
+        "name": "Vertical Sync",
+        "value": 512
+      },
+      {
+        "name": "Disable 3D",
+        "value": 1024
+      }
+    ]
+  },
+  {
+    "name": "Basic Object",
+    "guid": [
+      820781227,
+      1844859261
+    ],
+    "guid_hex": "0x30EC20AB-0x6DF6517D",
+    "index": 51,
+    "size": 4,
+    "flags": 0,
+    "class_id": 1,
+    "derived_from": null,
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "State",
+    "guid": [
+      2883662675,
+      2726510884
+    ],
+    "guid_hex": "0xABE13353-0xA2834124",
+    "index": 52,
+    "size": 4,
+    "flags": 0,
+    "class_id": 5,
+    "derived_from": [
+      820781227,
+      1844859261
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Behavior",
+    "guid": [
+      678107611,
+      555244879
+    ],
+    "guid_hex": "0x286B19DB-0x21185D4F",
+    "index": 53,
+    "size": 4,
+    "flags": 0,
+    "class_id": 8,
+    "derived_from": [
+      1541352759,
+      1693086495
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Scene",
+    "guid": [
+      632187863,
+      2089776034
+    ],
+    "guid_hex": "0x25AE6BD7-0x7C8F73A2",
+    "index": 54,
+    "size": 4,
+    "flags": 0,
+    "class_id": 10,
+    "derived_from": [
+      1909983097,
+      1076839155
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Scene Object",
+    "guid": [
+      1541352759,
+      1693086495
+    ],
+    "guid_hex": "0x5BDF2D37-0x64EA731F",
+    "index": 55,
+    "size": 4,
+    "flags": 0,
+    "class_id": 11,
+    "derived_from": [
+      820781227,
+      1844859261
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Behavioral Object",
+    "guid": [
+      1909983097,
+      1076839155
+    ],
+    "guid_hex": "0x71D80779-0x402F42F3",
+    "index": 56,
+    "size": 4,
+    "flags": 0,
+    "class_id": 19,
+    "derived_from": [
+      1541352759,
+      1693086495
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Synchronization Object",
+    "guid": [
+      588556131,
+      3270808120
+    ],
+    "guid_hex": "0x2314A763-0xC2F49238",
+    "index": 57,
+    "size": 4,
+    "flags": 0,
+    "class_id": 20,
+    "derived_from": [
+      820781227,
+      1844859261
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Level",
+    "guid": [
+      274220935,
+      1989357431
+    ],
+    "guid_hex": "0x10584787-0x76932F77",
+    "index": 58,
+    "size": 4,
+    "flags": 0,
+    "class_id": 21,
+    "derived_from": [
+      1909983097,
+      1076839155
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Group",
+    "guid": [
+      1544492315,
+      1862617085
+    ],
+    "guid_hex": "0x5C0F151B-0x6F0547FD",
+    "index": 59,
+    "size": 4,
+    "flags": 0,
+    "class_id": 23,
+    "derived_from": [
+      1909983097,
+      1076839155
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Sound",
+    "guid": [
+      1075397648,
+      980893568
+    ],
+    "guid_hex": "0x40194410-0x3A773F80",
+    "index": 60,
+    "size": 4,
+    "flags": 0,
+    "class_id": 24,
+    "derived_from": [
+      1909983097,
+      1076839155
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Wave Sound",
+    "guid": [
+      1274498654,
+      1173621231
+    ],
+    "guid_hex": "0x4BF74E5E-0x45F409EF",
+    "index": 61,
+    "size": 4,
+    "flags": 0,
+    "class_id": 25,
+    "derived_from": [
+      1075397648,
+      980893568
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Midi Sound",
+    "guid": [
+      1266753931,
+      783750238
+    ],
+    "guid_hex": "0x4B81218B-0x2EB7145E",
+    "index": 62,
+    "size": 4,
+    "flags": 0,
+    "class_id": 26,
+    "derived_from": [
+      1075397648,
+      980893568
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Critical Section",
+    "guid": [
+      2486706474,
+      3270783276
+    ],
+    "guid_hex": "0x9438212A-0xC2F4312C",
+    "index": 63,
+    "size": 4,
+    "flags": 0,
+    "class_id": 49,
+    "derived_from": [
+      820781227,
+      1844859261
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Array",
+    "guid": [
+      38621937,
+      1736582066
+    ],
+    "guid_hex": "0x024D52F1-0x678223B2",
+    "index": 64,
+    "size": 4,
+    "flags": 0,
+    "class_id": 52,
+    "derived_from": [
+      1909983097,
+      1076839155
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Registered Class",
+    "guid": [
+      426004035,
+      1299144995
+    ],
+    "guid_hex": "0x19644E43-0x4D6F6123",
+    "index": 65,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Array",
+        "value": 52
+      },
+      {
+        "name": "Basic Object",
+        "value": 1
+      },
+      {
+        "name": "Behavior IO",
+        "value": 9
+      },
+      {
+        "name": "Behavior Link",
+        "value": 6
+      },
+      {
+        "name": "Behavior",
+        "value": 8
+      },
+      {
+        "name": "Behavioral Object",
+        "value": 19
+      },
+      {
+        "name": "Critical Section",
+        "value": 49
+      },
+      {
+        "name": "Group",
+        "value": 23
+      },
+      {
+        "name": "Level",
+        "value": 21
+      },
+      {
+        "name": "Midi Sound",
+        "value": 26
+      },
+      {
+        "name": "Parameter In",
+        "value": 2
+      },
+      {
+        "name": "Parameter Local",
+        "value": 45
+      },
+      {
+        "name": "Parameter Operation",
+        "value": 4
+      },
+      {
+        "name": "Parameter Out",
+        "value": 3
+      },
+      {
+        "name": "Parameter",
+        "value": 46
+      },
+      {
+        "name": "Scene Object",
+        "value": 11
+      },
+      {
+        "name": "Scene",
+        "value": 10
+      },
+      {
+        "name": "Sound",
+        "value": 24
+      },
+      {
+        "name": "State",
+        "value": 5
+      },
+      {
+        "name": "Synchronization Object",
+        "value": 20
+      },
+      {
+        "name": "VirtoolsInterfaceObject",
+        "value": 48
+      },
+      {
+        "name": "Wave Sound",
+        "value": 25
+      },
+      {
+        "name": "",
+        "value": 26
+      }
+    ]
+  },
+  {
+    "name": "Registered Parameter",
+    "guid": [
+      877755893,
+      73288037
+    ],
+    "guid_hex": "0x34517DF5-0x045E4965",
+    "index": 66,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "NA",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Keyboard Key",
+    "guid": [
+      4201520093,
+      1657973719
+    ],
+    "guid_hex": "0xFA6E1BDD-0x62D2ABD7",
+    "index": 67,
+    "size": 4,
+    "flags": 0,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "primitive",
+    "values": null
+  },
+  {
+    "name": "Frame Rate",
+    "guid": [
+      1582046671,
+      1714177173
+    ],
+    "guid_hex": "0x5E4C1DCF-0x662C4495",
+    "index": 68,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Free",
+        "value": 1
+      },
+      {
+        "name": "Synchronize to Screen",
+        "value": 2
+      },
+      {
+        "name": "Limit",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Behavioral Rate",
+    "guid": [
+      1736390723,
+      1316634576
+    ],
+    "guid_hex": "0x677F3843-0x4E7A3FD0",
+    "index": 69,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Linked to Frame Rate",
+        "value": 1
+      },
+      {
+        "name": "Limit",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Rasterizer Api",
+    "guid": [
+      247364978,
+      77626271
+    ],
+    "guid_hex": "0x0EBE7D72-0x04A07B9F",
+    "index": 70,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Unknown",
+        "value": 0
+      },
+      {
+        "name": "OpenGL",
+        "value": 1
+      },
+      {
+        "name": "DirectX5",
+        "value": 2
+      },
+      {
+        "name": "DirectX7",
+        "value": 3
+      },
+      {
+        "name": "DirectX8",
+        "value": 4
+      },
+      {
+        "name": "DirectX9",
+        "value": 5
+      }
+    ]
+  },
+  {
+    "name": "Projection Mode",
+    "guid": [
+      518136136,
+      1613503649
+    ],
+    "guid_hex": "0x1EE22148-0x602C1CA1",
+    "index": 71,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Perspective",
+        "value": 1
+      },
+      {
+        "name": "Orthographic",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Mouse Button",
+    "guid": [
+      535973210,
+      305081375
+    ],
+    "guid_hex": "0x1FF24D5A-0x122F2C1F",
+    "index": 72,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Left",
+        "value": 0
+      },
+      {
+        "name": "Middle",
+        "value": 2
+      },
+      {
+        "name": "Right",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "name": "Animation Transition",
+    "guid": [
+      1894136660,
+      600061052
+    ],
+    "guid_hex": "0x70E63B54-0x23C4347C",
+    "index": 73,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Break",
+        "value": 1
+      },
+      {
+        "name": "Warp to start",
+        "value": 18
+      },
+      {
+        "name": "Warp best",
+        "value": 34
+      },
+      {
+        "name": "Warp same pos",
+        "value": 258
+      }
+    ]
+  },
+  {
+    "name": "Secondary Animation Play Mode",
+    "guid": [
+      209072899,
+      730812216
+    ],
+    "guid_hex": "0x0C763303-0x2B8F4F38",
+    "index": 74,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Stop",
+        "value": 0
+      },
+      {
+        "name": "Play Once",
+        "value": 4
+      },
+      {
+        "name": "Play Loop",
+        "value": 8
+      },
+      {
+        "name": "Play Loop N",
+        "value": 64
+      }
+    ]
+  },
+  {
+    "name": "Geometry Precision",
+    "guid": [
+      1595616060,
+      850273974
+    ],
+    "guid_hex": "0x5F1B2B3C-0x32AE26B6",
+    "index": 75,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "BoundingBox",
+        "value": 1
+      },
+      {
+        "name": "Faces",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Geometry Precision (Behavioral)",
+    "guid": [
+      1597711164,
+      867055286
+    ],
+    "guid_hex": "0x5F3B233C-0x33AE36B6",
+    "index": 76,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Automatic",
+        "value": 0
+      },
+      {
+        "name": "BoundingBox",
+        "value": 1
+      },
+      {
+        "name": "Faces",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Obstacle",
+    "guid": [
+      19105859,
+      4287110254
+    ],
+    "guid_hex": "0x01238843-0xFF881C6E",
+    "index": 77,
+    "size": 8,
+    "flags": 16,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Obstacle Type",
+        "type_guid": [
+          1595616060,
+          850273974
+        ]
+      },
+      {
+        "name": "Use Hierarchy?",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Geometry",
+    "guid": [
+      2082025633,
+      1110841925
+    ],
+    "guid_hex": "0x7C1930A1-0x42361A45",
+    "index": 78,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Faces",
+        "value": 0
+      },
+      {
+        "name": "Bounding Box",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "name": "Floor",
+    "guid": [
+      2068084338,
+      1469601578
+    ],
+    "guid_hex": "0x7B447672-0x5798572A",
+    "index": 79,
+    "size": 20,
+    "flags": 16,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Floor Geometry",
+        "type_guid": [
+          2082025633,
+          1110841925
+        ]
+      },
+      {
+        "name": "Moving Floor",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      },
+      {
+        "name": "Floor Type",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ]
+      },
+      {
+        "name": "Use Hierarchy?",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      },
+      {
+        "name": "First Contact?",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Impact Data",
+    "guid": [
+      1350519972,
+      1418597692
+    ],
+    "guid_hex": "0x507F4CA4-0x548E153C",
+    "index": 80,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Touched Obstacle",
+        "value": 1
+      },
+      {
+        "name": "Touched Sub Obstacle",
+        "value": 2
+      },
+      {
+        "name": "Touched Face",
+        "value": 4
+      },
+      {
+        "name": "Touching Face",
+        "value": 8
+      },
+      {
+        "name": "Touched Vertex",
+        "value": 16
+      },
+      {
+        "name": "Touching Vertex",
+        "value": 32
+      },
+      {
+        "name": "Impact World Matrix",
+        "value": 64
+      },
+      {
+        "name": "Impact Point",
+        "value": 128
+      },
+      {
+        "name": "Impact Normal",
+        "value": 256
+      },
+      {
+        "name": "Object Part",
+        "value": 512
+      }
+    ]
+  },
+  {
+    "name": "Object Extents",
+    "guid": [
+      423497041,
+      1415732362
+    ],
+    "guid_hex": "0x193E0D51-0x54625C8A",
+    "index": 81,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Point",
+        "value": 1
+      },
+      {
+        "name": "BoundingBox",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Mouse Event",
+    "guid": [
+      2059273075,
+      473328155
+    ],
+    "guid_hex": "0x7ABE0373-0x1C366A1B",
+    "index": 82,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Move",
+        "value": 1
+      },
+      {
+        "name": "Left Button Down",
+        "value": 2
+      },
+      {
+        "name": "Left Button Up",
+        "value": 4
+      },
+      {
+        "name": "Right Button Down",
+        "value": 8
+      },
+      {
+        "name": "Right Button Up",
+        "value": 16
+      },
+      {
+        "name": "Middle Button Down",
+        "value": 32
+      },
+      {
+        "name": "Middle Button Up",
+        "value": 64
+      },
+      {
+        "name": "Roll Received",
+        "value": 128
+      }
+    ]
+  },
+  {
+    "name": "Joy Axis",
+    "guid": [
+      517360234,
+      1512310170
+    ],
+    "guid_hex": "0x1ED64A6A-0x5A24059A",
+    "index": 83,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Axis X",
+        "value": 1
+      },
+      {
+        "name": "Axis Y",
+        "value": 2
+      },
+      {
+        "name": "Axis Z",
+        "value": 4
+      },
+      {
+        "name": "Rotation X",
+        "value": 8
+      },
+      {
+        "name": "Rotation Y",
+        "value": 16
+      },
+      {
+        "name": "Rotation Z",
+        "value": 32
+      },
+      {
+        "name": "Slider 1",
+        "value": 64
+      },
+      {
+        "name": "Slider 2",
+        "value": 128
+      },
+      {
+        "name": "Pov",
+        "value": 256
+      }
+    ]
+  },
+  {
+    "name": "Keyboard Section",
+    "guid": [
+      2051229661,
+      1504193742
+    ],
+    "guid_hex": "0x7A4347DD-0x59A82CCE",
+    "index": 84,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "NumPad",
+        "value": 1
+      },
+      {
+        "name": "Arrows",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Layer Type",
+    "guid": [
+      1245271356,
+      449398391
+    ],
+    "guid_hex": "0x4A39553C-0x1AC94677",
+    "index": 85,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "- default -",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "name": "Collision",
+    "guid": [
+      1669806038,
+      259538606
+    ],
+    "guid_hex": "0x638737D6-0x0F783EAE",
+    "index": 86,
+    "size": 12,
+    "flags": 16,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Collision Mask",
+        "type_guid": [
+          1247627619,
+          1294501951
+        ]
+      },
+      {
+        "name": "Collision Radius",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Avoid Radius",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Heuristic (distance calculation method)",
+    "guid": [
+      1918914339,
+      100564751
+    ],
+    "guid_hex": "0x72604F23-0x05FE7F0F",
+    "index": 87,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Euclidian Distance",
+        "value": 1
+      },
+      {
+        "name": "Manhattan Distance",
+        "value": 2
+      },
+      {
+        "name": "Squared Euclidian Distance",
+        "value": 3
+      },
+      {
+        "name": "Optimized Euclidian Distance",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Path Type",
+    "guid": [
+      1048539189,
+      2016755743
+    ],
+    "guid_hex": "0x3E7F7035-0x7835401F",
+    "index": 88,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Path ID ",
+        "value": 1
+      },
+      {
+        "name": "List of Point",
+        "value": 2
+      },
+      {
+        "name": "Curve ",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Follow Mode",
+    "guid": [
+      138301742,
+      891058483
+    ],
+    "guid_hex": "0x083E512E-0x351C7933",
+    "index": 89,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Step Follow",
+        "value": 1
+      },
+      {
+        "name": "Simple Follow",
+        "value": 2
+      },
+      {
+        "name": "Delayed Follow",
+        "value": 3
+      },
+      {
+        "name": "Smooth Follow",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Layer Square Type",
+    "guid": [
+      1162706312,
+      554581811
+    ],
+    "guid_hex": "0x454D7D88-0x210E3F33",
+    "index": 90,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Integer",
+        "value": 1
+      },
+      {
+        "name": "Linker",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Linker",
+    "guid": [
+      380177435,
+      1947012882
+    ],
+    "guid_hex": "0x16A90C1B-0x740D0F12",
+    "index": 91,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "None",
+        "value": 0
+      },
+      {
+        "name": "Start",
+        "value": 1
+      },
+      {
+        "name": "End",
+        "value": 2
+      },
+      {
+        "name": "Start/End",
+        "value": 3
+      },
+      {
+        "name": "Door",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Font Type",
+    "guid": [
+      1694193681,
+      864431419
+    ],
+    "guid_hex": "0x64FB5811-0x33862D3B",
+    "index": 92,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "No Font",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Alignment",
+    "guid": [
+      773726729,
+      1205486773
+    ],
+    "guid_hex": "0x2E1E2209-0x47DA44B5",
+    "index": 93,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Top-Left",
+        "value": 5
+      },
+      {
+        "name": "Top",
+        "value": 4
+      },
+      {
+        "name": "Top-Right",
+        "value": 6
+      },
+      {
+        "name": "Left",
+        "value": 1
+      },
+      {
+        "name": "Center",
+        "value": 0
+      },
+      {
+        "name": "Right",
+        "value": 2
+      },
+      {
+        "name": "Bottom-Left",
+        "value": 9
+      },
+      {
+        "name": "Bottom",
+        "value": 8
+      },
+      {
+        "name": "Bottom-Right",
+        "value": 10
+      }
+    ]
+  },
+  {
+    "name": "",
+    "guid": [
+      1663188437,
+      1801414908
+    ],
+    "guid_hex": "0x63223DD5-0x6B5F68FC",
+    "index": 94,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Gradient",
+        "value": 1
+      },
+      {
+        "name": "Shadow",
+        "value": 2
+      },
+      {
+        "name": "Lighting",
+        "value": 4
+      },
+      {
+        "name": "Disable Filter",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "",
+    "guid": [
+      1096220701,
+      1288186146
+    ],
+    "guid_hex": "0x4157001D-0x4CC82922",
+    "index": 95,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Screen Proportionnal",
+        "value": 1
+      },
+      {
+        "name": "Background",
+        "value": 2
+      },
+      {
+        "name": "Clip To Dimension",
+        "value": 4
+      },
+      {
+        "name": "Resize Verticaly",
+        "value": 8
+      },
+      {
+        "name": "Resize Horizontaly",
+        "value": 16
+      },
+      {
+        "name": "WordWrap",
+        "value": 32
+      },
+      {
+        "name": "Justified",
+        "value": 64
+      },
+      {
+        "name": "Compiled",
+        "value": 128
+      },
+      {
+        "name": "Multiple",
+        "value": 256
+      },
+      {
+        "name": "Show Caret",
+        "value": 512
+      }
+    ]
+  },
+  {
+    "name": "Font Weight",
+    "guid": [
+      1131807039,
+      187982528
+    ],
+    "guid_hex": "0x4376013F-0x0B3462C0",
+    "index": 96,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "THIN",
+        "value": 100
+      },
+      {
+        "name": "EXTRALIGHT",
+        "value": 200
+      },
+      {
+        "name": "LIGHT",
+        "value": 300
+      },
+      {
+        "name": "NORMAL",
+        "value": 400
+      },
+      {
+        "name": "MEDIUM",
+        "value": 500
+      },
+      {
+        "name": "DEMIBOLD",
+        "value": 600
+      },
+      {
+        "name": "BOLD",
+        "value": 700
+      },
+      {
+        "name": "EXTRABOLD",
+        "value": 800
+      },
+      {
+        "name": "HEAVY",
+        "value": 900
+      }
+    ]
+  },
+  {
+    "name": "Font Resolution",
+    "guid": [
+      1901529373,
+      1338517810
+    ],
+    "guid_hex": "0x7157091D-0x4FC82932",
+    "index": 97,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "128x128",
+        "value": 1
+      },
+      {
+        "name": "256x256",
+        "value": 2
+      },
+      {
+        "name": "512x512",
+        "value": 4
+      },
+      {
+        "name": "1024x1024",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Font Name",
+    "guid": [
+      1902577946,
+      2135434802
+    ],
+    "guid_hex": "0x7167091A-0x7F482632",
+    "index": 98,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Mouse Pointers",
+    "guid": [
+      933256157,
+      517488448
+    ],
+    "guid_hex": "0x37A05BDD-0x1ED83F40",
+    "index": 99,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Normal Select",
+        "value": 1
+      },
+      {
+        "name": "Busy",
+        "value": 2
+      },
+      {
+        "name": "Move",
+        "value": 3
+      },
+      {
+        "name": "Link Select",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Flow Direction",
+    "guid": [
+      1049321107,
+      683418546
+    ],
+    "guid_hex": "0x3E8B5E93-0x28BC23B2",
+    "index": 100,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Left/Right",
+        "value": 1
+      },
+      {
+        "name": "Up/Down",
+        "value": 2
+      },
+      {
+        "name": "Rear/Front",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Flow Alignment",
+    "guid": [
+      1583043731,
+      4173079119
+    ],
+    "guid_hex": "0x5E5B5493-0xF8BC224F",
+    "index": 101,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Left",
+        "value": 1
+      },
+      {
+        "name": "Center",
+        "value": 2
+      },
+      {
+        "name": "Right",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Flow Support",
+    "guid": [
+      2388350099,
+      2562531909
+    ],
+    "guid_hex": "0x8E5B5493-0x98BD2245",
+    "index": 102,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Front",
+        "value": 1
+      },
+      {
+        "name": " In",
+        "value": 2
+      },
+      {
+        "name": " Rear",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Button Events",
+    "guid": [
+      621166884,
+      532572846
+    ],
+    "guid_hex": "0x25064124-0x1FBE6AAE",
+    "index": 103,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Pressed",
+        "value": 1
+      },
+      {
+        "name": "Released",
+        "value": 2
+      },
+      {
+        "name": "Active",
+        "value": 4
+      },
+      {
+        "name": "Enter Button",
+        "value": 8
+      },
+      {
+        "name": "Exit Button",
+        "value": 16
+      },
+      {
+        "name": "In Button",
+        "value": 32
+      }
+    ]
+  },
+  {
+    "name": "Intersection Precision Level",
+    "guid": [
+      1828017971,
+      1526148526
+    ],
+    "guid_hex": "0x6CF55733-0x5AF72DAE",
+    "index": 104,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Bounding Box",
+        "value": 1
+      },
+      {
+        "name": "Face",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Rectangle Mode",
+    "guid": [
+      1516911577,
+      132282749
+    ],
+    "guid_hex": "0x5A6A3BD9-0x07E2797D",
+    "index": 105,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Corners",
+        "value": 1
+      },
+      {
+        "name": "Minimum Position/Sizes",
+        "value": 2
+      },
+      {
+        "name": "Center/HalfSizes",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Proximity",
+    "guid": [
+      2147440281,
+      1970353005
+    ],
+    "guid_hex": "0x7FFF5699-0x7571336D",
+    "index": 106,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "In Range",
+        "value": 1
+      },
+      {
+        "name": "Out Range",
+        "value": 2
+      },
+      {
+        "name": "Enter Range",
+        "value": 4
+      },
+      {
+        "name": "Exit Range",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Modify 2DVector Settings",
+    "guid": [
+      1948213586,
+      1464671680
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC0",
+    "index": 107,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify X",
+        "value": 1
+      },
+      {
+        "name": "Modify Y",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Modify Box Settings",
+    "guid": [
+      1948213586,
+      1464671681
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC1",
+    "index": 108,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify Min",
+        "value": 1
+      },
+      {
+        "name": "Modify Max",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Modify Color Settings",
+    "guid": [
+      1948213586,
+      1464671682
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC2",
+    "index": 109,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify R",
+        "value": 1
+      },
+      {
+        "name": "Modify G",
+        "value": 4
+      },
+      {
+        "name": "Modify B",
+        "value": 16
+      },
+      {
+        "name": "Modify Alpha",
+        "value": 64
+      }
+    ]
+  },
+  {
+    "name": "Modify EulerAngles Settings",
+    "guid": [
+      1948213586,
+      1464671683
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC3",
+    "index": 110,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify Angle1",
+        "value": 1
+      },
+      {
+        "name": "Modify Angle2",
+        "value": 4
+      },
+      {
+        "name": "Modify Angle3",
+        "value": 16
+      }
+    ]
+  },
+  {
+    "name": "Modify Quaternion Settings",
+    "guid": [
+      1948213586,
+      1464671684
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC4",
+    "index": 111,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify X",
+        "value": 1
+      },
+      {
+        "name": "Modify Y",
+        "value": 4
+      },
+      {
+        "name": "Modify Z",
+        "value": 16
+      },
+      {
+        "name": "Modify W",
+        "value": 64
+      }
+    ]
+  },
+  {
+    "name": "Modify Rect Settings",
+    "guid": [
+      1948213586,
+      1464671685
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC5",
+    "index": 112,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify TopLeft",
+        "value": 1
+      },
+      {
+        "name": "Modify BottomRight",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Modify Vector Settings",
+    "guid": [
+      1948213586,
+      1464671686
+    ],
+    "guid_hex": "0x741F6152-0x574D1DC6",
+    "index": 113,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Modify X",
+        "value": 1
+      },
+      {
+        "name": "Modify Y",
+        "value": 4
+      },
+      {
+        "name": "Modify Z",
+        "value": 16
+      }
+    ]
+  },
+  {
+    "name": "Write Mode",
+    "guid": [
+      1734228227,
+      2047213628
+    ],
+    "guid_hex": "0x675E3903-0x7A06003C",
+    "index": 114,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Replace",
+        "value": 0
+      },
+      {
+        "name": "Blend",
+        "value": 1
+      },
+      {
+        "name": "Add Saturate",
+        "value": 2
+      },
+      {
+        "name": "Add Unsat.",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "",
+    "guid": [
+      289500370,
+      691826718
+    ],
+    "guid_hex": "0x11416CD2-0x293C701E",
+    "index": 115,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "FlipU",
+        "value": 1
+      },
+      {
+        "name": "FlipV",
+        "value": 2
+      },
+      {
+        "name": "Use Ref Orientation",
+        "value": 4
+      },
+      {
+        "name": "Reflective Mapping",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Texture Video Format",
+    "guid": [
+      740187523,
+      934881355
+    ],
+    "guid_hex": "0x2C1E5D83-0x37B9284B",
+    "index": 116,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "32 bits ARGB 8888",
+        "value": 0
+      },
+      {
+        "name": "32 bits RGB 888",
+        "value": 1
+      },
+      {
+        "name": "24 bits RGB 888",
+        "value": 2
+      },
+      {
+        "name": "16 bits RGB 565",
+        "value": 3
+      },
+      {
+        "name": "16 bits RGB 555",
+        "value": 4
+      },
+      {
+        "name": "16 bits ARGB 1555",
+        "value": 5
+      },
+      {
+        "name": "16 bits ARGB 4444",
+        "value": 6
+      },
+      {
+        "name": "8 bits RGB 332",
+        "value": 7
+      },
+      {
+        "name": "8 bits ARGB 2222",
+        "value": 8
+      },
+      {
+        "name": "Compressed DXT1",
+        "value": 9
+      },
+      {
+        "name": "Compressed DXT3",
+        "value": 10
+      },
+      {
+        "name": "Compressed DXT5",
+        "value": 11
+      },
+      {
+        "name": "V8U8 BumpMap",
+        "value": 12
+      },
+      {
+        "name": "L6V5U5 BumpMap",
+        "value": 13
+      }
+    ]
+  },
+  {
+    "name": "Sound Type",
+    "guid": [
+      1094076637,
+      1196513024
+    ],
+    "guid_hex": "0x413648DD-0x47515700",
+    "index": 117,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Background",
+        "value": 1
+      },
+      {
+        "name": "Point",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Particle Rendering",
+    "guid": [
+      144603092,
+      787511250
+    ],
+    "guid_hex": "0x089E77D4-0x2EF077D2",
+    "index": 118,
+    "size": 4,
+    "flags": 36,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Point",
+        "value": 1
+      },
+      {
+        "name": "Line",
+        "value": 2
+      },
+      {
+        "name": "Sprite",
+        "value": 3
+      },
+      {
+        "name": "Object",
+        "value": 4
+      },
+      {
+        "name": "Orientable Sprite",
+        "value": 5
+      },
+      {
+        "name": "Radial Sprite",
+        "value": 6
+      },
+      {
+        "name": "Fast Sprite",
+        "value": 7
+      },
+      {
+        "name": "Comet",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Loop Mode",
+    "guid": [
+      1670655253,
+      95179175
+    ],
+    "guid_hex": "0x63942D15-0x05AC51A7",
+    "index": 119,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "No Loop",
+        "value": 0
+      },
+      {
+        "name": "Loop",
+        "value": 1
+      },
+      {
+        "name": "To and Fro",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "Evolutions",
+    "guid": [
+      655326009,
+      1846220876
+    ],
+    "guid_hex": "0x270F7B39-0x6E0B184C",
+    "index": 120,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Size",
+        "value": 1
+      },
+      {
+        "name": "Color",
+        "value": 2
+      },
+      {
+        "name": "Texture",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Variances",
+    "guid": [
+      138310612,
+      774927314
+    ],
+    "guid_hex": "0x083E73D4-0x2E3073D2",
+    "index": 121,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Speed",
+        "value": 1
+      },
+      {
+        "name": "Angular Speed",
+        "value": 2
+      },
+      {
+        "name": "Lifespan",
+        "value": 4
+      },
+      {
+        "name": "Emission",
+        "value": 8
+      },
+      {
+        "name": "Initial Size",
+        "value": 16
+      },
+      {
+        "name": "Ending Size",
+        "value": 32
+      },
+      {
+        "name": "Bounce",
+        "value": 64
+      },
+      {
+        "name": "Weight",
+        "value": 128
+      },
+      {
+        "name": "Surface",
+        "value": 256
+      },
+      {
+        "name": "Initial Color",
+        "value": 512
+      },
+      {
+        "name": "Ending Color",
+        "value": 1024
+      },
+      {
+        "name": "Initial Texture",
+        "value": 2048
+      },
+      {
+        "name": "Texture Speed",
+        "value": 4096
+      }
+    ]
+  },
+  {
+    "name": "Particle Interactors Managing",
+    "guid": [
+      137507284,
+      573666258
+    ],
+    "guid_hex": "0x083231D4-0x223173D2",
+    "index": 122,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Gravity",
+        "value": 1
+      },
+      {
+        "name": "Global Wind",
+        "value": 2
+      },
+      {
+        "name": "Local Wind",
+        "value": 4
+      },
+      {
+        "name": "Magnet",
+        "value": 8
+      },
+      {
+        "name": "Vortex",
+        "value": 16
+      },
+      {
+        "name": "Disruption Box",
+        "value": 32
+      },
+      {
+        "name": "Atmosphere",
+        "value": 64
+      },
+      {
+        "name": "Mutation Box",
+        "value": 128
+      },
+      {
+        "name": "Tunnel",
+        "value": 256
+      },
+      {
+        "name": "Projector",
+        "value": 512
+      }
+    ]
+  },
+  {
+    "name": "Particle Deflectors Managing",
+    "guid": [
+      137578708,
+      591950802
+    ],
+    "guid_hex": "0x083348D4-0x234873D2",
+    "index": 123,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Plane",
+        "value": 1
+      },
+      {
+        "name": "Infinite Plane",
+        "value": 2
+      },
+      {
+        "name": "Cylinder",
+        "value": 4
+      },
+      {
+        "name": "Sphere",
+        "value": 8
+      },
+      {
+        "name": "Box",
+        "value": 16
+      },
+      {
+        "name": "Object",
+        "value": 32
+      },
+      {
+        "name": "Outputs Impacts",
+        "value": 64
+      },
+      {
+        "name": "Die On Impact",
+        "value": 128
+      }
+    ]
+  },
+  {
+    "name": "Mutation Elements",
+    "guid": [
+      1183525868,
+      1938952654
+    ],
+    "guid_hex": "0x468B2BEC-0x739211CE",
+    "index": 124,
+    "size": 16,
+    "flags": 20,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Size",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "SizeSpeed",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Color",
+        "type_guid": [
+          1473523694,
+          2092645265
+        ]
+      },
+      {
+        "name": "ColorSpeed",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Tunnel Values",
+    "guid": [
+      1201417451,
+      1922241261
+    ],
+    "guid_hex": "0x479C2CEB-0x729312ED",
+    "index": 125,
+    "size": 20,
+    "flags": 20,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Velocity",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Radius",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Attraction Shape",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Attraction Speed",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Attraction Direction",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Deflectors",
+    "guid": [
+      1474170841,
+      1972007382
+    ],
+    "guid_hex": "0x57DE0FD9-0x758A71D6",
+    "index": 126,
+    "size": 12,
+    "flags": 20,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Response",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Friction",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Density",
+        "type_guid": [
+          4089989966,
+          268094516
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Deflectors",
+    "guid": [
+      2005752793,
+      1571103541
+    ],
+    "guid_hex": "0x778D5BD9-0x5DA52335",
+    "index": 127,
+    "size": 16,
+    "flags": 20,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Response",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Friction",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "Density",
+        "type_guid": [
+          4089989966,
+          268094516
+        ]
+      },
+      {
+        "name": "Smoothed Normal",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Proximity",
+    "guid": [
+      1250034978,
+      638334121
+    ],
+    "guid_hex": "0x4A820522-0x260C34A9",
+    "index": 128,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "InRange",
+        "value": 1
+      },
+      {
+        "name": "OutRange",
+        "value": 2
+      },
+      {
+        "name": "EnterRange",
+        "value": 4
+      },
+      {
+        "name": "ExitRange",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Check Axis?",
+    "guid": [
+      1457085862,
+      164521391
+    ],
+    "guid_hex": "0x56D95DA6-0x09CE65AF",
+    "index": 129,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "X",
+        "value": 1
+      },
+      {
+        "name": "Y",
+        "value": 2
+      },
+      {
+        "name": "Z",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Set",
+    "guid": [
+      1587828372,
+      1912235559
+    ],
+    "guid_hex": "0x5EA45694-0x71FA6627",
+    "index": 130,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "UV-Mapping",
+        "value": 1
+      },
+      {
+        "name": "Size",
+        "value": 2
+      },
+      {
+        "name": "Position",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "Set",
+    "guid": [
+      47150909,
+      1113211012
+    ],
+    "guid_hex": "0x02CF773D-0x425A4084",
+    "index": 131,
+    "size": 4,
+    "flags": 8,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "UV-Mapping",
+        "value": 1
+      },
+      {
+        "name": "Offset",
+        "value": 2
+      },
+      {
+        "name": "Size",
+        "value": 4
+      },
+      {
+        "name": "Position",
+        "value": 8
+      }
+    ]
+  },
+  {
+    "name": "Axis",
+    "guid": [
+      787898562,
+      544696021
+    ],
+    "guid_hex": "0x2EF660C2-0x207766D5",
+    "index": 132,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "X",
+        "value": 1
+      },
+      {
+        "name": "Y",
+        "value": 2
+      },
+      {
+        "name": "Z",
+        "value": 4
+      },
+      {
+        "name": "XY",
+        "value": 3
+      },
+      {
+        "name": "XZ",
+        "value": 5
+      },
+      {
+        "name": "YZ",
+        "value": 6
+      },
+      {
+        "name": "XYZ",
+        "value": 7
+      }
+    ]
+  },
+  {
+    "name": "Mapping",
+    "guid": [
+      1481135371,
+      180313765
+    ],
+    "guid_hex": "0x5848550B-0x0ABF5EA5",
+    "index": 133,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Conic",
+        "value": 1
+      },
+      {
+        "name": "Radial",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "name": "SShadow",
+    "guid": [
+      469842135,
+      437651951
+    ],
+    "guid_hex": "0x1C0138D7-0x1A1609EF",
+    "index": 134,
+    "size": 16,
+    "flags": 16,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Mesh-ID",
+        "type_guid": [
+          1515656957,
+          1155692247
+        ]
+      },
+      {
+        "name": "Static",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      },
+      {
+        "name": "Shadow-Length",
+        "type_guid": [
+          1200114751,
+          1126968352
+        ]
+      },
+      {
+        "name": "SelfShadow",
+        "type_guid": [
+          450177678,
+          1584666912
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Text Alignment",
+    "guid": [
+      287457199,
+      445847033
+    ],
+    "guid_hex": "0x11223FAF-0x1A9315F9",
+    "index": 135,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Left",
+        "value": 1
+      },
+      {
+        "name": "Right",
+        "value": 2
+      },
+      {
+        "name": "Center",
+        "value": 3
+      }
+    ]
+  },
+  {
+    "name": "Curve Rendering",
+    "guid": [
+      1294164737,
+      1541746876
+    ],
+    "guid_hex": "0x4D236301-0x5BE530BC",
+    "index": 136,
+    "size": 4,
+    "flags": 32,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "enum",
+    "values": [
+      {
+        "name": "Plane",
+        "value": 0
+      },
+      {
+        "name": "Cross",
+        "value": 1
+      },
+      {
+        "name": "Tube",
+        "value": 2
+      },
+      {
+        "name": "2D",
+        "value": 3
+      },
+      {
+        "name": "Line",
+        "value": 4
+      }
+    ]
+  },
+  {
+    "name": "SpriteEdition",
+    "guid": [
+      298535077,
+      1206207051
+    ],
+    "guid_hex": "0x11CB48A5-0x47E5424B",
+    "index": 137,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Position",
+        "value": 1
+      },
+      {
+        "name": "Z Ordering",
+        "value": 2
+      },
+      {
+        "name": "Background",
+        "value": 4
+      },
+      {
+        "name": "Size",
+        "value": 8
+      },
+      {
+        "name": "Pickable",
+        "value": 16
+      },
+      {
+        "name": "Clip To Parent",
+        "value": 32
+      },
+      {
+        "name": "Parent Alignment",
+        "value": 64
+      }
+    ]
+  },
+  {
+    "name": "General Time Statistics",
+    "guid": [
+      266874492,
+      9967423
+    ],
+    "guid_hex": "0x0FE82E7C-0x0098173F",
+    "index": 138,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Interface",
+        "value": 1
+      },
+      {
+        "name": "Processing",
+        "value": 2
+      },
+      {
+        "name": "Rendering",
+        "value": 4
+      },
+      {
+        "name": "Parametric Operation",
+        "value": 8
+      },
+      {
+        "name": "Animation Management",
+        "value": 16
+      },
+      {
+        "name": "IK Management",
+        "value": 32
+      },
+      {
+        "name": "Total Behavior",
+        "value": 64
+      },
+      {
+        "name": "Behavior Execution",
+        "value": 128
+      }
+    ]
+  },
+  {
+    "name": "Behavioral Statistics",
+    "guid": [
+      995369609,
+      794983099
+    ],
+    "guid_hex": "0x3B542289-0x2F627ABB",
+    "index": 139,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Active Objects Executed",
+        "value": 1
+      },
+      {
+        "name": "Behaviors Executed",
+        "value": 2
+      },
+      {
+        "name": "Building Blocks Executed",
+        "value": 4
+      },
+      {
+        "name": "Links Parsed",
+        "value": 8
+      },
+      {
+        "name": "Links Delayed",
+        "value": 16
+      }
+    ]
+  },
+  {
+    "name": "Renderal Statistics",
+    "guid": [
+      1420130470,
+      1408320724
+    ],
+    "guid_hex": "0x54A578A6-0x53F144D4",
+    "index": 140,
+    "size": 4,
+    "flags": 12,
+    "class_id": 0,
+    "derived_from": [
+      1515656957,
+      1155692247
+    ],
+    "category": "flags",
+    "values": [
+      {
+        "name": "Faces Drawn",
+        "value": 1
+      },
+      {
+        "name": " Lines Drawn",
+        "value": 2
+      },
+      {
+        "name": " Points Drawn",
+        "value": 4
+      },
+      {
+        "name": " Objects Drawn",
+        "value": 8
+      },
+      {
+        "name": " Vertices Processed",
+        "value": 16
+      }
+    ]
+  },
+  {
+    "name": "",
+    "guid": [
+      2117551561,
+      2041073226
+    ],
+    "guid_hex": "0x7E3745C9-0x79A84E4A",
+    "index": 141,
+    "size": 8,
+    "flags": 20,
+    "class_id": 0,
+    "derived_from": null,
+    "category": "struct",
+    "members": [
+      {
+        "name": "Group",
+        "type_guid": [
+          1247627619,
+          1294501951
+        ]
+      },
+      {
+        "name": "Mesh",
+        "type_guid": [
+          609440581,
+          1708216873
+        ]
+      }
+    ]
+  }
+]
