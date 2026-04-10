@@ -270,7 +270,6 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
     src/type/nmo_reflection.c
-    src/type/type_registry_virtools.c
 )
 
 # DSL System sources
@@ -332,6 +331,7 @@ set(NMO_APP_SOURCES
 set(NMO_JSON_SOURCES
     src/app/json_util.c
     src/app/object_summary.c
+    src/app/virtools_loader.c
 )
 
 # Combine all sources

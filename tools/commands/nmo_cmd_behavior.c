@@ -357,7 +357,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     fprintf(c.out, "  Type: %s\n", is_script ? "Script" : is_bb ? "Building Block" : "Graph");
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
 
-        const char *proto_name = nmo_bb_builtin_get_name(bs->block_guid);
+        const char *proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);
         if (proto_name) {
             fprintf(c.out, "  Prototype: %s  {%08X-%08X}  v%u\n",
                     proto_name, bs->block_guid.d1, bs->block_guid.d2, bs->block_version);
@@ -445,7 +445,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (sub && sub->state) {
                 const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
                 if ((sub_bs->flags & 0x8000) && !nmo_guid_is_null(sub_bs->block_guid)) {
-                    proto_name = nmo_bb_builtin_get_name(sub_bs->block_guid);
+                    proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),sub_bs->block_guid);
                 }
             }
             if (proto_name) {
@@ -1430,7 +1430,7 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
             char proto_buf[64] = "-";
             if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
         
-                const char *proto_name = nmo_bb_builtin_get_name(bs->block_guid);
+                const char *proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);
                 if (proto_name) {
                     snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
                 } else {

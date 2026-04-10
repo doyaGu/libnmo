@@ -13,7 +13,6 @@
 #include "type/nmo_operations.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_types.h"
-#include "type/nmo_type_virtools.h"
 #include "format/nmo_manager_registry.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
@@ -187,12 +186,11 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
-    /* Register CK2 parameter types and operation types from Virtools data export */
-    nmo_register_virtools_types(ctx->type_registry);
-    /* Non-fatal: best-effort enrichment of type names */
-
     /* Compute state layouts for all types (ECS support) */
     nmo_type_registry_compute_state_layouts(ctx->type_registry);
+
+    /* Create BB prototype registry (populated later by JSON loader) */
+    ctx->bb_registry = nmo_bb_registry_create(ctx->arena);
 
     ctx->operation_registry = nmo_operation_registry_create(ctx->arena);
     if (ctx->operation_registry == NULL) {

@@ -8,6 +8,8 @@
 #include "nmo_tool_common.h"
 
 #include "app/nmo_context.h"
+#include "app/nmo_virtools_loader.h"
+#include "app/nmo_bb_registry.h"
 
 #include <string.h>
 
@@ -32,6 +34,14 @@ int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                                errbuf, sizeof(errbuf))) {
         fprintf(stderr, "Error: %s\n", errbuf);
         return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    /* Load Virtools plugin data (param types, operations, BBs) from JSON.
+     * Searches for data/ directory relative to executable. Best-effort. */
+    {
+        nmo_type_registry_t *reg = nmo_context_get_type_registry(c->ctx);
+        nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c->ctx);
+        nmo_virtools_load_data_dir(reg, bb_reg, "data");
     }
 
     /* Cache type registry */

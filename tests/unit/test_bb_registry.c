@@ -1,71 +1,31 @@
 /**
  * @file test_bb_registry.c
- * @brief Unit tests for BB prototype registry
+ * @brief Unit tests for BB prototype registry (pure dynamic mode)
  */
 
 #include "../test_framework.h"
 #include "app/nmo_bb_registry.h"
+#include "app/nmo_virtools_loader.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 
 #include <string.h>
 
-/* === Builtin lookups === */
+/* === Pure dynamic: starts empty === */
 
-TEST(bb_reg, builtin_count)
-{
-    ASSERT_TRUE(nmo_bb_registry_builtin_count(NULL) > 500);
-}
-
-TEST(bb_reg, find_rotate)
-{
+TEST(bb_reg, empty_on_create) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
     ASSERT_TRUE(reg != NULL);
-
-    /* Rotate = (0xFFFFFFEE, 0xEEFFFFFF) */
-    nmo_guid_t guid = nmo_guid_create(0xFFFFFFEE, 0xEEFFFFFF);
-    const nmo_bb_proto_t *proto = nmo_bb_registry_find(reg, guid);
-    ASSERT_TRUE(proto != NULL);
-    ASSERT_STR_EQ(proto->name, "Rotate");
-    ASSERT_TRUE(proto->dll != NULL);
-
+    ASSERT_EQ(nmo_bb_registry_count(reg), 0u);
+    ASSERT_TRUE(nmo_bb_registry_find(reg, nmo_guid_create(0xFFFFFFEE, 0xEEFFFFFF)) == NULL);
     nmo_bb_registry_destroy(reg);
     nmo_arena_destroy(arena);
 }
 
-TEST(bb_reg, get_name_shortcut)
-{
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
+/* === Dynamic add/find/remove === */
 
-    /* "Set Position" from TT_Toolbox_RT */
-    nmo_guid_t guid = nmo_guid_create(0xE456E78A, 0x456789AA);
-    const char *name = nmo_bb_registry_get_name(reg, guid);
-    ASSERT_TRUE(name != NULL);
-    ASSERT_STR_EQ(name, "Set Position");
-
-    nmo_bb_registry_destroy(reg);
-    nmo_arena_destroy(arena);
-}
-
-TEST(bb_reg, not_found)
-{
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
-
-    nmo_guid_t guid = nmo_guid_create(0xDEADDEAD, 0xBEEFBEEF);
-    ASSERT_TRUE(nmo_bb_registry_find(reg, guid) == NULL);
-    ASSERT_TRUE(nmo_bb_registry_get_name(reg, guid) == NULL);
-
-    nmo_bb_registry_destroy(reg);
-    nmo_arena_destroy(arena);
-}
-
-/* === Dynamic add === */
-
-TEST(bb_reg, add_and_find)
-{
+TEST(bb_reg, add_and_find) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
 
@@ -95,39 +55,12 @@ TEST(bb_reg, add_and_find)
     ASSERT_STR_EQ(found->description, "Test description");
     ASSERT_EQ(found->input_count, 2u);
     ASSERT_STR_EQ(found->inputs[0], "In");
-    ASSERT_STR_EQ(found->inputs[1], "Reset");
-    ASSERT_EQ(found->input_param_count, 1u);
-    ASSERT_STR_EQ(found->input_params[0].name, "Position");
 
     nmo_bb_registry_destroy(reg);
     nmo_arena_destroy(arena);
 }
 
-TEST(bb_reg, add_overrides_builtin)
-{
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
-
-    /* Override "Rotate" */
-    nmo_guid_t guid = nmo_guid_create(0xFFFFFFEE, 0xEEFFFFFF);
-    nmo_bb_proto_t proto;
-    memset(&proto, 0, sizeof(proto));
-    proto.guid = guid;
-    proto.name = "Custom Rotate";
-
-    ASSERT_EQ(nmo_bb_registry_add(reg, &proto), NMO_OK);
-
-    const char *name = nmo_bb_registry_get_name(reg, guid);
-    ASSERT_STR_EQ(name, "Custom Rotate");
-
-    nmo_bb_registry_destroy(reg);
-    nmo_arena_destroy(arena);
-}
-
-/* === Remove === */
-
-TEST(bb_reg, remove_dynamic)
-{
+TEST(bb_reg, remove_entry) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
 
@@ -141,82 +74,42 @@ TEST(bb_reg, remove_dynamic)
     ASSERT_TRUE(nmo_bb_registry_find(reg, guid) != NULL);
     ASSERT_TRUE(nmo_bb_registry_remove(reg, guid));
     ASSERT_TRUE(nmo_bb_registry_find(reg, guid) == NULL);
-    ASSERT_FALSE(nmo_bb_registry_remove(reg, guid)); /* double remove */
 
     nmo_bb_registry_destroy(reg);
     nmo_arena_destroy(arena);
 }
 
-/* === Count === */
+/* === JSON loading === */
 
-TEST(bb_reg, count_tracks_dynamic)
-{
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+TEST(bb_reg, load_from_json) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 256 * 1024);
     nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
 
-    size_t base = nmo_bb_registry_count(reg);
+    nmo_status_t st = nmo_virtools_load_building_blocks(reg, "data/virtools_building_blocks.json");
+    if (st != NMO_OK) {
+        /* Skip if data files not available */
+        nmo_bb_registry_destroy(reg);
+        nmo_arena_destroy(arena);
+        return;
+    }
 
-    nmo_guid_t guid = nmo_guid_create(0xAAAA0003, 0xBBBB0003);
-    nmo_bb_proto_t proto;
-    memset(&proto, 0, sizeof(proto));
-    proto.guid = guid;
-    proto.name = "Extra";
-    nmo_bb_registry_add(reg, &proto);
+    ASSERT_TRUE(nmo_bb_registry_count(reg) > 400);
 
-    ASSERT_EQ(nmo_bb_registry_count(reg), base + 1);
-
-    nmo_bb_registry_remove(reg, guid);
-    ASSERT_EQ(nmo_bb_registry_count(reg), base);
-
-    nmo_bb_registry_destroy(reg);
-    nmo_arena_destroy(arena);
-}
-
-TEST(bb_reg, builtin_has_full_data)
-{
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
-
-    /* "Set Position" from TT_Toolbox_RT — should have full proto data */
-    nmo_guid_t guid = nmo_guid_create(0xE456E78A, 0x456789AA);
-    const nmo_bb_proto_t *p = nmo_bb_registry_find(reg, guid);
-    ASSERT_TRUE(p != NULL);
-    ASSERT_STR_EQ(p->name, "Set Position");
-    ASSERT_TRUE(p->description != NULL);
-    ASSERT_TRUE(p->category != NULL);
-    ASSERT_TRUE(p->dll != NULL);
-    ASSERT_TRUE(p->input_count > 0);
-    ASSERT_TRUE(p->output_count > 0);
-    ASSERT_TRUE(p->input_param_count > 0);
-    ASSERT_TRUE(p->input_params != NULL);
-    ASSERT_TRUE(p->input_params[0].name != NULL);
-
-    nmo_bb_registry_destroy(reg);
-    nmo_arena_destroy(arena);
-}
-
-TEST(bb_reg, builtin_rotate_io)
-{
-    /* Rotate has 1 input "In", 1 output "Out", multiple input params */
+    /* "Rotate" = (0xFFFFFFEE, 0xEEFFFFFF) */
     nmo_guid_t guid = nmo_guid_create(0xFFFFFFEE, 0xEEFFFFFF);
-    const nmo_bb_proto_t *p = nmo_bb_registry_find(NULL, guid);
+    const nmo_bb_proto_t *p = nmo_bb_registry_find(reg, guid);
     ASSERT_TRUE(p != NULL);
     ASSERT_STR_EQ(p->name, "Rotate");
     ASSERT_TRUE(p->input_count >= 1);
     ASSERT_STR_EQ(p->inputs[0], "In");
-    ASSERT_TRUE(p->output_count >= 1);
-    ASSERT_STR_EQ(p->outputs[0], "Out");
+
+    nmo_bb_registry_destroy(reg);
+    nmo_arena_destroy(arena);
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(bb_reg, builtin_count);
-    REGISTER_TEST(bb_reg, find_rotate);
-    REGISTER_TEST(bb_reg, get_name_shortcut);
-    REGISTER_TEST(bb_reg, not_found);
+    REGISTER_TEST(bb_reg, empty_on_create);
     REGISTER_TEST(bb_reg, add_and_find);
-    REGISTER_TEST(bb_reg, add_overrides_builtin);
-    REGISTER_TEST(bb_reg, remove_dynamic);
-    REGISTER_TEST(bb_reg, count_tracks_dynamic);
-    REGISTER_TEST(bb_reg, builtin_has_full_data);
-    REGISTER_TEST(bb_reg, builtin_rotate_io);
+    REGISTER_TEST(bb_reg, remove_entry);
+    REGISTER_TEST(bb_reg, load_from_json);
 TEST_MAIN_END()

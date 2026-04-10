@@ -1,6 +1,8 @@
 /**
  * @file bb_registry.c
- * @brief Building block prototype registry implementation
+ * @brief Building block prototype registry — pure dynamic, no builtin data
+ *
+ * All data is loaded at runtime by external loaders (e.g. nmo_json virtools_loader).
  */
 
 #include "app/nmo_bb_registry.h"
@@ -11,27 +13,10 @@
 #include <string.h>
 
 /* ============================================================================
- * Compiled-in builtin table — full nmo_bb_proto_t entries, sorted by GUID
+ * Dynamic entry storage (hash map)
  * ============================================================================ */
 
-#include "bb_registry_builtin.inc"
-
-static const nmo_bb_proto_t *builtin_find(nmo_guid_t guid) {
-    size_t lo = 0, hi = BB_BUILTIN_COUNT;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        int cmp = nmo_guid_compare(guid, s_bb_builtin[mid].guid);
-        if (cmp == 0) return &s_bb_builtin[mid];
-        if (cmp < 0) hi = mid; else lo = mid + 1;
-    }
-    return NULL;
-}
-
-/* ============================================================================
- * Dynamic entry storage (hash map for runtime additions)
- * ============================================================================ */
-
-#define HASH_BUCKETS 256
+#define HASH_BUCKETS 512
 
 typedef struct dyn_bb_entry {
     nmo_bb_proto_t proto;
@@ -41,7 +26,7 @@ typedef struct dyn_bb_entry {
 struct nmo_bb_registry {
     nmo_arena_t *arena;
     dyn_bb_entry_t *buckets[HASH_BUCKETS];
-    size_t dynamic_count;
+    size_t count;
 };
 
 static uint32_t bucket_of(nmo_guid_t guid) {
@@ -123,17 +108,13 @@ void nmo_bb_registry_destroy(nmo_bb_registry_t *registry) {
 }
 
 const nmo_bb_proto_t *nmo_bb_registry_find(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
-    if (!registry) return builtin_find(guid);
-
-    /* Dynamic entries first */
+    if (!registry) return NULL;
     uint32_t idx = bucket_of(guid);
     for (dyn_bb_entry_t *e = registry->buckets[idx]; e; e = e->next) {
         if (nmo_guid_equals(e->proto.guid, guid))
             return &e->proto;
     }
-
-    /* Builtin fallback — returns pointer into static const table (full data) */
-    return builtin_find(guid);
+    return NULL;
 }
 
 const char *nmo_bb_registry_get_name(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
@@ -166,7 +147,7 @@ nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto
     deep_copy_proto(registry->arena, &entry->proto, proto);
     entry->next = registry->buckets[idx];
     registry->buckets[idx] = entry;
-    registry->dynamic_count++;
+    registry->count++;
     return NMO_OK;
 }
 
@@ -177,7 +158,7 @@ bool nmo_bb_registry_remove(nmo_bb_registry_t *registry, nmo_guid_t guid) {
     while (*pp) {
         if (nmo_guid_equals((*pp)->proto.guid, guid)) {
             *pp = (*pp)->next;
-            registry->dynamic_count--;
+            registry->count--;
             return true;
         }
         pp = &(*pp)->next;
@@ -186,22 +167,21 @@ bool nmo_bb_registry_remove(nmo_bb_registry_t *registry, nmo_guid_t guid) {
 }
 
 size_t nmo_bb_registry_count(const nmo_bb_registry_t *registry) {
-    if (!registry) return BB_BUILTIN_COUNT;
-    return BB_BUILTIN_COUNT + registry->dynamic_count;
+    return registry ? registry->count : 0;
 }
 
 size_t nmo_bb_registry_builtin_count(const nmo_bb_registry_t *registry) {
     (void)registry;
-    return BB_BUILTIN_COUNT;
+    return 0; /* no builtin data — all loaded at runtime */
 }
 
-/* Static (no-instance) builtin lookups */
+/* Static (no-instance) lookups — always return NULL in pure-dynamic mode */
 
 const char *nmo_bb_builtin_get_name(nmo_guid_t guid) {
-    const nmo_bb_proto_t *p = builtin_find(guid);
-    return p ? p->name : NULL;
+    (void)guid;
+    return NULL; /* no compiled-in data */
 }
 
 size_t nmo_bb_builtin_count(void) {
-    return BB_BUILTIN_COUNT;
+    return 0;
 }
