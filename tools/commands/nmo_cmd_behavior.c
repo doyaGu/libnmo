@@ -433,21 +433,120 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     /* Behavior Links */
     if (bs->sub_behavior_links.count > 0) {
         fprintf(c.out, "\n");
-        nmo_cli_print_heading(c.out, "Links", c.colorize);
+        nmo_cli_print_heading(c.out, "Execution Flow", c.colorize);
         const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->sub_behavior_links.data;
         for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
             nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, ids[i]);
             if (!link_obj || !link_obj->state) continue;
             const nmo_behaviorlink_state_t *ls =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
-            fprintf(c.out, "  [%zu] %s -> %s",
-                    i,
+            fprintf(c.out, "  %s -> %s",
                     resolve_name(repo, ls->out_io_id),
                     resolve_name(repo, ls->in_io_id));
             if (ls->activation_delay != 0) {
                 fprintf(c.out, "  (delay: %d)", ls->activation_delay);
             }
             fprintf(c.out, "\n");
+        }
+    }
+
+    /* Data Flow: trace pIn.source_id connections between sub-behaviors.
+     * Build a map: param_id → owner_behavior_name, then for each sub-BB's
+     * input parameters, show where the data comes from. */
+    if (bs->sub_behaviors.count > 0) {
+        /* Collect all sub-behavior pOut/pLocal → owner name mapping */
+        typedef struct { nmo_object_id_t param_id; const char *owner; const char *param_name; } flow_src_t;
+        flow_src_t sources[512];
+        size_t src_count = 0;
+
+        /* Add parent's local parameters as sources */
+        if (bs->local_parameters.data) {
+            const nmo_object_id_t *lids = (const nmo_object_id_t *)bs->local_parameters.data;
+            for (size_t i = 0; i < bs->local_parameters.count && src_count < 512; i++) {
+                nmo_object_t *p = nmo_object_repository_find_by_id(repo, lids[i]);
+                sources[src_count].param_id = lids[i];
+                sources[src_count].owner = (name && name[0]) ? name : "(root)";
+                sources[src_count].param_name = p ? nmo_object_get_name(p) : "?";
+                src_count++;
+            }
+        }
+
+        /* Add each sub-behavior's pOut as sources */
+        const nmo_object_id_t *sub_ids = (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, sub_ids[si]);
+            if (!sub || !sub->state) continue;
+            const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
+            const char *sname = nmo_object_get_name(sub);
+            if (!sname || !sname[0]) sname = "(unnamed)";
+
+            if (sub_bs->out_parameters.data) {
+                const nmo_object_id_t *pids = (const nmo_object_id_t *)sub_bs->out_parameters.data;
+                for (size_t i = 0; i < sub_bs->out_parameters.count && src_count < 512; i++) {
+                    nmo_object_t *p = nmo_object_repository_find_by_id(repo, pids[i]);
+                    sources[src_count].param_id = pids[i];
+                    sources[src_count].owner = sname;
+                    sources[src_count].param_name = p ? nmo_object_get_name(p) : "?";
+                    src_count++;
+                }
+            }
+        }
+
+        /* Now trace each sub-behavior's pIn.source_id to find data flow edges */
+        size_t flow_count = 0;
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Data Flow", c.colorize);
+
+        for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, sub_ids[si]);
+            if (!sub || !sub->state) continue;
+            const nmo_behavior_state_t *sub_bs = (const nmo_behavior_state_t *)sub->state;
+            const char *sname = nmo_object_get_name(sub);
+            if (!sname || !sname[0]) sname = "(unnamed)";
+
+            if (!sub_bs->in_parameters.data) continue;
+            const nmo_object_id_t *pids = (const nmo_object_id_t *)sub_bs->in_parameters.data;
+            for (size_t pi = 0; pi < sub_bs->in_parameters.count; pi++) {
+                nmo_object_t *pin = nmo_object_repository_find_by_id(repo, pids[pi]);
+                if (!pin || !pin->state) continue;
+                const nmo_parameterin_state_t *ps = (const nmo_parameterin_state_t *)pin->state;
+                if (ps->source_id == 0) continue;
+
+                /* Find source in our map */
+                const char *src_owner = NULL;
+                const char *src_name = NULL;
+                for (size_t s = 0; s < src_count; s++) {
+                    if (sources[s].param_id == ps->source_id) {
+                        src_owner = sources[s].owner;
+                        src_name = sources[s].param_name;
+                        break;
+                    }
+                }
+
+                if (!src_owner) {
+                    /* Source not in local scope — might be external */
+                    src_owner = "(external)";
+                    nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, ps->source_id);
+                    src_name = src_obj ? nmo_object_get_name(src_obj) : "?";
+                }
+
+                const char *pin_name = nmo_object_get_name(pin);
+                nmo_guid_t tg = get_param_type_guid(pin);
+                const char *tname = resolve_type(c.registry, tg);
+
+                fprintf(c.out, "  %s.%s -> %s.%s  [%s]%s\n",
+                        src_owner,
+                        (src_name && src_name[0]) ? src_name : "?",
+                        sname,
+                        (pin_name && pin_name[0]) ? pin_name : "?",
+                        tname,
+                        ps->is_shared ? " (shared)" : "");
+                flow_count++;
+            }
+        }
+
+        if (flow_count == 0) {
+            fprintf(c.out, "  (no parameter connections)\n");
         }
     }
 
