@@ -120,6 +120,37 @@ TEST(guid, guid_equals_same_values)
     ASSERT_TRUE(nmo_guid_equals(guid1, guid2));  // Same GUIDs should be equal
 }
 
+TEST(guid, compare_equal)
+{
+    nmo_guid_t a = nmo_guid_create(0x12345678, 0x9ABCDEF0);
+    nmo_guid_t b = nmo_guid_create(0x12345678, 0x9ABCDEF0);
+    ASSERT_EQ(nmo_guid_compare(a, b), 0);
+}
+
+TEST(guid, compare_less_d1)
+{
+    nmo_guid_t a = nmo_guid_create(0x10000000, 0xFFFFFFFF);
+    nmo_guid_t b = nmo_guid_create(0x20000000, 0x00000000);
+    ASSERT_TRUE(nmo_guid_compare(a, b) < 0);
+    ASSERT_TRUE(nmo_guid_compare(b, a) > 0);
+}
+
+TEST(guid, compare_less_d2)
+{
+    nmo_guid_t a = nmo_guid_create(0x12345678, 0x00000001);
+    nmo_guid_t b = nmo_guid_create(0x12345678, 0x00000002);
+    ASSERT_TRUE(nmo_guid_compare(a, b) < 0);
+    ASSERT_TRUE(nmo_guid_compare(b, a) > 0);
+}
+
+TEST(guid, compare_null)
+{
+    nmo_guid_t null = NMO_GUID_NULL;
+    nmo_guid_t nonzero = nmo_guid_create(0x00000001, 0x00000000);
+    ASSERT_EQ(nmo_guid_compare(null, null), 0);
+    ASSERT_TRUE(nmo_guid_compare(null, nonzero) < 0);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(guid, create_guid);
     REGISTER_TEST(guid, guid_string_conversion);
@@ -138,4 +169,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(guid, parse_malformed_hyphen);
     REGISTER_TEST(guid, guid_equals_different_values);
     REGISTER_TEST(guid, guid_equals_same_values);
+    REGISTER_TEST(guid, compare_equal);
+    REGISTER_TEST(guid, compare_less_d1);
+    REGISTER_TEST(guid, compare_less_d2);
+    REGISTER_TEST(guid, compare_null);
 TEST_MAIN_END()

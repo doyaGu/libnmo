@@ -60,6 +60,17 @@ typedef struct nmo_guid {
 NMO_API int nmo_guid_equals(nmo_guid_t a, nmo_guid_t b);
 
 /**
+ * @brief Compare two GUIDs for ordering
+ *
+ * Compares d1 first, then d2. Suitable for sorted arrays and binary search.
+ *
+ * @param a First GUID
+ * @param b Second GUID
+ * @return negative if a < b, 0 if equal, positive if a > b
+ */
+NMO_API int nmo_guid_compare(nmo_guid_t a, nmo_guid_t b);
+
+/**
  * @brief Check if GUID is null
  *
  * @param guid GUID to check

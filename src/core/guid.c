@@ -6,6 +6,14 @@ int nmo_guid_equals(nmo_guid_t a, nmo_guid_t b) {
     return a.d1 == b.d1 && a.d2 == b.d2;
 }
 
+int nmo_guid_compare(nmo_guid_t a, nmo_guid_t b) {
+    if (a.d1 != b.d1)
+        return a.d1 < b.d1 ? -1 : 1;
+    if (a.d2 != b.d2)
+        return a.d2 < b.d2 ? -1 : 1;
+    return 0;
+}
+
 int nmo_guid_is_null(nmo_guid_t guid) {
     return guid.d1 == 0 && guid.d2 == 0;
 }
