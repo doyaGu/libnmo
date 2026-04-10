@@ -250,8 +250,11 @@ static void behavior_list_usage(FILE *out) {
 }
 
 static void behavior_show_usage(FILE *out) {
-    fprintf(out, "Usage: nmo behavior show <id> <file>\n\n");
-    fprintf(out, "Show a behavior object (same output as 'nmo object show').\n");
+    fprintf(out, "Usage: nmo behavior show [options] <id> <file>\n\n");
+    fprintf(out, "Show behavior signature: IO ports, parameters with types,\n");
+    fprintf(out, "sub-behaviors, and links.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --raw    Show raw reflection output (like object show)\n");
 }
 
 static void behavior_stats_usage(FILE *out) {
@@ -487,7 +490,7 @@ static const nmo_cli_action_t object_actions[] = {
 static const nmo_cli_action_t behavior_actions[] = {
     {"list", "ls", "List behaviors", nmo_cmd_behavior_list, behavior_list_usage},
     {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage},
-    {"show", "s", "Show behavior object", nmo_cmd_behavior_show, behavior_show_usage},
+    {"show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage},
     {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage},
     {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL},
 };
