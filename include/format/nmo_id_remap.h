@@ -38,6 +38,8 @@ typedef struct nmo_id_remap {
     size_t count;                  /**< Number of entries */
     size_t capacity;               /**< Allocated capacity */
     nmo_arena_t *arena;            /**< Memory arena for allocations */
+    nmo_object_id_t *lookup;       /**< Direct-mapped lookup: lookup[old_id] = new_id+1 (0=unmapped) */
+    size_t lookup_capacity;        /**< Number of slots in lookup table */
 } nmo_id_remap_t;
 
 /**

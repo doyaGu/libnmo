@@ -9,6 +9,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_bit_array.h"
 #include "session/nmo_ref_graph.h"
+#include "format/nmo_id_remap.h"
 #include "core/nmo_logger.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
@@ -21,11 +22,6 @@
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
 #include <string.h>
-
-typedef struct runtime_id_pair {
-    nmo_object_id_t old_id;
-    nmo_object_id_t new_id;
-} runtime_id_pair_t;
 
 typedef struct runtime_id_set {
     nmo_arena_array_t ids;  /**< Ordered list of member IDs (for iteration) */
@@ -122,23 +118,15 @@ static const nmo_type_descriptor_t *runtime_find_type_for_object(
 }
 
 static bool runtime_lookup_mapping(
-    const runtime_id_pair_t *mapping,
-    size_t mapping_count,
+    const nmo_id_remap_t *remap,
     nmo_object_id_t old_id,
     nmo_object_id_t *out_new_id)
 {
-    if (mapping == NULL || out_new_id == NULL || old_id == NMO_OBJECT_ID_NONE) {
+    if (remap == NULL || out_new_id == NULL || old_id == NMO_OBJECT_ID_NONE) {
         return false;
     }
 
-    for (size_t i = 0; i < mapping_count; i++) {
-        if (mapping[i].old_id == old_id) {
-            *out_new_id = mapping[i].new_id;
-            return true;
-        }
-    }
-
-    return false;
+    return nmo_id_remap_lookup_id(remap, old_id, out_new_id) == NMO_OK;
 }
 
 static bool runtime_id_set_contains(const runtime_id_set_t *set, nmo_object_id_t id)
@@ -371,8 +359,7 @@ static bool runtime_get_pointer_array_count(
 }
 
 typedef struct runtime_ref_remap_ctx {
-    const runtime_id_pair_t *mapping;
-    size_t mapping_count;
+    const nmo_id_remap_t *remap;
     const nmo_type_descriptor_t *type;
     void *instance;
 } runtime_ref_remap_ctx_t;
@@ -398,7 +385,7 @@ static bool runtime_remap_ref_field(
             nmo_object_id_t *id_ptr = (nmo_object_id_t *)nmo_field_get_ptr(ctx->instance, field);
             if (id_ptr != NULL && *id_ptr != NMO_OBJECT_ID_NONE) {
                 nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-                if (runtime_lookup_mapping(ctx->mapping, ctx->mapping_count, *id_ptr, &mapped)) {
+                if (runtime_lookup_mapping(ctx->remap,*id_ptr, &mapped)) {
                     *id_ptr = mapped;
                 }
             }
@@ -416,7 +403,7 @@ static bool runtime_remap_ref_field(
         nmo_object_id_t *ids = (nmo_object_id_t *)arr->data;
         for (size_t i = 0; i < arr->count; i++) {
             nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-            if (runtime_lookup_mapping(ctx->mapping, ctx->mapping_count, ids[i], &mapped)) {
+            if (runtime_lookup_mapping(ctx->remap,ids[i], &mapped)) {
                 ids[i] = mapped;
             }
         }
@@ -437,7 +424,7 @@ static bool runtime_remap_ref_field(
         nmo_object_id_t *ids = *ids_ptr;
         for (uint32_t i = 0; i < count; i++) {
             nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-            if (runtime_lookup_mapping(ctx->mapping, ctx->mapping_count, ids[i], &mapped)) {
+            if (runtime_lookup_mapping(ctx->remap,ids[i], &mapped)) {
                 ids[i] = mapped;
             }
         }
@@ -473,14 +460,13 @@ static int runtime_remap_object_copy_refs(
     const nmo_type_runtime_t *type_rt,
     const nmo_type_descriptor_t *type,
     void *instance,
-    const runtime_id_pair_t *mapping,
-    size_t mapping_count)
+    const nmo_id_remap_t *remap)
 {
     if (type_rt == NULL || type_rt->types == NULL || type == NULL || instance == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (mapping == NULL || mapping_count == 0) {
+    if (remap == NULL || nmo_id_remap_get_count(remap) == 0) {
         return NMO_OK;
     }
 
@@ -491,8 +477,7 @@ static int runtime_remap_object_copy_refs(
 
     for (size_t depth = 0; current != NULL && current_instance != NULL && depth < 64; ++depth) {
         runtime_ref_remap_ctx_t remap_ctx = {
-            .mapping = mapping,
-            .mapping_count = mapping_count,
+            .remap = remap,
             .type = current,
             .instance = current_instance
         };
@@ -903,17 +888,13 @@ static int runtime_execute_copy(
         return NMO_OK;
     }
 
-    runtime_id_pair_t *mapping = (runtime_id_pair_t *)nmo_arena_alloc(
-        arena,
-        sizeof(runtime_id_pair_t) * copied_count,
-        _Alignof(runtime_id_pair_t));
-    if (mapping == NULL) {
+    nmo_id_remap_t *copy_remap = nmo_id_remap_create(arena);
+    if (copy_remap == NULL) {
         return NMO_ERR_NOMEM;
     }
 
     for (size_t i = 0; i < copied_count; i++) {
-        mapping[i].old_id = sources[i]->id;
-        mapping[i].new_id = clones[i]->id;
+        nmo_id_remap_add(copy_remap, sources[i]->id, clones[i]->id);
     }
 
     for (size_t i = 0; i < copied_count; i++) {
@@ -927,8 +908,7 @@ static int runtime_execute_copy(
             type_rt,
             type,
             clone->state,
-            mapping,
-            copied_count);
+            copy_remap);
 
         if (type->vtable != NULL && type->vtable->prepare_dependencies != NULL) {
             (void)type->vtable->prepare_dependencies(clone->state, type, repo);
