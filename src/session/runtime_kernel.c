@@ -160,7 +160,10 @@ static int runtime_id_set_init(
     }
 
     size_t bit_cap = initial_capacity > 1024 ? initial_capacity : 1024;
-    nmo_bit_array_init(&set->bits, bit_cap, NULL);
+    nmo_status_t bit_st = nmo_bit_array_init(&set->bits, bit_cap, NULL);
+    if (bit_st != NMO_OK) {
+        return bit_st;
+    }
 
     return NMO_OK;
 }
@@ -298,7 +301,10 @@ static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
         return st;
     }
 
-    nmo_bit_array_set(&set->bits, (size_t)id);
+    nmo_status_t bit_st = nmo_bit_array_set(&set->bits, (size_t)id);
+    if (bit_st != NMO_OK) {
+        return bit_st;
+    }
     return NMO_OK;
 }
 
@@ -385,7 +391,7 @@ static bool runtime_remap_ref_field(
             nmo_object_id_t *id_ptr = (nmo_object_id_t *)nmo_field_get_ptr(ctx->instance, field);
             if (id_ptr != NULL && *id_ptr != NMO_OBJECT_ID_NONE) {
                 nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-                if (runtime_lookup_mapping(ctx->remap,*id_ptr, &mapped)) {
+                if (runtime_lookup_mapping(ctx->remap, *id_ptr, &mapped)) {
                     *id_ptr = mapped;
                 }
             }
@@ -403,7 +409,7 @@ static bool runtime_remap_ref_field(
         nmo_object_id_t *ids = (nmo_object_id_t *)arr->data;
         for (size_t i = 0; i < arr->count; i++) {
             nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-            if (runtime_lookup_mapping(ctx->remap,ids[i], &mapped)) {
+            if (runtime_lookup_mapping(ctx->remap, ids[i], &mapped)) {
                 ids[i] = mapped;
             }
         }
@@ -424,7 +430,7 @@ static bool runtime_remap_ref_field(
         nmo_object_id_t *ids = *ids_ptr;
         for (uint32_t i = 0; i < count; i++) {
             nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-            if (runtime_lookup_mapping(ctx->remap,ids[i], &mapped)) {
+            if (runtime_lookup_mapping(ctx->remap, ids[i], &mapped)) {
                 ids[i] = mapped;
             }
         }
@@ -621,8 +627,10 @@ int runtime_kernel_preview_delete(
     request.payload.destroy.count = object_count;
 
     runtime_id_set_t delete_set;
+    memset(&delete_set, 0, sizeof(delete_set));
     int result = runtime_collect_delete_set(repo, type_rt, arena, &request, &delete_set);
     if (result != NMO_OK) {
+        nmo_bit_array_dispose(&delete_set.bits);
         return result;
     }
 
@@ -894,7 +902,10 @@ static int runtime_execute_copy(
     }
 
     for (size_t i = 0; i < copied_count; i++) {
-        nmo_id_remap_add(copy_remap, sources[i]->id, clones[i]->id);
+        nmo_status_t add_st = nmo_id_remap_add(copy_remap, sources[i]->id, clones[i]->id);
+        if (add_st != NMO_OK) {
+            return add_st;
+        }
     }
 
     for (size_t i = 0; i < copied_count; i++) {
@@ -944,8 +955,10 @@ static int runtime_execute_delete(
     }
 
     runtime_id_set_t delete_set;
+    memset(&delete_set, 0, sizeof(delete_set));
     int collect_result = runtime_collect_delete_set(repo, type_rt, arena, request, &delete_set);
     if (collect_result != NMO_OK) {
+        nmo_bit_array_dispose(&delete_set.bits);
         return collect_result;
     }
 
@@ -958,6 +971,7 @@ static int runtime_execute_delete(
         arena, ID_SET_COUNT(&delete_set) * sizeof(nmo_object_t *),
         _Alignof(nmo_object_t *));
     if (detached_objects == NULL && ID_SET_COUNT(&delete_set) > 0) {
+        nmo_bit_array_dispose(&delete_set.bits);
         return NMO_ERR_NOMEM;
     }
     size_t detached_count = 0;
@@ -976,6 +990,7 @@ static int runtime_execute_delete(
             obj->state != NULL) {
             int hook_result = type->vtable->pre_delete(obj->state, type, repo);
             if (hook_result != NMO_OK && (request->flags & NMO_RUNTIME_REQUEST_STRICT)) {
+                nmo_bit_array_dispose(&delete_set.bits);
                 return hook_result;
             }
         }
@@ -983,6 +998,7 @@ static int runtime_execute_delete(
         nmo_object_t *detached = NULL;
         int remove_result = nmo_object_repository_take(repo, object_id, &detached);
         if (remove_result != NMO_OK && (request->flags & NMO_RUNTIME_REQUEST_STRICT)) {
+            nmo_bit_array_dispose(&delete_set.bits);
             return remove_result;
         }
 
