@@ -2,6 +2,700 @@
  * DO NOT EDIT — regenerate with: python tools/scripts/gen_virtools_data.py
  */
 
+static const nmo_enum_descriptor_t vt_enum_0[] = {
+    {"Union", 1, NULL, 0},
+    {"Intersection", 2, NULL, 0},
+    {"Subtraction", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_1[] = {
+    {"Wireframe", 0, NULL, 0},
+    {"Flat", 1, NULL, 0},
+    {"Gouraud", 2, NULL, 0},
+    {"Material Default", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_2[] = {
+    {"X", 1, NULL, 0},
+    {"-X", 2, NULL, 0},
+    {"Y", 3, NULL, 0},
+    {"-Y", 4, NULL, 0},
+    {"Z", 5, NULL, 0},
+    {"-Z", 6, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_3[] = {
+    {"Wrap", 1, NULL, 0},
+    {"Mirror", 2, NULL, 0},
+    {"Clamp", 3, NULL, 0},
+    {"Border", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_4[] = {
+    {"Step Follow", 1, NULL, 0},
+    {"Simple Follow", 2, NULL, 0},
+    {"Delayed Follow", 3, NULL, 0},
+    {"Smooth Follow", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_5[] = {
+    {"Zero", 1, NULL, 0},
+    {"One", 2, NULL, 0},
+    {"Source Color", 3, NULL, 0},
+    {"Inverse Source Color", 4, NULL, 0},
+    {"Source Alpha", 5, NULL, 0},
+    {"Inverse Source Alpha", 6, NULL, 0},
+    {"Destination Alpha", 7, NULL, 0},
+    {"Inverse Destination Alpha", 8, NULL, 0},
+    {"Destination Color", 9, NULL, 0},
+    {"Inverse Destination Color", 10, NULL, 0},
+    {"Source Alpha Saturation", 11, NULL, 0},
+    {"Both Source Alpha", 12, NULL, 0},
+    {"Both Inverse Source Alpha", 13, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_6[] = {
+    {"Point", 1, NULL, 0},
+    {"Line", 2, NULL, 0},
+    {"Sprite", 3, NULL, 0},
+    {"Object", 4, NULL, 0},
+    {"Orientable Sprite", 5, NULL, 0},
+    {"Radial Sprite", 6, NULL, 0},
+    {"Fast Sprite", 7, NULL, 0},
+    {"Comet", 8, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_7[] = {
+    {"Stop", 0, NULL, 0},
+    {"Play Once", 4, NULL, 0},
+    {"Play Loop", 8, NULL, 0},
+    {"Play Loop N", 64, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_8[] = {
+    {"Unknown", 0, NULL, 0},
+    {"OpenGL", 1, NULL, 0},
+    {"DirectX5", 2, NULL, 0},
+    {"DirectX7", 3, NULL, 0},
+    {"DirectX8", 4, NULL, 0},
+    {"DirectX9", 5, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_9[] = {
+    {"Left", 1, NULL, 0},
+    {"Right", 2, NULL, 0},
+    {"Center", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_10[] = {
+    {"None", 0, NULL, 0},
+    {"V Looping", 1, NULL, 0},
+    {"U Looping", 2, NULL, 0},
+    {"UV Looping", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_11[] = {
+    {"None", 0, NULL, 0},
+    {"Start", 1, NULL, 0},
+    {"End", 2, NULL, 0},
+    {"Start/End", 3, NULL, 0},
+    {"Door", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_12[] = {
+    {"Scene Defaults", 0, NULL, 0},
+    {"Force Reset", 1, NULL, 0},
+    {"Do nothing", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_13[] = {
+    {"Point", 1, NULL, 0},
+    {"BoundingBox", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_14[] = {
+    {"Array", 52, NULL, 0},
+    {"Basic Object", 1, NULL, 0},
+    {"Behavior IO", 9, NULL, 0},
+    {"Behavior Link", 6, NULL, 0},
+    {"Behavior", 8, NULL, 0},
+    {"Behavioral Object", 19, NULL, 0},
+    {"Critical Section", 49, NULL, 0},
+    {"Group", 23, NULL, 0},
+    {"Level", 21, NULL, 0},
+    {"Midi Sound", 26, NULL, 0},
+    {"Parameter In", 2, NULL, 0},
+    {"Parameter Local", 45, NULL, 0},
+    {"Parameter Operation", 4, NULL, 0},
+    {"Parameter Out", 3, NULL, 0},
+    {"Parameter", 46, NULL, 0},
+    {"Scene Object", 11, NULL, 0},
+    {"Scene", 10, NULL, 0},
+    {"Sound", 24, NULL, 0},
+    {"State", 5, NULL, 0},
+    {"Synchronization Object", 20, NULL, 0},
+    {"VirtoolsInterfaceObject", 48, NULL, 0},
+    {"Wave Sound", 25, NULL, 0},
+    {"", 26, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_15[] = {
+    {"Scene Defaults", 0, NULL, 0},
+    {"Force activate", 1, NULL, 0},
+    {"Force deactivate", 2, NULL, 0},
+    {"Do nothing", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_16[] = {
+    {"Billboard", 0, NULL, 0},
+    {"XRotate", 1, NULL, 0},
+    {"YRotate", 2, NULL, 0},
+    {"Orientable", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_17[] = {
+    {"Perspective", 1, NULL, 0},
+    {"Orthographic", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_18[] = {
+    {"Left", 0, NULL, 0},
+    {"Middle", 2, NULL, 0},
+    {"Right", 1, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_19[] = {
+    {"Point", 1, NULL, 0},
+    {"WireFrame", 2, NULL, 0},
+    {"Solid", 3, NULL, 0},
+    {"OnlyZ", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_20[] = {
+    {"Nearest", 1, NULL, 0},
+    {"Linear", 2, NULL, 0},
+    {"MipNearest", 3, NULL, 0},
+    {"MipLinear", 4, NULL, 0},
+    {"LinearMipNearest", 5, NULL, 0},
+    {"LinearMipLinear", 6, NULL, 0},
+    {"Anisotropic", 7, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_21[] = {
+    {"32 bits ARGB 8888", 0, NULL, 0},
+    {"32 bits RGB 888", 1, NULL, 0},
+    {"24 bits RGB 888", 2, NULL, 0},
+    {"16 bits RGB 565", 3, NULL, 0},
+    {"16 bits RGB 555", 4, NULL, 0},
+    {"16 bits ARGB 1555", 5, NULL, 0},
+    {"16 bits ARGB 4444", 6, NULL, 0},
+    {"8 bits RGB 332", 7, NULL, 0},
+    {"8 bits ARGB 2222", 8, NULL, 0},
+    {"Compressed DXT1", 9, NULL, 0},
+    {"Compressed DXT3", 10, NULL, 0},
+    {"Compressed DXT5", 11, NULL, 0},
+    {"V8U8 BumpMap", 12, NULL, 0},
+    {"L6V5U5 BumpMap", 13, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_22[] = {
+    {"+", 1, NULL, 0},
+    {"-", 2, NULL, 0},
+    {"*", 3, NULL, 0},
+    {"/", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_23[] = {
+    {"Top-Left", 5, NULL, 0},
+    {"Top", 4, NULL, 0},
+    {"Top-Right", 6, NULL, 0},
+    {"Left", 1, NULL, 0},
+    {"Center", 0, NULL, 0},
+    {"Right", 2, NULL, 0},
+    {"Bottom-Left", 9, NULL, 0},
+    {"Bottom", 8, NULL, 0},
+    {"Bottom-Right", 10, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_24[] = {
+    {"X", 1, NULL, 0},
+    {"Y", 2, NULL, 0},
+    {"Z", 4, NULL, 0},
+    {"XY", 3, NULL, 0},
+    {"XZ", 5, NULL, 0},
+    {"YZ", 6, NULL, 0},
+    {"XYZ", 7, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_25[] = {
+    {"NA", 0, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_26[] = {
+    {"Normal Select", 1, NULL, 0},
+    {"Busy", 2, NULL, 0},
+    {"Move", 3, NULL, 0},
+    {"Link Select", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_27[] = {
+    {"Decal", 1, NULL, 0},
+    {"Modulate", 2, NULL, 0},
+    {"DecalAlpha", 3, NULL, 0},
+    {"ModulateAlpha", 4, NULL, 0},
+    {"DecalMask", 5, NULL, 0},
+    {"ModulateMask", 6, NULL, 0},
+    {"Copy", 7, NULL, 0},
+    {"Add", 8, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_28[] = {
+    {"Path ID ", 1, NULL, 0},
+    {"List of Point", 2, NULL, 0},
+    {"Curve ", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_29[] = {
+    {"Left/Right", 1, NULL, 0},
+    {"Up/Down", 2, NULL, 0},
+    {"Rear/Front", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_30[] = {
+    {"Background", 1, NULL, 0},
+    {"Point", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_31[] = {
+    {"THIN", 100, NULL, 0},
+    {"EXTRALIGHT", 200, NULL, 0},
+    {"LIGHT", 300, NULL, 0},
+    {"NORMAL", 400, NULL, 0},
+    {"MEDIUM", 500, NULL, 0},
+    {"DEMIBOLD", 600, NULL, 0},
+    {"BOLD", 700, NULL, 0},
+    {"EXTRABOLD", 800, NULL, 0},
+    {"HEAVY", 900, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_32[] = {
+    {"Integer", 1, NULL, 0},
+    {"Linker", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_33[] = {
+    {"- default -", 1, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_34[] = {
+    {"Plane", 0, NULL, 0},
+    {"Cross", 1, NULL, 0},
+    {"Tube", 2, NULL, 0},
+    {"2D", 3, NULL, 0},
+    {"Line", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_35[] = {
+    {"Point", 1, NULL, 0},
+    {"Spot", 2, NULL, 0},
+    {"Directional", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_36[] = {
+    {"Never", 1, NULL, 0},
+    {"Less", 2, NULL, 0},
+    {"Equal", 3, NULL, 0},
+    {"Less Equal", 4, NULL, 0},
+    {"Greater", 5, NULL, 0},
+    {"Not Equal", 6, NULL, 0},
+    {"Greater Equal", 7, NULL, 0},
+    {"Always", 8, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_37[] = {
+    {"Conic", 1, NULL, 0},
+    {"Radial", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_38[] = {
+    {"Corners", 1, NULL, 0},
+    {"Minimum Position/Sizes", 2, NULL, 0},
+    {"Center/HalfSizes", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_39[] = {
+    {"Free", 1, NULL, 0},
+    {"Synchronize to Screen", 2, NULL, 0},
+    {"Limit", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_40[] = {
+    {"Left", 1, NULL, 0},
+    {"Center", 2, NULL, 0},
+    {"Right", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_41[] = {
+    {"BoundingBox", 1, NULL, 0},
+    {"Faces", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_42[] = {
+    {"Automatic", 0, NULL, 0},
+    {"BoundingBox", 1, NULL, 0},
+    {"Faces", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_43[] = {
+    {"Integer", 1, NULL, 0},
+    {"Float", 2, NULL, 0},
+    {"String", 3, NULL, 0},
+    {"Object", 4, NULL, 0},
+    {"Parameter", 5, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_44[] = {
+    {"No Loop", 0, NULL, 0},
+    {"Loop", 1, NULL, 0},
+    {"To and Fro", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_45[] = {
+    {"No Font", 0, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_46[] = {
+    {"Replace", 0, NULL, 0},
+    {"Blend", 1, NULL, 0},
+    {"Add Saturate", 2, NULL, 0},
+    {"Add Unsat.", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_47[] = {
+    {"Linked to Frame Rate", 1, NULL, 0},
+    {"Limit", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_48[] = {
+    {"None", 0, NULL, 0},
+    {"Exponential", 1, NULL, 0},
+    {"Exponential Squared", 2, NULL, 0},
+    {"Linear", 3, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_49[] = {
+    {"Bounding Box", 1, NULL, 0},
+    {"Face", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_50[] = {
+    {"Prelit", 0, NULL, 0},
+    {"Lit", 1, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_51[] = {
+    {"Center", 1, NULL, 0},
+    {"Left", 2, NULL, 0},
+    {"Right", 4, NULL, 0},
+    {"Top", 8, NULL, 0},
+    {"Bottom", 16, NULL, 0},
+    {"VCenter", 32, NULL, 0},
+    {"HCenter", 64, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_52[] = {
+    {"Break", 1, NULL, 0},
+    {"Warp to start", 18, NULL, 0},
+    {"Warp best", 34, NULL, 0},
+    {"Warp same pos", 258, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_53[] = {
+    {"128x128", 1, NULL, 0},
+    {"256x256", 2, NULL, 0},
+    {"512x512", 4, NULL, 0},
+    {"1024x1024", 8, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_54[] = {
+    {"", 0, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_55[] = {
+    {"Euclidian Distance", 1, NULL, 0},
+    {"Manhattan Distance", 2, NULL, 0},
+    {"Squared Euclidian Distance", 3, NULL, 0},
+    {"Optimized Euclidian Distance", 4, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_56[] = {
+    {"Flat", 1, NULL, 0},
+    {"Gouraud", 2, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_57[] = {
+    {"Equal", 1, NULL, 0},
+    {"Not Equal", 2, NULL, 0},
+    {"Less than", 3, NULL, 0},
+    {"Less or equal", 4, NULL, 0},
+    {"Greater than", 5, NULL, 0},
+    {"Greater or equal", 6, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_58[] = {
+    {"Faces", 0, NULL, 0},
+    {"Bounding Box", 1, NULL, 0},
+};
+static const nmo_enum_descriptor_t vt_enum_59[] = {
+    {"Front", 1, NULL, 0},
+    {" In", 2, NULL, 0},
+    {" Rear", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_0[] = {
+    {"UV-Mapping", 1, NULL, 0},
+    {"Offset", 2, NULL, 0},
+    {"Size", 4, NULL, 0},
+    {"Position", 8, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_1[] = {
+    {"Gravity", 1, NULL, 0},
+    {"Global Wind", 2, NULL, 0},
+    {"Local Wind", 4, NULL, 0},
+    {"Magnet", 8, NULL, 0},
+    {"Vortex", 16, NULL, 0},
+    {"Disruption Box", 32, NULL, 0},
+    {"Atmosphere", 64, NULL, 0},
+    {"Mutation Box", 128, NULL, 0},
+    {"Tunnel", 256, NULL, 0},
+    {"Projector", 512, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_2[] = {
+    {"Plane", 1, NULL, 0},
+    {"Infinite Plane", 2, NULL, 0},
+    {"Cylinder", 4, NULL, 0},
+    {"Sphere", 8, NULL, 0},
+    {"Box", 16, NULL, 0},
+    {"Object", 32, NULL, 0},
+    {"Outputs Impacts", 64, NULL, 0},
+    {"Die On Impact", 128, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_3[] = {
+    {"Speed", 1, NULL, 0},
+    {"Angular Speed", 2, NULL, 0},
+    {"Lifespan", 4, NULL, 0},
+    {"Emission", 8, NULL, 0},
+    {"Initial Size", 16, NULL, 0},
+    {"Ending Size", 32, NULL, 0},
+    {"Bounce", 64, NULL, 0},
+    {"Weight", 128, NULL, 0},
+    {"Surface", 256, NULL, 0},
+    {"Initial Color", 512, NULL, 0},
+    {"Ending Color", 1024, NULL, 0},
+    {"Initial Texture", 2048, NULL, 0},
+    {"Texture Speed", 4096, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_4[] = {
+    {"Interface", 1, NULL, 0},
+    {"Processing", 2, NULL, 0},
+    {"Rendering", 4, NULL, 0},
+    {"Parametric Operation", 8, NULL, 0},
+    {"Animation Management", 16, NULL, 0},
+    {"IK Management", 32, NULL, 0},
+    {"Total Behavior", 64, NULL, 0},
+    {"Behavior Execution", 128, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_5[] = {
+    {"FlipU", 1, NULL, 0},
+    {"FlipV", 2, NULL, 0},
+    {"Use Ref Orientation", 4, NULL, 0},
+    {"Reflective Mapping", 8, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_6[] = {
+    {"Position", 1, NULL, 0},
+    {"Z Ordering", 2, NULL, 0},
+    {"Background", 4, NULL, 0},
+    {"Size", 8, NULL, 0},
+    {"Pickable", 16, NULL, 0},
+    {"Clip To Parent", 32, NULL, 0},
+    {"Parent Alignment", 64, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_7[] = {
+    {"Axis X", 1, NULL, 0},
+    {"Axis Y", 2, NULL, 0},
+    {"Axis Z", 4, NULL, 0},
+    {"Rotation X", 8, NULL, 0},
+    {"Rotation Y", 16, NULL, 0},
+    {"Rotation Z", 32, NULL, 0},
+    {"Slider 1", 64, NULL, 0},
+    {"Slider 2", 128, NULL, 0},
+    {"Pov", 256, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_8[] = {
+    {"Pressed", 1, NULL, 0},
+    {"Released", 2, NULL, 0},
+    {"Active", 4, NULL, 0},
+    {"Enter Button", 8, NULL, 0},
+    {"Exit Button", 16, NULL, 0},
+    {"In Button", 32, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_9[] = {
+    {"Size", 1, NULL, 0},
+    {"Color", 2, NULL, 0},
+    {"Texture", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_10[] = {
+    {"Active Objects Executed", 1, NULL, 0},
+    {"Behaviors Executed", 2, NULL, 0},
+    {"Building Blocks Executed", 4, NULL, 0},
+    {"Links Parsed", 8, NULL, 0},
+    {"Links Delayed", 16, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_11[] = {
+    {"Screen Proportionnal", 1, NULL, 0},
+    {"Background", 2, NULL, 0},
+    {"Clip To Dimension", 4, NULL, 0},
+    {"Resize Verticaly", 8, NULL, 0},
+    {"Resize Horizontaly", 16, NULL, 0},
+    {"WordWrap", 32, NULL, 0},
+    {"Justified", 64, NULL, 0},
+    {"Compiled", 128, NULL, 0},
+    {"Multiple", 256, NULL, 0},
+    {"Show Caret", 512, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_12[] = {
+    {"1", 1, NULL, 0},
+    {"2", 2, NULL, 0},
+    {"3", 4, NULL, 0},
+    {"4", 8, NULL, 0},
+    {"5", 16, NULL, 0},
+    {"6", 32, NULL, 0},
+    {"7", 64, NULL, 0},
+    {"8", 128, NULL, 0},
+    {"9", 256, NULL, 0},
+    {"10", 512, NULL, 0},
+    {"11", 1024, NULL, 0},
+    {"12", 2048, NULL, 0},
+    {"13", 4096, NULL, 0},
+    {"14", 8192, NULL, 0},
+    {"15", 16384, NULL, 0},
+    {"16", 32768, NULL, 0},
+    {"17", 65536, NULL, 0},
+    {"18", 131072, NULL, 0},
+    {"19", 262144, NULL, 0},
+    {"20", 524288, NULL, 0},
+    {"21", 1048576, NULL, 0},
+    {"22", 2097152, NULL, 0},
+    {"23", 4194304, NULL, 0},
+    {"24", 8388608, NULL, 0},
+    {"25", 16777216, NULL, 0},
+    {"26", 33554432, NULL, 0},
+    {"27", 67108864, NULL, 0},
+    {"28", 134217728, NULL, 0},
+    {"29", 268435456, NULL, 0},
+    {"30", 536870912, NULL, 0},
+    {"31", 1073741824, NULL, 0},
+    {"32", -2147483648, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_13[] = {
+    {"InRange", 1, NULL, 0},
+    {"OutRange", 2, NULL, 0},
+    {"EnterRange", 4, NULL, 0},
+    {"ExitRange", 8, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_14[] = {
+    {"Touched Obstacle", 1, NULL, 0},
+    {"Touched Sub Obstacle", 2, NULL, 0},
+    {"Touched Face", 4, NULL, 0},
+    {"Touching Face", 8, NULL, 0},
+    {"Touched Vertex", 16, NULL, 0},
+    {"Touching Vertex", 32, NULL, 0},
+    {"Impact World Matrix", 64, NULL, 0},
+    {"Impact Point", 128, NULL, 0},
+    {"Impact Normal", 256, NULL, 0},
+    {"Object Part", 512, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_15[] = {
+    {"Faces Drawn", 1, NULL, 0},
+    {" Lines Drawn", 2, NULL, 0},
+    {" Points Drawn", 4, NULL, 0},
+    {" Objects Drawn", 8, NULL, 0},
+    {" Vertices Processed", 16, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_16[] = {
+    {"X", 1, NULL, 0},
+    {"Y", 2, NULL, 0},
+    {"Z", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_17[] = {
+    {"UV-Mapping", 1, NULL, 0},
+    {"Size", 2, NULL, 0},
+    {"Position", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_18[] = {
+    {"Gradient", 1, NULL, 0},
+    {"Shadow", 2, NULL, 0},
+    {"Lighting", 4, NULL, 0},
+    {"Disable Filter", 8, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_19[] = {
+    {"Modify X", 1, NULL, 0},
+    {"Modify Y", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_20[] = {
+    {"Modify Min", 1, NULL, 0},
+    {"Modify Max", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_21[] = {
+    {"Modify R", 1, NULL, 0},
+    {"Modify G", 4, NULL, 0},
+    {"Modify B", 16, NULL, 0},
+    {"Modify Alpha", 64, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_22[] = {
+    {"Modify Angle1", 1, NULL, 0},
+    {"Modify Angle2", 4, NULL, 0},
+    {"Modify Angle3", 16, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_23[] = {
+    {"Modify X", 1, NULL, 0},
+    {"Modify Y", 4, NULL, 0},
+    {"Modify Z", 16, NULL, 0},
+    {"Modify W", 64, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_24[] = {
+    {"Modify TopLeft", 1, NULL, 0},
+    {"Modify BottomRight", 4, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_25[] = {
+    {"Modify X", 1, NULL, 0},
+    {"Modify Y", 4, NULL, 0},
+    {"Modify Z", 16, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_26[] = {
+    {"Background Sprites", 1, NULL, 0},
+    {"Foreground Sprites", 2, NULL, 0},
+    {"Use Camera Ratio", 8, NULL, 0},
+    {"Clear ZBuffer", 16, NULL, 0},
+    {"Clear Back Buffer", 32, NULL, 0},
+    {"Clear Stencil Buffer", 64, NULL, 0},
+    {"Buffer Swapping", 128, NULL, 0},
+    {"Clear Only Viewport", 256, NULL, 0},
+    {"Vertical Sync", 512, NULL, 0},
+    {"Disable 3D", 1024, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_27[] = {
+    {"NumPad", 1, NULL, 0},
+    {"Arrows", 2, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_28[] = {
+    {"Move", 1, NULL, 0},
+    {"Left Button Down", 2, NULL, 0},
+    {"Left Button Up", 4, NULL, 0},
+    {"Right Button Down", 8, NULL, 0},
+    {"Right Button Up", 16, NULL, 0},
+    {"Middle Button Down", 32, NULL, 0},
+    {"Middle Button Up", 64, NULL, 0},
+    {"Roll Received", 128, NULL, 0},
+};
+static const nmo_flags_descriptor_t vt_flags_29[] = {
+    {"In Range", 1, NULL, 0},
+    {"Out Range", 2, NULL, 0},
+    {"Enter Range", 4, NULL, 0},
+    {"Exit Range", 8, NULL, 0},
+};
+static const nmo_struct_descriptor_t vt_struct_0[] = {
+    {"Obstacle Type", NMO_GUID_INIT(0x5F1B2B3C, 0x32AE26B6), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Use Hierarchy?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_1[] = {
+    {"Mesh-ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Static", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Shadow-Length", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"SelfShadow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_2[] = {
+    {"Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"SizeSpeed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"ColorSpeed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_3[] = {
+    {"Velocity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Attraction Shape", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Attraction Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Attraction Direction", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_4[] = {
+    {"Response", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Friction", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Density", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_5[] = {
+    {"Collision Mask", NMO_GUID_INIT(0x4A5D4963, 0x4D28883F), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Collision Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Avoid Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_6[] = {
+    {"Response", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Friction", NMO_GUID_INIT(0x47884C3F, 0x432C2C20), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Density", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Smoothed Normal", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_7[] = {
+    {"Floor Geometry", NMO_GUID_INIT(0x7C1930A1, 0x42361A45), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Moving Floor", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Floor Type", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Use Hierarchy?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"First Contact?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+static const nmo_struct_descriptor_t vt_struct_8[] = {
+    {"Group", NMO_GUID_INIT(0x4A5D4963, 0x4D28883F), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+    {"Mesh", NMO_GUID_INIT(0x24535345, 0x65D15229), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0},
+};
+
 static nmo_status_t register_virtools_param_types(nmo_type_registry_t *registry) {
     nmo_type_descriptor_t desc;
     nmo_status_t st;
@@ -1141,6 +1835,1003 @@ static nmo_status_t register_virtools_param_types(nmo_type_registry_t *registry)
         desc.category = NMO_TYPE_CATEGORY_SCALAR; desc.class_id = 0;
         desc.base_type = NMO_GUID(0x5A5716FD, 0x44E276D7); desc.valid = true;
         st = nmo_type_registry_register(registry, &desc); (void)st;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t register_virtools_param_metadata(nmo_type_registry_t *registry) {
+    nmo_specialized_metadata_t meta;
+    nmo_type_id_t tid;
+
+    /* Sets Operator */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x02011B99, 0x1EFB0B91));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_0;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Global Shade Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x0259699F, 0x6EDA4960));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_1;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Direction */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x0286652D, 0x5EA709C2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_2;
+        meta.enum_meta.value_count = 6;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Address Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x080D38D5, 0x02CF7A30));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_3;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Follow Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x083E512E, 0x351C7933));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_4;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Blend Factor */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x089E28D4, 0x2EF031D2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_5;
+        meta.enum_meta.value_count = 13;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Particle Rendering */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x089E77D4, 0x2EF077D2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_6;
+        meta.enum_meta.value_count = 8;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Secondary Animation Play Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x0C763303, 0x2B8F4F38));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_7;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Rasterizer Api */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x0EBE7D72, 0x04A07B9F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_8;
+        meta.enum_meta.value_count = 6;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Text Alignment */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x11223FAF, 0x1A9315F9));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_9;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Wrap Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x14E14BD8, 0x32A738E7));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_10;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Linker */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x16A90C1B, 0x740D0F12));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_11;
+        meta.enum_meta.value_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Scene Reset Options */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x18170AFB, 0x687D5DA7));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_12;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Object Extents */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x193E0D51, 0x54625C8A));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_13;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Registered Class */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x19644E43, 0x4D6F6123));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_14;
+        meta.enum_meta.value_count = 23;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Scene Activity Options */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x1CD24241, 0x533C0F8F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_15;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* 3DSprite Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x1D1A3403, 0x535E7252));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_16;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Projection Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x1EE22148, 0x602C1CA1));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_17;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Mouse Button */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x1FF24D5A, 0x122F2C1F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_18;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Fill Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x2B0F1617, 0x53CE1B0E));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_19;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Filter Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x2BD753B3, 0x563E5165));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_20;
+        meta.enum_meta.value_count = 7;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Texture Video Format */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x2C1E5D83, 0x37B9284B));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_21;
+        meta.enum_meta.value_count = 14;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Binary Operator */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x2CE46C85, 0x4B791332));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_22;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Alignment */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x2E1E2209, 0x47DA44B5));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_23;
+        meta.enum_meta.value_count = 9;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Axis */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x2EF660C2, 0x207766D5));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_24;
+        meta.enum_meta.value_count = 7;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Registered Parameter */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x34517DF5, 0x045E4965));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_25;
+        meta.enum_meta.value_count = 1;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Mouse Pointers */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x37A05BDD, 0x1ED83F40));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_26;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Texture Blend Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x3C2A6ACA, 0x6F0E5865));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_27;
+        meta.enum_meta.value_count = 8;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Path Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x3E7F7035, 0x7835401F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_28;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Flow Direction */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x3E8B5E93, 0x28BC23B2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_29;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Sound Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x413648DD, 0x47515700));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_30;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Font Weight */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4376013F, 0x0B3462C0));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_31;
+        meta.enum_meta.value_count = 9;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Layer Square Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x454D7D88, 0x210E3F33));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_32;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Layer Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4A39553C, 0x1AC94677));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_33;
+        meta.enum_meta.value_count = 1;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Curve Rendering */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4D236301, 0x5BE530BC));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_34;
+        meta.enum_meta.value_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Light Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4F0F4891, 0x340A05D1));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_35;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Z Compare Function */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x51CD1CF5, 0x1D5C2D9B));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_36;
+        meta.enum_meta.value_count = 8;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Mapping */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5848550B, 0x0ABF5EA5));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_37;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Rectangle Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5A6A3BD9, 0x07E2797D));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_38;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Frame Rate */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5E4C1DCF, 0x662C4495));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_39;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Flow Alignment */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5E5B5493, 0xF8BC224F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_40;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Geometry Precision */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5F1B2B3C, 0x32AE26B6));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_41;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Geometry Precision (Behavioral) */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5F3B233C, 0x33AE36B6));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_42;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Array Column Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x615D017C, 0x54A9524F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_43;
+        meta.enum_meta.value_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Loop Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x63942D15, 0x05AC51A7));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_44;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Font Type */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x64FB5811, 0x33862D3B));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_45;
+        meta.enum_meta.value_count = 1;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Write Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x675E3903, 0x7A06003C));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_46;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Behavioral Rate */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x677F3843, 0x4E7A3FD0));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_47;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Fog Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x686F28EF, 0x5ECC7766));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_48;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Intersection Precision Level */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x6CF55733, 0x5AF72DAE));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_49;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Lit Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x6DD30F0A, 0x74671D2E));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_50;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Sprite Text Alignment */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x6E49509A, 0x2F067425));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_51;
+        meta.enum_meta.value_count = 7;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Animation Transition */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x70E63B54, 0x23C4347C));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_52;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Font Resolution */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7157091D, 0x4FC82932));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_53;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Font Name */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7167091A, 0x7F482632));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_54;
+        meta.enum_meta.value_count = 1;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Heuristic (distance calculation method) */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x72604F23, 0x05FE7F0F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_55;
+        meta.enum_meta.value_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Shade Mode */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7990258F, 0x60326351));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_56;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Comparison Operator */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x79B90856, 0x75D070FF));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_57;
+        meta.enum_meta.value_count = 6;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Geometry */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7C1930A1, 0x42361A45));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_58;
+        meta.enum_meta.value_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Flow Support */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x8E5B5493, 0x98BD2245));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_ENUM;
+        meta.enum_meta.values = vt_enum_59;
+        meta.enum_meta.value_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Set */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x02CF773D, 0x425A4084));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_0;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Particle Interactors Managing */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x083231D4, 0x223173D2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_1;
+        meta.flags_meta.bit_count = 10;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Particle Deflectors Managing */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x083348D4, 0x234873D2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_2;
+        meta.flags_meta.bit_count = 8;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Variances */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x083E73D4, 0x2E3073D2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_3;
+        meta.flags_meta.bit_count = 13;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* General Time Statistics */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x0FE82E7C, 0x0098173F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_4;
+        meta.flags_meta.bit_count = 8;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /*  */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x11416CD2, 0x293C701E));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_5;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* SpriteEdition */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x11CB48A5, 0x47E5424B));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_6;
+        meta.flags_meta.bit_count = 7;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Joy Axis */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x1ED64A6A, 0x5A24059A));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_7;
+        meta.flags_meta.bit_count = 9;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Button Events */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x25064124, 0x1FBE6AAE));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_8;
+        meta.flags_meta.bit_count = 6;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Evolutions */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x270F7B39, 0x6E0B184C));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_9;
+        meta.flags_meta.bit_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Behavioral Statistics */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x3B542289, 0x2F627ABB));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_10;
+        meta.flags_meta.bit_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /*  */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4157001D, 0x4CC82922));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_11;
+        meta.flags_meta.bit_count = 10;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Filter */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4A5D4963, 0x4D28883F));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_12;
+        meta.flags_meta.bit_count = 32;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Proximity */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x4A820522, 0x260C34A9));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_13;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Impact Data */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x507F4CA4, 0x548E153C));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_14;
+        meta.flags_meta.bit_count = 10;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Renderal Statistics */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x54A578A6, 0x53F144D4));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_15;
+        meta.flags_meta.bit_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Check Axis? */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x56D95DA6, 0x09CE65AF));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_16;
+        meta.flags_meta.bit_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Set */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x5EA45694, 0x71FA6627));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_17;
+        meta.flags_meta.bit_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /*  */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x63223DD5, 0x6B5F68FC));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_18;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify 2DVector Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC0));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_19;
+        meta.flags_meta.bit_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify Box Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC1));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_20;
+        meta.flags_meta.bit_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify Color Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC2));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_21;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify EulerAngles Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC3));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_22;
+        meta.flags_meta.bit_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify Quaternion Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC4));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_23;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify Rect Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC5));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_24;
+        meta.flags_meta.bit_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Modify Vector Settings */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x741F6152, 0x574D1DC6));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_25;
+        meta.flags_meta.bit_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Render Options */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x745655A9, 0x61BB29A1));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_26;
+        meta.flags_meta.bit_count = 10;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Keyboard Section */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7A4347DD, 0x59A82CCE));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_27;
+        meta.flags_meta.bit_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Mouse Event */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7ABE0373, 0x1C366A1B));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_28;
+        meta.flags_meta.bit_count = 8;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Proximity */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7FFF5699, 0x7571336D));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;
+        meta.flags_meta.bits = vt_flags_29;
+        meta.flags_meta.bit_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Obstacle */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x01238843, 0xFF881C6E));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_0;
+        meta.struct_meta.field_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* SShadow */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x1C0138D7, 0x1A1609EF));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_1;
+        meta.struct_meta.field_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Mutation Elements */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x468B2BEC, 0x739211CE));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_2;
+        meta.struct_meta.field_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Tunnel Values */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x479C2CEB, 0x729312ED));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_3;
+        meta.struct_meta.field_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Deflectors */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x57DE0FD9, 0x758A71D6));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_4;
+        meta.struct_meta.field_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Collision */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x638737D6, 0x0F783EAE));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_5;
+        meta.struct_meta.field_count = 3;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Deflectors */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x778D5BD9, 0x5DA52335));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_6;
+        meta.struct_meta.field_count = 4;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /* Floor */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7B447672, 0x5798572A));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_7;
+        meta.struct_meta.field_count = 5;
+        nmo_type_registry_register_metadata(registry, &meta);
+    }
+    /*  */
+    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x7E3745C9, 0x79A84E4A));
+    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {
+        memset(&meta, 0, sizeof(meta));
+        meta.type_id = tid;
+        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;
+        meta.struct_meta.fields = vt_struct_8;
+        meta.struct_meta.field_count = 2;
+        nmo_type_registry_register_metadata(registry, &meta);
     }
     return NMO_OK;
 }

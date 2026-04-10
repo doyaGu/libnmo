@@ -2,649 +2,15121 @@
  * DO NOT EDIT — regenerate with: python tools/scripts/gen_virtools_data.py
  */
 
-typedef struct bb_builtin_entry {
-    nmo_guid_t guid;
-    const char *name;
-    const char *category;
-    const char *dll;
-} bb_builtin_entry_t;
+/* nmo_bb_param_desc_t is defined in nmo_bb_registry.h */
 
-static const bb_builtin_entry_t s_bb_builtin[] = {
-    {NMO_GUID_INIT(0x00024125, 0x785420AB), "Add To Group", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x000D000D, 0x000D000D), "Translate", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x00283A35, 0x38EF6B48), "Play Sound Instance", "Sounds/Basic", "Sounds.dll"},
-    {NMO_GUID_INIT(0x00532D07, 0x1DB631CC), "Animation Recorder", "3D Transformations/Animation", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x0060522F, 0x041D4C1F), "TT Set Float Value To Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x0085EBC1, 0x21935422), "Joystick Controller", "Controllers/Joystick", "Controllers.dll"},
-    {NMO_GUID_INIT(0x009C1208, 0x3A8D779E), "TT_TextureSine", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x00A376E0, 0x326609E6), "Get Square From 3D Pos", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x00CD010B, 0x00DD010B), "Camera Color Filter", "Cameras/FX", "Cameras.dll"},
-    {NMO_GUID_INIT(0x00CD159B, 0x164D010B), "Additional View", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x00CD320B, 0x32ED010B), "Planar Filter", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x00DC125F, 0x592B00A8), "Get Current Scene", "Narratives/Scene Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x00E85AB1, 0x312A731C), "Texture Load", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x00E85AE1, 0x317A771C), "sprite Load", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x00ED010B, 0x00FD010B), "Curve Follow", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x00FE6FE4, 0x12A66150), "TT Get Float Value From Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x010015A6, 0xEF597665), "While", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x010D010B, 0x011D010B), "Move To", "3D Transformations/Movement", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x01157F66, 0x0AF04FD2), "Sky Around(CubeMap)", "World Environments/Background", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0x012D010B, 0x013D010B), "Joystick Waiter", "Controllers/Joystick", "Controllers.dll"},
-    {NMO_GUID_INIT(0x014D010B, 0x015D010B), "Mouse Waiter", "Controllers/Mouse", "Controllers.dll"},
-    {NMO_GUID_INIT(0x0153342C, 0xE543674F), "Delete Font", "Interface/Fonts", "Interface.dll"},
-    {NMO_GUID_INIT(0x016D010B, 0x017D010B), "Key Waiter", "Controllers/Keyboard", "Controllers.dll"},
-    {NMO_GUID_INIT(0x01AD010B, 0x01BD010B), "Test Bounding Box Y Overlapping", "Collisions/3D Entity", "Collisions.dll"},
-    {NMO_GUID_INIT(0x01ED010B, 0x01FD010B), "Spot Light Properties", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x01F60ADC, 0x39B02CB8), "Use Z information", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x02030EA1, 0x30182971), "TT Set Level Data", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x02580258, 0x02580258), "Set Light Target", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x02BC537C, 0x147C22E0), "Sound Load", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x02DA5A18, 0x52227285), "TT WaveParticleSystem", "TT_Particles/Terratools", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x03184D55, 0x7D7A0509), "Interpolator Matrix", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x03385BC3, 0x1034102F), "Align 2D", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x033E30A1, 0x42F452FC), "TT_ParameterMapper", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x03442842, 0x01DF7A5F), "TT_CreateDirectory", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x034B2E0E, 0x0CBF75E9), "Time Bezier Interpolator", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x036D1A87, 0xDF0A670C), "Set Dest Blend", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x03ED1BEA, 0x25692ECC), "Joystick Mapper", "Controllers/Joystick", "Controllers.dll"},
-    {NMO_GUID_INIT(0x040E1FE8, 0x79ED7C9B), "Resize View", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x049D487B, 0x57565345), "BitmapText Display", "Interface/Text", "Interface.dll"},
-    {NMO_GUID_INIT(0x04C05C6A, 0x6454792B), "Sound Manager Setup", "Sounds/Global", "Sounds.dll"},
-    {NMO_GUID_INIT(0x04CF37CD, 0x7A246B85), "Display Progression Bar", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x04DB6E14, 0x2C151F73), "TT GetNearestCurvePosition", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x04E65BDD, 0x473C3681), "Is Global State Active", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x04F80EFD, 0x76B47B33), "TT_JoystickVectorMapper", "TT Toolbox/Controllers", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x053B2BDE, 0x2F8F1D74), "Keyboard Mapper", "Controllers/Keyboard", "Controllers.dll"},
-    {NMO_GUID_INIT(0x05441494, 0x38AC7789), "TT Load Database", "TT Database", "TT_DatabaseManager_RT.dll"},
-    {NMO_GUID_INIT(0x055B29FE, 0x662D5CA0), "2D Text", "Interface/Text", "Interface.dll"},
-    {NMO_GUID_INIT(0x05CB7802, 0x04A64A58), "Insert Column", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x060A0F8C, 0x09203B5F), "Time Settings", "Optimizations/System", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x0694658D, 0x7FFD236F), "TT Player Active", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x06D0B04B, 0x1D4EA106), "Motion Blur", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x0718360B, 0x71E5002F), "ShadowCaster", "Visuals/Shadows", "Visuals.dll"},
-    {NMO_GUID_INIT(0x07253EDB, 0x4D1237ED), "Change Value If", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x07414AF4, 0x505E52EE), "TT Write Array", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x07610F4D, 0x69747B9D), "Keyboard Camera Orbit", "Cameras/Movement", "Cameras.dll"},
-    {NMO_GUID_INIT(0x078C60DE, 0x6C744614), "Find Path", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x085207EB, 0x584950D8), "Get Nearest In Group", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x086A487C, 0x3CD44ACB), "Copy Mapping", "Materials-Textures/Mapping", "Materials.dll"},
-    {NMO_GUID_INIT(0x08E53929, 0x4C9C5205), "TT MagnetMeshForm", "TT Toolbox/Mesh", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x09163112, 0x1D2B4454), "TT_GetZOrder", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x092A4E59, 0x4009769C), "Activate Node", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x09A06075, 0x760A4720), "Mark System", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x09B335B3, 0x12D17CDC), "TT_LinearVolume", "TT Toolbox/Sounds", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x0A0E0F18, 0x7A01EF09), "Set Quadratic Attenuation", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x0A125555, 0x0EEE5488), "Orthographic Zoom", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0x0A8B6C27, 0x402B43B4), "TT Create new GameInfo", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x0AD75CCB, 0x0CD1369A), "Set Floor Reference Object", "Characters/Basic", "Characters.dll"},
-    {NMO_GUID_INIT(0x0B585F6F, 0x46253C21), "TT Restart CMO", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x0C4966D8, 0x6C0C6D14), "Set Euler Orientation", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x0C4977A8, 0x6C645D14), "Get Euler Orientation", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x0C5D0457, 0xC64C7000), "Set 3DSprite Mode", "Visuals/Sprite", "Visuals.dll"},
-    {NMO_GUID_INIT(0x0C622386, 0x1C3054F7), "Random", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x0C7E39BB, 0x16DB20D5), "Physics Impulse", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x0CBA3195, 0x53440E4C), "Delete Dynamic Objects", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x0CF151B2, 0x0B1B6001), "TT Set Level Reached", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x0E579636, 0xA3B6E7F0), "Set Animation Frame", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x0EF6070D, 0x67166889), "Copy Buffer to Texture", "Materials-Textures/Texture", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x0F1C5480, 0x04A811CB), "Box Face Intersection", "Collisions/Intersection", "Collisions.dll"},
-    {NMO_GUID_INIT(0x0F384BC3, 0x1B34102F), "Align 3D", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x0F760D6E, 0x7CE7589A), "Set Caret Position", "Interface/Text", "Interface.dll"},
-    {NMO_GUID_INIT(0x0F822838, 0x74116583), "TT_LoadMotorSettings", "TT Toolbox/Sounds", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x0F8334EA, 0x279A40CD), "Remove Key Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x0FAC60AD, 0x1BD31AC9), "Get Nearest", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x0FC45543, 0x55B012C3), "Display Score", "Visuals/Text", "Visuals.dll"},
-    {NMO_GUID_INIT(0x0FD4755F, 0x7DE22DC8), "TT Set Dynamic Position", "TT Toolbox/3D Transformations", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x10043A79, 0x03BA2461), "TT Set TaskSwitchHandler", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x101A62F4, 0x6E2D25F6), "Move Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x104D0913, 0x766563DD), "Generic Camera Orbit", "Cameras/Movement", "Cameras.dll"},
-    {NMO_GUID_INIT(0x10B16051, 0x26173B39), "Get SubString", "Logics/Strings", "Logics.dll"},
-    {NMO_GUID_INIT(0x10D1C997, 0x99DABEF4), "Environment Mapping", "Materials-Textures/Mapping", "Materials.dll"},
-    {NMO_GUID_INIT(0x11223344, 0xAABBCCDD), "Character Go To", "Characters/Movement", "Characters.dll"},
-    {NMO_GUID_INIT(0x11426A61, 0x1A815584), "Face Face Intersection", "Collisions/Intersection", "Collisions.dll"},
-    {NMO_GUID_INIT(0x1144022F, 0x68FD055C), "Set Material Z Buffer", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x120127AA, 0x960ADDED), "Set Animation Step", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x1234EEFA, 0xFFAEC112), "Add Control Point", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x1234EFFA, 0xFFBEC112), "Remove Control Point", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x12480CB5, 0x4816349F), "TT Get Game Bonus", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x1251ADFA, 0xAEBEC002), "Get Curve Properties", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x1251EFFA, 0xAEBEC112), "Get Control Point Properties", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x1254D1CE, 0x001D0A58), "Set Background Image", "World Environments/Background", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0x1254EFFA, 0xFEBEC112), "Set Control Point Properties", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x1257EFFA, 0xF7BEC112), "Set Curve Properties", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x12589321, 0x32587123), "Set Texture Min", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x12874356, 0x12874356), "Character Controller", "Characters/Movement", "Characters.dll"},
-    {NMO_GUID_INIT(0x12A40E8F, 0x6F2D0613), "TT Limit Framerate", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x12A5498D, 0x65657512), "Set Wrap Mode", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x12DB7B06, 0x74C514C3), "Mimic", "3D Transformations/Constraint", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x12F31E27, 0x4CEA0BF5), "TT Find SubString", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x13172F30, 0x3A7876ED), "ObjectParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x13579753, 0x13579753), "Hide 2D Entity", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0x13603DB0, 0x16BC321A), "Object Slider", "Collisions/3D Entity", "Collisions.dll"},
-    {NMO_GUID_INIT(0x136044B0, 0x1C59B21A), "Floor Slider", "Collisions/Floors", "Collisions.dll"},
-    {NMO_GUID_INIT(0x136B3F22, 0x0DC12786), "Set Ambient Light Color", "World Environments/Global", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0x137C3D66, 0x3FF1752D), "TT ShadowPlane", "TT Toolbox/FX", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x13BD2C64, 0x62DB38E1), "Array Load", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x140C3EAC, 0x6E502A81), "Mouse Cursor", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x1436624F, 0x34E1290A), "TT Set Database Properties", "TT Database", "TT_DatabaseManager_RT.dll"},
-    {NMO_GUID_INIT(0x14367C05, 0x635B24F9), "Deactivate Script", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x14782B1D, 0x52692E21), "Set Animation Step Entity", "3D Transformations/Animation", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x14C70F07, 0x4F2A100A), "Set 2D Parent", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x14D325D1, 0x6748654E), "TT PushButton2", "TT Toolbox/Interface", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x15151652, 0xAEEFFFD5), "Identity", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x15185846, 0x41014A45), "Array Save", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x151AAAAA, 0xFFD5BDBC), "Set Fog", "World Environments/Global", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0x159630E5, 0x5A5A26C6), "Set Priority", "Sounds/Properties", "Sounds.dll"},
-    {NMO_GUID_INIT(0x15D472A5, 0x3BEA409F), "Delayer", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x160F4B7D, 0x67DE224E), "Deactivate Object", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x1616120F, 0x5B2F48CE), "2D Picking", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x16875322, 0x72422C5C), "TT  Get Game Data", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x16CC600C, 0x702836D1), "Make Transparent", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x16F6368F, 0x506B60FC), "Show Mouse Cursor", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0x170A5187, 0x42F10A3A), "Entity Find Nodal Path", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x17171700, 0x17171700), "Interpolator Float", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x17171701, 0x17171701), "Interpolator Int", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x17171702, 0x17171702), "Interpolator Vector", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x17171703, 0x17171703), "Interpolator Color", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x17171704, 0x17171704), "Interpolator Object Orientation", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x173E60FF, 0x4DB14BCC), "TT_BitmapFont", "TT Toolbox/FX", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x175C07D1, 0x1D235544), "TT Set Integer Value To Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x17CB4C57, 0x00F525FB), "Show Object Information", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0x17D66D26, 0x726B7DEC), "Test", "Logics/Test", "Logics.dll"},
-    {NMO_GUID_INIT(0x17E75566, 0x0C5625A6), "Grid Path Solver", "Grids/Path Finding", "Grids.dll"},
-    {NMO_GUID_INIT(0x18655B3F, 0x68291DC3), "Output To Console", "Logics/Strings", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x188D6D43, 0x169613DD), "Launch Scene", "Narratives/Scene Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x18F96977, 0x18E20F83), "TT ConvertPixel-Homogen", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x198531F9, 0x60F66C57), "Sphere Sphere Intersection", "Collisions/Intersection", "Collisions.dll"},
-    {NMO_GUID_INIT(0x198F0AF9, 0x0268249F), "Iterator", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x199E4CF1, 0x545A78FE), "PhysicsContinuousContact", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x1A151160, 0x1BE26257), "TT Switch on Layer", "TT Toolbox/Grids", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x1A1A67AA, 0x664108ED), "TT_MotorSound", "TT Toolbox/Sounds", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x1A7D5B17, 0x70630FED), "Call Script", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x1ACE1319, 0x66B112B1), "Move Column", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x1AE11F1A, 0x1A1E1F11), "Set Specular Flag", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x1AF2274B, 0x6B8C1524), "Key Event", "Controllers/Keyboard", "Controllers.dll"},
-    {NMO_GUID_INIT(0x1B241485, 0x1F572AAC), "Hardware Level", "Optimizations/System", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x1B82338F, 0x5A656975), "Fade Out", "Sounds/Global", "Sounds.dll"},
-    {NMO_GUID_INIT(0x1BB23F1D, 0x17FF14B9), "Switch On Message", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0x1C0D5E24, 0xDE47B706), "Share Character Animation Keys", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x1C7E5DC6, 0x3F6423C2), "Add Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x1C8E61D1, 0x32723C6F), "Get Profiler Values", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x1C9236E1, 0x42F40996), "Play Global Animation", "3D Transformations/Animation", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x1CB5661E, 0x5B5D3FDA), "Set Alpha Test", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x1D12662E, 0x42687A3C), "Group Clear", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x1D2D378D, 0x4A4F36B6), "Set Z Buffer", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x1D57024D, 0x7C064238), "Write In Texture", "Materials-Textures/Texture", "Materials.dll"},
-    {NMO_GUID_INIT(0x1DBA5F4A, 0x14481212), "Attach Script", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x1EF926BD, 0x01AD167F), "Sprite Multi Angle", "Visuals/Sprite", "Visuals.dll"},
-    {NMO_GUID_INIT(0x1F0B52BF, 0x4C3342DD), "Streaming Event", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x1F1E7188, 0x0EC26D1F), "LinearParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x1F49612E, 0x6CD63DE0), "Switch On Key", "Controllers/Keyboard", "Controllers.dll"},
-    {NMO_GUID_INIT(0x1F5B2FE7, 0x6D355175), "3D Text", "Interface/Text", "Interface.dll"},
-    {NMO_GUID_INIT(0x1FA57136, 0x14310857), "Remove Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x200123D8, 0x65F802B6), "Save State", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x200D6501, 0x4CF61E52), "LOD Character Animation", "Optimizations/Level Of Detail", "Characters.dll"},
-    {NMO_GUID_INIT(0x20171E01, 0x234A1B62), "Light Color Progression", "Lights/FX", "Lights.dll"},
-    {NMO_GUID_INIT(0x20202020, 0x30303030), "Set Specular", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x208F0030, 0x652F088E), "Replace Rendering", "Visuals/FX", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x20B86A4C, 0x3C62472A), "TT Set Level ID", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x215C7794, 0x7AC40F5D), "Render Curve", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x21647449, 0x51126C00), "Update Nodal Path", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x21DC34E8, 0xD512CD89), "Declare Obstacles", "Collisions/Obstacle", "Collisions.dll"},
-    {NMO_GUID_INIT(0x21F5F30D, 0x08D5A1DB), "Set Local Matrix", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x22252552, 0x00200020), "Set Light Range", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x229865EB, 0x577619E4), "TT_TestForJoystick", "TT Toolbox/Controllers", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x22C71529, 0x6BB265D2), "Create Group From Array", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x22E510F9, 0x070F528A), "TT_CopyFile", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2356342F, 0x9542674F), "Mouse Camera Orbit", "Cameras/Movement", "Cameras.dll"},
-    {NMO_GUID_INIT(0x241B32A5, 0x71FE3357), "TT_LensFlare", "TT Toolbox/Object", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x245FB72C, 0xA5E437E6), "3D Flow Layout", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x2483576D, 0x57C66324), "Mouse Cursor System", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x248A56ED, 0x2C232967), "Create Blended Animation", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x24A06A3A, 0x07100FCE), "Set Physics Spring", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x250C4D8D, 0x288960D9), "Get Texture Info", "Narratives/Object Management", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x254074C1, 0x22C0397E), "Switch If Square", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x2557342C, 0x15246746), "3D Curve Layout", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x25B54079, 0x6FF90545), "Has Attribute", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x260E4EB0, 0x0E256B90), "TT_CreateFontEx", "TT Toolbox/Font", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x265F342C, 0x95E466E6), "2D Grid Layout", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x26843971, 0x86249317), "Look At", "3D Transformations/Constraint", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x2689057B, 0x1A1A446A), "Get Component", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x270F177A, 0x4CA20023), "Shuffle Order", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x271538E6, 0x2FAE49AC), "Object Create", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x271B61AF, 0x41B44D43), "One At A Time", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x27447F6B, 0x22AA0C59), "Hide Hierarchy", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0x279603A9, 0x16F20716), "TT_SearchRow", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x27B71ADA, 0x22191538), "Create Decal", "Mesh Modifications/Creation", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x27F50A7C, 0x0EE91D0E), "Set Sound Range", "Sounds/3D Properties", "Sounds.dll"},
-    {NMO_GUID_INIT(0x28CD6341, 0x0CAD5793), "Set Listener", "Sounds/Global", "Sounds.dll"},
-    {NMO_GUID_INIT(0x2956342C, 0x95246746), "2D Curve Layout", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x295F342C, 0x95E467E6), "2D Flow Layout", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x2973360E, 0x23D31AA7), "Set Physics Slider", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x29F17890, 0x2E0117A2), "TT Delete GameInfo ", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x2A2A63CA, 0x00826175), "TT Scaleable Proximity", "TT Toolbox/Test", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2A5A3D0B, 0x04E6466C), "TT Set Game Score", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x2A6A3FA3, 0x3280407D), "Planar Mapping", "Materials-Textures/Mapping", "Materials.dll"},
-    {NMO_GUID_INIT(0x2B175818, 0x2C270B20), "Make Rows Unique", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x2C015F2B, 0x5B147512), "PhysicsBuoyancy", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x2C1835EB, 0x68083D54), "Animation Synchronizer", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x2C7D5826, 0x688778F4), "TT SkyAround", "TT Toolbox/Object", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2D2A0D16, 0x6B955EE1), "TT_SetCurrentDirectory", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2D2D2A64, 0x5A0501C7), "TT_CelShading", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2D5D6D01, 0x6A353EB0), "Op", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x2E0A6B92, 0x366A3F9B), "Set Channel Material", "Materials-Textures/Channel", "Materials.dll"},
-    {NMO_GUID_INIT(0x2E36319F, 0x6EC6031F), "TT_SetMapping", "TT Toolbox/Mapping", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2E3C2D7E, 0x7BE7234E), "TT_HighMapMeshform", "TT Toolbox/Mesh", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2E8344E0, 0x05101432), "TT Get Level Reached", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x2ED72740, 0x406B5027), "Swap Rows", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x2F572A66, 0x6A9A0088), "Set Blend Modes", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x2F5A0EB9, 0x27067E93), "Set Channel Dest Blend", "Materials-Textures/Channel", "Materials.dll"},
-    {NMO_GUID_INIT(0x2F6A47B3, 0x35F4755C), "TT_RippleWave", "TT Toolbox/Mesh", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2FC37564, 0x299A2C9D), "Set Transparent", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x2FCA6B65, 0x73B31EBD), "TT_ShowVector", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2FFB3EF0, 0x21807AE3), "TT_Key Waiter", "TT Toolbox/Controllers", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x2FFF4C63, 0x4FCB1B94), "Set Key Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x301971F0, 0x7919343F), "Prevent Collision", "Collisions/3D Entity", "Collisions.dll"},
-    {NMO_GUID_INIT(0x302561C4, 0x0D282980), "Nop", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x30362F34, 0x1935316F), "TT Save IC", "TT Toolbox/Narratives", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x30641426, 0x12403BB9), "TT Set Game Name", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x30BD6156, 0x14772834), "TT_SetFSAA", "TT Toolbox/FX", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x30ED1C6D, 0x4A3B7067), "Set Cell", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x30FA6A70, 0x3B3F728A), "TT_GetSoundProperties", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x319971F0, 0x7919193F), "Character Prevent From Collision", "Collisions/Character", "Collisions.dll"},
-    {NMO_GUID_INIT(0x31D97D82, 0x78D54D98), "Hide", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0x32115590, 0x78951230), "Set Light Color", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x32165A2F, 0x70000000), "Set Light Type", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x321A42C4, 0x006133D5), "Add Obstacle", "Collisions/Obstacle", "Collisions.dll"},
-    {NMO_GUID_INIT(0x321D56C4, 0x006D56D5), "Remove Attribute Obsolete", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x321E41C4, 0x006E41D5), "Has Attribute Obsolete", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x321F32C4, 0x006F32D5), "Set Attribute Obsolete", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x32351C65, 0x4F6916BE), "Column Operation", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x325D722D, 0x3D9E16E9), "TT_Chrono", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x32A6308D, 0x1D3D0931), "TT Bounding Sphere Intersection", "TT Toolbox/Collision", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x32D26C84, 0x3C741F89), "Get Mouse Displacement", "Controllers/Mouse", "Controllers.dll"},
-    {NMO_GUID_INIT(0x32D30604, 0x23B163FC), "Set 2D Position", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x334C7DFE, 0x47C81A31), "TT ShadowMapping", "TT Toolbox/FX", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x33613F21, 0x776B185B), "Volume Control", "Sounds/Control", "Sounds.dll"},
-    {NMO_GUID_INIT(0x33B77F41, 0x07B95C45), "Get Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x33B7FF41, 0x07B95C44), "Get Column Name", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x33B99F51, 0x07D95C45), "Get Cell", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x348773DC, 0x19AE6322), "TT Register Array", "TT Database", "TT_DatabaseManager_RT.dll"},
-    {NMO_GUID_INIT(0x34951557, 0x4D180895), "TT Get Game Score", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x35503950, 0x2DDE7A65), "Interpolator", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x35C9352F, 0x7B1A193B), "Clear Array", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x36106BD9, 0x51813906), "TT Extra", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x36691920, 0x3B261630), "TT Sky", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x368F0AB1, 0x2D8957E4), "Set As Active Camera", "Cameras/Montage", "Cameras.dll"},
-    {NMO_GUID_INIT(0x368F22B1, 0x222957E4), "Get Current Camera", "Cameras/Montage", "Cameras.dll"},
-    {NMO_GUID_INIT(0x36AF3944, 0x67C75AA7), "TT Set Game ID", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x373040F2, 0x05E01B34), "Set Attribute", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x373A615B, 0x769A6D53), "Activate Global State", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x37865D50, 0x2E285FAB), "Set Material", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x37F1163D, 0x35AD3E6B), "Global Blur", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x38571B61, 0x64CD2174), "TT ProximityVolumeControl", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x38B84D97, 0x13932F28), "TT Change ScreenMode", "TT InterfaceManager/Display", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x38B851B5, 0x72CA74AC), "Physics WakeUp", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x38B87D43, 0x149B755B), "TT PMS_Meshdeform", "TT Toolbox/Mesh", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x38C34DAB, 0x5DD03BDF), "TT_SetMipMapping", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x391555D6, 0x42F2500E), "Load String", "Logics/Strings", "Logics.dll"},
-    {NMO_GUID_INIT(0x39460907, 0x30F329AF), "Avoid Obstacles", "Collisions/Influence", "Collisions.dll"},
-    {NMO_GUID_INIT(0x39B21B0C, 0x5DB65810), "TT Get Game Name", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x39C45869, 0x3DCF3FC1), "Drag and Drop", "Interface/Controls", "Interface.dll"},
-    {NMO_GUID_INIT(0x39CF3DD3, 0x11A92281), "TT_IsObjectVisible", "TT Toolbox/Test", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x39F64A9A, 0x682B721C), "Column Product", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x3A1A16C7, 0x20095C45), "Rendezvous", "Logics/Synchro", "Logics.dll"},
-    {NMO_GUID_INIT(0x3A271561, 0x1D8C4B45), "Floor Manager Setup", "Collisions/Floors", "Collisions.dll"},
-    {NMO_GUID_INIT(0x3AB6273F, 0x578F7118), "Read State", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x3B7D3DB7, 0x519F015B), "Reverse Order", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x3B826E04, 0x6E764285), "TT GetMemoryStatus", "TT Toolbox/System", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x3B9B0E7F, 0xB1316800), "Set Channel Src Blend", "Materials-Textures/Channel", "Materials.dll"},
-    {NMO_GUID_INIT(0x3BCF7052, 0x59F40417), "Set Rectangles", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x3BD73009, 0x7AA01DAC), "Set Material Effect", "Materials-Textures/Basic", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x3C392558, 0x419D2680), "TT Set_2DSprite", "TT Toolbox/Sprite", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x3C3F7044, 0x0E917D1A), "Trigger Event", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x3C442002, 0x5988257C), "Enter Critical Section", "Logics/Synchro", "Logics.dll"},
-    {NMO_GUID_INIT(0x3C94747A, 0x50882825), "Remove Object From Group", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x3CC07535, 0x037E351C), "TT GetGroupBoundingBox", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x3D00718F, 0x2C8B33A2), "TT_DebugON", "TT Toolbox/Debug", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x3D4861F8, 0x2861703D), "TT LookAt", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x3D6C4AE1, 0x72AE2CD6), "Broadcast Message", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0x3D7453F9, 0x1DBA691F), "CubicParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x3DDD6D33, 0xA54D5C48), "Set Material 3DSprite", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x3DE853BD, 0x133D0D2E), "Object Keep On Floor V2", "3D Transformations/Constraint", "Collisions.dll"},
-    {NMO_GUID_INIT(0x3DF93DDC, 0x9C89C141), "Water Texture", "Materials-Textures/Procedural Textures", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x3E715746, 0x45CE3B5A), "TT_GetTime", "TT Toolbox/Time", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x3E7335D9, 0x29687F36), "Variation", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x3EBE40F2, 0x3FA41377), "Set MipMap Level", "Materials-Textures/Texture", "Materials.dll"},
-    {NMO_GUID_INIT(0x3F377888, 0x128A7767), "Remove Column", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x3F6B0AC7, 0x47D20F78), "Object Copy", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x3F7E5BFF, 0x02326A71), "Set 2D Material", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x3FB65480, 0x6CA450E2), "DiscParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x400F0E6F, 0x72822162), "Joystick Camera Orbit", "Cameras/Movement", "Cameras.dll"},
-    {NMO_GUID_INIT(0x40234DDC, 0x012DA700), "Set Src Blend", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x40540A0D, 0x000AAAAA), "Set Zoom", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0x408E30B5, 0x22A07ADA), "TT Set_3DSprite", "TT Toolbox/Sprite", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4095766F, 0x291161C1), "Draw Rectangle", "Interface/Primitives", "Interface.dll"},
-    {NMO_GUID_INIT(0x409F03D9, 0x7616062C), "TT_IsObjectActive", "TT Toolbox/Test", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x41236987, 0xA54A87A6), "Scale", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x412E4CD0, 0x6F860DE3), "TT_ViewFrustumClipping", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x416B4F0E, 0x192D339A), "TT_PreloadTextures", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x419602EC, 0x7822779E), "Collection Iterator", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x41BB5AF1, 0x01EB26E9), "Set Color Key", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x41CD3653, 0x0DE60C1D), "Set Physics Hinge", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x41F47EC4, 0x69470BBD), "TT Install Array", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x4212CABD, 0xEAFBCDA6), "Character Curve Follow", "Characters/Movement", "Characters.dll"},
-    {NMO_GUID_INIT(0x42530844, 0x257B6053), "Sequencer", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x4321ABCD, 0x0EEAABDD), "Get Nearest Object", "Characters/Basic", "Characters.dll"},
-    {NMO_GUID_INIT(0x435B3D9C, 0x3A8E41F6), "Create Nodal Path", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x43617677, 0x7DE15E12), "Object Keep On Floor", "3D Transformations/Constraint", "Collisions.dll"},
-    {NMO_GUID_INIT(0x43F1D000, 0x1A2B3C4D), "Keyboard Controller", "Controllers/Keyboard", "Controllers.dll"},
-    {NMO_GUID_INIT(0x44433224, 0x12874356), "Enhanced Character Controller", "Characters/Movement", "Characters.dll"},
-    {NMO_GUID_INIT(0x4445257B, 0x70016C57), "Fill Group By Class", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x448E54CE, 0x75A655C5), "Per Second", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x44D43591, 0x28F91084), "TT Homing Missile", "TT Toolbox/3D Transformations", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x44FE1B3C, 0x29BA3445), "Planar Reflection", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x452816AF, 0x681A3A81), "TT RealShadowMapping", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x45454545, 0x15151515), "Set Specular Power", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x45484B53, 0x08EB1FAB), "Object Between", "Logics/Test", "Logics.dll"},
-    {NMO_GUID_INIT(0x45542A7F, 0x4C2F01A6), "Is In View Frustum", "Logics/Test", "Logics.dll"},
-    {NMO_GUID_INIT(0x45875FEE, 0x45875FDD), "Get Message Data", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0x4587FFEE, 0x4587FFDD), "Wait Message", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0x45895551, 0x59486677), "Set Linear Attenuation", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0x45899665, 0x45211254), "Set Lighting Mode", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x45986587, 0x12654556), "Add Child", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x45DB3138, 0x4DB80F47), "Leave Critical Section", "Logics/Synchro", "Logics.dll"},
-    {NMO_GUID_INIT(0x460044B5, 0x6E927B66), "TT_ReadRegistry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x465C4732, 0x30996468), "Set Portal", "Optimizations/Portals", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x46F71E13, 0x13D26F61), "Get Highest", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x473167B6, 0x48F75A1D), "Pixel Value", "Materials-Textures/Texture", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x47DC3232, 0x64BF203A), "Get Delta Time", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x49064205, 0x10E72F7A), "Get Key Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x49124252, 0x1BE909A4), "Column Sum", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x496F429E, 0x7D602E9D), "TT_ListDir", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x49957BFE, 0x0FF27FFC), "PlanarParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x4A446C43, 0x66FA2375), "TT_Debug", "TT Toolbox/Debug", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4A462E58, 0x022E369B), "Remove Channel", "Materials-Textures/Channel", "Materials.dll"},
-    {NMO_GUID_INIT(0x4A6524C4, 0x13B55824), "CurveParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x4A797D21, 0x214D37F9), "Lightmap", "Lights/FX", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x4A797D21, 0x214D37FA), "Static Lightmap", "Lights/FX", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x4A797D94, 0x21AB5CFA), "Write Config", "Narratives/Config", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x4A888D94, 0x21CCCCFA), "Read Config", "Narratives/Config", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x4AFA2F11, 0x034872E2), "Scan String", "Logics/Strings", "Logics.dll"},
-    {NMO_GUID_INIT(0x4BA42A5B, 0x3CA030DD), "Position Sound", "Sounds/3D Properties", "Sounds.dll"},
-    {NMO_GUID_INIT(0x4BC209B8, 0x5B3679B0), "Calculator", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x4BCD2F9D, 0x382652E2), "Create String", "Logics/Strings", "Logics.dll"},
-    {NMO_GUID_INIT(0x4C1D16AC, 0x1877604A), "Sprite Movie Player", "Visuals/Sprite", "Visuals.dll"},
-    {NMO_GUID_INIT(0x4C42AACE, 0x1DA45635), "Switch On Parameter", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x4C6513E9, 0x20E11177), "TT GetEnvironmentVariable", "TT Toolbox/Advanced", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4C710F65, 0x32ED4EA6), "Character Go To Node", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x4C7E7BC3, 0x0B693155), "Activate Script", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x4C94621D, 0x24FE2CF3), "TT OperationSystem", "TT Toolbox/System", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4CA718CC, 0x03520C5A), "Object Rename", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x4D3F515B, 0x450C20C6), "Exclude From Animation", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x4D586C55, 0x5250236A), "Set Render Options", "World Environments/Global", "Visuals.dll"},
-    {NMO_GUID_INIT(0x4D6075E1, 0x2DDA272E), "Frustum Object Intersection", "Collisions/Intersection", "Collisions.dll"},
-    {NMO_GUID_INIT(0x4DCF4CA0, 0x474E25EC), "TT_SceneStencilShadow", "TT Toolbox/FX", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4DEF3319, 0x075B5CC8), "Light Sprite", "Lights/FX", "Lights.dll"},
-    {NMO_GUID_INIT(0x4DF00DAC, 0x562C27DA), "TT PushButton", "TT Toolbox/Interface", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4E6C6DA8, 0x636904FC), "Test Cell", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x4E7A0194, 0x040328FD), "TT List ScreenModes", "TT InterfaceManager/Display", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x4F16689A, 0x472B1C63), "TT GetUV2DSprite", "TT Toolbox/Sprite", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4F7D5221, 0x4C852520), "Add Object To Scene", "Narratives/Scene Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x4F8F0DFE, 0x7C517321), "Column Transform", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x4F907F12, 0x16AF15D6), "TT SinusMeshdeform", "TT Toolbox/Mesh", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4F9B6FA1, 0x57040B1B), "TT Set Level Bonus", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x4FBB3808, 0x4A99083C), "TT_KeySwitch", "TT Toolbox/Controllers", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x4FE0646E, 0x7E0635C9), "Texture Sine", "Materials-Textures/Animation", "Materials.dll"},
-    {NMO_GUID_INIT(0x506B40F7, 0x30852E46), "Point Particle System", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x50C02B30, 0x2E5A2EDA), "TT Get Integer Value From Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x50EB3A17, 0x015C5BF9), "TT GetCurvePoint", "TT Toolbox/3D Transformations", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x513344BB, 0x6B943D9F), "Fill Layer", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x51BD5521, 0x672C67BF), "TT SpeedOMeter", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x51DF79D8, 0x294163A3), "Activate Link", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x520D14A5, 0x797502AE), "Deactivate Global State", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x524A6BCB, 0x66F67774), "TT_ReplacePath", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x52DF323C, 0x39DC1211), "Filter Texture", "Materials-Textures/Texture", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x52FD6294, 0x612F51A5), "TT InputString", "TT Toolbox/Interface", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x53024810, 0x22ED280F), "TT_RefractionMapping", "TT Toolbox/Mapping", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x5321CACB, 0xDCDC5213), "Proximity", "Logics/Test", "Logics.dll"},
-    {NMO_GUID_INIT(0x534377DE, 0x75FD478A), "Value Count", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x53BA46BC, 0x31782F60), "TT_ExistFile", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x53BF75AA, 0x770C7021), "DeleteCollisionSurfaces", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x53EE4292, 0x7D932BB1), "Blend Textures", "Materials-Textures/Procedural Textures", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x54A776B7, 0x20FC1E7C), "TT ReplaceInputparameter", "TT Toolbox/Advanced", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x55041717, 0x30817370), "Portal Management", "Optimizations/Portals", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x55566666, 0x66666444), "Activate Channel", "Materials-Textures/Channel", "Materials.dll"},
-    {NMO_GUID_INIT(0x556E6DF3, 0x24207D37), "TT_GetCurrentDirectory", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x55BC3115, 0x1DFE1E40), "Mini Calculator", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x55F045C7, 0x6CB3417B), "Set Bodypart Animation Frame", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x56173AA5, 0x73FF1A7F), "TT Exists GameInfo ?", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x56204F09, 0x611101E8), "Multi Collision Detection", "Collisions/3D Entity", "Collisions.dll"},
-    {NMO_GUID_INIT(0x56204F19, 0x682801E8), "Collision Detection", "Collisions/3D Entity", "Collisions.dll"},
-    {NMO_GUID_INIT(0x562F6AAB, 0x07EA0F0B), "TT_DeleteFile", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x56680B62, 0x23083054), "TT Set_2DSprite_old", "TT Toolbox/Sprite", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x56864D6D, 0x159B5D1E), "Create Blended Animation 2", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x568E2C3C, 0x24547EF7), "TT Set Level Score", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x569D2CC2, 0x3BCB01B9), "TT_TimedependentPointParticlesystem", "TT_Particles/Terratools", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x56E20C57, 0x0B926068), "SetPhysicsForce", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x5714345E, 0x792262AE), "Physics Reset", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x573705FA, 0x1710468E), "TT Get Level Bonus", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x57865622, 0x662D2FEE), "Remove Row If", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x58A1210B, 0x14E5715C), "Is In Group", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x58EF12CA, 0x26805940), "Screen Mapping", "Materials-Textures/Mapping", "Materials.dll"},
-    {NMO_GUID_INIT(0x59245FAE, 0x24A123F3), "TT Activate Object", "TT Toolbox/Narratives", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x594A136E, 0x58135EF9), "TT Joystick Waiter", "TT Toolbox/Controllers", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x59537E89, 0x79D02F25), "Unlimited Controller", "Characters/Movement", "Characters.dll"},
-    {NMO_GUID_INIT(0x595B4723, 0x576C6749), "TT FollowCamera", "TT Toolbox/3D Transformations", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x5ACE7E01, 0x199B76FD), "TT Get Boolean Value From Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x5AE25172, 0x5C781FAA), "Set Quaternion Orientation", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x5AE72F89, 0x57EB5413), "TT_GeneratePlane", "TT Toolbox/Mesh", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x5AE74E2F, 0x799C49B5), "TT_SplitString", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x5B1F1381, 0x5C640372), "Get Mouse Position", "Controllers/Mouse", "Controllers.dll"},
-    {NMO_GUID_INIT(0x5BC50AF4, 0x41E92536), "TT Exit to System", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x5BDE0E45, 0x2E2107D5), "Wave Player", "Sounds/Basic", "Sounds.dll"},
-    {NMO_GUID_INIT(0x5C825017, 0x6D367973), "TT Read Array", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x5CA62D31, 0x5D2031B8), "TT_SaveAlpha", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x5D303E9D, 0x552C0AF2), "TT Save Database", "TT Database", "TT_DatabaseManager_RT.dll"},
-    {NMO_GUID_INIT(0x5E2F1788, 0x4F965A44), "Chrono", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x5E40778E, 0x44F36CF3), "Spherical Mapping", "Materials-Textures/Mapping", "Materials.dll"},
-    {NMO_GUID_INIT(0x5E624F0A, 0x35160450), "Set Physics Ball Joint", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x5F003FBA, 0x5E574F60), "Activate Object", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x5F4A214B, 0x6817452C), "Hierarchy Parser", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x5F906952, 0x6DF11649), "Send Message To Group", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0x5FB70201, 0x65595AF3), "Statistics", "Optimizations/System", "Visuals.dll"},
-    {NMO_GUID_INIT(0x60415D44, 0x0D0174EA), "Set Prelit Color", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x6050252F, 0x3AA82D40), "Group Iterator", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x60A873C5, 0x51245A67), "ShadowStencil", "Visuals/Shadows", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x61226639, 0x6D390CB7), "Check For Message", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0x625874AA, 0xAA694132), "Set Orientation", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x62963FA9, 0x7258745C), "TT_Set Material Values", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x62D00456, 0x30EB4245), "TT List Driver", "TT InterfaceManager/Display", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x62DA29D8, 0x1BBC6234), "Synchro Player", "Narratives/Streaming Recording", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x62E87901, 0x2DF007DD), "Set Row", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x62EA3812, 0x1ED661A6), "Synchro Recorder", "Narratives/Streaming Recording", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x630D05F7, 0x1DDA541F), "TT_BumpMap", "TT Toolbox/Mapping", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x63527B75, 0x1F9A40D9), "TT Get Game ID", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x63DD09A7, 0x567F7218), "TT Load CMO", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x63EB2B0C, 0x27E2767E), "Parameter Selector", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x64154401, 0x76CF37AF), "Box Box Intersection", "Collisions/Intersection", "Collisions.dll"},
-    {NMO_GUID_INIT(0x641822B0, 0x15AA42D7), "Billboard", "3D Transformations/Constraint", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x64221225, 0x769A143F), "Play Animation 3D Entity", "3D Transformations/Animation", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x649011FE, 0x437D5918), "TT Get Level ID", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x652316A2, 0x01AA09A9), "Set Clipping Planes", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0x655E6AF4, 0x08C0596F), "Threshold", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x665F342C, 0x9E1366E6), "3D Grid Layout", "Interface/Layouts", "Interface.dll"},
-    {NMO_GUID_INIT(0x66E06B8A, 0x57DB26D0), "TT_IsScriptActive", "TT Toolbox/Test", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x670616AD, 0x2A5C54AC), "Get Pos From Value", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x671E4A87, 0x383B2912), "Ray Intersection", "Logics/Test", "Logics.dll"},
-    {NMO_GUID_INIT(0x671E53A2, 0x5BA16D62), "Get Proportional Screen Pos", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x671E5A87, 0x383B2372), "Ray Box Intersection", "Logics/Test", "Logics.dll"},
-    {NMO_GUID_INIT(0x672F0997, 0x563644CC), "3D Entity Fill", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x676776D0, 0x20D457BD), "Position On Curve", "3D Transformations/Curve", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x67C88F47, 0x8880721E), "SphericalParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x67C90F47, 0x1480721E), "CylindricalParticleSystem", "TT_Particles", "TT_ParticleSystems_RT.dll"},
-    {NMO_GUID_INIT(0x67FC7084, 0x141154F7), "Texture Render", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x680269CB, 0x50814D03), "TT Restore Dynamic IC", "TT Toolbox/Narratives", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x683925F3, 0x6FDD3F16), "Remove Object From Scene", "Narratives/Scene Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x68E631F7, 0x13F914FE), "TT_GetFileNameFromPath", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x693E7E4B, 0x100104C4), "Input String", "Controllers/Keyboard", "Controllers.dll"},
-    {NMO_GUID_INIT(0x694867FF, 0x7DB16D1F), "TT_ConvertBox", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x69AA320B, 0x023829C7), "Add Object To Group", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x69E34443, 0x459F23DB), "TT ConvertTimeToString", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x69FB3783, 0x50262517), "TT Set Boolean Value To Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x6A3D4643, 0x4F0462DD), "TT Get Level Name", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x6A5F17AF, 0x63480864), "Panning Control", "Sounds/Control", "Sounds.dll"},
-    {NMO_GUID_INIT(0x6A777FC4, 0x1DC17B23), "Gauge", "Visuals/2D", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x6A794228, 0x77197F5E), "Add Animation", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x6AC67901, 0x7D2A6059), "TT_Timer", "TT Toolbox/Time", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x6B6340C4, 0x61E94A41), "Remove Attribute", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x6B6D781E, 0x4B531860), "TT_ListAllCurrentUsedTextures", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x6BB8699A, 0x29FB6A4B), "Bezier Progression", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x6BC1494C, 0x0C816AD3), "Objects With Attribute Iterator", "Logics/Attribute", "Logics.dll"},
-    {NMO_GUID_INIT(0x6BCA40F9, 0x42641A24), "TT Get Level Data", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x6BEC4BE6, 0x12D64C7C), "Iterator If", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x6D0A6DD3, 0x43765DF4), "Character Grid Path Follow", "Grids/Path Finding", "Grids.dll"},
-    {NMO_GUID_INIT(0x6D433E1B, 0x191954B4), "Bezier Transform", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x6DAD424E, 0x54B6003D), "Get Nearest Floors", "Collisions/Floors", "Collisions.dll"},
-    {NMO_GUID_INIT(0x6DC06ABB, 0x44451DE5), "TT Is Rookie", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x6E407FCF, 0x0EFF06A5), "Set MipMap Texture", "Materials-Textures/Texture", "Materials.dll"},
-    {NMO_GUID_INIT(0x6E800755, 0x57B64ACB), "Set Component", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0x6F623E68, 0x62BB5A98), "Sort Rows", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x6F8B6782, 0x21554283), "Set Render Order", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0x706C5A40, 0x5BB31A0B), "Execute Script", "Narratives/Script Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x70936783, 0x7FEE4A3B), "TT Window Activate?", "TT InterfaceManager/Display", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x70F65B3E, 0x2DC41372), "TT_DebugOFF", "TT Toolbox/Debug", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x70F8028C, 0x723215E7), "Change Sprite Slot", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x71234F96, 0x34321E45), "Home on Entity", "Collisions/Influence", "Collisions.dll"},
-    {NMO_GUID_INIT(0x71570E39, 0x5B37428A), "Bezier Interpolator", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x7160133A, 0x1F2532FE), "Keep Active", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x71B25ED7, 0x3C365A30), "Get Lowest", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x7242794C, 0x98C2B340), "FIFO", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x72542B8A, 0x6FE901C7), "Find Curved Nodal Path", "3D Transformations/Nodal Path", "Collisions.dll"},
-    {NMO_GUID_INIT(0x72671A24, 0x161A2347), "Set IC", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x72AF347C, 0x03DA71E1), "Set Physics Globals", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x72B17C2E, 0x644E2563), "Reverse String", "Logics/Strings", "Logics.dll"},
-    {NMO_GUID_INIT(0x731072FA, 0x56CF087F), "Planar Shadow", "Visuals/Shadows", "Visuals.dll"},
-    {NMO_GUID_INIT(0x734F73B4, 0x01FC79AC), "TT_FlushTextures", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x73A67252, 0x1D5B39C1), "Set Square From 3D Pos", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x73B30B5E, 0x4FED4C65), "TT_AnisoMapping", "TT Toolbox/Mapping", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x73E256E5, 0x6552118E), "TT_FontCoordinatesToDataArray", "TT Toolbox/Font", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x74120DED, 0x76524673), "Object Delete", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x74123741, 0x4563FFFF), "Set Camera Target", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0x742215EA, 0x08A06C46), "Fade In", "Sounds/Global", "Sounds.dll"},
-    {NMO_GUID_INIT(0x7435488D, 0x201D1188), "PhysicsCollDetection", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x74412551, 0x6146504C), "Set Grid Priority", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x74A35F75, 0x3AD00FAA), "TT Set String Value To Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x74D12456, 0x6F481719), "Grid Path Init", "Grids/Path Finding", "Grids.dll"},
-    {NMO_GUID_INIT(0x750F20FC, 0x3741186D), "TT_Counter", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7522370E, 0x37EC15EC), "Physicalize", "Physics", "physics_RT.dll"},
-    {NMO_GUID_INIT(0x75FF55A7, 0x378205D0), "TT Get String Value From Registry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x761B7E64, 0x2B4C6911), "PushButton", "Interface/Controls", "Interface.dll"},
-    {NMO_GUID_INIT(0x76319845, 0x48593399), "Set Both Sided", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x766E4E44, 0x4FAC6D52), "Restore IC", "Narratives/States", "Narratives.dll"},
-    {NMO_GUID_INIT(0x76926718, 0x7EE807D5), "Lens Flare", "Lights/FX", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x770A5FC9, 0x7BBE2AED), "Cylindrical Mapping", "Materials-Textures/Mapping", "Materials.dll"},
-    {NMO_GUID_INIT(0x7734470D, 0x23B221F8), "Set Sound Type", "Sounds/Properties", "Sounds.dll"},
-    {NMO_GUID_INIT(0x777D999E, 0xDEF777D8), "Camera Orbit", "Cameras/Movement", "Cameras.dll"},
-    {NMO_GUID_INIT(0x778400BB, 0x1A480D35), "Interpolator HSV Color", "Logics/Interpolator", "Logics.dll"},
-    {NMO_GUID_INIT(0x778D16D4, 0x1DD60060), "Movie Player", "Materials-Textures/Animation", "Materials.dll"},
-    {NMO_GUID_INIT(0x77C04509, 0x00A36A46), "Clouds Around", "World Environments/Background", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0x77DD56CF, 0x63DC30B4), "TT Uninstall Array", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x77DE64DF, 0x694F141F), "TT Set Rookie", "TT InterfaceManager/General", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x78041C90, 0x16DE3CDE), "TT ChildrenIterator", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x78587CF6, 0x0DDB1BB0), "TT Set Game Bonus", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x785E7760, 0x46EA50B5), "Enhanced Character Curve Follow", "Characters/Movement", "Characters.dll"},
-    {NMO_GUID_INIT(0x788061FB, 0x249F29A1), "Character Keep On Floor Limits", "Characters/Constraint", "Collisions.dll"},
-    {NMO_GUID_INIT(0x78863443, 0x45AF59B6), "Row Search", "Logics/Array", "Logics.dll"},
-    {NMO_GUID_INIT(0x78A667F0, 0x5A3C0323), "Stop & Go", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x78B31127, 0x0A875030), "TT WriteBack", "TT Toolbox/Advanced", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x798E26A9, 0x34E4169E), "Movie Load", "Narratives/Object Management", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x79B95ED0, 0x3E4A01F5), "Simple Shadow", "Visuals/Shadows", "Visuals.dll"},
-    {NMO_GUID_INIT(0x79D72FDE, 0x2E9D0912), "Random Switch", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x7A18014D, 0x009D2E73), "TT_GetFullAngle", "TT Toolbox/Logic", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7A2105FA, 0x282D2A22), "TT_RemoveDirectory", "TT Toolbox/File", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7A7A7A7A, 0x7A7A7A7A), "Set Scale", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x7A7C4D7B, 0x468D0F33), "Change Texture Size", "Materials-Textures/Texture", "Materials.dll"},
-    {NMO_GUID_INIT(0x7AA8084E, 0x1EE229B7), "TT_WriteRegistry", "TT InterfaceManager/Registry", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x7AEC3D66, 0x4AA904C5), "TT Set Level Name", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x7AFC20A3, 0x6D367A99), "Set Blended Animation Factor", "Characters/Animation", "Characters.dll"},
-    {NMO_GUID_INIT(0x7B377625, 0x16DA3BDA), "Group Operator", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0x7B7C731E, 0x175B27A3), "Pitch Control", "Sounds/Control", "Sounds.dll"},
-    {NMO_GUID_INIT(0x7BA27C0A, 0x7BD21DB6), "Set Global Animation Step", "3D Transformations/Animation", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0x7BAC6DA2, 0x1CBE76ED), "Layer Slider", "Grids/Basic", "Grids.dll"},
-    {NMO_GUID_INIT(0x7BD977D7, 0x26396C0C), "Object Load", "Narratives/Object Management", "Narratives.dll"},
-    {NMO_GUID_INIT(0x7BDA540C, 0x39782384), "Set Color Key 2D", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x7BDF0404, 0x0F765834), "Get Screen Proportional Pos", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0x7C663B40, 0x2F4B347E), "TT_TextureInfo", "TT Toolbox/Material", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7C805C49, 0x78A601D3), "TT Set Game Data", "TT InterfaceManager/GameInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x7D037385, 0x12D62259), "LIFO", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x7D644088, 0x40DD0349), "Create Font", "Interface/Fonts", "Interface.dll"},
-    {NMO_GUID_INIT(0x7E0F2F58, 0x232D3109), "TT Restore IC", "TT Toolbox/Narratives", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7E212B2F, 0x24DB67C6), "TT_ReflectionMapping", "TT Toolbox/Mapping", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7E9A4415, 0x199E4EB3), "TT CheckCurveCollision", "TT Toolbox/Collision", "TT_Toolbox_RT.dll"},
-    {NMO_GUID_INIT(0x7EBC16CE, 0x75BA1301), "All But One", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0x7F0517C2, 0x52CC76BB), "TT Simple Shadow", "TT Gravity", "TT_Gravity_RT.dll"},
-    {NMO_GUID_INIT(0x7FC54C91, 0x3F486670), "Edit 2D Entity", "Visuals/2D", "Visuals.dll"},
-    {NMO_GUID_INIT(0x7FE65A65, 0x490A49B5), "TT Get Level Score", "TT InterfaceManager/LevelInfo Behaviors", "TT_InterfaceManager_RT.dll"},
-    {NMO_GUID_INIT(0x84BE2329, 0xAED66CE1), "Combine Texture", "Materials-Textures/Texture", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0x89658965, 0x36654789), "Add Channel", "Materials-Textures/Channel", "Materials.dll"},
-    {NMO_GUID_INIT(0x8E43CD12, 0x98DC215D), "Declare Floors", "Collisions/Floors", "Collisions.dll"},
-    {NMO_GUID_INIT(0x936334FC, 0xF243684F), "Create System Font", "Interface/Fonts", "Interface.dll"},
-    {NMO_GUID_INIT(0x9424FF80, 0x9751BC39), "Noise Progression", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x95195195, 0x98795198), "Set Shade Mode", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0x998F000F, 0xF000F899), "Counter", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0x9D9D9D98, 0x7E7A7F75), "Set Parent", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0xA20E8D5B, 0xDF002150), "Send Message", "Logics/Message", "Logics.dll"},
-    {NMO_GUID_INIT(0xA2A5A63A, 0xE4E7E8E5), "Timer", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0xA58A313A, 0xE7F8D32A), "FPS", "Visuals/Text", "Visuals.dll"},
-    {NMO_GUID_INIT(0xA85A213A, 0xEF78D52A), "Show", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0xAA4AA6F0, 0xDDEFDEF4), "Set World Matrix", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0xAAAA213A, 0xEAA8D52A), "Set Current Slot", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xAAAAAAAA, 0xAEAE1287), "Set Ambient", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xAAAACCCC, 0xAAAACCCC), "Set FOV", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0xABABA123, 0x123ABABA), "Show 2D Entity", "Visuals/Show-Hide", "Visuals.dll"},
-    {NMO_GUID_INIT(0xABF60A8C, 0x0FF91D0D), "Set Sound Cone Values", "Sounds/3D Properties", "Sounds.dll"},
-    {NMO_GUID_INIT(0xB00D010A, 0xC00D010A), "Vertigo", "Cameras/FX", "Cameras.dll"},
-    {NMO_GUID_INIT(0xB0F1CA98, 0xE9DABE5F), "Volumetric Fog", "Visuals/FX", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0xB7E6398A, 0x113C66DD), "Keep At Constant Distance", "3D Transformations/Constraint", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0xB98B83BB, 0x87787878), "Dolly", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0xBCFDE546, 0xFEEFD18B), "Set Listener Properties", "Sounds/Global", "BuildingBlocksAddons1.dll"},
-    {NMO_GUID_INIT(0xBEFC4A32, 0x893ECAD4), "IK Position", "Characters/IK", "Characters.dll"},
-    {NMO_GUID_INIT(0xC044A999, 0xFDFEFAF7), "Wait For All", "Logics/Synchro", "Logics.dll"},
-    {NMO_GUID_INIT(0xC5C4C3C2, 0x8C8C8C8C), "Set Fill Mode", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xCC030377, 0x897AAAAA), "Vertex Render", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0xD00D010A, 0xE00D010A), "Solid Trail", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0xD0147412, 0x0258520D), "Remove From Group", "Logics/Groups", "Logics.dll"},
-    {NMO_GUID_INIT(0xD02D67DD, 0x10211FDD), "Binary Memory", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0xD0B7ADF3, 0xD3FF3CF6), "Dummy0", "", "Narratives.dll"},
-    {NMO_GUID_INIT(0xD1D1D1D1, 0x30303030), "Set Emissive", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xD63D004D, 0xD54D8100), "Set Light Attenuation", "Lights/Basic", "Lights.dll"},
-    {NMO_GUID_INIT(0xDA495631, 0xDE155488), "Set Texture Mag", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xDACFBD61, 0x7A6E65E7), "Set Font Properties", "Interface/Fonts", "Interface.dll"},
-    {NMO_GUID_INIT(0xDBAC2124, 0x6ADCBFA4), "Character Keep On Floor", "Characters/Constraint", "Collisions.dll"},
-    {NMO_GUID_INIT(0xDBDE2424, 0x6ADDEF12), "Enhanced Character Keep On Floor", "Characters/Constraint", "Collisions.dll"},
-    {NMO_GUID_INIT(0xDDCCEFEC, 0xD010C102), "Set Background Material", "World Environments/Background", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0xE1E1E1E1, 0x1E1E1E1E), "Set Diffuse", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xE444E666, 0x4EEE6EEE), "Set Projection", "Cameras/Basic", "Cameras.dll"},
-    {NMO_GUID_INIT(0xE456E78A, 0x456789AA), "Set Position", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0xE5B234F3, 0x35FBACF7), "Modify Component", "Logics/Calculator", "Logics.dll"},
-    {NMO_GUID_INIT(0xE5F22514, 0x12DFFFEE), "Specific Bool Event", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0xEB123EB5, 0x5BE321BE), "Set Texture", "Materials-Textures/Basic", "Materials.dll"},
-    {NMO_GUID_INIT(0xEB506901, 0x984AFCCC), "Binary Switch", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0xED453298, 0x01AE789F), "Sky Around", "World Environments/Background", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0xEE6E5E6E, 0xE6E6E6E6), "Look At Pos", "3D Transformations/Constraint", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0xF00D010A, 0xFA0D010A), "Blink", "Visuals/FX", "Visuals.dll"},
-    {NMO_GUID_INIT(0xF11D010A, 0xFB1D010A), "Texture Scroller", "Materials-Textures/Animation", "Materials.dll"},
-    {NMO_GUID_INIT(0xF1499052, 0xEBE9BBF1), "Set Pickable", "Interface/Screen", "Interface.dll"},
-    {NMO_GUID_INIT(0xF22D010A, 0xF2CD010A), "Text Display", "Interface/Text", "Interface.dll"},
-    {NMO_GUID_INIT(0xF56D92EF, 0x41EB20C1), "Change Texture Video Format", "Materials-Textures/Texture", "Materials.dll"},
-    {NMO_GUID_INIT(0xF5F22514, 0x123FFFEE), "IBCQ", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0xF5FAAAAA, 0xFDD5BD00), "Set Background Color", "World Environments/Background", "WorldEnvironments.dll"},
-    {NMO_GUID_INIT(0xFDFD999E, 0xDEFEDED8), "Rotate Around", "3D Transformations/Basic", "3DTransfo.dll"},
-    {NMO_GUID_INIT(0xFEFEFEFE, 0xFEFEFEFE), "Bool Event", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0xFFB40D68, 0x45455444), "Priority", "Logics/Streaming", "Logics.dll"},
-    {NMO_GUID_INIT(0xFFF45680, 0xAA512A39), "Linear Progression", "Logics/Loops", "Logics.dll"},
-    {NMO_GUID_INIT(0xFFFFFFEE, 0xEEFFFFFF), "Rotate", "3D Transformations/Basic", "3DTransfo.dll"},
+static const char *bb_0_Add_To_Group_inputs[] = {"In"};
+static const char *bb_0_Add_To_Group_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_0_Add_To_Group_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_1_Translate_inputs[] = {"In"};
+static const char *bb_1_Translate_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_1_Translate_ip[] = {
+    {"Translate Vector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_2_Play_Sound_Instance_inputs[] = {"In"};
+static const char *bb_2_Play_Sound_Instance_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_2_Play_Sound_Instance_ip[] = {
+    {"2D", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Min Delay", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Volume", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_3_Animation_Recorder_inputs[] = {"On", "Off"};
+static const char *bb_3_Animation_Recorder_outputs[] = {"Out On", "Out Off"};
+static const nmo_bb_param_desc_t bb_3_Animation_Recorder_ip[] = {
+    {"Object(s)", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Animation Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Frame Step", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_3_Animation_Recorder_op[] = {
+    {"Animation", NMO_GUID_INIT(0x43476550, 0x11E52C0E)},
+};
+static const nmo_bb_param_desc_t bb_3_Animation_Recorder_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_3_Animation_Recorder_st[] = {
+    {"Use Grouped Animation", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_4_TT_Set_Float_Value_To_Registry_inputs[] = {"In"};
+static const char *bb_4_TT_Set_Float_Value_To_Registry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_4_TT_Set_Float_Value_To_Registry_ip[] = {
+    {"Float Value ", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_5_Joystick_Controller_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_5_Joystick_Controller_ip[] = {
+    {"Joystick Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_5_Joystick_Controller_op[] = {
+    {"Analog Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_5_Joystick_Controller_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_5_Joystick_Controller_st[] = {
+    {"Axis Sensitivity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_6_TT_TextureSine_inputs[] = {"In"};
+static const char *bb_6_TT_TextureSine_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_6_TT_TextureSine_ip[] = {
+    {"X Amplitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Y Amplitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Velocity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_6_TT_TextureSine_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_7_Get_Square_From_3D_Pos_inputs[] = {"In"};
+static const char *bb_7_Get_Square_From_3D_Pos_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_7_Get_Square_From_3D_Pos_ip[] = {
+    {"Pos3d", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+};
+static const nmo_bb_param_desc_t bb_7_Get_Square_From_3D_Pos_op[] = {
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_8_Camera_Color_Filter_inputs[] = {"On", "Off"};
+static const char *bb_8_Camera_Color_Filter_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_8_Camera_Color_Filter_ip[] = {
+    {"Filter Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Density", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Hard Light", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_9_Additional_View_inputs[] = {"On", "Off"};
+static const char *bb_9_Additional_View_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_9_Additional_View_ip[] = {
+    {"View Region", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Render Options", NMO_GUID_INIT(0x745655A9, 0x61BB29A1)},
+    {"Overwrite 2D", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_10_Planar_Filter_inputs[] = {"On", "Off"};
+static const char *bb_10_Planar_Filter_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_10_Planar_Filter_ip[] = {
+    {"Filtering Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Additional Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Dest Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Texture Mag Mode", NMO_GUID_INIT(0x2BD753B3, 0x563E5165)},
+    {"Texture Min Mode", NMO_GUID_INIT(0x2BD753B3, 0x563E5165)},
+};
+static const char *bb_11_Get_Current_Scene_inputs[] = {"In"};
+static const char *bb_11_Get_Current_Scene_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_11_Get_Current_Scene_op[] = {
+    {"Scene", NMO_GUID_INIT(0x25AE6BD7, 0x7C8F73A2)},
+};
+static const char *bb_12_Texture_Load_inputs[] = {"On"};
+static const char *bb_12_Texture_Load_outputs[] = {"Loaded", "Error"};
+static const nmo_bb_param_desc_t bb_12_Texture_Load_ip[] = {
+    {"Texture File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_12_Texture_Load_lp[] = {
+    {"Loading Texture Thread", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Loading Info", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_12_Texture_Load_st[] = {
+    {"Use Thread", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_13_sprite_Load_inputs[] = {"On"};
+static const char *bb_13_sprite_Load_outputs[] = {"Loaded", "Error"};
+static const nmo_bb_param_desc_t bb_13_sprite_Load_ip[] = {
+    {"sprite File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_13_sprite_Load_lp[] = {
+    {"Loading sprite Thread", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Loading Info", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_13_sprite_Load_st[] = {
+    {"Use Thread", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_14_Curve_Follow_inputs[] = {"In", "Loop In"};
+static const char *bb_14_Curve_Follow_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_14_Curve_Follow_ip[] = {
+    {"Curve to cover", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_14_Curve_Follow_op[] = {
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_14_Curve_Follow_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_14_Curve_Follow_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_15_TT_Get_Float_Value_From_Registry_inputs[] = {"In"};
+static const char *bb_15_TT_Get_Float_Value_From_Registry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_15_TT_Get_Float_Value_From_Registry_ip[] = {
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_15_TT_Get_Float_Value_From_Registry_op[] = {
+    {"Float Value ", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_16_While_inputs[] = {"In", "Loop In"};
+static const char *bb_16_While_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_16_While_ip[] = {
+    {"Condition", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_17_Move_To_inputs[] = {"In", "Loop In"};
+static const char *bb_17_Move_To_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_17_Move_To_ip[] = {
+    {"Destination Point", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Destination Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Duration (ms)", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_17_Move_To_op[] = {
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_17_Move_To_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_17_Move_To_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_18_Sky_Around_CubeMap__inputs[] = {"On", "Off"};
+static const char *bb_18_Sky_Around_CubeMap__outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_18_Sky_Around_CubeMap__ip[] = {
+    {"Cube Map Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Distortion", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Filtering Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Additional Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_18_Sky_Around_CubeMap__lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_19_Joystick_Waiter_inputs[] = {"On", "Off"};
+static const char *bb_19_Joystick_Waiter_outputs[] = {"Joystick Idle", "Axis X Moved", "Axis Y Moved"};
+static const nmo_bb_param_desc_t bb_19_Joystick_Waiter_ip[] = {
+    {"Joystick Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_19_Joystick_Waiter_op[] = {
+    {"Analog Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Rotation", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Sliders", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Point Of View", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const nmo_bb_param_desc_t bb_19_Joystick_Waiter_st[] = {
+    {"Axis Sensitivity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Axis Outputs", NMO_GUID_INIT(0x1ED64A6A, 0x5A24059A)},
+    {"Button Outputs", NMO_GUID_INIT(0x4A5D4963, 0x4D28883F)},
+    {"Relative Moves", NMO_GUID_INIT(0x1ED64A6A, 0x5A24059A)},
+};
+static const char *bb_20_Mouse_Waiter_inputs[] = {"On", "Off"};
+static const char *bb_20_Mouse_Waiter_outputs[] = {"Move", "Left Button Down", "Left Button Up", "Right Button Down", "Right Button Up", "Middle Button Down", "Middle Button Up", "Roll Received"};
+static const nmo_bb_param_desc_t bb_20_Mouse_Waiter_op[] = {
+    {"Mouse Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Wheel Direction", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Left Button", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Middle Button", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Right Button", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_20_Mouse_Waiter_st[] = {
+    {"Stay Active", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Outputs", NMO_GUID_INIT(0x7ABE0373, 0x1C366A1B)},
+    {"Notify Only if Action Inside 3D Window", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_21_Delete_Font_inputs[] = {"In"};
+static const char *bb_21_Delete_Font_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_21_Delete_Font_ip[] = {
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+};
+static const char *bb_22_Key_Waiter_inputs[] = {"In"};
+static const char *bb_22_Key_Waiter_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_22_Key_Waiter_ip[] = {
+    {"Key", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_22_Key_Waiter_st[] = {
+    {"Wait For Any Key", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_23_Test_Bounding_Box_Y_Overlapping_inputs[] = {"In"};
+static const char *bb_23_Test_Bounding_Box_Y_Overlapping_outputs[] = {"A above B", "B above A", "A above B, overlapped", "B above A, overlapped", "A and B overlapped"};
+static const nmo_bb_param_desc_t bb_23_Test_Bounding_Box_Y_Overlapping_ip[] = {
+    {"ObjectA", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"ObjectB", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_24_Spot_Light_Properties_inputs[] = {"In"};
+static const char *bb_24_Spot_Light_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_24_Spot_Light_Properties_ip[] = {
+    {"Fall Off", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Fall Off Shape", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Hot Spot", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const nmo_bb_param_desc_t bb_25_Use_Z_information_ip[] = {
+    {"Clear Background", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_25_Use_Z_information_lp[] = {
+    {"Attribute", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_26_TT_Set_Level_Data_inputs[] = {"In"};
+static const char *bb_26_TT_Set_Level_Data_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_26_TT_Set_Level_Data_ip[] = {
+    {"Level Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Level Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Level Reached", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_27_Set_Light_Target_inputs[] = {"In"};
+static const char *bb_27_Set_Light_Target_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_27_Set_Light_Target_ip[] = {
+    {"Target", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_28_Sound_Load_inputs[] = {"In"};
+static const char *bb_28_Sound_Load_outputs[] = {"Out", "Failed"};
+static const nmo_bb_param_desc_t bb_28_Sound_Load_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Streamed ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_28_Sound_Load_lp[] = {
+    {"Loading Sound Thread", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Loading Info", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_28_Sound_Load_st[] = {
+    {"Use asynchonized loading", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_29_TT_WaveParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_29_TT_WaveParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_29_TT_WaveParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_29_TT_WaveParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_29_TT_WaveParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_30_Interpolator_Matrix_inputs[] = {"In"};
+static const char *bb_30_Interpolator_Matrix_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_30_Interpolator_Matrix_ip[] = {
+    {"A", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+    {"B", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_30_Interpolator_Matrix_op[] = {
+    {"C", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+};
+static const char *bb_31_Align_2D_inputs[] = {"In"};
+static const char *bb_31_Align_2D_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_31_Align_2D_ip[] = {
+    {"Model", NMO_GUID_INIT(0x181671E3, 0x1BDC1503)},
+    {"Alignment", NMO_GUID_INIT(0x2E1E2209, 0x47DA44B5)},
+    {"Center", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Margins", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const char *bb_32_TT_ParameterMapper_inputs[] = {"In 0", "In 1"};
+static const char *bb_32_TT_ParameterMapper_outputs[] = {"NONE", "Out 0"};
+static const nmo_bb_param_desc_t bb_32_TT_ParameterMapper_ip[] = {
+    {"pIn 0", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"pIn 1", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_33_TT_CreateDirectory_inputs[] = {"IN"};
+static const char *bb_33_TT_CreateDirectory_outputs[] = {"OK", "Fail"};
+static const nmo_bb_param_desc_t bb_33_TT_CreateDirectory_ip[] = {
+    {"Directory", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_34_Time_Bezier_Interpolator_inputs[] = {"In", "Loop In"};
+static const char *bb_34_Time_Bezier_Interpolator_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_34_Time_Bezier_Interpolator_ip[] = {
+    {"Time (ms)", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_34_Time_Bezier_Interpolator_op[] = {
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_34_Time_Bezier_Interpolator_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_35_Set_Dest_Blend_inputs[] = {"In"};
+static const char *bb_35_Set_Dest_Blend_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_35_Set_Dest_Blend_ip[] = {
+    {"Blending Mode", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const char *bb_36_Joystick_Mapper_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_36_Joystick_Mapper_ip[] = {
+    {"Joystick Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_36_Joystick_Mapper_op[] = {
+    {"Analog Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_36_Joystick_Mapper_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_36_Joystick_Mapper_st[] = {
+    {"Axis Sensitivity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_37_Resize_View_inputs[] = {"On", "Off"};
+static const char *bb_37_Resize_View_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_37_Resize_View_ip[] = {
+    {"View Region", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const char *bb_38_BitmapText_Display_inputs[] = {"On/Reset", "Off", "Carriage Return"};
+static const char *bb_38_BitmapText_Display_outputs[] = {"Exit On", "Exit Off", "Line Added"};
+static const nmo_bb_param_desc_t bb_38_BitmapText_Display_ip[] = {
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Character Spacing", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Scale", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Alignment", NMO_GUID_INIT(0x11223FAF, 0x1A9315F9)},
+    {"Vertical Spacing", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_38_BitmapText_Display_lp[] = {
+    {"", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_38_BitmapText_Display_st[] = {
+    {"Font", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+};
+static const char *bb_39_Sound_Manager_Setup_inputs[] = {"In"};
+static const char *bb_39_Sound_Manager_Setup_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_39_Sound_Manager_Setup_ip[] = {
+    {"Distance Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"RollOff Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Global Tone", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Global Gain", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Doppler Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_40_Display_Progression_Bar_inputs[] = {"On", "Off"};
+static const char *bb_40_Display_Progression_Bar_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_40_Display_Progression_Bar_ip[] = {
+    {"X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Bar Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_40_Display_Progression_Bar_lp[] = {
+    {"Active", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_40_Display_Progression_Bar_st[] = {
+    {"Empty Bar ()", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"Full Bar ()", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+};
+static const char *bb_41_TT_GetNearestCurvePosition_inputs[] = {"In"};
+static const char *bb_41_TT_GetNearestCurvePosition_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_41_TT_GetNearestCurvePosition_ip[] = {
+    {"Curve", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_41_TT_GetNearestCurvePosition_op[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Step", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_41_TT_GetNearestCurvePosition_st[] = {
+    {"Prefered Height Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_42_Is_Global_State_Active_inputs[] = {"In"};
+static const char *bb_42_Is_Global_State_Active_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_42_Is_Global_State_Active_ip[] = {
+    {"State", NMO_GUID_INIT(0xABE13353, 0xA2834124)},
+};
+static const char *bb_43_TT_JoystickVectorMapper_inputs[] = {"Do"};
+static const char *bb_43_TT_JoystickVectorMapper_outputs[] = {"Done"};
+static const nmo_bb_param_desc_t bb_43_TT_JoystickVectorMapper_ip[] = {
+    {"InVector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"JX+", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"JX-", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"JY+", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"JY-", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_43_TT_JoystickVectorMapper_op[] = {
+    {"OutVector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_44_Keyboard_Mapper_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_44_Keyboard_Mapper_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_45_TT_Load_Database_inputs[] = {"Load"};
+static const char *bb_45_TT_Load_Database_outputs[] = {"OK", "Error"};
+static const nmo_bb_param_desc_t bb_45_TT_Load_Database_ip[] = {
+    {"Auto Register", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Array Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_46_2D_Text_inputs[] = {"On", "Off"};
+static const char *bb_46_2D_Text_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_46_2D_Text_ip[] = {
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Alignment", NMO_GUID_INIT(0x2E1E2209, 0x47DA44B5)},
+    {"Margins", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Offset", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Paragraph Indentation", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Background Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Caret Size", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Caret Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_46_2D_Text_op[] = {
+    {"Text Extents", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Line Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_46_2D_Text_st[] = {
+    {"Text Properties", NMO_GUID_INIT(0x4157001D, 0x4CC82922)},
+};
+static const char *bb_47_Insert_Column_inputs[] = {"In"};
+static const char *bb_47_Insert_Column_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_47_Insert_Column_ip[] = {
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Column Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Column Type", NMO_GUID_INIT(0x615D017C, 0x54A9524F)},
+    {"Parameter Type", NMO_GUID_INIT(0x34517DF5, 0x045E4965)},
+};
+static const char *bb_48_Time_Settings_inputs[] = {"In"};
+static const char *bb_48_Time_Settings_outputs[] = {"out"};
+static const nmo_bb_param_desc_t bb_48_Time_Settings_ip[] = {
+    {"Frame Rate", NMO_GUID_INIT(0x5E4C1DCF, 0x662C4495)},
+    {"Frame Limit Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Scale Time Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Behavior Rate", NMO_GUID_INIT(0x677F3843, 0x4E7A3FD0)},
+    {"Behavior Limit Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Min Delta Time", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max Delta Time", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_49_TT_Player_Active_inputs[] = {"In"};
+static const char *bb_49_TT_Player_Active_outputs[] = {"Active", "InActive"};
+static const char *bb_50_Motion_Blur_inputs[] = {"On", "Off"};
+static const char *bb_50_Motion_Blur_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_50_Motion_Blur_ip[] = {
+    {"Number of Trails", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_50_Motion_Blur_lp[] = {
+    {"Int and Array of Matrix", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Is Bluring", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_51_ShadowCaster_inputs[] = {"On", "Off"};
+static const char *bb_51_ShadowCaster_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_51_ShadowCaster_ip[] = {
+    {"Light", NMO_GUID_INIT(0x4B6D412F, 0x5D1E1416)},
+    {"Min Light Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max Light Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Soft Shadow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_51_ShadowCaster_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_51_ShadowCaster_st[] = {
+    {"Shadow Resolution Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_52_Change_Value_If_inputs[] = {"In"};
+static const char *bb_52_Change_Value_If_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_52_Change_Value_If_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operation", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_52_Change_Value_If_op[] = {
+    {"Number Changed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_53_TT_Write_Array_inputs[] = {"In"};
+static const char *bb_53_TT_Write_Array_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_53_TT_Write_Array_ip[] = {
+    {"Name of Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Filename of CMO", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Show message: 'wrote array'", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_54_Keyboard_Camera_Orbit_inputs[] = {"On", "Off"};
+static const char *bb_54_Keyboard_Camera_Orbit_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_54_Keyboard_Camera_Orbit_ip[] = {
+    {"Target Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Target Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Move Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Return Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Zoom Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_54_Keyboard_Camera_Orbit_lp[] = {
+    {"Initial Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Rotation Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Stopping", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_54_Keyboard_Camera_Orbit_st[] = {
+    {"Limits", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Returns", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Key Rotate Left", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Right", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Up", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Down", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Zoom In", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Zoom Out", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const char *bb_55_Find_Path_inputs[] = {"In"};
+static const char *bb_55_Find_Path_outputs[] = {"Path Found", "No Path Found"};
+static const nmo_bb_param_desc_t bb_55_Find_Path_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Start Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Goal Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_55_Find_Path_op[] = {
+    {"Object List", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_56_Get_Nearest_In_Group_inputs[] = {"In"};
+static const char *bb_56_Get_Nearest_In_Group_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_56_Get_Nearest_In_Group_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_56_Get_Nearest_In_Group_op[] = {
+    {"Nearest Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_57_Copy_Mapping_inputs[] = {"In"};
+static const char *bb_57_Copy_Mapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_57_Copy_Mapping_ip[] = {
+    {"Dest Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Src Mesh", NMO_GUID_INIT(0x24535345, 0x65D15229)},
+    {"Src Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"UV Tile", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const char *bb_58_TT_MagnetMeshForm_inputs[] = {"On", "Off"};
+static const char *bb_58_TT_MagnetMeshForm_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_58_TT_MagnetMeshForm_ip[] = {
+    {"Magnet-Entity", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Max Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Min Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Strength", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_58_TT_MagnetMeshForm_lp[] = {
+    {"VArray", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Time", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_58_TT_MagnetMeshForm_st[] = {
+    {"Sinus-Deform?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_59_TT_GetZOrder_inputs[] = {"In"};
+static const char *bb_59_TT_GetZOrder_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_59_TT_GetZOrder_op[] = {
+    {"Rendering Priority", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_60_Activate_Node_inputs[] = {"In"};
+static const char *bb_60_Activate_Node_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_60_Activate_Node_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Node", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Activate", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_61_Mark_System_inputs[] = {"On", "Off", "Mark"};
+static const char *bb_61_Mark_System_outputs[] = {"Exit On", "Exit Off", "Exit Mark"};
+static const nmo_bb_param_desc_t bb_61_Mark_System_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Fading Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"UVs", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Position Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_61_Mark_System_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_61_Mark_System_st[] = {
+    {"Maximum Marks", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Continuous Marks", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Supporting Entity", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_62_TT_LinearVolume_inputs[] = {"In"};
+static const char *bb_62_TT_LinearVolume_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_62_TT_LinearVolume_ip[] = {
+    {"Vol. in Decibel", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_62_TT_LinearVolume_op[] = {
+    {"Linear Volume", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_63_Set_Quadratic_Attenuation_inputs[] = {"In"};
+static const char *bb_63_Set_Quadratic_Attenuation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_63_Set_Quadratic_Attenuation_ip[] = {
+    {"Quadratic Attenuation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_64_Orthographic_Zoom_inputs[] = {"In"};
+static const char *bb_64_Orthographic_Zoom_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_64_Orthographic_Zoom_ip[] = {
+    {"Zoom", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_65_TT_Create_new_GameInfo_inputs[] = {"In"};
+static const char *bb_65_TT_Create_new_GameInfo_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_65_TT_Create_new_GameInfo_ip[] = {
+    {"Registry Path", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_65_TT_Create_new_GameInfo_op[] = {
+    {"Address of GameInfo (hex)", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_66_Set_Floor_Reference_Object_inputs[] = {"In"};
+static const char *bb_66_Set_Floor_Reference_Object_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_66_Set_Floor_Reference_Object_ip[] = {
+    {"Floor Reference", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_67_TT_Restart_CMO_inputs[] = {"In"};
+static const char *bb_67_TT_Restart_CMO_outputs[] = {"Out"};
+static const char *bb_68_Set_Euler_Orientation_inputs[] = {"In"};
+static const char *bb_68_Set_Euler_Orientation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_68_Set_Euler_Orientation_ip[] = {
+    {"Orientation", NMO_GUID_INIT(0x13B01B3C, 0x1942583E)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_68_Set_Euler_Orientation_st[] = {
+    {"Merge Angles Params", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_69_Get_Euler_Orientation_inputs[] = {"In"};
+static const char *bb_69_Get_Euler_Orientation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_69_Get_Euler_Orientation_op[] = {
+    {"X", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Y", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Z", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const char *bb_70_Set_3DSprite_Mode_inputs[] = {"In"};
+static const char *bb_70_Set_3DSprite_Mode_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_70_Set_3DSprite_Mode_ip[] = {
+    {"Mode", NMO_GUID_INIT(0x1D1A3403, 0x535E7252)},
+};
+static const char *bb_71_Random_inputs[] = {"In"};
+static const char *bb_71_Random_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_71_Random_ip[] = {
+    {"Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_71_Random_op[] = {
+    {"Rand", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_72_Physics_Impulse_inputs[] = {"In"};
+static const char *bb_72_Physics_Impulse_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_72_Physics_Impulse_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Direction Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Impulse", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_72_Physics_Impulse_st[] = {
+    {"2 pos instead of dir ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Constant Force ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_73_Delete_Dynamic_Objects_inputs[] = {"In"};
+static const char *bb_73_Delete_Dynamic_Objects_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_73_Delete_Dynamic_Objects_ip[] = {
+    {"Scene", NMO_GUID_INIT(0x25AE6BD7, 0x7C8F73A2)},
+};
+static const char *bb_74_TT_Set_Level_Reached_inputs[] = {"In"};
+static const char *bb_74_TT_Set_Level_Reached_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_74_TT_Set_Level_Reached_ip[] = {
+    {"Level Reached", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_75_Set_Animation_Frame_inputs[] = {"In"};
+static const char *bb_75_Set_Animation_Frame_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_75_Set_Animation_Frame_ip[] = {
+    {"Frame", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const char *bb_76_Copy_Buffer_to_Texture_inputs[] = {"In"};
+static const char *bb_76_Copy_Buffer_to_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_76_Copy_Buffer_to_Texture_ip[] = {
+    {"Source", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Destination", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const char *bb_77_Box_Face_Intersection_inputs[] = {"In"};
+static const char *bb_77_Box_Face_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_77_Box_Face_Intersection_ip[] = {
+    {"Entity 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Entity 2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy 1", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_78_Align_3D_inputs[] = {"In"};
+static const char *bb_78_Align_3D_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_78_Align_3D_ip[] = {
+    {"Model", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Alignment", NMO_GUID_INIT(0x2E1E2209, 0x47DA44B5)},
+    {"Support", NMO_GUID_INIT(0x8E5B5493, 0x98BD2245)},
+    {"Center", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Margins", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Depth Margins", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const char *bb_79_Set_Caret_Position_inputs[] = {"In"};
+static const char *bb_79_Set_Caret_Position_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_79_Set_Caret_Position_ip[] = {
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Caret Position", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_79_Set_Caret_Position_op[] = {
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_80_TT_LoadMotorSettings_inputs[] = {"Start"};
+static const char *bb_80_TT_LoadMotorSettings_outputs[] = {"Loading finished", "Error"};
+static const nmo_bb_param_desc_t bb_80_TT_LoadMotorSettings_ip[] = {
+    {"SettingsFile", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_80_TT_LoadMotorSettings_lp[] = {
+    {"FirstTime", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_81_Remove_Key_Row_inputs[] = {"In"};
+static const char *bb_81_Remove_Key_Row_outputs[] = {"Found", "Not Found"};
+static const char *bb_82_Get_Nearest_inputs[] = {"In"};
+static const char *bb_82_Get_Nearest_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_82_Get_Nearest_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_82_Get_Nearest_op[] = {
+    {"Row Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_83_Display_Score_inputs[] = {"On", "Off"};
+static const char *bb_83_Display_Score_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_83_Display_Score_ip[] = {
+    {"X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_83_Display_Score_lp[] = {
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"DisplayScore", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+    {"Active", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_83_Display_Score_st[] = {
+    {"Number 0", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+};
+static const char *bb_84_TT_Set_Dynamic_Position_inputs[] = {"On", "Off"};
+static const char *bb_84_TT_Set_Dynamic_Position_outputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_84_TT_Set_Dynamic_Position_ip[] = {
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Force X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Force Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Force Z", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Damping X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Damping Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Damping Z", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Offset X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Offset Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Offset Z", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Coordinate-System", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"MaxDistance2Target", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_84_TT_Set_Dynamic_Position_op[] = {
+    {"OldPosition", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"DeltaTarget", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"NewPosition", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"fDist", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_84_TT_Set_Dynamic_Position_lp[] = {
+    {"Status", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Old Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_85_TT_Set_TaskSwitchHandler_inputs[] = {"In"};
+static const char *bb_85_TT_Set_TaskSwitchHandler_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_85_TT_Set_TaskSwitchHandler_ip[] = {
+    {"Enable TaskSwitch", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_86_Move_Row_inputs[] = {"In"};
+static const char *bb_86_Move_Row_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_86_Move_Row_ip[] = {
+    {"Src Row", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Dest Row", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_87_Generic_Camera_Orbit_inputs[] = {"On", "Off", "Move Left", "Move Right", "Move Up", "Move Down", "Zoom In", "Zoom Out"};
+static const char *bb_87_Generic_Camera_Orbit_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_87_Generic_Camera_Orbit_ip[] = {
+    {"Target Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Target Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Move Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Return Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Zoom Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_87_Generic_Camera_Orbit_lp[] = {
+    {"Initial Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Rotation Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Stopping", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Returning", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_87_Generic_Camera_Orbit_st[] = {
+    {"Limits", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Returns", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_88_Get_SubString_inputs[] = {"In"};
+static const char *bb_88_Get_SubString_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_88_Get_SubString_ip[] = {
+    {"String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Start", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Length", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_88_Get_SubString_op[] = {
+    {"SubString", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_89_Environment_Mapping_inputs[] = {"In"};
+static const char *bb_89_Environment_Mapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_89_Environment_Mapping_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Options", NMO_GUID_INIT(0x11416CD2, 0x293C701E)},
+    {"Projection Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_90_Character_Go_To_inputs[] = {"In", "Loop In"};
+static const char *bb_90_Character_Go_To_outputs[] = {"Arrived", "No Object", "Loop Out"};
+static const nmo_bb_param_desc_t bb_90_Character_Go_To_ip[] = {
+    {"Target Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Character Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Limit Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Reverse", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_90_Character_Go_To_lp[] = {
+    {"Messages", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_91_Face_Face_Intersection_inputs[] = {"In"};
+static const char *bb_91_Face_Face_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_91_Face_Face_Intersection_ip[] = {
+    {"Entity 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Entity 2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_92_Set_Material_Z_Buffer_inputs[] = {"In"};
+static const char *bb_92_Set_Material_Z_Buffer_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_92_Set_Material_Z_Buffer_ip[] = {
+    {"Z Buffer Write", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Z Compare Function", NMO_GUID_INIT(0x51CD1CF5, 0x1D5C2D9B)},
+};
+static const char *bb_93_Set_Animation_Step_inputs[] = {"In"};
+static const char *bb_93_Set_Animation_Step_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_93_Set_Animation_Step_ip[] = {
+    {"Step", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const char *bb_94_Add_Control_Point_inputs[] = {"In"};
+static const char *bb_94_Add_Control_Point_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_94_Add_Control_Point_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Prior Point Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_94_Add_Control_Point_op[] = {
+    {"Curve Point", NMO_GUID_INIT(0x5CC5194F, 0x72342879)},
+    {"Percentage", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_94_Add_Control_Point_st[] = {
+    {"Dynamic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Update Percentage", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_95_Remove_Control_Point_inputs[] = {"In"};
+static const char *bb_95_Remove_Control_Point_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_95_Remove_Control_Point_ip[] = {
+    {"CurvePoint Object", NMO_GUID_INIT(0x5CC5194F, 0x72342879)},
+};
+static const char *bb_96_TT_Get_Game_Bonus_inputs[] = {"In"};
+static const char *bb_96_TT_Get_Game_Bonus_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_96_TT_Get_Game_Bonus_op[] = {
+    {"Game Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_97_Get_Curve_Properties_inputs[] = {"In"};
+static const char *bb_97_Get_Curve_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_97_Get_Curve_Properties_op[] = {
+    {"Open", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Number Of Steps", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Fitting Coef", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Length", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_98_Get_Control_Point_Properties_inputs[] = {"In"};
+static const char *bb_98_Get_Control_Point_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_98_Get_Control_Point_Properties_op[] = {
+    {"Bias", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Tension", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Continuity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Linear", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_99_Set_Background_Image_inputs[] = {"In"};
+static const char *bb_99_Set_Background_Image_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_99_Set_Background_Image_ip[] = {
+    {"Background Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const char *bb_100_Set_Control_Point_Properties_inputs[] = {"In"};
+static const char *bb_100_Set_Control_Point_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_100_Set_Control_Point_Properties_ip[] = {
+    {"Bias", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Tension", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Continuity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Linear", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_101_Set_Curve_Properties_inputs[] = {"In"};
+static const char *bb_101_Set_Curve_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_101_Set_Curve_Properties_ip[] = {
+    {"Open", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Number Of Steps", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Fitting Coef", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_102_Set_Texture_Min_inputs[] = {"In"};
+static const char *bb_102_Set_Texture_Min_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_102_Set_Texture_Min_ip[] = {
+    {"Mode", NMO_GUID_INIT(0x2BD753B3, 0x563E5165)},
+};
+static const char *bb_103_Character_Controller_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_103_Character_Controller_ip[] = {
+    {"Stand Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Walk Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Walk Backward Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Run Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const nmo_bb_param_desc_t bb_103_Character_Controller_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_104_TT_Limit_Framerate_inputs[] = {"In"};
+static const char *bb_104_TT_Limit_Framerate_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_104_TT_Limit_Framerate_ip[] = {
+    {"Framerate", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_105_Set_Wrap_Mode_inputs[] = {"In"};
+static const char *bb_105_Set_Wrap_Mode_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_105_Set_Wrap_Mode_ip[] = {
+    {"Wrap Mode", NMO_GUID_INIT(0x14E14BD8, 0x32A738E7)},
+};
+static const char *bb_106_Mimic_inputs[] = {"In"};
+static const char *bb_106_Mimic_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_106_Mimic_ip[] = {
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Copy Position", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Position Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Copy Orientation", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Orientation Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Copy Scale", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Scale Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_106_Mimic_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_107_TT_Find_SubString_inputs[] = {"In0"};
+static const char *bb_107_TT_Find_SubString_outputs[] = {"None", "StringOut 1"};
+static const nmo_bb_param_desc_t bb_107_TT_Find_SubString_ip[] = {
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"String 1", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_107_TT_Find_SubString_op[] = {
+    {"String ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_107_TT_Find_SubString_st[] = {
+    {"String Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_108_ObjectParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_108_ObjectParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_108_ObjectParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_108_ObjectParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_108_ObjectParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_109_Hide_2D_Entity_inputs[] = {"In"};
+static const char *bb_109_Hide_2D_Entity_outputs[] = {"Out"};
+static const char *bb_110_Object_Slider_inputs[] = {"On", "Off"};
+static const char *bb_110_Object_Slider_outputs[] = {"Contact", "No Contact"};
+static const nmo_bb_param_desc_t bb_110_Object_Slider_ip[] = {
+    {"Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_110_Object_Slider_op[] = {
+    {"Reaction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_110_Object_Slider_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_110_Object_Slider_st[] = {
+    {"Accuracy", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Touched Objects Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Place Optimization", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_111_Floor_Slider_inputs[] = {"On", "Off"};
+static const char *bb_111_Floor_Slider_outputs[] = {"Contact", "No Contact"};
+static const nmo_bb_param_desc_t bb_111_Floor_Slider_ip[] = {
+    {"Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_111_Floor_Slider_lp[] = {
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_112_Set_Ambient_Light_Color_inputs[] = {"In"};
+static const char *bb_112_Set_Ambient_Light_Color_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_112_Set_Ambient_Light_Color_ip[] = {
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_113_TT_ShadowPlane_inputs[] = {"On", "Off"};
+static const char *bb_113_TT_ShadowPlane_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_113_TT_ShadowPlane_ip[] = {
+    {"Light", NMO_GUID_INIT(0x4B6D412F, 0x5D1E1416)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"SourceBlend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"DestBlend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const nmo_bb_param_desc_t bb_113_TT_ShadowPlane_lp[] = {
+    {"ShadowStruct", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const char *bb_114_Array_Load_inputs[] = {"In"};
+static const char *bb_114_Array_Load_outputs[] = {"Out", "File Error"};
+static const nmo_bb_param_desc_t bb_114_Array_Load_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Append", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"First Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_115_Mouse_Cursor_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_115_Mouse_Cursor_ip[] = {
+    {"Cursor Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Cursor Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Cursor Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Shadow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Shadow Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Shadow Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Shadow Intensity", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_116_TT_Set_Database_Properties_inputs[] = {"Set"};
+static const char *bb_116_TT_Set_Database_Properties_outputs[] = {"OK", "Error"};
+static const nmo_bb_param_desc_t bb_116_TT_Set_Database_Properties_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Crypted", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_117_Deactivate_Script_inputs[] = {"In"};
+static const char *bb_117_Deactivate_Script_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_117_Deactivate_Script_ip[] = {
+    {"Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+};
+static const char *bb_118_Set_Animation_Step_Entity_inputs[] = {"In"};
+static const char *bb_118_Set_Animation_Step_Entity_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_118_Set_Animation_Step_Entity_ip[] = {
+    {"Animation", NMO_GUID_INIT(0x43476550, 0x11E52C0E)},
+    {"Step", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_119_Set_2D_Parent_inputs[] = {"In"};
+static const char *bb_119_Set_2D_Parent_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_119_Set_2D_Parent_ip[] = {
+    {"Parent", NMO_GUID_INIT(0x181671E3, 0x1BDC1503)},
+};
+static const char *bb_120_TT_PushButton2_inputs[] = {"On", "Off"};
+static const char *bb_120_TT_PushButton2_outputs[] = {"Released", "Roll Over", "Mouse Down"};
+static const nmo_bb_param_desc_t bb_120_TT_PushButton2_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_121_Identity_inputs[] = {"In"};
+static const char *bb_121_Identity_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_121_Identity_ip[] = {
+    {"pIn 0", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_121_Identity_op[] = {
+    {"pOut 0", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_122_Array_Save_inputs[] = {"In"};
+static const char *bb_122_Array_Save_outputs[] = {"Out", "Write Error"};
+static const nmo_bb_param_desc_t bb_122_Array_Save_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"First Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Number of Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Append", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_123_Set_Fog_inputs[] = {"In"};
+static const char *bb_123_Set_Fog_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_123_Set_Fog_ip[] = {
+    {"Fog Mode", NMO_GUID_INIT(0x686F28EF, 0x5ECC7766)},
+    {"Fog Start", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Fog End", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Fog Density", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Fog Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_123_Set_Fog_lp[] = {
+    {"NewVersion", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_124_Set_Priority_inputs[] = {"In"};
+static const char *bb_124_Set_Priority_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_124_Set_Priority_ip[] = {
+    {"Priority", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_125_Delayer_inputs[] = {"In"};
+static const char *bb_125_Delayer_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_125_Delayer_ip[] = {
+    {"Time to Wait", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const nmo_bb_param_desc_t bb_125_Delayer_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_126_Deactivate_Object_inputs[] = {"In"};
+static const char *bb_126_Deactivate_Object_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_126_Deactivate_Object_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const char *bb_127_2D_Picking_inputs[] = {"In"};
+static const char *bb_127_2D_Picking_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_127_2D_Picking_ip[] = {
+    {"Pos", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Absolute Coordinates", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_127_2D_Picking_op[] = {
+    {"Object Picked", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Intersection Point", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Intersection Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"UV Coordinates", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Distance from The Viewpoint", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Face Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Sprite", NMO_GUID_INIT(0x577E2EA8, 0x5B901969)},
+};
+static const nmo_bb_param_desc_t bb_127_2D_Picking_st[] = {
+    {"Use 2D Vector?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Use Mouse Coordinates?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_128_TT__Get_Game_Data_inputs[] = {"In"};
+static const char *bb_128_TT__Get_Game_Data_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_128_TT__Get_Game_Data_op[] = {
+    {"Games Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Game Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_129_Make_Transparent_inputs[] = {"In"};
+static const char *bb_129_Make_Transparent_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_129_Make_Transparent_ip[] = {
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Alpha", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_130_Show_Mouse_Cursor_inputs[] = {"In"};
+static const char *bb_130_Show_Mouse_Cursor_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_130_Show_Mouse_Cursor_ip[] = {
+    {"Show", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_131_Entity_Find_Nodal_Path_inputs[] = {"In"};
+static const char *bb_131_Entity_Find_Nodal_Path_outputs[] = {"Path Found", "No Path Found"};
+static const nmo_bb_param_desc_t bb_131_Entity_Find_Nodal_Path_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Goal Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_131_Entity_Find_Nodal_Path_op[] = {
+    {"Object List", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_132_Interpolator_Float_inputs[] = {"In"};
+static const char *bb_132_Interpolator_Float_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_132_Interpolator_Float_ip[] = {
+    {"A", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"B", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_132_Interpolator_Float_op[] = {
+    {"C", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_133_Interpolator_Int_inputs[] = {"In"};
+static const char *bb_133_Interpolator_Int_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_133_Interpolator_Int_ip[] = {
+    {"A", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"B", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_133_Interpolator_Int_op[] = {
+    {"C", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_134_Interpolator_Vector_inputs[] = {"In"};
+static const char *bb_134_Interpolator_Vector_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_134_Interpolator_Vector_ip[] = {
+    {"A", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"B", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_134_Interpolator_Vector_op[] = {
+    {"C", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_135_Interpolator_Color_inputs[] = {"In"};
+static const char *bb_135_Interpolator_Color_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_135_Interpolator_Color_ip[] = {
+    {"A", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"B", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_135_Interpolator_Color_op[] = {
+    {"C", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_136_Interpolator_Object_Orientation_inputs[] = {"In"};
+static const char *bb_136_Interpolator_Object_Orientation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_136_Interpolator_Object_Orientation_ip[] = {
+    {"A", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"B", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Scale", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_136_Interpolator_Object_Orientation_op[] = {
+    {"C", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+};
+static const nmo_bb_param_desc_t bb_136_Interpolator_Object_Orientation_st[] = {
+    {"Objects are all 1x1x1 scaled", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_137_TT_BitmapFont_inputs[] = {"On", "Off"};
+static const char *bb_137_TT_BitmapFont_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_137_TT_BitmapFont_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Scale", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"cursiv", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Src Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Dest Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_137_TT_BitmapFont_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_138_TT_Set_Integer_Value_To_Registry_inputs[] = {"In"};
+static const char *bb_138_TT_Set_Integer_Value_To_Registry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_138_TT_Set_Integer_Value_To_Registry_ip[] = {
+    {"Integer Value ", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_139_Show_Object_Information_inputs[] = {"In"};
+static const char *bb_139_Show_Object_Information_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_139_Show_Object_Information_ip[] = {
+    {"Show Bounding Box", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Bounding Box color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Local", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchical Box", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Show Vertex Normals", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Vertex Normals Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Vertex Normals Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Show Face Normals", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Face Normals Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Face Normals Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Show Bounding Sphere", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Bounding Sphere color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_139_Show_Object_Information_st[] = {
+    {"Vertex Normal Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Face Normal Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_140_Test_inputs[] = {"In"};
+static const char *bb_140_Test_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_140_Test_ip[] = {
+    {"Test", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+    {"A", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"B", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_141_Grid_Path_Solver_inputs[] = {"On", "Reset"};
+static const char *bb_141_Grid_Path_Solver_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_141_Grid_Path_Solver_ip[] = {
+    {"Position In Owner Ref", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Goal Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Goal Position Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Heuristic Method", NMO_GUID_INIT(0x72604F23, 0x05FE7F0F)},
+    {"Heuristic Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Diagonal", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Obstacle Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Obstacle Threshold", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Slowing Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Use Linkers", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Linkers As Obstacles", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Ms/Frame", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_141_Grid_Path_Solver_op[] = {
+    {"Path ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Path's Length", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_141_Grid_Path_Solver_st[] = {
+    {"Path Type", NMO_GUID_INIT(0x3E7F7035, 0x7835401F)},
+    {"Optimize Path", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_142_Output_To_Console_inputs[] = {"In"};
+static const char *bb_142_Output_To_Console_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_142_Output_To_Console_ip[] = {
+    {"String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Output Target?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Beep?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_143_Launch_Scene_inputs[] = {"In"};
+static const char *bb_143_Launch_Scene_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_143_Launch_Scene_ip[] = {
+    {"Scene", NMO_GUID_INIT(0x25AE6BD7, 0x7C8F73A2)},
+    {"Activity Options", NMO_GUID_INIT(0x1CD24241, 0x533C0F8F)},
+    {"Reset Options", NMO_GUID_INIT(0x18170AFB, 0x687D5DA7)},
+};
+static const char *bb_144_TT_ConvertPixel_Homogen_inputs[] = {"On"};
+static const char *bb_144_TT_ConvertPixel_Homogen_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_144_TT_ConvertPixel_Homogen_ip[] = {
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_144_TT_ConvertPixel_Homogen_op[] = {
+    {"X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"2D Vector", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_144_TT_ConvertPixel_Homogen_st[] = {
+    {"Pixel to homogen?:", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_145_Sphere_Sphere_Intersection_inputs[] = {"In"};
+static const char *bb_145_Sphere_Sphere_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_145_Sphere_Sphere_Intersection_ip[] = {
+    {"Entity 0", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Entity 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy 0", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchy 1", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_146_Iterator_inputs[] = {"In", "Loop In"};
+static const char *bb_146_Iterator_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_146_Iterator_ip[] = {
+    {"Starting Row", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Ending Row", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Backward", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_146_Iterator_op[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_147_PhysicsContinuousContact_inputs[] = {"Create", "Stop"};
+static const char *bb_147_PhysicsContinuousContact_outputs[] = {"contact on 1", "contact off 1", "contact on 2", "contact off 2", "contact on 3", "contact off 3", "contact on 4", "contact off 4", "contact on 5", "contact off 5"};
+static const nmo_bb_param_desc_t bb_147_PhysicsContinuousContact_ip[] = {
+    {"Time Delay Start", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Time Delay End", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_147_PhysicsContinuousContact_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_147_PhysicsContinuousContact_st[] = {
+    {"Number Group Output", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_148_TT_Switch_on_Layer_inputs[] = {"In", "Off"};
+static const char *bb_148_TT_Switch_on_Layer_outputs[] = {"In", "Out", "Enter", "Exit"};
+static const nmo_bb_param_desc_t bb_148_TT_Switch_on_Layer_ip[] = {
+    {"Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_148_TT_Switch_on_Layer_op[] = {
+    {"Exitvector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_148_TT_Switch_on_Layer_lp[] = {
+    {"Last Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Was inside", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_149_TT_MotorSound_inputs[] = {"Start", "Stop"};
+static const char *bb_149_TT_MotorSound_outputs[] = {"Start Playing", "End Playing", "Error"};
+static const nmo_bb_param_desc_t bb_149_TT_MotorSound_ip[] = {
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Sound1", NMO_GUID_INIT(0x4BF74E5E, 0x45F409EF)},
+    {"Sound2", NMO_GUID_INIT(0x4BF74E5E, 0x45F409EF)},
+    {"Sound3", NMO_GUID_INIT(0x4BF74E5E, 0x45F409EF)},
+    {"GlobalVolume", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_149_TT_MotorSound_op[] = {
+    {"CurrentPitchValue1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"CurrentVolume1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"CurrentPitchValue2", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"CurrentVolume2", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"CurrentPitchValue3", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"CurrentVolume3", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_149_TT_MotorSound_lp[] = {
+    {"FirstTime", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_150_Call_Script_inputs[] = {"In"};
+static const char *bb_150_Call_Script_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_150_Call_Script_ip[] = {
+    {"Reset ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+    {"Wait For Completion?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_151_Move_Column_inputs[] = {"In"};
+static const char *bb_151_Move_Column_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_151_Move_Column_ip[] = {
+    {"Src Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Dest Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_152_Set_Specular_Flag_inputs[] = {"In"};
+static const char *bb_152_Set_Specular_Flag_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_152_Set_Specular_Flag_ip[] = {
+    {"Specular Highlight", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_153_Key_Event_inputs[] = {"On", "Off"};
+static const char *bb_153_Key_Event_outputs[] = {"Pressed", "Released"};
+static const nmo_bb_param_desc_t bb_153_Key_Event_ip[] = {
+    {"Key Waited", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_153_Key_Event_op[] = {
+    {"Key State", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_154_Hardware_Level_inputs[] = {"In"};
+static const char *bb_154_Hardware_Level_outputs[] = {"TL", "Hardware", "Software"};
+static const nmo_bb_param_desc_t bb_154_Hardware_Level_op[] = {
+    {"Current Api", NMO_GUID_INIT(0x0EBE7D72, 0x04A07B9F)},
+};
+static const char *bb_155_Fade_Out_inputs[] = {"In"};
+static const char *bb_155_Fade_Out_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_155_Fade_Out_ip[] = {
+    {"Fade Delay", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_155_Fade_Out_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_156_Switch_On_Message_inputs[] = {"On", "Off"};
+static const char *bb_156_Switch_On_Message_outputs[] = {"Received 0", "Received 1"};
+static const nmo_bb_param_desc_t bb_156_Switch_On_Message_ip[] = {
+    {"Message 0", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Message 1", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+};
+static const nmo_bb_param_desc_t bb_157_Share_Character_Animation_Keys_ip[] = {
+    {"Characters Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_157_Share_Character_Animation_Keys_op[] = {
+    {"Number Of Shared Animations", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_158_Add_Row_inputs[] = {"In"};
+static const char *bb_158_Add_Row_outputs[] = {"Out", "Already Present"};
+static const nmo_bb_param_desc_t bb_158_Add_Row_st[] = {
+    {"Unique Key Column", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_159_Get_Profiler_Values_inputs[] = {"Start", "Reset"};
+static const char *bb_159_Get_Profiler_Values_outputs[] = {"Out", "ResetOut"};
+static const nmo_bb_param_desc_t bb_159_Get_Profiler_Values_op[] = {
+    {"HasPhysicsCalls", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"PhysicalizeCalls", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"DePhysicalizeCalls", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"HasPhysicsTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"DePhysicalizeTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_160_Play_Global_Animation_inputs[] = {"On", "Off"};
+static const char *bb_160_Play_Global_Animation_outputs[] = {"One Loop Played"};
+static const nmo_bb_param_desc_t bb_160_Play_Global_Animation_ip[] = {
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Loop", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_160_Play_Global_Animation_op[] = {
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_160_Play_Global_Animation_lp[] = {
+    {"", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_161_Set_Alpha_Test_inputs[] = {"In"};
+static const char *bb_161_Set_Alpha_Test_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_161_Set_Alpha_Test_ip[] = {
+    {"Alpha Test Enable", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Alpha Test Function", NMO_GUID_INIT(0x51CD1CF5, 0x1D5C2D9B)},
+    {"Alpha Reference Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_162_Group_Clear_inputs[] = {"In"};
+static const char *bb_162_Group_Clear_outputs[] = {"Out"};
+static const char *bb_163_Set_Z_Buffer_inputs[] = {"In"};
+static const char *bb_163_Set_Z_Buffer_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_163_Set_Z_Buffer_ip[] = {
+    {"Read", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Write", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_164_Write_In_Texture_inputs[] = {"In"};
+static const char *bb_164_Write_In_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_164_Write_In_Texture_ip[] = {
+    {"UV", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Pen Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Write Mode", NMO_GUID_INIT(0x675E3903, 0x7A06003C)},
+};
+static const char *bb_165_Attach_Script_inputs[] = {"In"};
+static const char *bb_165_Attach_Script_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_165_Attach_Script_ip[] = {
+    {"Dynamic?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+    {"Activate?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Reset?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_165_Attach_Script_op[] = {
+    {"Created Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+};
+static const char *bb_166_Sprite_Multi_Angle_inputs[] = {"In"};
+static const char *bb_166_Sprite_Multi_Angle_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_166_Sprite_Multi_Angle_ip[] = {
+    {"Scale X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Scale Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Transparent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Color Key", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Mirroring", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Sprite Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const nmo_bb_param_desc_t bb_166_Sprite_Multi_Angle_lp[] = {
+    {"Sprite Sprite3D", NMO_GUID_INIT(0x23C8061B, 0x70033A27)},
+    {"Sprite Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_167_Streaming_Event_inputs[] = {"In 0", "In 1"};
+static const char *bb_167_Streaming_Event_outputs[] = {"Out 0", "Out 1"};
+static const nmo_bb_param_desc_t bb_167_Streaming_Event_op[] = {
+    {"Last Activated Output", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_167_Streaming_Event_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_168_LinearParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_168_LinearParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_168_LinearParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_168_LinearParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_168_LinearParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_169_Switch_On_Key_inputs[] = {"On", "Off"};
+static const char *bb_169_Switch_On_Key_outputs[] = {"Out 0", "Out 1"};
+static const nmo_bb_param_desc_t bb_169_Switch_On_Key_ip[] = {
+    {"Key 0", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key 1", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const char *bb_170_3D_Text_inputs[] = {"On", "Off"};
+static const char *bb_170_3D_Text_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_170_3D_Text_ip[] = {
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Alignment", NMO_GUID_INIT(0x2E1E2209, 0x47DA44B5)},
+    {"Margins", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Offset", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Paragraph Indentation", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Background Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Caret Size", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Caret Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_170_3D_Text_op[] = {
+    {"Text Extents", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Line Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_170_3D_Text_st[] = {
+    {"Text Properties", NMO_GUID_INIT(0x4157001D, 0x4CC82922)},
+};
+static const char *bb_171_Remove_Row_inputs[] = {"In"};
+static const char *bb_171_Remove_Row_outputs[] = {"Removed", "Not Present"};
+static const nmo_bb_param_desc_t bb_171_Remove_Row_ip[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_172_Save_State_inputs[] = {"In"};
+static const char *bb_172_Save_State_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_172_Save_State_op[] = {
+    {"Object State", NMO_GUID_INIT(0x9FB5E33C, 0x134CB77E)},
+};
+static const char *bb_173_LOD_Character_Animation_inputs[] = {"In"};
+static const char *bb_173_LOD_Character_Animation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_173_LOD_Character_Animation_ip[] = {
+    {"Distance Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Distance Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Minimum", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_174_Light_Color_Progression_inputs[] = {"In", "Loop In"};
+static const char *bb_174_Light_Color_Progression_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_174_Light_Color_Progression_ip[] = {
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Start Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"End Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_174_Light_Color_Progression_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_174_Light_Color_Progression_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_175_Set_Specular_inputs[] = {"In"};
+static const char *bb_175_Set_Specular_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_175_Set_Specular_ip[] = {
+    {"Specular Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Specular Power", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_176_Replace_Rendering_inputs[] = {"On", "Off"};
+static const char *bb_176_Replace_Rendering_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_176_Replace_Rendering_ip[] = {
+    {"In Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Out Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_176_Replace_Rendering_st[] = {
+    {"Per Object", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_177_TT_Set_Level_ID_inputs[] = {"In"};
+static const char *bb_177_TT_Set_Level_ID_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_177_TT_Set_Level_ID_ip[] = {
+    {"Level ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_178_Render_Curve_inputs[] = {"On", "Off"};
+static const char *bb_178_Render_Curve_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_178_Render_Curve_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Texture Scale", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Texture Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Up", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Tube Lighting", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Tube Tesselation", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_178_Render_Curve_st[] = {
+    {"Render Mode", NMO_GUID_INIT(0x4D236301, 0x5BE530BC)},
+};
+static const char *bb_179_Update_Nodal_Path_inputs[] = {"In"};
+static const char *bb_179_Update_Nodal_Path_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_179_Update_Nodal_Path_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_180_Declare_Obstacles_inputs[] = {"In"};
+static const char *bb_180_Declare_Obstacles_outputs[] = {"In"};
+static const nmo_bb_param_desc_t bb_180_Declare_Obstacles_ip[] = {
+    {"Key Substring", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Moving", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Geometry", NMO_GUID_INIT(0x01238843, 0xFF881C6E)},
+};
+static const char *bb_181_Set_Local_Matrix_inputs[] = {"In"};
+static const char *bb_181_Set_Local_Matrix_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_181_Set_Local_Matrix_ip[] = {
+    {"Local Matrix", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_182_Set_Light_Range_inputs[] = {"In"};
+static const char *bb_182_Set_Light_Range_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_182_Set_Light_Range_ip[] = {
+    {"Range", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_183_TT_TestForJoystick_inputs[] = {"Do"};
+static const char *bb_183_TT_TestForJoystick_outputs[] = {"Yes", "No"};
+static const nmo_bb_param_desc_t bb_183_TT_TestForJoystick_ip[] = {
+    {"Nr", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_184_Create_Group_From_Array_inputs[] = {"In"};
+static const char *bb_184_Create_Group_From_Array_outputs[] = {"Created", "No Elements Found"};
+static const nmo_bb_param_desc_t bb_184_Create_Group_From_Array_ip[] = {
+    {"Entities Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Search Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operator", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_184_Create_Group_From_Array_op[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_185_TT_CopyFile_inputs[] = {"Copy"};
+static const char *bb_185_TT_CopyFile_outputs[] = {"OK", "Fail"};
+static const nmo_bb_param_desc_t bb_185_TT_CopyFile_ip[] = {
+    {"Source", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Destination", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Overwrite", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_186_Mouse_Camera_Orbit_inputs[] = {"On", "Off", "Resume"};
+static const char *bb_186_Mouse_Camera_Orbit_outputs[] = {"Exit On", "Exit Off", "Exit Resume"};
+static const nmo_bb_param_desc_t bb_186_Mouse_Camera_Orbit_ip[] = {
+    {"Target Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Target Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Move Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Return Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Zoom Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_186_Mouse_Camera_Orbit_lp[] = {
+    {"Initial Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Rotation Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Stopping", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_186_Mouse_Camera_Orbit_st[] = {
+    {"Limits", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Returns", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_187_TT_LensFlare_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_187_TT_LensFlare_ip[] = {
+    {"Flares Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Flares Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size Multiplier", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Dest Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const nmo_bb_param_desc_t bb_187_TT_LensFlare_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Active", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_187_TT_LensFlare_st[] = {
+    {"Read Array Each Frame", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_188_3D_Flow_Layout_inputs[] = {"In"};
+static const char *bb_188_3D_Flow_Layout_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_188_3D_Flow_Layout_ip[] = {
+    {"Model", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Flow Direction", NMO_GUID_INIT(0x3E8B5E93, 0x28BC23B2)},
+    {"Flow Alignment", NMO_GUID_INIT(0x5E5B5493, 0xF8BC224F)},
+    {"Support", NMO_GUID_INIT(0x8E5B5493, 0x98BD2245)},
+    {"Top Margin", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Side Margin", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Offset Margin", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Gap Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Keep Children ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_189_Mouse_Cursor_System_inputs[] = {"In"};
+static const char *bb_189_Mouse_Cursor_System_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_189_Mouse_Cursor_System_ip[] = {
+    {"Mouse Pointer", NMO_GUID_INIT(0x37A05BDD, 0x1ED83F40)},
+};
+static const nmo_bb_param_desc_t bb_190_Create_Blended_Animation_ip[] = {
+    {"Animation 0", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Animation 1", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const nmo_bb_param_desc_t bb_190_Create_Blended_Animation_op[] = {
+    {"Blended Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const char *bb_191_Set_Physics_Spring_inputs[] = {"Create", "Shutdown"};
+static const char *bb_191_Set_Physics_Spring_outputs[] = {"Out1", "Out2"};
+static const nmo_bb_param_desc_t bb_191_Set_Physics_Spring_ip[] = {
+    {"Object2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Position 1", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Position 2", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential 2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Length", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Constant", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Linear Dampening", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Global Dampening", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_191_Set_Physics_Spring_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const char *bb_192_Get_Texture_Info_inputs[] = {"In"};
+static const char *bb_192_Get_Texture_Info_outputs[] = {"Exist", "Empty"};
+static const nmo_bb_param_desc_t bb_192_Get_Texture_Info_op[] = {
+    {"FileName", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Priority", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_193_Switch_If_Square_inputs[] = {"In"};
+static const char *bb_193_Switch_If_Square_outputs[] = {"None", "Layer1"};
+static const nmo_bb_param_desc_t bb_193_Switch_If_Square_ip[] = {
+    {"Pos 3D", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Layer1", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+};
+static const nmo_bb_param_desc_t bb_193_Switch_If_Square_op[] = {
+    {"Value1", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_194_3D_Curve_Layout_inputs[] = {"In"};
+static const char *bb_194_3D_Curve_Layout_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_194_3D_Curve_Layout_ip[] = {
+    {"Curve", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+    {"A", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"B", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Follow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Roll", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_195_Has_Attribute_inputs[] = {"In"};
+static const char *bb_195_Has_Attribute_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_195_Has_Attribute_ip[] = {
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const nmo_bb_param_desc_t bb_195_Has_Attribute_op[] = {
+    {"Attribute Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_196_TT_CreateFontEx_inputs[] = {"In"};
+static const char *bb_196_TT_CreateFontEx_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_196_TT_CreateFontEx_ip[] = {
+    {"Font Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Font Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Horizontal/Vertical Character Number", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Proportionnal", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Font Bounds", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"First Character", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"FontCoordinatesData", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const nmo_bb_param_desc_t bb_196_TT_CreateFontEx_op[] = {
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+};
+static const char *bb_197_2D_Grid_Layout_inputs[] = {"In"};
+static const char *bb_197_2D_Grid_Layout_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_197_2D_Grid_Layout_ip[] = {
+    {"Components Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Margins", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Horizontal Gap Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Vertical Gap Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Resize", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Set Parent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_198_Look_At_inputs[] = {"In"};
+static const char *bb_198_Look_At_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_198_Look_At_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Following Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_198_Look_At_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Roll", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const char *bb_199_Get_Component_inputs[] = {"In"};
+static const char *bb_199_Get_Component_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_199_Get_Component_ip[] = {
+    {"Variable", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_199_Get_Component_op[] = {
+    {"Component 1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Component 2", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Component 3", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_199_Get_Component_st[] = {
+    {"Rectangle/Box Mode", NMO_GUID_INIT(0x5A6A3BD9, 0x07E2797D)},
+};
+static const char *bb_200_Shuffle_Order_inputs[] = {"In"};
+static const char *bb_200_Shuffle_Order_outputs[] = {"Out"};
+static const char *bb_201_Object_Create_inputs[] = {"In"};
+static const char *bb_201_Object_Create_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_201_Object_Create_ip[] = {
+    {"Class", NMO_GUID_INIT(0x19644E43, 0x4D6F6123)},
+    {"Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_201_Object_Create_op[] = {
+    {"Object", NMO_GUID_INIT(0x30EC20AB, 0x6DF6517D)},
+};
+static const nmo_bb_param_desc_t bb_201_Object_Create_st[] = {
+    {"Dynamic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_202_One_At_A_Time_inputs[] = {"Reset", "In 1", "In 2"};
+static const char *bb_202_One_At_A_Time_outputs[] = {"Out Reset", "Out 1", "Out 2"};
+static const nmo_bb_param_desc_t bb_202_One_At_A_Time_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_203_Hide_Hierarchy_inputs[] = {"In"};
+static const char *bb_203_Hide_Hierarchy_outputs[] = {"Out"};
+static const char *bb_204_TT_SearchRow_inputs[] = {"On"};
+static const char *bb_204_TT_SearchRow_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_204_TT_SearchRow_ip[] = {
+    {"Search Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Search Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_204_TT_SearchRow_op[] = {
+    {"First Row Found", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_205_Create_Decal_inputs[] = {"In"};
+static const char *bb_205_Create_Decal_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_205_Create_Decal_ip[] = {
+    {"Frustum", NMO_GUID_INIT(0x3CF24D6F, 0x216204F9)},
+    {"Decal Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Backface Cull", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Prelit", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Whole Faces", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Generate UVs", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_205_Create_Decal_op[] = {
+    {"Decal", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_205_Create_Decal_st[] = {
+    {"Dynamic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_206_Set_Sound_Range_inputs[] = {"In"};
+static const char *bb_206_Set_Sound_Range_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_206_Set_Sound_Range_ip[] = {
+    {"Min distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_207_Set_Listener_inputs[] = {"In"};
+static const char *bb_207_Set_Listener_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_207_Set_Listener_ip[] = {
+    {"Listener", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_208_2D_Curve_Layout_inputs[] = {"In"};
+static const char *bb_208_2D_Curve_Layout_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_208_2D_Curve_Layout_ip[] = {
+    {"Components", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Center", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_209_2D_Flow_Layout_inputs[] = {"In"};
+static const char *bb_209_2D_Flow_Layout_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_209_2D_Flow_Layout_ip[] = {
+    {"Components", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Flow Alignment", NMO_GUID_INIT(0x5E5B5493, 0xF8BC224F)},
+    {"Top Margin", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Side Margin", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Gap Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Horizontal Flow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Set Parent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_210_Set_Physics_Slider_inputs[] = {"Create", "Shutdown"};
+static const char *bb_210_Set_Physics_Slider_outputs[] = {"Out1", "Out2"};
+static const nmo_bb_param_desc_t bb_210_Set_Physics_Slider_ip[] = {
+    {"Object2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Axis first Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Axis second Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Limitations (meter)", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Lower Limit", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Upper Limit", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_210_Set_Physics_Slider_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const char *bb_211_TT_Delete_GameInfo__inputs[] = {"In"};
+static const char *bb_211_TT_Delete_GameInfo__outputs[] = {"Deleted", "Not Found"};
+static const nmo_bb_param_desc_t bb_211_TT_Delete_GameInfo__ip[] = {
+    {"Address of GameInfo (hex)", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_212_TT_Scaleable_Proximity_inputs[] = {"In", "Off"};
+static const char *bb_212_TT_Scaleable_Proximity_outputs[] = {"In Range", "Out Range", "Enter Range", "Exit Range"};
+static const nmo_bb_param_desc_t bb_212_TT_Scaleable_Proximity_ip[] = {
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"ObjectA", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"ObjectB", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Barycenter?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Exactness min. Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Exactness max. Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Minimum Framedelay", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Maximum Framedelay", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_212_TT_Scaleable_Proximity_op[] = {
+    {"Current Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_212_TT_Scaleable_Proximity_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Last Check", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_212_TT_Scaleable_Proximity_st[] = {
+    {"Use Ouputs:", NMO_GUID_INIT(0x4A820522, 0x260C34A9)},
+    {"Check Axis:", NMO_GUID_INIT(0x56D95DA6, 0x09CE65AF)},
+    {"Squared Distance?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_213_TT_Set_Game_Score_inputs[] = {"In"};
+static const char *bb_213_TT_Set_Game_Score_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_213_TT_Set_Game_Score_ip[] = {
+    {"Game Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_214_Planar_Mapping_inputs[] = {"In"};
+static const char *bb_214_Planar_Mapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_214_Planar_Mapping_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Mapping Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"UV Tile", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_214_Planar_Mapping_st[] = {
+    {"Exclude Faces", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_215_Make_Rows_Unique_inputs[] = {"In"};
+static const char *bb_215_Make_Rows_Unique_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_215_Make_Rows_Unique_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_216_PhysicsBuoyancy_inputs[] = {"In"};
+static const char *bb_216_PhysicsBuoyancy_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_216_PhysicsBuoyancy_ip[] = {
+    {"First Surface Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Second Surface Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Third Surface Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Current Start Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Current End Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Strength of Current (meter/sec)", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Medium Density (kg/meter^3)", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Medium Damp Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Medium Friction Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Viscosity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Airplane like factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Suction factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_217_Animation_Synchronizer_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_217_Animation_Synchronizer_lp[] = {
+    {"", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_218_TT_SkyAround_inputs[] = {"On", "Off"};
+static const char *bb_218_TT_SkyAround_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_218_TT_SkyAround_ip[] = {
+    {"Distortion", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Filtering Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Additional Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Dest Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Orientation Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Quadratic SideFaces?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"SideFace-Heigth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Y-Position of Sky", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_218_TT_SkyAround_lp[] = {
+    {"Skyaround", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_218_TT_SkyAround_st[] = {
+    {"Side Materials", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Top Materials", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Bottom Materials", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_219_TT_SetCurrentDirectory_inputs[] = {"IN"};
+static const char *bb_219_TT_SetCurrentDirectory_outputs[] = {"OK", "Fail"};
+static const nmo_bb_param_desc_t bb_219_TT_SetCurrentDirectory_ip[] = {
+    {"CurrentDirectory", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_220_TT_CelShading_inputs[] = {"On", "Off"};
+static const char *bb_220_TT_CelShading_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_220_TT_CelShading_ip[] = {
+    {"Light", NMO_GUID_INIT(0x4B6D412F, 0x5D1E1416)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Outline", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_220_TT_CelShading_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_221_Op_inputs[] = {"In"};
+static const char *bb_221_Op_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_221_Op_ip[] = {
+    {"p1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"p2", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_221_Op_op[] = {
+    {"res", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_221_Op_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_221_Op_st[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_222_Set_Channel_Material_inputs[] = {"In"};
+static const char *bb_222_Set_Channel_Material_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_222_Set_Channel_Material_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_223_TT_SetMapping_inputs[] = {"In"};
+static const char *bb_223_TT_SetMapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_223_TT_SetMapping_ip[] = {
+    {"MatChannel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"New planar Mapping", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Rotate", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Offset UV", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Tile U", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const char *bb_224_TT_HighMapMeshform_inputs[] = {"In"};
+static const char *bb_224_TT_HighMapMeshform_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_224_TT_HighMapMeshform_ip[] = {
+    {"MatChannel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Height", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_224_TT_HighMapMeshform_lp[] = {
+    {"Vertex Array", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_225_TT_Get_Level_Reached_inputs[] = {"In"};
+static const char *bb_225_TT_Get_Level_Reached_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_225_TT_Get_Level_Reached_op[] = {
+    {"Level Reached", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_226_Swap_Rows_inputs[] = {"In"};
+static const char *bb_226_Swap_Rows_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_226_Swap_Rows_ip[] = {
+    {"Row 1", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Row 2", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_227_Set_Blend_Modes_inputs[] = {"In"};
+static const char *bb_227_Set_Blend_Modes_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_227_Set_Blend_Modes_ip[] = {
+    {"Blend", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Texture Blend", NMO_GUID_INIT(0x3C2A6ACA, 0x6F0E5865)},
+};
+static const char *bb_228_Set_Channel_Dest_Blend_inputs[] = {"In"};
+static const char *bb_228_Set_Channel_Dest_Blend_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_228_Set_Channel_Dest_Blend_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Blending Mode", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const char *bb_229_TT_RippleWave_inputs[] = {"In", "Drop", "Off"};
+static const char *bb_229_TT_RippleWave_outputs[] = {"Exit In", "Exit Off"};
+static const nmo_bb_param_desc_t bb_229_TT_RippleWave_ip[] = {
+    {"DropStrength", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Viscosity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_229_TT_RippleWave_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Vertex Array", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_230_Set_Transparent_inputs[] = {"Set", "UnSet"};
+static const char *bb_230_Set_Transparent_outputs[] = {"Out"};
+static const char *bb_231_TT_ShowVector_inputs[] = {"On"};
+static const char *bb_231_TT_ShowVector_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_231_TT_ShowVector_ip[] = {
+    {"StartPos", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"EndPos", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Curve", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+};
+static const char *bb_232_TT_Key_Waiter_inputs[] = {"In", "Off"};
+static const char *bb_232_TT_Key_Waiter_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_232_TT_Key_Waiter_ip[] = {
+    {"Key", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_232_TT_Key_Waiter_st[] = {
+    {"Wait For Any Key", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_233_Set_Key_Row_inputs[] = {"In"};
+static const char *bb_233_Set_Key_Row_outputs[] = {"Found", "Not Found"};
+static const char *bb_234_Prevent_Collision_inputs[] = {"On", "Off"};
+static const char *bb_234_Prevent_Collision_outputs[] = {"Collision Occured", "No Collision"};
+static const nmo_bb_param_desc_t bb_234_Prevent_Collision_ip[] = {
+    {"Geometry Precision", NMO_GUID_INIT(0x5F3B233C, 0x33AE36B6)},
+    {"Detection Tests", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Safe Position Tests", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_235_Nop_inputs[] = {"In 0"};
+static const char *bb_235_Nop_outputs[] = {"Out 0"};
+static const char *bb_236_TT_Save_IC_inputs[] = {"In"};
+static const char *bb_236_TT_Save_IC_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_236_TT_Save_IC_ip[] = {
+    {"Hierarchy?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_237_TT_Set_Game_Name_inputs[] = {"In"};
+static const char *bb_237_TT_Set_Game_Name_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_237_TT_Set_Game_Name_ip[] = {
+    {"Game Name", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_238_TT_SetFSAA_inputs[] = {"On"};
+static const char *bb_238_TT_SetFSAA_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_238_TT_SetFSAA_ip[] = {
+    {"FSAA", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_239_Set_Cell_inputs[] = {"In"};
+static const char *bb_239_Set_Cell_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_239_Set_Cell_ip[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Column Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_240_TT_GetSoundProperties_inputs[] = {"In"};
+static const char *bb_240_TT_GetSoundProperties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_240_TT_GetSoundProperties_op[] = {
+    {"Gain", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Pitch", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Pan", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_241_Character_Prevent_From_Collision_inputs[] = {"On", "Off"};
+static const char *bb_241_Character_Prevent_From_Collision_outputs[] = {"Collision Occured", "No Collision"};
+static const nmo_bb_param_desc_t bb_241_Character_Prevent_From_Collision_ip[] = {
+    {"Geometry Precision", NMO_GUID_INIT(0x5F3B233C, 0x33AE36B6)},
+    {"Detection Tests", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Safe Position Tests", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_241_Character_Prevent_From_Collision_op[] = {
+    {"BodyPart Touched", NMO_GUID_INIT(0x4BA1010E, 0x7ABD6D02)},
+    {"Touched Obstacle", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Touched Sub Obstacle", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_242_Hide_inputs[] = {"In"};
+static const char *bb_242_Hide_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_242_Hide_ip[] = {
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_243_Set_Light_Color_inputs[] = {"In"};
+static const char *bb_243_Set_Light_Color_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_243_Set_Light_Color_ip[] = {
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_244_Set_Light_Type_inputs[] = {"In"};
+static const char *bb_244_Set_Light_Type_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_244_Set_Light_Type_ip[] = {
+    {"Light Type", NMO_GUID_INIT(0x4F0F4891, 0x340A05D1)},
+};
+static const char *bb_245_Add_Obstacle_inputs[] = {"In"};
+static const char *bb_245_Add_Obstacle_outputs[] = {"Out"};
+static const char *bb_246_Remove_Attribute_Obsolete_inputs[] = {"In"};
+static const char *bb_246_Remove_Attribute_Obsolete_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_246_Remove_Attribute_Obsolete_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const char *bb_247_Has_Attribute_Obsolete_inputs[] = {"In"};
+static const char *bb_247_Has_Attribute_Obsolete_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_247_Has_Attribute_Obsolete_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const nmo_bb_param_desc_t bb_247_Has_Attribute_Obsolete_op[] = {
+    {"Attribute Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_248_Set_Attribute_Obsolete_inputs[] = {"In"};
+static const char *bb_248_Set_Attribute_Obsolete_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_248_Set_Attribute_Obsolete_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const char *bb_249_Column_Operation_inputs[] = {"In"};
+static const char *bb_249_Column_Operation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_249_Column_Operation_ip[] = {
+    {"Column 1", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operation", NMO_GUID_INIT(0x2CE46C85, 0x4B791332)},
+    {"Column 2", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Result Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_250_TT_Chrono_inputs[] = {"On", "Stop", "Off"};
+static const char *bb_250_TT_Chrono_outputs[] = {"Exit On", "Exit Stop", "Exit Off"};
+static const nmo_bb_param_desc_t bb_250_TT_Chrono_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_251_TT_Bounding_Sphere_Intersection_inputs[] = {"In"};
+static const char *bb_251_TT_Bounding_Sphere_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_251_TT_Bounding_Sphere_Intersection_ip[] = {
+    {"Entity 0", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Entity 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy 0", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchy 1", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Threshold", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_252_Get_Mouse_Displacement_inputs[] = {"In"};
+static const char *bb_252_Get_Mouse_Displacement_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_252_Get_Mouse_Displacement_op[] = {
+    {"X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Displacement Vector", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const char *bb_253_Set_2D_Position_inputs[] = {"In"};
+static const char *bb_253_Set_2D_Position_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_253_Set_2D_Position_ip[] = {
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Referential", NMO_GUID_INIT(0x181671E3, 0x1BDC1503)},
+};
+static const char *bb_254_TT_ShadowMapping_inputs[] = {"On", "Off"};
+static const char *bb_254_TT_ShadowMapping_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_254_TT_ShadowMapping_ip[] = {
+    {"Light", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"SourceBlend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"DestBlend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const nmo_bb_param_desc_t bb_254_TT_ShadowMapping_lp[] = {
+    {"Data", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_255_Volume_Control_inputs[] = {"In"};
+static const char *bb_255_Volume_Control_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_255_Volume_Control_ip[] = {
+    {"Volume", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_256_Get_Row_inputs[] = {"In"};
+static const char *bb_256_Get_Row_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_256_Get_Row_ip[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_257_Get_Column_Name_inputs[] = {"In"};
+static const char *bb_257_Get_Column_Name_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_257_Get_Column_Name_ip[] = {
+    {"Column Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_257_Get_Column_Name_op[] = {
+    {"Column Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_258_Get_Cell_inputs[] = {"In"};
+static const char *bb_258_Get_Cell_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_258_Get_Cell_ip[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Column Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_258_Get_Cell_op[] = {
+    {"Cell Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_259_TT_Register_Array_inputs[] = {"Register", "Clear"};
+static const char *bb_259_TT_Register_Array_outputs[] = {"OK", "Error"};
+static const nmo_bb_param_desc_t bb_259_TT_Register_Array_ip[] = {
+    {"Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const char *bb_260_TT_Get_Game_Score_inputs[] = {"In"};
+static const char *bb_260_TT_Get_Game_Score_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_260_TT_Get_Game_Score_op[] = {
+    {"Game Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_261_Interpolator_inputs[] = {"In"};
+static const char *bb_261_Interpolator_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_261_Interpolator_ip[] = {
+    {"A", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"B", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_261_Interpolator_op[] = {
+    {"C", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_261_Interpolator_st[] = {
+    {"Use HSV Interpolation for Color", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_262_Clear_Array_inputs[] = {"In"};
+static const char *bb_262_Clear_Array_outputs[] = {"Out"};
+static const char *bb_263_TT_Extra_inputs[] = {"On", "Off", "Initialize"};
+static const char *bb_263_TT_Extra_outputs[] = {"Activated", "Hit", "Ready"};
+static const nmo_bb_param_desc_t bb_263_TT_Extra_ip[] = {
+    {"Ball", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Number of Smallballs", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Activationdistance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Extra_Points CollDistance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Rotationspeed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Awayforce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Awaydamping", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Force", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Damping", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Forcewidth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Flyawaytime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Hitframegroup", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Flying Extra?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Exactness Framedelay", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_263_TT_Extra_op[] = {
+    {"Current Hits", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_263_TT_Extra_lp[] = {
+    {"Activationstatus", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Smallballlist", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"Shadowobject", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Centerobject", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Status", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initialized", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Timecounter", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ballcounter", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Timevalue", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Next Check", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Away Positionsave", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_263_TT_Extra_st[] = {
+    {"Exactness?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_264_TT_Sky_inputs[] = {"On", "Off"};
+static const char *bb_264_TT_Sky_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_264_TT_Sky_ip[] = {
+    {"Distortion", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Vertex Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Orientation Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Radius", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Quadratic SideFaces?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"or SideFace-Heigth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Y-Position of Sky", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_264_TT_Sky_lp[] = {
+    {"Skyaround", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_264_TT_Sky_st[] = {
+    {"Side Materials", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Top Material", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Bottom Material", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_265_Set_As_Active_Camera_inputs[] = {"In"};
+static const char *bb_265_Set_As_Active_Camera_outputs[] = {"Out"};
+static const char *bb_266_Get_Current_Camera_inputs[] = {"In"};
+static const char *bb_266_Get_Current_Camera_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_266_Get_Current_Camera_op[] = {
+    {"Current Camera", NMO_GUID_INIT(0x3CF24D6F, 0x216204F9)},
+};
+static const char *bb_267_TT_Set_Game_ID_inputs[] = {"In"};
+static const char *bb_267_TT_Set_Game_ID_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_267_TT_Set_Game_ID_ip[] = {
+    {"Game ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_268_Set_Attribute_inputs[] = {"In"};
+static const char *bb_268_Set_Attribute_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_268_Set_Attribute_ip[] = {
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const char *bb_269_Activate_Global_State_inputs[] = {"In"};
+static const char *bb_269_Activate_Global_State_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_269_Activate_Global_State_ip[] = {
+    {"State", NMO_GUID_INIT(0xABE13353, 0xA2834124)},
+};
+static const char *bb_270_Set_Material_inputs[] = {"In"};
+static const char *bb_270_Set_Material_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_270_Set_Material_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Material to replace", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_271_Global_Blur_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_271_Global_Blur_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_272_TT_ProximityVolumeControl_inputs[] = {"On", "Off"};
+static const char *bb_272_TT_ProximityVolumeControl_outputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_272_TT_ProximityVolumeControl_ip[] = {
+    {"Object #1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object #2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Near-Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Far-Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Sound", NMO_GUID_INIT(0x4BF74E5E, 0x45F409EF)},
+};
+static const nmo_bb_param_desc_t bb_272_TT_ProximityVolumeControl_lp[] = {
+    {"Status", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_273_TT_Change_ScreenMode_inputs[] = {"In"};
+static const char *bb_273_TT_Change_ScreenMode_outputs[] = {"Out", "Error"};
+static const nmo_bb_param_desc_t bb_273_TT_Change_ScreenMode_ip[] = {
+    {"Driver ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"ScreenMode ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_274_Physics_WakeUp_inputs[] = {"In"};
+static const char *bb_274_Physics_WakeUp_outputs[] = {"Out"};
+static const char *bb_275_TT_PMS_Meshdeform_inputs[] = {"In", "Off"};
+static const char *bb_275_TT_PMS_Meshdeform_outputs[] = {"Out", "Exit Off"};
+static const nmo_bb_param_desc_t bb_275_TT_PMS_Meshdeform_ip[] = {
+    {"Winddirection", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max. Amplitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"WaveScale", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"TimeScale", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"1.WaveLength in Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"1.WaveLength in X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"1.Amplitude in X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_275_TT_PMS_Meshdeform_lp[] = {
+    {"Vertex Array", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Time", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"WaveX", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"WaveY", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"WindMatrix", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+};
+static const nmo_bb_param_desc_t bb_275_TT_PMS_Meshdeform_st[] = {
+    {"Wellenanzahl", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_276_TT_SetMipMapping_inputs[] = {"In"};
+static const char *bb_276_TT_SetMipMapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_276_TT_SetMipMapping_ip[] = {
+    {"Filter Min", NMO_GUID_INIT(0x2BD753B3, 0x563E5165)},
+    {"Filter Mag", NMO_GUID_INIT(0x2BD753B3, 0x563E5165)},
+    {"MipMap Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_277_Load_String_inputs[] = {"In"};
+static const char *bb_277_Load_String_outputs[] = {"Out", "File Error"};
+static const nmo_bb_param_desc_t bb_277_Load_String_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_277_Load_String_op[] = {
+    {"String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_278_Avoid_Obstacles_inputs[] = {"In", "Loop In"};
+static const char *bb_278_Avoid_Obstacles_outputs[] = {"Loop Out"};
+static const nmo_bb_param_desc_t bb_278_Avoid_Obstacles_ip[] = {
+    {"Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Inertia", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Influence Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Keep On Floor", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_278_Avoid_Obstacles_op[] = {
+    {"New Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_279_TT_Get_Game_Name_inputs[] = {"In"};
+static const char *bb_279_TT_Get_Game_Name_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_279_TT_Get_Game_Name_op[] = {
+    {"Game Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_280_Drag_and_Drop_inputs[] = {"On", "Off"};
+static const char *bb_280_Drag_and_Drop_outputs[] = {"Dragged", "Dropped"};
+static const nmo_bb_param_desc_t bb_280_Drag_and_Drop_ip[] = {
+    {"Limit Rectangle", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const nmo_bb_param_desc_t bb_280_Drag_and_Drop_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const char *bb_281_TT_IsObjectVisible_inputs[] = {"In"};
+static const char *bb_281_TT_IsObjectVisible_outputs[] = {"Yes", "No"};
+static const nmo_bb_param_desc_t bb_281_TT_IsObjectVisible_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const char *bb_282_Column_Product_inputs[] = {"In"};
+static const char *bb_282_Column_Product_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_282_Column_Product_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_283_Rendezvous_inputs[] = {"In"};
+static const char *bb_283_Rendezvous_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_283_Rendezvous_ip[] = {
+    {"Rendezvous", NMO_GUID_INIT(0x2314A763, 0xC2F49238)},
+};
+static const nmo_bb_param_desc_t bb_283_Rendezvous_op[] = {
+    {"Number already arrived", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_284_Floor_Manager_Setup_inputs[] = {"In"};
+static const char *bb_284_Floor_Manager_Setup_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_284_Floor_Manager_Setup_ip[] = {
+    {"Angle Limit", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Cache Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Cache Threshold", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_285_Read_State_inputs[] = {"In"};
+static const char *bb_285_Read_State_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_285_Read_State_ip[] = {
+    {"Object State", NMO_GUID_INIT(0x9FB5E33C, 0x134CB77E)},
+};
+static const char *bb_286_Reverse_Order_inputs[] = {"In"};
+static const char *bb_286_Reverse_Order_outputs[] = {"Out"};
+static const char *bb_287_TT_GetMemoryStatus_inputs[] = {"In"};
+static const char *bb_287_TT_GetMemoryStatus_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_287_TT_GetMemoryStatus_op[] = {
+    {"MemoryLoad", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Total Physical Memory", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Available Physical Memory", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Total Virtual Address Space", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Available Virtual Address Space", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_288_Set_Channel_Src_Blend_inputs[] = {"In"};
+static const char *bb_288_Set_Channel_Src_Blend_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_288_Set_Channel_Src_Blend_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Blending Mode", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const char *bb_289_Set_Rectangles_inputs[] = {"In"};
+static const char *bb_289_Set_Rectangles_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_289_Set_Rectangles_ip[] = {
+    {"Destination", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Source", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const char *bb_290_Set_Material_Effect_inputs[] = {"In"};
+static const char *bb_290_Set_Material_Effect_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_290_Set_Material_Effect_ip[] = {
+    {"Effect", NMO_GUID_INIT(0x62C563E3, 0x7323470D)},
+    {"Texture 1", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Texture 2", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Texture 3", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const char *bb_291_TT_Set_2DSprite_inputs[] = {"On"};
+static const char *bb_291_TT_Set_2DSprite_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_291_TT_Set_2DSprite_ip[] = {
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"UV-Rect", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const nmo_bb_param_desc_t bb_291_TT_Set_2DSprite_st[] = {
+    {"Add Input:", NMO_GUID_INIT(0x5EA45694, 0x71FA6627)},
+};
+static const char *bb_292_Trigger_Event_inputs[] = {"In"};
+static const char *bb_292_Trigger_Event_outputs[] = {"Activate", "Deactivate"};
+static const nmo_bb_param_desc_t bb_292_Trigger_Event_lp[] = {
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_293_Enter_Critical_Section_inputs[] = {"In"};
+static const char *bb_293_Enter_Critical_Section_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_293_Enter_Critical_Section_ip[] = {
+    {"CriticalSection", NMO_GUID_INIT(0x9438212A, 0xC2F4312C)},
+};
+static const char *bb_294_Remove_Object_From_Group_inputs[] = {"In"};
+static const char *bb_294_Remove_Object_From_Group_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_294_Remove_Object_From_Group_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const char *bb_295_TT_GetGroupBoundingBox_inputs[] = {"In"};
+static const char *bb_295_TT_GetGroupBoundingBox_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_295_TT_GetGroupBoundingBox_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_295_TT_GetGroupBoundingBox_op[] = {
+    {"BBox", NMO_GUID_INIT(0x668649C8, 0x283E2EE1)},
+};
+static const char *bb_296_TT_DebugON_inputs[] = {"IN"};
+static const char *bb_296_TT_DebugON_outputs[] = {"Exit"};
+static const char *bb_297_TT_LookAt_inputs[] = {"In"};
+static const char *bb_297_TT_LookAt_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_297_TT_LookAt_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Following Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"look X-Axis", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"look Y-Axis", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"look Z-Axis", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_297_TT_LookAt_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Roll", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const char *bb_298_Broadcast_Message_inputs[] = {"In"};
+static const char *bb_298_Broadcast_Message_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_298_Broadcast_Message_ip[] = {
+    {"Message", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Type", NMO_GUID_INIT(0x19644E43, 0x4D6F6123)},
+};
+static const char *bb_299_CubicParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_299_CubicParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_299_CubicParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_299_CubicParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_299_CubicParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_300_Set_Material_3DSprite_inputs[] = {"In"};
+static const char *bb_300_Set_Material_3DSprite_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_300_Set_Material_3DSprite_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_301_Object_Keep_On_Floor_V2_inputs[] = {"On", "Off"};
+static const char *bb_301_Object_Keep_On_Floor_V2_outputs[] = {"Exit On", "Exit Off", "Touched Floor Limits"};
+static const nmo_bb_param_desc_t bb_301_Object_Keep_On_Floor_V2_ip[] = {
+    {"Follow Inclination", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Replacement Altitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Keep In Floor Boundary", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Detection Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Orientation Attenuation", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_301_Object_Keep_On_Floor_V2_op[] = {
+    {"Floor", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Floor Type", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Floor Slope", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Old Floor Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_301_Object_Keep_On_Floor_V2_st[] = {
+    {"Object Extents", NMO_GUID_INIT(0x193E0D51, 0x54625C8A)},
+};
+static const char *bb_302_Water_Texture_inputs[] = {"In"};
+static const char *bb_302_Water_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_302_Water_Texture_ip[] = {
+    {"Damping", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Border Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_303_TT_GetTime_inputs[] = {"In"};
+static const char *bb_303_TT_GetTime_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_303_TT_GetTime_op[] = {
+    {"GameTime", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_304_Variation_inputs[] = {"In", "Reset"};
+static const char *bb_304_Variation_outputs[] = {"Change", "No Change"};
+static const nmo_bb_param_desc_t bb_304_Variation_ip[] = {
+    {"X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Reset Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_304_Variation_op[] = {
+    {"Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"OldX", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_304_Variation_lp[] = {
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_305_Set_MipMap_Level_inputs[] = {"In"};
+static const char *bb_305_Set_MipMap_Level_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_305_Set_MipMap_Level_ip[] = {
+    {"Use MipMapping", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_306_Remove_Column_inputs[] = {"In"};
+static const char *bb_306_Remove_Column_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_306_Remove_Column_ip[] = {
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_307_Object_Copy_inputs[] = {"In"};
+static const char *bb_307_Object_Copy_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_307_Object_Copy_ip[] = {
+    {"Dependency Options", NMO_GUID_INIT(0x748D4E0D, 0x3BF7195B)},
+    {"Original", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const nmo_bb_param_desc_t bb_307_Object_Copy_op[] = {
+    {"Copy", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const nmo_bb_param_desc_t bb_307_Object_Copy_st[] = {
+    {"Dynamic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Awake Object", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_308_Set_2D_Material_inputs[] = {"In"};
+static const char *bb_308_Set_2D_Material_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_308_Set_2D_Material_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_309_DiscParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_309_DiscParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_309_DiscParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_309_DiscParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_309_DiscParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_310_Joystick_Camera_Orbit_inputs[] = {"On", "Off"};
+static const char *bb_310_Joystick_Camera_Orbit_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_310_Joystick_Camera_Orbit_ip[] = {
+    {"Target Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Target Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Move Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Return Speed", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Horizontal", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Min Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Max Vertical", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Zoom Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Zoom Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_310_Joystick_Camera_Orbit_lp[] = {
+    {"Initial Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Rotation Angles & Radius", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Stopping", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_310_Joystick_Camera_Orbit_st[] = {
+    {"Limits", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Returns", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Joystick Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Zoom In Button", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Zoom Out Button", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Inverse Up / Down", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Threshold", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_311_Set_Src_Blend_inputs[] = {"In"};
+static const char *bb_311_Set_Src_Blend_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_311_Set_Src_Blend_ip[] = {
+    {"Blending Mode", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const char *bb_312_Set_Zoom_inputs[] = {"In"};
+static const char *bb_312_Set_Zoom_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_312_Set_Zoom_ip[] = {
+    {"Focal Length (mm)", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_313_TT_Set_3DSprite_inputs[] = {"On"};
+static const char *bb_313_TT_Set_3DSprite_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_313_TT_Set_3DSprite_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Offset", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"UV Left,Top", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"UV Right,Bottom", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_313_TT_Set_3DSprite_st[] = {
+    {"Add Input:", NMO_GUID_INIT(0x02CF773D, 0x425A4084)},
+};
+static const char *bb_314_Draw_Rectangle_inputs[] = {"In"};
+static const char *bb_314_Draw_Rectangle_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_314_Draw_Rectangle_ip[] = {
+    {"Interior", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Screen Coordinates", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Texture Coordinates", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Border", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Border Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Border Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_315_TT_IsObjectActive_inputs[] = {"In"};
+static const char *bb_315_TT_IsObjectActive_outputs[] = {"Yes", "No"};
+static const nmo_bb_param_desc_t bb_315_TT_IsObjectActive_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const char *bb_316_Scale_inputs[] = {"In"};
+static const char *bb_316_Scale_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_316_Scale_ip[] = {
+    {"Scaling Vector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Absolute", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_317_TT_ViewFrustumClipping_inputs[] = {"In"};
+static const char *bb_317_TT_ViewFrustumClipping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_317_TT_ViewFrustumClipping_ip[] = {
+    {"Camera", NMO_GUID_INIT(0x3CF24D6F, 0x216204F9)},
+};
+static const nmo_bb_param_desc_t bb_317_TT_ViewFrustumClipping_lp[] = {
+    {"MatChannel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_318_TT_PreloadTextures_inputs[] = {"In"};
+static const char *bb_318_TT_PreloadTextures_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_318_TT_PreloadTextures_op[] = {
+    {"NumberOfTextures", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_319_Collection_Iterator_inputs[] = {"In", "Loop In"};
+static const char *bb_319_Collection_Iterator_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_319_Collection_Iterator_ip[] = {
+    {"Collection", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+};
+static const nmo_bb_param_desc_t bb_319_Collection_Iterator_op[] = {
+    {"Element", NMO_GUID_INIT(0x30EC20AB, 0x6DF6517D)},
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_320_Set_Color_Key_inputs[] = {"In"};
+static const char *bb_320_Set_Color_Key_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_320_Set_Color_Key_ip[] = {
+    {"Translucent Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Transparent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_321_Set_Physics_Hinge_inputs[] = {"Create", "Shutdown"};
+static const char *bb_321_Set_Physics_Hinge_outputs[] = {"Out1", "Out2"};
+static const nmo_bb_param_desc_t bb_321_Set_Physics_Hinge_ip[] = {
+    {"Object2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Joint Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Limitations (-180 to 180 degree)", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Lower Limit", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Upper Limit", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_321_Set_Physics_Hinge_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const char *bb_322_TT_Install_Array_inputs[] = {"In"};
+static const char *bb_322_TT_Install_Array_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_322_TT_Install_Array_ip[] = {
+    {"Array to install", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Filename of current CMO", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Show message: INSTALLED", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_323_Character_Curve_Follow_inputs[] = {"In", "Loop In"};
+static const char *bb_323_Character_Curve_Follow_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_323_Character_Curve_Follow_ip[] = {
+    {"Curve To Follow", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+    {"Start Percentage", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Character Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_323_Character_Curve_Follow_op[] = {
+    {"Current Percentage", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_323_Character_Curve_Follow_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_324_Sequencer_inputs[] = {"Reset", "In"};
+static const char *bb_324_Sequencer_outputs[] = {"Exit Reset", "Out 1"};
+static const nmo_bb_param_desc_t bb_324_Sequencer_op[] = {
+    {"Current", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_325_Get_Nearest_Object_inputs[] = {"In"};
+static const char *bb_325_Get_Nearest_Object_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_325_Get_Nearest_Object_ip[] = {
+    {"Group of Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_325_Get_Nearest_Object_op[] = {
+    {"Nearest Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_326_Create_Nodal_Path_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x1CB10760, 0x419F50C5)},
+    {"", NMO_GUID_INIT(0x9FB5E33C, 0x134CB77E)},
+};
+static const nmo_bb_param_desc_t bb_326_Create_Nodal_Path_st[] = {
+    {"Debug Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_327_Object_Keep_On_Floor_inputs[] = {"In"};
+static const char *bb_327_Object_Keep_On_Floor_outputs[] = {"Out"};
+static const char *bb_328_Keyboard_Controller_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_328_Keyboard_Controller_lp[] = {
+    {"Messages", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_329_Enhanced_Character_Controller_inputs[] = {"On", "Off"};
+static const nmo_bb_param_desc_t bb_329_Enhanced_Character_Controller_ip[] = {
+    {"Stand Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Walk Animation (Up)", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Walk Backward Animation (Down)", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Run Animation (B1)", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Creep Animation (B2)", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Jump Animation (B3)", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Dance Animation (B4)", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const nmo_bb_param_desc_t bb_329_Enhanced_Character_Controller_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_330_Fill_Group_By_Class_inputs[] = {"In"};
+static const char *bb_330_Fill_Group_By_Class_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_330_Fill_Group_By_Class_ip[] = {
+    {"Class", NMO_GUID_INIT(0x19644E43, 0x4D6F6123)},
+    {"Derived Classes", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Only In Current Scene", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_331_Per_Second_inputs[] = {"In"};
+static const char *bb_331_Per_Second_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_331_Per_Second_ip[] = {
+    {"pIn 0", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_331_Per_Second_op[] = {
+    {"pOut 0", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_332_TT_Homing_Missile_inputs[] = {"In", "Loop In"};
+static const char *bb_332_TT_Homing_Missile_outputs[] = {"Target Reach", "Loop Out"};
+static const nmo_bb_param_desc_t bb_332_TT_Homing_Missile_ip[] = {
+    {"Destination", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Missilespeed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Adaptationspeed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_332_TT_Homing_Missile_op[] = {
+    {"Current Velocity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_333_Planar_Reflection_inputs[] = {"On", "Off"};
+static const char *bb_333_Planar_Reflection_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_333_Planar_Reflection_ip[] = {
+    {"Reflection Group(s)", NMO_GUID_INIT(0x4A5D4963, 0x4D28883F)},
+    {"Plane Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_333_Planar_Reflection_st[] = {
+    {"Discard Off Mirror Reflection", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_334_TT_RealShadowMapping_inputs[] = {"On", "Off"};
+static const char *bb_334_TT_RealShadowMapping_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_334_TT_RealShadowMapping_ip[] = {
+    {"Light-Vector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"SourceBlend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"DestBlend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+};
+static const nmo_bb_param_desc_t bb_334_TT_RealShadowMapping_op[] = {
+    {"Eckpunkt1", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Eckpunkt2", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Eckpunkt3", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Eckpunkt4", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Mittelpunkt", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_334_TT_RealShadowMapping_lp[] = {
+    {"Data", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Active", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_335_Set_Specular_Power_inputs[] = {"In"};
+static const char *bb_335_Set_Specular_Power_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_335_Set_Specular_Power_ip[] = {
+    {"Power", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_336_Object_Between_inputs[] = {"In"};
+static const char *bb_336_Object_Between_outputs[] = {"Yes", "No"};
+static const nmo_bb_param_desc_t bb_336_Object_Between_ip[] = {
+    {"Object 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object 2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Intersection Precision Level", NMO_GUID_INIT(0x6CF55733, 0x5AF72DAE)},
+    {"Test Only Obstacles", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_336_Object_Between_op[] = {
+    {"Obstacle", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_337_Is_In_View_Frustum_inputs[] = {"In"};
+static const char *bb_337_Is_In_View_Frustum_outputs[] = {"Inside", "Outside"};
+static const nmo_bb_param_desc_t bb_337_Is_In_View_Frustum_ip[] = {
+    {"Object", NMO_GUID_INIT(0x65706358, 0x63627B50)},
+    {"Test Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_337_Is_In_View_Frustum_op[] = {
+    {"Extents", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Fully Inside", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_338_Get_Message_Data_inputs[] = {"In"};
+static const char *bb_338_Get_Message_Data_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_338_Get_Message_Data_ip[] = {
+    {"Message", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+};
+static const nmo_bb_param_desc_t bb_338_Get_Message_Data_op[] = {
+    {"Sender", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const nmo_bb_param_desc_t bb_338_Get_Message_Data_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_338_Get_Message_Data_st[] = {
+    {"Can get several Message per Frame", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_339_Wait_Message_inputs[] = {"In", "Stop"};
+static const char *bb_339_Wait_Message_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_339_Wait_Message_ip[] = {
+    {"Message", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+};
+static const char *bb_340_Set_Linear_Attenuation_inputs[] = {"In"};
+static const char *bb_340_Set_Linear_Attenuation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_340_Set_Linear_Attenuation_ip[] = {
+    {"Linear Attenuation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_341_Set_Lighting_Mode_inputs[] = {"In"};
+static const char *bb_341_Set_Lighting_Mode_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_341_Set_Lighting_Mode_ip[] = {
+    {"Lighting Mode", NMO_GUID_INIT(0x6DD30F0A, 0x74671D2E)},
+};
+static const char *bb_342_Add_Child_inputs[] = {"In"};
+static const char *bb_342_Add_Child_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_342_Add_Child_ip[] = {
+    {"Child", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_343_Leave_Critical_Section_inputs[] = {"In"};
+static const char *bb_343_Leave_Critical_Section_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_343_Leave_Critical_Section_ip[] = {
+    {"Critical Section", NMO_GUID_INIT(0x9438212A, 0xC2F4312C)},
+};
+static const char *bb_344_TT_ReadRegistry_inputs[] = {"In"};
+static const char *bb_344_TT_ReadRegistry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_344_TT_ReadRegistry_ip[] = {
+    {"Reg-Section  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Reg-Entry", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Destination-Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Array to load", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_344_TT_ReadRegistry_op[] = {
+    {"Data", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_344_TT_ReadRegistry_st[] = {
+    {"SaveArray-Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_345_Set_Portal_inputs[] = {"In"};
+static const char *bb_345_Set_Portal_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_345_Set_Portal_ip[] = {
+    {"Place 1", NMO_GUID_INIT(0x249530ED, 0x4C0865F3)},
+    {"Place 2", NMO_GUID_INIT(0x249530ED, 0x4C0865F3)},
+    {"Auto Fit", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_346_Get_Highest_inputs[] = {"In"};
+static const char *bb_346_Get_Highest_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_346_Get_Highest_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_346_Get_Highest_op[] = {
+    {"Row Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_347_Pixel_Value_inputs[] = {"In"};
+static const char *bb_347_Pixel_Value_outputs[] = {"In Range", "Out Range"};
+static const nmo_bb_param_desc_t bb_347_Pixel_Value_ip[] = {
+    {"Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"(U,V)", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Address Mode", NMO_GUID_INIT(0x080D38D5, 0x02CF7A30)},
+};
+static const nmo_bb_param_desc_t bb_347_Pixel_Value_op[] = {
+    {"Pixel", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_347_Pixel_Value_st[] = {
+    {"Use 2D Vector", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Homogeneous", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_348_Get_Delta_Time_inputs[] = {"In"};
+static const char *bb_348_Get_Delta_Time_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_348_Get_Delta_Time_op[] = {
+    {"Delta Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_349_Get_Key_Row_inputs[] = {"In"};
+static const char *bb_349_Get_Key_Row_outputs[] = {"Found", "Not Found"};
+static const char *bb_350_Column_Sum_inputs[] = {"In"};
+static const char *bb_350_Column_Sum_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_350_Column_Sum_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_351_TT_ListDir_inputs[] = {"IN"};
+static const char *bb_351_TT_ListDir_outputs[] = {"OUT"};
+static const nmo_bb_param_desc_t bb_351_TT_ListDir_ip[] = {
+    {"SearchPath", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const char *bb_352_PlanarParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_352_PlanarParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_352_PlanarParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_352_PlanarParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_352_PlanarParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_353_TT_Debug_inputs[] = {"IN"};
+static const char *bb_353_TT_Debug_outputs[] = {"Exit"};
+static const nmo_bb_param_desc_t bb_353_TT_Debug_ip[] = {
+    {"DebugText", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Console", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Log-File", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Enable", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_354_Remove_Channel_inputs[] = {"In"};
+static const char *bb_354_Remove_Channel_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_354_Remove_Channel_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_355_CurveParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_355_CurveParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_355_CurveParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_355_CurveParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_355_CurveParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_356_Lightmap_inputs[] = {"On", "Off", "Generate"};
+static const char *bb_356_Lightmap_outputs[] = {"Exit On", "Exit Off", "Exit Generate"};
+static const nmo_bb_param_desc_t bb_356_Lightmap_ip[] = {
+    {"Receiving Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Occluder Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Lights", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"LightMap Resolution", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Supersampling", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Blur Pass", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Threshold", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Opacity", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_356_Lightmap_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"", NMO_GUID_INIT(0x9FB5E33C, 0x134CB77E)},
+};
+static const nmo_bb_param_desc_t bb_356_Lightmap_st[] = {
+    {"Save", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Show Polygons", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Display Computation Time", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_357_Static_Lightmap_inputs[] = {"In"};
+static const char *bb_357_Static_Lightmap_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_357_Static_Lightmap_ip[] = {
+    {"Receiving Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Occluder Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Lights", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"LightMap Resolution", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Supersampling", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Blur Pass", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Threshold", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const nmo_bb_param_desc_t bb_357_Static_Lightmap_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_357_Static_Lightmap_st[] = {
+    {"Display Computation Time", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_358_Write_Config_inputs[] = {"In"};
+static const char *bb_358_Write_Config_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_358_Write_Config_ip[] = {
+    {"Section", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Entry", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Data", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_359_Read_Config_inputs[] = {"In"};
+static const char *bb_359_Read_Config_outputs[] = {"Out", "Entry Not Present"};
+static const nmo_bb_param_desc_t bb_359_Read_Config_ip[] = {
+    {"Section", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Entry", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_359_Read_Config_op[] = {
+    {"Data", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_360_Scan_String_inputs[] = {"In"};
+static const char *bb_360_Scan_String_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_360_Scan_String_ip[] = {
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Delimiter", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_360_Scan_String_op[] = {
+    {"Elements Found", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_361_Position_Sound_inputs[] = {"In"};
+static const char *bb_361_Position_Sound_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_361_Position_Sound_ip[] = {
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_362_Calculator_inputs[] = {"In"};
+static const char *bb_362_Calculator_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_362_Calculator_ip[] = {
+    {"expression", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"a", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_362_Calculator_op[] = {
+    {"x", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_362_Calculator_lp[] = {
+    {"", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_363_Create_String_inputs[] = {"Create", "Add Line", "Clear"};
+static const char *bb_363_Create_String_outputs[] = {"Create Out", "Add Line Out", "Clear Out"};
+static const nmo_bb_param_desc_t bb_363_Create_String_ip[] = {
+    {"Delimiter", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_363_Create_String_op[] = {
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_364_Sprite_Movie_Player_inputs[] = {"On", "Off"};
+static const char *bb_364_Sprite_Movie_Player_outputs[] = {"Slot Complete", "Movie Complete"};
+static const nmo_bb_param_desc_t bb_364_Sprite_Movie_Player_ip[] = {
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Loop", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Starting Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Ending Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_364_Sprite_Movie_Player_op[] = {
+    {"Current Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_364_Sprite_Movie_Player_lp[] = {
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_365_Switch_On_Parameter_inputs[] = {"In"};
+static const char *bb_365_Switch_On_Parameter_outputs[] = {"None", "Out 1"};
+static const nmo_bb_param_desc_t bb_365_Switch_On_Parameter_ip[] = {
+    {"Test", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Pin 1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_365_Switch_On_Parameter_st[] = {
+    {"Float epsilon", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_366_TT_GetEnvironmentVariable_inputs[] = {"Go and get it!"};
+static const char *bb_366_TT_GetEnvironmentVariable_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_366_TT_GetEnvironmentVariable_ip[] = {
+    {"Variablename", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_366_TT_GetEnvironmentVariable_op[] = {
+    {"Environment Variable", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_367_Character_Go_To_Node_inputs[] = {"In", "Loop In", "Stop"};
+static const char *bb_367_Character_Go_To_Node_outputs[] = {"Arrived", "Can't Go", "Loop Out"};
+static const nmo_bb_param_desc_t bb_367_Character_Go_To_Node_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Goal Node", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Guard Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Character Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Limit Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Mark Occupation", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_367_Character_Go_To_Node_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_367_Character_Go_To_Node_st[] = {
+    {"Turn With Messages", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Rotation Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_368_Activate_Script_inputs[] = {"In"};
+static const char *bb_368_Activate_Script_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_368_Activate_Script_ip[] = {
+    {"Reset ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+};
+static const nmo_bb_param_desc_t bb_368_Activate_Script_st[] = {
+    {"Awake Object", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_369_TT_OperationSystem_inputs[] = {"In"};
+static const char *bb_369_TT_OperationSystem_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_369_TT_OperationSystem_op[] = {
+    {"PlattformId", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"MinorVersion", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"MajorVersion", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_370_Object_Rename_inputs[] = {"In"};
+static const char *bb_370_Object_Rename_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_370_Object_Rename_ip[] = {
+    {"Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_371_Exclude_From_Animation_inputs[] = {"In"};
+static const char *bb_371_Exclude_From_Animation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_371_Exclude_From_Animation_ip[] = {
+    {"Exclude", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_372_Set_Render_Options_inputs[] = {"In"};
+static const char *bb_372_Set_Render_Options_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_372_Set_Render_Options_ip[] = {
+    {"Render Options", NMO_GUID_INIT(0x745655A9, 0x61BB29A1)},
+    {"Global Shade Mode", NMO_GUID_INIT(0x0259699F, 0x6EDA4960)},
+    {"Use Textures", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Add Wireframe Layer", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_373_Frustum_Object_Intersection_inputs[] = {"In"};
+static const char *bb_373_Frustum_Object_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_373_Frustum_Object_Intersection_ip[] = {
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Local", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_374_TT_SceneStencilShadow_inputs[] = {"On", "Off"};
+static const char *bb_374_TT_SceneStencilShadow_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_374_TT_SceneStencilShadow_ip[] = {
+    {"Light", NMO_GUID_INIT(0x4B6D412F, 0x5D1E1416)},
+    {"ShadowColor", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_374_TT_SceneStencilShadow_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+    {"", NMO_GUID_INIT(0x181671E3, 0x1BDC1503)},
+    {"", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"LightMatrix", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+    {"ObjectCount", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_375_Light_Sprite_inputs[] = {"On", "Off"};
+static const char *bb_375_Light_Sprite_outputs[] = {"Out (Loop)"};
+static const nmo_bb_param_desc_t bb_375_Light_Sprite_ip[] = {
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size Scale", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_375_Light_Sprite_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_376_TT_PushButton_inputs[] = {"On", "Off"};
+static const char *bb_376_TT_PushButton_outputs[] = {"Released", "Roll Over", "Mouse Down", "Mouse Up"};
+static const nmo_bb_param_desc_t bb_376_TT_PushButton_ip[] = {
+    {"Released Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Pressed Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"RollOver Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_376_TT_PushButton_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_377_Test_Cell_inputs[] = {"In"};
+static const char *bb_377_Test_Cell_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_377_Test_Cell_ip[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operation", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const char *bb_378_TT_List_ScreenModes_inputs[] = {"In"};
+static const char *bb_378_TT_List_ScreenModes_outputs[] = {"OK", "Error"};
+static const nmo_bb_param_desc_t bb_378_TT_List_ScreenModes_ip[] = {
+    {"Driver ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Return: Modes", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const nmo_bb_param_desc_t bb_378_TT_List_ScreenModes_op[] = {
+    {"Installed Mode", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_379_TT_GetUV2DSprite_inputs[] = {"On"};
+static const char *bb_379_TT_GetUV2DSprite_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_379_TT_GetUV2DSprite_op[] = {
+    {"UV-Rect", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const char *bb_380_Add_Object_To_Scene_inputs[] = {"In"};
+static const char *bb_380_Add_Object_To_Scene_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_380_Add_Object_To_Scene_ip[] = {
+    {"Scene", NMO_GUID_INIT(0x25AE6BD7, 0x7C8F73A2)},
+    {"Copy Current Scene Activation", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Activity Options", NMO_GUID_INIT(0x1CD24241, 0x533C0F8F)},
+};
+static const char *bb_381_Column_Transform_inputs[] = {"In"};
+static const char *bb_381_Column_Transform_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_381_Column_Transform_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operation", NMO_GUID_INIT(0x2CE46C85, 0x4B791332)},
+};
+static const char *bb_382_TT_SinusMeshdeform_inputs[] = {"On", "Off"};
+static const char *bb_382_TT_SinusMeshdeform_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_382_TT_SinusMeshdeform_ip[] = {
+    {"1. Timefactor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"1. Heigth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"1. Wavelength", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"1. Sinpos", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_382_TT_SinusMeshdeform_lp[] = {
+    {"SinusCount", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Vertex Array", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Wave Params", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_382_TT_SinusMeshdeform_st[] = {
+    {"SinusCount", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_383_TT_Set_Level_Bonus_inputs[] = {"In"};
+static const char *bb_383_TT_Set_Level_Bonus_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_383_TT_Set_Level_Bonus_ip[] = {
+    {"Level Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_384_TT_KeySwitch_inputs[] = {"On", "Off"};
+static const char *bb_384_TT_KeySwitch_outputs[] = {"Out 0", "Out 1"};
+static const nmo_bb_param_desc_t bb_384_TT_KeySwitch_ip[] = {
+    {"Key 0", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key 1", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const char *bb_385_Texture_Sine_inputs[] = {"In"};
+static const char *bb_385_Texture_Sine_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_385_Texture_Sine_ip[] = {
+    {"X Amplitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Y Amplitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Velocity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_385_Texture_Sine_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_386_Point_Particle_System_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_386_Point_Particle_System_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_386_Point_Particle_System_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_386_Point_Particle_System_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_386_Point_Particle_System_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_387_TT_Get_Integer_Value_From_Regist_inputs[] = {"In"};
+static const char *bb_387_TT_Get_Integer_Value_From_Regist_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_387_TT_Get_Integer_Value_From_Regist_ip[] = {
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_387_TT_Get_Integer_Value_From_Regist_op[] = {
+    {"Integer Value ", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_388_TT_GetCurvePoint_inputs[] = {"In"};
+static const char *bb_388_TT_GetCurvePoint_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_388_TT_GetCurvePoint_ip[] = {
+    {"Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_388_TT_GetCurvePoint_op[] = {
+    {"CurvePoint", NMO_GUID_INIT(0x5CC5194F, 0x72342879)},
+};
+static const char *bb_389_Fill_Layer_inputs[] = {"In"};
+static const char *bb_389_Fill_Layer_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_389_Fill_Layer_ip[] = {
+    {"Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_390_TT_SpeedOMeter_inputs[] = {"In"};
+static const char *bb_390_TT_SpeedOMeter_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_390_TT_SpeedOMeter_op[] = {
+    {"Absolute Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_390_TT_SpeedOMeter_lp[] = {
+    {"Last Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_390_TT_SpeedOMeter_st[] = {
+    {"Calculate relative speed?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Loop-Framedelay?", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_391_Activate_Link_inputs[] = {"In"};
+static const char *bb_391_Activate_Link_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_391_Activate_Link_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Start Node", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"End Node", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Activate", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Two Way", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_392_Deactivate_Global_State_inputs[] = {"In"};
+static const char *bb_392_Deactivate_Global_State_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_392_Deactivate_Global_State_ip[] = {
+    {"State", NMO_GUID_INIT(0xABE13353, 0xA2834124)},
+};
+static const char *bb_393_TT_ReplacePath_inputs[] = {"In"};
+static const char *bb_393_TT_ReplacePath_outputs[] = {"Ok", "Failed"};
+static const nmo_bb_param_desc_t bb_393_TT_ReplacePath_ip[] = {
+    {"Old_relative_Path(\\..)", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"New_relative_Path(\\..)", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"CurrentWorking_Directory(Drive:\\..\\..)", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"PathIDX(0=Texture/1=Data/2=Sound)", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_394_Filter_Texture_inputs[] = {"In"};
+static const char *bb_394_Filter_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_394_Filter_Texture_ip[] = {
+    {"Matrix Row 1", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Matrix Row 2", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Matrix Row 3", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Scale", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_395_TT_InputString_inputs[] = {"On", "Off"};
+static const char *bb_395_TT_InputString_outputs[] = {"On", "Off", "Updated String"};
+static const nmo_bb_param_desc_t bb_395_TT_InputString_ip[] = {
+    {"Reset String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"End Key", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_395_TT_InputString_op[] = {
+    {"String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"StringWithoutCaret", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Key", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_395_TT_InputString_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_395_TT_InputString_st[] = {
+    {"Max Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Keyboard Repetition", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Multiline", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Disable Keyboard Section", NMO_GUID_INIT(0x7A4347DD, 0x59A82CCE)},
+    {"Use Caret", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_396_TT_RefractionMapping_inputs[] = {"On", "Off"};
+static const char *bb_396_TT_RefractionMapping_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_396_TT_RefractionMapping_ip[] = {
+    {"MatChannel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Camera", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Depth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Refractionfactor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_397_Proximity_inputs[] = {"In"};
+static const char *bb_397_Proximity_outputs[] = {"In Range", "Out Range", "Enter Range", "Exit Range"};
+static const nmo_bb_param_desc_t bb_397_Proximity_ip[] = {
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Object A", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object B", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Barycenter", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_397_Proximity_op[] = {
+    {"Current Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_397_Proximity_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_397_Proximity_st[] = {
+    {"Use Ouputs:", NMO_GUID_INIT(0x7FFF5699, 0x7571336D)},
+};
+static const char *bb_398_Value_Count_inputs[] = {"In"};
+static const char *bb_398_Value_Count_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_398_Value_Count_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operator", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_398_Value_Count_op[] = {
+    {"Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_399_TT_ExistFile_inputs[] = {"IN"};
+static const char *bb_399_TT_ExistFile_outputs[] = {"Yes", "No"};
+static const nmo_bb_param_desc_t bb_399_TT_ExistFile_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_400_DeleteCollisionSurfaces_inputs[] = {"In"};
+static const char *bb_400_DeleteCollisionSurfaces_outputs[] = {"Out"};
+static const char *bb_401_Blend_Textures_inputs[] = {"In"};
+static const char *bb_401_Blend_Textures_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_401_Blend_Textures_ip[] = {
+    {"Texture 1", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Texture 2", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Blend Factor", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_402_TT_ReplaceInputparameter_inputs[] = {"Replace!"};
+static const nmo_bb_param_desc_t bb_402_TT_ReplaceInputparameter_ip[] = {
+    {"Get-Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+    {"Get-Parametername", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Set-Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+    {"Set-Parametername", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_403_Portal_Management_inputs[] = {"On", "Off"};
+static const char *bb_403_Portal_Management_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_403_Portal_Management_ip[] = {
+    {"Debug Cameras", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Traversal Depth", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"TransPlace Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_403_Portal_Management_op[] = {
+    {"Current Places", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+    {"Rendered Places", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+    {"Rendered TransPlace Objects", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+};
+static const nmo_bb_param_desc_t bb_403_Portal_Management_st[] = {
+    {"Automatically Create Portals", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_404_Activate_Channel_inputs[] = {"In"};
+static const char *bb_404_Activate_Channel_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_404_Activate_Channel_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Activate", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_405_TT_GetCurrentDirectory_inputs[] = {"IN"};
+static const char *bb_405_TT_GetCurrentDirectory_outputs[] = {"OK", "Fail"};
+static const nmo_bb_param_desc_t bb_405_TT_GetCurrentDirectory_op[] = {
+    {"CurrentDirectory", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_406_Mini_Calculator_inputs[] = {"In"};
+static const char *bb_406_Mini_Calculator_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_406_Mini_Calculator_ip[] = {
+    {"Operator", NMO_GUID_INIT(0x2CE46C85, 0x4B791332)},
+    {"a", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"b", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_406_Mini_Calculator_op[] = {
+    {"x", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_407_Set_Bodypart_Animation_Frame_inputs[] = {"In"};
+static const char *bb_407_Set_Bodypart_Animation_Frame_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_407_Set_Bodypart_Animation_Frame_ip[] = {
+    {"Frame", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const char *bb_408_TT_Exists_GameInfo___inputs[] = {"In"};
+static const char *bb_408_TT_Exists_GameInfo___outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_408_TT_Exists_GameInfo___ip[] = {
+    {"Address of GameInfo (hex)", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_409_Multi_Collision_Detection_inputs[] = {"On", "Off", "Loop In"};
+static const char *bb_409_Multi_Collision_Detection_outputs[] = {"Exit On", "Exit Off", "All Collisions parsed", "Loop Out"};
+static const nmo_bb_param_desc_t bb_409_Multi_Collision_Detection_ip[] = {
+    {"Geometry Precision", NMO_GUID_INIT(0x5F3B233C, 0x33AE36B6)},
+};
+static const nmo_bb_param_desc_t bb_409_Multi_Collision_Detection_op[] = {
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Object 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object 2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object 1 Part", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object 2 Part", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Object 1 Face", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Object 2 Face", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Object 1 Vertex", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Object 2 Vertex", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Impact Point", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Impact Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_409_Multi_Collision_Detection_st[] = {
+    {"Impact Data", NMO_GUID_INIT(0x507F4CA4, 0x548E153C)},
+};
+static const char *bb_410_Collision_Detection_inputs[] = {"In"};
+static const char *bb_410_Collision_Detection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_410_Collision_Detection_ip[] = {
+    {"Geometry Precision", NMO_GUID_INIT(0x5F3B233C, 0x33AE36B6)},
+    {"Detection Tests", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Safe Position Tests", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_410_Collision_Detection_op[] = {
+    {"Object Part", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Touched Obstacle", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Touched Sub Obstacle", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Touched Face", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Touching Face", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Touched Vertex", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Touching Vertex", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Impact Point", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Impact Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Impact Orientation", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+};
+static const nmo_bb_param_desc_t bb_410_Collision_Detection_st[] = {
+    {"Impact Data", NMO_GUID_INIT(0x507F4CA4, 0x548E153C)},
+};
+static const char *bb_411_TT_DeleteFile_inputs[] = {"IN"};
+static const char *bb_411_TT_DeleteFile_outputs[] = {"OK", "Fail"};
+static const nmo_bb_param_desc_t bb_411_TT_DeleteFile_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_412_TT_Set_2DSprite_old_inputs[] = {"On"};
+static const char *bb_412_TT_Set_2DSprite_old_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_412_TT_Set_2DSprite_old_ip[] = {
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"UV Left,Rigth", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"UV Top,Bottom", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_412_TT_Set_2DSprite_old_st[] = {
+    {"Add Input:", NMO_GUID_INIT(0x5EA45694, 0x71FA6627)},
+};
+static const char *bb_413_Create_Blended_Animation_2_inputs[] = {"Create"};
+static const char *bb_413_Create_Blended_Animation_2_outputs[] = {"Exit Created"};
+static const nmo_bb_param_desc_t bb_413_Create_Blended_Animation_2_ip[] = {
+    {"Animation 0", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Animation 1", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const nmo_bb_param_desc_t bb_413_Create_Blended_Animation_2_op[] = {
+    {"Blended Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const nmo_bb_param_desc_t bb_413_Create_Blended_Animation_2_st[] = {
+    {"Dynamic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Add to character", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_414_TT_Set_Level_Score_inputs[] = {"In"};
+static const char *bb_414_TT_Set_Level_Score_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_414_TT_Set_Level_Score_ip[] = {
+    {"Level Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_415_TT_TimedependentPointParticlesys_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_415_TT_TimedependentPointParticlesys_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_415_TT_TimedependentPointParticlesys_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_415_TT_TimedependentPointParticlesys_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_415_TT_TimedependentPointParticlesys_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_416_SetPhysicsForce_inputs[] = {"Create", "Shutdown"};
+static const char *bb_416_SetPhysicsForce_outputs[] = {"Out1", "Out2"};
+static const nmo_bb_param_desc_t bb_416_SetPhysicsForce_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Pos Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Direction Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Force Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_416_SetPhysicsForce_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const char *bb_417_Physics_Reset_inputs[] = {"In"};
+static const char *bb_417_Physics_Reset_outputs[] = {"Out"};
+static const char *bb_418_TT_Get_Level_Bonus_inputs[] = {"In"};
+static const char *bb_418_TT_Get_Level_Bonus_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_418_TT_Get_Level_Bonus_op[] = {
+    {"Level Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_419_Remove_Row_If_inputs[] = {"In"};
+static const char *bb_419_Remove_Row_If_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_419_Remove_Row_If_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operation", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_419_Remove_Row_If_op[] = {
+    {"Number Removed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_420_Is_In_Group_inputs[] = {"In"};
+static const char *bb_420_Is_In_Group_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_420_Is_In_Group_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_421_Screen_Mapping_inputs[] = {"In"};
+static const char *bb_421_Screen_Mapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_421_Screen_Mapping_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Screen UVs", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Rotation", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const nmo_bb_param_desc_t bb_421_Screen_Mapping_st[] = {
+    {"Disable Perspective Correction", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_422_TT_Activate_Object_inputs[] = {"In"};
+static const char *bb_422_TT_Activate_Object_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_422_TT_Activate_Object_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Reset Scripts?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Activate All Scripts", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_423_TT_Joystick_Waiter_inputs[] = {"On", "Off"};
+static const char *bb_423_TT_Joystick_Waiter_outputs[] = {"Joystick Idle", "Axis X Moved", "Axis Y Moved"};
+static const nmo_bb_param_desc_t bb_423_TT_Joystick_Waiter_ip[] = {
+    {"Joystick Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_423_TT_Joystick_Waiter_op[] = {
+    {"Analog Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Rotation", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Sliders", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Point Of View", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Sliders Diff", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_423_TT_Joystick_Waiter_st[] = {
+    {"Axis Sensitivity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Axis Outputs", NMO_GUID_INIT(0x1ED64A6A, 0x5A24059A)},
+    {"Button Outputs", NMO_GUID_INIT(0x4A5D4963, 0x4D28883F)},
+    {"Relative Moves", NMO_GUID_INIT(0x1ED64A6A, 0x5A24059A)},
+};
+static const char *bb_424_Unlimited_Controller_inputs[] = {"On", "Off"};
+static const char *bb_424_Unlimited_Controller_outputs[] = {"Exit On", "exit Off"};
+static const nmo_bb_param_desc_t bb_424_Unlimited_Controller_op[] = {
+    {"Current Anim", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Current Msg", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Current Step (0..1)", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Current Frame", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_424_Unlimited_Controller_lp[] = {
+    {"Anims", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+    {"Data", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"NbData", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Floor", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Rotates", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"MsgRot", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Data2", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"NbData2", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_424_Unlimited_Controller_st[] = {
+    {"Detection Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_425_TT_FollowCamera_inputs[] = {"On", "Stop"};
+static const char *bb_425_TT_FollowCamera_outputs[] = {"Exit On", "Exit Stop"};
+static const nmo_bb_param_desc_t bb_425_TT_FollowCamera_ip[] = {
+    {"Target Entity", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"View Offset", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"View Attenuation", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Camera Offset", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Camera Attenuation", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"FOV Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Back Attenuation", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_425_TT_FollowCamera_lp[] = {
+    {"ViewPosOld", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"CamPosOld", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"oldDeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"init", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_425_TT_FollowCamera_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Init actPos", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_426_TT_Get_Boolean_Value_From_Regist_inputs[] = {"In"};
+static const char *bb_426_TT_Get_Boolean_Value_From_Regist_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_426_TT_Get_Boolean_Value_From_Regist_ip[] = {
+    {"RegKey  ..\\...\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_426_TT_Get_Boolean_Value_From_Regist_op[] = {
+    {"Integer Value ", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_427_Set_Quaternion_Orientation_inputs[] = {"In"};
+static const char *bb_427_Set_Quaternion_Orientation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_427_Set_Quaternion_Orientation_ip[] = {
+    {"Orientation", NMO_GUID_INIT(0x06C439EE, 0x45B50FC2)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_428_TT_GeneratePlane_inputs[] = {"In"};
+static const char *bb_428_TT_GeneratePlane_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_428_TT_GeneratePlane_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Scale", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Size X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Size Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_429_TT_SplitString_inputs[] = {"In"};
+static const char *bb_429_TT_SplitString_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_429_TT_SplitString_ip[] = {
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Delimiter", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_429_TT_SplitString_op[] = {
+    {"Elements Found", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_430_Get_Mouse_Position_inputs[] = {"In"};
+static const char *bb_430_Get_Mouse_Position_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_430_Get_Mouse_Position_op[] = {
+    {"X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Position", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_430_Get_Mouse_Position_st[] = {
+    {"Windowed Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_431_TT_Exit_to_System_inputs[] = {"In"};
+static const char *bb_431_TT_Exit_to_System_outputs[] = {"Out"};
+static const char *bb_432_Wave_Player_inputs[] = {"Play", "Stop", "Pause/Resume"};
+static const char *bb_432_Wave_Player_outputs[] = {"Start Playing", "End Playing", "Paused/Resumed"};
+static const nmo_bb_param_desc_t bb_432_Wave_Player_ip[] = {
+    {"Fade In", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Fade Out", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Loop", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_433_TT_Read_Array_inputs[] = {"In"};
+static const char *bb_433_TT_Read_Array_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_433_TT_Read_Array_ip[] = {
+    {"Name of Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Filename of CMO", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Show message: 'red array'", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_434_TT_SaveAlpha_inputs[] = {"In"};
+static const char *bb_434_TT_SaveAlpha_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_434_TT_SaveAlpha_ip[] = {
+    {"Filename", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_435_TT_Save_Database_inputs[] = {"Save"};
+static const char *bb_435_TT_Save_Database_outputs[] = {"OK", "Error"};
+static const char *bb_436_Chrono_inputs[] = {"On", "Off"};
+static const char *bb_436_Chrono_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_436_Chrono_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_437_Spherical_Mapping_inputs[] = {"In"};
+static const char *bb_437_Spherical_Mapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_437_Spherical_Mapping_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Mapping Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"UV Tile", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Wrap Correction", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_438_Set_Physics_Ball_Joint_inputs[] = {"Create", "Shutdown"};
+static const char *bb_438_Set_Physics_Ball_Joint_outputs[] = {"Out1", "Out2"};
+static const nmo_bb_param_desc_t bb_438_Set_Physics_Ball_Joint_ip[] = {
+    {"Object2", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Position 1", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_438_Set_Physics_Ball_Joint_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_438_Set_Physics_Ball_Joint_st[] = {
+    {"Specify 2 Points ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_439_Activate_Object_inputs[] = {"In"};
+static const char *bb_439_Activate_Object_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_439_Activate_Object_ip[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Reset ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Activate All Scripts", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Reset Scripts", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_440_Hierarchy_Parser_inputs[] = {"In", "Loop In"};
+static const char *bb_440_Hierarchy_Parser_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_440_Hierarchy_Parser_ip[] = {
+    {"Max Depth", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_440_Hierarchy_Parser_op[] = {
+    {"Current", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Depth", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_441_Send_Message_To_Group_inputs[] = {"In"};
+static const char *bb_441_Send_Message_To_Group_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_441_Send_Message_To_Group_ip[] = {
+    {"Message", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_442_Statistics_inputs[] = {"On", "Off"};
+static const char *bb_442_Statistics_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_442_Statistics_op[] = {
+    {"Frame Rate", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Interface Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Processing Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Rendering Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Parametric operations Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Animation Management Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"IK Management Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Total Behavior Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Behavior Execution Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Active Object Executed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Behaviors Executed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Building Block Executed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Links Parsed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Links Delayed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Faces Drawn", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Lines Drawn", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Points Drawn", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Objects Drawn", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Vertices Processed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_442_Statistics_st[] = {
+    {"Frame Rate", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"General Time", NMO_GUID_INIT(0x0FE82E7C, 0x0098173F)},
+    {"Behavioral", NMO_GUID_INIT(0x3B542289, 0x2F627ABB)},
+    {"Rendering", NMO_GUID_INIT(0x54A578A6, 0x53F144D4)},
+};
+static const char *bb_443_Set_Prelit_Color_inputs[] = {"In"};
+static const char *bb_443_Set_Prelit_Color_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_443_Set_Prelit_Color_ip[] = {
+    {"Filtering Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Additional Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_444_Group_Iterator_inputs[] = {"In", "Loop In"};
+static const char *bb_444_Group_Iterator_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_444_Group_Iterator_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_444_Group_Iterator_op[] = {
+    {"Element", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_445_ShadowStencil_inputs[] = {"On", "Off"};
+static const char *bb_445_ShadowStencil_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_445_ShadowStencil_ip[] = {
+    {"Shadow Range Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Shadow Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Show Shadow Volumes", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Camera Can Penetrate Shadow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_445_ShadowStencil_op[] = {
+    {"Light Occluders Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_446_Check_For_Message_inputs[] = {"In"};
+static const char *bb_446_Check_For_Message_outputs[] = {"No Message", "Message Arrived"};
+static const nmo_bb_param_desc_t bb_446_Check_For_Message_ip[] = {
+    {"Message", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+};
+static const nmo_bb_param_desc_t bb_446_Check_For_Message_op[] = {
+    {"Message Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_447_Set_Orientation_inputs[] = {"In"};
+static const char *bb_447_Set_Orientation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_447_Set_Orientation_ip[] = {
+    {"Dir", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Up", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Local Dir", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Local Up", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_448_TT_Set_Material_Values_inputs[] = {"In"};
+static const char *bb_448_TT_Set_Material_Values_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_448_TT_Set_Material_Values_ip[] = {
+    {"Get Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_449_TT_List_Driver_inputs[] = {"In"};
+static const char *bb_449_TT_List_Driver_outputs[] = {"OK", "Error"};
+static const nmo_bb_param_desc_t bb_449_TT_List_Driver_ip[] = {
+    {"Driver List", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const nmo_bb_param_desc_t bb_449_TT_List_Driver_op[] = {
+    {"Installed Driver", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_450_Synchro_Player_inputs[] = {"On", "Off"};
+static const char *bb_450_Synchro_Player_outputs[] = {"End", "Impulse"};
+static const nmo_bb_param_desc_t bb_450_Synchro_Player_ip[] = {
+    {"Synchro Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const nmo_bb_param_desc_t bb_450_Synchro_Player_op[] = {
+    {"Signal Amplitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Length", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_450_Synchro_Player_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_450_Synchro_Player_st[] = {
+    {"Keep Activated During Delay", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_451_Set_Row_inputs[] = {"In"};
+static const char *bb_451_Set_Row_outputs[] = {"Out", "Already Present"};
+static const nmo_bb_param_desc_t bb_451_Set_Row_ip[] = {
+    {"Row Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_451_Set_Row_st[] = {
+    {"Unique Key Column", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_452_Synchro_Recorder_inputs[] = {"On"};
+static const nmo_bb_param_desc_t bb_452_Synchro_Recorder_ip[] = {
+    {"Synchro Array Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Key 0", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_452_Synchro_Recorder_op[] = {
+    {"Synchro Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const nmo_bb_param_desc_t bb_452_Synchro_Recorder_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_453_TT_BumpMap_inputs[] = {"On", "Off"};
+static const char *bb_453_TT_BumpMap_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_453_TT_BumpMap_ip[] = {
+    {"MatChannel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Light", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Emboss-Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_453_TT_BumpMap_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_454_TT_Get_Game_ID_inputs[] = {"In"};
+static const char *bb_454_TT_Get_Game_ID_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_454_TT_Get_Game_ID_op[] = {
+    {"Game ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_455_TT_Load_CMO_inputs[] = {"In"};
+static const char *bb_455_TT_Load_CMO_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_455_TT_Load_CMO_ip[] = {
+    {"CMO Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_456_Parameter_Selector_inputs[] = {"In 0", "In 1"};
+static const char *bb_456_Parameter_Selector_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_456_Parameter_Selector_ip[] = {
+    {"pIn 0", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"pIn 1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_456_Parameter_Selector_op[] = {
+    {"Selected", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_457_Box_Box_Intersection_inputs[] = {"In"};
+static const char *bb_457_Box_Box_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_457_Box_Box_Intersection_ip[] = {
+    {"Entity 0", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Entity 1", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy 0", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchy 1", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_458_Billboard_inputs[] = {"In"};
+static const char *bb_458_Billboard_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_458_Billboard_ip[] = {
+    {"Face Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Local Dir", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Local Up", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Texture Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Apply Transformation", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Scale Instead Of Move", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_458_Billboard_op[] = {
+    {"World Matrix", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+};
+static const char *bb_459_Play_Animation_3D_Entity_inputs[] = {"On", "Off"};
+static const char *bb_459_Play_Animation_3D_Entity_outputs[] = {"One Loop Played"};
+static const nmo_bb_param_desc_t bb_459_Play_Animation_3D_Entity_ip[] = {
+    {"Animation", NMO_GUID_INIT(0x43476550, 0x11E52C0E)},
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Loop", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_459_Play_Animation_3D_Entity_op[] = {
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_459_Play_Animation_3D_Entity_lp[] = {
+    {"", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_460_TT_Get_Level_ID_inputs[] = {"In"};
+static const char *bb_460_TT_Get_Level_ID_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_460_TT_Get_Level_ID_op[] = {
+    {"Level ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_461_Set_Clipping_Planes_inputs[] = {"In"};
+static const char *bb_461_Set_Clipping_Planes_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_461_Set_Clipping_Planes_ip[] = {
+    {"Near Clip", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Far Clip", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_462_Threshold_inputs[] = {"In"};
+static const char *bb_462_Threshold_outputs[] = {"X < MIN", "X > MAX", "MIN < X < MAX"};
+static const nmo_bb_param_desc_t bb_462_Threshold_ip[] = {
+    {"X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"MIN", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"MAX", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_462_Threshold_op[] = {
+    {"X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_463_3D_Grid_Layout_inputs[] = {"In"};
+static const char *bb_463_3D_Grid_Layout_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_463_3D_Grid_Layout_ip[] = {
+    {"Model", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Std Margins", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"Front Margin", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Rear Margin", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Support", NMO_GUID_INIT(0x8E5B5493, 0x98BD2245)},
+    {"Horizontal Gap Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Vertical Gap Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Depth Gap Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_464_TT_IsScriptActive_inputs[] = {"In"};
+static const char *bb_464_TT_IsScriptActive_outputs[] = {"Yes", "No"};
+static const nmo_bb_param_desc_t bb_464_TT_IsScriptActive_ip[] = {
+    {"Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+};
+static const char *bb_465_Get_Pos_From_Value_inputs[] = {"In", "Loop In"};
+static const char *bb_465_Get_Pos_From_Value_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_465_Get_Pos_From_Value_ip[] = {
+    {"Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Test", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_465_Get_Pos_From_Value_op[] = {
+    {"Pos3d", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Grid Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_465_Get_Pos_From_Value_lp[] = {
+    {"local", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_466_Ray_Intersection_inputs[] = {"In"};
+static const char *bb_466_Ray_Intersection_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_466_Ray_Intersection_ip[] = {
+    {"Ray Origin", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Ray Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Depth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Filter", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_466_Ray_Intersection_op[] = {
+    {"Object Intersected", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Face Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Nearest Vertex Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Intersection Point", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Intersection Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Body Part", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_466_Ray_Intersection_st[] = {
+    {"Output Param Update", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Skip Owner", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Skip Transparent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_467_Get_Proportional_Screen_Pos_inputs[] = {"In"};
+static const char *bb_467_Get_Proportional_Screen_Pos_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_467_Get_Proportional_Screen_Pos_ip[] = {
+    {"Pos X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Pos Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_467_Get_Proportional_Screen_Pos_op[] = {
+    {"%Pos X", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"%Pos Y", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_468_Ray_Box_Intersection_inputs[] = {"In"};
+static const char *bb_468_Ray_Box_Intersection_outputs[] = {"True", "False", "Origin Inside"};
+static const nmo_bb_param_desc_t bb_468_Ray_Box_Intersection_ip[] = {
+    {"Ray Origin", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Ray Direction", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Depth", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const nmo_bb_param_desc_t bb_468_Ray_Box_Intersection_op[] = {
+    {"Object intersected", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Intersection Point", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Intersection Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_469_3D_Entity_Fill_inputs[] = {"In"};
+static const char *bb_469_3D_Entity_Fill_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_469_3D_Entity_Fill_ip[] = {
+    {"Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Solid Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Shape Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_469_3D_Entity_Fill_st[] = {
+    {"Only Bounding Box", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_470_Position_On_Curve_inputs[] = {"In"};
+static const char *bb_470_Position_On_Curve_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_470_Position_On_Curve_ip[] = {
+    {"Curve", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Follow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Bank", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Bank Amount", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_470_Position_On_Curve_lp[] = {
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_470_Position_On_Curve_st[] = {
+    {"Roll", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const char *bb_471_SphericalParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_471_SphericalParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_471_SphericalParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_471_SphericalParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_471_SphericalParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_472_CylindricalParticleSystem_inputs[] = {"On", "Off", "Freeze"};
+static const char *bb_472_CylindricalParticleSystem_outputs[] = {"Exit On", "Exit Off", "Exit Freeze"};
+static const nmo_bb_param_desc_t bb_472_CylindricalParticleSystem_ip[] = {
+    {"Emission Delay", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Emission Delay Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Yaw Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Pitch Variance", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Speed", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Speed Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed/Spreading", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angular Speed Variance/Spreading Variation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lifespan", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Lifespan Variance", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Emission Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Ending Size Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Bounce Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Weight Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Surface Variance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Initial Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Ending Color and Alpha", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Variance", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Initial Texture Frame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Initial Texture Frame Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Speed Variance", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Frame Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture Loop", NMO_GUID_INIT(0x63942D15, 0x05AC51A7)},
+    {"Real-Time Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"DeltaTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_472_CylindricalParticleSystem_lp[] = {
+    {"Emitter", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"Activity", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"EmissionTime", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_472_CylindricalParticleSystem_st[] = {
+    {"Maximum Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Particle Rendering", NMO_GUID_INIT(0x089E77D4, 0x2EF077D2)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Destination Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Objects", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Evolutions", NMO_GUID_INIT(0x270F7B39, 0x6E0B184C)},
+    {"Variances", NMO_GUID_INIT(0x083E73D4, 0x2E3073D2)},
+    {"Manage Deflectors", NMO_GUID_INIT(0x083348D4, 0x234873D2)},
+    {"Message To Deflectors", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Manage Interactors", NMO_GUID_INIT(0x083231D4, 0x223173D2)},
+    {"Interactors/Deflectors Display", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_473_Texture_Render_inputs[] = {"In"};
+static const char *bb_473_Texture_Render_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_473_Texture_Render_ip[] = {
+    {"Camera", NMO_GUID_INIT(0x3CF24D6F, 0x216204F9)},
+    {"Background Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Background Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const nmo_bb_param_desc_t bb_473_Texture_Render_lp[] = {
+    {"", NMO_GUID_INIT(0x1CB10760, 0x419F50C5)},
+};
+static const nmo_bb_param_desc_t bb_473_Texture_Render_st[] = {
+    {"", NMO_GUID_INIT(0x1CB10760, 0x419F50C5)},
+    {"", NMO_GUID_INIT(0x1CB10760, 0x419F50C5)},
+    {"Render Options", NMO_GUID_INIT(0x745655A9, 0x61BB29A1)},
+    {"(CubeMap) Render Face by Face", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_474_TT_Restore_Dynamic_IC_inputs[] = {"In"};
+static const char *bb_474_TT_Restore_Dynamic_IC_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_474_TT_Restore_Dynamic_IC_ip[] = {
+    {"Hierarchy?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_475_Remove_Object_From_Scene_inputs[] = {"In"};
+static const char *bb_475_Remove_Object_From_Scene_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_475_Remove_Object_From_Scene_ip[] = {
+    {"Scene", NMO_GUID_INIT(0x25AE6BD7, 0x7C8F73A2)},
+};
+static const char *bb_476_TT_GetFileNameFromPath_inputs[] = {"IN"};
+static const char *bb_476_TT_GetFileNameFromPath_outputs[] = {"OK"};
+static const nmo_bb_param_desc_t bb_476_TT_GetFileNameFromPath_ip[] = {
+    {"Path+Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_476_TT_GetFileNameFromPath_op[] = {
+    {"FileName", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_476_TT_GetFileNameFromPath_st[] = {
+    {"Use Slash '/'", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_477_Input_String_inputs[] = {"On", "Off"};
+static const char *bb_477_Input_String_outputs[] = {"On", "Off", "Updated String"};
+static const nmo_bb_param_desc_t bb_477_Input_String_ip[] = {
+    {"Reset String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"End Key", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_477_Input_String_op[] = {
+    {"String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Key", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const nmo_bb_param_desc_t bb_477_Input_String_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_477_Input_String_st[] = {
+    {"Max Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Keyboard Repetition", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Multiline", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Disable Keyboard Section", NMO_GUID_INIT(0x7A4347DD, 0x59A82CCE)},
+    {"Use Caret", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_478_TT_ConvertBox_inputs[] = {"On"};
+static const char *bb_478_TT_ConvertBox_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_478_TT_ConvertBox_ip[] = {
+    {"Vector Min", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Vector Max", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_478_TT_ConvertBox_op[] = {
+    {"BBox", NMO_GUID_INIT(0x668649C8, 0x283E2EE1)},
+};
+static const char *bb_479_Add_Object_To_Group_inputs[] = {"In"};
+static const char *bb_479_Add_Object_To_Group_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_479_Add_Object_To_Group_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const char *bb_480_TT_ConvertTimeToString_inputs[] = {"On"};
+static const char *bb_480_TT_ConvertTimeToString_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_480_TT_ConvertTimeToString_ip[] = {
+    {"Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const nmo_bb_param_desc_t bb_480_TT_ConvertTimeToString_op[] = {
+    {"String Time", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_481_TT_Set_Boolean_Value_To_Registry_inputs[] = {"In"};
+static const char *bb_481_TT_Set_Boolean_Value_To_Registry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_481_TT_Set_Boolean_Value_To_Registry_ip[] = {
+    {"True ? ", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_482_TT_Get_Level_Name_inputs[] = {"In"};
+static const char *bb_482_TT_Get_Level_Name_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_482_TT_Get_Level_Name_op[] = {
+    {"Level Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_483_Panning_Control_inputs[] = {"In"};
+static const char *bb_483_Panning_Control_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_483_Panning_Control_ip[] = {
+    {"Position", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_484_Gauge_inputs[] = {"On", "Off", "Pause/Resume"};
+static const char *bb_484_Gauge_outputs[] = {"Exit On", "Exit Off", "Exit Pause/Resume"};
+static const nmo_bb_param_desc_t bb_484_Gauge_ip[] = {
+    {"Bar Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Orientation", NMO_GUID_INIT(0x6E49509A, 0x2F067425)},
+    {"Stretch", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_484_Gauge_lp[] = {
+    {"", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_485_Add_Animation_inputs[] = {"In"};
+static const char *bb_485_Add_Animation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_485_Add_Animation_ip[] = {
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+};
+static const char *bb_486_TT_Timer_inputs[] = {"On/Reset", "Pause", "Play", "Off"};
+static const char *bb_486_TT_Timer_outputs[] = {"Exit On", "Exit Pause", "Exit Play", "Exit Off"};
+static const nmo_bb_param_desc_t bb_486_TT_Timer_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_487_Remove_Attribute_inputs[] = {"In"};
+static const char *bb_487_Remove_Attribute_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_487_Remove_Attribute_ip[] = {
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const char *bb_488_TT_ListAllCurrentUsedTextures_inputs[] = {"In"};
+static const char *bb_488_TT_ListAllCurrentUsedTextures_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_488_TT_ListAllCurrentUsedTextures_ip[] = {
+    {"Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const nmo_bb_param_desc_t bb_488_TT_ListAllCurrentUsedTextures_st[] = {
+    {"OnInVideoMemory", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_489_Bezier_Progression_inputs[] = {"In", "Loop In"};
+static const char *bb_489_Bezier_Progression_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_489_Bezier_Progression_ip[] = {
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"A", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"B", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+};
+static const nmo_bb_param_desc_t bb_489_Bezier_Progression_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_489_Bezier_Progression_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_490_Objects_With_Attribute_Iterator_inputs[] = {"In", "Loop In"};
+static const char *bb_490_Objects_With_Attribute_Iterator_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_490_Objects_With_Attribute_Iterator_ip[] = {
+    {"Attribute", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const nmo_bb_param_desc_t bb_490_Objects_With_Attribute_Iterator_op[] = {
+    {"Object", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Attribute Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_490_Objects_With_Attribute_Iterator_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_491_TT_Get_Level_Data_inputs[] = {"In"};
+static const char *bb_491_TT_Get_Level_Data_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_491_TT_Get_Level_Data_op[] = {
+    {"Level Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Level Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Level Reached", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_492_Iterator_If_inputs[] = {"In", "Loop In"};
+static const char *bb_492_Iterator_If_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_492_Iterator_If_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operator", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_492_Iterator_If_op[] = {
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_493_Character_Grid_Path_Follow_inputs[] = {"On", "Off", "Reset"};
+static const char *bb_493_Character_Grid_Path_Follow_outputs[] = {"Out", "Can't Follow Path", "Collion Happen", "Avoid Happen"};
+static const nmo_bb_param_desc_t bb_493_Character_Grid_Path_Follow_ip[] = {
+    {"Path ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Character Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Change Direction Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Limit Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Fuzzyness", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"To and Fro", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Max Blocked Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Blocked Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Enter Teleporter Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Travel Teleporter Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Exit Teleporter Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const nmo_bb_param_desc_t bb_493_Character_Grid_Path_Follow_op[] = {
+    {"Collision Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Avoid Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_493_Character_Grid_Path_Follow_st[] = {
+    {"Manage Teleporters", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_494_Bezier_Transform_inputs[] = {"In"};
+static const char *bb_494_Bezier_Transform_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_494_Bezier_Transform_ip[] = {
+    {"X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Boundaries", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+};
+static const nmo_bb_param_desc_t bb_494_Bezier_Transform_op[] = {
+    {"Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_494_Bezier_Transform_st[] = {
+    {"Use 4 Floats As Boundaries", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_495_Get_Nearest_Floors_inputs[] = {"In"};
+static const char *bb_495_Get_Nearest_Floors_outputs[] = {"None", "Lower", "Upper"};
+static const nmo_bb_param_desc_t bb_495_Get_Nearest_Floors_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_495_Get_Nearest_Floors_op[] = {
+    {"Lower Floor", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Lower Floor Type", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Lower Floor Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Lower Floor Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Lower Floor Face Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Upper Floor", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Upper Floor Type", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Upper Floor Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Upper Floor Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Upper Floor Face Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_496_TT_Is_Rookie_inputs[] = {"In"};
+static const char *bb_496_TT_Is_Rookie_outputs[] = {"Rookie", "No Rookie", "FAILED"};
+static const char *bb_497_Set_MipMap_Texture_inputs[] = {"In"};
+static const char *bb_497_Set_MipMap_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_497_Set_MipMap_Texture_ip[] = {
+    {"Full Size Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size/2 Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const char *bb_498_Set_Component_inputs[] = {"In"};
+static const char *bb_498_Set_Component_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_498_Set_Component_ip[] = {
+    {"Component 1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Component 2", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Component 3", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_498_Set_Component_op[] = {
+    {"Variable", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_498_Set_Component_st[] = {
+    {"Rectangle/Box Mode", NMO_GUID_INIT(0x5A6A3BD9, 0x07E2797D)},
+};
+static const char *bb_499_Sort_Rows_inputs[] = {"In"};
+static const char *bb_499_Sort_Rows_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_499_Sort_Rows_ip[] = {
+    {"Sorting Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Ascending", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_500_Set_Render_Order_inputs[] = {"In"};
+static const char *bb_500_Set_Render_Order_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_500_Set_Render_Order_ip[] = {
+    {"Display First", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Display Last", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Rendering Priority", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_501_Execute_Script_inputs[] = {"In"};
+static const char *bb_501_Execute_Script_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_501_Execute_Script_ip[] = {
+    {"Reset ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Script", NMO_GUID_INIT(0x7EA4176D, 0x1B405D30)},
+};
+static const nmo_bb_param_desc_t bb_501_Execute_Script_st[] = {
+    {"Awake Object", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_502_TT_Window_Activate__inputs[] = {"In"};
+static const char *bb_502_TT_Window_Activate__outputs[] = {"Activate", "else"};
+static const char *bb_503_TT_DebugOFF_inputs[] = {"IN"};
+static const char *bb_503_TT_DebugOFF_outputs[] = {"Exit"};
+static const char *bb_504_Change_Sprite_Slot_inputs[] = {"In"};
+static const char *bb_504_Change_Sprite_Slot_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_504_Change_Sprite_Slot_ip[] = {
+    {"Slot Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_505_Home_on_Entity_inputs[] = {"In", "Loop In"};
+static const char *bb_505_Home_on_Entity_outputs[] = {"Target Reach", "Obstacle Reach", "Loop Out"};
+static const nmo_bb_param_desc_t bb_505_Home_on_Entity_ip[] = {
+    {"Destination", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Initial Velocity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Inertia (0 to 1)", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Obstacle Influence Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_505_Home_on_Entity_op[] = {
+    {"Object Hit", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_506_Bezier_Interpolator_inputs[] = {"In", "Loop In"};
+static const char *bb_506_Bezier_Interpolator_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_506_Bezier_Interpolator_ip[] = {
+    {"Number of steps", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+    {"Min", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_506_Bezier_Interpolator_op[] = {
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_506_Bezier_Interpolator_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_507_Keep_Active_inputs[] = {"Reset", "In 1"};
+static const char *bb_507_Keep_Active_outputs[] = {"Out Reset", "Out 1"};
+static const nmo_bb_param_desc_t bb_507_Keep_Active_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_507_Keep_Active_st[] = {
+    {"One at a time ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_508_Get_Lowest_inputs[] = {"In"};
+static const char *bb_508_Get_Lowest_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_508_Get_Lowest_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_508_Get_Lowest_op[] = {
+    {"Row Number", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_509_FIFO_inputs[] = {"Unstack", "In 1", "In 2"};
+static const char *bb_509_FIFO_outputs[] = {"Out Unstack", "Out 1", "Out 2"};
+static const nmo_bb_param_desc_t bb_509_FIFO_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_509_FIFO_st[] = {
+    {"Stack Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_510_Find_Curved_Nodal_Path_inputs[] = {"In"};
+static const char *bb_510_Find_Curved_Nodal_Path_outputs[] = {"Path Found", "No Path Found"};
+static const nmo_bb_param_desc_t bb_510_Find_Curved_Nodal_Path_ip[] = {
+    {"Nodal Path", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"Start Node", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Goal Node", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Fitting Coef", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_510_Find_Curved_Nodal_Path_op[] = {
+    {"Curve", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+};
+static const nmo_bb_param_desc_t bb_510_Find_Curved_Nodal_Path_lp[] = {
+    {"", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_511_Set_IC_inputs[] = {"In"};
+static const char *bb_511_Set_IC_outputs[] = {"Out"};
+static const char *bb_512_Set_Physics_Globals_inputs[] = {"Set Values", "Clean Physics World"};
+static const char *bb_512_Set_Physics_Globals_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_512_Set_Physics_Globals_ip[] = {
+    {"Gravity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Physic Time Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_513_Reverse_String_inputs[] = {"In"};
+static const char *bb_513_Reverse_String_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_513_Reverse_String_ip[] = {
+    {"String", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_514_Planar_Shadow_inputs[] = {"On", "Off"};
+static const char *bb_514_Planar_Shadow_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_514_Planar_Shadow_ip[] = {
+    {"Shadowing Group(s)", NMO_GUID_INIT(0x4A5D4963, 0x4D28883F)},
+    {"Light", NMO_GUID_INIT(0x4B6D412F, 0x5D1E1416)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Plane Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_514_Planar_Shadow_st[] = {
+    {"Discard Off Plane Shadow", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_515_TT_FlushTextures_inputs[] = {"In"};
+static const char *bb_515_TT_FlushTextures_outputs[] = {"Out"};
+static const char *bb_516_Set_Square_From_3D_Pos_inputs[] = {"In"};
+static const char *bb_516_Set_Square_From_3D_Pos_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_516_Set_Square_From_3D_Pos_ip[] = {
+    {"Pos 3D", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Ref", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Layer", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_517_TT_AnisoMapping_inputs[] = {"On", "Off"};
+static const char *bb_517_TT_AnisoMapping_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_517_TT_AnisoMapping_ip[] = {
+    {"Light", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Camera", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Texture Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Metal", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Mapping", NMO_GUID_INIT(0x5848550B, 0x0ABF5EA5)},
+    {"Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_517_TT_AnisoMapping_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_518_TT_FontCoordinatesToDataArray_inputs[] = {"In"};
+static const char *bb_518_TT_FontCoordinatesToDataArray_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_518_TT_FontCoordinatesToDataArray_ip[] = {
+    {"ArrayName", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+};
+static const nmo_bb_param_desc_t bb_518_TT_FontCoordinatesToDataArray_op[] = {
+    {"FontCoordinatesData", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+};
+static const char *bb_519_Object_Delete_inputs[] = {"In"};
+static const char *bb_519_Object_Delete_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_519_Object_Delete_ip[] = {
+    {"Object", NMO_GUID_INIT(0x30EC20AB, 0x6DF6517D)},
+    {"Dependency Options", NMO_GUID_INIT(0x69590C80, 0x30B61630)},
+};
+static const char *bb_520_Set_Camera_Target_inputs[] = {"In"};
+static const char *bb_520_Set_Camera_Target_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_520_Set_Camera_Target_ip[] = {
+    {"Target", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_521_Fade_In_inputs[] = {"In"};
+static const char *bb_521_Fade_In_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_521_Fade_In_ip[] = {
+    {"Fade Delay", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_521_Fade_In_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_522_PhysicsCollDetection_inputs[] = {"Create", "Stop"};
+static const char *bb_522_PhysicsCollDetection_outputs[] = {"Collision"};
+static const nmo_bb_param_desc_t bb_522_PhysicsCollDetection_ip[] = {
+    {"Min Speed m/s", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Max Speed m/s", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Sleep afterwards", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Collision ID", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_522_PhysicsCollDetection_op[] = {
+    {"Entity", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Speed (0-1)", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Collision Normal World", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Position World", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_522_PhysicsCollDetection_lp[] = {
+    {"IVP_Handle", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_522_PhysicsCollDetection_st[] = {
+    {"Use Collision ID", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_523_Set_Grid_Priority_inputs[] = {"In"};
+static const char *bb_523_Set_Grid_Priority_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_523_Set_Grid_Priority_ip[] = {
+    {"Priority", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_524_TT_Set_String_Value_To_Registry_inputs[] = {"In"};
+static const char *bb_524_TT_Set_String_Value_To_Registry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_524_TT_Set_String_Value_To_Registry_ip[] = {
+    {"String Value (256 chars)", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_525_Grid_Path_Init_inputs[] = {"In"};
+static const char *bb_525_Grid_Path_Init_outputs[] = {"Out", "Error"};
+static const nmo_bb_param_desc_t bb_525_Grid_Path_Init_ip[] = {
+    {"Layer 1", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+};
+static const char *bb_526_TT_Counter_inputs[] = {"Initialize", "Count Up", "Count Down"};
+static const char *bb_526_TT_Counter_outputs[] = {"Initialize OUT", "Count Up OUT", "Count Down OUT"};
+static const nmo_bb_param_desc_t bb_526_TT_Counter_ip[] = {
+    {"Start", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Min", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Max", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_526_TT_Counter_op[] = {
+    {"current count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_526_TT_Counter_lp[] = {
+    {"Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_527_Physicalize_inputs[] = {"Physicalize", "Unphysicalize"};
+static const char *bb_527_Physicalize_outputs[] = {"Out1", "Out2"};
+static const nmo_bb_param_desc_t bb_527_Physicalize_ip[] = {
+    {"Fixed ?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Friction", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Elasticity", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Mass", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Collision Group", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Start Frozen", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Enable Collision", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Automatic Calculate Mass Center", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Linear Speed Dampening", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Rot Speed Dampening", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Collision Surface", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Convex", NMO_GUID_INIT(0x24535345, 0x65D15229)},
+};
+static const nmo_bb_param_desc_t bb_527_Physicalize_st[] = {
+    {"Convex Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Ball Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Concave Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Shift Mass Center", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_528_TT_Get_String_Value_From_Registr_inputs[] = {"In"};
+static const char *bb_528_TT_Get_String_Value_From_Registr_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_528_TT_Get_String_Value_From_Registr_ip[] = {
+    {"RegKey  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Value Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_528_TT_Get_String_Value_From_Registr_op[] = {
+    {"String Value ", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_529_PushButton_inputs[] = {"On", "Off", "Disable"};
+static const char *bb_529_PushButton_outputs[] = {"Pressed", "Released", "Active", "Enter Button", "Exit Button", "In Button"};
+static const nmo_bb_param_desc_t bb_529_PushButton_ip[] = {
+    {"Released Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Pressed Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"RollOver Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Pressed Offset", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Disabled Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_529_PushButton_op[] = {
+    {"Current Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_529_PushButton_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_529_PushButton_st[] = {
+    {"Events", NMO_GUID_INIT(0x25064124, 0x1FBE6AAE)},
+};
+static const char *bb_530_Set_Both_Sided_inputs[] = {"In"};
+static const char *bb_530_Set_Both_Sided_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_530_Set_Both_Sided_ip[] = {
+    {"Both sided", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_531_Restore_IC_inputs[] = {"In"};
+static const char *bb_531_Restore_IC_outputs[] = {"Out"};
+static const char *bb_532_Lens_Flare_inputs[] = {"On", "Off"};
+static const char *bb_532_Lens_Flare_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_532_Lens_Flare_ip[] = {
+    {"Flare Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Flare Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size Scale", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_532_Lens_Flare_lp[] = {
+    {"", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const nmo_bb_param_desc_t bb_532_Lens_Flare_st[] = {
+    {"Read Array Each Frame", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_533_Cylindrical_Mapping_inputs[] = {"In"};
+static const char *bb_533_Cylindrical_Mapping_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_533_Cylindrical_Mapping_ip[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Mapping Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"UV Tile", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Wrap Correction", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_534_Set_Sound_Type_inputs[] = {"In"};
+static const char *bb_534_Set_Sound_Type_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_534_Set_Sound_Type_ip[] = {
+    {"Sound Type", NMO_GUID_INIT(0x413648DD, 0x47515700)},
+};
+static const char *bb_535_Camera_Orbit_inputs[] = {"In"};
+static const char *bb_535_Camera_Orbit_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_535_Camera_Orbit_ip[] = {
+    {"Target", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_535_Camera_Orbit_op[] = {
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_535_Camera_Orbit_st[] = {
+    {"Key Zoom In", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Zoom Out", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Up", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Down", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Left", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Rotate Right", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+    {"Key Speed x2", NMO_GUID_INIT(0xFA6E1BDD, 0x62D2ABD7)},
+};
+static const char *bb_536_Interpolator_HSV_Color_inputs[] = {"In"};
+static const char *bb_536_Interpolator_HSV_Color_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_536_Interpolator_HSV_Color_ip[] = {
+    {"Start Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"End Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Mix Amount", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_536_Interpolator_HSV_Color_op[] = {
+    {"Interpolated Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_537_Movie_Player_inputs[] = {"On", "Off"};
+static const char *bb_537_Movie_Player_outputs[] = {"Synchro Out", "One Loop Played"};
+static const nmo_bb_param_desc_t bb_537_Movie_Player_ip[] = {
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Loop", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Starting Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Ending Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_537_Movie_Player_op[] = {
+    {"Current Slot", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_537_Movie_Player_lp[] = {
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_538_Clouds_Around_inputs[] = {"On", "Off"};
+static const char *bb_538_Clouds_Around_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_538_Clouds_Around_ip[] = {
+    {"Back Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Right Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Front Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Left Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Up Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Down Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Distortion", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Filtering Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Additionnal Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Source Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Dest Blend", NMO_GUID_INIT(0x089E28D4, 0x2EF031D2)},
+    {"Orientation Object", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const nmo_bb_param_desc_t bb_538_Clouds_Around_lp[] = {
+    {"Struct Effect ProjMat", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_539_TT_Uninstall_Array_inputs[] = {"In"};
+static const char *bb_539_TT_Uninstall_Array_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_539_TT_Uninstall_Array_ip[] = {
+    {"Array to uninstall", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Filename of current CMO", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Show message: UNINSTALLED", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_540_TT_Set_Rookie_inputs[] = {"In"};
+static const char *bb_540_TT_Set_Rookie_outputs[] = {"Active", "InActive"};
+static const nmo_bb_param_desc_t bb_540_TT_Set_Rookie_ip[] = {
+    {"Is Rookie", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_541_TT_ChildrenIterator_inputs[] = {"Reset", "Next"};
+static const char *bb_541_TT_ChildrenIterator_outputs[] = {"Finished", "Not Finished"};
+static const nmo_bb_param_desc_t bb_541_TT_ChildrenIterator_op[] = {
+    {"Childrencount", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Child", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+    {"Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_542_TT_Set_Game_Bonus_inputs[] = {"In"};
+static const char *bb_542_TT_Set_Game_Bonus_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_542_TT_Set_Game_Bonus_ip[] = {
+    {"Game Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_543_Enhanced_Character_Curve_Follow_inputs[] = {"In", "Loop In"};
+static const char *bb_543_Enhanced_Character_Curve_Follow_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_543_Enhanced_Character_Curve_Follow_ip[] = {
+    {"Curve To Follow", NMO_GUID_INIT(0x1072130B, 0x1F9572BA)},
+    {"Start Percentage", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"End Percentage", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Character Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Loop", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_543_Enhanced_Character_Curve_Follow_op[] = {
+    {"Current Percentage", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_543_Enhanced_Character_Curve_Follow_lp[] = {
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_544_Character_Keep_On_Floor_Limits_inputs[] = {"In"};
+static const char *bb_544_Character_Keep_On_Floor_Limits_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_544_Character_Keep_On_Floor_Limits_lp[] = {
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_545_Row_Search_inputs[] = {"In"};
+static const char *bb_545_Row_Search_outputs[] = {"Found", "Not Found"};
+static const nmo_bb_param_desc_t bb_545_Row_Search_ip[] = {
+    {"Column", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"First Search Row", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Operation", NMO_GUID_INIT(0x79B90856, 0x75D070FF)},
+};
+static const nmo_bb_param_desc_t bb_545_Row_Search_op[] = {
+    {"First Row Found", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_546_Stop___Go_inputs[] = {"In"};
+static const char *bb_546_Stop___Go_outputs[] = {"Out"};
+static const char *bb_547_TT_WriteBack_inputs[] = {"On"};
+static const char *bb_547_TT_WriteBack_outputs[] = {"Off"};
+static const nmo_bb_param_desc_t bb_547_TT_WriteBack_ip[] = {
+    {"Parameter", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_548_Movie_Load_inputs[] = {"On"};
+static const char *bb_548_Movie_Load_outputs[] = {"Loaded", "Error"};
+static const nmo_bb_param_desc_t bb_548_Movie_Load_ip[] = {
+    {"Movie File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_549_Simple_Shadow_inputs[] = {"On", "Off"};
+static const char *bb_549_Simple_Shadow_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_549_Simple_Shadow_ip[] = {
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size Scale", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Maximum Height", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_549_Simple_Shadow_lp[] = {
+    {"Data", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_550_Random_Switch_inputs[] = {"In"};
+static const char *bb_550_Random_Switch_outputs[] = {"Out 1", "Out 2"};
+static const nmo_bb_param_desc_t bb_550_Random_Switch_ip[] = {
+    {"Coef 1", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Coef 2", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_550_Random_Switch_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_550_Random_Switch_st[] = {
+    {"Forbid twice the same", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_551_TT_GetFullAngle_inputs[] = {"On"};
+static const char *bb_551_TT_GetFullAngle_outputs[] = {"Exit On"};
+static const nmo_bb_param_desc_t bb_551_TT_GetFullAngle_ip[] = {
+    {"Vector A", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Vector B", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const nmo_bb_param_desc_t bb_551_TT_GetFullAngle_op[] = {
+    {"Angle RAD", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Angle Degree", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_552_TT_RemoveDirectory_inputs[] = {"IN"};
+static const char *bb_552_TT_RemoveDirectory_outputs[] = {"OK", "Fail"};
+static const nmo_bb_param_desc_t bb_552_TT_RemoveDirectory_ip[] = {
+    {"Directory", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const char *bb_553_Set_Scale_inputs[] = {"In"};
+static const char *bb_553_Set_Scale_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_553_Set_Scale_ip[] = {
+    {"Scale Vector", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_554_Change_Texture_Size_inputs[] = {"In"};
+static const char *bb_554_Change_Texture_Size_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_554_Change_Texture_Size_ip[] = {
+    {"Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Clear", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_555_TT_WriteRegistry_inputs[] = {"In"};
+static const char *bb_555_TT_WriteRegistry_outputs[] = {"OK", "FAILED"};
+static const nmo_bb_param_desc_t bb_555_TT_WriteRegistry_ip[] = {
+    {"Reg-Section  ...\\..\\", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Reg-Entry", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Destination-Array", NMO_GUID_INIT(0x024D52F1, 0x678223B2)},
+    {"Data", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_555_TT_WriteRegistry_st[] = {
+    {"SaveArray-Mode", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_556_TT_Set_Level_Name_inputs[] = {"In"};
+static const char *bb_556_TT_Set_Level_Name_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_556_TT_Set_Level_Name_ip[] = {
+    {"Level Name", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_557_Set_Blended_Animation_Factor_inputs[] = {"In"};
+static const char *bb_557_Set_Blended_Animation_Factor_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_557_Set_Blended_Animation_Factor_ip[] = {
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Factor", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_558_Group_Operator_inputs[] = {"In"};
+static const char *bb_558_Group_Operator_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_558_Group_Operator_ip[] = {
+    {"Operator", NMO_GUID_INIT(0x02011B99, 0x1EFB0B91)},
+    {"Set", NMO_GUID_INIT(0x3EA34EE9, 0x09FA5366)},
+};
+static const char *bb_559_Pitch_Control_inputs[] = {"In"};
+static const char *bb_559_Pitch_Control_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_559_Pitch_Control_ip[] = {
+    {"Frequency", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_560_Set_Global_Animation_Step_inputs[] = {"In"};
+static const char *bb_560_Set_Global_Animation_Step_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_560_Set_Global_Animation_Step_ip[] = {
+    {"Animation", NMO_GUID_INIT(0x5BFA474D, 0x19E60236)},
+    {"Step", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_561_Layer_Slider_inputs[] = {"On", "Off"};
+static const char *bb_561_Layer_Slider_outputs[] = {"Contact", "No Contact"};
+static const nmo_bb_param_desc_t bb_561_Layer_Slider_ip[] = {
+    {"Influence Radius", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Layer To Slide On", NMO_GUID_INIT(0x4A39553C, 0x1AC94677)},
+};
+static const nmo_bb_param_desc_t bb_561_Layer_Slider_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_561_Layer_Slider_st[] = {
+    {"Reaction Vecto", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Output Contact Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Accuracy", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_562_Object_Load_inputs[] = {"Load", "Unload"};
+static const char *bb_562_Object_Load_outputs[] = {"Loaded", "Unloaded", "Failed"};
+static const nmo_bb_param_desc_t bb_562_Object_Load_ip[] = {
+    {"File", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Master Object Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Filter Class", NMO_GUID_INIT(0x19644E43, 0x4D6F6123)},
+    {"Add To Current Scene", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Reuse Meshes", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Reuse Materials/Textures", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_562_Object_Load_op[] = {
+    {"Loaded Objects", NMO_GUID_INIT(0x71DF7142, 0xC437133A)},
+    {"Master Object", NMO_GUID_INIT(0x30EC20AB, 0x6DF6517D)},
+};
+static const nmo_bb_param_desc_t bb_562_Object_Load_st[] = {
+    {"Dynamic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_563_Set_Color_Key_2D_inputs[] = {"In"};
+static const char *bb_563_Set_Color_Key_2D_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_563_Set_Color_Key_2D_ip[] = {
+    {"Translucide Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Transparent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_564_Get_Screen_Proportional_Pos_inputs[] = {"In"};
+static const char *bb_564_Get_Screen_Proportional_Pos_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_564_Get_Screen_Proportional_Pos_ip[] = {
+    {"%Pos X", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"%Pos Y", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_564_Get_Screen_Proportional_Pos_op[] = {
+    {"Pos X", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Pos Y", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_564_Get_Screen_Proportional_Pos_st[] = {
+    {"Window Relative", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_565_TT_TextureInfo_inputs[] = {"In"};
+static const char *bb_565_TT_TextureInfo_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_565_TT_TextureInfo_op[] = {
+    {"MaxVideoMemory", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"NumberOfTextures", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"UsedSystemMemory", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"TexturesInVideoMemory", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"UsedVideoTextureMemory", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_566_TT_Set_Game_Data_inputs[] = {"In"};
+static const char *bb_566_TT_Set_Game_Data_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_566_TT_Set_Game_Data_ip[] = {
+    {"Games Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Game Bonus", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_567_LIFO_inputs[] = {"Unstack", "In 1", "In 2"};
+static const char *bb_567_LIFO_outputs[] = {"Out Unstack", "Out 1", "Out 2"};
+static const nmo_bb_param_desc_t bb_567_LIFO_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_567_LIFO_st[] = {
+    {"Stack Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_568_Create_Font_inputs[] = {"In"};
+static const char *bb_568_Create_Font_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_568_Create_Font_ip[] = {
+    {"Font Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Font Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Horizontal/Vertical Character Number", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Proportionnal", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Font Bounds", NMO_GUID_INIT(0x7AB20D20, 0x693044A9)},
+    {"First Character", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_568_Create_Font_op[] = {
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+};
+static const nmo_bb_param_desc_t bb_568_Create_Font_st[] = {
+    {"Space Size", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const char *bb_569_TT_Restore_IC_inputs[] = {"In"};
+static const char *bb_569_TT_Restore_IC_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_569_TT_Restore_IC_ip[] = {
+    {"Hierarchy?", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_570_TT_ReflectionMapping_inputs[] = {"On", "Off"};
+static const char *bb_570_TT_ReflectionMapping_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_570_TT_ReflectionMapping_ip[] = {
+    {"MatChannel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Camera", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_571_TT_CheckCurveCollision_inputs[] = {"Check"};
+static const char *bb_571_TT_CheckCurveCollision_outputs[] = {"TRUE", "FALSE"};
+static const nmo_bb_param_desc_t bb_571_TT_CheckCurveCollision_ip[] = {
+    {"Curve Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+    {"HierachieBB", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_571_TT_CheckCurveCollision_op[] = {
+    {"MinDistance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_571_TT_CheckCurveCollision_st[] = {
+    {"MinDistance", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_572_All_But_One_inputs[] = {"In 0", "In 1"};
+static const char *bb_572_All_But_One_outputs[] = {"Out 0", "Out 1"};
+static const char *bb_573_TT_Simple_Shadow_inputs[] = {"On", "Off"};
+static const char *bb_573_TT_Simple_Shadow_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_573_TT_Simple_Shadow_ip[] = {
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Size Scale", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Maximum Height", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_573_TT_Simple_Shadow_lp[] = {
+    {"Data", NMO_GUID_INIT(0x50766059, 0x159D4BDE)},
+};
+static const char *bb_574_Edit_2D_Entity_inputs[] = {"In"};
+static const char *bb_574_Edit_2D_Entity_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_574_Edit_2D_Entity_ip[] = {
+    {"Pos X", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Pos Y", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Z Order", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Background", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Pickable", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Clip To Parent", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Stick Left", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Stick Right", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Stick Top", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Stick Bottom", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_574_Edit_2D_Entity_st[] = {
+    {"Edited Components :", NMO_GUID_INIT(0x11CB48A5, 0x47E5424B)},
+};
+static const char *bb_575_TT_Get_Level_Score_inputs[] = {"In"};
+static const char *bb_575_TT_Get_Level_Score_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_575_TT_Get_Level_Score_op[] = {
+    {"Level Score", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_576_Combine_Texture_inputs[] = {"In"};
+static const char *bb_576_Combine_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_576_Combine_Texture_ip[] = {
+    {"Color Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Color Filter", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Alpha Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const char *bb_577_Add_Channel_inputs[] = {"In"};
+static const char *bb_577_Add_Channel_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_577_Add_Channel_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_577_Add_Channel_op[] = {
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_578_Declare_Floors_inputs[] = {"In"};
+static const char *bb_578_Declare_Floors_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_578_Declare_Floors_ip[] = {
+    {"Key Substring", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"Attributes", NMO_GUID_INIT(0x7B447672, 0x5798572A)},
+};
+static const char *bb_579_Create_System_Font_inputs[] = {"In"};
+static const char *bb_579_Create_System_Font_outputs[] = {"Success", "Error"};
+static const nmo_bb_param_desc_t bb_579_Create_System_Font_ip[] = {
+    {"Font Name", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+    {"System Font Name", NMO_GUID_INIT(0x7167091A, 0x7F482632)},
+    {"Font Weight", NMO_GUID_INIT(0x4376013F, 0x0B3462C0)},
+    {"Italic", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Underline", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_579_Create_System_Font_op[] = {
+    {"Font Created", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+    {"Texture Created", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const nmo_bb_param_desc_t bb_579_Create_System_Font_lp[] = {
+    {"Current Font", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_579_Create_System_Font_st[] = {
+    {"Texture Resolution", NMO_GUID_INIT(0x7157091D, 0x4FC82932)},
+    {"Full Charset", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Render Control Characters", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Dynamic Texture", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Font Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_580_Noise_Progression_inputs[] = {"In", "Loop In"};
+static const char *bb_580_Noise_Progression_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_580_Noise_Progression_ip[] = {
+    {"Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"A", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"B", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Alpha", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Beta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Harmonics", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_580_Noise_Progression_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_580_Noise_Progression_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_581_Set_Shade_Mode_inputs[] = {"In"};
+static const char *bb_581_Set_Shade_Mode_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_581_Set_Shade_Mode_ip[] = {
+    {"ShadeMode", NMO_GUID_INIT(0x7990258F, 0x60326351)},
+};
+static const char *bb_582_Counter_inputs[] = {"In", "Loop In"};
+static const char *bb_582_Counter_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_582_Counter_ip[] = {
+    {"Count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Start Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Step", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_582_Counter_op[] = {
+    {"Value", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_583_Set_Parent_inputs[] = {"In"};
+static const char *bb_583_Set_Parent_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_583_Set_Parent_ip[] = {
+    {"Parent", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+};
+static const char *bb_584_Send_Message_inputs[] = {"In"};
+static const char *bb_584_Send_Message_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_584_Send_Message_ip[] = {
+    {"Message", NMO_GUID_INIT(0x03881E12, 0x5BA34E2B)},
+    {"Dest", NMO_GUID_INIT(0x71D80779, 0x402F42F3)},
+};
+static const char *bb_585_Timer_inputs[] = {"In", "Loop In"};
+static const char *bb_585_Timer_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_585_Timer_ip[] = {
+    {"Duration", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const nmo_bb_param_desc_t bb_585_Timer_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Delta Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+};
+static const char *bb_586_FPS_inputs[] = {"In"};
+static const char *bb_586_FPS_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_586_FPS_op[] = {
+    {"Fps", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_587_Show_inputs[] = {"In"};
+static const char *bb_587_Show_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_587_Show_ip[] = {
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_588_Set_World_Matrix_inputs[] = {"In"};
+static const char *bb_588_Set_World_Matrix_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_588_Set_World_Matrix_ip[] = {
+    {"World Matrix", NMO_GUID_INIT(0x643F046E, 0x65211B71)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_589_Set_Current_Slot_inputs[] = {"In"};
+static const char *bb_589_Set_Current_Slot_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_589_Set_Current_Slot_ip[] = {
+    {"Slot Index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_590_Set_Ambient_inputs[] = {"In"};
+static const char *bb_590_Set_Ambient_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_590_Set_Ambient_ip[] = {
+    {"Ambient Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_591_Set_FOV_inputs[] = {"In"};
+static const char *bb_591_Set_FOV_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_591_Set_FOV_ip[] = {
+    {"Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+};
+static const char *bb_592_Show_2D_Entity_inputs[] = {"In"};
+static const char *bb_592_Show_2D_Entity_outputs[] = {"Out"};
+static const char *bb_593_Set_Sound_Cone_Values_inputs[] = {"In"};
+static const char *bb_593_Set_Sound_Cone_Values_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_593_Set_Sound_Cone_Values_ip[] = {
+    {"Inside Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Outside Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Outside Cone Volume", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_594_Vertigo_inputs[] = {"In", "Loop In"};
+static const char *bb_594_Vertigo_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_594_Vertigo_ip[] = {
+    {"Focal Point", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Number of Frames", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Forward", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Distortion Amount", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Progression Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+};
+static const nmo_bb_param_desc_t bb_594_Vertigo_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const char *bb_595_Volumetric_Fog_inputs[] = {"On", "Off"};
+static const char *bb_595_Volumetric_Fog_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_595_Volumetric_Fog_ip[] = {
+    {"Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"FogDensity", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_596_Keep_At_Constant_Distance_inputs[] = {"In"};
+static const char *bb_596_Keep_At_Constant_Distance_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_596_Keep_At_Constant_Distance_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Attenuation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_596_Keep_At_Constant_Distance_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_597_Dolly_inputs[] = {"In"};
+static const char *bb_597_Dolly_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_597_Dolly_ip[] = {
+    {"Translation Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_598_Set_Listener_Properties_inputs[] = {"In"};
+static const char *bb_598_Set_Listener_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_598_Set_Listener_Properties_ip[] = {
+    {"Global Gain", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"RollOff Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Doppler Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Distance Factor", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_599_IK_Position_inputs[] = {"In"};
+static const char *bb_599_IK_Position_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_599_IK_Position_ip[] = {
+    {"Starting Body Part", NMO_GUID_INIT(0x4BA1010E, 0x7ABD6D02)},
+    {"Ending Body Part", NMO_GUID_INIT(0x4BA1010E, 0x7ABD6D02)},
+    {"Entity To Follow", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Latency", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_599_IK_Position_lp[] = {
+    {"", NMO_GUID_INIT(0x305B4E1C, 0x3DA07AE6)},
+};
+static const char *bb_600_Wait_For_All_inputs[] = {"In 0", "In 1"};
+static const char *bb_600_Wait_For_All_outputs[] = {"Out"};
+static const char *bb_601_Set_Fill_Mode_inputs[] = {"In"};
+static const char *bb_601_Set_Fill_Mode_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_601_Set_Fill_Mode_ip[] = {
+    {"Fill Mode", NMO_GUID_INIT(0x2B0F1617, 0x53CE1B0E)},
+};
+static const char *bb_602_Vertex_Render_inputs[] = {"On", "Off"};
+static const char *bb_602_Vertex_Render_outputs[] = {"Out (Loop)"};
+static const nmo_bb_param_desc_t bb_602_Vertex_Render_ip[] = {
+    {"Light Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Light Size", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Enable Fog Influence", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_602_Vertex_Render_lp[] = {
+    {"Light Sprite3D", NMO_GUID_INIT(0x23C8061B, 0x70033A27)},
+    {"Light Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+    {"Is Lighting", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_602_Vertex_Render_st[] = {
+    {"Use Vertex Color", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Use Vertex Weight", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_603_Solid_Trail_inputs[] = {"On", "Off"};
+static const char *bb_603_Solid_Trail_outputs[] = {"ExitOn", "ExitOff"};
+static const nmo_bb_param_desc_t bb_603_Solid_Trail_ip[] = {
+    {"Width attenuation", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Length", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Frame delay", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+};
+static const nmo_bb_param_desc_t bb_603_Solid_Trail_lp[] = {
+    {"Object id", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"First point index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Second point index", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Framedelay count", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Active", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_604_Remove_From_Group_inputs[] = {"In"};
+static const char *bb_604_Remove_From_Group_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_604_Remove_From_Group_ip[] = {
+    {"Group", NMO_GUID_INIT(0x5C0F151B, 0x6F0547FD)},
+};
+static const char *bb_605_Binary_Memory_inputs[] = {"In 0", "In 1"};
+static const char *bb_605_Binary_Memory_outputs[] = {"Out 0", "Out 1"};
+static const nmo_bb_param_desc_t bb_605_Binary_Memory_op[] = {
+    {"State", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_607_Set_Emissive_inputs[] = {"In"};
+static const char *bb_607_Set_Emissive_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_607_Set_Emissive_ip[] = {
+    {"Emissive Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_608_Set_Light_Attenuation_inputs[] = {"In"};
+static const char *bb_608_Set_Light_Attenuation_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_608_Set_Light_Attenuation_ip[] = {
+    {"Constant Attenuation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Linear Attenuation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Quadratic Attenuation", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_609_Set_Texture_Mag_inputs[] = {"In"};
+static const char *bb_609_Set_Texture_Mag_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_609_Set_Texture_Mag_ip[] = {
+    {"Mode", NMO_GUID_INIT(0x2BD753B3, 0x563E5165)},
+};
+static const char *bb_610_Set_Font_Properties_inputs[] = {"In"};
+static const char *bb_610_Set_Font_Properties_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_610_Set_Font_Properties_ip[] = {
+    {"Font", NMO_GUID_INIT(0x64FB5811, 0x33862D3B)},
+    {"Space", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Scale", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Italic Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"End Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Shadow Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Shadow Angle", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Shadow Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Shadow Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Lit Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const nmo_bb_param_desc_t bb_610_Set_Font_Properties_st[] = {
+    {"Font Properties", NMO_GUID_INIT(0x63223DD5, 0x6B5F68FC)},
+};
+static const char *bb_611_Character_Keep_On_Floor_inputs[] = {"In"};
+static const char *bb_611_Character_Keep_On_Floor_outputs[] = {"Out"};
+static const char *bb_612_Enhanced_Character_Keep_On_Floor_inputs[] = {"On", "Off"};
+static const char *bb_612_Enhanced_Character_Keep_On_Floor_outputs[] = {"Exit On", "Exit Off", "Touched Floor Limits"};
+static const nmo_bb_param_desc_t bb_612_Enhanced_Character_Keep_On_Floor_ip[] = {
+    {"Follow Inclination", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Replacement Altitude", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Keep In Floor Boundary", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Detection Offset", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Character Extents", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Orientation Attenuation", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Weight", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Character Direction", NMO_GUID_INIT(0x0286652D, 0x5EA709C2)},
+};
+static const nmo_bb_param_desc_t bb_612_Enhanced_Character_Keep_On_Floor_op[] = {
+    {"Floor", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Floor Type", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Floor Normal", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Old Floor Distance", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Down Velocity", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_612_Enhanced_Character_Keep_On_Floor_lp[] = {
+    {"", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const nmo_bb_param_desc_t bb_612_Enhanced_Character_Keep_On_Floor_st[] = {
+    {"Show Extents", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_613_Set_Background_Material_inputs[] = {"In"};
+static const char *bb_613_Set_Background_Material_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_613_Set_Background_Material_ip[] = {
+    {"Background Material", NMO_GUID_INIT(0x55AB12CD, 0x22AE6A8B)},
+};
+static const char *bb_614_Set_Diffuse_inputs[] = {"In"};
+static const char *bb_614_Set_Diffuse_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_614_Set_Diffuse_ip[] = {
+    {"Diffuse Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Keep Alpha Component", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_615_Set_Projection_inputs[] = {"In"};
+static const char *bb_615_Set_Projection_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_615_Set_Projection_ip[] = {
+    {"Projection Type", NMO_GUID_INIT(0x1EE22148, 0x602C1CA1)},
+};
+static const char *bb_616_Set_Position_inputs[] = {"In"};
+static const char *bb_616_Set_Position_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_616_Set_Position_ip[] = {
+    {"Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_617_Modify_Component_inputs[] = {"In"};
+static const char *bb_617_Modify_Component_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_617_Modify_Component_ip[] = {
+    {"Vin", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_617_Modify_Component_op[] = {
+    {"Vout", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+};
+static const nmo_bb_param_desc_t bb_617_Modify_Component_st[] = {
+    {"Settings", NMO_GUID_INIT(0x741F6152, 0x574D1DC6)},
+};
+static const char *bb_618_Specific_Bool_Event_inputs[] = {"In", "Reset"};
+static const char *bb_618_Specific_Bool_Event_outputs[] = {"True -> False", "False -> True", "Still True", "STill False"};
+static const nmo_bb_param_desc_t bb_618_Specific_Bool_Event_ip[] = {
+    {"Value", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_618_Specific_Bool_Event_lp[] = {
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_619_Set_Texture_inputs[] = {"In"};
+static const char *bb_619_Set_Texture_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_619_Set_Texture_ip[] = {
+    {"Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Perspective Correct", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Address Mode", NMO_GUID_INIT(0x080D38D5, 0x02CF7A30)},
+};
+static const char *bb_620_Binary_Switch_inputs[] = {"In"};
+static const char *bb_620_Binary_Switch_outputs[] = {"True", "False"};
+static const nmo_bb_param_desc_t bb_620_Binary_Switch_ip[] = {
+    {"Condition", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_621_Sky_Around_inputs[] = {"On", "Off"};
+static const char *bb_621_Sky_Around_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_621_Sky_Around_ip[] = {
+    {"Back Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Right Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Front Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Left Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Up Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Down Texture", NMO_GUID_INIT(0x155B2870, 0x183679F8)},
+    {"Distortion", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Filtering Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Additional Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const nmo_bb_param_desc_t bb_621_Sky_Around_lp[] = {
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+};
+static const char *bb_622_Look_At_Pos_inputs[] = {"In"};
+static const char *bb_622_Look_At_Pos_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_622_Look_At_Pos_ip[] = {
+    {"Target Position", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Following Speed", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_623_Blink_inputs[] = {"In"};
+static const char *bb_623_Blink_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_623_Blink_ip[] = {
+    {"Hidden frames", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Shown frames", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const nmo_bb_param_desc_t bb_623_Blink_lp[] = {
+    {"currentFrame", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_624_Texture_Scroller_inputs[] = {"In"};
+static const char *bb_624_Texture_Scroller_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_624_Texture_Scroller_ip[] = {
+    {"Scroll Vector", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Channel", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_625_Set_Pickable_inputs[] = {"In"};
+static const char *bb_625_Set_Pickable_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_625_Set_Pickable_ip[] = {
+    {"Pickable", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_626_Text_Display_inputs[] = {"On", "Off"};
+static const char *bb_626_Text_Display_outputs[] = {"Exit On", "Exit Off"};
+static const nmo_bb_param_desc_t bb_626_Text_Display_ip[] = {
+    {"Offset", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+    {"Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+    {"Alignment", NMO_GUID_INIT(0x6E49509A, 0x2F067425)},
+    {"Size", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+    {"Text", NMO_GUID_INIT(0x6BD010E2, 0x115617EA)},
+};
+static const nmo_bb_param_desc_t bb_626_Text_Display_lp[] = {
+    {"", NMO_GUID_INIT(0x5C2E69E3, 0xFE156F09)},
+    {"", NMO_GUID_INIT(0x4D082C90, 0x0C8339A2)},
+    {"", NMO_GUID_INIT(0x1CB10760, 0x419F50C5)},
+    {"", NMO_GUID_INIT(0x1CB10760, 0x419F50C5)},
+};
+static const nmo_bb_param_desc_t bb_626_Text_Display_st[] = {
+    {"Sprite Size", NMO_GUID_INIT(0x4EFCB34A, 0x6079E42F)},
+};
+static const char *bb_627_Change_Texture_Video_Format_inputs[] = {"In"};
+static const char *bb_627_Change_Texture_Video_Format_outputs[] = {"Success", "Failed"};
+static const nmo_bb_param_desc_t bb_627_Change_Texture_Video_Format_ip[] = {
+    {"Desired Video Format", NMO_GUID_INIT(0x2C1E5D83, 0x37B9284B)},
+};
+static const char *bb_628_IBCQ_inputs[] = {"In", "Loop In"};
+static const char *bb_628_IBCQ_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_628_IBCQ_ip[] = {
+    {"Delta_In", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Curve", NMO_GUID_INIT(0x20AD345D, 0x1AFB25B1)},
+};
+static const nmo_bb_param_desc_t bb_628_IBCQ_op[] = {
+    {"Delta_Out", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Value", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_628_IBCQ_lp[] = {
+    {"", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const char *bb_629_Set_Background_Color_inputs[] = {"In"};
+static const char *bb_629_Set_Background_Color_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_629_Set_Background_Color_ip[] = {
+    {"Background Color", NMO_GUID_INIT(0x57D42FEE, 0x7CBB3B91)},
+};
+static const char *bb_630_Rotate_Around_inputs[] = {"In"};
+static const char *bb_630_Rotate_Around_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_630_Rotate_Around_ip[] = {
+    {"Axis Of Rotation", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Angle Of Rotation", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Keep Orientation", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_631_Bool_Event_inputs[] = {"In", "Reset"};
+static const char *bb_631_Bool_Event_outputs[] = {"Change Detected", "No Change"};
+static const nmo_bb_param_desc_t bb_631_Bool_Event_ip[] = {
+    {"Value", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const nmo_bb_param_desc_t bb_631_Bool_Event_lp[] = {
+    {"", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_632_Priority_inputs[] = {"Reset", "In 1", "In 2"};
+static const char *bb_632_Priority_outputs[] = {"OutReset", "Out 1", "Out 2"};
+static const nmo_bb_param_desc_t bb_632_Priority_lp[] = {
+    {"", NMO_GUID_INIT(0x5A5716FD, 0x44E276D7)},
+};
+static const char *bb_633_Linear_Progression_inputs[] = {"In", "Loop In"};
+static const char *bb_633_Linear_Progression_outputs[] = {"Out", "Loop Out"};
+static const nmo_bb_param_desc_t bb_633_Linear_Progression_ip[] = {
+    {"Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"A", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"B", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+};
+static const nmo_bb_param_desc_t bb_633_Linear_Progression_op[] = {
+    {"Elapsed Time", NMO_GUID_INIT(0x54B4422B, 0x730F0F4F)},
+    {"Value", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Delta", NMO_GUID_INIT(0x47884C3F, 0x432C2C20)},
+    {"Progression", NMO_GUID_INIT(0xF3C84B4E, 0x0FFACC34)},
+};
+static const nmo_bb_param_desc_t bb_633_Linear_Progression_st[] = {
+    {"Time Based", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+static const char *bb_634_Rotate_inputs[] = {"In"};
+static const char *bb_634_Rotate_outputs[] = {"Out"};
+static const nmo_bb_param_desc_t bb_634_Rotate_ip[] = {
+    {"Axis Of Rotation", NMO_GUID_INIT(0x48824EAE, 0x2FE47960)},
+    {"Angle Of Rotation", NMO_GUID_INIT(0x11262CF5, 0x30B0233A)},
+    {"Referential", NMO_GUID_INIT(0x5B8A05D5, 0x31EA28D4)},
+    {"Hierarchy", NMO_GUID_INIT(0x1AD52A8E, 0x5E741920)},
+};
+
+static const nmo_bb_proto_t s_bb_builtin[] = {
+    { /* Add To Group */
+        NMO_GUID_INIT(0x00024125, 0x785420AB),
+        "Add To Group",
+        "Adds the object to a Group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_0_Add_To_Group_inputs, 1,
+        (const char *const *)bb_0_Add_To_Group_outputs, 1,
+        bb_0_Add_To_Group_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Translate */
+        NMO_GUID_INIT(0x000D000D, 0x000D000D),
+        "Translate",
+        "Translates a 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_1_Translate_inputs, 1,
+        (const char *const *)bb_1_Translate_outputs, 1,
+        bb_1_Translate_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Play Sound Instance */
+        NMO_GUID_INIT(0x00283A35, 0x38EF6B48),
+        "Play Sound Instance",
+        "Plays the totality of a sound once, optionally attaching it to an object.",
+        "Sounds/Basic",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_2_Play_Sound_Instance_inputs, 1,
+        (const char *const *)bb_2_Play_Sound_Instance_outputs, 1,
+        bb_2_Play_Sound_Instance_ip, 6,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Animation Recorder */
+        NMO_GUID_INIT(0x00532D07, 0x1DB631CC),
+        "Animation Recorder",
+        "Records the Position+Orientation+Scale as an animation.",
+        "3D Transformations/Animation",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_3_Animation_Recorder_inputs, 2,
+        (const char *const *)bb_3_Animation_Recorder_outputs, 2,
+        bb_3_Animation_Recorder_ip, 3,
+        bb_3_Animation_Recorder_op, 1,
+        bb_3_Animation_Recorder_lp, 1,
+        bb_3_Animation_Recorder_st, 1,
+    },
+    { /* TT Set Float Value To Registry */
+        NMO_GUID_INIT(0x0060522F, 0x041D4C1F),
+        "TT Set Float Value To Registry",
+        "Writes a Float value to the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_4_TT_Set_Float_Value_To_Registry_inputs, 1,
+        (const char *const *)bb_4_TT_Set_Float_Value_To_Registry_outputs, 2,
+        bb_4_TT_Set_Float_Value_To_Registry_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Joystick Controller */
+        NMO_GUID_INIT(0x0085EBC1, 0x21935422),
+        "Joystick Controller",
+        "Sends standard joystick messages to the building block owner.",
+        "Controllers/Joystick",
+        "Controllers.dll",
+        65536, 19, 327680,
+        (const char *const *)bb_5_Joystick_Controller_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_5_Joystick_Controller_ip, 1,
+        bb_5_Joystick_Controller_op, 1,
+        bb_5_Joystick_Controller_lp, 1,
+        bb_5_Joystick_Controller_st, 1,
+    },
+    { /* TT_TextureSine */
+        NMO_GUID_INIT(0x009C1208, 0x3A8D779E),
+        "TT_TextureSine",
+        "Produces a sinusoidal displacement on the UV coords of a mesh's material (or one of its channel).",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_6_TT_TextureSine_inputs, 1,
+        (const char *const *)bb_6_TT_TextureSine_outputs, 1,
+        bb_6_TT_TextureSine_ip, 4,
+        NULL, 0,
+        bb_6_TT_TextureSine_lp, 2,
+        NULL, 0,
+    },
+    { /* Get Square From 3D Pos */
+        NMO_GUID_INIT(0x00A376E0, 0x326609E6),
+        "Get Square From 3D Pos",
+        "Gets the value of a square",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 19, 0,
+        (const char *const *)bb_7_Get_Square_From_3D_Pos_inputs, 1,
+        (const char *const *)bb_7_Get_Square_From_3D_Pos_outputs, 1,
+        bb_7_Get_Square_From_3D_Pos_ip, 3,
+        bb_7_Get_Square_From_3D_Pos_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Camera Color Filter */
+        NMO_GUID_INIT(0x00CD010B, 0x00DD010B),
+        "Camera Color Filter",
+        "Adds a color filter to the Camera.",
+        "Cameras/FX",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_8_Camera_Color_Filter_inputs, 2,
+        (const char *const *)bb_8_Camera_Color_Filter_outputs, 2,
+        bb_8_Camera_Color_Filter_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Additional View */
+        NMO_GUID_INIT(0x00CD159B, 0x164D010B),
+        "Additional View",
+        "Allows additional views to be displayed on screen simultaneously.",
+        "Interface/Screen",
+        "Interface.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_9_Additional_View_inputs, 2,
+        (const char *const *)bb_9_Additional_View_outputs, 2,
+        bb_9_Additional_View_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Planar Filter */
+        NMO_GUID_INIT(0x00CD320B, 0x32ED010B),
+        "Planar Filter",
+        "Sets an filter color and an additionnal color to recover all the scene.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_10_Planar_Filter_inputs, 2,
+        (const char *const *)bb_10_Planar_Filter_outputs, 2,
+        bb_10_Planar_Filter_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Current Scene */
+        NMO_GUID_INIT(0x00DC125F, 0x592B00A8),
+        "Get Current Scene",
+        "Returns the scene that is currently being played.",
+        "Narratives/Scene Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_11_Get_Current_Scene_inputs, 1,
+        (const char *const *)bb_11_Get_Current_Scene_outputs, 1,
+        NULL, 0,
+        bb_11_Get_Current_Scene_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Texture Load */
+        NMO_GUID_INIT(0x00E85AB1, 0x312A731C),
+        "Texture Load",
+        "Loads a texture file into a texture or a Sprite.",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 31, 17039360,
+        (const char *const *)bb_12_Texture_Load_inputs, 1,
+        (const char *const *)bb_12_Texture_Load_outputs, 2,
+        bb_12_Texture_Load_ip, 2,
+        NULL, 0,
+        bb_12_Texture_Load_lp, 2,
+        bb_12_Texture_Load_st, 1,
+    },
+    { /* sprite Load */
+        NMO_GUID_INIT(0x00E85AE1, 0x317A771C),
+        "sprite Load",
+        "Loads a sprite file into a sprite or a ABPosFinder.",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 28, 17039360,
+        (const char *const *)bb_13_sprite_Load_inputs, 1,
+        (const char *const *)bb_13_sprite_Load_outputs, 2,
+        bb_13_sprite_Load_ip, 2,
+        NULL, 0,
+        bb_13_sprite_Load_lp, 2,
+        bb_13_sprite_Load_st, 1,
+    },
+    { /* Curve Follow */
+        NMO_GUID_INIT(0x00ED010B, 0x00FD010B),
+        "Curve Follow",
+        "Moves a 3D Entity along a path.",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65541, 33, 67371008,
+        (const char *const *)bb_14_Curve_Follow_inputs, 2,
+        (const char *const *)bb_14_Curve_Follow_outputs, 2,
+        bb_14_Curve_Follow_ip, 4,
+        bb_14_Curve_Follow_op, 2,
+        bb_14_Curve_Follow_lp, 3,
+        bb_14_Curve_Follow_st, 1,
+    },
+    { /* TT Get Float Value From Registry */
+        NMO_GUID_INIT(0x00FE6FE4, 0x12A66150),
+        "TT Get Float Value From Registry",
+        "Reads a Float value from the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_15_TT_Get_Float_Value_From_Registry_inputs, 1,
+        (const char *const *)bb_15_TT_Get_Float_Value_From_Registry_outputs, 2,
+        bb_15_TT_Get_Float_Value_From_Registry_ip, 2,
+        bb_15_TT_Get_Float_Value_From_Registry_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* While */
+        NMO_GUID_INIT(0x010015A6, 0xEF597665),
+        "While",
+        "Loops while 'Condition' is TRUE.",
+        "Logics/Loops",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_16_While_inputs, 2,
+        (const char *const *)bb_16_While_outputs, 2,
+        bb_16_While_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Move To */
+        NMO_GUID_INIT(0x010D010B, 0x011D010B),
+        "Move To",
+        "Makes a 3D Entity move to a specified position.",
+        "3D Transformations/Movement",
+        "3DTransfo.dll",
+        65541, 33, 67371008,
+        (const char *const *)bb_17_Move_To_inputs, 2,
+        (const char *const *)bb_17_Move_To_outputs, 2,
+        bb_17_Move_To_ip, 5,
+        bb_17_Move_To_op, 2,
+        bb_17_Move_To_lp, 4,
+        bb_17_Move_To_st, 1,
+    },
+    { /* Sky Around(CubeMap) */
+        NMO_GUID_INIT(0x01157F66, 0x0AF04FD2),
+        "Sky Around(CubeMap)",
+        "Simulates a Sky Effect on the Scene using a cube map texture on a cube; This behavior doesn't need loop.",
+        "World Environments/Background",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_18_Sky_Around_CubeMap__inputs, 2,
+        (const char *const *)bb_18_Sky_Around_CubeMap__outputs, 2,
+        bb_18_Sky_Around_CubeMap__ip, 5,
+        NULL, 0,
+        bb_18_Sky_Around_CubeMap__lp, 1,
+        NULL, 0,
+    },
+    { /* Joystick Waiter */
+        NMO_GUID_INIT(0x012D010B, 0x013D010B),
+        "Joystick Waiter",
+        "Activates different outputs according to Joystick commands.",
+        "Controllers/Joystick",
+        "Controllers.dll",
+        131072, 19, 33554432,
+        (const char *const *)bb_19_Joystick_Waiter_inputs, 2,
+        (const char *const *)bb_19_Joystick_Waiter_outputs, 3,
+        bb_19_Joystick_Waiter_ip, 1,
+        bb_19_Joystick_Waiter_op, 4,
+        NULL, 0,
+        bb_19_Joystick_Waiter_st, 4,
+    },
+    { /* Mouse Waiter */
+        NMO_GUID_INIT(0x014D010B, 0x015D010B),
+        "Mouse Waiter",
+        "Activates different outputs according to mouse actions.",
+        "Controllers/Mouse",
+        "Controllers.dll",
+        65536, 19, 184549376,
+        (const char *const *)bb_20_Mouse_Waiter_inputs, 2,
+        (const char *const *)bb_20_Mouse_Waiter_outputs, 8,
+        NULL, 0,
+        bb_20_Mouse_Waiter_op, 5,
+        NULL, 0,
+        bb_20_Mouse_Waiter_st, 3,
+    },
+    { /* Delete Font */
+        NMO_GUID_INIT(0x0153342C, 0xE543674F),
+        "Delete Font",
+        "Delete a font (created by CreateFont or CreateSystemFont)",
+        "Interface/Fonts",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_21_Delete_Font_inputs, 1,
+        (const char *const *)bb_21_Delete_Font_outputs, 1,
+        bb_21_Delete_Font_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Key Waiter */
+        NMO_GUID_INIT(0x016D010B, 0x017D010B),
+        "Key Waiter",
+        "Waits for a key to be pressed.",
+        "Controllers/Keyboard",
+        "Controllers.dll",
+        65536, 19, 201326592,
+        (const char *const *)bb_22_Key_Waiter_inputs, 1,
+        (const char *const *)bb_22_Key_Waiter_outputs, 1,
+        bb_22_Key_Waiter_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        bb_22_Key_Waiter_st, 1,
+    },
+    { /* Test Bounding Box Y Overlapping */
+        NMO_GUID_INIT(0x01AD010B, 0x01BD010B),
+        "Test Bounding Box Y Overlapping",
+        "Tests the Y Relative Position of the bounding boxes of two 3D Entities, in the world coordinate system.",
+        "Collisions/3D Entity",
+        "Collisions.dll",
+        65536, 33, 0,
+        (const char *const *)bb_23_Test_Bounding_Box_Y_Overlapping_inputs, 1,
+        (const char *const *)bb_23_Test_Bounding_Box_Y_Overlapping_outputs, 5,
+        bb_23_Test_Bounding_Box_Y_Overlapping_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Spot Light Properties */
+        NMO_GUID_INIT(0x01ED010B, 0x01FD010B),
+        "Spot Light Properties",
+        "Sets the properties of a spotlight (internal and external diameter of the light cone).",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_24_Spot_Light_Properties_inputs, 1,
+        (const char *const *)bb_24_Spot_Light_Properties_outputs, 1,
+        bb_24_Spot_Light_Properties_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Use Z information */
+        NMO_GUID_INIT(0x01F60ADC, 0x39B02CB8),
+        "Use Z information",
+        "Hides the object but uses its Z information during rendering",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)NULL, 0,
+        (const char *const *)NULL, 0,
+        bb_25_Use_Z_information_ip, 1,
+        NULL, 0,
+        bb_25_Use_Z_information_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Set Level Data */
+        NMO_GUID_INIT(0x02030EA1, 0x30182971),
+        "TT Set Level Data",
+        "Sets the level data",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_26_TT_Set_Level_Data_inputs, 1,
+        (const char *const *)bb_26_TT_Set_Level_Data_outputs, 1,
+        bb_26_TT_Set_Level_Data_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Light Target */
+        NMO_GUID_INIT(0x02580258, 0x02580258),
+        "Set Light Target",
+        "Makes a 3D Entity become the target of a light.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_27_Set_Light_Target_inputs, 1,
+        (const char *const *)bb_27_Set_Light_Target_outputs, 1,
+        bb_27_Set_Light_Target_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Sound Load */
+        NMO_GUID_INIT(0x02BC537C, 0x147C22E0),
+        "Sound Load",
+        "Loads a sound file into a sound object",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 25, 17039360,
+        (const char *const *)bb_28_Sound_Load_inputs, 1,
+        (const char *const *)bb_28_Sound_Load_outputs, 2,
+        bb_28_Sound_Load_ip, 2,
+        NULL, 0,
+        bb_28_Sound_Load_lp, 2,
+        bb_28_Sound_Load_st, 1,
+    },
+    { /* TT WaveParticleSystem */
+        NMO_GUID_INIT(0x02DA5A18, 0x52227285),
+        "TT WaveParticleSystem",
+        "Emits particles from a point and set Orientation from the Offset vector",
+        "TT_Particles/Terratools",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_29_TT_WaveParticleSystem_inputs, 3,
+        (const char *const *)bb_29_TT_WaveParticleSystem_outputs, 3,
+        bb_29_TT_WaveParticleSystem_ip, 36,
+        NULL, 0,
+        bb_29_TT_WaveParticleSystem_lp, 3,
+        bb_29_TT_WaveParticleSystem_st, 11,
+    },
+    { /* Interpolator Matrix */
+        NMO_GUID_INIT(0x03184D55, 0x7D7A0509),
+        "Interpolator Matrix",
+        "Performs a linear interpolation between matrices.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_30_Interpolator_Matrix_inputs, 1,
+        (const char *const *)bb_30_Interpolator_Matrix_outputs, 1,
+        bb_30_Interpolator_Matrix_ip, 3,
+        bb_30_Interpolator_Matrix_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Align 2D */
+        NMO_GUID_INIT(0x03385BC3, 0x1034102F),
+        "Align 2D",
+        "Aligns a 2D Entity on a model.",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_31_Align_2D_inputs, 1,
+        (const char *const *)bb_31_Align_2D_outputs, 1,
+        bb_31_Align_2D_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ParameterMapper */
+        NMO_GUID_INIT(0x033E30A1, 0x42F452FC),
+        "TT_ParameterMapper",
+        "According to the Input activated, routes the corresponding Input Parameter to the Output Parameter.",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_32_TT_ParameterMapper_inputs, 2,
+        (const char *const *)bb_32_TT_ParameterMapper_outputs, 2,
+        bb_32_TT_ParameterMapper_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_CreateDirectory */
+        NMO_GUID_INIT(0x03442842, 0x01DF7A5F),
+        "TT_CreateDirectory",
+        "Creates a Directory",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_33_TT_CreateDirectory_inputs, 1,
+        (const char *const *)bb_33_TT_CreateDirectory_outputs, 2,
+        bb_33_TT_CreateDirectory_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Time Bezier Interpolator */
+        NMO_GUID_INIT(0x034B2E0E, 0x0CBF75E9),
+        "Time Bezier Interpolator",
+        "Interpolates a float according to a 2D Bezier curve in the [Min,Max] range, in a given number of milliseconds.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_34_Time_Bezier_Interpolator_inputs, 2,
+        (const char *const *)bb_34_Time_Bezier_Interpolator_outputs, 2,
+        bb_34_Time_Bezier_Interpolator_ip, 4,
+        bb_34_Time_Bezier_Interpolator_op, 2,
+        bb_34_Time_Bezier_Interpolator_lp, 1,
+        NULL, 0,
+    },
+    { /* Set Dest Blend */
+        NMO_GUID_INIT(0x036D1A87, 0xDF0A670C),
+        "Set Dest Blend",
+        "Sets the Destination Mode when Blending is used on the material of the 3D entity.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_35_Set_Dest_Blend_inputs, 1,
+        (const char *const *)bb_35_Set_Dest_Blend_outputs, 1,
+        bb_35_Set_Dest_Blend_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Joystick Mapper */
+        NMO_GUID_INIT(0x03ED1BEA, 0x25692ECC),
+        "Joystick Mapper",
+        "Binds specific messages to joystick commands.",
+        "Controllers/Joystick",
+        "Controllers.dll",
+        65536, 19, 851968,
+        (const char *const *)bb_36_Joystick_Mapper_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_36_Joystick_Mapper_ip, 1,
+        bb_36_Joystick_Mapper_op, 1,
+        bb_36_Joystick_Mapper_lp, 2,
+        bb_36_Joystick_Mapper_st, 1,
+    },
+    { /* Resize View */
+        NMO_GUID_INIT(0x040E1FE8, 0x79ED7C9B),
+        "Resize View",
+        "Allows main view to be resized.",
+        "Interface/Screen",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_37_Resize_View_inputs, 2,
+        (const char *const *)bb_37_Resize_View_outputs, 2,
+        bb_37_Resize_View_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* BitmapText Display */
+        NMO_GUID_INIT(0x049D487B, 0x57565345),
+        "BitmapText Display",
+        "Displays a Bitmap Text on top of the 3D environment",
+        "Interface/Text",
+        "Interface.dll",
+        65536, 19, 512,
+        (const char *const *)bb_38_BitmapText_Display_inputs, 3,
+        (const char *const *)bb_38_BitmapText_Display_outputs, 3,
+        bb_38_BitmapText_Display_ip, 6,
+        NULL, 0,
+        bb_38_BitmapText_Display_lp, 2,
+        bb_38_BitmapText_Display_st, 1,
+    },
+    { /* Sound Manager Setup */
+        NMO_GUID_INIT(0x04C05C6A, 0x6454792B),
+        "Sound Manager Setup",
+        "Controls the listener properties.",
+        "Sounds/Global",
+        "Sounds.dll",
+        65536, 19, 0,
+        (const char *const *)bb_39_Sound_Manager_Setup_inputs, 1,
+        (const char *const *)bb_39_Sound_Manager_Setup_outputs, 1,
+        bb_39_Sound_Manager_Setup_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Display Progression Bar */
+        NMO_GUID_INIT(0x04CF37CD, 0x7A246B85),
+        "Display Progression Bar",
+        "Displays a progression bar.",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_40_Display_Progression_Bar_inputs, 2,
+        (const char *const *)bb_40_Display_Progression_Bar_outputs, 2,
+        bb_40_Display_Progression_Bar_ip, 3,
+        NULL, 0,
+        bb_40_Display_Progression_Bar_lp, 1,
+        bb_40_Display_Progression_Bar_st, 2,
+    },
+    { /* TT GetNearestCurvePosition */
+        NMO_GUID_INIT(0x04DB6E14, 0x2C151F73),
+        "TT GetNearestCurvePosition",
+        "Get Nearest Curve Position",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_41_TT_GetNearestCurvePosition_inputs, 1,
+        (const char *const *)bb_41_TT_GetNearestCurvePosition_outputs, 1,
+        bb_41_TT_GetNearestCurvePosition_ip, 2,
+        bb_41_TT_GetNearestCurvePosition_op, 2,
+        NULL, 0,
+        bb_41_TT_GetNearestCurvePosition_st, 1,
+    },
+    { /* Is Global State Active */
+        NMO_GUID_INIT(0x04E65BDD, 0x473C3681),
+        "Is Global State Active",
+        "Checks to see if the system is in a specified global state.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_42_Is_Global_State_Active_inputs, 1,
+        (const char *const *)bb_42_Is_Global_State_Active_outputs, 2,
+        bb_42_Is_Global_State_Active_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_JoystickVectorMapper */
+        NMO_GUID_INIT(0x04F80EFD, 0x76B47B33),
+        "TT_JoystickVectorMapper",
+        "TT_JoystickVectorMapper",
+        "TT Toolbox/Controllers",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_43_TT_JoystickVectorMapper_inputs, 1,
+        (const char *const *)bb_43_TT_JoystickVectorMapper_outputs, 1,
+        bb_43_TT_JoystickVectorMapper_ip, 5,
+        bb_43_TT_JoystickVectorMapper_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Keyboard Mapper */
+        NMO_GUID_INIT(0x053B2BDE, 0x2F8F1D74),
+        "Keyboard Mapper",
+        "Binds specific messages to keyboard keys.",
+        "Controllers/Keyboard",
+        "Controllers.dll",
+        65536, 19, 851968,
+        (const char *const *)bb_44_Keyboard_Mapper_inputs, 2,
+        (const char *const *)NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        bb_44_Keyboard_Mapper_lp, 2,
+        NULL, 0,
+    },
+    { /* TT Load Database */
+        NMO_GUID_INIT(0x05441494, 0x38AC7789),
+        "TT Load Database",
+        "Get arrays from a database",
+        "TT Database",
+        "TT_DatabaseManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_45_TT_Load_Database_inputs, 1,
+        (const char *const *)bb_45_TT_Load_Database_outputs, 2,
+        bb_45_TT_Load_Database_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 2D Text */
+        NMO_GUID_INIT(0x055B29FE, 0x662D5CA0),
+        "2D Text",
+        "Display a text on a 2D Frame, using a texture font",
+        "Interface/Text",
+        "Interface.dll",
+        131072, 27, 251920384,
+        (const char *const *)bb_46_2D_Text_inputs, 2,
+        (const char *const *)bb_46_2D_Text_outputs, 2,
+        bb_46_2D_Text_ip, 9,
+        bb_46_2D_Text_op, 2,
+        NULL, 0,
+        bb_46_2D_Text_st, 1,
+    },
+    { /* Insert Column */
+        NMO_GUID_INIT(0x05CB7802, 0x04A64A58),
+        "Insert Column",
+        "Inserts a column in the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_47_Insert_Column_inputs, 1,
+        (const char *const *)bb_47_Insert_Column_outputs, 1,
+        bb_47_Insert_Column_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Time Settings */
+        NMO_GUID_INIT(0x060A0F8C, 0x09203B5F),
+        "Time Settings",
+        "Set All Time Settings",
+        "Optimizations/System",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 0,
+        (const char *const *)bb_48_Time_Settings_inputs, 1,
+        (const char *const *)bb_48_Time_Settings_outputs, 1,
+        bb_48_Time_Settings_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Player Active */
+        NMO_GUID_INIT(0x0694658D, 0x7FFD236F),
+        "TT Player Active",
+        "Check PlayerActive",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_49_TT_Player_Active_inputs, 1,
+        (const char *const *)bb_49_TT_Player_Active_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Motion Blur */
+        NMO_GUID_INIT(0x06D0B04B, 0x1D4EA106),
+        "Motion Blur",
+        "Performs a Motion Blur when the 3D Entity is moving.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 41, 0,
+        (const char *const *)bb_50_Motion_Blur_inputs, 2,
+        (const char *const *)bb_50_Motion_Blur_outputs, 2,
+        bb_50_Motion_Blur_ip, 1,
+        NULL, 0,
+        bb_50_Motion_Blur_lp, 2,
+        NULL, 0,
+    },
+    { /* ShadowCaster */
+        NMO_GUID_INIT(0x0718360B, 0x71E5002F),
+        "ShadowCaster",
+        "Projects a shadow of the target object.",
+        "Visuals/Shadows",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_51_ShadowCaster_inputs, 2,
+        (const char *const *)bb_51_ShadowCaster_outputs, 2,
+        bb_51_ShadowCaster_ip, 4,
+        NULL, 0,
+        bb_51_ShadowCaster_lp, 1,
+        bb_51_ShadowCaster_st, 1,
+    },
+    { /* Change Value If */
+        NMO_GUID_INIT(0x07253EDB, 0x4D1237ED),
+        "Change Value If",
+        "Get elements from an array, using the input parameter key and then replace it by the 4th input parameter's value.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_52_Change_Value_If_inputs, 1,
+        (const char *const *)bb_52_Change_Value_If_outputs, 2,
+        bb_52_Change_Value_If_ip, 2,
+        bb_52_Change_Value_If_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Write Array */
+        NMO_GUID_INIT(0x07414AF4, 0x505E52EE),
+        "TT Write Array",
+        "Writes Arrays to manager",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_53_TT_Write_Array_inputs, 1,
+        (const char *const *)bb_53_TT_Write_Array_outputs, 1,
+        bb_53_TT_Write_Array_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Keyboard Camera Orbit */
+        NMO_GUID_INIT(0x07610F4D, 0x69747B9D),
+        "Keyboard Camera Orbit",
+        "Makes a Camera orbit round a 3D Entity using keyboard with limited angles.",
+        "Cameras/Movement",
+        "Cameras.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_54_Keyboard_Camera_Orbit_inputs, 2,
+        (const char *const *)bb_54_Keyboard_Camera_Orbit_outputs, 2,
+        bb_54_Keyboard_Camera_Orbit_ip, 11,
+        NULL, 0,
+        bb_54_Keyboard_Camera_Orbit_lp, 3,
+        bb_54_Keyboard_Camera_Orbit_st, 8,
+    },
+    { /* Find Path */
+        NMO_GUID_INIT(0x078C60DE, 0x6C744614),
+        "Find Path",
+        "Returns a group of nodes to go by to reach a goal from a starting point.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_55_Find_Path_inputs, 1,
+        (const char *const *)bb_55_Find_Path_outputs, 2,
+        bb_55_Find_Path_ip, 3,
+        bb_55_Find_Path_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Nearest In Group */
+        NMO_GUID_INIT(0x085207EB, 0x584950D8),
+        "Get Nearest In Group",
+        "Get the nearest object in the selected group from the given position.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_56_Get_Nearest_In_Group_inputs, 1,
+        (const char *const *)bb_56_Get_Nearest_In_Group_outputs, 1,
+        bb_56_Get_Nearest_In_Group_ip, 3,
+        bb_56_Get_Nearest_In_Group_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Copy Mapping */
+        NMO_GUID_INIT(0x086A487C, 0x3CD44ACB),
+        "Copy Mapping",
+        "Copies the texture coordinates from a mesh to another mesh,",
+        "Materials-Textures/Mapping",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_57_Copy_Mapping_inputs, 1,
+        (const char *const *)bb_57_Copy_Mapping_outputs, 1,
+        bb_57_Copy_Mapping_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT MagnetMeshForm */
+        NMO_GUID_INIT(0x08E53929, 0x4C9C5205),
+        "TT MagnetMeshForm",
+        "Object is magnetically attracted to another",
+        "TT Toolbox/Mesh",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_58_TT_MagnetMeshForm_inputs, 2,
+        (const char *const *)bb_58_TT_MagnetMeshForm_outputs, 2,
+        bb_58_TT_MagnetMeshForm_ip, 4,
+        NULL, 0,
+        bb_58_TT_MagnetMeshForm_lp, 2,
+        bb_58_TT_MagnetMeshForm_st, 1,
+    },
+    { /* TT_GetZOrder */
+        NMO_GUID_INIT(0x09163112, 0x1D2B4454),
+        "TT_GetZOrder",
+        "Changing the mapping and creating planar mapping",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_59_TT_GetZOrder_inputs, 1,
+        (const char *const *)bb_59_TT_GetZOrder_outputs, 1,
+        NULL, 0,
+        bb_59_TT_GetZOrder_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Activate Node */
+        NMO_GUID_INIT(0x092A4E59, 0x4009769C),
+        "Activate Node",
+        "Activates or deactivates a node in a Nodal Path.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_60_Activate_Node_inputs, 1,
+        (const char *const *)bb_60_Activate_Node_outputs, 1,
+        bb_60_Activate_Node_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Mark System */
+        NMO_GUID_INIT(0x09A06075, 0x760A4720),
+        "Mark System",
+        "Creates marks (single or continuous) on surfaces.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 19, 117440512,
+        (const char *const *)bb_61_Mark_System_inputs, 3,
+        (const char *const *)bb_61_Mark_System_outputs, 3,
+        bb_61_Mark_System_ip, 10,
+        NULL, 0,
+        bb_61_Mark_System_lp, 1,
+        bb_61_Mark_System_st, 3,
+    },
+    { /* TT_LinearVolume */
+        NMO_GUID_INIT(0x09B335B3, 0x12D17CDC),
+        "TT_LinearVolume",
+        "Plays different samples according to a given vehicle velocity",
+        "TT Toolbox/Sounds",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_62_TT_LinearVolume_inputs, 1,
+        (const char *const *)bb_62_TT_LinearVolume_outputs, 1,
+        bb_62_TT_LinearVolume_ip, 1,
+        bb_62_TT_LinearVolume_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Quadratic Attenuation */
+        NMO_GUID_INIT(0x0A0E0F18, 0x7A01EF09),
+        "Set Quadratic Attenuation",
+        "Sets the value of the 'Quadratic Attenuation' of a Light.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_63_Set_Quadratic_Attenuation_inputs, 1,
+        (const char *const *)bb_63_Set_Quadratic_Attenuation_outputs, 1,
+        bb_63_Set_Quadratic_Attenuation_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Orthographic Zoom */
+        NMO_GUID_INIT(0x0A125555, 0x0EEE5488),
+        "Orthographic Zoom",
+        "Emulates a zoom when the viewing mode is orthographic.",
+        "Cameras/Basic",
+        "Cameras.dll",
+        131072, 34, 262144,
+        (const char *const *)bb_64_Orthographic_Zoom_inputs, 1,
+        (const char *const *)bb_64_Orthographic_Zoom_outputs, 1,
+        bb_64_Orthographic_Zoom_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Create new GameInfo */
+        NMO_GUID_INIT(0x0A8B6C27, 0x402B43B4),
+        "TT Create new GameInfo",
+        "Creates new GameInfo",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_65_TT_Create_new_GameInfo_inputs, 1,
+        (const char *const *)bb_65_TT_Create_new_GameInfo_outputs, 1,
+        bb_65_TT_Create_new_GameInfo_ip, 1,
+        bb_65_TT_Create_new_GameInfo_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Floor Reference Object */
+        NMO_GUID_INIT(0x0AD75CCB, 0x0CD1369A),
+        "Set Floor Reference Object",
+        "Sets the bodypart used to represent floor reference for the Character",
+        "Characters/Basic",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_66_Set_Floor_Reference_Object_inputs, 1,
+        (const char *const *)bb_66_Set_Floor_Reference_Object_outputs, 1,
+        bb_66_Set_Floor_Reference_Object_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Restart CMO */
+        NMO_GUID_INIT(0x0B585F6F, 0x46253C21),
+        "TT Restart CMO",
+        "Restarts CMO",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_67_TT_Restart_CMO_inputs, 1,
+        (const char *const *)bb_67_TT_Restart_CMO_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Euler Orientation */
+        NMO_GUID_INIT(0x0C4966D8, 0x6C0C6D14),
+        "Set Euler Orientation",
+        "Sets the orientation of a 3D Entity with Euler angles.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 67371008,
+        (const char *const *)bb_68_Set_Euler_Orientation_inputs, 1,
+        (const char *const *)bb_68_Set_Euler_Orientation_outputs, 1,
+        bb_68_Set_Euler_Orientation_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_68_Set_Euler_Orientation_st, 1,
+    },
+    { /* Get Euler Orientation */
+        NMO_GUID_INIT(0x0C4977A8, 0x6C645D14),
+        "Get Euler Orientation",
+        "Gets the orientation of a 3D Entity with Euler angles.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_69_Get_Euler_Orientation_inputs, 1,
+        (const char *const *)bb_69_Get_Euler_Orientation_outputs, 1,
+        NULL, 0,
+        bb_69_Get_Euler_Orientation_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set 3DSprite Mode */
+        NMO_GUID_INIT(0x0C5D0457, 0xC64C7000),
+        "Set 3DSprite Mode",
+        "Sets the orientation mode of the 3D Sprite.",
+        "Visuals/Sprite",
+        "Visuals.dll",
+        65536, 37, 262144,
+        (const char *const *)bb_70_Set_3DSprite_Mode_inputs, 1,
+        (const char *const *)bb_70_Set_3DSprite_Mode_outputs, 1,
+        bb_70_Set_3DSprite_Mode_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Random */
+        NMO_GUID_INIT(0x0C622386, 0x1C3054F7),
+        "Random",
+        "Retrieves a Random Variable between 'Min' an 'Max'.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 201327616,
+        (const char *const *)bb_71_Random_inputs, 1,
+        (const char *const *)bb_71_Random_outputs, 1,
+        bb_71_Random_ip, 2,
+        bb_71_Random_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Physics Impulse */
+        NMO_GUID_INIT(0x0C7E39BB, 0x16DB20D5),
+        "Physics Impulse",
+        "Give a instantaneous Impulse to the object",
+        "Physics",
+        "physics_RT.dll",
+        65536, 33, 67371008,
+        (const char *const *)bb_72_Physics_Impulse_inputs, 1,
+        (const char *const *)bb_72_Physics_Impulse_outputs, 1,
+        bb_72_Physics_Impulse_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        bb_72_Physics_Impulse_st, 2,
+    },
+    { /* Delete Dynamic Objects */
+        NMO_GUID_INIT(0x0CBA3195, 0x53440E4C),
+        "Delete Dynamic Objects",
+        "Deletes all the dynamic objects in memory",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_73_Delete_Dynamic_Objects_inputs, 1,
+        (const char *const *)bb_73_Delete_Dynamic_Objects_outputs, 1,
+        bb_73_Delete_Dynamic_Objects_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Level Reached */
+        NMO_GUID_INIT(0x0CF151B2, 0x0B1B6001),
+        "TT Set Level Reached",
+        "Sets level reached to manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_74_TT_Set_Level_Reached_inputs, 1,
+        (const char *const *)bb_74_TT_Set_Level_Reached_outputs, 1,
+        bb_74_TT_Set_Level_Reached_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Animation Frame */
+        NMO_GUID_INIT(0x0E579636, 0xA3B6E7F0),
+        "Set Animation Frame",
+        "Places the character in a specified frame of an animation cycle.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_75_Set_Animation_Frame_inputs, 1,
+        (const char *const *)bb_75_Set_Animation_Frame_outputs, 1,
+        bb_75_Set_Animation_Frame_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Copy Buffer to Texture */
+        NMO_GUID_INIT(0x0EF6070D, 0x67166889),
+        "Copy Buffer to Texture",
+        "Copy a part of the frame buffer to a texture.",
+        "Materials-Textures/Texture",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_76_Copy_Buffer_to_Texture_inputs, 1,
+        (const char *const *)bb_76_Copy_Buffer_to_Texture_outputs, 1,
+        bb_76_Copy_Buffer_to_Texture_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Box Face Intersection */
+        NMO_GUID_INIT(0x0F1C5480, 0x04A811CB),
+        "Box Face Intersection",
+        "Detects the collision between the first entity's bounding box and each faces of the second entity.",
+        "Collisions/Intersection",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_77_Box_Face_Intersection_inputs, 1,
+        (const char *const *)bb_77_Box_Face_Intersection_outputs, 2,
+        bb_77_Box_Face_Intersection_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Align 3D */
+        NMO_GUID_INIT(0x0F384BC3, 0x1B34102F),
+        "Align 3D",
+        "Aligns 3D Entities on a model.",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_78_Align_3D_inputs, 1,
+        (const char *const *)bb_78_Align_3D_outputs, 1,
+        bb_78_Align_3D_ip, 6,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Caret Position */
+        NMO_GUID_INIT(0x0F760D6E, 0x7CE7589A),
+        "Set Caret Position",
+        "Insert a caret into a string.",
+        "Interface/Text",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_79_Set_Caret_Position_inputs, 1,
+        (const char *const *)bb_79_Set_Caret_Position_outputs, 1,
+        bb_79_Set_Caret_Position_ip, 2,
+        bb_79_Set_Caret_Position_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_LoadMotorSettings */
+        NMO_GUID_INIT(0x0F822838, 0x74116583),
+        "TT_LoadMotorSettings",
+        "Loads sound settings for TT_MotorSound behavior",
+        "TT Toolbox/Sounds",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_80_TT_LoadMotorSettings_inputs, 1,
+        (const char *const *)bb_80_TT_LoadMotorSettings_outputs, 2,
+        bb_80_TT_LoadMotorSettings_ip, 1,
+        NULL, 0,
+        bb_80_TT_LoadMotorSettings_lp, 1,
+        NULL, 0,
+    },
+    { /* Remove Key Row */
+        NMO_GUID_INIT(0x0F8334EA, 0x279A40CD),
+        "Remove Key Row",
+        "Remove elements from an array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_81_Remove_Key_Row_inputs, 1,
+        (const char *const *)bb_81_Remove_Key_Row_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Nearest */
+        NMO_GUID_INIT(0x0FAC60AD, 0x1BD31AC9),
+        "Get Nearest",
+        "Gets the element of an array, which value in the given column is the nearest from the reference value.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 201588736,
+        (const char *const *)bb_82_Get_Nearest_inputs, 1,
+        (const char *const *)bb_82_Get_Nearest_outputs, 2,
+        bb_82_Get_Nearest_ip, 1,
+        bb_82_Get_Nearest_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Display Score */
+        NMO_GUID_INIT(0x0FC45543, 0x55B012C3),
+        "Display Score",
+        "Displays a score in 2d",
+        "Visuals/Text",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_83_Display_Score_inputs, 2,
+        (const char *const *)bb_83_Display_Score_outputs, 2,
+        bb_83_Display_Score_ip, 3,
+        NULL, 0,
+        bb_83_Display_Score_lp, 10,
+        bb_83_Display_Score_st, 1,
+    },
+    { /* TT Set Dynamic Position */
+        NMO_GUID_INIT(0x0FD4755F, 0x7DE22DC8),
+        "TT Set Dynamic Position",
+        "Follows an 3D-Object smoothly.",
+        "TT Toolbox/3D Transformations",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_84_TT_Set_Dynamic_Position_inputs, 2,
+        (const char *const *)bb_84_TT_Set_Dynamic_Position_outputs, 2,
+        bb_84_TT_Set_Dynamic_Position_ip, 12,
+        bb_84_TT_Set_Dynamic_Position_op, 4,
+        bb_84_TT_Set_Dynamic_Position_lp, 2,
+        NULL, 0,
+    },
+    { /* TT Set TaskSwitchHandler */
+        NMO_GUID_INIT(0x10043A79, 0x03BA2461),
+        "TT Set TaskSwitchHandler",
+        "Sends Set TaskSwitchHandler",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_85_TT_Set_TaskSwitchHandler_inputs, 1,
+        (const char *const *)bb_85_TT_Set_TaskSwitchHandler_outputs, 1,
+        bb_85_TT_Set_TaskSwitchHandler_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Move Row */
+        NMO_GUID_INIT(0x101A62F4, 0x6E2D25F6),
+        "Move Row",
+        "Moves a row of the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_86_Move_Row_inputs, 1,
+        (const char *const *)bb_86_Move_Row_outputs, 1,
+        bb_86_Move_Row_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Generic Camera Orbit */
+        NMO_GUID_INIT(0x104D0913, 0x766563DD),
+        "Generic Camera Orbit",
+        "Makes a Camera orbit round a 3D Entity using input activation.",
+        "Cameras/Movement",
+        "Cameras.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_87_Generic_Camera_Orbit_inputs, 8,
+        (const char *const *)bb_87_Generic_Camera_Orbit_outputs, 2,
+        bb_87_Generic_Camera_Orbit_ip, 11,
+        NULL, 0,
+        bb_87_Generic_Camera_Orbit_lp, 4,
+        bb_87_Generic_Camera_Orbit_st, 2,
+    },
+    { /* Get SubString */
+        NMO_GUID_INIT(0x10B16051, 0x26173B39),
+        "Get SubString",
+        "Gets a sub string from an initial string.",
+        "Logics/Strings",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_88_Get_SubString_inputs, 1,
+        (const char *const *)bb_88_Get_SubString_outputs, 1,
+        bb_88_Get_SubString_ip, 3,
+        bb_88_Get_SubString_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Environment Mapping */
+        NMO_GUID_INIT(0x10D1C997, 0x99DABEF4),
+        "Environment Mapping",
+        "Sets a 3D Entity to be rendered with 'pseudo' Environment Mapping.",
+        "Materials-Textures/Mapping",
+        "Materials.dll",
+        65541, 41, 262144,
+        (const char *const *)bb_89_Environment_Mapping_inputs, 1,
+        (const char *const *)bb_89_Environment_Mapping_outputs, 1,
+        bb_89_Environment_Mapping_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Character Go To */
+        NMO_GUID_INIT(0x11223344, 0xAABBCCDD),
+        "Character Go To",
+        "Make the character walk to a given object.",
+        "Characters/Movement",
+        "Characters.dll",
+        65536, 40, 327680,
+        (const char *const *)bb_90_Character_Go_To_inputs, 2,
+        (const char *const *)bb_90_Character_Go_To_outputs, 3,
+        bb_90_Character_Go_To_ip, 5,
+        NULL, 0,
+        bb_90_Character_Go_To_lp, 1,
+        NULL, 0,
+    },
+    { /* Face Face Intersection */
+        NMO_GUID_INIT(0x11426A61, 0x1A815584),
+        "Face Face Intersection",
+        "Detects the collision between two 3D entities at the face level.",
+        "Collisions/Intersection",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_91_Face_Face_Intersection_inputs, 1,
+        (const char *const *)bb_91_Face_Face_Intersection_outputs, 2,
+        bb_91_Face_Face_Intersection_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Material Z Buffer */
+        NMO_GUID_INIT(0x1144022F, 0x68FD055C),
+        "Set Material Z Buffer",
+        "Sets the Z buffer rendering options of the material.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_92_Set_Material_Z_Buffer_inputs, 1,
+        (const char *const *)bb_92_Set_Material_Z_Buffer_outputs, 1,
+        bb_92_Set_Material_Z_Buffer_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Animation Step */
+        NMO_GUID_INIT(0x120127AA, 0x960ADDED),
+        "Set Animation Step",
+        "Places the character in a specified frame of an animation cycle.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_93_Set_Animation_Step_inputs, 1,
+        (const char *const *)bb_93_Set_Animation_Step_outputs, 1,
+        bb_93_Set_Animation_Step_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Control Point */
+        NMO_GUID_INIT(0x1234EEFA, 0xFFAEC112),
+        "Add Control Point",
+        "Allows to extend a curve with a new control point",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 43, 262144,
+        (const char *const *)bb_94_Add_Control_Point_inputs, 1,
+        (const char *const *)bb_94_Add_Control_Point_outputs, 1,
+        bb_94_Add_Control_Point_ip, 3,
+        bb_94_Add_Control_Point_op, 2,
+        NULL, 0,
+        bb_94_Add_Control_Point_st, 2,
+    },
+    { /* Remove Control Point */
+        NMO_GUID_INIT(0x1234EFFA, 0xFFBEC112),
+        "Remove Control Point",
+        "Allows to shoot a control point of the curve",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 43, 262144,
+        (const char *const *)bb_95_Remove_Control_Point_inputs, 1,
+        (const char *const *)bb_95_Remove_Control_Point_outputs, 1,
+        bb_95_Remove_Control_Point_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Get Game Bonus */
+        NMO_GUID_INIT(0x12480CB5, 0x4816349F),
+        "TT Get Game Bonus",
+        "Gets game bonus from manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_96_TT_Get_Game_Bonus_inputs, 1,
+        (const char *const *)bb_96_TT_Get_Game_Bonus_outputs, 1,
+        NULL, 0,
+        bb_96_TT_Get_Game_Bonus_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Curve Properties */
+        NMO_GUID_INIT(0x1251ADFA, 0xAEBEC002),
+        "Get Curve Properties",
+        "Allows to get parameter values of curve",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 43, 262144,
+        (const char *const *)bb_97_Get_Curve_Properties_inputs, 1,
+        (const char *const *)bb_97_Get_Curve_Properties_outputs, 1,
+        NULL, 0,
+        bb_97_Get_Curve_Properties_op, 4,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Control Point Properties */
+        NMO_GUID_INIT(0x1251EFFA, 0xAEBEC112),
+        "Get Control Point Properties",
+        "Allows to get parameter values of a control point",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 36, 262144,
+        (const char *const *)bb_98_Get_Control_Point_Properties_inputs, 1,
+        (const char *const *)bb_98_Get_Control_Point_Properties_outputs, 1,
+        NULL, 0,
+        bb_98_Get_Control_Point_Properties_op, 4,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Background Image */
+        NMO_GUID_INIT(0x1254D1CE, 0x001D0A58),
+        "Set Background Image",
+        "Places a background image.",
+        "World Environments/Background",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_99_Set_Background_Image_inputs, 1,
+        (const char *const *)bb_99_Set_Background_Image_outputs, 1,
+        bb_99_Set_Background_Image_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Control Point Properties */
+        NMO_GUID_INIT(0x1254EFFA, 0xFEBEC112),
+        "Set Control Point Properties",
+        "Allows to set parameter values of a control point",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 36, 262144,
+        (const char *const *)bb_100_Set_Control_Point_Properties_inputs, 1,
+        (const char *const *)bb_100_Set_Control_Point_Properties_outputs, 1,
+        bb_100_Set_Control_Point_Properties_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Curve Properties */
+        NMO_GUID_INIT(0x1257EFFA, 0xF7BEC112),
+        "Set Curve Properties",
+        "Allows to set parameter values of curve",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 43, 262144,
+        (const char *const *)bb_101_Set_Curve_Properties_inputs, 1,
+        (const char *const *)bb_101_Set_Curve_Properties_outputs, 1,
+        bb_101_Set_Curve_Properties_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Texture Min */
+        NMO_GUID_INIT(0x12589321, 0x32587123),
+        "Set Texture Min",
+        "Sets the Material Filtering Mode when it is minimized.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_102_Set_Texture_Min_inputs, 1,
+        (const char *const *)bb_102_Set_Texture_Min_outputs, 1,
+        bb_102_Set_Texture_Min_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Character Controller */
+        NMO_GUID_INIT(0x12874356, 0x12874356),
+        "Character Controller",
+        "Simple control of a character with 4 animations by joystick or keyboard.",
+        "Characters/Movement",
+        "Characters.dll",
+        65536, 40, 131073,
+        (const char *const *)bb_103_Character_Controller_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_103_Character_Controller_ip, 4,
+        NULL, 0,
+        bb_103_Character_Controller_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Limit Framerate */
+        NMO_GUID_INIT(0x12A40E8F, 0x6F2D0613),
+        "TT Limit Framerate",
+        "Limits the framerate.",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_104_TT_Limit_Framerate_inputs, 1,
+        (const char *const *)bb_104_TT_Limit_Framerate_outputs, 1,
+        bb_104_TT_Limit_Framerate_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Wrap Mode */
+        NMO_GUID_INIT(0x12A5498D, 0x65657512),
+        "Set Wrap Mode",
+        "Sets the way the texture applied to the mesh will be tiled.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_105_Set_Wrap_Mode_inputs, 1,
+        (const char *const *)bb_105_Set_Wrap_Mode_outputs, 1,
+        bb_105_Set_Wrap_Mode_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Mimic */
+        NMO_GUID_INIT(0x12DB7B06, 0x74C514C3),
+        "Mimic",
+        "Makes a 3D Entity copy the motion of another one.",
+        "3D Transformations/Constraint",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_106_Mimic_inputs, 1,
+        (const char *const *)bb_106_Mimic_outputs, 1,
+        bb_106_Mimic_ip, 8,
+        NULL, 0,
+        NULL, 0,
+        bb_106_Mimic_st, 1,
+    },
+    { /* TT Find SubString */
+        NMO_GUID_INIT(0x12F31E27, 0x4CEA0BF5),
+        "TT Find SubString",
+        "Searches for strings in object names",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_107_TT_Find_SubString_inputs, 1,
+        (const char *const *)bb_107_TT_Find_SubString_outputs, 2,
+        bb_107_TT_Find_SubString_ip, 2,
+        bb_107_TT_Find_SubString_op, 1,
+        NULL, 0,
+        bb_107_TT_Find_SubString_st, 1,
+    },
+    { /* ObjectParticleSystem */
+        NMO_GUID_INIT(0x13172F30, 0x3A7876ED),
+        "ObjectParticleSystem",
+        "Emits particles from an object surface",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 41, 184549376,
+        (const char *const *)bb_108_ObjectParticleSystem_inputs, 3,
+        (const char *const *)bb_108_ObjectParticleSystem_outputs, 3,
+        bb_108_ObjectParticleSystem_ip, 36,
+        NULL, 0,
+        bb_108_ObjectParticleSystem_lp, 3,
+        bb_108_ObjectParticleSystem_st, 11,
+    },
+    { /* Hide 2D Entity */
+        NMO_GUID_INIT(0x13579753, 0x13579753),
+        "Hide 2D Entity",
+        "Hides a 2D Entity",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_109_Hide_2D_Entity_inputs, 1,
+        (const char *const *)bb_109_Hide_2D_Entity_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Slider */
+        NMO_GUID_INIT(0x13603DB0, 0x16BC321A),
+        "Object Slider",
+        "Object Ball Slider ; Impede the 3d object from penetrating a 3dobject in the specified group.",
+        "Collisions/3D Entity",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_110_Object_Slider_inputs, 2,
+        (const char *const *)bb_110_Object_Slider_outputs, 2,
+        bb_110_Object_Slider_ip, 2,
+        bb_110_Object_Slider_op, 1,
+        bb_110_Object_Slider_lp, 1,
+        bb_110_Object_Slider_st, 3,
+    },
+    { /* Floor Slider */
+        NMO_GUID_INIT(0x136044B0, 0x1C59B21A),
+        "Floor Slider",
+        "Constrain an object to the floor boundaries, with a given radius.",
+        "Collisions/Floors",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_111_Floor_Slider_inputs, 2,
+        (const char *const *)bb_111_Floor_Slider_outputs, 2,
+        bb_111_Floor_Slider_ip, 1,
+        NULL, 0,
+        bb_111_Floor_Slider_lp, 1,
+        NULL, 0,
+    },
+    { /* Set Ambient Light Color */
+        NMO_GUID_INIT(0x136B3F22, 0x0DC12786),
+        "Set Ambient Light Color",
+        "Sets the ambient light color.",
+        "World Environments/Global",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_112_Set_Ambient_Light_Color_inputs, 1,
+        (const char *const *)bb_112_Set_Ambient_Light_Color_outputs, 1,
+        bb_112_Set_Ambient_Light_Color_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ShadowPlane */
+        NMO_GUID_INIT(0x137C3D66, 0x3FF1752D),
+        "TT ShadowPlane",
+        "Creates shadow planes without Z-Buffer writing",
+        "TT Toolbox/FX",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_113_TT_ShadowPlane_inputs, 2,
+        (const char *const *)bb_113_TT_ShadowPlane_outputs, 2,
+        bb_113_TT_ShadowPlane_ip, 5,
+        NULL, 0,
+        bb_113_TT_ShadowPlane_lp, 1,
+        NULL, 0,
+    },
+    { /* Array Load */
+        NMO_GUID_INIT(0x13BD2C64, 0x62DB38E1),
+        "Array Load",
+        "Loads elements into an array from a formatted file.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_114_Array_Load_inputs, 1,
+        (const char *const *)bb_114_Array_Load_outputs, 2,
+        bb_114_Array_Load_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Mouse Cursor */
+        NMO_GUID_INIT(0x140C3EAC, 0x6E502A81),
+        "Mouse Cursor",
+        "Display a texture instead of the standard cursor.",
+        "Interface/Screen",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_115_Mouse_Cursor_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_115_Mouse_Cursor_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Database Properties */
+        NMO_GUID_INIT(0x1436624F, 0x34E1290A),
+        "TT Set Database Properties",
+        "Sets the properties of the database",
+        "TT Database",
+        "TT_DatabaseManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_116_TT_Set_Database_Properties_inputs, 1,
+        (const char *const *)bb_116_TT_Set_Database_Properties_outputs, 2,
+        bb_116_TT_Set_Database_Properties_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Deactivate Script */
+        NMO_GUID_INIT(0x14367C05, 0x635B24F9),
+        "Deactivate Script",
+        "Deactivates a Script.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_117_Deactivate_Script_inputs, 1,
+        (const char *const *)bb_117_Deactivate_Script_outputs, 1,
+        bb_117_Deactivate_Script_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Animation Step Entity */
+        NMO_GUID_INIT(0x14782B1D, 0x52692E21),
+        "Set Animation Step Entity",
+        "Sets the advancement in percentage of the character's animation.",
+        "3D Transformations/Animation",
+        "3DTransfo.dll",
+        65536, 33, 0,
+        (const char *const *)bb_118_Set_Animation_Step_Entity_inputs, 1,
+        (const char *const *)bb_118_Set_Animation_Step_Entity_outputs, 1,
+        bb_118_Set_Animation_Step_Entity_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set 2D Parent */
+        NMO_GUID_INIT(0x14C70F07, 0x4F2A100A),
+        "Set 2D Parent",
+        "Sets the Parent of a 2D Entity.",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_119_Set_2D_Parent_inputs, 1,
+        (const char *const *)bb_119_Set_2D_Parent_outputs, 1,
+        bb_119_Set_2D_Parent_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT PushButton2 */
+        NMO_GUID_INIT(0x14D325D1, 0x6748654E),
+        "TT PushButton2",
+        "Push button without material changes",
+        "TT Toolbox/Interface",
+        "TT_Toolbox_RT.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_120_TT_PushButton2_inputs, 2,
+        (const char *const *)bb_120_TT_PushButton2_outputs, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_120_TT_PushButton2_lp, 2,
+        NULL, 0,
+    },
+    { /* Identity */
+        NMO_GUID_INIT(0x15151652, 0xAEEFFFD5),
+        "Identity",
+        "Outputs the Input Parameter(s) when activated.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 134218240,
+        (const char *const *)bb_121_Identity_inputs, 1,
+        (const char *const *)bb_121_Identity_outputs, 1,
+        bb_121_Identity_ip, 1,
+        bb_121_Identity_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Array Save */
+        NMO_GUID_INIT(0x15185846, 0x41014A45),
+        "Array Save",
+        "Writes elements from an array to a text file.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_122_Array_Save_inputs, 1,
+        (const char *const *)bb_122_Array_Save_outputs, 2,
+        bb_122_Array_Save_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Fog */
+        NMO_GUID_INIT(0x151AAAAA, 0xFFD5BDBC),
+        "Set Fog",
+        "Sets the Atmospheric Fog.",
+        "World Environments/Global",
+        "WorldEnvironments.dll",
+        131072, 19, 0,
+        (const char *const *)bb_123_Set_Fog_inputs, 1,
+        (const char *const *)bb_123_Set_Fog_outputs, 1,
+        bb_123_Set_Fog_ip, 5,
+        NULL, 0,
+        bb_123_Set_Fog_lp, 1,
+        NULL, 0,
+    },
+    { /* Set Priority */
+        NMO_GUID_INIT(0x159630E5, 0x5A5A26C6),
+        "Set Priority",
+        "Controls the Priority of a sound, either it is playing or not.",
+        "Sounds/Properties",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_124_Set_Priority_inputs, 1,
+        (const char *const *)bb_124_Set_Priority_outputs, 1,
+        bb_124_Set_Priority_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Delayer */
+        NMO_GUID_INIT(0x15D472A5, 0x3BEA409F),
+        "Delayer",
+        "Waits for a given time to elapse using internal looping.",
+        "Logics/Loops",
+        "Logics.dll",
+        131072, 19, 0,
+        (const char *const *)bb_125_Delayer_inputs, 1,
+        (const char *const *)bb_125_Delayer_outputs, 1,
+        bb_125_Delayer_ip, 1,
+        bb_125_Delayer_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Deactivate Object */
+        NMO_GUID_INIT(0x160F4B7D, 0x67DE224E),
+        "Deactivate Object",
+        "De-activates all the scripts of an object in the current scene.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_126_Deactivate_Object_inputs, 1,
+        (const char *const *)bb_126_Deactivate_Object_outputs, 1,
+        bb_126_Deactivate_Object_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 2D Picking */
+        NMO_GUID_INIT(0x1616120F, 0x5B2F48CE),
+        "2D Picking",
+        "Returns the 3D Entity, the normal and the exact position of the 2d mouse picking",
+        "Interface/Screen",
+        "Interface.dll",
+        131072, 19, 67108864,
+        (const char *const *)bb_127_2D_Picking_inputs, 1,
+        (const char *const *)bb_127_2D_Picking_outputs, 2,
+        bb_127_2D_Picking_ip, 2,
+        bb_127_2D_Picking_op, 7,
+        NULL, 0,
+        bb_127_2D_Picking_st, 2,
+    },
+    { /* TT  Get Game Data */
+        NMO_GUID_INIT(0x16875322, 0x72422C5C),
+        "TT  Get Game Data",
+        "Gets the game datas",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_128_TT__Get_Game_Data_inputs, 1,
+        (const char *const *)bb_128_TT__Get_Game_Data_outputs, 1,
+        NULL, 0,
+        bb_128_TT__Get_Game_Data_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Make Transparent */
+        NMO_GUID_INIT(0x16CC600C, 0x702836D1),
+        "Make Transparent",
+        "Makes a Render Object (3D or 2D Entity) Transparent.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 47, 262144,
+        (const char *const *)bb_129_Make_Transparent_inputs, 1,
+        (const char *const *)bb_129_Make_Transparent_outputs, 1,
+        bb_129_Make_Transparent_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Show Mouse Cursor */
+        NMO_GUID_INIT(0x16F6368F, 0x506B60FC),
+        "Show Mouse Cursor",
+        "Show/Hide the mouse cursor.",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_130_Show_Mouse_Cursor_inputs, 1,
+        (const char *const *)bb_130_Show_Mouse_Cursor_outputs, 1,
+        bb_130_Show_Mouse_Cursor_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Entity Find Nodal Path */
+        NMO_GUID_INIT(0x170A5187, 0x42F10A3A),
+        "Entity Find Nodal Path",
+        "Finds the shortest path to a specified destination for a 3D Entity.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_131_Entity_Find_Nodal_Path_inputs, 1,
+        (const char *const *)bb_131_Entity_Find_Nodal_Path_outputs, 2,
+        bb_131_Entity_Find_Nodal_Path_ip, 2,
+        bb_131_Entity_Find_Nodal_Path_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Interpolator Float */
+        NMO_GUID_INIT(0x17171700, 0x17171700),
+        "Interpolator Float",
+        "Performs a linear interpolation between 2 floats.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_132_Interpolator_Float_inputs, 1,
+        (const char *const *)bb_132_Interpolator_Float_outputs, 1,
+        bb_132_Interpolator_Float_ip, 3,
+        bb_132_Interpolator_Float_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Interpolator Int */
+        NMO_GUID_INIT(0x17171701, 0x17171701),
+        "Interpolator Int",
+        "Performs an interpolation between 2 integers.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_133_Interpolator_Int_inputs, 1,
+        (const char *const *)bb_133_Interpolator_Int_outputs, 1,
+        bb_133_Interpolator_Int_ip, 3,
+        bb_133_Interpolator_Int_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Interpolator Vector */
+        NMO_GUID_INIT(0x17171702, 0x17171702),
+        "Interpolator Vector",
+        "Performs a linear interpolation between 2 vectors.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_134_Interpolator_Vector_inputs, 1,
+        (const char *const *)bb_134_Interpolator_Vector_outputs, 1,
+        bb_134_Interpolator_Vector_ip, 3,
+        bb_134_Interpolator_Vector_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Interpolator Color */
+        NMO_GUID_INIT(0x17171703, 0x17171703),
+        "Interpolator Color",
+        "Performs a linear interpolation between 2 colors.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_135_Interpolator_Color_inputs, 1,
+        (const char *const *)bb_135_Interpolator_Color_outputs, 1,
+        bb_135_Interpolator_Color_ip, 3,
+        bb_135_Interpolator_Color_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Interpolator Object Orientation */
+        NMO_GUID_INIT(0x17171704, 0x17171704),
+        "Interpolator Object Orientation",
+        "Performs an interpolation between orientations of two given 3D Entity.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_136_Interpolator_Object_Orientation_inputs, 1,
+        (const char *const *)bb_136_Interpolator_Object_Orientation_outputs, 1,
+        bb_136_Interpolator_Object_Orientation_ip, 4,
+        bb_136_Interpolator_Object_Orientation_op, 1,
+        NULL, 0,
+        bb_136_Interpolator_Object_Orientation_st, 1,
+    },
+    { /* TT_BitmapFont */
+        NMO_GUID_INIT(0x173E60FF, 0x4DB14BCC),
+        "TT_BitmapFont",
+        "Creates an object text from a texture",
+        "TT Toolbox/FX",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_137_TT_BitmapFont_inputs, 2,
+        (const char *const *)bb_137_TT_BitmapFont_outputs, 2,
+        bb_137_TT_BitmapFont_ip, 8,
+        NULL, 0,
+        bb_137_TT_BitmapFont_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Set Integer Value To Registry */
+        NMO_GUID_INIT(0x175C07D1, 0x1D235544),
+        "TT Set Integer Value To Registry",
+        "Writes an integer value to the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_138_TT_Set_Integer_Value_To_Registry_inputs, 1,
+        (const char *const *)bb_138_TT_Set_Integer_Value_To_Registry_outputs, 2,
+        bb_138_TT_Set_Integer_Value_To_Registry_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Show Object Information */
+        NMO_GUID_INIT(0x17CB4C57, 0x00F525FB),
+        "Show Object Information",
+        "Shows the bounding box and the normals of a 3D Entity.",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_139_Show_Object_Information_inputs, 1,
+        (const char *const *)bb_139_Show_Object_Information_outputs, 1,
+        bb_139_Show_Object_Information_ip, 12,
+        NULL, 0,
+        NULL, 0,
+        bb_139_Show_Object_Information_st, 2,
+    },
+    { /* Test */
+        NMO_GUID_INIT(0x17D66D26, 0x726B7DEC),
+        "Test",
+        "Activates the appropriate output, according to the test between A and B.",
+        "Logics/Test",
+        "Logics.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_140_Test_inputs, 1,
+        (const char *const *)bb_140_Test_outputs, 2,
+        bb_140_Test_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Grid Path Solver */
+        NMO_GUID_INIT(0x17E75566, 0x0C5625A6),
+        "Grid Path Solver",
+        "Solve a new path finding problem.",
+        "Grids/Path Finding",
+        "Grids.dll",
+        131072, 33, 134479872,
+        (const char *const *)bb_141_Grid_Path_Solver_inputs, 2,
+        (const char *const *)bb_141_Grid_Path_Solver_outputs, 2,
+        bb_141_Grid_Path_Solver_ip, 12,
+        bb_141_Grid_Path_Solver_op, 2,
+        NULL, 0,
+        bb_141_Grid_Path_Solver_st, 2,
+    },
+    { /* Output To Console */
+        NMO_GUID_INIT(0x18655B3F, 0x68291DC3),
+        "Output To Console",
+        "Displays a string in the Dev console.",
+        "Logics/Strings",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_142_Output_To_Console_inputs, 1,
+        (const char *const *)bb_142_Output_To_Console_outputs, 1,
+        bb_142_Output_To_Console_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Launch Scene */
+        NMO_GUID_INIT(0x188D6D43, 0x169613DD),
+        "Launch Scene",
+        "Launches a specified scene.",
+        "Narratives/Scene Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_143_Launch_Scene_inputs, 1,
+        (const char *const *)bb_143_Launch_Scene_outputs, 1,
+        bb_143_Launch_Scene_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ConvertPixel-Homogen */
+        NMO_GUID_INIT(0x18F96977, 0x18E20F83),
+        "TT ConvertPixel-Homogen",
+        "Converts pixel coordinates to homogeneous coordinates and vice versa",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_144_TT_ConvertPixel_Homogen_inputs, 1,
+        (const char *const *)bb_144_TT_ConvertPixel_Homogen_outputs, 1,
+        bb_144_TT_ConvertPixel_Homogen_ip, 1,
+        bb_144_TT_ConvertPixel_Homogen_op, 3,
+        NULL, 0,
+        bb_144_TT_ConvertPixel_Homogen_st, 1,
+    },
+    { /* Sphere Sphere Intersection */
+        NMO_GUID_INIT(0x198531F9, 0x60F66C57),
+        "Sphere Sphere Intersection",
+        "Detects the collision between two 3D entities at the bounding sphere level.",
+        "Collisions/Intersection",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_145_Sphere_Sphere_Intersection_inputs, 1,
+        (const char *const *)bb_145_Sphere_Sphere_Intersection_outputs, 2,
+        bb_145_Sphere_Sphere_Intersection_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Iterator */
+        NMO_GUID_INIT(0x198F0AF9, 0x0268249F),
+        "Iterator",
+        "Iterate on each row of an array and return the values of the current row.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 134479872,
+        (const char *const *)bb_146_Iterator_inputs, 2,
+        (const char *const *)bb_146_Iterator_outputs, 2,
+        bb_146_Iterator_ip, 3,
+        bb_146_Iterator_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* PhysicsContinuousContact */
+        NMO_GUID_INIT(0x199E4CF1, 0x545A78FE),
+        "PhysicsContinuousContact",
+        "PhysicsContinuousContact",
+        "Physics",
+        "physics_RT.dll",
+        65537, 33, 67371008,
+        (const char *const *)bb_147_PhysicsContinuousContact_inputs, 2,
+        (const char *const *)bb_147_PhysicsContinuousContact_outputs, 10,
+        bb_147_PhysicsContinuousContact_ip, 2,
+        NULL, 0,
+        bb_147_PhysicsContinuousContact_lp, 1,
+        bb_147_PhysicsContinuousContact_st, 1,
+    },
+    { /* TT Switch on Layer */
+        NMO_GUID_INIT(0x1A151160, 0x1BE26257),
+        "TT Switch on Layer",
+        "Gets the value of a square",
+        "TT Toolbox/Grids",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_148_TT_Switch_on_Layer_inputs, 2,
+        (const char *const *)bb_148_TT_Switch_on_Layer_outputs, 4,
+        bb_148_TT_Switch_on_Layer_ip, 3,
+        bb_148_TT_Switch_on_Layer_op, 1,
+        bb_148_TT_Switch_on_Layer_lp, 2,
+        NULL, 0,
+    },
+    { /* TT_MotorSound */
+        NMO_GUID_INIT(0x1A1A67AA, 0x664108ED),
+        "TT_MotorSound",
+        "Plays different samples according to a given vehicle velocity",
+        "TT Toolbox/Sounds",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_149_TT_MotorSound_inputs, 2,
+        (const char *const *)bb_149_TT_MotorSound_outputs, 3,
+        bb_149_TT_MotorSound_ip, 5,
+        bb_149_TT_MotorSound_op, 6,
+        bb_149_TT_MotorSound_lp, 1,
+        NULL, 0,
+    },
+    { /* Call Script */
+        NMO_GUID_INIT(0x1A7D5B17, 0x70630FED),
+        "Call Script",
+        "Calls immediately a script.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_150_Call_Script_inputs, 1,
+        (const char *const *)bb_150_Call_Script_outputs, 1,
+        bb_150_Call_Script_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Move Column */
+        NMO_GUID_INIT(0x1ACE1319, 0x66B112B1),
+        "Move Column",
+        "Moves a column of the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_151_Move_Column_inputs, 1,
+        (const char *const *)bb_151_Move_Column_outputs, 1,
+        bb_151_Move_Column_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Specular Flag */
+        NMO_GUID_INIT(0x1AE11F1A, 0x1A1E1F11),
+        "Set Specular Flag",
+        "Tells whether a light should be specular or not.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_152_Set_Specular_Flag_inputs, 1,
+        (const char *const *)bb_152_Set_Specular_Flag_outputs, 1,
+        bb_152_Set_Specular_Flag_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Key Event */
+        NMO_GUID_INIT(0x1AF2274B, 0x6B8C1524),
+        "Key Event",
+        "Activates one output when a specific key is pressed and a different output when the released.",
+        "Controllers/Keyboard",
+        "Controllers.dll",
+        65536, 19, 512,
+        (const char *const *)bb_153_Key_Event_inputs, 2,
+        (const char *const *)bb_153_Key_Event_outputs, 2,
+        bb_153_Key_Event_ip, 1,
+        bb_153_Key_Event_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Hardware Level */
+        NMO_GUID_INIT(0x1B241485, 0x1F572AAC),
+        "Hardware Level",
+        "Activates output depending on the hardware acceleration level of the current driver",
+        "Optimizations/System",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 1,
+        (const char *const *)bb_154_Hardware_Level_inputs, 1,
+        (const char *const *)bb_154_Hardware_Level_outputs, 3,
+        NULL, 0,
+        bb_154_Hardware_Level_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Fade Out */
+        NMO_GUID_INIT(0x1B82338F, 0x5A656975),
+        "Fade Out",
+        "Fades out sound(s).",
+        "Sounds/Global",
+        "Sounds.dll",
+        65536, 19, 0,
+        (const char *const *)bb_155_Fade_Out_inputs, 1,
+        (const char *const *)bb_155_Fade_Out_outputs, 1,
+        bb_155_Fade_Out_ip, 1,
+        bb_155_Fade_Out_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Switch On Message */
+        NMO_GUID_INIT(0x1BB23F1D, 0x17FF14B9),
+        "Switch On Message",
+        "Activates the appropriate output when receiving a message.",
+        "Logics/Message",
+        "Logics.dll",
+        65536, 19, 67240192,
+        (const char *const *)bb_156_Switch_On_Message_inputs, 2,
+        (const char *const *)bb_156_Switch_On_Message_outputs, 2,
+        bb_156_Switch_On_Message_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Share Character Animation Keys */
+        NMO_GUID_INIT(0x1C0D5E24, 0xDE47B706),
+        "Share Character Animation Keys",
+        "Share animations keys of with all characters in a group.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)NULL, 0,
+        (const char *const *)NULL, 0,
+        bb_157_Share_Character_Animation_Keys_ip, 1,
+        bb_157_Share_Character_Animation_Keys_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Row */
+        NMO_GUID_INIT(0x1C7E5DC6, 0x3F6423C2),
+        "Add Row",
+        "Adds a new row to the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 100925440,
+        (const char *const *)bb_158_Add_Row_inputs, 1,
+        (const char *const *)bb_158_Add_Row_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        bb_158_Add_Row_st, 1,
+    },
+    { /* Get Profiler Values */
+        NMO_GUID_INIT(0x1C8E61D1, 0x32723C6F),
+        "Get Profiler Values",
+        "Get Profiler Values",
+        "Physics",
+        "physics_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_159_Get_Profiler_Values_inputs, 2,
+        (const char *const *)bb_159_Get_Profiler_Values_outputs, 2,
+        NULL, 0,
+        bb_159_Get_Profiler_Values_op, 5,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Play Global Animation */
+        NMO_GUID_INIT(0x1C9236E1, 0x42F40996),
+        "Play Global Animation",
+        "Makes several 3D Entities perform a global animation.",
+        "3D Transformations/Animation",
+        "3DTransfo.dll",
+        65536, 19, 0,
+        (const char *const *)bb_160_Play_Global_Animation_inputs, 2,
+        (const char *const *)bb_160_Play_Global_Animation_outputs, 1,
+        bb_160_Play_Global_Animation_ip, 4,
+        bb_160_Play_Global_Animation_op, 1,
+        bb_160_Play_Global_Animation_lp, 1,
+        NULL, 0,
+    },
+    { /* Set Alpha Test */
+        NMO_GUID_INIT(0x1CB5661E, 0x5B5D3FDA),
+        "Set Alpha Test",
+        "Setups the Alpha Test of a Material.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_161_Set_Alpha_Test_inputs, 1,
+        (const char *const *)bb_161_Set_Alpha_Test_outputs, 1,
+        bb_161_Set_Alpha_Test_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Group Clear */
+        NMO_GUID_INIT(0x1D12662E, 0x42687A3C),
+        "Group Clear",
+        "Remove all the elements of a group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 23, 262144,
+        (const char *const *)bb_162_Group_Clear_inputs, 1,
+        (const char *const *)bb_162_Group_Clear_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Z Buffer */
+        NMO_GUID_INIT(0x1D2D378D, 0x4A4F36B6),
+        "Set Z Buffer",
+        "Change the way the object read and write into the ZBuffer.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_163_Set_Z_Buffer_inputs, 1,
+        (const char *const *)bb_163_Set_Z_Buffer_outputs, 1,
+        bb_163_Set_Z_Buffer_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Write In Texture */
+        NMO_GUID_INIT(0x1D57024D, 0x7C064238),
+        "Write In Texture",
+        "Write a colored pixel in the texture.",
+        "Materials-Textures/Texture",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_164_Write_In_Texture_inputs, 1,
+        (const char *const *)bb_164_Write_In_Texture_outputs, 1,
+        bb_164_Write_In_Texture_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Attach Script */
+        NMO_GUID_INIT(0x1DBA5F4A, 0x14481212),
+        "Attach Script",
+        "Attach a script on an entity.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_165_Attach_Script_inputs, 1,
+        (const char *const *)bb_165_Attach_Script_outputs, 1,
+        bb_165_Attach_Script_ip, 4,
+        bb_165_Attach_Script_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Sprite Multi Angle */
+        NMO_GUID_INIT(0x1EF926BD, 0x01AD167F),
+        "Sprite Multi Angle",
+        "Replaces the 3D Entity by a 3D sprite.",
+        "Visuals/Sprite",
+        "Visuals.dll",
+        65536, 33, 512,
+        (const char *const *)bb_166_Sprite_Multi_Angle_inputs, 1,
+        (const char *const *)bb_166_Sprite_Multi_Angle_outputs, 1,
+        bb_166_Sprite_Multi_Angle_ip, 6,
+        NULL, 0,
+        bb_166_Sprite_Multi_Angle_lp, 2,
+        NULL, 0,
+    },
+    { /* Streaming Event */
+        NMO_GUID_INIT(0x1F0B52BF, 0x4C3342DD),
+        "Streaming Event",
+        "Activates outputs on the input activation change.",
+        "Logics/Streaming",
+        "Logics.dll",
+        131072, 19, 33554560,
+        (const char *const *)bb_167_Streaming_Event_inputs, 2,
+        (const char *const *)bb_167_Streaming_Event_outputs, 2,
+        NULL, 0,
+        bb_167_Streaming_Event_op, 1,
+        bb_167_Streaming_Event_lp, 1,
+        NULL, 0,
+    },
+    { /* LinearParticleSystem */
+        NMO_GUID_INIT(0x1F1E7188, 0x0EC26D1F),
+        "LinearParticleSystem",
+        "Emits particles from a line",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_168_LinearParticleSystem_inputs, 3,
+        (const char *const *)bb_168_LinearParticleSystem_outputs, 3,
+        bb_168_LinearParticleSystem_ip, 36,
+        NULL, 0,
+        bb_168_LinearParticleSystem_lp, 3,
+        bb_168_LinearParticleSystem_st, 11,
+    },
+    { /* Switch On Key */
+        NMO_GUID_INIT(0x1F49612E, 0x6CD63DE0),
+        "Switch On Key",
+        "Activates the appropriate output when receiving a Key.",
+        "Controllers/Keyboard",
+        "Controllers.dll",
+        65536, 19, 67109120,
+        (const char *const *)bb_169_Switch_On_Key_inputs, 2,
+        (const char *const *)bb_169_Switch_On_Key_outputs, 2,
+        bb_169_Switch_On_Key_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 3D Text */
+        NMO_GUID_INIT(0x1F5B2FE7, 0x6D355175),
+        "3D Text",
+        "Display a text on the plane XY of a 3D Frame, using a texture font",
+        "Interface/Text",
+        "Interface.dll",
+        131072, 33, 251920384,
+        (const char *const *)bb_170_3D_Text_inputs, 2,
+        (const char *const *)bb_170_3D_Text_outputs, 2,
+        bb_170_3D_Text_ip, 9,
+        bb_170_3D_Text_op, 2,
+        NULL, 0,
+        bb_170_3D_Text_st, 1,
+    },
+    { /* Remove Row */
+        NMO_GUID_INIT(0x1FA57136, 0x14310857),
+        "Remove Row",
+        "Remove a row of the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_171_Remove_Row_inputs, 1,
+        (const char *const *)bb_171_Remove_Row_outputs, 2,
+        bb_171_Remove_Row_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Save State */
+        NMO_GUID_INIT(0x200123D8, 0x65F802B6),
+        "Save State",
+        "Saves an object state.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_172_Save_State_inputs, 1,
+        (const char *const *)bb_172_Save_State_outputs, 1,
+        NULL, 0,
+        bb_172_Save_State_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* LOD Character Animation */
+        NMO_GUID_INIT(0x200D6501, 0x4CF61E52),
+        "LOD Character Animation",
+        "Sets the level of detail for character animations.",
+        "Optimizations/Level Of Detail",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_173_LOD_Character_Animation_inputs, 1,
+        (const char *const *)bb_173_LOD_Character_Animation_outputs, 1,
+        bb_173_LOD_Character_Animation_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Light Color Progression */
+        NMO_GUID_INIT(0x20171E01, 0x234A1B62),
+        "Light Color Progression",
+        "Makes a Light progressively change from one color to another.",
+        "Lights/FX",
+        "Lights.dll",
+        65541, 38, 262144,
+        (const char *const *)bb_174_Light_Color_Progression_inputs, 2,
+        (const char *const *)bb_174_Light_Color_Progression_outputs, 2,
+        bb_174_Light_Color_Progression_ip, 4,
+        NULL, 0,
+        bb_174_Light_Color_Progression_lp, 1,
+        bb_174_Light_Color_Progression_st, 1,
+    },
+    { /* Set Specular */
+        NMO_GUID_INIT(0x20202020, 0x30303030),
+        "Set Specular",
+        "Sets the Specular Color of a Material",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_175_Set_Specular_inputs, 1,
+        (const char *const *)bb_175_Set_Specular_outputs, 1,
+        bb_175_Set_Specular_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Replace Rendering */
+        NMO_GUID_INIT(0x208F0030, 0x652F088E),
+        "Replace Rendering",
+        "Replace the rendering of a mesh's material just before it's rendering.",
+        "Visuals/FX",
+        "BuildingBlocksAddons1.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_176_Replace_Rendering_inputs, 2,
+        (const char *const *)bb_176_Replace_Rendering_outputs, 2,
+        bb_176_Replace_Rendering_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_176_Replace_Rendering_st, 1,
+    },
+    { /* TT Set Level ID */
+        NMO_GUID_INIT(0x20B86A4C, 0x3C62472A),
+        "TT Set Level ID",
+        "Sets level ID to manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_177_TT_Set_Level_ID_inputs, 1,
+        (const char *const *)bb_177_TT_Set_Level_ID_outputs, 1,
+        bb_177_TT_Set_Level_ID_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Render Curve */
+        NMO_GUID_INIT(0x215C7794, 0x7AC40F5D),
+        "Render Curve",
+        "Renders the curve with a specific material.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 43, 262144,
+        (const char *const *)bb_178_Render_Curve_inputs, 2,
+        (const char *const *)bb_178_Render_Curve_outputs, 2,
+        bb_178_Render_Curve_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        bb_178_Render_Curve_st, 1,
+    },
+    { /* Update Nodal Path */
+        NMO_GUID_INIT(0x21647449, 0x51126C00),
+        "Update Nodal Path",
+        "Reevaluates the nodes distance of the given nodal path.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_179_Update_Nodal_Path_inputs, 1,
+        (const char *const *)bb_179_Update_Nodal_Path_outputs, 1,
+        bb_179_Update_Nodal_Path_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Declare Obstacles */
+        NMO_GUID_INIT(0x21DC34E8, 0xD512CD89),
+        "Declare Obstacles",
+        "Identifies obstacle objects by their name",
+        "Collisions/Obstacle",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_180_Declare_Obstacles_inputs, 1,
+        (const char *const *)bb_180_Declare_Obstacles_outputs, 1,
+        bb_180_Declare_Obstacles_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Local Matrix */
+        NMO_GUID_INIT(0x21F5F30D, 0x08D5A1DB),
+        "Set Local Matrix",
+        "Sets the Local Matrix of the 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_181_Set_Local_Matrix_inputs, 1,
+        (const char *const *)bb_181_Set_Local_Matrix_outputs, 1,
+        bb_181_Set_Local_Matrix_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Light Range */
+        NMO_GUID_INIT(0x22252552, 0x00200020),
+        "Set Light Range",
+        "Sets the range of the light.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_182_Set_Light_Range_inputs, 1,
+        (const char *const *)bb_182_Set_Light_Range_outputs, 1,
+        bb_182_Set_Light_Range_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_TestForJoystick */
+        NMO_GUID_INIT(0x229865EB, 0x577619E4),
+        "TT_TestForJoystick",
+        "TT_TestForJoystick",
+        "TT Toolbox/Controllers",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_183_TT_TestForJoystick_inputs, 1,
+        (const char *const *)bb_183_TT_TestForJoystick_outputs, 2,
+        bb_183_TT_TestForJoystick_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Create Group From Array */
+        NMO_GUID_INIT(0x22C71529, 0x6BB265D2),
+        "Create Group From Array",
+        "Create a group with entities elements matching the given value.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_184_Create_Group_From_Array_inputs, 1,
+        (const char *const *)bb_184_Create_Group_From_Array_outputs, 2,
+        bb_184_Create_Group_From_Array_ip, 3,
+        bb_184_Create_Group_From_Array_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_CopyFile */
+        NMO_GUID_INIT(0x22E510F9, 0x070F528A),
+        "TT_CopyFile",
+        "Copy a File",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_185_TT_CopyFile_inputs, 1,
+        (const char *const *)bb_185_TT_CopyFile_outputs, 2,
+        bb_185_TT_CopyFile_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Mouse Camera Orbit */
+        NMO_GUID_INIT(0x2356342F, 0x9542674F),
+        "Mouse Camera Orbit",
+        "Makes a Camera orbit round a 3D Entity using Mouse.",
+        "Cameras/Movement",
+        "Cameras.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_186_Mouse_Camera_Orbit_inputs, 3,
+        (const char *const *)bb_186_Mouse_Camera_Orbit_outputs, 3,
+        bb_186_Mouse_Camera_Orbit_ip, 11,
+        NULL, 0,
+        bb_186_Mouse_Camera_Orbit_lp, 3,
+        bb_186_Mouse_Camera_Orbit_st, 2,
+    },
+    { /* TT_LensFlare */
+        NMO_GUID_INIT(0x241B32A5, 0x71FE3357),
+        "TT_LensFlare",
+        "Creates camera reflections",
+        "TT Toolbox/Object",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_187_TT_LensFlare_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_187_TT_LensFlare_ip, 5,
+        NULL, 0,
+        bb_187_TT_LensFlare_lp, 2,
+        bb_187_TT_LensFlare_st, 1,
+    },
+    { /* 3D Flow Layout */
+        NMO_GUID_INIT(0x245FB72C, 0xA5E437E6),
+        "3D Flow Layout",
+        "Organize a set of 3D entities belong a direction in space",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 23, 262144,
+        (const char *const *)bb_188_3D_Flow_Layout_inputs, 1,
+        (const char *const *)bb_188_3D_Flow_Layout_outputs, 1,
+        bb_188_3D_Flow_Layout_ip, 9,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Mouse Cursor System */
+        NMO_GUID_INIT(0x2483576D, 0x57C66324),
+        "Mouse Cursor System",
+        "Change the system mouse cursor pointer.",
+        "Interface/Screen",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_189_Mouse_Cursor_System_inputs, 1,
+        (const char *const *)bb_189_Mouse_Cursor_System_outputs, 1,
+        bb_189_Mouse_Cursor_System_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Create Blended Animation */
+        NMO_GUID_INIT(0x248A56ED, 0x2C232967),
+        "Create Blended Animation",
+        "Creates a new animation by merging two exsiting animations.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 0,
+        (const char *const *)NULL, 0,
+        (const char *const *)NULL, 0,
+        bb_190_Create_Blended_Animation_ip, 2,
+        bb_190_Create_Blended_Animation_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Physics Spring */
+        NMO_GUID_INIT(0x24A06A3A, 0x07100FCE),
+        "Set Physics Spring",
+        "Set a Physics Springs...",
+        "Physics",
+        "physics_RT.dll",
+        65537, 33, 262144,
+        (const char *const *)bb_191_Set_Physics_Spring_inputs, 2,
+        (const char *const *)bb_191_Set_Physics_Spring_outputs, 2,
+        bb_191_Set_Physics_Spring_ip, 9,
+        NULL, 0,
+        bb_191_Set_Physics_Spring_lp, 1,
+        NULL, 0,
+    },
+    { /* Get Texture Info */
+        NMO_GUID_INIT(0x250C4D8D, 0x288960D9),
+        "Get Texture Info",
+        "Gets informations (filename and priority) about a texture.",
+        "Narratives/Object Management",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_192_Get_Texture_Info_inputs, 1,
+        (const char *const *)bb_192_Get_Texture_Info_outputs, 2,
+        NULL, 0,
+        bb_192_Get_Texture_Info_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Switch If Square */
+        NMO_GUID_INIT(0x254074C1, 0x22C0397E),
+        "Switch If Square",
+        "Switch streaming if the value on the specified layer on the specified position isn't NULL.",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 19, 234881536,
+        (const char *const *)bb_193_Switch_If_Square_inputs, 1,
+        (const char *const *)bb_193_Switch_If_Square_outputs, 2,
+        bb_193_Switch_If_Square_ip, 3,
+        bb_193_Switch_If_Square_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 3D Curve Layout */
+        NMO_GUID_INIT(0x2557342C, 0x15246746),
+        "3D Curve Layout",
+        "Organize a set of 3D belong a 3D curve in space",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 23, 262144,
+        (const char *const *)bb_194_3D_Curve_Layout_inputs, 1,
+        (const char *const *)bb_194_3D_Curve_Layout_outputs, 1,
+        bb_194_3D_Curve_Layout_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Has Attribute */
+        NMO_GUID_INIT(0x25B54079, 0x6FF90545),
+        "Has Attribute",
+        "Gets the parameter of an attribute (if it exists) on the object.",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 134479872,
+        (const char *const *)bb_195_Has_Attribute_inputs, 1,
+        (const char *const *)bb_195_Has_Attribute_outputs, 2,
+        bb_195_Has_Attribute_ip, 1,
+        bb_195_Has_Attribute_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_CreateFontEx */
+        NMO_GUID_INIT(0x260E4EB0, 0x0E256B90),
+        "TT_CreateFontEx",
+        "Creates a font from a provided texture.",
+        "TT Toolbox/Font",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_196_TT_CreateFontEx_inputs, 1,
+        (const char *const *)bb_196_TT_CreateFontEx_outputs, 1,
+        bb_196_TT_CreateFontEx_ip, 7,
+        bb_196_TT_CreateFontEx_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 2D Grid Layout */
+        NMO_GUID_INIT(0x265F342C, 0x95E466E6),
+        "2D Grid Layout",
+        "Organize as a grid a set of 2D entities into a 2D Frame",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_197_2D_Grid_Layout_inputs, 1,
+        (const char *const *)bb_197_2D_Grid_Layout_outputs, 1,
+        bb_197_2D_Grid_Layout_ip, 6,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Look At */
+        NMO_GUID_INIT(0x26843971, 0x86249317),
+        "Look At",
+        "Makes a 3D Entity's local Z axis point to a given position.",
+        "3D Transformations/Constraint",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_198_Look_At_inputs, 1,
+        (const char *const *)bb_198_Look_At_outputs, 1,
+        bb_198_Look_At_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        bb_198_Look_At_st, 3,
+    },
+    { /* Get Component */
+        NMO_GUID_INIT(0x2689057B, 0x1A1A446A),
+        "Get Component",
+        "Extracts the components of a COLOR, VECTOR or 2dVECTOR.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65541, 19, 134218240,
+        (const char *const *)bb_199_Get_Component_inputs, 1,
+        (const char *const *)bb_199_Get_Component_outputs, 1,
+        bb_199_Get_Component_ip, 1,
+        bb_199_Get_Component_op, 3,
+        NULL, 0,
+        bb_199_Get_Component_st, 1,
+    },
+    { /* Shuffle Order */
+        NMO_GUID_INIT(0x270F177A, 0x4CA20023),
+        "Shuffle Order",
+        "Shuffle the rows order of the array",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_200_Shuffle_Order_inputs, 1,
+        (const char *const *)bb_200_Shuffle_Order_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Create */
+        NMO_GUID_INIT(0x271538E6, 0x2FAE49AC),
+        "Object Create",
+        "Creates an object",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_201_Object_Create_inputs, 1,
+        (const char *const *)bb_201_Object_Create_outputs, 1,
+        bb_201_Object_Create_ip, 2,
+        bb_201_Object_Create_op, 1,
+        NULL, 0,
+        bb_201_Object_Create_st, 1,
+    },
+    { /* One At A Time */
+        NMO_GUID_INIT(0x271B61AF, 0x41B44D43),
+        "One At A Time",
+        "When reseted, this building block activates a Output corresponding to the last activated Input.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 33554560,
+        (const char *const *)bb_202_One_At_A_Time_inputs, 3,
+        (const char *const *)bb_202_One_At_A_Time_outputs, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_202_One_At_A_Time_lp, 1,
+        NULL, 0,
+    },
+    { /* Hide Hierarchy */
+        NMO_GUID_INIT(0x27447F6B, 0x22AA0C59),
+        "Hide Hierarchy",
+        "Hides hierarchically an entity",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_203_Hide_Hierarchy_inputs, 1,
+        (const char *const *)bb_203_Hide_Hierarchy_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_SearchRow */
+        NMO_GUID_INIT(0x279603A9, 0x16F20716),
+        "TT_SearchRow",
+        "Finds value in array and returns row",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_204_TT_SearchRow_inputs, 1,
+        (const char *const *)bb_204_TT_SearchRow_outputs, 1,
+        bb_204_TT_SearchRow_ip, 2,
+        bb_204_TT_SearchRow_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Create Decal */
+        NMO_GUID_INIT(0x27B71ADA, 0x22191538),
+        "Create Decal",
+        "Create a decal (object+mesh) on the targeted object.",
+        "Mesh Modifications/Creation",
+        "BuildingBlocksAddons1.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_205_Create_Decal_inputs, 1,
+        (const char *const *)bb_205_Create_Decal_outputs, 1,
+        bb_205_Create_Decal_ip, 7,
+        bb_205_Create_Decal_op, 1,
+        NULL, 0,
+        bb_205_Create_Decal_st, 1,
+    },
+    { /* Set Sound Range */
+        NMO_GUID_INIT(0x27F50A7C, 0x0EE91D0E),
+        "Set Sound Range",
+        "Control the range of the 3D sound.",
+        "Sounds/3D Properties",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_206_Set_Sound_Range_inputs, 1,
+        (const char *const *)bb_206_Set_Sound_Range_outputs, 1,
+        bb_206_Set_Sound_Range_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Listener */
+        NMO_GUID_INIT(0x28CD6341, 0x0CAD5793),
+        "Set Listener",
+        "Sets the listener of the sound.",
+        "Sounds/Global",
+        "Sounds.dll",
+        65536, 19, 0,
+        (const char *const *)bb_207_Set_Listener_inputs, 1,
+        (const char *const *)bb_207_Set_Listener_outputs, 1,
+        bb_207_Set_Listener_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 2D Curve Layout */
+        NMO_GUID_INIT(0x2956342C, 0x95246746),
+        "2D Curve Layout",
+        "Organize a set of 2D belong a 3D curve in space",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_208_2D_Curve_Layout_inputs, 1,
+        (const char *const *)bb_208_2D_Curve_Layout_outputs, 1,
+        bb_208_2D_Curve_Layout_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 2D Flow Layout */
+        NMO_GUID_INIT(0x295F342C, 0x95E467E6),
+        "2D Flow Layout",
+        "Organize a set of 2D entities horizontally or vertically",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_209_2D_Flow_Layout_inputs, 1,
+        (const char *const *)bb_209_2D_Flow_Layout_outputs, 1,
+        bb_209_2D_Flow_Layout_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Physics Slider */
+        NMO_GUID_INIT(0x2973360E, 0x23D31AA7),
+        "Set Physics Slider",
+        "Set a Physics Slider...",
+        "Physics",
+        "physics_RT.dll",
+        65537, 33, 262144,
+        (const char *const *)bb_210_Set_Physics_Slider_inputs, 2,
+        (const char *const *)bb_210_Set_Physics_Slider_outputs, 2,
+        bb_210_Set_Physics_Slider_ip, 6,
+        NULL, 0,
+        bb_210_Set_Physics_Slider_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Delete GameInfo  */
+        NMO_GUID_INIT(0x29F17890, 0x2E0117A2),
+        "TT Delete GameInfo ",
+        "Deletes GameInfo",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_211_TT_Delete_GameInfo__inputs, 1,
+        (const char *const *)bb_211_TT_Delete_GameInfo__outputs, 2,
+        bb_211_TT_Delete_GameInfo__ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Scaleable Proximity */
+        NMO_GUID_INIT(0x2A2A63CA, 0x00826175),
+        "TT Scaleable Proximity",
+        "Compares the distance between two 3D Entities with a given threshold distance.",
+        "TT Toolbox/Test",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 33554432,
+        (const char *const *)bb_212_TT_Scaleable_Proximity_inputs, 2,
+        (const char *const *)bb_212_TT_Scaleable_Proximity_outputs, 4,
+        bb_212_TT_Scaleable_Proximity_ip, 8,
+        bb_212_TT_Scaleable_Proximity_op, 1,
+        bb_212_TT_Scaleable_Proximity_lp, 2,
+        bb_212_TT_Scaleable_Proximity_st, 3,
+    },
+    { /* TT Set Game Score */
+        NMO_GUID_INIT(0x2A5A3D0B, 0x04E6466C),
+        "TT Set Game Score",
+        "Sets game score to manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_213_TT_Set_Game_Score_inputs, 1,
+        (const char *const *)bb_213_TT_Set_Game_Score_outputs, 1,
+        bb_213_TT_Set_Game_Score_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Planar Mapping */
+        NMO_GUID_INIT(0x2A6A3FA3, 0x3280407D),
+        "Planar Mapping",
+        "Maps an Object according to the Planar.",
+        "Materials-Textures/Mapping",
+        "Materials.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_214_Planar_Mapping_inputs, 1,
+        (const char *const *)bb_214_Planar_Mapping_outputs, 1,
+        bb_214_Planar_Mapping_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_214_Planar_Mapping_st, 1,
+    },
+    { /* Make Rows Unique */
+        NMO_GUID_INIT(0x2B175818, 0x2C270B20),
+        "Make Rows Unique",
+        "Assures the uniqueness of the elements of a column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_215_Make_Rows_Unique_inputs, 1,
+        (const char *const *)bb_215_Make_Rows_Unique_outputs, 1,
+        bb_215_Make_Rows_Unique_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* PhysicsBuoyancy */
+        NMO_GUID_INIT(0x2C015F2B, 0x5B147512),
+        "PhysicsBuoyancy",
+        "PhysicsBuoyancys...",
+        "Physics",
+        "physics_RT.dll",
+        65536, 33, 67371008,
+        (const char *const *)bb_216_PhysicsBuoyancy_inputs, 1,
+        (const char *const *)bb_216_PhysicsBuoyancy_outputs, 1,
+        bb_216_PhysicsBuoyancy_ip, 12,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Animation Synchronizer */
+        NMO_GUID_INIT(0x2C1835EB, 0x68083D54),
+        "Animation Synchronizer",
+        "Provides a way to send messages at a specific moment during a character animation.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 589824,
+        (const char *const *)bb_217_Animation_Synchronizer_inputs, 2,
+        (const char *const *)NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        bb_217_Animation_Synchronizer_lp, 2,
+        NULL, 0,
+    },
+    { /* TT SkyAround */
+        NMO_GUID_INIT(0x2C7D5826, 0x688778F4),
+        "TT SkyAround",
+        "Creates a skyaround object with any number of faces",
+        "TT Toolbox/Object",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_218_TT_SkyAround_inputs, 2,
+        (const char *const *)bb_218_TT_SkyAround_outputs, 2,
+        bb_218_TT_SkyAround_ip, 10,
+        NULL, 0,
+        bb_218_TT_SkyAround_lp, 1,
+        bb_218_TT_SkyAround_st, 3,
+    },
+    { /* TT_SetCurrentDirectory */
+        NMO_GUID_INIT(0x2D2A0D16, 0x6B955EE1),
+        "TT_SetCurrentDirectory",
+        "Set Current Directory",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_219_TT_SetCurrentDirectory_inputs, 1,
+        (const char *const *)bb_219_TT_SetCurrentDirectory_outputs, 2,
+        bb_219_TT_SetCurrentDirectory_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_CelShading */
+        NMO_GUID_INIT(0x2D2D2A64, 0x5A0501C7),
+        "TT_CelShading",
+        "Cartoon-Shader",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_220_TT_CelShading_inputs, 2,
+        (const char *const *)bb_220_TT_CelShading_outputs, 2,
+        bb_220_TT_CelShading_ip, 3,
+        NULL, 0,
+        bb_220_TT_CelShading_lp, 1,
+        NULL, 0,
+    },
+    { /* Op */
+        NMO_GUID_INIT(0x2D5D6D01, 0x6A353EB0),
+        "Op",
+        "Process any existing Parameter Operation (go to settings).",
+        "Logics/Calculator",
+        "Logics.dll",
+        131072, 19, 201326624,
+        (const char *const *)bb_221_Op_inputs, 1,
+        (const char *const *)bb_221_Op_outputs, 1,
+        bb_221_Op_ip, 2,
+        bb_221_Op_op, 1,
+        bb_221_Op_lp, 2,
+        bb_221_Op_st, 1,
+    },
+    { /* Set Channel Material */
+        NMO_GUID_INIT(0x2E0A6B92, 0x366A3F9B),
+        "Set Channel Material",
+        "Sets the Material of a Channel applied to the 3D Entity.",
+        "Materials-Textures/Channel",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_222_Set_Channel_Material_inputs, 1,
+        (const char *const *)bb_222_Set_Channel_Material_outputs, 1,
+        bb_222_Set_Channel_Material_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_SetMapping */
+        NMO_GUID_INIT(0x2E36319F, 0x6EC6031F),
+        "TT_SetMapping",
+        "Change the UV coordinates for the Material Channels",
+        "TT Toolbox/Mapping",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_223_TT_SetMapping_inputs, 1,
+        (const char *const *)bb_223_TT_SetMapping_outputs, 1,
+        bb_223_TT_SetMapping_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_HighMapMeshform */
+        NMO_GUID_INIT(0x2E3C2D7E, 0x7BE7234E),
+        "TT_HighMapMeshform",
+        "Deforms the mesh based on the texture data",
+        "TT Toolbox/Mesh",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_224_TT_HighMapMeshform_inputs, 1,
+        (const char *const *)bb_224_TT_HighMapMeshform_outputs, 1,
+        bb_224_TT_HighMapMeshform_ip, 2,
+        NULL, 0,
+        bb_224_TT_HighMapMeshform_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Get Level Reached */
+        NMO_GUID_INIT(0x2E8344E0, 0x05101432),
+        "TT Get Level Reached",
+        "Gets Level reached from manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_225_TT_Get_Level_Reached_inputs, 1,
+        (const char *const *)bb_225_TT_Get_Level_Reached_outputs, 1,
+        NULL, 0,
+        bb_225_TT_Get_Level_Reached_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Swap Rows */
+        NMO_GUID_INIT(0x2ED72740, 0x406B5027),
+        "Swap Rows",
+        "Swaps two rows of an array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_226_Swap_Rows_inputs, 1,
+        (const char *const *)bb_226_Swap_Rows_outputs, 1,
+        bb_226_Swap_Rows_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Blend Modes */
+        NMO_GUID_INIT(0x2F572A66, 0x6A9A0088),
+        "Set Blend Modes",
+        "Sets the blend modes of a Material.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_227_Set_Blend_Modes_inputs, 1,
+        (const char *const *)bb_227_Set_Blend_Modes_outputs, 1,
+        bb_227_Set_Blend_Modes_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Channel Dest Blend */
+        NMO_GUID_INIT(0x2F5A0EB9, 0x27067E93),
+        "Set Channel Dest Blend",
+        "Sets the dest mode when Blending the Material of a specific channel.",
+        "Materials-Textures/Channel",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_228_Set_Channel_Dest_Blend_inputs, 1,
+        (const char *const *)bb_228_Set_Channel_Dest_Blend_outputs, 1,
+        bb_228_Set_Channel_Dest_Blend_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_RippleWave */
+        NMO_GUID_INIT(0x2F6A47B3, 0x35F4755C),
+        "TT_RippleWave",
+        "Creates wavy rings",
+        "TT Toolbox/Mesh",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_229_TT_RippleWave_inputs, 3,
+        (const char *const *)bb_229_TT_RippleWave_outputs, 2,
+        bb_229_TT_RippleWave_ip, 3,
+        NULL, 0,
+        bb_229_TT_RippleWave_lp, 2,
+        NULL, 0,
+    },
+    { /* Set Transparent */
+        NMO_GUID_INIT(0x2FC37564, 0x299A2C9D),
+        "Set Transparent",
+        "Puts the Transparent flag to a Mesh (Allow Transparency to be applied with no ZBuffer problems)",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_230_Set_Transparent_inputs, 2,
+        (const char *const *)bb_230_Set_Transparent_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ShowVector */
+        NMO_GUID_INIT(0x2FCA6B65, 0x73B31EBD),
+        "TT_ShowVector",
+        "Displays vector over 2 given points",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_231_TT_ShowVector_inputs, 1,
+        (const char *const *)bb_231_TT_ShowVector_outputs, 1,
+        bb_231_TT_ShowVector_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_Key Waiter */
+        NMO_GUID_INIT(0x2FFB3EF0, 0x21807AE3),
+        "TT_Key Waiter",
+        "Waits for a key to be pressed.",
+        "TT Toolbox/Controllers",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 201326592,
+        (const char *const *)bb_232_TT_Key_Waiter_inputs, 2,
+        (const char *const *)bb_232_TT_Key_Waiter_outputs, 1,
+        bb_232_TT_Key_Waiter_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        bb_232_TT_Key_Waiter_st, 1,
+    },
+    { /* Set Key Row */
+        NMO_GUID_INIT(0x2FFF4C63, 0x4FCB1B94),
+        "Set Key Row",
+        "Sets the elements of a row, using the key column as a search criterion.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_233_Set_Key_Row_inputs, 1,
+        (const char *const *)bb_233_Set_Key_Row_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Prevent Collision */
+        NMO_GUID_INIT(0x301971F0, 0x7919343F),
+        "Prevent Collision",
+        "Prevents the 3DEntity from colliding obstacles.",
+        "Collisions/3D Entity",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_234_Prevent_Collision_inputs, 2,
+        (const char *const *)bb_234_Prevent_Collision_outputs, 2,
+        bb_234_Prevent_Collision_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Nop */
+        NMO_GUID_INIT(0x302561C4, 0x0D282980),
+        "Nop",
+        "Join several links and dispatch the stream to all the outputs.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 384,
+        (const char *const *)bb_235_Nop_inputs, 1,
+        (const char *const *)bb_235_Nop_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Save IC */
+        NMO_GUID_INIT(0x30362F34, 0x1935316F),
+        "TT Save IC",
+        "Saves an object's Initial Condition in the scene being played.",
+        "TT Toolbox/Narratives",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_236_TT_Save_IC_inputs, 1,
+        (const char *const *)bb_236_TT_Save_IC_outputs, 1,
+        bb_236_TT_Save_IC_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Game Name */
+        NMO_GUID_INIT(0x30641426, 0x12403BB9),
+        "TT Set Game Name",
+        "Sets game name to manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_237_TT_Set_Game_Name_inputs, 1,
+        (const char *const *)bb_237_TT_Set_Game_Name_outputs, 1,
+        bb_237_TT_Set_Game_Name_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_SetFSAA */
+        NMO_GUID_INIT(0x30BD6156, 0x14772834),
+        "TT_SetFSAA",
+        "Toggles antialiasing on/off in the render state",
+        "TT Toolbox/FX",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_238_TT_SetFSAA_inputs, 1,
+        (const char *const *)bb_238_TT_SetFSAA_outputs, 1,
+        bb_238_TT_SetFSAA_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Cell */
+        NMO_GUID_INIT(0x30ED1C6D, 0x4A3B7067),
+        "Set Cell",
+        "Sets the element of a chosen row and column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262656,
+        (const char *const *)bb_239_Set_Cell_inputs, 1,
+        (const char *const *)bb_239_Set_Cell_outputs, 2,
+        bb_239_Set_Cell_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_GetSoundProperties */
+        NMO_GUID_INIT(0x30FA6A70, 0x3B3F728A),
+        "TT_GetSoundProperties",
+        "Get Gain, Pitch and Pan.",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_240_TT_GetSoundProperties_inputs, 1,
+        (const char *const *)bb_240_TT_GetSoundProperties_outputs, 1,
+        NULL, 0,
+        bb_240_TT_GetSoundProperties_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Character Prevent From Collision */
+        NMO_GUID_INIT(0x319971F0, 0x7919193F),
+        "Character Prevent From Collision",
+        "Prevents the character from colliding obstacles.",
+        "Collisions/Character",
+        "Collisions.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_241_Character_Prevent_From_Collision_inputs, 2,
+        (const char *const *)bb_241_Character_Prevent_From_Collision_outputs, 2,
+        bb_241_Character_Prevent_From_Collision_ip, 3,
+        bb_241_Character_Prevent_From_Collision_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Hide */
+        NMO_GUID_INIT(0x31D97D82, 0x78D54D98),
+        "Hide",
+        "Hides a 2D/3D Entity, a Mesh or a Group",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_242_Hide_inputs, 1,
+        (const char *const *)bb_242_Hide_outputs, 1,
+        bb_242_Hide_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Light Color */
+        NMO_GUID_INIT(0x32115590, 0x78951230),
+        "Set Light Color",
+        "Sets the Color of a Light.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_243_Set_Light_Color_inputs, 1,
+        (const char *const *)bb_243_Set_Light_Color_outputs, 1,
+        bb_243_Set_Light_Color_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Light Type */
+        NMO_GUID_INIT(0x32165A2F, 0x70000000),
+        "Set Light Type",
+        "Sets the type of a Light.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_244_Set_Light_Type_inputs, 1,
+        (const char *const *)bb_244_Set_Light_Type_outputs, 1,
+        bb_244_Set_Light_Type_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Obstacle */
+        NMO_GUID_INIT(0x321A42C4, 0x006133D5),
+        "Add Obstacle",
+        "Adds the 3D Entity to the list of the Collision Manager.",
+        "Collisions/Obstacle",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_245_Add_Obstacle_inputs, 1,
+        (const char *const *)bb_245_Add_Obstacle_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Attribute Obsolete */
+        NMO_GUID_INIT(0x321D56C4, 0x006D56D5),
+        "Remove Attribute Obsolete",
+        "Removes an attribute from an object.",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_246_Remove_Attribute_Obsolete_inputs, 1,
+        (const char *const *)bb_246_Remove_Attribute_Obsolete_outputs, 1,
+        bb_246_Remove_Attribute_Obsolete_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Has Attribute Obsolete */
+        NMO_GUID_INIT(0x321E41C4, 0x006E41D5),
+        "Has Attribute Obsolete",
+        "Gets the parameter of an attribute (if it exists) on the given object.",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 134217728,
+        (const char *const *)bb_247_Has_Attribute_Obsolete_inputs, 1,
+        (const char *const *)bb_247_Has_Attribute_Obsolete_outputs, 2,
+        bb_247_Has_Attribute_Obsolete_ip, 2,
+        bb_247_Has_Attribute_Obsolete_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Attribute Obsolete */
+        NMO_GUID_INIT(0x321F32C4, 0x006F32D5),
+        "Set Attribute Obsolete",
+        "Gives an attribute to an object, and/or sets the value of this attribute.",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_248_Set_Attribute_Obsolete_inputs, 1,
+        (const char *const *)bb_248_Set_Attribute_Obsolete_outputs, 1,
+        bb_248_Set_Attribute_Obsolete_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Column Operation */
+        NMO_GUID_INIT(0x32351C65, 0x4F6916BE),
+        "Column Operation",
+        "Performs an operation between two columns and put the result in a third one.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_249_Column_Operation_inputs, 1,
+        (const char *const *)bb_249_Column_Operation_outputs, 1,
+        bb_249_Column_Operation_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_Chrono */
+        NMO_GUID_INIT(0x325D722D, 0x3D9E16E9),
+        "TT_Chrono",
+        "Chronometer (ON=Start, OFF=Stop).",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_250_TT_Chrono_inputs, 3,
+        (const char *const *)bb_250_TT_Chrono_outputs, 3,
+        NULL, 0,
+        bb_250_TT_Chrono_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Bounding Sphere Intersection */
+        NMO_GUID_INIT(0x32A6308D, 0x1D3D0931),
+        "TT Bounding Sphere Intersection",
+        "Detects the collision between two 3D entities at the bounding sphere level.",
+        "TT Toolbox/Collision",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_251_TT_Bounding_Sphere_Intersection_inputs, 1,
+        (const char *const *)bb_251_TT_Bounding_Sphere_Intersection_outputs, 2,
+        bb_251_TT_Bounding_Sphere_Intersection_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Mouse Displacement */
+        NMO_GUID_INIT(0x32D26C84, 0x3C741F89),
+        "Get Mouse Displacement",
+        "Gets the mouse relative movement.",
+        "Controllers/Mouse",
+        "Controllers.dll",
+        65536, 19, 0,
+        (const char *const *)bb_252_Get_Mouse_Displacement_inputs, 1,
+        (const char *const *)bb_252_Get_Mouse_Displacement_outputs, 1,
+        NULL, 0,
+        bb_252_Get_Mouse_Displacement_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set 2D Position */
+        NMO_GUID_INIT(0x32D30604, 0x23B163FC),
+        "Set 2D Position",
+        "Set the position of a 2D Entity",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_253_Set_2D_Position_inputs, 1,
+        (const char *const *)bb_253_Set_2D_Position_outputs, 1,
+        bb_253_Set_2D_Position_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ShadowMapping */
+        NMO_GUID_INIT(0x334C7DFE, 0x47C81A31),
+        "TT ShadowMapping",
+        "Creates shadows via UV mapping",
+        "TT Toolbox/FX",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_254_TT_ShadowMapping_inputs, 2,
+        (const char *const *)bb_254_TT_ShadowMapping_outputs, 2,
+        bb_254_TT_ShadowMapping_ip, 5,
+        NULL, 0,
+        bb_254_TT_ShadowMapping_lp, 1,
+        NULL, 0,
+    },
+    { /* Volume Control */
+        NMO_GUID_INIT(0x33613F21, 0x776B185B),
+        "Volume Control",
+        "Controls the volume of a sound, either it is playing or not.",
+        "Sounds/Control",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_255_Volume_Control_inputs, 1,
+        (const char *const *)bb_255_Volume_Control_outputs, 1,
+        bb_255_Volume_Control_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Row */
+        NMO_GUID_INIT(0x33B77F41, 0x07B95C45),
+        "Get Row",
+        "Gets the elements of a chosen row.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 134479872,
+        (const char *const *)bb_256_Get_Row_inputs, 1,
+        (const char *const *)bb_256_Get_Row_outputs, 2,
+        bb_256_Get_Row_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Column Name */
+        NMO_GUID_INIT(0x33B7FF41, 0x07B95C44),
+        "Get Column Name",
+        "Gets the name of a column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_257_Get_Column_Name_inputs, 1,
+        (const char *const *)bb_257_Get_Column_Name_outputs, 1,
+        bb_257_Get_Column_Name_ip, 1,
+        bb_257_Get_Column_Name_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Cell */
+        NMO_GUID_INIT(0x33B99F51, 0x07D95C45),
+        "Get Cell",
+        "Gets the cell of a chosen row and column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 263168,
+        (const char *const *)bb_258_Get_Cell_inputs, 1,
+        (const char *const *)bb_258_Get_Cell_outputs, 2,
+        bb_258_Get_Cell_ip, 2,
+        bb_258_Get_Cell_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Register Array */
+        NMO_GUID_INIT(0x348773DC, 0x19AE6322),
+        "TT Register Array",
+        "Registers an array for storage in a database",
+        "TT Database",
+        "TT_DatabaseManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_259_TT_Register_Array_inputs, 2,
+        (const char *const *)bb_259_TT_Register_Array_outputs, 2,
+        bb_259_TT_Register_Array_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Get Game Score */
+        NMO_GUID_INIT(0x34951557, 0x4D180895),
+        "TT Get Game Score",
+        "Gets game score from manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_260_TT_Get_Game_Score_inputs, 1,
+        (const char *const *)bb_260_TT_Get_Game_Score_outputs, 1,
+        NULL, 0,
+        bb_260_TT_Get_Game_Score_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Interpolator */
+        NMO_GUID_INIT(0x35503950, 0x2DDE7A65),
+        "Interpolator",
+        "Performs an interpolation between 2 parameters",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 67109888,
+        (const char *const *)bb_261_Interpolator_inputs, 1,
+        (const char *const *)bb_261_Interpolator_outputs, 1,
+        bb_261_Interpolator_ip, 3,
+        bb_261_Interpolator_op, 1,
+        NULL, 0,
+        bb_261_Interpolator_st, 1,
+    },
+    { /* Clear Array */
+        NMO_GUID_INIT(0x35C9352F, 0x7B1A193B),
+        "Clear Array",
+        "Removes all the rows of the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_262_Clear_Array_inputs, 1,
+        (const char *const *)bb_262_Clear_Array_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Extra */
+        NMO_GUID_INIT(0x36106BD9, 0x51813906),
+        "TT Extra",
+        "Manages the Powerball extras.",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_263_TT_Extra_inputs, 3,
+        (const char *const *)bb_263_TT_Extra_outputs, 3,
+        bb_263_TT_Extra_ip, 14,
+        bb_263_TT_Extra_op, 1,
+        bb_263_TT_Extra_lp, 11,
+        bb_263_TT_Extra_st, 1,
+    },
+    { /* TT Sky */
+        NMO_GUID_INIT(0x36691920, 0x3B261630),
+        "TT Sky",
+        "Creates a sky object with any number of faces and changeable material transparency",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_264_TT_Sky_inputs, 2,
+        (const char *const *)bb_264_TT_Sky_outputs, 2,
+        bb_264_TT_Sky_ip, 7,
+        NULL, 0,
+        bb_264_TT_Sky_lp, 1,
+        bb_264_TT_Sky_st, 3,
+    },
+    { /* Set As Active Camera */
+        NMO_GUID_INIT(0x368F0AB1, 0x2D8957E4),
+        "Set As Active Camera",
+        "Tells the camera to be the active one.",
+        "Cameras/Montage",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_265_Set_As_Active_Camera_inputs, 1,
+        (const char *const *)bb_265_Set_As_Active_Camera_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Current Camera */
+        NMO_GUID_INIT(0x368F22B1, 0x222957E4),
+        "Get Current Camera",
+        "States the current camera in the active scene.",
+        "Cameras/Montage",
+        "Cameras.dll",
+        65536, 19, 0,
+        (const char *const *)bb_266_Get_Current_Camera_inputs, 1,
+        (const char *const *)bb_266_Get_Current_Camera_outputs, 1,
+        NULL, 0,
+        bb_266_Get_Current_Camera_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Game ID */
+        NMO_GUID_INIT(0x36AF3944, 0x67C75AA7),
+        "TT Set Game ID",
+        "Sets game ID to manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_267_TT_Set_Game_ID_inputs, 1,
+        (const char *const *)bb_267_TT_Set_Game_ID_outputs, 1,
+        bb_267_TT_Set_Game_ID_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Attribute */
+        NMO_GUID_INIT(0x373040F2, 0x05E01B34),
+        "Set Attribute",
+        "Gives an attribute to the object, and/or sets the value of this attribute.",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 67371008,
+        (const char *const *)bb_268_Set_Attribute_inputs, 1,
+        (const char *const *)bb_268_Set_Attribute_outputs, 1,
+        bb_268_Set_Attribute_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Activate Global State */
+        NMO_GUID_INIT(0x373A615B, 0x769A6D53),
+        "Activate Global State",
+        "Enters the system in the given global state.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_269_Activate_Global_State_inputs, 1,
+        (const char *const *)bb_269_Activate_Global_State_outputs, 1,
+        bb_269_Activate_Global_State_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Material */
+        NMO_GUID_INIT(0x37865D50, 0x2E285FAB),
+        "Set Material",
+        "Sets the material of the 3D Entity (or replace an existing one).",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_270_Set_Material_inputs, 1,
+        (const char *const *)bb_270_Set_Material_outputs, 1,
+        bb_270_Set_Material_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Global Blur */
+        NMO_GUID_INIT(0x37F1163D, 0x35AD3E6B),
+        "Global Blur",
+        "Apply a global blur on all the objects rendered.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_271_Global_Blur_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_271_Global_Blur_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ProximityVolumeControl */
+        NMO_GUID_INIT(0x38571B61, 0x64CD2174),
+        "TT ProximityVolumeControl",
+        "Sets the volume of a sound dependend to a distance.",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_272_TT_ProximityVolumeControl_inputs, 2,
+        (const char *const *)bb_272_TT_ProximityVolumeControl_outputs, 2,
+        bb_272_TT_ProximityVolumeControl_ip, 5,
+        NULL, 0,
+        bb_272_TT_ProximityVolumeControl_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Change ScreenMode */
+        NMO_GUID_INIT(0x38B84D97, 0x13932F28),
+        "TT Change ScreenMode",
+        "Change Screenmode",
+        "TT InterfaceManager/Display",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_273_TT_Change_ScreenMode_inputs, 1,
+        (const char *const *)bb_273_TT_Change_ScreenMode_outputs, 2,
+        bb_273_TT_Change_ScreenMode_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Physics WakeUp */
+        NMO_GUID_INIT(0x38B851B5, 0x72CA74AC),
+        "Physics WakeUp",
+        "Wake Up Object for Simulation",
+        "Physics",
+        "physics_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_274_Physics_WakeUp_inputs, 1,
+        (const char *const *)bb_274_Physics_WakeUp_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT PMS_Meshdeform */
+        NMO_GUID_INIT(0x38B87D43, 0x149B755B),
+        "TT PMS_Meshdeform",
+        "Generates waves via Pierson-Moskowitz spectrum",
+        "TT Toolbox/Mesh",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_275_TT_PMS_Meshdeform_inputs, 2,
+        (const char *const *)bb_275_TT_PMS_Meshdeform_outputs, 2,
+        bb_275_TT_PMS_Meshdeform_ip, 7,
+        NULL, 0,
+        bb_275_TT_PMS_Meshdeform_lp, 5,
+        bb_275_TT_PMS_Meshdeform_st, 1,
+    },
+    { /* TT_SetMipMapping */
+        NMO_GUID_INIT(0x38C34DAB, 0x5DD03BDF),
+        "TT_SetMipMapping",
+        "Sets mipmapping for material",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 30, 67371008,
+        (const char *const *)bb_276_TT_SetMipMapping_inputs, 1,
+        (const char *const *)bb_276_TT_SetMipMapping_outputs, 1,
+        bb_276_TT_SetMipMapping_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Load String */
+        NMO_GUID_INIT(0x391555D6, 0x42F2500E),
+        "Load String",
+        "Loads a string from a file.",
+        "Logics/Strings",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_277_Load_String_inputs, 1,
+        (const char *const *)bb_277_Load_String_outputs, 2,
+        bb_277_Load_String_ip, 1,
+        bb_277_Load_String_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Avoid Obstacles */
+        NMO_GUID_INIT(0x39460907, 0x30F329AF),
+        "Avoid Obstacles",
+        "Modifies the 'Direction' input parameter to avoid obstacles.",
+        "Collisions/Influence",
+        "Collisions.dll",
+        131072, 33, 262144,
+        (const char *const *)bb_278_Avoid_Obstacles_inputs, 2,
+        (const char *const *)bb_278_Avoid_Obstacles_outputs, 1,
+        bb_278_Avoid_Obstacles_ip, 5,
+        bb_278_Avoid_Obstacles_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Get Game Name */
+        NMO_GUID_INIT(0x39B21B0C, 0x5DB65810),
+        "TT Get Game Name",
+        "Gets game name from manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_279_TT_Get_Game_Name_inputs, 1,
+        (const char *const *)bb_279_TT_Get_Game_Name_outputs, 1,
+        NULL, 0,
+        bb_279_TT_Get_Game_Name_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Drag and Drop */
+        NMO_GUID_INIT(0x39C45869, 0x3DCF3FC1),
+        "Drag and Drop",
+        "Enables you to drag and drop a 2D Entity.",
+        "Interface/Controls",
+        "Interface.dll",
+        65536, 27, 0,
+        (const char *const *)bb_280_Drag_and_Drop_inputs, 2,
+        (const char *const *)bb_280_Drag_and_Drop_outputs, 2,
+        bb_280_Drag_and_Drop_ip, 1,
+        NULL, 0,
+        bb_280_Drag_and_Drop_lp, 2,
+        NULL, 0,
+    },
+    { /* TT_IsObjectVisible */
+        NMO_GUID_INIT(0x39CF3DD3, 0x11A92281),
+        "TT_IsObjectVisible",
+        "Tests whether object is visible",
+        "TT Toolbox/Test",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_281_TT_IsObjectVisible_inputs, 1,
+        (const char *const *)bb_281_TT_IsObjectVisible_outputs, 2,
+        bb_281_TT_IsObjectVisible_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Column Product */
+        NMO_GUID_INIT(0x39F64A9A, 0x682B721C),
+        "Column Product",
+        "Performs the multiplication of all the elements of a column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 134479872,
+        (const char *const *)bb_282_Column_Product_inputs, 1,
+        (const char *const *)bb_282_Column_Product_outputs, 1,
+        bb_282_Column_Product_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Rendezvous */
+        NMO_GUID_INIT(0x3A1A16C7, 0x20095C45),
+        "Rendezvous",
+        "Waits for a group of objects/characters expected to be at the rendez-vous to all be present in order to allow them to pass through. You need to choose a Meeting Name and a Number of participants.",
+        "Logics/Synchro",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_283_Rendezvous_inputs, 1,
+        (const char *const *)bb_283_Rendezvous_outputs, 1,
+        bb_283_Rendezvous_ip, 1,
+        bb_283_Rendezvous_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Floor Manager Setup */
+        NMO_GUID_INIT(0x3A271561, 0x1D8C4B45),
+        "Floor Manager Setup",
+        "Configure the Floor Manager.",
+        "Collisions/Floors",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_284_Floor_Manager_Setup_inputs, 1,
+        (const char *const *)bb_284_Floor_Manager_Setup_outputs, 1,
+        bb_284_Floor_Manager_Setup_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Read State */
+        NMO_GUID_INIT(0x3AB6273F, 0x578F7118),
+        "Read State",
+        "Read an object state.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_285_Read_State_inputs, 1,
+        (const char *const *)bb_285_Read_State_outputs, 1,
+        bb_285_Read_State_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Reverse Order */
+        NMO_GUID_INIT(0x3B7D3DB7, 0x519F015B),
+        "Reverse Order",
+        "Reverse the rows order of the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_286_Reverse_Order_inputs, 1,
+        (const char *const *)bb_286_Reverse_Order_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT GetMemoryStatus */
+        NMO_GUID_INIT(0x3B826E04, 0x6E764285),
+        "TT GetMemoryStatus",
+        "Reads system memory status",
+        "TT Toolbox/System",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_287_TT_GetMemoryStatus_inputs, 1,
+        (const char *const *)bb_287_TT_GetMemoryStatus_outputs, 1,
+        NULL, 0,
+        bb_287_TT_GetMemoryStatus_op, 5,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Channel Src Blend */
+        NMO_GUID_INIT(0x3B9B0E7F, 0xB1316800),
+        "Set Channel Src Blend",
+        "Sets the Source mode when Blending the Material of a specific channel.",
+        "Materials-Textures/Channel",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_288_Set_Channel_Src_Blend_inputs, 1,
+        (const char *const *)bb_288_Set_Channel_Src_Blend_outputs, 1,
+        bb_288_Set_Channel_Src_Blend_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Rectangles */
+        NMO_GUID_INIT(0x3BCF7052, 0x59F40417),
+        "Set Rectangles",
+        "Set the destination and/or source rectangles of a 2DEntity",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_289_Set_Rectangles_inputs, 1,
+        (const char *const *)bb_289_Set_Rectangles_outputs, 1,
+        bb_289_Set_Rectangles_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Material Effect */
+        NMO_GUID_INIT(0x3BD73009, 0x7AA01DAC),
+        "Set Material Effect",
+        "Enables a special effect on a material.",
+        "Materials-Textures/Basic",
+        "BuildingBlocksAddons1.dll",
+        65536, 30, 67371008,
+        (const char *const *)bb_290_Set_Material_Effect_inputs, 1,
+        (const char *const *)bb_290_Set_Material_Effect_outputs, 1,
+        bb_290_Set_Material_Effect_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set_2DSprite */
+        NMO_GUID_INIT(0x3C392558, 0x419D2680),
+        "TT Set_2DSprite",
+        "Sets position, size and UV mapping for sprite",
+        "TT Toolbox/Sprite",
+        "TT_Toolbox_RT.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_291_TT_Set_2DSprite_inputs, 1,
+        (const char *const *)bb_291_TT_Set_2DSprite_outputs, 1,
+        bb_291_TT_Set_2DSprite_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_291_TT_Set_2DSprite_st, 1,
+    },
+    { /* Trigger Event */
+        NMO_GUID_INIT(0x3C3F7044, 0x0E917D1A),
+        "Trigger Event",
+        "activates 'Activated' output when 'In' begins to be activated / activates 'Deactivated' output when 'In' stops being activated.",
+        "Logics/Streaming",
+        "Logics.dll",
+        5, 19, 0,
+        (const char *const *)bb_292_Trigger_Event_inputs, 1,
+        (const char *const *)bb_292_Trigger_Event_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_292_Trigger_Event_lp, 1,
+        NULL, 0,
+    },
+    { /* Enter Critical Section */
+        NMO_GUID_INIT(0x3C442002, 0x5988257C),
+        "Enter Critical Section",
+        "Makes the object enter a critical section.",
+        "Logics/Synchro",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_293_Enter_Critical_Section_inputs, 1,
+        (const char *const *)bb_293_Enter_Critical_Section_outputs, 1,
+        bb_293_Enter_Critical_Section_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Object From Group */
+        NMO_GUID_INIT(0x3C94747A, 0x50882825),
+        "Remove Object From Group",
+        "Removes the object from a Group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_294_Remove_Object_From_Group_inputs, 1,
+        (const char *const *)bb_294_Remove_Object_From_Group_outputs, 1,
+        bb_294_Remove_Object_From_Group_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT GetGroupBoundingBox */
+        NMO_GUID_INIT(0x3CC07535, 0x037E351C),
+        "TT GetGroupBoundingBox",
+        "Get bounding box for group",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_295_TT_GetGroupBoundingBox_inputs, 1,
+        (const char *const *)bb_295_TT_GetGroupBoundingBox_outputs, 1,
+        bb_295_TT_GetGroupBoundingBox_ip, 1,
+        bb_295_TT_GetGroupBoundingBox_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_DebugON */
+        NMO_GUID_INIT(0x3D00718F, 0x2C8B33A2),
+        "TT_DebugON",
+        "Debug ON",
+        "TT Toolbox/Debug",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_296_TT_DebugON_inputs, 1,
+        (const char *const *)bb_296_TT_DebugON_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT LookAt */
+        NMO_GUID_INIT(0x3D4861F8, 0x2861703D),
+        "TT LookAt",
+        "Axis constrained lock at.",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_297_TT_LookAt_inputs, 1,
+        (const char *const *)bb_297_TT_LookAt_outputs, 1,
+        bb_297_TT_LookAt_ip, 7,
+        NULL, 0,
+        NULL, 0,
+        bb_297_TT_LookAt_st, 3,
+    },
+    { /* Broadcast Message */
+        NMO_GUID_INIT(0x3D6C4AE1, 0x72AE2CD6),
+        "Broadcast Message",
+        "Sends a Message to every objects waiting for it.",
+        "Logics/Message",
+        "Logics.dll",
+        131072, 19, 328192,
+        (const char *const *)bb_298_Broadcast_Message_inputs, 1,
+        (const char *const *)bb_298_Broadcast_Message_outputs, 1,
+        bb_298_Broadcast_Message_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* CubicParticleSystem */
+        NMO_GUID_INIT(0x3D7453F9, 0x1DBA691F),
+        "CubicParticleSystem",
+        "Emits particles from inside a cube",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_299_CubicParticleSystem_inputs, 3,
+        (const char *const *)bb_299_CubicParticleSystem_outputs, 3,
+        bb_299_CubicParticleSystem_ip, 36,
+        NULL, 0,
+        bb_299_CubicParticleSystem_lp, 3,
+        bb_299_CubicParticleSystem_st, 11,
+    },
+    { /* Set Material 3DSprite */
+        NMO_GUID_INIT(0x3DDD6D33, 0xA54D5C48),
+        "Set Material 3DSprite",
+        "Sets the material of the 3D Sprite.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 37, 262144,
+        (const char *const *)bb_300_Set_Material_3DSprite_inputs, 1,
+        (const char *const *)bb_300_Set_Material_3DSprite_outputs, 1,
+        bb_300_Set_Material_3DSprite_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Keep On Floor V2 */
+        NMO_GUID_INIT(0x3DE853BD, 0x133D0D2E),
+        "Object Keep On Floor V2",
+        "Forces an object to stay on a declared floor (so it will not hover above it).",
+        "3D Transformations/Constraint",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_301_Object_Keep_On_Floor_V2_inputs, 2,
+        (const char *const *)bb_301_Object_Keep_On_Floor_V2_outputs, 3,
+        bb_301_Object_Keep_On_Floor_V2_ip, 6,
+        bb_301_Object_Keep_On_Floor_V2_op, 4,
+        NULL, 0,
+        bb_301_Object_Keep_On_Floor_V2_st, 1,
+    },
+    { /* Water Texture */
+        NMO_GUID_INIT(0x3DF93DDC, 0x9C89C141),
+        "Water Texture",
+        "Apply a water matrix to the texture.",
+        "Materials-Textures/Procedural Textures",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 0,
+        (const char *const *)bb_302_Water_Texture_inputs, 1,
+        (const char *const *)bb_302_Water_Texture_outputs, 1,
+        bb_302_Water_Texture_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_GetTime */
+        NMO_GUID_INIT(0x3E715746, 0x45CE3B5A),
+        "TT_GetTime",
+        "Chronometer (ON=Start, OFF=Stop).",
+        "TT Toolbox/Time",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_303_TT_GetTime_inputs, 1,
+        (const char *const *)bb_303_TT_GetTime_outputs, 1,
+        NULL, 0,
+        bb_303_TT_GetTime_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Variation */
+        NMO_GUID_INIT(0x3E7335D9, 0x29687F36),
+        "Variation",
+        "Computes the difference between old and new value of X.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 134218240,
+        (const char *const *)bb_304_Variation_inputs, 2,
+        (const char *const *)bb_304_Variation_outputs, 2,
+        bb_304_Variation_ip, 2,
+        bb_304_Variation_op, 2,
+        bb_304_Variation_lp, 1,
+        NULL, 0,
+    },
+    { /* Set MipMap Level */
+        NMO_GUID_INIT(0x3EBE40F2, 0x3FA41377),
+        "Set MipMap Level",
+        "Set the MipMap level of the texture.",
+        "Materials-Textures/Texture",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_305_Set_MipMap_Level_inputs, 1,
+        (const char *const *)bb_305_Set_MipMap_Level_outputs, 1,
+        bb_305_Set_MipMap_Level_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Column */
+        NMO_GUID_INIT(0x3F377888, 0x128A7767),
+        "Remove Column",
+        "Removes a column of the array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_306_Remove_Column_inputs, 1,
+        (const char *const *)bb_306_Remove_Column_outputs, 1,
+        bb_306_Remove_Column_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Copy */
+        NMO_GUID_INIT(0x3F6B0AC7, 0x47D20F78),
+        "Object Copy",
+        "Duplicates objects",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        131072, 19, 512,
+        (const char *const *)bb_307_Object_Copy_inputs, 1,
+        (const char *const *)bb_307_Object_Copy_outputs, 1,
+        bb_307_Object_Copy_ip, 2,
+        bb_307_Object_Copy_op, 1,
+        NULL, 0,
+        bb_307_Object_Copy_st, 2,
+    },
+    { /* Set 2D Material */
+        NMO_GUID_INIT(0x3F7E5BFF, 0x02326A71),
+        "Set 2D Material",
+        "Sets the material of a 2D Entity.",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_308_Set_2D_Material_inputs, 1,
+        (const char *const *)bb_308_Set_2D_Material_outputs, 1,
+        bb_308_Set_2D_Material_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* DiscParticleSystem */
+        NMO_GUID_INIT(0x3FB65480, 0x6CA450E2),
+        "DiscParticleSystem",
+        "Emits particles from a disc",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_309_DiscParticleSystem_inputs, 3,
+        (const char *const *)bb_309_DiscParticleSystem_outputs, 3,
+        bb_309_DiscParticleSystem_ip, 36,
+        NULL, 0,
+        bb_309_DiscParticleSystem_lp, 3,
+        bb_309_DiscParticleSystem_st, 11,
+    },
+    { /* Joystick Camera Orbit */
+        NMO_GUID_INIT(0x400F0E6F, 0x72822162),
+        "Joystick Camera Orbit",
+        "Makes a Camera orbit round a 3D Entity using Joystick.",
+        "Cameras/Movement",
+        "Cameras.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_310_Joystick_Camera_Orbit_inputs, 2,
+        (const char *const *)bb_310_Joystick_Camera_Orbit_outputs, 2,
+        bb_310_Joystick_Camera_Orbit_ip, 11,
+        NULL, 0,
+        bb_310_Joystick_Camera_Orbit_lp, 3,
+        bb_310_Joystick_Camera_Orbit_st, 7,
+    },
+    { /* Set Src Blend */
+        NMO_GUID_INIT(0x40234DDC, 0x012DA700),
+        "Set Src Blend",
+        "Sets the Source mode when Blending the Material.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_311_Set_Src_Blend_inputs, 1,
+        (const char *const *)bb_311_Set_Src_Blend_outputs, 1,
+        bb_311_Set_Src_Blend_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Zoom */
+        NMO_GUID_INIT(0x40540A0D, 0x000AAAAA),
+        "Set Zoom",
+        "Sets the Zoom (or Lens) of a perspective camera (millimeter).",
+        "Cameras/Basic",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_312_Set_Zoom_inputs, 1,
+        (const char *const *)bb_312_Set_Zoom_outputs, 1,
+        bb_312_Set_Zoom_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set_3DSprite */
+        NMO_GUID_INIT(0x408E30B5, 0x22A07ADA),
+        "TT Set_3DSprite",
+        "Sets position, size, offset and UV mapping for 3D sprite",
+        "TT Toolbox/Sprite",
+        "TT_Toolbox_RT.dll",
+        65536, 37, 262144,
+        (const char *const *)bb_313_TT_Set_3DSprite_inputs, 1,
+        (const char *const *)bb_313_TT_Set_3DSprite_outputs, 1,
+        bb_313_TT_Set_3DSprite_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        bb_313_TT_Set_3DSprite_st, 1,
+    },
+    { /* Draw Rectangle */
+        NMO_GUID_INIT(0x4095766F, 0x291161C1),
+        "Draw Rectangle",
+        "Draws a rectangle and a border at a specified position.",
+        "Interface/Primitives",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_314_Draw_Rectangle_inputs, 1,
+        (const char *const *)bb_314_Draw_Rectangle_outputs, 1,
+        bb_314_Draw_Rectangle_ip, 8,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_IsObjectActive */
+        NMO_GUID_INIT(0x409F03D9, 0x7616062C),
+        "TT_IsObjectActive",
+        "Tests whether object is active",
+        "TT Toolbox/Test",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_315_TT_IsObjectActive_inputs, 1,
+        (const char *const *)bb_315_TT_IsObjectActive_outputs, 2,
+        bb_315_TT_IsObjectActive_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Scale */
+        NMO_GUID_INIT(0x41236987, 0xA54A87A6),
+        "Scale",
+        "Scales the 3D Entity (relatively to its current size or not).",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_316_Scale_inputs, 1,
+        (const char *const *)bb_316_Scale_outputs, 1,
+        bb_316_Scale_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ViewFrustumClipping */
+        NMO_GUID_INIT(0x412E4CD0, 0x6F860DE3),
+        "TT_ViewFrustumClipping",
+        "Creates light dependent bump mapping",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 67371008,
+        (const char *const *)bb_317_TT_ViewFrustumClipping_inputs, 1,
+        (const char *const *)bb_317_TT_ViewFrustumClipping_outputs, 1,
+        bb_317_TT_ViewFrustumClipping_ip, 1,
+        NULL, 0,
+        bb_317_TT_ViewFrustumClipping_lp, 2,
+        NULL, 0,
+    },
+    { /* TT_PreloadTextures */
+        NMO_GUID_INIT(0x416B4F0E, 0x192D339A),
+        "TT_PreloadTextures",
+        "Copies all textures of the current scene to the video memory of the graphics card",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_318_TT_PreloadTextures_inputs, 1,
+        (const char *const *)bb_318_TT_PreloadTextures_outputs, 1,
+        NULL, 0,
+        bb_318_TT_PreloadTextures_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Collection Iterator */
+        NMO_GUID_INIT(0x419602EC, 0x7822779E),
+        "Collection Iterator",
+        "Retrieves each element of a Collection.",
+        "Logics/Loops",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_319_Collection_Iterator_inputs, 2,
+        (const char *const *)bb_319_Collection_Iterator_outputs, 2,
+        bb_319_Collection_Iterator_ip, 1,
+        bb_319_Collection_Iterator_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Color Key */
+        NMO_GUID_INIT(0x41BB5AF1, 0x01EB26E9),
+        "Set Color Key",
+        "Sets the transparent color key of the selected texture.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_320_Set_Color_Key_inputs, 1,
+        (const char *const *)bb_320_Set_Color_Key_outputs, 1,
+        bb_320_Set_Color_Key_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Physics Hinge */
+        NMO_GUID_INIT(0x41CD3653, 0x0DE60C1D),
+        "Set Physics Hinge",
+        "Set a Physics Hinge joint...",
+        "Physics",
+        "physics_RT.dll",
+        65537, 33, 262144,
+        (const char *const *)bb_321_Set_Physics_Hinge_inputs, 2,
+        (const char *const *)bb_321_Set_Physics_Hinge_outputs, 2,
+        bb_321_Set_Physics_Hinge_ip, 5,
+        NULL, 0,
+        bb_321_Set_Physics_Hinge_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Install Array */
+        NMO_GUID_INIT(0x41F47EC4, 0x69470BBD),
+        "TT Install Array",
+        "Install Array to Manager",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_322_TT_Install_Array_inputs, 1,
+        (const char *const *)bb_322_TT_Install_Array_outputs, 1,
+        bb_322_TT_Install_Array_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Character Curve Follow */
+        NMO_GUID_INIT(0x4212CABD, 0xEAFBCDA6),
+        "Character Curve Follow",
+        "Makes a character follow a 3D Curved.",
+        "Characters/Movement",
+        "Characters.dll",
+        65536, 40, 327680,
+        (const char *const *)bb_323_Character_Curve_Follow_inputs, 2,
+        (const char *const *)bb_323_Character_Curve_Follow_outputs, 2,
+        bb_323_Character_Curve_Follow_ip, 3,
+        bb_323_Character_Curve_Follow_op, 1,
+        bb_323_Character_Curve_Follow_lp, 3,
+        NULL, 0,
+    },
+    { /* Sequencer */
+        NMO_GUID_INIT(0x42530844, 0x257B6053),
+        "Sequencer",
+        "When 'In' is activated for the nth time, exits by the nth output.",
+        "Logics/Streaming",
+        "Logics.dll",
+        131072, 19, 256,
+        (const char *const *)bb_324_Sequencer_inputs, 2,
+        (const char *const *)bb_324_Sequencer_outputs, 2,
+        NULL, 0,
+        bb_324_Sequencer_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Nearest Object */
+        NMO_GUID_INIT(0x4321ABCD, 0x0EEAABDD),
+        "Get Nearest Object",
+        "Finds out which object in a group is closest to a character.",
+        "Characters/Basic",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_325_Get_Nearest_Object_inputs, 1,
+        (const char *const *)bb_325_Get_Nearest_Object_outputs, 1,
+        bb_325_Get_Nearest_Object_ip, 1,
+        bb_325_Get_Nearest_Object_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Create Nodal Path */
+        NMO_GUID_INIT(0x435B3D9C, 0x3A8E41F6),
+        "Create Nodal Path",
+        "Creates a Nodal Path out of a group of frames.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 23, 524288,
+        (const char *const *)NULL, 0,
+        (const char *const *)NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        bb_326_Create_Nodal_Path_lp, 3,
+        bb_326_Create_Nodal_Path_st, 1,
+    },
+    { /* Object Keep On Floor */
+        NMO_GUID_INIT(0x43617677, 0x7DE15E12),
+        "Object Keep On Floor",
+        "Forces an object stay on a declared floor (so it will not hover above it).",
+        "3D Transformations/Constraint",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_327_Object_Keep_On_Floor_inputs, 1,
+        (const char *const *)bb_327_Object_Keep_On_Floor_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Keyboard Controller */
+        NMO_GUID_INIT(0x43F1D000, 0x1A2B3C4D),
+        "Keyboard Controller",
+        "Emulates joystick messages using the keyboard.",
+        "Controllers/Keyboard",
+        "Controllers.dll",
+        65536, 19, 327680,
+        (const char *const *)bb_328_Keyboard_Controller_inputs, 2,
+        (const char *const *)NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        bb_328_Keyboard_Controller_lp, 1,
+        NULL, 0,
+    },
+    { /* Enhanced Character Controller */
+        NMO_GUID_INIT(0x44433224, 0x12874356),
+        "Enhanced Character Controller",
+        "Controls a character by using 7 animations reacting to a joystick or keyboard.",
+        "Characters/Movement",
+        "Characters.dll",
+        65536, 40, 131073,
+        (const char *const *)bb_329_Enhanced_Character_Controller_inputs, 2,
+        (const char *const *)NULL, 0,
+        bb_329_Enhanced_Character_Controller_ip, 7,
+        NULL, 0,
+        bb_329_Enhanced_Character_Controller_lp, 1,
+        NULL, 0,
+    },
+    { /* Fill Group By Class */
+        NMO_GUID_INIT(0x4445257B, 0x70016C57),
+        "Fill Group By Class",
+        "Add all objects of a given type to the group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 23, 262144,
+        (const char *const *)bb_330_Fill_Group_By_Class_inputs, 1,
+        (const char *const *)bb_330_Fill_Group_By_Class_outputs, 1,
+        bb_330_Fill_Group_By_Class_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Per Second */
+        NMO_GUID_INIT(0x448E54CE, 0x75A655C5),
+        "Per Second",
+        "Calculates a progression (Y) according to a given speed (X) : Y=X*Elapsed Time During One Frame. X can be either an Angle, a Float, a Percentage, Vector or a 2dVector.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 201327616,
+        (const char *const *)bb_331_Per_Second_inputs, 1,
+        (const char *const *)bb_331_Per_Second_outputs, 1,
+        bb_331_Per_Second_ip, 1,
+        bb_331_Per_Second_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Homing Missile */
+        NMO_GUID_INIT(0x44D43591, 0x28F91084),
+        "TT Homing Missile",
+        "Leads a 3D Entity towards its target.",
+        "TT Toolbox/3D Transformations",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_332_TT_Homing_Missile_inputs, 2,
+        (const char *const *)bb_332_TT_Homing_Missile_outputs, 2,
+        bb_332_TT_Homing_Missile_ip, 3,
+        bb_332_TT_Homing_Missile_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Planar Reflection */
+        NMO_GUID_INIT(0x44FE1B3C, 0x29BA3445),
+        "Planar Reflection",
+        "Creates a reflection on a plane of objects in a group.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_333_Planar_Reflection_inputs, 2,
+        (const char *const *)bb_333_Planar_Reflection_outputs, 2,
+        bb_333_Planar_Reflection_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_333_Planar_Reflection_st, 1,
+    },
+    { /* TT RealShadowMapping */
+        NMO_GUID_INIT(0x452816AF, 0x681A3A81),
+        "TT RealShadowMapping",
+        "Calculate the real postion of shadow",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_334_TT_RealShadowMapping_inputs, 2,
+        (const char *const *)bb_334_TT_RealShadowMapping_outputs, 2,
+        bb_334_TT_RealShadowMapping_ip, 5,
+        bb_334_TT_RealShadowMapping_op, 5,
+        bb_334_TT_RealShadowMapping_lp, 2,
+        NULL, 0,
+    },
+    { /* Set Specular Power */
+        NMO_GUID_INIT(0x45454545, 0x15151515),
+        "Set Specular Power",
+        "Sets the Power value of the Material (specular shape of the reflected light).",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_335_Set_Specular_Power_inputs, 1,
+        (const char *const *)bb_335_Set_Specular_Power_outputs, 1,
+        bb_335_Set_Specular_Power_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Between */
+        NMO_GUID_INIT(0x45484B53, 0x08EB1FAB),
+        "Object Between",
+        "Tests if there is an object between the two given entities",
+        "Logics/Test",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_336_Object_Between_inputs, 1,
+        (const char *const *)bb_336_Object_Between_outputs, 2,
+        bb_336_Object_Between_ip, 4,
+        bb_336_Object_Between_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Is In View Frustum */
+        NMO_GUID_INIT(0x45542A7F, 0x4C2F01A6),
+        "Is In View Frustum",
+        "Tests if the object is in the viewing frustrum of the active camera.",
+        "Logics/Test",
+        "Logics.dll",
+        196608, 19, 0,
+        (const char *const *)bb_337_Is_In_View_Frustum_inputs, 1,
+        (const char *const *)bb_337_Is_In_View_Frustum_outputs, 2,
+        bb_337_Is_In_View_Frustum_ip, 2,
+        bb_337_Is_In_View_Frustum_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Message Data */
+        NMO_GUID_INIT(0x45875FEE, 0x45875FDD),
+        "Get Message Data",
+        "Reads the data bound with the selected message.",
+        "Logics/Message",
+        "Logics.dll",
+        65536, 19, 50725888,
+        (const char *const *)bb_338_Get_Message_Data_inputs, 1,
+        (const char *const *)bb_338_Get_Message_Data_outputs, 1,
+        bb_338_Get_Message_Data_ip, 1,
+        bb_338_Get_Message_Data_op, 1,
+        bb_338_Get_Message_Data_lp, 1,
+        bb_338_Get_Message_Data_st, 1,
+    },
+    { /* Wait Message */
+        NMO_GUID_INIT(0x4587FFEE, 0x4587FFDD),
+        "Wait Message",
+        "Waits the receipt of a Message.",
+        "Logics/Message",
+        "Logics.dll",
+        65536, 19, 393216,
+        (const char *const *)bb_339_Wait_Message_inputs, 2,
+        (const char *const *)bb_339_Wait_Message_outputs, 1,
+        bb_339_Wait_Message_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Linear Attenuation */
+        NMO_GUID_INIT(0x45895551, 0x59486677),
+        "Set Linear Attenuation",
+        "Sets the value of the 'Linear Attenuation' of a Light",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_340_Set_Linear_Attenuation_inputs, 1,
+        (const char *const *)bb_340_Set_Linear_Attenuation_outputs, 1,
+        bb_340_Set_Linear_Attenuation_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Lighting Mode */
+        NMO_GUID_INIT(0x45899665, 0x45211254),
+        "Set Lighting Mode",
+        "Sets the Lit mode of a mesh (lighting / no lighting).",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_341_Set_Lighting_Mode_inputs, 1,
+        (const char *const *)bb_341_Set_Lighting_Mode_outputs, 1,
+        bb_341_Set_Lighting_Mode_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Child */
+        NMO_GUID_INIT(0x45986587, 0x12654556),
+        "Add Child",
+        "Adds a child to the 3D Entity's hierarchy",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_342_Add_Child_inputs, 1,
+        (const char *const *)bb_342_Add_Child_outputs, 1,
+        bb_342_Add_Child_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Leave Critical Section */
+        NMO_GUID_INIT(0x45DB3138, 0x4DB80F47),
+        "Leave Critical Section",
+        "Makes the attached object leave the critical section.",
+        "Logics/Synchro",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_343_Leave_Critical_Section_inputs, 1,
+        (const char *const *)bb_343_Leave_Critical_Section_outputs, 1,
+        bb_343_Leave_Critical_Section_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ReadRegistry */
+        NMO_GUID_INIT(0x460044B5, 0x6E927B66),
+        "TT_ReadRegistry",
+        "Reads a value from the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 1024,
+        (const char *const *)bb_344_TT_ReadRegistry_inputs, 1,
+        (const char *const *)bb_344_TT_ReadRegistry_outputs, 2,
+        bb_344_TT_ReadRegistry_ip, 4,
+        bb_344_TT_ReadRegistry_op, 1,
+        NULL, 0,
+        bb_344_TT_ReadRegistry_st, 1,
+    },
+    { /* Set Portal */
+        NMO_GUID_INIT(0x465C4732, 0x30996468),
+        "Set Portal",
+        "Defines a 3D Entity as a portal between 2 places.",
+        "Optimizations/Portals",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_345_Set_Portal_inputs, 1,
+        (const char *const *)bb_345_Set_Portal_outputs, 1,
+        bb_345_Set_Portal_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Highest */
+        NMO_GUID_INIT(0x46F71E13, 0x13D26F61),
+        "Get Highest",
+        "Gets the element of an array, which value in the given column is the highest.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 134479872,
+        (const char *const *)bb_346_Get_Highest_inputs, 1,
+        (const char *const *)bb_346_Get_Highest_outputs, 2,
+        bb_346_Get_Highest_ip, 1,
+        bb_346_Get_Highest_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Pixel Value */
+        NMO_GUID_INIT(0x473167B6, 0x48F75A1D),
+        "Pixel Value",
+        "Return the color of a given texture's pixel.",
+        "Materials-Textures/Texture",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_347_Pixel_Value_inputs, 1,
+        (const char *const *)bb_347_Pixel_Value_outputs, 2,
+        bb_347_Pixel_Value_ip, 3,
+        bb_347_Pixel_Value_op, 1,
+        NULL, 0,
+        bb_347_Pixel_Value_st, 2,
+    },
+    { /* Get Delta Time */
+        NMO_GUID_INIT(0x47DC3232, 0x64BF203A),
+        "Get Delta Time",
+        "Returns the elapsed time between the previous and the current Behavioral Process.",
+        "Logics/Calculator",
+        "Logics.dll",
+        131072, 19, 0,
+        (const char *const *)bb_348_Get_Delta_Time_inputs, 1,
+        (const char *const *)bb_348_Get_Delta_Time_outputs, 1,
+        NULL, 0,
+        bb_348_Get_Delta_Time_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Key Row */
+        NMO_GUID_INIT(0x49064205, 0x10E72F7A),
+        "Get Key Row",
+        "Gets elements from an array, using the key column as a search criterion on the given key value.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 201588736,
+        (const char *const *)bb_349_Get_Key_Row_inputs, 1,
+        (const char *const *)bb_349_Get_Key_Row_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Column Sum */
+        NMO_GUID_INIT(0x49124252, 0x1BE909A4),
+        "Column Sum",
+        "Calculates the sum of all the elements of a column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 134479872,
+        (const char *const *)bb_350_Column_Sum_inputs, 1,
+        (const char *const *)bb_350_Column_Sum_outputs, 1,
+        bb_350_Column_Sum_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ListDir */
+        NMO_GUID_INIT(0x496F429E, 0x7D602E9D),
+        "TT_ListDir",
+        "Checks for existing of a File",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_351_TT_ListDir_inputs, 1,
+        (const char *const *)bb_351_TT_ListDir_outputs, 1,
+        bb_351_TT_ListDir_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* PlanarParticleSystem */
+        NMO_GUID_INIT(0x49957BFE, 0x0FF27FFC),
+        "PlanarParticleSystem",
+        "Emits particles from a plan",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_352_PlanarParticleSystem_inputs, 3,
+        (const char *const *)bb_352_PlanarParticleSystem_outputs, 3,
+        bb_352_PlanarParticleSystem_ip, 36,
+        NULL, 0,
+        bb_352_PlanarParticleSystem_lp, 3,
+        bb_352_PlanarParticleSystem_st, 11,
+    },
+    { /* TT_Debug */
+        NMO_GUID_INIT(0x4A446C43, 0x66FA2375),
+        "TT_Debug",
+        "Debug",
+        "TT Toolbox/Debug",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_353_TT_Debug_inputs, 1,
+        (const char *const *)bb_353_TT_Debug_outputs, 1,
+        bb_353_TT_Debug_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Channel */
+        NMO_GUID_INIT(0x4A462E58, 0x022E369B),
+        "Remove Channel",
+        "Removes a channel material from the 3D Entity.",
+        "Materials-Textures/Channel",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_354_Remove_Channel_inputs, 1,
+        (const char *const *)bb_354_Remove_Channel_outputs, 1,
+        bb_354_Remove_Channel_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* CurveParticleSystem */
+        NMO_GUID_INIT(0x4A6524C4, 0x13B55824),
+        "CurveParticleSystem",
+        "Emits particles from a curve",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 43, 184549376,
+        (const char *const *)bb_355_CurveParticleSystem_inputs, 3,
+        (const char *const *)bb_355_CurveParticleSystem_outputs, 3,
+        bb_355_CurveParticleSystem_ip, 36,
+        NULL, 0,
+        bb_355_CurveParticleSystem_lp, 3,
+        bb_355_CurveParticleSystem_st, 11,
+    },
+    { /* Lightmap */
+        NMO_GUID_INIT(0x4A797D21, 0x214D37F9),
+        "Lightmap",
+        "Calculates lightmaps (textures containing lighting and shadows) for a set of objects with a set of lights.",
+        "Lights/FX",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 0,
+        (const char *const *)bb_356_Lightmap_inputs, 3,
+        (const char *const *)bb_356_Lightmap_outputs, 3,
+        bb_356_Lightmap_ip, 8,
+        NULL, 0,
+        bb_356_Lightmap_lp, 2,
+        bb_356_Lightmap_st, 3,
+    },
+    { /* Static Lightmap */
+        NMO_GUID_INIT(0x4A797D21, 0x214D37FA),
+        "Static Lightmap",
+        "Generates objects with lightmaps (textures containing lighting and shadows).",
+        "Lights/FX",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 0,
+        (const char *const *)bb_357_Static_Lightmap_inputs, 1,
+        (const char *const *)bb_357_Static_Lightmap_outputs, 1,
+        bb_357_Static_Lightmap_ip, 7,
+        NULL, 0,
+        bb_357_Static_Lightmap_lp, 1,
+        bb_357_Static_Lightmap_st, 1,
+    },
+    { /* Write Config */
+        NMO_GUID_INIT(0x4A797D94, 0x21AB5CFA),
+        "Write Config",
+        "Write Data in a user specific storage place.",
+        "Narratives/Config",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 512,
+        (const char *const *)bb_358_Write_Config_inputs, 1,
+        (const char *const *)bb_358_Write_Config_outputs, 1,
+        bb_358_Write_Config_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Read Config */
+        NMO_GUID_INIT(0x4A888D94, 0x21CCCCFA),
+        "Read Config",
+        "Read Data in a user specific storage place.",
+        "Narratives/Config",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 1024,
+        (const char *const *)bb_359_Read_Config_inputs, 1,
+        (const char *const *)bb_359_Read_Config_outputs, 2,
+        bb_359_Read_Config_ip, 2,
+        bb_359_Read_Config_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Scan String */
+        NMO_GUID_INIT(0x4AFA2F11, 0x034872E2),
+        "Scan String",
+        "Retrieves values (float, vector or anything else) from a string.",
+        "Logics/Strings",
+        "Logics.dll",
+        65536, 19, 1024,
+        (const char *const *)bb_360_Scan_String_inputs, 1,
+        (const char *const *)bb_360_Scan_String_outputs, 1,
+        bb_360_Scan_String_ip, 2,
+        bb_360_Scan_String_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Position Sound */
+        NMO_GUID_INIT(0x4BA42A5B, 0x3CA030DD),
+        "Position Sound",
+        "Attaches a sound to an object.",
+        "Sounds/3D Properties",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_361_Position_Sound_inputs, 1,
+        (const char *const *)bb_361_Position_Sound_outputs, 1,
+        bb_361_Position_Sound_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Calculator */
+        NMO_GUID_INIT(0x4BC209B8, 0x5B3679B0),
+        "Calculator",
+        "Calculates the value of an arithmetic expression; 'a' stand for the first parameter, 'b' for the second, ...etc.",
+        "Logics/Calculator",
+        "Logics.dll",
+        131072, 19, 201328128,
+        (const char *const *)bb_362_Calculator_inputs, 1,
+        (const char *const *)bb_362_Calculator_outputs, 1,
+        bb_362_Calculator_ip, 2,
+        bb_362_Calculator_op, 1,
+        bb_362_Calculator_lp, 2,
+        NULL, 0,
+    },
+    { /* Create String */
+        NMO_GUID_INIT(0x4BCD2F9D, 0x382652E2),
+        "Create String",
+        "Creates a string by concatenating elements, separating them by an optionnal delimiter.",
+        "Logics/Strings",
+        "Logics.dll",
+        131072, 19, 1073742336,
+        (const char *const *)bb_363_Create_String_inputs, 3,
+        (const char *const *)bb_363_Create_String_outputs, 3,
+        bb_363_Create_String_ip, 1,
+        bb_363_Create_String_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Sprite Movie Player */
+        NMO_GUID_INIT(0x4C1D16AC, 0x1877604A),
+        "Sprite Movie Player",
+        "Plays a movie in a 2d Sprite (avi)",
+        "Visuals/Sprite",
+        "Visuals.dll",
+        65536, 28, 262144,
+        (const char *const *)bb_364_Sprite_Movie_Player_inputs, 2,
+        (const char *const *)bb_364_Sprite_Movie_Player_outputs, 2,
+        bb_364_Sprite_Movie_Player_ip, 4,
+        bb_364_Sprite_Movie_Player_op, 1,
+        bb_364_Sprite_Movie_Player_lp, 1,
+        NULL, 0,
+    },
+    { /* Switch On Parameter */
+        NMO_GUID_INIT(0x4C42AACE, 0x1DA45635),
+        "Switch On Parameter",
+        "Switches the sequential stream to the corresponding ouput, following the result of comparison between 'Test' and the others input parameters",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 67109632,
+        (const char *const *)bb_365_Switch_On_Parameter_inputs, 1,
+        (const char *const *)bb_365_Switch_On_Parameter_outputs, 2,
+        bb_365_Switch_On_Parameter_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_365_Switch_On_Parameter_st, 1,
+    },
+    { /* TT GetEnvironmentVariable */
+        NMO_GUID_INIT(0x4C6513E9, 0x20E11177),
+        "TT GetEnvironmentVariable",
+        "Gets the value of a square",
+        "TT Toolbox/Advanced",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_366_TT_GetEnvironmentVariable_inputs, 1,
+        (const char *const *)bb_366_TT_GetEnvironmentVariable_outputs, 2,
+        bb_366_TT_GetEnvironmentVariable_ip, 1,
+        bb_366_TT_GetEnvironmentVariable_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Character Go To Node */
+        NMO_GUID_INIT(0x4C710F65, 0x32ED4EA6),
+        "Character Go To Node",
+        "Makes the target character walk to the selected node, by taking the shortest path possible.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_367_Character_Go_To_Node_inputs, 3,
+        (const char *const *)bb_367_Character_Go_To_Node_outputs, 3,
+        bb_367_Character_Go_To_Node_ip, 6,
+        NULL, 0,
+        bb_367_Character_Go_To_Node_lp, 3,
+        bb_367_Character_Go_To_Node_st, 2,
+    },
+    { /* Activate Script */
+        NMO_GUID_INIT(0x4C7E7BC3, 0x0B693155),
+        "Activate Script",
+        "Activates a script, either in the state it was before deactivation or once reset.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_368_Activate_Script_inputs, 1,
+        (const char *const *)bb_368_Activate_Script_outputs, 1,
+        bb_368_Activate_Script_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_368_Activate_Script_st, 1,
+    },
+    { /* TT OperationSystem */
+        NMO_GUID_INIT(0x4C94621D, 0x24FE2CF3),
+        "TT OperationSystem",
+        "Reads operation system",
+        "TT Toolbox/System",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_369_TT_OperationSystem_inputs, 1,
+        (const char *const *)bb_369_TT_OperationSystem_outputs, 1,
+        NULL, 0,
+        bb_369_TT_OperationSystem_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Rename */
+        NMO_GUID_INIT(0x4CA718CC, 0x03520C5A),
+        "Object Rename",
+        "Renames an object",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_370_Object_Rename_inputs, 1,
+        (const char *const *)bb_370_Object_Rename_outputs, 1,
+        bb_370_Object_Rename_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Exclude From Animation */
+        NMO_GUID_INIT(0x4D3F515B, 0x450C20C6),
+        "Exclude From Animation",
+        "Excludes the selected 3D Entity from all taking part in any animation that uses it.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_371_Exclude_From_Animation_inputs, 1,
+        (const char *const *)bb_371_Exclude_From_Animation_outputs, 1,
+        bb_371_Exclude_From_Animation_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Render Options */
+        NMO_GUID_INIT(0x4D586C55, 0x5250236A),
+        "Set Render Options",
+        "Set the flags of the render context.",
+        "World Environments/Global",
+        "Visuals.dll",
+        5, 19, 0,
+        (const char *const *)bb_372_Set_Render_Options_inputs, 1,
+        (const char *const *)bb_372_Set_Render_Options_outputs, 1,
+        bb_372_Set_Render_Options_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Frustum Object Intersection */
+        NMO_GUID_INIT(0x4D6075E1, 0x2DDA272E),
+        "Frustum Object Intersection",
+        "Detects the collision between a camera frustum and an object.",
+        "Collisions/Intersection",
+        "Collisions.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_373_Frustum_Object_Intersection_inputs, 1,
+        (const char *const *)bb_373_Frustum_Object_Intersection_outputs, 2,
+        bb_373_Frustum_Object_Intersection_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_SceneStencilShadow */
+        NMO_GUID_INIT(0x4DCF4CA0, 0x474E25EC),
+        "TT_SceneStencilShadow",
+        "Creates StencilBuffer shadows (32Bit required!)",
+        "TT Toolbox/FX",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_374_TT_SceneStencilShadow_inputs, 2,
+        (const char *const *)bb_374_TT_SceneStencilShadow_outputs, 2,
+        bb_374_TT_SceneStencilShadow_ip, 2,
+        NULL, 0,
+        bb_374_TT_SceneStencilShadow_lp, 5,
+        NULL, 0,
+    },
+    { /* Light Sprite */
+        NMO_GUID_INIT(0x4DEF3319, 0x075B5CC8),
+        "Light Sprite",
+        "Renders the Light with a specific 'Light Texture'.",
+        "Lights/FX",
+        "Lights.dll",
+        65536, 38, 0,
+        (const char *const *)bb_375_Light_Sprite_inputs, 2,
+        (const char *const *)bb_375_Light_Sprite_outputs, 1,
+        bb_375_Light_Sprite_ip, 2,
+        NULL, 0,
+        bb_375_Light_Sprite_lp, 1,
+        NULL, 0,
+    },
+    { /* TT PushButton */
+        NMO_GUID_INIT(0x4DF00DAC, 0x562C27DA),
+        "TT PushButton",
+        "Transforms a 2D Frame into a push button.",
+        "TT Toolbox/Interface",
+        "TT_Toolbox_RT.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_376_TT_PushButton_inputs, 2,
+        (const char *const *)bb_376_TT_PushButton_outputs, 4,
+        bb_376_TT_PushButton_ip, 3,
+        NULL, 0,
+        bb_376_TT_PushButton_lp, 2,
+        NULL, 0,
+    },
+    { /* Test Cell */
+        NMO_GUID_INIT(0x4E6C6DA8, 0x636904FC),
+        "Test Cell",
+        "Compare an array element (cell) with a given reference value.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_377_Test_Cell_inputs, 1,
+        (const char *const *)bb_377_Test_Cell_outputs, 2,
+        bb_377_Test_Cell_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT List ScreenModes */
+        NMO_GUID_INIT(0x4E7A0194, 0x040328FD),
+        "TT List ScreenModes",
+        "List Screenmodes",
+        "TT InterfaceManager/Display",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_378_TT_List_ScreenModes_inputs, 1,
+        (const char *const *)bb_378_TT_List_ScreenModes_outputs, 2,
+        bb_378_TT_List_ScreenModes_ip, 2,
+        bb_378_TT_List_ScreenModes_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT GetUV2DSprite */
+        NMO_GUID_INIT(0x4F16689A, 0x472B1C63),
+        "TT GetUV2DSprite",
+        "Gets UV coordinates of a 2d sprite",
+        "TT Toolbox/Sprite",
+        "TT_Toolbox_RT.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_379_TT_GetUV2DSprite_inputs, 1,
+        (const char *const *)bb_379_TT_GetUV2DSprite_outputs, 1,
+        NULL, 0,
+        bb_379_TT_GetUV2DSprite_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Object To Scene */
+        NMO_GUID_INIT(0x4F7D5221, 0x4C852520),
+        "Add Object To Scene",
+        "Add an object to a specified scene.",
+        "Narratives/Scene Management",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_380_Add_Object_To_Scene_inputs, 1,
+        (const char *const *)bb_380_Add_Object_To_Scene_outputs, 1,
+        bb_380_Add_Object_To_Scene_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Column Transform */
+        NMO_GUID_INIT(0x4F8F0DFE, 0x7C517321),
+        "Column Transform",
+        "Performs an operation between one column value and a operand and store the result in the column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_381_Column_Transform_inputs, 1,
+        (const char *const *)bb_381_Column_Transform_outputs, 1,
+        bb_381_Column_Transform_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT SinusMeshdeform */
+        NMO_GUID_INIT(0x4F907F12, 0x16AF15D6),
+        "TT SinusMeshdeform",
+        "Generates sine waves",
+        "TT Toolbox/Mesh",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_382_TT_SinusMeshdeform_inputs, 2,
+        (const char *const *)bb_382_TT_SinusMeshdeform_outputs, 2,
+        bb_382_TT_SinusMeshdeform_ip, 4,
+        NULL, 0,
+        bb_382_TT_SinusMeshdeform_lp, 3,
+        bb_382_TT_SinusMeshdeform_st, 1,
+    },
+    { /* TT Set Level Bonus */
+        NMO_GUID_INIT(0x4F9B6FA1, 0x57040B1B),
+        "TT Set Level Bonus",
+        "Sets level bonus to manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_383_TT_Set_Level_Bonus_inputs, 1,
+        (const char *const *)bb_383_TT_Set_Level_Bonus_outputs, 1,
+        bb_383_TT_Set_Level_Bonus_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_KeySwitch */
+        NMO_GUID_INIT(0x4FBB3808, 0x4A99083C),
+        "TT_KeySwitch",
+        "Waits for a key to be pressed.",
+        "TT Toolbox/Controllers",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_384_TT_KeySwitch_inputs, 2,
+        (const char *const *)bb_384_TT_KeySwitch_outputs, 2,
+        bb_384_TT_KeySwitch_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Texture Sine */
+        NMO_GUID_INIT(0x4FE0646E, 0x7E0635C9),
+        "Texture Sine",
+        "Produces a sinusoidal displacement on the UV coords of a mesh's material (or one of its channel).",
+        "Materials-Textures/Animation",
+        "Materials.dll",
+        65536, 32, 0,
+        (const char *const *)bb_385_Texture_Sine_inputs, 1,
+        (const char *const *)bb_385_Texture_Sine_outputs, 1,
+        bb_385_Texture_Sine_ip, 4,
+        NULL, 0,
+        bb_385_Texture_Sine_lp, 2,
+        NULL, 0,
+    },
+    { /* Point Particle System */
+        NMO_GUID_INIT(0x506B40F7, 0x30852E46),
+        "Point Particle System",
+        "Emits particles from a point",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_386_Point_Particle_System_inputs, 3,
+        (const char *const *)bb_386_Point_Particle_System_outputs, 3,
+        bb_386_Point_Particle_System_ip, 36,
+        NULL, 0,
+        bb_386_Point_Particle_System_lp, 3,
+        bb_386_Point_Particle_System_st, 11,
+    },
+    { /* TT Get Integer Value From Registry */
+        NMO_GUID_INIT(0x50C02B30, 0x2E5A2EDA),
+        "TT Get Integer Value From Registry",
+        "Reads an integer value from the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_387_TT_Get_Integer_Value_From_Regist_inputs, 1,
+        (const char *const *)bb_387_TT_Get_Integer_Value_From_Regist_outputs, 2,
+        bb_387_TT_Get_Integer_Value_From_Regist_ip, 2,
+        bb_387_TT_Get_Integer_Value_From_Regist_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT GetCurvePoint */
+        NMO_GUID_INIT(0x50EB3A17, 0x015C5BF9),
+        "TT GetCurvePoint",
+        "Get Curve Point",
+        "TT Toolbox/3D Transformations",
+        "TT_Toolbox_RT.dll",
+        65536, 43, 67371008,
+        (const char *const *)bb_388_TT_GetCurvePoint_inputs, 1,
+        (const char *const *)bb_388_TT_GetCurvePoint_outputs, 1,
+        bb_388_TT_GetCurvePoint_ip, 1,
+        bb_388_TT_GetCurvePoint_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Fill Layer */
+        NMO_GUID_INIT(0x513344BB, 0x6B943D9F),
+        "Fill Layer",
+        "Fills a specific layer type with some value.",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 19, 0,
+        (const char *const *)bb_389_Fill_Layer_inputs, 1,
+        (const char *const *)bb_389_Fill_Layer_outputs, 1,
+        bb_389_Fill_Layer_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT SpeedOMeter */
+        NMO_GUID_INIT(0x51BD5521, 0x672C67BF),
+        "TT SpeedOMeter",
+        "Calculates the speed of an 3DEntity.",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_390_TT_SpeedOMeter_inputs, 1,
+        (const char *const *)bb_390_TT_SpeedOMeter_outputs, 1,
+        NULL, 0,
+        bb_390_TT_SpeedOMeter_op, 1,
+        bb_390_TT_SpeedOMeter_lp, 1,
+        bb_390_TT_SpeedOMeter_st, 2,
+    },
+    { /* Activate Link */
+        NMO_GUID_INIT(0x51DF79D8, 0x294163A3),
+        "Activate Link",
+        "Activates or deactivates a link between two nodes of a Nodal Path.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_391_Activate_Link_inputs, 1,
+        (const char *const *)bb_391_Activate_Link_outputs, 1,
+        bb_391_Activate_Link_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Deactivate Global State */
+        NMO_GUID_INIT(0x520D14A5, 0x797502AE),
+        "Deactivate Global State",
+        "Exit the system from the given global state.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_392_Deactivate_Global_State_inputs, 1,
+        (const char *const *)bb_392_Deactivate_Global_State_outputs, 1,
+        bb_392_Deactivate_Global_State_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ReplacePath */
+        NMO_GUID_INIT(0x524A6BCB, 0x66F67774),
+        "TT_ReplacePath",
+        "Copy a File",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_393_TT_ReplacePath_inputs, 1,
+        (const char *const *)bb_393_TT_ReplacePath_outputs, 2,
+        bb_393_TT_ReplacePath_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Filter Texture */
+        NMO_GUID_INIT(0x52DF323C, 0x39DC1211),
+        "Filter Texture",
+        "Apply a filter matrix to the texture.",
+        "Materials-Textures/Texture",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_394_Filter_Texture_inputs, 1,
+        (const char *const *)bb_394_Filter_Texture_outputs, 1,
+        bb_394_Filter_Texture_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT InputString */
+        NMO_GUID_INIT(0x52FD6294, 0x612F51A5),
+        "TT InputString",
+        "Captures text entered by user.",
+        "TT Toolbox/Interface",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_395_TT_InputString_inputs, 2,
+        (const char *const *)bb_395_TT_InputString_outputs, 3,
+        bb_395_TT_InputString_ip, 2,
+        bb_395_TT_InputString_op, 3,
+        bb_395_TT_InputString_lp, 2,
+        bb_395_TT_InputString_st, 5,
+    },
+    { /* TT_RefractionMapping */
+        NMO_GUID_INIT(0x53024810, 0x22ED280F),
+        "TT_RefractionMapping",
+        "Creates refraction mapping when changing the mappings channel normals",
+        "TT Toolbox/Mapping",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_396_TT_RefractionMapping_inputs, 2,
+        (const char *const *)bb_396_TT_RefractionMapping_outputs, 2,
+        bb_396_TT_RefractionMapping_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Proximity */
+        NMO_GUID_INIT(0x5321CACB, 0xDCDC5213),
+        "Proximity",
+        "Compares the distance between two 3D Entities with a given threshold distance.",
+        "Logics/Test",
+        "Logics.dll",
+        65536, 19, 33554432,
+        (const char *const *)bb_397_Proximity_inputs, 1,
+        (const char *const *)bb_397_Proximity_outputs, 4,
+        bb_397_Proximity_ip, 4,
+        bb_397_Proximity_op, 1,
+        bb_397_Proximity_lp, 1,
+        bb_397_Proximity_st, 1,
+    },
+    { /* Value Count */
+        NMO_GUID_INIT(0x534377DE, 0x75FD478A),
+        "Value Count",
+        "Returns the number of elements in a column matching the given value.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_398_Value_Count_inputs, 1,
+        (const char *const *)bb_398_Value_Count_outputs, 1,
+        bb_398_Value_Count_ip, 2,
+        bb_398_Value_Count_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ExistFile */
+        NMO_GUID_INIT(0x53BA46BC, 0x31782F60),
+        "TT_ExistFile",
+        "Checks for existing of a File",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_399_TT_ExistFile_inputs, 1,
+        (const char *const *)bb_399_TT_ExistFile_outputs, 2,
+        bb_399_TT_ExistFile_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* DeleteCollisionSurfaces */
+        NMO_GUID_INIT(0x53BF75AA, 0x770C7021),
+        "DeleteCollisionSurfaces",
+        "Delete Collision Behaviors",
+        "Physics",
+        "physics_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_400_DeleteCollisionSurfaces_inputs, 1,
+        (const char *const *)bb_400_DeleteCollisionSurfaces_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Blend Textures */
+        NMO_GUID_INIT(0x53EE4292, 0x7D932BB1),
+        "Blend Textures",
+        "Blends 2 textures.",
+        "Materials-Textures/Procedural Textures",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_401_Blend_Textures_inputs, 1,
+        (const char *const *)bb_401_Blend_Textures_outputs, 1,
+        bb_401_Blend_Textures_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ReplaceInputparameter */
+        NMO_GUID_INIT(0x54A776B7, 0x20FC1E7C),
+        "TT ReplaceInputparameter",
+        "Links an input parameter to another parameter.",
+        "TT Toolbox/Advanced",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_402_TT_ReplaceInputparameter_inputs, 1,
+        (const char *const *)NULL, 0,
+        bb_402_TT_ReplaceInputparameter_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Portal Management */
+        NMO_GUID_INIT(0x55041717, 0x30817370),
+        "Portal Management",
+        "Automatically hide places which can't be see through visible portals.",
+        "Optimizations/Portals",
+        "3DTransfo.dll",
+        65536, 19, 0,
+        (const char *const *)bb_403_Portal_Management_inputs, 2,
+        (const char *const *)bb_403_Portal_Management_outputs, 2,
+        bb_403_Portal_Management_ip, 3,
+        bb_403_Portal_Management_op, 3,
+        NULL, 0,
+        bb_403_Portal_Management_st, 1,
+    },
+    { /* Activate Channel */
+        NMO_GUID_INIT(0x55566666, 0x66666444),
+        "Activate Channel",
+        "Activates or Deactivates a specific Channel of the Mesh.",
+        "Materials-Textures/Channel",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_404_Activate_Channel_inputs, 1,
+        (const char *const *)bb_404_Activate_Channel_outputs, 1,
+        bb_404_Activate_Channel_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_GetCurrentDirectory */
+        NMO_GUID_INIT(0x556E6DF3, 0x24207D37),
+        "TT_GetCurrentDirectory",
+        "Get Current Directory",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_405_TT_GetCurrentDirectory_inputs, 1,
+        (const char *const *)bb_405_TT_GetCurrentDirectory_outputs, 2,
+        NULL, 0,
+        bb_405_TT_GetCurrentDirectory_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Mini Calculator */
+        NMO_GUID_INIT(0x55BC3115, 0x1DFE1E40),
+        "Mini Calculator",
+        "Processes a simple operation (+,-,*,/) between 'a' and 'b'",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_406_Mini_Calculator_inputs, 1,
+        (const char *const *)bb_406_Mini_Calculator_outputs, 1,
+        bb_406_Mini_Calculator_ip, 3,
+        bb_406_Mini_Calculator_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Bodypart Animation Frame */
+        NMO_GUID_INIT(0x55F045C7, 0x6CB3417B),
+        "Set Bodypart Animation Frame",
+        "Places a character's body part in a specified frame of an animation cycle.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 42, 262144,
+        (const char *const *)bb_407_Set_Bodypart_Animation_Frame_inputs, 1,
+        (const char *const *)bb_407_Set_Bodypart_Animation_Frame_outputs, 1,
+        bb_407_Set_Bodypart_Animation_Frame_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Exists GameInfo ? */
+        NMO_GUID_INIT(0x56173AA5, 0x73FF1A7F),
+        "TT Exists GameInfo ?",
+        "Checks GameInfo",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_408_TT_Exists_GameInfo___inputs, 1,
+        (const char *const *)bb_408_TT_Exists_GameInfo___outputs, 2,
+        bb_408_TT_Exists_GameInfo___ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Multi Collision Detection */
+        NMO_GUID_INIT(0x56204F09, 0x611101E8),
+        "Multi Collision Detection",
+        "Detects the collision between any 3D objects declared as obstacles.",
+        "Collisions/3D Entity",
+        "Collisions.dll",
+        131072, 19, 0,
+        (const char *const *)bb_409_Multi_Collision_Detection_inputs, 3,
+        (const char *const *)bb_409_Multi_Collision_Detection_outputs, 4,
+        bb_409_Multi_Collision_Detection_ip, 1,
+        bb_409_Multi_Collision_Detection_op, 11,
+        NULL, 0,
+        bb_409_Multi_Collision_Detection_st, 1,
+    },
+    { /* Collision Detection */
+        NMO_GUID_INIT(0x56204F19, 0x682801E8),
+        "Collision Detection",
+        "Detects the collision between the 3D object and other 3D object declared as obstacles.",
+        "Collisions/3D Entity",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_410_Collision_Detection_inputs, 1,
+        (const char *const *)bb_410_Collision_Detection_outputs, 2,
+        bb_410_Collision_Detection_ip, 3,
+        bb_410_Collision_Detection_op, 10,
+        NULL, 0,
+        bb_410_Collision_Detection_st, 1,
+    },
+    { /* TT_DeleteFile */
+        NMO_GUID_INIT(0x562F6AAB, 0x07EA0F0B),
+        "TT_DeleteFile",
+        "Delete a File",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_411_TT_DeleteFile_inputs, 1,
+        (const char *const *)bb_411_TT_DeleteFile_outputs, 2,
+        bb_411_TT_DeleteFile_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set_2DSprite_old */
+        NMO_GUID_INIT(0x56680B62, 0x23083054),
+        "TT Set_2DSprite_old",
+        "Old! Sets position, size and UV mapping for sprite",
+        "TT Toolbox/Sprite",
+        "TT_Toolbox_RT.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_412_TT_Set_2DSprite_old_inputs, 1,
+        (const char *const *)bb_412_TT_Set_2DSprite_old_outputs, 1,
+        bb_412_TT_Set_2DSprite_old_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        bb_412_TT_Set_2DSprite_old_st, 1,
+    },
+    { /* Create Blended Animation 2 */
+        NMO_GUID_INIT(0x56864D6D, 0x159B5D1E),
+        "Create Blended Animation 2",
+        "Creates a new animation by merging two exsiting animations.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_413_Create_Blended_Animation_2_inputs, 1,
+        (const char *const *)bb_413_Create_Blended_Animation_2_outputs, 1,
+        bb_413_Create_Blended_Animation_2_ip, 2,
+        bb_413_Create_Blended_Animation_2_op, 1,
+        NULL, 0,
+        bb_413_Create_Blended_Animation_2_st, 2,
+    },
+    { /* TT Set Level Score */
+        NMO_GUID_INIT(0x568E2C3C, 0x24547EF7),
+        "TT Set Level Score",
+        "Sets level score to manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_414_TT_Set_Level_Score_inputs, 1,
+        (const char *const *)bb_414_TT_Set_Level_Score_outputs, 1,
+        bb_414_TT_Set_Level_Score_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_TimedependentPointParticlesystem */
+        NMO_GUID_INIT(0x569D2CC2, 0x3BCB01B9),
+        "TT_TimedependentPointParticlesystem",
+        "Emits particles from a point and it's timedependent",
+        "TT_Particles/Terratools",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_415_TT_TimedependentPointParticlesys_inputs, 3,
+        (const char *const *)bb_415_TT_TimedependentPointParticlesys_outputs, 3,
+        bb_415_TT_TimedependentPointParticlesys_ip, 36,
+        NULL, 0,
+        bb_415_TT_TimedependentPointParticlesys_lp, 3,
+        bb_415_TT_TimedependentPointParticlesys_st, 11,
+    },
+    { /* SetPhysicsForce */
+        NMO_GUID_INIT(0x56E20C57, 0x0B926068),
+        "SetPhysicsForce",
+        "Physics Force",
+        "Physics",
+        "physics_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_416_SetPhysicsForce_inputs, 2,
+        (const char *const *)bb_416_SetPhysicsForce_outputs, 2,
+        bb_416_SetPhysicsForce_ip, 5,
+        NULL, 0,
+        bb_416_SetPhysicsForce_lp, 1,
+        NULL, 0,
+    },
+    { /* Physics Reset */
+        NMO_GUID_INIT(0x5714345E, 0x792262AE),
+        "Physics Reset",
+        "Reset all Physics",
+        "Physics",
+        "physics_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_417_Physics_Reset_inputs, 1,
+        (const char *const *)bb_417_Physics_Reset_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Get Level Bonus */
+        NMO_GUID_INIT(0x573705FA, 0x1710468E),
+        "TT Get Level Bonus",
+        "Gets level bonus from manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_418_TT_Get_Level_Bonus_inputs, 1,
+        (const char *const *)bb_418_TT_Get_Level_Bonus_outputs, 1,
+        NULL, 0,
+        bb_418_TT_Get_Level_Bonus_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Row If */
+        NMO_GUID_INIT(0x57865622, 0x662D2FEE),
+        "Remove Row If",
+        "Remove rows matching a value from an array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_419_Remove_Row_If_inputs, 1,
+        (const char *const *)bb_419_Remove_Row_If_outputs, 2,
+        bb_419_Remove_Row_If_ip, 2,
+        bb_419_Remove_Row_If_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Is In Group */
+        NMO_GUID_INIT(0x58A1210B, 0x14E5715C),
+        "Is In Group",
+        "Check if the object is in a specific group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_420_Is_In_Group_inputs, 1,
+        (const char *const *)bb_420_Is_In_Group_outputs, 2,
+        bb_420_Is_In_Group_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Screen Mapping */
+        NMO_GUID_INIT(0x58EF12CA, 0x26805940),
+        "Screen Mapping",
+        "Maps an Object according to the screen.",
+        "Materials-Textures/Mapping",
+        "Materials.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_421_Screen_Mapping_inputs, 1,
+        (const char *const *)bb_421_Screen_Mapping_outputs, 1,
+        bb_421_Screen_Mapping_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_421_Screen_Mapping_st, 1,
+    },
+    { /* TT Activate Object */
+        NMO_GUID_INIT(0x59245FAE, 0x24A123F3),
+        "TT Activate Object",
+        "Activates all the scripts of an object, either in the state they were before deactivation or once reset.",
+        "TT Toolbox/Narratives",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_422_TT_Activate_Object_inputs, 1,
+        (const char *const *)bb_422_TT_Activate_Object_outputs, 1,
+        bb_422_TT_Activate_Object_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Joystick Waiter */
+        NMO_GUID_INIT(0x594A136E, 0x58135EF9),
+        "TT Joystick Waiter",
+        "Activates different outputs according to Joystick commands.",
+        "TT Toolbox/Controllers",
+        "TT_Toolbox_RT.dll",
+        131072, 19, 33554432,
+        (const char *const *)bb_423_TT_Joystick_Waiter_inputs, 2,
+        (const char *const *)bb_423_TT_Joystick_Waiter_outputs, 3,
+        bb_423_TT_Joystick_Waiter_ip, 1,
+        bb_423_TT_Joystick_Waiter_op, 5,
+        NULL, 0,
+        bb_423_TT_Joystick_Waiter_st, 4,
+    },
+    { /* Unlimited Controller */
+        NMO_GUID_INIT(0x59537E89, 0x79D02F25),
+        "Unlimited Controller",
+        "Controls a character by using animations played in response to messages.",
+        "Characters/Movement",
+        "Characters.dll",
+        131072, 40, 67764224,
+        (const char *const *)bb_424_Unlimited_Controller_inputs, 2,
+        (const char *const *)bb_424_Unlimited_Controller_outputs, 2,
+        NULL, 0,
+        bb_424_Unlimited_Controller_op, 4,
+        bb_424_Unlimited_Controller_lp, 8,
+        bb_424_Unlimited_Controller_st, 1,
+    },
+    { /* TT FollowCamera */
+        NMO_GUID_INIT(0x595B4723, 0x576C6749),
+        "TT FollowCamera",
+        "Camera follows an object",
+        "TT Toolbox/3D Transformations",
+        "TT_Toolbox_RT.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_425_TT_FollowCamera_inputs, 2,
+        (const char *const *)bb_425_TT_FollowCamera_outputs, 2,
+        bb_425_TT_FollowCamera_ip, 7,
+        NULL, 0,
+        bb_425_TT_FollowCamera_lp, 4,
+        bb_425_TT_FollowCamera_st, 2,
+    },
+    { /* TT Get Boolean Value From Registry */
+        NMO_GUID_INIT(0x5ACE7E01, 0x199B76FD),
+        "TT Get Boolean Value From Registry",
+        "Reads a Boolean value from the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_426_TT_Get_Boolean_Value_From_Regist_inputs, 1,
+        (const char *const *)bb_426_TT_Get_Boolean_Value_From_Regist_outputs, 2,
+        bb_426_TT_Get_Boolean_Value_From_Regist_ip, 2,
+        bb_426_TT_Get_Boolean_Value_From_Regist_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Quaternion Orientation */
+        NMO_GUID_INIT(0x5AE25172, 0x5C781FAA),
+        "Set Quaternion Orientation",
+        "Sets the orientation of a 3D Entity with a quaternion.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_427_Set_Quaternion_Orientation_inputs, 1,
+        (const char *const *)bb_427_Set_Quaternion_Orientation_outputs, 1,
+        bb_427_Set_Quaternion_Orientation_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_GeneratePlane */
+        NMO_GUID_INIT(0x5AE72F89, 0x57EB5413),
+        "TT_GeneratePlane",
+        "Generates plane",
+        "TT Toolbox/Mesh",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_428_TT_GeneratePlane_inputs, 1,
+        (const char *const *)bb_428_TT_GeneratePlane_outputs, 1,
+        bb_428_TT_GeneratePlane_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_SplitString */
+        NMO_GUID_INIT(0x5AE74E2F, 0x799C49B5),
+        "TT_SplitString",
+        "Split a string into Sub-Elements.",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 1024,
+        (const char *const *)bb_429_TT_SplitString_inputs, 1,
+        (const char *const *)bb_429_TT_SplitString_outputs, 1,
+        bb_429_TT_SplitString_ip, 2,
+        bb_429_TT_SplitString_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Mouse Position */
+        NMO_GUID_INIT(0x5B1F1381, 0x5C640372),
+        "Get Mouse Position",
+        "Gets the position of the mouse.",
+        "Controllers/Mouse",
+        "Controllers.dll",
+        65536, 19, 0,
+        (const char *const *)bb_430_Get_Mouse_Position_inputs, 1,
+        (const char *const *)bb_430_Get_Mouse_Position_outputs, 1,
+        NULL, 0,
+        bb_430_Get_Mouse_Position_op, 3,
+        NULL, 0,
+        bb_430_Get_Mouse_Position_st, 1,
+    },
+    { /* TT Exit to System */
+        NMO_GUID_INIT(0x5BC50AF4, 0x41E92536),
+        "TT Exit to System",
+        "Sends Exit to System",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_431_TT_Exit_to_System_inputs, 1,
+        (const char *const *)bb_431_TT_Exit_to_System_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Wave Player */
+        NMO_GUID_INIT(0x5BDE0E45, 0x2E2107D5),
+        "Wave Player",
+        "Plays a Wave Sound File, with possible fade in and/or fade out; the fades values are done in seconds;",
+        "Sounds/Basic",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_432_Wave_Player_inputs, 3,
+        (const char *const *)bb_432_Wave_Player_outputs, 3,
+        bb_432_Wave_Player_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Read Array */
+        NMO_GUID_INIT(0x5C825017, 0x6D367973),
+        "TT Read Array",
+        "Reads arrays from manager",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_433_TT_Read_Array_inputs, 1,
+        (const char *const *)bb_433_TT_Read_Array_outputs, 1,
+        bb_433_TT_Read_Array_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_SaveAlpha */
+        NMO_GUID_INIT(0x5CA62D31, 0x5D2031B8),
+        "TT_SaveAlpha",
+        "Copies the alpha channel to the texture's RGB values and saves them to a TGA file",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_434_TT_SaveAlpha_inputs, 1,
+        (const char *const *)bb_434_TT_SaveAlpha_outputs, 1,
+        bb_434_TT_SaveAlpha_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Save Database */
+        NMO_GUID_INIT(0x5D303E9D, 0x552C0AF2),
+        "TT Save Database",
+        "Stores the registered arrays to a database",
+        "TT Database",
+        "TT_DatabaseManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_435_TT_Save_Database_inputs, 1,
+        (const char *const *)bb_435_TT_Save_Database_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Chrono */
+        NMO_GUID_INIT(0x5E2F1788, 0x4F965A44),
+        "Chrono",
+        "Chronometer (ON=Start, OFF=Stop).",
+        "Logics/Loops",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_436_Chrono_inputs, 2,
+        (const char *const *)bb_436_Chrono_outputs, 2,
+        NULL, 0,
+        bb_436_Chrono_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Spherical Mapping */
+        NMO_GUID_INIT(0x5E40778E, 0x44F36CF3),
+        "Spherical Mapping",
+        "Maps an Object according to the Spherical.",
+        "Materials-Textures/Mapping",
+        "Materials.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_437_Spherical_Mapping_inputs, 1,
+        (const char *const *)bb_437_Spherical_Mapping_outputs, 1,
+        bb_437_Spherical_Mapping_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Physics Ball Joint */
+        NMO_GUID_INIT(0x5E624F0A, 0x35160450),
+        "Set Physics Ball Joint",
+        "Sets a Physics Balljoint ...",
+        "Physics",
+        "physics_RT.dll",
+        65537, 33, 67371008,
+        (const char *const *)bb_438_Set_Physics_Ball_Joint_inputs, 2,
+        (const char *const *)bb_438_Set_Physics_Ball_Joint_outputs, 2,
+        bb_438_Set_Physics_Ball_Joint_ip, 3,
+        NULL, 0,
+        bb_438_Set_Physics_Ball_Joint_lp, 1,
+        bb_438_Set_Physics_Ball_Joint_st, 1,
+    },
+    { /* Activate Object */
+        NMO_GUID_INIT(0x5F003FBA, 0x5E574F60),
+        "Activate Object",
+        "Activates all the scripts of an object, either in the state they were before deactivation or once reset.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_439_Activate_Object_inputs, 1,
+        (const char *const *)bb_439_Activate_Object_outputs, 1,
+        bb_439_Activate_Object_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Hierarchy Parser */
+        NMO_GUID_INIT(0x5F4A214B, 0x6817452C),
+        "Hierarchy Parser",
+        "Iterate recursively on an object and all its children.",
+        "Logics/Loops",
+        "Logics.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_440_Hierarchy_Parser_inputs, 2,
+        (const char *const *)bb_440_Hierarchy_Parser_outputs, 2,
+        bb_440_Hierarchy_Parser_ip, 1,
+        bb_440_Hierarchy_Parser_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Send Message To Group */
+        NMO_GUID_INIT(0x5F906952, 0x6DF11649),
+        "Send Message To Group",
+        "Sends a Message to each Object of a Group.",
+        "Logics/Message",
+        "Logics.dll",
+        131072, 19, 328192,
+        (const char *const *)bb_441_Send_Message_To_Group_inputs, 1,
+        (const char *const *)bb_441_Send_Message_To_Group_outputs, 1,
+        bb_441_Send_Message_To_Group_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Statistics */
+        NMO_GUID_INIT(0x5FB70201, 0x65595AF3),
+        "Statistics",
+        "Returns the needed statistics about the system.",
+        "Optimizations/System",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_442_Statistics_inputs, 2,
+        (const char *const *)bb_442_Statistics_outputs, 2,
+        NULL, 0,
+        bb_442_Statistics_op, 19,
+        NULL, 0,
+        bb_442_Statistics_st, 4,
+    },
+    { /* Set Prelit Color */
+        NMO_GUID_INIT(0x60415D44, 0x0D0174EA),
+        "Set Prelit Color",
+        "Sets the color of a Prelit 3D Entity ( and Prelit the 3D Entity if it wasn't )",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_443_Set_Prelit_Color_inputs, 1,
+        (const char *const *)bb_443_Set_Prelit_Color_outputs, 1,
+        bb_443_Set_Prelit_Color_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Group Iterator */
+        NMO_GUID_INIT(0x6050252F, 0x3AA82D40),
+        "Group Iterator",
+        "Retrieves each element of a group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_444_Group_Iterator_inputs, 2,
+        (const char *const *)bb_444_Group_Iterator_outputs, 2,
+        bb_444_Group_Iterator_ip, 1,
+        bb_444_Group_Iterator_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* ShadowStencil */
+        NMO_GUID_INIT(0x60A873C5, 0x51245A67),
+        "ShadowStencil",
+        "Use the stencil buffer to create a shadow volume that cast on objects using the ShadowStencil attribute.",
+        "Visuals/Shadows",
+        "BuildingBlocksAddons1.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_445_ShadowStencil_inputs, 2,
+        (const char *const *)bb_445_ShadowStencil_outputs, 2,
+        bb_445_ShadowStencil_ip, 4,
+        bb_445_ShadowStencil_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Check For Message */
+        NMO_GUID_INIT(0x61226639, 0x6D390CB7),
+        "Check For Message",
+        "Check the message manager to see if a specific message has been received by the object.",
+        "Logics/Message",
+        "Logics.dll",
+        65536, 19, 131072,
+        (const char *const *)bb_446_Check_For_Message_inputs, 1,
+        (const char *const *)bb_446_Check_For_Message_outputs, 2,
+        bb_446_Check_For_Message_ip, 1,
+        bb_446_Check_For_Message_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Orientation */
+        NMO_GUID_INIT(0x625874AA, 0xAA694132),
+        "Set Orientation",
+        "Sets the orientation of a 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_447_Set_Orientation_inputs, 1,
+        (const char *const *)bb_447_Set_Orientation_outputs, 1,
+        bb_447_Set_Orientation_ip, 6,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_Set Material Values */
+        NMO_GUID_INIT(0x62963FA9, 0x7258745C),
+        "TT_Set Material Values",
+        "Sets all material values of the target material (Ambient, Specular, etc. ) using the values of another material.",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_448_TT_Set_Material_Values_inputs, 1,
+        (const char *const *)bb_448_TT_Set_Material_Values_outputs, 1,
+        bb_448_TT_Set_Material_Values_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT List Driver */
+        NMO_GUID_INIT(0x62D00456, 0x30EB4245),
+        "TT List Driver",
+        "List Drivers",
+        "TT InterfaceManager/Display",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_449_TT_List_Driver_inputs, 1,
+        (const char *const *)bb_449_TT_List_Driver_outputs, 2,
+        bb_449_TT_List_Driver_ip, 1,
+        bb_449_TT_List_Driver_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Synchro Player */
+        NMO_GUID_INIT(0x62DA29D8, 0x1BBC6234),
+        "Synchro Player",
+        "Produce streaming events that match the one recorded with 'Synchro Recorder'.",
+        "Narratives/Streaming Recording",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 0,
+        (const char *const *)bb_450_Synchro_Player_inputs, 2,
+        (const char *const *)bb_450_Synchro_Player_outputs, 2,
+        bb_450_Synchro_Player_ip, 1,
+        bb_450_Synchro_Player_op, 2,
+        bb_450_Synchro_Player_lp, 1,
+        bb_450_Synchro_Player_st, 1,
+    },
+    { /* Set Row */
+        NMO_GUID_INIT(0x62E87901, 0x2DF007DD),
+        "Set Row",
+        "Set the elements value of a row of an array.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 100925440,
+        (const char *const *)bb_451_Set_Row_inputs, 1,
+        (const char *const *)bb_451_Set_Row_outputs, 2,
+        bb_451_Set_Row_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        bb_451_Set_Row_st, 1,
+    },
+    { /* Synchro Recorder */
+        NMO_GUID_INIT(0x62EA3812, 0x1ED661A6),
+        "Synchro Recorder",
+        "Records some input keys events by putting them in a data array which could used with 'Synchro Player' building block.",
+        "Narratives/Streaming Recording",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_452_Synchro_Recorder_inputs, 1,
+        (const char *const *)NULL, 0,
+        bb_452_Synchro_Recorder_ip, 4,
+        bb_452_Synchro_Recorder_op, 1,
+        bb_452_Synchro_Recorder_lp, 1,
+        NULL, 0,
+    },
+    { /* TT_BumpMap */
+        NMO_GUID_INIT(0x630D05F7, 0x1DDA541F),
+        "TT_BumpMap",
+        "Creates light dependent bump mapping",
+        "TT Toolbox/Mapping",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_453_TT_BumpMap_inputs, 2,
+        (const char *const *)bb_453_TT_BumpMap_outputs, 2,
+        bb_453_TT_BumpMap_ip, 3,
+        NULL, 0,
+        bb_453_TT_BumpMap_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Get Game ID */
+        NMO_GUID_INIT(0x63527B75, 0x1F9A40D9),
+        "TT Get Game ID",
+        "Gets game ID from manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_454_TT_Get_Game_ID_inputs, 1,
+        (const char *const *)bb_454_TT_Get_Game_ID_outputs, 1,
+        NULL, 0,
+        bb_454_TT_Get_Game_ID_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Load CMO */
+        NMO_GUID_INIT(0x63DD09A7, 0x567F7218),
+        "TT Load CMO",
+        "Sends Load CMO",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_455_TT_Load_CMO_inputs, 1,
+        (const char *const *)bb_455_TT_Load_CMO_outputs, 1,
+        bb_455_TT_Load_CMO_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Parameter Selector */
+        NMO_GUID_INIT(0x63EB2B0C, 0x27E2767E),
+        "Parameter Selector",
+        "According to the Input activated, routes the corresponding Input Parameter to the Output Parameter.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 67110016,
+        (const char *const *)bb_456_Parameter_Selector_inputs, 2,
+        (const char *const *)bb_456_Parameter_Selector_outputs, 1,
+        bb_456_Parameter_Selector_ip, 2,
+        bb_456_Parameter_Selector_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Box Box Intersection */
+        NMO_GUID_INIT(0x64154401, 0x76CF37AF),
+        "Box Box Intersection",
+        "Detects the collision between two 3D entities at the box level.",
+        "Collisions/Intersection",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_457_Box_Box_Intersection_inputs, 1,
+        (const char *const *)bb_457_Box_Box_Intersection_outputs, 2,
+        bb_457_Box_Box_Intersection_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Billboard */
+        NMO_GUID_INIT(0x641822B0, 0x15AA42D7),
+        "Billboard",
+        "Makes a 3dEntity act like a billboard sprite (with possible constant texture ratio for a face).",
+        "3D Transformations/Constraint",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_458_Billboard_inputs, 1,
+        (const char *const *)bb_458_Billboard_outputs, 1,
+        bb_458_Billboard_ip, 6,
+        bb_458_Billboard_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Play Animation 3D Entity */
+        NMO_GUID_INIT(0x64221225, 0x769A143F),
+        "Play Animation 3D Entity",
+        "Makes a 3D Entity perform an animation.",
+        "3D Transformations/Animation",
+        "3DTransfo.dll",
+        65536, 33, 0,
+        (const char *const *)bb_459_Play_Animation_3D_Entity_inputs, 2,
+        (const char *const *)bb_459_Play_Animation_3D_Entity_outputs, 1,
+        bb_459_Play_Animation_3D_Entity_ip, 4,
+        bb_459_Play_Animation_3D_Entity_op, 1,
+        bb_459_Play_Animation_3D_Entity_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Get Level ID */
+        NMO_GUID_INIT(0x649011FE, 0x437D5918),
+        "TT Get Level ID",
+        "Gets level ID from manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_460_TT_Get_Level_ID_inputs, 1,
+        (const char *const *)bb_460_TT_Get_Level_ID_outputs, 1,
+        NULL, 0,
+        bb_460_TT_Get_Level_ID_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Clipping Planes */
+        NMO_GUID_INIT(0x652316A2, 0x01AA09A9),
+        "Set Clipping Planes",
+        "Sets the near and the far clipping plane of a camera.",
+        "Cameras/Basic",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_461_Set_Clipping_Planes_inputs, 1,
+        (const char *const *)bb_461_Set_Clipping_Planes_outputs, 1,
+        bb_461_Set_Clipping_Planes_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Threshold */
+        NMO_GUID_INIT(0x655E6AF4, 0x08C0596F),
+        "Threshold",
+        "Binds a variable between two limits (Min and Max), and exit by the corresponding output according to the comparison result.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_462_Threshold_inputs, 1,
+        (const char *const *)bb_462_Threshold_outputs, 3,
+        bb_462_Threshold_ip, 3,
+        bb_462_Threshold_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 3D Grid Layout */
+        NMO_GUID_INIT(0x665F342C, 0x9E1366E6),
+        "3D Grid Layout",
+        "Organize a set of 3D entities into a 3D Grid",
+        "Interface/Layouts",
+        "Interface.dll",
+        65536, 23, 262144,
+        (const char *const *)bb_463_3D_Grid_Layout_inputs, 1,
+        (const char *const *)bb_463_3D_Grid_Layout_outputs, 1,
+        bb_463_3D_Grid_Layout_ip, 8,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_IsScriptActive */
+        NMO_GUID_INIT(0x66E06B8A, 0x57DB26D0),
+        "TT_IsScriptActive",
+        "Tests whether script is active",
+        "TT Toolbox/Test",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_464_TT_IsScriptActive_inputs, 1,
+        (const char *const *)bb_464_TT_IsScriptActive_outputs, 2,
+        bb_464_TT_IsScriptActive_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Pos From Value */
+        NMO_GUID_INIT(0x670616AD, 0x2A5C54AC),
+        "Get Pos From Value",
+        "Gets the position of all the layer squares confirm test.",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 19, 0,
+        (const char *const *)bb_465_Get_Pos_From_Value_inputs, 2,
+        (const char *const *)bb_465_Get_Pos_From_Value_outputs, 2,
+        bb_465_Get_Pos_From_Value_ip, 3,
+        bb_465_Get_Pos_From_Value_op, 2,
+        bb_465_Get_Pos_From_Value_lp, 1,
+        NULL, 0,
+    },
+    { /* Ray Intersection */
+        NMO_GUID_INIT(0x671E4A87, 0x383B2912),
+        "Ray Intersection",
+        "Returns the nearest object intersected by the ray, the position of the intersection point and the normal at this point.",
+        "Logics/Test",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_466_Ray_Intersection_inputs, 1,
+        (const char *const *)bb_466_Ray_Intersection_outputs, 2,
+        bb_466_Ray_Intersection_ip, 5,
+        bb_466_Ray_Intersection_op, 7,
+        NULL, 0,
+        bb_466_Ray_Intersection_st, 3,
+    },
+    { /* Get Proportional Screen Pos */
+        NMO_GUID_INIT(0x671E53A2, 0x5BA16D62),
+        "Get Proportional Screen Pos",
+        "Converts a given 2d position on the screen to a proportional position.",
+        "Interface/Screen",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_467_Get_Proportional_Screen_Pos_inputs, 1,
+        (const char *const *)bb_467_Get_Proportional_Screen_Pos_outputs, 1,
+        bb_467_Get_Proportional_Screen_Pos_ip, 2,
+        bb_467_Get_Proportional_Screen_Pos_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Ray Box Intersection */
+        NMO_GUID_INIT(0x671E5A87, 0x383B2372),
+        "Ray Box Intersection",
+        "Returns the nearest object intersected by the ray, the position of the intersection point and the normal at this point.",
+        "Logics/Test",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_468_Ray_Box_Intersection_inputs, 1,
+        (const char *const *)bb_468_Ray_Box_Intersection_outputs, 3,
+        bb_468_Ray_Box_Intersection_ip, 5,
+        bb_468_Ray_Box_Intersection_op, 4,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* 3D Entity Fill */
+        NMO_GUID_INIT(0x672F0997, 0x563644CC),
+        "3D Entity Fill",
+        "Fill a grid's layer using the bounding box of a 3D Entity",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 19, 0,
+        (const char *const *)bb_469_3D_Entity_Fill_inputs, 1,
+        (const char *const *)bb_469_3D_Entity_Fill_outputs, 1,
+        bb_469_3D_Entity_Fill_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        bb_469_3D_Entity_Fill_st, 1,
+    },
+    { /* Position On Curve */
+        NMO_GUID_INIT(0x676776D0, 0x20D457BD),
+        "Position On Curve",
+        "Places a 3D Entity at a specific position on a 3D Curve.",
+        "3D Transformations/Curve",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_470_Position_On_Curve_inputs, 1,
+        (const char *const *)bb_470_Position_On_Curve_outputs, 1,
+        bb_470_Position_On_Curve_ip, 7,
+        NULL, 0,
+        bb_470_Position_On_Curve_lp, 1,
+        bb_470_Position_On_Curve_st, 1,
+    },
+    { /* SphericalParticleSystem */
+        NMO_GUID_INIT(0x67C88F47, 0x8880721E),
+        "SphericalParticleSystem",
+        "Emits particles from a sphere",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_471_SphericalParticleSystem_inputs, 3,
+        (const char *const *)bb_471_SphericalParticleSystem_outputs, 3,
+        bb_471_SphericalParticleSystem_ip, 36,
+        NULL, 0,
+        bb_471_SphericalParticleSystem_lp, 3,
+        bb_471_SphericalParticleSystem_st, 11,
+    },
+    { /* CylindricalParticleSystem */
+        NMO_GUID_INIT(0x67C90F47, 0x1480721E),
+        "CylindricalParticleSystem",
+        "Emits particles from a cylinder",
+        "TT_Particles",
+        "TT_ParticleSystems_RT.dll",
+        65536, 33, 184549376,
+        (const char *const *)bb_472_CylindricalParticleSystem_inputs, 3,
+        (const char *const *)bb_472_CylindricalParticleSystem_outputs, 3,
+        bb_472_CylindricalParticleSystem_ip, 36,
+        NULL, 0,
+        bb_472_CylindricalParticleSystem_lp, 3,
+        bb_472_CylindricalParticleSystem_st, 11,
+    },
+    { /* Texture Render */
+        NMO_GUID_INIT(0x67FC7084, 0x141154F7),
+        "Texture Render",
+        "Render an image in the texture of a 3D Entity.",
+        "Visuals/FX",
+        "Visuals.dll",
+        131072, 31, 262144,
+        (const char *const *)bb_473_Texture_Render_inputs, 1,
+        (const char *const *)bb_473_Texture_Render_outputs, 1,
+        bb_473_Texture_Render_ip, 3,
+        NULL, 0,
+        bb_473_Texture_Render_lp, 1,
+        bb_473_Texture_Render_st, 4,
+    },
+    { /* TT Restore Dynamic IC */
+        NMO_GUID_INIT(0x680269CB, 0x50814D03),
+        "TT Restore Dynamic IC",
+        "Restores an object's Initial Condition for the scene being played.",
+        "TT Toolbox/Narratives",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_474_TT_Restore_Dynamic_IC_inputs, 1,
+        (const char *const *)bb_474_TT_Restore_Dynamic_IC_outputs, 1,
+        bb_474_TT_Restore_Dynamic_IC_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Object From Scene */
+        NMO_GUID_INIT(0x683925F3, 0x6FDD3F16),
+        "Remove Object From Scene",
+        "Remove an object from a specified scene.",
+        "Narratives/Scene Management",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_475_Remove_Object_From_Scene_inputs, 1,
+        (const char *const *)bb_475_Remove_Object_From_Scene_outputs, 1,
+        bb_475_Remove_Object_From_Scene_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_GetFileNameFromPath */
+        NMO_GUID_INIT(0x68E631F7, 0x13F914FE),
+        "TT_GetFileNameFromPath",
+        "Get File Name From Path",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_476_TT_GetFileNameFromPath_inputs, 1,
+        (const char *const *)bb_476_TT_GetFileNameFromPath_outputs, 1,
+        bb_476_TT_GetFileNameFromPath_ip, 1,
+        bb_476_TT_GetFileNameFromPath_op, 1,
+        NULL, 0,
+        bb_476_TT_GetFileNameFromPath_st, 1,
+    },
+    { /* Input String */
+        NMO_GUID_INIT(0x693E7E4B, 0x100104C4),
+        "Input String",
+        "Captures text entered by user.",
+        "Controllers/Keyboard",
+        "Controllers.dll",
+        65536, 19, 0,
+        (const char *const *)bb_477_Input_String_inputs, 2,
+        (const char *const *)bb_477_Input_String_outputs, 3,
+        bb_477_Input_String_ip, 2,
+        bb_477_Input_String_op, 2,
+        bb_477_Input_String_lp, 3,
+        bb_477_Input_String_st, 5,
+    },
+    { /* TT_ConvertBox */
+        NMO_GUID_INIT(0x694867FF, 0x7DB16D1F),
+        "TT_ConvertBox",
+        "Generates a bounding box from 2 vectors",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_478_TT_ConvertBox_inputs, 1,
+        (const char *const *)bb_478_TT_ConvertBox_outputs, 1,
+        bb_478_TT_ConvertBox_ip, 2,
+        bb_478_TT_ConvertBox_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Object To Group */
+        NMO_GUID_INIT(0x69AA320B, 0x023829C7),
+        "Add Object To Group",
+        "Adds the Object to a Group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_479_Add_Object_To_Group_inputs, 1,
+        (const char *const *)bb_479_Add_Object_To_Group_outputs, 1,
+        bb_479_Add_Object_To_Group_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ConvertTimeToString */
+        NMO_GUID_INIT(0x69E34443, 0x459F23DB),
+        "TT ConvertTimeToString",
+        "Converts time to string of the form 00:00:00",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_480_TT_ConvertTimeToString_inputs, 1,
+        (const char *const *)bb_480_TT_ConvertTimeToString_outputs, 1,
+        bb_480_TT_ConvertTimeToString_ip, 1,
+        bb_480_TT_ConvertTimeToString_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Boolean Value To Registry */
+        NMO_GUID_INIT(0x69FB3783, 0x50262517),
+        "TT Set Boolean Value To Registry",
+        "Writes a Boolean value to the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_481_TT_Set_Boolean_Value_To_Registry_inputs, 1,
+        (const char *const *)bb_481_TT_Set_Boolean_Value_To_Registry_outputs, 2,
+        bb_481_TT_Set_Boolean_Value_To_Registry_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Get Level Name */
+        NMO_GUID_INIT(0x6A3D4643, 0x4F0462DD),
+        "TT Get Level Name",
+        "Gets level name from manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_482_TT_Get_Level_Name_inputs, 1,
+        (const char *const *)bb_482_TT_Get_Level_Name_outputs, 1,
+        NULL, 0,
+        bb_482_TT_Get_Level_Name_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Panning Control */
+        NMO_GUID_INIT(0x6A5F17AF, 0x63480864),
+        "Panning Control",
+        "Sets the panning for a sound, regardless of whether it is playing or not.",
+        "Sounds/Control",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_483_Panning_Control_inputs, 1,
+        (const char *const *)bb_483_Panning_Control_outputs, 1,
+        bb_483_Panning_Control_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Gauge */
+        NMO_GUID_INIT(0x6A777FC4, 0x1DC17B23),
+        "Gauge",
+        "Displays a progression bar.",
+        "Visuals/2D",
+        "BuildingBlocksAddons1.dll",
+        131072, 27, 262144,
+        (const char *const *)bb_484_Gauge_inputs, 3,
+        (const char *const *)bb_484_Gauge_outputs, 3,
+        bb_484_Gauge_ip, 3,
+        NULL, 0,
+        bb_484_Gauge_lp, 3,
+        NULL, 0,
+    },
+    { /* Add Animation */
+        NMO_GUID_INIT(0x6A794228, 0x77197F5E),
+        "Add Animation",
+        "Add an animation to a character.",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_485_Add_Animation_inputs, 1,
+        (const char *const *)bb_485_Add_Animation_outputs, 1,
+        bb_485_Add_Animation_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_Timer */
+        NMO_GUID_INIT(0x6AC67901, 0x7D2A6059),
+        "TT_Timer",
+        "Chronometer (ON=Start, OFF=Stop).",
+        "TT Toolbox/Time",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_486_TT_Timer_inputs, 4,
+        (const char *const *)bb_486_TT_Timer_outputs, 4,
+        NULL, 0,
+        bb_486_TT_Timer_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Remove Attribute */
+        NMO_GUID_INIT(0x6B6340C4, 0x61E94A41),
+        "Remove Attribute",
+        "Removes an attribute from the object.",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_487_Remove_Attribute_inputs, 1,
+        (const char *const *)bb_487_Remove_Attribute_outputs, 1,
+        bb_487_Remove_Attribute_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ListAllCurrentUsedTextures */
+        NMO_GUID_INIT(0x6B6D781E, 0x4B531860),
+        "TT_ListAllCurrentUsedTextures",
+        "List All Current Used Textures in a DataArray",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_488_TT_ListAllCurrentUsedTextures_inputs, 1,
+        (const char *const *)bb_488_TT_ListAllCurrentUsedTextures_outputs, 1,
+        bb_488_TT_ListAllCurrentUsedTextures_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        bb_488_TT_ListAllCurrentUsedTextures_st, 1,
+    },
+    { /* Bezier Progression */
+        NMO_GUID_INIT(0x6BB8699A, 0x29FB6A4B),
+        "Bezier Progression",
+        "Interpolates a float according to a 2D Bezier curve in the [Min,Max] range, in a given number of milliseconds.",
+        "Logics/Loops",
+        "Logics.dll",
+        65541, 19, 0,
+        (const char *const *)bb_489_Bezier_Progression_inputs, 2,
+        (const char *const *)bb_489_Bezier_Progression_outputs, 2,
+        bb_489_Bezier_Progression_ip, 4,
+        bb_489_Bezier_Progression_op, 4,
+        NULL, 0,
+        bb_489_Bezier_Progression_st, 1,
+    },
+    { /* Objects With Attribute Iterator */
+        NMO_GUID_INIT(0x6BC1494C, 0x0C816AD3),
+        "Objects With Attribute Iterator",
+        "Retrieves each element of a group with a particular attribute",
+        "Logics/Attribute",
+        "Logics.dll",
+        65536, 19, 134217728,
+        (const char *const *)bb_490_Objects_With_Attribute_Iterator_inputs, 2,
+        (const char *const *)bb_490_Objects_With_Attribute_Iterator_outputs, 2,
+        bb_490_Objects_With_Attribute_Iterator_ip, 1,
+        bb_490_Objects_With_Attribute_Iterator_op, 2,
+        bb_490_Objects_With_Attribute_Iterator_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Get Level Data */
+        NMO_GUID_INIT(0x6BCA40F9, 0x42641A24),
+        "TT Get Level Data",
+        "Gets the level data",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_491_TT_Get_Level_Data_inputs, 1,
+        (const char *const *)bb_491_TT_Get_Level_Data_outputs, 1,
+        NULL, 0,
+        bb_491_TT_Get_Level_Data_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Iterator If */
+        NMO_GUID_INIT(0x6BEC4BE6, 0x12D64C7C),
+        "Iterator If",
+        "Iterates on each row matching a value and return the values of them.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 201588736,
+        (const char *const *)bb_492_Iterator_If_inputs, 2,
+        (const char *const *)bb_492_Iterator_If_outputs, 2,
+        bb_492_Iterator_If_ip, 2,
+        bb_492_Iterator_If_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Character Grid Path Follow */
+        NMO_GUID_INIT(0x6D0A6DD3, 0x43765DF4),
+        "Character Grid Path Follow",
+        "Allow to a character to follow a path generated by the GridPathSolver",
+        "Grids/Path Finding",
+        "Grids.dll",
+        65536, 40, 327680,
+        (const char *const *)bb_493_Character_Grid_Path_Follow_inputs, 3,
+        (const char *const *)bb_493_Character_Grid_Path_Follow_outputs, 4,
+        bb_493_Character_Grid_Path_Follow_ip, 11,
+        bb_493_Character_Grid_Path_Follow_op, 2,
+        NULL, 0,
+        bb_493_Character_Grid_Path_Follow_st, 1,
+    },
+    { /* Bezier Transform */
+        NMO_GUID_INIT(0x6D433E1B, 0x191954B4),
+        "Bezier Transform",
+        "Transform a float value into another float value according to a 2d bezier curve shape, and given boundaries.",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_494_Bezier_Transform_inputs, 1,
+        (const char *const *)bb_494_Bezier_Transform_outputs, 1,
+        bb_494_Bezier_Transform_ip, 3,
+        bb_494_Bezier_Transform_op, 1,
+        NULL, 0,
+        bb_494_Bezier_Transform_st, 1,
+    },
+    { /* Get Nearest Floors */
+        NMO_GUID_INIT(0x6DAD424E, 0x54B6003D),
+        "Get Nearest Floors",
+        "Retrieves the nearest 'floors' from given position",
+        "Collisions/Floors",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_495_Get_Nearest_Floors_inputs, 1,
+        (const char *const *)bb_495_Get_Nearest_Floors_outputs, 3,
+        bb_495_Get_Nearest_Floors_ip, 2,
+        bb_495_Get_Nearest_Floors_op, 10,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Is Rookie */
+        NMO_GUID_INIT(0x6DC06ABB, 0x44451DE5),
+        "TT Is Rookie",
+        "Check PlayerRookie",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_496_TT_Is_Rookie_inputs, 1,
+        (const char *const *)bb_496_TT_Is_Rookie_outputs, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set MipMap Texture */
+        NMO_GUID_INIT(0x6E407FCF, 0x0EFF06A5),
+        "Set MipMap Texture",
+        "Set the 'Full Size Texture' to contain the given mipmap textures.",
+        "Materials-Textures/Texture",
+        "Materials.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_497_Set_MipMap_Texture_inputs, 1,
+        (const char *const *)bb_497_Set_MipMap_Texture_outputs, 1,
+        bb_497_Set_MipMap_Texture_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Component */
+        NMO_GUID_INIT(0x6E800755, 0x57B64ACB),
+        "Set Component",
+        "Composes a COLOR, VECTOR or 2dVECTOR, by specifying each components.",
+        "Logics/Calculator",
+        "Logics.dll",
+        131072, 19, 67109888,
+        (const char *const *)bb_498_Set_Component_inputs, 1,
+        (const char *const *)bb_498_Set_Component_outputs, 1,
+        bb_498_Set_Component_ip, 3,
+        bb_498_Set_Component_op, 1,
+        NULL, 0,
+        bb_498_Set_Component_st, 1,
+    },
+    { /* Sort Rows */
+        NMO_GUID_INIT(0x6F623E68, 0x62BB5A98),
+        "Sort Rows",
+        "Sorts the rows of an array, according to the values of a given column.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 262144,
+        (const char *const *)bb_499_Sort_Rows_inputs, 1,
+        (const char *const *)bb_499_Sort_Rows_outputs, 1,
+        bb_499_Sort_Rows_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Render Order */
+        NMO_GUID_INIT(0x6F8B6782, 0x21554283),
+        "Set Render Order",
+        "Tells the object to be displayed FIRST, LAST, or in a normal way.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_500_Set_Render_Order_inputs, 1,
+        (const char *const *)bb_500_Set_Render_Order_outputs, 1,
+        bb_500_Set_Render_Order_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Execute Script */
+        NMO_GUID_INIT(0x706C5A40, 0x5BB31A0B),
+        "Execute Script",
+        "Executes a script.",
+        "Narratives/Script Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_501_Execute_Script_inputs, 1,
+        (const char *const *)bb_501_Execute_Script_outputs, 1,
+        bb_501_Execute_Script_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_501_Execute_Script_st, 1,
+    },
+    { /* TT Window Activate? */
+        NMO_GUID_INIT(0x70936783, 0x7FEE4A3B),
+        "TT Window Activate?",
+        "TT Window Activate?",
+        "TT InterfaceManager/Display",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_502_TT_Window_Activate__inputs, 1,
+        (const char *const *)bb_502_TT_Window_Activate__outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_DebugOFF */
+        NMO_GUID_INIT(0x70F65B3E, 0x2DC41372),
+        "TT_DebugOFF",
+        "Debug OFF",
+        "TT Toolbox/Debug",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_503_TT_DebugOFF_inputs, 1,
+        (const char *const *)bb_503_TT_DebugOFF_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Change Sprite Slot */
+        NMO_GUID_INIT(0x70F8028C, 0x723215E7),
+        "Change Sprite Slot",
+        "Changes the current slot of the Sprite.",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 28, 262144,
+        (const char *const *)bb_504_Change_Sprite_Slot_inputs, 1,
+        (const char *const *)bb_504_Change_Sprite_Slot_outputs, 1,
+        bb_504_Change_Sprite_Slot_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Home on Entity */
+        NMO_GUID_INIT(0x71234F96, 0x34321E45),
+        "Home on Entity",
+        "Leads a 3D Entity towards its target, avoiding obstacles.",
+        "Collisions/Influence",
+        "Collisions.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_505_Home_on_Entity_inputs, 2,
+        (const char *const *)bb_505_Home_on_Entity_outputs, 3,
+        bb_505_Home_on_Entity_ip, 4,
+        bb_505_Home_on_Entity_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Bezier Interpolator */
+        NMO_GUID_INIT(0x71570E39, 0x5B37428A),
+        "Bezier Interpolator",
+        "Interpolates a float according to a 2D Bezier curve in the [Min,Max] range, in a given number of steps.",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_506_Bezier_Interpolator_inputs, 2,
+        (const char *const *)bb_506_Bezier_Interpolator_outputs, 2,
+        bb_506_Bezier_Interpolator_ip, 4,
+        bb_506_Bezier_Interpolator_op, 2,
+        bb_506_Bezier_Interpolator_lp, 1,
+        NULL, 0,
+    },
+    { /* Keep Active */
+        NMO_GUID_INIT(0x7160133A, 0x1F2532FE),
+        "Keep Active",
+        "Keeps streaming activated even if inputs has been activate only once.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 33554560,
+        (const char *const *)bb_507_Keep_Active_inputs, 2,
+        (const char *const *)bb_507_Keep_Active_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        bb_507_Keep_Active_lp, 1,
+        bb_507_Keep_Active_st, 1,
+    },
+    { /* Get Lowest */
+        NMO_GUID_INIT(0x71B25ED7, 0x3C365A30),
+        "Get Lowest",
+        "Gets the element of an array, which value in the given column is the lowest.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 134479872,
+        (const char *const *)bb_508_Get_Lowest_inputs, 1,
+        (const char *const *)bb_508_Get_Lowest_outputs, 2,
+        bb_508_Get_Lowest_ip, 1,
+        bb_508_Get_Lowest_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* FIFO */
+        NMO_GUID_INIT(0x7242794C, 0x98C2B340),
+        "FIFO",
+        "First In First Out",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 33554560,
+        (const char *const *)bb_509_FIFO_inputs, 3,
+        (const char *const *)bb_509_FIFO_outputs, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_509_FIFO_lp, 2,
+        bb_509_FIFO_st, 1,
+    },
+    { /* Find Curved Nodal Path */
+        NMO_GUID_INIT(0x72542B8A, 0x6FE901C7),
+        "Find Curved Nodal Path",
+        "Retrieves a curve to follow between a starting point and a destination point.",
+        "3D Transformations/Nodal Path",
+        "Collisions.dll",
+        65536, 19, 0,
+        (const char *const *)bb_510_Find_Curved_Nodal_Path_inputs, 1,
+        (const char *const *)bb_510_Find_Curved_Nodal_Path_outputs, 2,
+        bb_510_Find_Curved_Nodal_Path_ip, 4,
+        bb_510_Find_Curved_Nodal_Path_op, 1,
+        bb_510_Find_Curved_Nodal_Path_lp, 1,
+        NULL, 0,
+    },
+    { /* Set IC */
+        NMO_GUID_INIT(0x72671A24, 0x161A2347),
+        "Set IC",
+        "Saves an object's Initial Condition in the scene being played.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_511_Set_IC_inputs, 1,
+        (const char *const *)bb_511_Set_IC_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Physics Globals */
+        NMO_GUID_INIT(0x72AF347C, 0x03DA71E1),
+        "Set Physics Globals",
+        "Set the Physics Global Variables...",
+        "Physics",
+        "physics_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_512_Set_Physics_Globals_inputs, 2,
+        (const char *const *)bb_512_Set_Physics_Globals_outputs, 1,
+        bb_512_Set_Physics_Globals_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Reverse String */
+        NMO_GUID_INIT(0x72B17C2E, 0x644E2563),
+        "Reverse String",
+        "Reverse the given string.",
+        "Logics/Strings",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_513_Reverse_String_inputs, 1,
+        (const char *const *)bb_513_Reverse_String_outputs, 1,
+        bb_513_Reverse_String_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Planar Shadow */
+        NMO_GUID_INIT(0x731072FA, 0x56CF087F),
+        "Planar Shadow",
+        "Display planars shadows of selected objects projected from a light.",
+        "Visuals/Shadows",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_514_Planar_Shadow_inputs, 2,
+        (const char *const *)bb_514_Planar_Shadow_outputs, 2,
+        bb_514_Planar_Shadow_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        bb_514_Planar_Shadow_st, 1,
+    },
+    { /* TT_FlushTextures */
+        NMO_GUID_INIT(0x734F73B4, 0x01FC79AC),
+        "TT_FlushTextures",
+        "Flushes all Textures from VideoMemory",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_515_TT_FlushTextures_inputs, 1,
+        (const char *const *)bb_515_TT_FlushTextures_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Square From 3D Pos */
+        NMO_GUID_INIT(0x73A67252, 0x1D5B39C1),
+        "Set Square From 3D Pos",
+        "Sets the value of a square",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 19, 0,
+        (const char *const *)bb_516_Set_Square_From_3D_Pos_inputs, 1,
+        (const char *const *)bb_516_Set_Square_From_3D_Pos_outputs, 1,
+        bb_516_Set_Square_From_3D_Pos_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_AnisoMapping */
+        NMO_GUID_INIT(0x73B30B5E, 0x4FED4C65),
+        "TT_AnisoMapping",
+        "Creates light dependent bump mapping",
+        "TT Toolbox/Mapping",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_517_TT_AnisoMapping_inputs, 2,
+        (const char *const *)bb_517_TT_AnisoMapping_outputs, 2,
+        bb_517_TT_AnisoMapping_ip, 7,
+        NULL, 0,
+        bb_517_TT_AnisoMapping_lp, 1,
+        NULL, 0,
+    },
+    { /* TT_FontCoordinatesToDataArray */
+        NMO_GUID_INIT(0x73E256E5, 0x6552118E),
+        "TT_FontCoordinatesToDataArray",
+        "FontCoordinates To DataArray",
+        "TT Toolbox/Font",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_518_TT_FontCoordinatesToDataArray_inputs, 1,
+        (const char *const *)bb_518_TT_FontCoordinatesToDataArray_outputs, 1,
+        bb_518_TT_FontCoordinatesToDataArray_ip, 2,
+        bb_518_TT_FontCoordinatesToDataArray_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Object Delete */
+        NMO_GUID_INIT(0x74120DED, 0x76524673),
+        "Object Delete",
+        "Deletes an object",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        131072, 19, 0,
+        (const char *const *)bb_519_Object_Delete_inputs, 1,
+        (const char *const *)bb_519_Object_Delete_outputs, 1,
+        bb_519_Object_Delete_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Camera Target */
+        NMO_GUID_INIT(0x74123741, 0x4563FFFF),
+        "Set Camera Target",
+        "Makes a 3D Entity be the target of a camera.",
+        "Cameras/Basic",
+        "Cameras.dll",
+        131072, 35, 262144,
+        (const char *const *)bb_520_Set_Camera_Target_inputs, 1,
+        (const char *const *)bb_520_Set_Camera_Target_outputs, 1,
+        bb_520_Set_Camera_Target_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Fade In */
+        NMO_GUID_INIT(0x742215EA, 0x08A06C46),
+        "Fade In",
+        "Fades in sound(s).",
+        "Sounds/Global",
+        "Sounds.dll",
+        65536, 19, 0,
+        (const char *const *)bb_521_Fade_In_inputs, 1,
+        (const char *const *)bb_521_Fade_In_outputs, 1,
+        bb_521_Fade_In_ip, 1,
+        bb_521_Fade_In_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* PhysicsCollDetection */
+        NMO_GUID_INIT(0x7435488D, 0x201D1188),
+        "PhysicsCollDetection",
+        "PhysicsCollDetection",
+        "Physics",
+        "physics_RT.dll",
+        65537, 33, 262144,
+        (const char *const *)bb_522_PhysicsCollDetection_inputs, 2,
+        (const char *const *)bb_522_PhysicsCollDetection_outputs, 1,
+        bb_522_PhysicsCollDetection_ip, 4,
+        bb_522_PhysicsCollDetection_op, 4,
+        bb_522_PhysicsCollDetection_lp, 1,
+        bb_522_PhysicsCollDetection_st, 1,
+    },
+    { /* Set Grid Priority */
+        NMO_GUID_INIT(0x74412551, 0x6146504C),
+        "Set Grid Priority",
+        "Sets the grid's priority",
+        "Grids/Basic",
+        "Grids.dll",
+        65536, 50, 262144,
+        (const char *const *)bb_523_Set_Grid_Priority_inputs, 1,
+        (const char *const *)bb_523_Set_Grid_Priority_outputs, 1,
+        bb_523_Set_Grid_Priority_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set String Value To Registry */
+        NMO_GUID_INIT(0x74A35F75, 0x3AD00FAA),
+        "TT Set String Value To Registry",
+        "Writes a string value to the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_524_TT_Set_String_Value_To_Registry_inputs, 1,
+        (const char *const *)bb_524_TT_Set_String_Value_To_Registry_outputs, 2,
+        bb_524_TT_Set_String_Value_To_Registry_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Grid Path Init */
+        NMO_GUID_INIT(0x74D12456, 0x6F481719),
+        "Grid Path Init",
+        "Initialize the grid graph for grid path finding",
+        "Grids/Path Finding",
+        "Grids.dll",
+        65536, 19, 512,
+        (const char *const *)bb_525_Grid_Path_Init_inputs, 1,
+        (const char *const *)bb_525_Grid_Path_Init_outputs, 2,
+        bb_525_Grid_Path_Init_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_Counter */
+        NMO_GUID_INIT(0x750F20FC, 0x3741186D),
+        "TT_Counter",
+        "Counts forward and backward with loop",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 1, 0,
+        (const char *const *)bb_526_TT_Counter_inputs, 3,
+        (const char *const *)bb_526_TT_Counter_outputs, 3,
+        bb_526_TT_Counter_ip, 3,
+        bb_526_TT_Counter_op, 1,
+        bb_526_TT_Counter_lp, 1,
+        NULL, 0,
+    },
+    { /* Physicalize */
+        NMO_GUID_INIT(0x7522370E, 0x37EC15EC),
+        "Physicalize",
+        "Physicalizes ... ",
+        "Physics",
+        "physics_RT.dll",
+        65536, 33, 67371008,
+        (const char *const *)bb_527_Physicalize_inputs, 2,
+        (const char *const *)bb_527_Physicalize_outputs, 2,
+        bb_527_Physicalize_ip, 12,
+        NULL, 0,
+        NULL, 0,
+        bb_527_Physicalize_st, 4,
+    },
+    { /* TT Get String Value From Registry */
+        NMO_GUID_INIT(0x75FF55A7, 0x378205D0),
+        "TT Get String Value From Registry",
+        "Reads a string value from the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_528_TT_Get_String_Value_From_Registr_inputs, 1,
+        (const char *const *)bb_528_TT_Get_String_Value_From_Registr_outputs, 2,
+        bb_528_TT_Get_String_Value_From_Registr_ip, 2,
+        bb_528_TT_Get_String_Value_From_Registr_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* PushButton */
+        NMO_GUID_INIT(0x761B7E64, 0x2B4C6911),
+        "PushButton",
+        "Transforms a 2D Frame into a push button.",
+        "Interface/Controls",
+        "Interface.dll",
+        196608, 27, 33554432,
+        (const char *const *)bb_529_PushButton_inputs, 3,
+        (const char *const *)bb_529_PushButton_outputs, 6,
+        bb_529_PushButton_ip, 7,
+        bb_529_PushButton_op, 1,
+        bb_529_PushButton_lp, 1,
+        bb_529_PushButton_st, 1,
+    },
+    { /* Set Both Sided */
+        NMO_GUID_INIT(0x76319845, 0x48593399),
+        "Set Both Sided",
+        "Sets the Material to be rendered even if the face normals doesn't faces the camera.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_530_Set_Both_Sided_inputs, 1,
+        (const char *const *)bb_530_Set_Both_Sided_outputs, 1,
+        bb_530_Set_Both_Sided_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Restore IC */
+        NMO_GUID_INIT(0x766E4E44, 0x4FAC6D52),
+        "Restore IC",
+        "Restores an object's Initial Condition for the scene being played.",
+        "Narratives/States",
+        "Narratives.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_531_Restore_IC_inputs, 1,
+        (const char *const *)bb_531_Restore_IC_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Lens Flare */
+        NMO_GUID_INIT(0x76926718, 0x7EE807D5),
+        "Lens Flare",
+        "Renders the Light with a specific 'Light Texture'.",
+        "Lights/FX",
+        "BuildingBlocksAddons1.dll",
+        131072, 38, 262144,
+        (const char *const *)bb_532_Lens_Flare_inputs, 2,
+        (const char *const *)bb_532_Lens_Flare_outputs, 2,
+        bb_532_Lens_Flare_ip, 3,
+        NULL, 0,
+        bb_532_Lens_Flare_lp, 1,
+        bb_532_Lens_Flare_st, 1,
+    },
+    { /* Cylindrical Mapping */
+        NMO_GUID_INIT(0x770A5FC9, 0x7BBE2AED),
+        "Cylindrical Mapping",
+        "Maps an Object according to the Cylindrical.",
+        "Materials-Textures/Mapping",
+        "Materials.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_533_Cylindrical_Mapping_inputs, 1,
+        (const char *const *)bb_533_Cylindrical_Mapping_outputs, 1,
+        bb_533_Cylindrical_Mapping_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Sound Type */
+        NMO_GUID_INIT(0x7734470D, 0x23B221F8),
+        "Set Sound Type",
+        "Tells if a sound is to be render in background or in 3d space.",
+        "Sounds/Properties",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_534_Set_Sound_Type_inputs, 1,
+        (const char *const *)bb_534_Set_Sound_Type_outputs, 1,
+        bb_534_Set_Sound_Type_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Camera Orbit */
+        NMO_GUID_INIT(0x777D999E, 0xDEF777D8),
+        "Camera Orbit",
+        "Makes a Camera orbit round a 3D Entity.",
+        "Cameras/Movement",
+        "Cameras.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_535_Camera_Orbit_inputs, 1,
+        (const char *const *)bb_535_Camera_Orbit_outputs, 1,
+        bb_535_Camera_Orbit_ip, 1,
+        bb_535_Camera_Orbit_op, 1,
+        NULL, 0,
+        bb_535_Camera_Orbit_st, 7,
+    },
+    { /* Interpolator HSV Color */
+        NMO_GUID_INIT(0x778400BB, 0x1A480D35),
+        "Interpolator HSV Color",
+        "Interpolates a color Using HSV color Model",
+        "Logics/Interpolator",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_536_Interpolator_HSV_Color_inputs, 1,
+        (const char *const *)bb_536_Interpolator_HSV_Color_outputs, 1,
+        bb_536_Interpolator_HSV_Color_ip, 3,
+        bb_536_Interpolator_HSV_Color_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Movie Player */
+        NMO_GUID_INIT(0x778D16D4, 0x1DD60060),
+        "Movie Player",
+        "Plays a Movie (avi)",
+        "Materials-Textures/Animation",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_537_Movie_Player_inputs, 2,
+        (const char *const *)bb_537_Movie_Player_outputs, 2,
+        bb_537_Movie_Player_ip, 4,
+        bb_537_Movie_Player_op, 1,
+        bb_537_Movie_Player_lp, 1,
+        NULL, 0,
+    },
+    { /* Clouds Around */
+        NMO_GUID_INIT(0x77C04509, 0x00A36A46),
+        "Clouds Around",
+        "Creates a cloud and fog effect in a scene using a 6 textured cube, colors and a blending mode.",
+        "World Environments/Background",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_538_Clouds_Around_inputs, 2,
+        (const char *const *)bb_538_Clouds_Around_outputs, 2,
+        bb_538_Clouds_Around_ip, 12,
+        NULL, 0,
+        bb_538_Clouds_Around_lp, 1,
+        NULL, 0,
+    },
+    { /* TT Uninstall Array */
+        NMO_GUID_INIT(0x77DD56CF, 0x63DC30B4),
+        "TT Uninstall Array",
+        "Uninstalls Array from Manager",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_539_TT_Uninstall_Array_inputs, 1,
+        (const char *const *)bb_539_TT_Uninstall_Array_outputs, 1,
+        bb_539_TT_Uninstall_Array_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Rookie */
+        NMO_GUID_INIT(0x77DE64DF, 0x694F141F),
+        "TT Set Rookie",
+        "Set PlayerRookie",
+        "TT InterfaceManager/General",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_540_TT_Set_Rookie_inputs, 1,
+        (const char *const *)bb_540_TT_Set_Rookie_outputs, 2,
+        bb_540_TT_Set_Rookie_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT ChildrenIterator */
+        NMO_GUID_INIT(0x78041C90, 0x16DE3CDE),
+        "TT ChildrenIterator",
+        "Retrieves each child of a hierarchy.",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_541_TT_ChildrenIterator_inputs, 2,
+        (const char *const *)bb_541_TT_ChildrenIterator_outputs, 2,
+        NULL, 0,
+        bb_541_TT_ChildrenIterator_op, 3,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Game Bonus */
+        NMO_GUID_INIT(0x78587CF6, 0x0DDB1BB0),
+        "TT Set Game Bonus",
+        "Sets game bonus to manager",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_542_TT_Set_Game_Bonus_inputs, 1,
+        (const char *const *)bb_542_TT_Set_Game_Bonus_outputs, 1,
+        bb_542_TT_Set_Game_Bonus_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Enhanced Character Curve Follow */
+        NMO_GUID_INIT(0x785E7760, 0x46EA50B5),
+        "Enhanced Character Curve Follow",
+        "Makes a charcter follow all or a specified part of a curve performing a specified animation.",
+        "Characters/Movement",
+        "Characters.dll",
+        65536, 40, 262144,
+        (const char *const *)bb_543_Enhanced_Character_Curve_Follow_inputs, 2,
+        (const char *const *)bb_543_Enhanced_Character_Curve_Follow_outputs, 2,
+        bb_543_Enhanced_Character_Curve_Follow_ip, 6,
+        bb_543_Enhanced_Character_Curve_Follow_op, 1,
+        bb_543_Enhanced_Character_Curve_Follow_lp, 5,
+        NULL, 0,
+    },
+    { /* Character Keep On Floor Limits */
+        NMO_GUID_INIT(0x788061FB, 0x249F29A1),
+        "Character Keep On Floor Limits",
+        "Forces a character to keep to a floor's limits, simulating a collision with a wall if the character tries to venture outside.",
+        "Characters/Constraint",
+        "Collisions.dll",
+        65536, 40, 0,
+        (const char *const *)bb_544_Character_Keep_On_Floor_Limits_inputs, 1,
+        (const char *const *)bb_544_Character_Keep_On_Floor_Limits_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        bb_544_Character_Keep_On_Floor_Limits_lp, 1,
+        NULL, 0,
+    },
+    { /* Row Search */
+        NMO_GUID_INIT(0x78863443, 0x45AF59B6),
+        "Row Search",
+        "Get the first row index found in an array, where the value in the chosen column match the comparison with the reference value given.",
+        "Logics/Array",
+        "Logics.dll",
+        65536, 52, 67371008,
+        (const char *const *)bb_545_Row_Search_inputs, 1,
+        (const char *const *)bb_545_Row_Search_outputs, 2,
+        bb_545_Row_Search_ip, 3,
+        bb_545_Row_Search_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Stop & Go */
+        NMO_GUID_INIT(0x78A667F0, 0x5A3C0323),
+        "Stop & Go",
+        "Activates the output only when the input stops being active.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_546_Stop___Go_inputs, 1,
+        (const char *const *)bb_546_Stop___Go_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT WriteBack */
+        NMO_GUID_INIT(0x78B31127, 0x0A875030),
+        "TT WriteBack",
+        "Writes a value to a dynamically substituted parameter.",
+        "TT Toolbox/Advanced",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 67108864,
+        (const char *const *)bb_547_TT_WriteBack_inputs, 1,
+        (const char *const *)bb_547_TT_WriteBack_outputs, 1,
+        bb_547_TT_WriteBack_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Movie Load */
+        NMO_GUID_INIT(0x798E26A9, 0x34E4169E),
+        "Movie Load",
+        "Loads a movie file into a texture or a Sprite.",
+        "Narratives/Object Management",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_548_Movie_Load_inputs, 1,
+        (const char *const *)bb_548_Movie_Load_outputs, 2,
+        bb_548_Movie_Load_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Simple Shadow */
+        NMO_GUID_INIT(0x79B95ED0, 0x3E4A01F5),
+        "Simple Shadow",
+        "Display a little soft shadow on floors beneath the object.",
+        "Visuals/Shadows",
+        "Visuals.dll",
+        65536, 41, 0,
+        (const char *const *)bb_549_Simple_Shadow_inputs, 2,
+        (const char *const *)bb_549_Simple_Shadow_outputs, 2,
+        bb_549_Simple_Shadow_ip, 3,
+        NULL, 0,
+        bb_549_Simple_Shadow_lp, 1,
+        NULL, 0,
+    },
+    { /* Random Switch */
+        NMO_GUID_INIT(0x79D72FDE, 0x2E9D0912),
+        "Random Switch",
+        "Switches the sequential stream to a randomly chosen ouput according to each coef.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 67109120,
+        (const char *const *)bb_550_Random_Switch_inputs, 1,
+        (const char *const *)bb_550_Random_Switch_outputs, 2,
+        bb_550_Random_Switch_ip, 2,
+        NULL, 0,
+        bb_550_Random_Switch_lp, 1,
+        bb_550_Random_Switch_st, 1,
+    },
+    { /* TT_GetFullAngle */
+        NMO_GUID_INIT(0x7A18014D, 0x009D2E73),
+        "TT_GetFullAngle",
+        "Calculate angles from 2 2D vectors",
+        "TT Toolbox/Logic",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_551_TT_GetFullAngle_inputs, 1,
+        (const char *const *)bb_551_TT_GetFullAngle_outputs, 1,
+        bb_551_TT_GetFullAngle_ip, 2,
+        bb_551_TT_GetFullAngle_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_RemoveDirectory */
+        NMO_GUID_INIT(0x7A2105FA, 0x282D2A22),
+        "TT_RemoveDirectory",
+        "Remove Directory",
+        "TT Toolbox/File",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_552_TT_RemoveDirectory_inputs, 1,
+        (const char *const *)bb_552_TT_RemoveDirectory_outputs, 2,
+        bb_552_TT_RemoveDirectory_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Scale */
+        NMO_GUID_INIT(0x7A7A7A7A, 0x7A7A7A7A),
+        "Set Scale",
+        "Sets the Scale of a 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65537, 33, 262144,
+        (const char *const *)bb_553_Set_Scale_inputs, 1,
+        (const char *const *)bb_553_Set_Scale_outputs, 1,
+        bb_553_Set_Scale_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Change Texture Size */
+        NMO_GUID_INIT(0x7A7C4D7B, 0x468D0F33),
+        "Change Texture Size",
+        "Change the size of the texture.",
+        "Materials-Textures/Texture",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_554_Change_Texture_Size_inputs, 1,
+        (const char *const *)bb_554_Change_Texture_Size_outputs, 1,
+        bb_554_Change_Texture_Size_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_WriteRegistry */
+        NMO_GUID_INIT(0x7AA8084E, 0x1EE229B7),
+        "TT_WriteRegistry",
+        "Writes a value to the registry",
+        "TT InterfaceManager/Registry",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_555_TT_WriteRegistry_inputs, 1,
+        (const char *const *)bb_555_TT_WriteRegistry_outputs, 2,
+        bb_555_TT_WriteRegistry_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        bb_555_TT_WriteRegistry_st, 1,
+    },
+    { /* TT Set Level Name */
+        NMO_GUID_INIT(0x7AEC3D66, 0x4AA904C5),
+        "TT Set Level Name",
+        "Sets level name to manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_556_TT_Set_Level_Name_inputs, 1,
+        (const char *const *)bb_556_TT_Set_Level_Name_outputs, 1,
+        bb_556_TT_Set_Level_Name_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Blended Animation Factor */
+        NMO_GUID_INIT(0x7AFC20A3, 0x6D367A99),
+        "Set Blended Animation Factor",
+        "Sets the coefficient of interpolation of a blended animation",
+        "Characters/Animation",
+        "Characters.dll",
+        65536, 19, 0,
+        (const char *const *)bb_557_Set_Blended_Animation_Factor_inputs, 1,
+        (const char *const *)bb_557_Set_Blended_Animation_Factor_outputs, 1,
+        bb_557_Set_Blended_Animation_Factor_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Group Operator */
+        NMO_GUID_INIT(0x7B377625, 0x16DA3BDA),
+        "Group Operator",
+        "Makes combination of groups and objects wearing attributes.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 23, 67371520,
+        (const char *const *)bb_558_Group_Operator_inputs, 1,
+        (const char *const *)bb_558_Group_Operator_outputs, 1,
+        bb_558_Group_Operator_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Pitch Control */
+        NMO_GUID_INIT(0x7B7C731E, 0x175B27A3),
+        "Pitch Control",
+        "Sets the pitch frequency for a sound, regardless of whether it is playing or not.",
+        "Sounds/Control",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_559_Pitch_Control_inputs, 1,
+        (const char *const *)bb_559_Pitch_Control_outputs, 1,
+        bb_559_Pitch_Control_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Global Animation Step */
+        NMO_GUID_INIT(0x7BA27C0A, 0x7BD21DB6),
+        "Set Global Animation Step",
+        "Sets the advancement in percentage of the global animation.",
+        "3D Transformations/Animation",
+        "3DTransfo.dll",
+        65536, 19, 0,
+        (const char *const *)bb_560_Set_Global_Animation_Step_inputs, 1,
+        (const char *const *)bb_560_Set_Global_Animation_Step_outputs, 1,
+        bb_560_Set_Global_Animation_Step_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Layer Slider */
+        NMO_GUID_INIT(0x7BAC6DA2, 0x1CBE76ED),
+        "Layer Slider",
+        "Impede the 3d object to enter into no-null squares of a specific layers.",
+        "Grids/Basic",
+        "Grids.dll",
+        131072, 33, 67371520,
+        (const char *const *)bb_561_Layer_Slider_inputs, 2,
+        (const char *const *)bb_561_Layer_Slider_outputs, 2,
+        bb_561_Layer_Slider_ip, 2,
+        NULL, 0,
+        bb_561_Layer_Slider_lp, 1,
+        bb_561_Layer_Slider_st, 3,
+    },
+    { /* Object Load */
+        NMO_GUID_INIT(0x7BD977D7, 0x26396C0C),
+        "Object Load",
+        "Loads a local file, containing one or more objects",
+        "Narratives/Object Management",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)bb_562_Object_Load_inputs, 2,
+        (const char *const *)bb_562_Object_Load_outputs, 3,
+        bb_562_Object_Load_ip, 6,
+        bb_562_Object_Load_op, 2,
+        NULL, 0,
+        bb_562_Object_Load_st, 1,
+    },
+    { /* Set Color Key 2D */
+        NMO_GUID_INIT(0x7BDA540C, 0x39782384),
+        "Set Color Key 2D",
+        "Sets the transparent transparence color key for a sprite.",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 28, 262144,
+        (const char *const *)bb_563_Set_Color_Key_2D_inputs, 1,
+        (const char *const *)bb_563_Set_Color_Key_2D_outputs, 1,
+        bb_563_Set_Color_Key_2D_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Get Screen Proportional Pos */
+        NMO_GUID_INIT(0x7BDF0404, 0x0F765834),
+        "Get Screen Proportional Pos",
+        "Converts a position from a 2d proportional position to the screen.",
+        "Interface/Screen",
+        "Interface.dll",
+        131072, 19, 0,
+        (const char *const *)bb_564_Get_Screen_Proportional_Pos_inputs, 1,
+        (const char *const *)bb_564_Get_Screen_Proportional_Pos_outputs, 1,
+        bb_564_Get_Screen_Proportional_Pos_ip, 2,
+        bb_564_Get_Screen_Proportional_Pos_op, 2,
+        NULL, 0,
+        bb_564_Get_Screen_Proportional_Pos_st, 1,
+    },
+    { /* TT_TextureInfo */
+        NMO_GUID_INIT(0x7C663B40, 0x2F4B347E),
+        "TT_TextureInfo",
+        "Gets Available TextureMemory, Number of used Textures etc.",
+        "TT Toolbox/Material",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_565_TT_TextureInfo_inputs, 1,
+        (const char *const *)bb_565_TT_TextureInfo_outputs, 1,
+        NULL, 0,
+        bb_565_TT_TextureInfo_op, 5,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Set Game Data */
+        NMO_GUID_INIT(0x7C805C49, 0x78A601D3),
+        "TT Set Game Data",
+        "Sets the game datas",
+        "TT InterfaceManager/GameInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_566_TT_Set_Game_Data_inputs, 1,
+        (const char *const *)bb_566_TT_Set_Game_Data_outputs, 1,
+        bb_566_TT_Set_Game_Data_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* LIFO */
+        NMO_GUID_INIT(0x7D037385, 0x12D62259),
+        "LIFO",
+        "Last In First Out",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 33554560,
+        (const char *const *)bb_567_LIFO_inputs, 3,
+        (const char *const *)bb_567_LIFO_outputs, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_567_LIFO_lp, 2,
+        bb_567_LIFO_st, 1,
+    },
+    { /* Create Font */
+        NMO_GUID_INIT(0x7D644088, 0x40DD0349),
+        "Create Font",
+        "Creates a font from a provided texture.",
+        "Interface/Fonts",
+        "Interface.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_568_Create_Font_inputs, 1,
+        (const char *const *)bb_568_Create_Font_outputs, 1,
+        bb_568_Create_Font_ip, 6,
+        bb_568_Create_Font_op, 1,
+        NULL, 0,
+        bb_568_Create_Font_st, 1,
+    },
+    { /* TT Restore IC */
+        NMO_GUID_INIT(0x7E0F2F58, 0x232D3109),
+        "TT Restore IC",
+        "Restores an object's Initial Condition for the scene being played.",
+        "TT Toolbox/Narratives",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_569_TT_Restore_IC_inputs, 1,
+        (const char *const *)bb_569_TT_Restore_IC_outputs, 1,
+        bb_569_TT_Restore_IC_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT_ReflectionMapping */
+        NMO_GUID_INIT(0x7E212B2F, 0x24DB67C6),
+        "TT_ReflectionMapping",
+        "Creates reflection mapping when changing mappings channel normals",
+        "TT Toolbox/Mapping",
+        "TT_Toolbox_RT.dll",
+        65536, 41, 67371008,
+        (const char *const *)bb_570_TT_ReflectionMapping_inputs, 2,
+        (const char *const *)bb_570_TT_ReflectionMapping_outputs, 2,
+        bb_570_TT_ReflectionMapping_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT CheckCurveCollision */
+        NMO_GUID_INIT(0x7E9A4415, 0x199E4EB3),
+        "TT CheckCurveCollision",
+        "Switches the sequential stream to the corresponding ouput, following the result of comparison between 'Test' and the others input parameters",
+        "TT Toolbox/Collision",
+        "TT_Toolbox_RT.dll",
+        65536, 19, 251920384,
+        (const char *const *)bb_571_TT_CheckCurveCollision_inputs, 1,
+        (const char *const *)bb_571_TT_CheckCurveCollision_outputs, 2,
+        bb_571_TT_CheckCurveCollision_ip, 2,
+        bb_571_TT_CheckCurveCollision_op, 1,
+        NULL, 0,
+        bb_571_TT_CheckCurveCollision_st, 1,
+    },
+    { /* All But One */
+        NMO_GUID_INIT(0x7EBC16CE, 0x75BA1301),
+        "All But One",
+        "Activates all the Outputs but not the one corresponding to the activated input.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 33554560,
+        (const char *const *)bb_572_All_But_One_inputs, 2,
+        (const char *const *)bb_572_All_But_One_outputs, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* TT Simple Shadow */
+        NMO_GUID_INIT(0x7F0517C2, 0x52CC76BB),
+        "TT Simple Shadow",
+        "Display a little soft shadow on floors beneath the object.",
+        "TT Gravity",
+        "TT_Gravity_RT.dll",
+        65536, 41, 262144,
+        (const char *const *)bb_573_TT_Simple_Shadow_inputs, 2,
+        (const char *const *)bb_573_TT_Simple_Shadow_outputs, 2,
+        bb_573_TT_Simple_Shadow_ip, 3,
+        NULL, 0,
+        bb_573_TT_Simple_Shadow_lp, 1,
+        NULL, 0,
+    },
+    { /* Edit 2D Entity */
+        NMO_GUID_INIT(0x7FC54C91, 0x3F486670),
+        "Edit 2D Entity",
+        "Changes the 2d entity parameters.",
+        "Visuals/2D",
+        "Visuals.dll",
+        65536, 27, 67371008,
+        (const char *const *)bb_574_Edit_2D_Entity_inputs, 1,
+        (const char *const *)bb_574_Edit_2D_Entity_outputs, 1,
+        bb_574_Edit_2D_Entity_ip, 10,
+        NULL, 0,
+        NULL, 0,
+        bb_574_Edit_2D_Entity_st, 1,
+    },
+    { /* TT Get Level Score */
+        NMO_GUID_INIT(0x7FE65A65, 0x490A49B5),
+        "TT Get Level Score",
+        "Gets Level score from manager",
+        "TT InterfaceManager/LevelInfo Behaviors",
+        "TT_InterfaceManager_RT.dll",
+        65536, 19, 0,
+        (const char *const *)bb_575_TT_Get_Level_Score_inputs, 1,
+        (const char *const *)bb_575_TT_Get_Level_Score_outputs, 1,
+        NULL, 0,
+        bb_575_TT_Get_Level_Score_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Combine Texture */
+        NMO_GUID_INIT(0x84BE2329, 0xAED66CE1),
+        "Combine Texture",
+        "Combine two Textures into one",
+        "Materials-Textures/Texture",
+        "BuildingBlocksAddons1.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_576_Combine_Texture_inputs, 1,
+        (const char *const *)bb_576_Combine_Texture_outputs, 1,
+        bb_576_Combine_Texture_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Add Channel */
+        NMO_GUID_INIT(0x89658965, 0x36654789),
+        "Add Channel",
+        "Adds a Channel Material to the 3D Entity.",
+        "Materials-Textures/Channel",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_577_Add_Channel_inputs, 1,
+        (const char *const *)bb_577_Add_Channel_outputs, 1,
+        bb_577_Add_Channel_ip, 1,
+        bb_577_Add_Channel_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Declare Floors */
+        NMO_GUID_INIT(0x8E43CD12, 0x98DC215D),
+        "Declare Floors",
+        "Identifies floor objects by their name",
+        "Collisions/Floors",
+        "Collisions.dll",
+        131072, 19, 0,
+        (const char *const *)bb_578_Declare_Floors_inputs, 1,
+        (const char *const *)bb_578_Declare_Floors_outputs, 1,
+        bb_578_Declare_Floors_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Create System Font */
+        NMO_GUID_INIT(0x936334FC, 0xF243684F),
+        "Create System Font",
+        "Create a font from a system font name",
+        "Interface/Fonts",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_579_Create_System_Font_inputs, 1,
+        (const char *const *)bb_579_Create_System_Font_outputs, 2,
+        bb_579_Create_System_Font_ip, 5,
+        bb_579_Create_System_Font_op, 2,
+        bb_579_Create_System_Font_lp, 1,
+        bb_579_Create_System_Font_st, 5,
+    },
+    { /* Noise Progression */
+        NMO_GUID_INIT(0x9424FF80, 0x9751BC39),
+        "Noise Progression",
+        "Interpolates a float according to a Perlin noise function in the [Min,Max] range, in a given number of milliseconds (or frames).",
+        "Logics/Loops",
+        "Logics.dll",
+        65541, 19, 0,
+        (const char *const *)bb_580_Noise_Progression_inputs, 2,
+        (const char *const *)bb_580_Noise_Progression_outputs, 2,
+        bb_580_Noise_Progression_ip, 6,
+        bb_580_Noise_Progression_op, 4,
+        NULL, 0,
+        bb_580_Noise_Progression_st, 1,
+    },
+    { /* Set Shade Mode */
+        NMO_GUID_INIT(0x95195195, 0x98795198),
+        "Set Shade Mode",
+        "Sets the Shade Mode of a Material",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_581_Set_Shade_Mode_inputs, 1,
+        (const char *const *)bb_581_Set_Shade_Mode_outputs, 1,
+        bb_581_Set_Shade_Mode_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Counter */
+        NMO_GUID_INIT(0x998F000F, 0xF000F899),
+        "Counter",
+        "Exits 'MaxCount' times by the 'Looping' output and when finished, exits by 'Out' output.",
+        "Logics/Loops",
+        "Logics.dll",
+        131072, 19, 0,
+        (const char *const *)bb_582_Counter_inputs, 2,
+        (const char *const *)bb_582_Counter_outputs, 2,
+        bb_582_Counter_ip, 3,
+        bb_582_Counter_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Parent */
+        NMO_GUID_INIT(0x9D9D9D98, 0x7E7A7F75),
+        "Set Parent",
+        "Sets the Parent of a 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_583_Set_Parent_inputs, 1,
+        (const char *const *)bb_583_Set_Parent_outputs, 1,
+        bb_583_Set_Parent_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Send Message */
+        NMO_GUID_INIT(0xA20E8D5B, 0xDF002150),
+        "Send Message",
+        "Sends a Message to a 3D Entity.",
+        "Logics/Message",
+        "Logics.dll",
+        65536, 19, 328192,
+        (const char *const *)bb_584_Send_Message_inputs, 1,
+        (const char *const *)bb_584_Send_Message_outputs, 1,
+        bb_584_Send_Message_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Timer */
+        NMO_GUID_INIT(0xA2A5A63A, 0xE4E7E8E5),
+        "Timer",
+        "Waits (throw looping) for a given time to has elapsed.",
+        "Logics/Loops",
+        "Logics.dll",
+        65541, 19, 0,
+        (const char *const *)bb_585_Timer_inputs, 2,
+        (const char *const *)bb_585_Timer_outputs, 2,
+        bb_585_Timer_ip, 1,
+        bb_585_Timer_op, 2,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* FPS */
+        NMO_GUID_INIT(0xA58A313A, 0xE7F8D32A),
+        "FPS",
+        "Writes in the output the FPS (Frames Per Second).",
+        "Visuals/Text",
+        "Visuals.dll",
+        65536, 19, 0,
+        (const char *const *)bb_586_FPS_inputs, 1,
+        (const char *const *)bb_586_FPS_outputs, 1,
+        NULL, 0,
+        bb_586_FPS_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Show */
+        NMO_GUID_INIT(0xA85A213A, 0xEF78D52A),
+        "Show",
+        "Shows a 2D/3D Entity, a Mesh or a Group",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_587_Show_inputs, 1,
+        (const char *const *)bb_587_Show_outputs, 1,
+        bb_587_Show_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set World Matrix */
+        NMO_GUID_INIT(0xAA4AA6F0, 0xDDEFDEF4),
+        "Set World Matrix",
+        "Sets the World Matrix of a 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_588_Set_World_Matrix_inputs, 1,
+        (const char *const *)bb_588_Set_World_Matrix_outputs, 1,
+        bb_588_Set_World_Matrix_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Current Slot */
+        NMO_GUID_INIT(0xAAAA213A, 0xEAA8D52A),
+        "Set Current Slot",
+        "Changes the current slot of the texture.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_589_Set_Current_Slot_inputs, 1,
+        (const char *const *)bb_589_Set_Current_Slot_outputs, 1,
+        bb_589_Set_Current_Slot_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Ambient */
+        NMO_GUID_INIT(0xAAAAAAAA, 0xAEAE1287),
+        "Set Ambient",
+        "Sets the Ambient Color of a Material.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_590_Set_Ambient_inputs, 1,
+        (const char *const *)bb_590_Set_Ambient_outputs, 1,
+        bb_590_Set_Ambient_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set FOV */
+        NMO_GUID_INIT(0xAAAACCCC, 0xAAAACCCC),
+        "Set FOV",
+        "Sets the Field Of View of the camera",
+        "Cameras/Basic",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_591_Set_FOV_inputs, 1,
+        (const char *const *)bb_591_Set_FOV_outputs, 1,
+        bb_591_Set_FOV_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Show 2D Entity */
+        NMO_GUID_INIT(0xABABA123, 0x123ABABA),
+        "Show 2D Entity",
+        "Shows a 2D Entity",
+        "Visuals/Show-Hide",
+        "Visuals.dll",
+        65536, 27, 262144,
+        (const char *const *)bb_592_Show_2D_Entity_inputs, 1,
+        (const char *const *)bb_592_Show_2D_Entity_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Sound Cone Values */
+        NMO_GUID_INIT(0xABF60A8C, 0x0FF91D0D),
+        "Set Sound Cone Values",
+        "Control the cone shape of the 3D sound.",
+        "Sounds/3D Properties",
+        "Sounds.dll",
+        65536, 25, 262144,
+        (const char *const *)bb_593_Set_Sound_Cone_Values_inputs, 1,
+        (const char *const *)bb_593_Set_Sound_Cone_Values_outputs, 1,
+        bb_593_Set_Sound_Cone_Values_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Vertigo */
+        NMO_GUID_INIT(0xB00D010A, 0xC00D010A),
+        "Vertigo",
+        "Creates a 'Vertigo' effect on the Camera.",
+        "Cameras/FX",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_594_Vertigo_inputs, 2,
+        (const char *const *)bb_594_Vertigo_outputs, 2,
+        bb_594_Vertigo_ip, 5,
+        NULL, 0,
+        bb_594_Vertigo_lp, 5,
+        NULL, 0,
+    },
+    { /* Volumetric Fog */
+        NMO_GUID_INIT(0xB0F1CA98, 0xE9DABE5F),
+        "Volumetric Fog",
+        "Volumetric Fog.",
+        "Visuals/FX",
+        "BuildingBlocksAddons1.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_595_Volumetric_Fog_inputs, 2,
+        (const char *const *)bb_595_Volumetric_Fog_outputs, 2,
+        bb_595_Volumetric_Fog_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Keep At Constant Distance */
+        NMO_GUID_INIT(0xB7E6398A, 0x113C66DD),
+        "Keep At Constant Distance",
+        "Selected object will follow another object wherever it goes, keeping the same distance between them.",
+        "3D Transformations/Constraint",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_596_Keep_At_Constant_Distance_inputs, 1,
+        (const char *const *)bb_596_Keep_At_Constant_Distance_outputs, 1,
+        bb_596_Keep_At_Constant_Distance_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        bb_596_Keep_At_Constant_Distance_st, 1,
+    },
+    { /* Dolly */
+        NMO_GUID_INIT(0xB98B83BB, 0x87787878),
+        "Dolly",
+        "Keeps the projection plane at the same position while translating the camera on its Z local axis.",
+        "Cameras/Basic",
+        "Cameras.dll",
+        65536, 35, 262144,
+        (const char *const *)bb_597_Dolly_inputs, 1,
+        (const char *const *)bb_597_Dolly_outputs, 1,
+        bb_597_Dolly_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Listener Properties */
+        NMO_GUID_INIT(0xBCFDE546, 0xFEEFD18B),
+        "Set Listener Properties",
+        "Controls the listener properties.",
+        "Sounds/Global",
+        "BuildingBlocksAddons1.dll",
+        65536, 19, 0,
+        (const char *const *)bb_598_Set_Listener_Properties_inputs, 1,
+        (const char *const *)bb_598_Set_Listener_Properties_outputs, 1,
+        bb_598_Set_Listener_Properties_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* IK Position */
+        NMO_GUID_INIT(0xBEFC4A32, 0x893ECAD4),
+        "IK Position",
+        "Sets a body part's position using Inverse Kinematics.",
+        "Characters/IK",
+        "Characters.dll",
+        65536, 40, 0,
+        (const char *const *)bb_599_IK_Position_inputs, 1,
+        (const char *const *)bb_599_IK_Position_outputs, 1,
+        bb_599_IK_Position_ip, 4,
+        NULL, 0,
+        bb_599_IK_Position_lp, 1,
+        NULL, 0,
+    },
+    { /* Wait For All */
+        NMO_GUID_INIT(0xC044A999, 0xFDFEFAF7),
+        "Wait For All",
+        "Waits until all behavior Inputs have been activated to activate the output",
+        "Logics/Synchro",
+        "Logics.dll",
+        65536, 19, 128,
+        (const char *const *)bb_600_Wait_For_All_inputs, 2,
+        (const char *const *)bb_600_Wait_For_All_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Fill Mode */
+        NMO_GUID_INIT(0xC5C4C3C2, 0x8C8C8C8C),
+        "Set Fill Mode",
+        "Sets the fill mode of a Material : 1 = Point, 2 = WireFrame, 3 = Solid.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_601_Set_Fill_Mode_inputs, 1,
+        (const char *const *)bb_601_Set_Fill_Mode_outputs, 1,
+        bb_601_Set_Fill_Mode_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Vertex Render */
+        NMO_GUID_INIT(0xCC030377, 0x897AAAAA),
+        "Vertex Render",
+        "Renders the object with a specific sprite at the vertices positions.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 41, 0,
+        (const char *const *)bb_602_Vertex_Render_inputs, 2,
+        (const char *const *)bb_602_Vertex_Render_outputs, 1,
+        bb_602_Vertex_Render_ip, 3,
+        NULL, 0,
+        bb_602_Vertex_Render_lp, 3,
+        bb_602_Vertex_Render_st, 2,
+    },
+    { /* Solid Trail */
+        NMO_GUID_INIT(0xD00D010A, 0xE00D010A),
+        "Solid Trail",
+        "Create a Solid Trail following the 3D Entity when it's moving.",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 41, 0,
+        (const char *const *)bb_603_Solid_Trail_inputs, 2,
+        (const char *const *)bb_603_Solid_Trail_outputs, 2,
+        bb_603_Solid_Trail_ip, 5,
+        NULL, 0,
+        bb_603_Solid_Trail_lp, 5,
+        NULL, 0,
+    },
+    { /* Remove From Group */
+        NMO_GUID_INIT(0xD0147412, 0x0258520D),
+        "Remove From Group",
+        "Removes the object from a Group.",
+        "Logics/Groups",
+        "Logics.dll",
+        65536, 19, 262144,
+        (const char *const *)bb_604_Remove_From_Group_inputs, 1,
+        (const char *const *)bb_604_Remove_From_Group_outputs, 1,
+        bb_604_Remove_From_Group_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Binary Memory */
+        NMO_GUID_INIT(0xD02D67DD, 0x10211FDD),
+        "Binary Memory",
+        "Memorizes in a 'State Memory' whether the behavior was triggered by 'In 0' or 'In 1'.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_605_Binary_Memory_inputs, 2,
+        (const char *const *)bb_605_Binary_Memory_outputs, 2,
+        NULL, 0,
+        bb_605_Binary_Memory_op, 1,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Dummy0 */
+        NMO_GUID_INIT(0xD0B7ADF3, 0xD3FF3CF6),
+        "Dummy0",
+        "",
+        "",
+        "Narratives.dll",
+        65536, 19, 0,
+        (const char *const *)NULL, 0,
+        (const char *const *)NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Emissive */
+        NMO_GUID_INIT(0xD1D1D1D1, 0x30303030),
+        "Set Emissive",
+        "Sets the Emissive Color of a Material",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_607_Set_Emissive_inputs, 1,
+        (const char *const *)bb_607_Set_Emissive_outputs, 1,
+        bb_607_Set_Emissive_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Light Attenuation */
+        NMO_GUID_INIT(0xD63D004D, 0xD54D8100),
+        "Set Light Attenuation",
+        "Sets the Constant, Linear and Quadratic Attenuation of a light.",
+        "Lights/Basic",
+        "Lights.dll",
+        65536, 38, 262144,
+        (const char *const *)bb_608_Set_Light_Attenuation_inputs, 1,
+        (const char *const *)bb_608_Set_Light_Attenuation_outputs, 1,
+        bb_608_Set_Light_Attenuation_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Texture Mag */
+        NMO_GUID_INIT(0xDA495631, 0xDE155488),
+        "Set Texture Mag",
+        "Sets the Material Filtering Mode when it is magnified.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_609_Set_Texture_Mag_inputs, 1,
+        (const char *const *)bb_609_Set_Texture_Mag_outputs, 1,
+        bb_609_Set_Texture_Mag_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Font Properties */
+        NMO_GUID_INIT(0xDACFBD61, 0x7A6E65E7),
+        "Set Font Properties",
+        "Sets the visual appearance of a font.",
+        "Interface/Fonts",
+        "Interface.dll",
+        65536, 19, 0,
+        (const char *const *)bb_610_Set_Font_Properties_inputs, 1,
+        (const char *const *)bb_610_Set_Font_Properties_outputs, 1,
+        bb_610_Set_Font_Properties_ip, 11,
+        NULL, 0,
+        NULL, 0,
+        bb_610_Set_Font_Properties_st, 1,
+    },
+    { /* Character Keep On Floor */
+        NMO_GUID_INIT(0xDBAC2124, 0x6ADCBFA4),
+        "Character Keep On Floor",
+        "Forces a character to stay on previously defined floors.",
+        "Characters/Constraint",
+        "Collisions.dll",
+        65536, 40, 0,
+        (const char *const *)bb_611_Character_Keep_On_Floor_inputs, 1,
+        (const char *const *)bb_611_Character_Keep_On_Floor_outputs, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Enhanced Character Keep On Floor */
+        NMO_GUID_INIT(0xDBDE2424, 0x6ADDEF12),
+        "Enhanced Character Keep On Floor",
+        "Forces a character to stay on a declared floor (so it will not hover above it).",
+        "Characters/Constraint",
+        "Collisions.dll",
+        65536, 40, 0,
+        (const char *const *)bb_612_Enhanced_Character_Keep_On_Floor_inputs, 2,
+        (const char *const *)bb_612_Enhanced_Character_Keep_On_Floor_outputs, 3,
+        bb_612_Enhanced_Character_Keep_On_Floor_ip, 8,
+        bb_612_Enhanced_Character_Keep_On_Floor_op, 5,
+        bb_612_Enhanced_Character_Keep_On_Floor_lp, 2,
+        bb_612_Enhanced_Character_Keep_On_Floor_st, 1,
+    },
+    { /* Set Background Material */
+        NMO_GUID_INIT(0xDDCCEFEC, 0xD010C102),
+        "Set Background Material",
+        "Sets the Background Material",
+        "World Environments/Background",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_613_Set_Background_Material_inputs, 1,
+        (const char *const *)bb_613_Set_Background_Material_outputs, 1,
+        bb_613_Set_Background_Material_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Diffuse */
+        NMO_GUID_INIT(0xE1E1E1E1, 0x1E1E1E1E),
+        "Set Diffuse",
+        "Sets the Diffuse Color of a Material",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        131072, 30, 262144,
+        (const char *const *)bb_614_Set_Diffuse_inputs, 1,
+        (const char *const *)bb_614_Set_Diffuse_outputs, 1,
+        bb_614_Set_Diffuse_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Projection */
+        NMO_GUID_INIT(0xE444E666, 0x4EEE6EEE),
+        "Set Projection",
+        "Sets the Projection Type of the Camera.",
+        "Cameras/Basic",
+        "Cameras.dll",
+        65536, 34, 262144,
+        (const char *const *)bb_615_Set_Projection_inputs, 1,
+        (const char *const *)bb_615_Set_Projection_outputs, 1,
+        bb_615_Set_Projection_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Position */
+        NMO_GUID_INIT(0xE456E78A, 0x456789AA),
+        "Set Position",
+        "Sets the Position of a 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_616_Set_Position_inputs, 1,
+        (const char *const *)bb_616_Set_Position_outputs, 1,
+        bb_616_Set_Position_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Modify Component */
+        NMO_GUID_INIT(0xE5B234F3, 0x35FBACF7),
+        "Modify Component",
+        "Modify a vector",
+        "Logics/Calculator",
+        "Logics.dll",
+        65536, 19, 67109376,
+        (const char *const *)bb_617_Modify_Component_inputs, 1,
+        (const char *const *)bb_617_Modify_Component_outputs, 1,
+        bb_617_Modify_Component_ip, 1,
+        bb_617_Modify_Component_op, 1,
+        NULL, 0,
+        bb_617_Modify_Component_st, 1,
+    },
+    { /* Specific Bool Event */
+        NMO_GUID_INIT(0xE5F22514, 0x12DFFFEE),
+        "Specific Bool Event",
+        "Detects a boolean value change. Same as 'BoolEvent', but with specific outputs.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_618_Specific_Bool_Event_inputs, 2,
+        (const char *const *)bb_618_Specific_Bool_Event_outputs, 4,
+        bb_618_Specific_Bool_Event_ip, 1,
+        NULL, 0,
+        bb_618_Specific_Bool_Event_lp, 1,
+        NULL, 0,
+    },
+    { /* Set Texture */
+        NMO_GUID_INIT(0xEB123EB5, 0x5BE321BE),
+        "Set Texture",
+        "Sets the Texture of a Material.",
+        "Materials-Textures/Basic",
+        "Materials.dll",
+        65536, 30, 262144,
+        (const char *const *)bb_619_Set_Texture_inputs, 1,
+        (const char *const *)bb_619_Set_Texture_outputs, 1,
+        bb_619_Set_Texture_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Binary Switch */
+        NMO_GUID_INIT(0xEB506901, 0x984AFCCC),
+        "Binary Switch",
+        "Activates the appropriate output, according to a Boolean condition.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_620_Binary_Switch_inputs, 1,
+        (const char *const *)bb_620_Binary_Switch_outputs, 2,
+        bb_620_Binary_Switch_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Sky Around */
+        NMO_GUID_INIT(0xED453298, 0x01AE789F),
+        "Sky Around",
+        "Simulates a Sky Effect on the Scene using 6 textures in a cube; This behavior doesn't need loop.",
+        "World Environments/Background",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_621_Sky_Around_inputs, 2,
+        (const char *const *)bb_621_Sky_Around_outputs, 2,
+        bb_621_Sky_Around_ip, 9,
+        NULL, 0,
+        bb_621_Sky_Around_lp, 1,
+        NULL, 0,
+    },
+    { /* Look At Pos */
+        NMO_GUID_INIT(0xEE6E5E6E, 0xE6E6E6E6),
+        "Look At Pos",
+        "OBSOLETE - please see 'Look At' instead.",
+        "3D Transformations/Constraint",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_622_Look_At_Pos_inputs, 1,
+        (const char *const *)bb_622_Look_At_Pos_outputs, 1,
+        bb_622_Look_At_Pos_ip, 3,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Blink */
+        NMO_GUID_INIT(0xF00D010A, 0xFA0D010A),
+        "Blink",
+        "Blinks the 3D Entity (alternates between show and hide).",
+        "Visuals/FX",
+        "Visuals.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_623_Blink_inputs, 1,
+        (const char *const *)bb_623_Blink_outputs, 1,
+        bb_623_Blink_ip, 2,
+        NULL, 0,
+        bb_623_Blink_lp, 1,
+        NULL, 0,
+    },
+    { /* Texture Scroller */
+        NMO_GUID_INIT(0xF11D010A, 0xFB1D010A),
+        "Texture Scroller",
+        "Scrolls the UV coords of a mesh's material (or one of its channel).",
+        "Materials-Textures/Animation",
+        "Materials.dll",
+        65536, 32, 262144,
+        (const char *const *)bb_624_Texture_Scroller_inputs, 1,
+        (const char *const *)bb_624_Texture_Scroller_outputs, 1,
+        bb_624_Texture_Scroller_ip, 2,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Set Pickable */
+        NMO_GUID_INIT(0xF1499052, 0xEBE9BBF1),
+        "Set Pickable",
+        "Sets the pickable state of a 3D Entity",
+        "Interface/Screen",
+        "Interface.dll",
+        65536, 47, 262144,
+        (const char *const *)bb_625_Set_Pickable_inputs, 1,
+        (const char *const *)bb_625_Set_Pickable_outputs, 1,
+        bb_625_Set_Pickable_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Text Display */
+        NMO_GUID_INIT(0xF22D010A, 0xF2CD010A),
+        "Text Display",
+        "Displays a text on top of the 3D environment",
+        "Interface/Text",
+        "Interface.dll",
+        131072, 19, 544,
+        (const char *const *)bb_626_Text_Display_inputs, 2,
+        (const char *const *)bb_626_Text_Display_outputs, 2,
+        bb_626_Text_Display_ip, 5,
+        NULL, 0,
+        bb_626_Text_Display_lp, 4,
+        bb_626_Text_Display_st, 1,
+    },
+    { /* Change Texture Video Format */
+        NMO_GUID_INIT(0xF56D92EF, 0x41EB20C1),
+        "Change Texture Video Format",
+        "Changes the desired video memory format of the texture applied to",
+        "Materials-Textures/Texture",
+        "Materials.dll",
+        65536, 31, 262144,
+        (const char *const *)bb_627_Change_Texture_Video_Format_inputs, 1,
+        (const char *const *)bb_627_Change_Texture_Video_Format_outputs, 2,
+        bb_627_Change_Texture_Video_Format_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* IBCQ */
+        NMO_GUID_INIT(0xF5F22514, 0x123FFFEE),
+        "IBCQ",
+        "Incremental Bezier Curve Query: Interpolates a float according to a 2D Bezier curve in the [0,1] range.",
+        "Logics/Loops",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_628_IBCQ_inputs, 2,
+        (const char *const *)bb_628_IBCQ_outputs, 2,
+        bb_628_IBCQ_ip, 2,
+        bb_628_IBCQ_op, 3,
+        bb_628_IBCQ_lp, 1,
+        NULL, 0,
+    },
+    { /* Set Background Color */
+        NMO_GUID_INIT(0xF5FAAAAA, 0xFDD5BD00),
+        "Set Background Color",
+        "Sets a background color.",
+        "World Environments/Background",
+        "WorldEnvironments.dll",
+        65536, 19, 0,
+        (const char *const *)bb_629_Set_Background_Color_inputs, 1,
+        (const char *const *)bb_629_Set_Background_Color_outputs, 1,
+        bb_629_Set_Background_Color_ip, 1,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Rotate Around */
+        NMO_GUID_INIT(0xFDFD999E, 0xDEFEDED8),
+        "Rotate Around",
+        "Rotates a 3D Entity around another object.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_630_Rotate_Around_inputs, 1,
+        (const char *const *)bb_630_Rotate_Around_outputs, 1,
+        bb_630_Rotate_Around_ip, 5,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
+    { /* Bool Event */
+        NMO_GUID_INIT(0xFEFEFEFE, 0xFEFEFEFE),
+        "Bool Event",
+        "Detects a boolean value change.",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 0,
+        (const char *const *)bb_631_Bool_Event_inputs, 2,
+        (const char *const *)bb_631_Bool_Event_outputs, 2,
+        bb_631_Bool_Event_ip, 1,
+        NULL, 0,
+        bb_631_Bool_Event_lp, 1,
+        NULL, 0,
+    },
+    { /* Priority */
+        NMO_GUID_INIT(0xFFB40D68, 0x45455444),
+        "Priority",
+        "Sets priorities between several signals (Inputs Activation).",
+        "Logics/Streaming",
+        "Logics.dll",
+        65536, 19, 33554560,
+        (const char *const *)bb_632_Priority_inputs, 3,
+        (const char *const *)bb_632_Priority_outputs, 3,
+        NULL, 0,
+        NULL, 0,
+        bb_632_Priority_lp, 1,
+        NULL, 0,
+    },
+    { /* Linear Progression */
+        NMO_GUID_INIT(0xFFF45680, 0xAA512A39),
+        "Linear Progression",
+        "Increments from 'Start Value' to 'End Value' in 'Number of Steps' steps.",
+        "Logics/Loops",
+        "Logics.dll",
+        65541, 19, 0,
+        (const char *const *)bb_633_Linear_Progression_inputs, 2,
+        (const char *const *)bb_633_Linear_Progression_outputs, 2,
+        bb_633_Linear_Progression_ip, 3,
+        bb_633_Linear_Progression_op, 4,
+        NULL, 0,
+        bb_633_Linear_Progression_st, 1,
+    },
+    { /* Rotate */
+        NMO_GUID_INIT(0xFFFFFFEE, 0xEEFFFFFF),
+        "Rotate",
+        "Rotates the 3D Entity.",
+        "3D Transformations/Basic",
+        "3DTransfo.dll",
+        65536, 33, 262144,
+        (const char *const *)bb_634_Rotate_inputs, 1,
+        (const char *const *)bb_634_Rotate_outputs, 1,
+        bb_634_Rotate_ip, 4,
+        NULL, 0,
+        NULL, 0,
+        NULL, 0,
+    },
 };
 
 #define BB_BUILTIN_COUNT 635

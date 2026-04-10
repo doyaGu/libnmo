@@ -27,6 +27,9 @@ nmo_status_t nmo_register_virtools_types(nmo_type_registry_t *registry) {
     st = register_virtools_param_types(registry);
     if (st != NMO_OK) return st;
 
+    st = register_virtools_param_metadata(registry);
+    /* Non-fatal: metadata enrichment is best-effort */
+
     st = register_virtools_operation_types(registry);
     if (st != NMO_OK) return st;
 

@@ -172,6 +172,42 @@ TEST(bb_reg, count_tracks_dynamic)
     nmo_arena_destroy(arena);
 }
 
+TEST(bb_reg, builtin_has_full_data)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    nmo_bb_registry_t *reg = nmo_bb_registry_create(arena);
+
+    /* "Set Position" from TT_Toolbox_RT — should have full proto data */
+    nmo_guid_t guid = nmo_guid_create(0xE456E78A, 0x456789AA);
+    const nmo_bb_proto_t *p = nmo_bb_registry_find(reg, guid);
+    ASSERT_TRUE(p != NULL);
+    ASSERT_STR_EQ(p->name, "Set Position");
+    ASSERT_TRUE(p->description != NULL);
+    ASSERT_TRUE(p->category != NULL);
+    ASSERT_TRUE(p->dll != NULL);
+    ASSERT_TRUE(p->input_count > 0);
+    ASSERT_TRUE(p->output_count > 0);
+    ASSERT_TRUE(p->input_param_count > 0);
+    ASSERT_TRUE(p->input_params != NULL);
+    ASSERT_TRUE(p->input_params[0].name != NULL);
+
+    nmo_bb_registry_destroy(reg);
+    nmo_arena_destroy(arena);
+}
+
+TEST(bb_reg, builtin_rotate_io)
+{
+    /* Rotate has 1 input "In", 1 output "Out", multiple input params */
+    nmo_guid_t guid = nmo_guid_create(0xFFFFFFEE, 0xEEFFFFFF);
+    const nmo_bb_proto_t *p = nmo_bb_registry_find(NULL, guid);
+    ASSERT_TRUE(p != NULL);
+    ASSERT_STR_EQ(p->name, "Rotate");
+    ASSERT_TRUE(p->input_count >= 1);
+    ASSERT_STR_EQ(p->inputs[0], "In");
+    ASSERT_TRUE(p->output_count >= 1);
+    ASSERT_STR_EQ(p->outputs[0], "Out");
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, builtin_count);
     REGISTER_TEST(bb_reg, find_rotate);
@@ -181,4 +217,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(bb_reg, add_overrides_builtin);
     REGISTER_TEST(bb_reg, remove_dynamic);
     REGISTER_TEST(bb_reg, count_tracks_dynamic);
+    REGISTER_TEST(bb_reg, builtin_has_full_data);
+    REGISTER_TEST(bb_reg, builtin_rotate_io);
 TEST_MAIN_END()

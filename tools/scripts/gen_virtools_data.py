@@ -5,15 +5,12 @@ Generate Virtools data .inc files from exported JSON.
 Reads:
   data/virtools_parameter_types.json
   data/virtools_operation_types.json
-  data/virtools_building_blocks.json
+  data/virtools_building_blocks.json [+ _ext.json if present]
 
 Produces:
   src/type/virtools_param_types.inc
   src/type/virtools_operations.inc
   src/app/bb_registry_builtin.inc
-
-Usage:
-  python gen_virtools_data.py
 """
 
 import json
@@ -57,8 +54,39 @@ CATEGORY_MAP = {
 
 def write_param_types_inc(path, entries):
     entries = dedup(entries)
+    meta_enums = [e for e in entries if e['category'] == 'enum' and e.get('values')]
+    meta_flags = [e for e in entries if e['category'] == 'flags' and e.get('values')]
+    meta_structs = [e for e in entries if e['category'] == 'struct' and e.get('members')]
+
     with open(path, 'w', encoding='utf-8') as f:
         f.write(HEADER)
+
+        # Static arrays for enum/flags/struct metadata
+        for idx, e in enumerate(meta_enums):
+            vals = e['values']
+            f.write(f'static const nmo_enum_descriptor_t vt_enum_{idx}[] = {{\n')
+            for v in vals:
+                f.write(f'    {{"{c_escape(v["name"])}", {v["value"]}, NULL, 0}},\n')
+            f.write('};\n')
+
+        for idx, fl in enumerate(meta_flags):
+            vals = fl['values']
+            f.write(f'static const nmo_flags_descriptor_t vt_flags_{idx}[] = {{\n')
+            for v in vals:
+                f.write(f'    {{"{c_escape(v["name"])}", {v["value"]}, NULL, 0}},\n')
+            f.write('};\n')
+
+        for idx, st in enumerate(meta_structs):
+            members = st['members']
+            f.write(f'static const nmo_struct_descriptor_t vt_struct_{idx}[] = {{\n')
+            for m in members:
+                d1, d2 = m.get('type_guid', [0, 0])
+                f.write(f'    {{"{c_escape(m["name"])}", NMO_GUID_INIT(0x{d1:08X}, 0x{d2:08X}), 0, 0, 0, 0, NULL, NMO_GUID_INIT(0, 0), 0}},\n')
+            f.write('};\n')
+
+        f.write('\n')
+
+        # Type registration function
         f.write('static nmo_status_t register_virtools_param_types(nmo_type_registry_t *registry) {\n')
         f.write('    nmo_type_descriptor_t desc;\n')
         f.write('    nmo_status_t st;\n\n')
@@ -76,7 +104,54 @@ def write_param_types_inc(path, entries):
             f.write(f'        desc.base_type = {base}; desc.valid = true;\n')
             f.write(f'        st = nmo_type_registry_register(registry, &desc); (void)st;\n')
             f.write(f'    }}\n')
+        f.write('    return NMO_OK;\n}\n\n')
+
+        # Metadata registration function
+        f.write('static nmo_status_t register_virtools_param_metadata(nmo_type_registry_t *registry) {\n')
+        f.write('    nmo_specialized_metadata_t meta;\n')
+        f.write('    nmo_type_id_t tid;\n\n')
+
+        for idx, e in enumerate(meta_enums):
+            d1, d2 = e['guid']
+            f.write(f'    /* {e["name"]} */\n')
+            f.write(f'    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x{d1:08X}, 0x{d2:08X}));\n')
+            f.write(f'    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {{\n')
+            f.write(f'        memset(&meta, 0, sizeof(meta));\n')
+            f.write(f'        meta.type_id = tid;\n')
+            f.write(f'        meta.metadata_type = NMO_METADATA_TYPE_ENUM;\n')
+            f.write(f'        meta.enum_meta.values = vt_enum_{idx};\n')
+            f.write(f'        meta.enum_meta.value_count = {len(e["values"])};\n')
+            f.write(f'        nmo_type_registry_register_metadata(registry, &meta);\n')
+            f.write(f'    }}\n')
+
+        for idx, fl in enumerate(meta_flags):
+            d1, d2 = fl['guid']
+            f.write(f'    /* {fl["name"]} */\n')
+            f.write(f'    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x{d1:08X}, 0x{d2:08X}));\n')
+            f.write(f'    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {{\n')
+            f.write(f'        memset(&meta, 0, sizeof(meta));\n')
+            f.write(f'        meta.type_id = tid;\n')
+            f.write(f'        meta.metadata_type = NMO_METADATA_TYPE_FLAGS;\n')
+            f.write(f'        meta.flags_meta.bits = vt_flags_{idx};\n')
+            f.write(f'        meta.flags_meta.bit_count = {len(fl["values"])};\n')
+            f.write(f'        nmo_type_registry_register_metadata(registry, &meta);\n')
+            f.write(f'    }}\n')
+
+        for idx, st in enumerate(meta_structs):
+            d1, d2 = st['guid']
+            f.write(f'    /* {st["name"]} */\n')
+            f.write(f'    tid = nmo_type_registry_guid_to_type_id(registry, NMO_GUID(0x{d1:08X}, 0x{d2:08X}));\n')
+            f.write(f'    if (tid != NMO_TYPE_ID_INVALID && !nmo_type_registry_get_metadata(registry, tid)) {{\n')
+            f.write(f'        memset(&meta, 0, sizeof(meta));\n')
+            f.write(f'        meta.type_id = tid;\n')
+            f.write(f'        meta.metadata_type = NMO_METADATA_TYPE_STRUCT;\n')
+            f.write(f'        meta.struct_meta.fields = vt_struct_{idx};\n')
+            f.write(f'        meta.struct_meta.field_count = {len(st["members"])};\n')
+            f.write(f'        nmo_type_registry_register_metadata(registry, &meta);\n')
+            f.write(f'    }}\n')
+
         f.write('    return NMO_OK;\n}\n')
+
     return len(entries)
 
 
@@ -97,25 +172,89 @@ def write_operations_inc(path, entries):
     return len(entries)
 
 
+def safe_id(name, idx):
+    """Make a C-safe identifier from a BB name."""
+    s = ''.join(c if c.isalnum() else '_' for c in name)
+    return f'bb_{idx}_{s[:32]}'
+
+
 def write_bb_registry_inc(path, entries):
     entries = dedup(entries)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(HEADER)
-        f.write('typedef struct bb_builtin_entry {\n')
-        f.write('    nmo_guid_t guid;\n')
-        f.write('    const char *name;\n')
-        f.write('    const char *category;\n')
-        f.write('    const char *dll;\n')
-        f.write('} bb_builtin_entry_t;\n\n')
-        f.write('static const bb_builtin_entry_t s_bb_builtin[] = {\n')
-        for b in entries:
+
+        # Forward declare the param desc type from the header
+        f.write('/* nmo_bb_param_desc_t is defined in nmo_bb_registry.h */\n\n')
+
+        # Emit static arrays for each BB's IO names and param descs
+        for idx, b in enumerate(entries):
+            sid = safe_id(b['name'], idx)
+
+            # Input names
+            inputs = b.get('inputs', [])
+            if inputs:
+                f.write(f'static const char *{sid}_inputs[] = {{')
+                f.write(', '.join(f'"{c_escape(s)}"' for s in inputs))
+                f.write('};\n')
+
+            # Output names
+            outputs = b.get('outputs', [])
+            if outputs:
+                f.write(f'static const char *{sid}_outputs[] = {{')
+                f.write(', '.join(f'"{c_escape(s)}"' for s in outputs))
+                f.write('};\n')
+
+            # Parameter arrays
+            for pkey, pname in [('input_params', 'ip'), ('output_params', 'op'),
+                                ('local_params', 'lp'), ('settings', 'st')]:
+                params = b.get(pkey, [])
+                if params:
+                    f.write(f'static const nmo_bb_param_desc_t {sid}_{pname}[] = {{\n')
+                    for p in params:
+                        d1, d2 = p.get('type_guid', [0, 0])
+                        f.write(f'    {{"{c_escape(p.get("name", ""))}", NMO_GUID_INIT(0x{d1:08X}, 0x{d2:08X})}},\n')
+                    f.write('};\n')
+
+        f.write('\n')
+
+        # Main table
+        f.write('static const nmo_bb_proto_t s_bb_builtin[] = {\n')
+        for idx, b in enumerate(entries):
+            sid = safe_id(b['name'], idx)
             d1, d2 = b['guid']
-            f.write(f'    {{NMO_GUID_INIT(0x{d1:08X}, 0x{d2:08X}), '
-                    f'"{c_escape(b["name"])}", '
-                    f'"{c_escape(b.get("category", ""))}", '
-                    f'"{c_escape(b.get("dll", ""))}"}},\n')
+
+            inputs = b.get('inputs', [])
+            outputs = b.get('outputs', [])
+            ip = b.get('input_params', [])
+            op = b.get('output_params', [])
+            lp = b.get('local_params', [])
+            st = b.get('settings', [])
+
+            in_ref = f'{sid}_inputs' if inputs else 'NULL'
+            out_ref = f'{sid}_outputs' if outputs else 'NULL'
+            ip_ref = f'{sid}_ip' if ip else 'NULL'
+            op_ref = f'{sid}_op' if op else 'NULL'
+            lp_ref = f'{sid}_lp' if lp else 'NULL'
+            st_ref = f'{sid}_st' if st else 'NULL'
+
+            f.write(f'    {{ /* {b["name"]} */\n')
+            f.write(f'        NMO_GUID_INIT(0x{d1:08X}, 0x{d2:08X}),\n')
+            f.write(f'        "{c_escape(b["name"])}",\n')
+            f.write(f'        "{c_escape(b.get("description", ""))}",\n')
+            f.write(f'        "{c_escape(b.get("category", ""))}",\n')
+            f.write(f'        "{c_escape(b.get("dll", ""))}",\n')
+            f.write(f'        {b.get("version", 0)}, {b.get("compatible_class_id", 0)}, {b.get("behavior_flags", 0)},\n')
+            f.write(f'        (const char *const *){in_ref}, {len(inputs)},\n')
+            f.write(f'        (const char *const *){out_ref}, {len(outputs)},\n')
+            f.write(f'        {ip_ref}, {len(ip)},\n')
+            f.write(f'        {op_ref}, {len(op)},\n')
+            f.write(f'        {lp_ref}, {len(lp)},\n')
+            f.write(f'        {st_ref}, {len(st)},\n')
+            f.write(f'    }},\n')
+
         f.write('};\n\n')
         f.write(f'#define BB_BUILTIN_COUNT {len(entries)}\n')
+
     return len(entries)
 
 
@@ -123,29 +262,24 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     data_dir = os.path.join(root, 'data')
 
-    pt_path = os.path.join(data_dir, 'virtools_parameter_types.json')
-    op_path = os.path.join(data_dir, 'virtools_operation_types.json')
-    bb_path = os.path.join(data_dir, 'virtools_building_blocks.json')
+    pt = json.load(open(os.path.join(data_dir, 'virtools_parameter_types.json'), encoding='utf-8'))
+    ops = json.load(open(os.path.join(data_dir, 'virtools_operation_types.json'), encoding='utf-8'))
 
-    for p in [pt_path, op_path, bb_path]:
-        if not os.path.isfile(p):
-            print(f'Error: {p} not found', file=sys.stderr)
-            return 1
-
-    pt = json.load(open(pt_path, encoding='utf-8'))
-    ops = json.load(open(op_path, encoding='utf-8'))
-    bbs = json.load(open(bb_path, encoding='utf-8'))
-    print(f'Input: {len(pt)} param types, {len(ops)} operations, {len(bbs)} BBs')
+    # Load standard BBs, optionally merge extended
+    bbs = json.load(open(os.path.join(data_dir, 'virtools_building_blocks.json'), encoding='utf-8'))
+    ext_path = os.path.join(data_dir, 'virtools_building_blocks_ext.json')
+    if os.path.isfile(ext_path):
+        ext = json.load(open(ext_path, encoding='utf-8'))
+        bbs = bbs + ext
+        print(f'Input: {len(pt)} param types, {len(ops)} operations, {len(bbs)} BBs (incl. {len(ext)} extended)')
+    else:
+        print(f'Input: {len(pt)} param types, {len(ops)} operations, {len(bbs)} BBs')
 
     n1 = write_param_types_inc(os.path.join(root, 'src', 'type', 'virtools_param_types.inc'), pt)
     n2 = write_operations_inc(os.path.join(root, 'src', 'type', 'virtools_operations.inc'), ops)
     n3 = write_bb_registry_inc(os.path.join(root, 'src', 'app', 'bb_registry_builtin.inc'), bbs)
 
-    print(f'Output:')
-    print(f'  src/type/virtools_param_types.inc: {n1} entries')
-    print(f'  src/type/virtools_operations.inc: {n2} entries')
-    print(f'  src/app/bb_registry_builtin.inc: {n3} entries')
-    return 0
+    print(f'Output: {n1} param types, {n2} operations, {n3} BBs')
 
 
 if __name__ == '__main__':

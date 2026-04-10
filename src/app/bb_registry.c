@@ -11,12 +11,12 @@
 #include <string.h>
 
 /* ============================================================================
- * Compiled-in builtin table (sorted by GUID for binary search)
+ * Compiled-in builtin table — full nmo_bb_proto_t entries, sorted by GUID
  * ============================================================================ */
 
 #include "bb_registry_builtin.inc"
 
-static const bb_builtin_entry_t *builtin_find(nmo_guid_t guid) {
+static const nmo_bb_proto_t *builtin_find(nmo_guid_t guid) {
     size_t lo = 0, hi = BB_BUILTIN_COUNT;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
@@ -28,7 +28,7 @@ static const bb_builtin_entry_t *builtin_find(nmo_guid_t guid) {
 }
 
 /* ============================================================================
- * Dynamic entry storage (hash map)
+ * Dynamic entry storage (hash map for runtime additions)
  * ============================================================================ */
 
 #define HASH_BUCKETS 256
@@ -49,7 +49,7 @@ static uint32_t bucket_of(nmo_guid_t guid) {
 }
 
 /* ============================================================================
- * Arena string/array helpers
+ * Arena deep-copy helpers
  * ============================================================================ */
 
 static char *arena_strdup(nmo_arena_t *arena, const char *s) {
@@ -105,7 +105,7 @@ static void deep_copy_proto(nmo_arena_t *arena, nmo_bb_proto_t *dst, const nmo_b
 }
 
 /* ============================================================================
- * API implementation
+ * API
  * ============================================================================ */
 
 nmo_bb_registry_t *nmo_bb_registry_create(nmo_arena_t *arena) {
@@ -119,13 +119,11 @@ nmo_bb_registry_t *nmo_bb_registry_create(nmo_arena_t *arena) {
 }
 
 void nmo_bb_registry_destroy(nmo_bb_registry_t *registry) {
-    /* Arena-allocated: nothing to free individually.
-     * The arena owns all memory. This is a no-op. */
-    (void)registry;
+    (void)registry; /* arena-allocated */
 }
 
 const nmo_bb_proto_t *nmo_bb_registry_find(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
-    if (!registry) return NULL;
+    if (!registry) return builtin_find(guid);
 
     /* Dynamic entries first */
     uint32_t idx = bucket_of(guid);
@@ -134,33 +132,13 @@ const nmo_bb_proto_t *nmo_bb_registry_find(const nmo_bb_registry_t *registry, nm
             return &e->proto;
     }
 
-    /* Builtin fallback — return a static nmo_bb_proto_t from thread-local storage */
-    const bb_builtin_entry_t *b = builtin_find(guid);
-    if (b) {
-        static _Thread_local nmo_bb_proto_t tls_proto;
-        memset(&tls_proto, 0, sizeof(tls_proto));
-        tls_proto.guid = b->guid;
-        tls_proto.name = b->name;
-        tls_proto.category = b->category;
-        tls_proto.dll = b->dll;
-        return &tls_proto;
-    }
-    return NULL;
+    /* Builtin fallback — returns pointer into static const table (full data) */
+    return builtin_find(guid);
 }
 
 const char *nmo_bb_registry_get_name(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
-    if (!registry) return NULL;
-
-    /* Dynamic entries first */
-    uint32_t idx = bucket_of(guid);
-    for (dyn_bb_entry_t *e = registry->buckets[idx]; e; e = e->next) {
-        if (nmo_guid_equals(e->proto.guid, guid))
-            return e->proto.name;
-    }
-
-    /* Builtin fallback */
-    const bb_builtin_entry_t *b = builtin_find(guid);
-    return b ? b->name : NULL;
+    const nmo_bb_proto_t *p = nmo_bb_registry_find(registry, guid);
+    return p ? p->name : NULL;
 }
 
 nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto_t *proto) {
@@ -169,11 +147,10 @@ nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto
                          "NULL argument to nmo_bb_registry_add");
     }
 
-    /* Check for existing entry (update in-place) */
+    /* Update existing? */
     uint32_t idx = bucket_of(proto->guid);
     for (dyn_bb_entry_t *e = registry->buckets[idx]; e; e = e->next) {
         if (nmo_guid_equals(e->proto.guid, proto->guid)) {
-            /* Overwrite — arena data is leaked but arena will reclaim */
             deep_copy_proto(registry->arena, &e->proto, proto);
             return NMO_OK;
         }
@@ -200,7 +177,6 @@ bool nmo_bb_registry_remove(nmo_bb_registry_t *registry, nmo_guid_t guid) {
     while (*pp) {
         if (nmo_guid_equals((*pp)->proto.guid, guid)) {
             *pp = (*pp)->next;
-            /* Arena-allocated: cannot individually free, just unlink */
             registry->dynamic_count--;
             return true;
         }
@@ -222,8 +198,8 @@ size_t nmo_bb_registry_builtin_count(const nmo_bb_registry_t *registry) {
 /* Static (no-instance) builtin lookups */
 
 const char *nmo_bb_builtin_get_name(nmo_guid_t guid) {
-    const bb_builtin_entry_t *b = builtin_find(guid);
-    return b ? b->name : NULL;
+    const nmo_bb_proto_t *p = builtin_find(guid);
+    return p ? p->name : NULL;
 }
 
 size_t nmo_bb_builtin_count(void) {
