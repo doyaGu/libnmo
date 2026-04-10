@@ -462,9 +462,11 @@ bool nmo_behavior_graph_build(nmo_context_t *ctx,
         const nmo_behavior_graph_io_owner_t *out_owner =
             find_io_owner(io_owners, io_owner_count, link_state->out_io_id);
 
+        /* Virtools SDK naming: in_io = SOURCE, out_io = TARGET (backwards!)
+         * Edge direction: in_owner (source BB) -> out_owner (target BB) */
         if (in_owner && out_owner) {
             if (!add_graph_edge(&edges, &edge_count, &edge_cap, link_id,
-                                out_owner->behavior_id, in_owner->behavior_id,
+                                in_owner->behavior_id, out_owner->behavior_id,
                                 "behavior_link", "sub_behavior_links",
                                 link_state->in_io_id, link_state->out_io_id,
                                 link_state->activation_delay, link_state->initial_activation_delay, false)) {
@@ -480,7 +482,7 @@ bool nmo_behavior_graph_build(nmo_context_t *ctx,
                 goto fail_nomem;
             }
             if (!add_graph_edge(&edges, &edge_count, &edge_cap, link_id,
-                                link_state->out_io_id, link_state->in_io_id,
+                                link_state->in_io_id, link_state->out_io_id,
                                 "io_link", "sub_behavior_links",
                                 link_state->in_io_id, link_state->out_io_id, 0, 0, false)) {
                 goto fail_nomem;

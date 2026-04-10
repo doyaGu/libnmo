@@ -1069,16 +1069,17 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
                 snprintf(link_buf, sizeof(link_buf), "-");
             }
 
+            /* in_io = source, out_io = target (Virtools SDK naming) */
             if (edge_ref.kind && strcmp(edge_ref.kind, "behavior_link") == 0) {
                 snprintf(meta_buf, sizeof(meta_buf), "io %u->%u %d/%d",
-                         edge_ref.out_io_id,
                          edge_ref.in_io_id,
+                         edge_ref.out_io_id,
                          edge_ref.activation_delay,
                          edge_ref.initial_activation_delay);
             } else if (edge_ref.kind && strcmp(edge_ref.kind, "io_link") == 0) {
                 snprintf(meta_buf, sizeof(meta_buf), "io %u->%u",
-                         edge_ref.out_io_id,
-                         edge_ref.in_io_id);
+                         edge_ref.in_io_id,
+                         edge_ref.out_io_id);
             } else if (edge_ref.kind && strcmp(edge_ref.kind, "param_source") == 0 && edge_ref.is_shared) {
                 snprintf(meta_buf, sizeof(meta_buf), "shared");
             } else {
