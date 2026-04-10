@@ -28,12 +28,13 @@ typedef struct runtime_id_pair {
 } runtime_id_pair_t;
 
 typedef struct runtime_id_set {
-    nmo_object_id_t *ids;
-    size_t count;
-    size_t capacity;
-    nmo_arena_t *arena;
+    nmo_arena_array_t ids;  /**< Ordered list of member IDs (for iteration) */
     nmo_bit_array_t bits;   /**< Bit array for O(1) membership test */
 } runtime_id_set_t;
+
+#define ID_SET_COUNT(s)   ((s)->ids.count)
+#define ID_SET_AT(s, i)   (((nmo_object_id_t *)(s)->ids.data)[(i)])
+#define ID_SET_DATA(s)    ((nmo_object_id_t *)(s)->ids.data)
 
 typedef struct runtime_created_layer {
     const nmo_type_descriptor_t *type;
@@ -159,21 +160,17 @@ static int runtime_id_set_init(
     }
 
     memset(set, 0, sizeof(*set));
-    set->arena = arena;
 
     if (initial_capacity == 0) {
         initial_capacity = 1;
     }
 
-    set->ids = (nmo_object_id_t *)nmo_arena_alloc(
-        arena, initial_capacity * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
-    if (set->ids == NULL) {
-        return NMO_ERR_NOMEM;
+    nmo_status_t arr_st = nmo_arena_array_init(
+        &set->ids, sizeof(nmo_object_id_t), initial_capacity, arena);
+    if (arr_st != NMO_OK) {
+        return arr_st;
     }
 
-    set->capacity = initial_capacity;
-
-    /* Initialize bit array for O(1) membership testing */
     size_t bit_cap = initial_capacity > 1024 ? initial_capacity : 1024;
     nmo_bit_array_init(&set->bits, bit_cap, NULL);
 
@@ -308,23 +305,12 @@ static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
         return NMO_OK;
     }
 
-    /* Grow ID array if needed */
-    if (set->count == set->capacity) {
-        size_t new_capacity = set->capacity * 2;
-        nmo_object_id_t *new_ids = (nmo_object_id_t *)nmo_arena_alloc(
-            set->arena, new_capacity * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
-        if (new_ids == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-
-        memcpy(new_ids, set->ids, set->count * sizeof(nmo_object_id_t));
-        set->ids = new_ids;
-        set->capacity = new_capacity;
+    nmo_status_t st = nmo_arena_array_append(&set->ids, &id);
+    if (st != NMO_OK) {
+        return st;
     }
 
-    set->ids[set->count++] = id;
     nmo_bit_array_set(&set->bits, (size_t)id);
-
     return NMO_OK;
 }
 
@@ -591,11 +577,12 @@ static int runtime_collect_delete_set(
         return NMO_OK;
     }
 
-    /* Worklist: indices into out_set->ids to process */
-    size_t worklist_head = 0; /* next to process = out_set->ids[worklist_head] */
+    /* Worklist: index into the id set's array. New IDs appended
+     * by runtime_id_set_add are automatically reached. */
+    size_t worklist_head = 0;
 
-    while (worklist_head < out_set->count) {
-        nmo_object_id_t target_id = out_set->ids[worklist_head++];
+    while (worklist_head < ID_SET_COUNT(out_set)) {
+        nmo_object_id_t target_id = ID_SET_AT(out_set, worklist_head++);
 
         nmo_ref_edge_t *in_edges = NULL;
         size_t in_count = 0;
@@ -654,8 +641,8 @@ int runtime_kernel_preview_delete(
         return result;
     }
 
-    *out_ids = delete_set.ids;
-    *out_count = delete_set.count;
+    *out_ids = ID_SET_DATA(&delete_set);
+    *out_count = ID_SET_COUNT(&delete_set);
     nmo_bit_array_dispose(&delete_set.bits);
     return NMO_OK;
 }
@@ -988,15 +975,15 @@ static int runtime_execute_delete(
 
     /* Pass 1: pre_delete hooks + detach from repository */
     nmo_object_t **detached_objects = (nmo_object_t **)nmo_arena_alloc(
-        arena, delete_set.count * sizeof(nmo_object_t *),
+        arena, ID_SET_COUNT(&delete_set) * sizeof(nmo_object_t *),
         _Alignof(nmo_object_t *));
-    if (detached_objects == NULL && delete_set.count > 0) {
+    if (detached_objects == NULL && ID_SET_COUNT(&delete_set) > 0) {
         return NMO_ERR_NOMEM;
     }
     size_t detached_count = 0;
 
-    for (size_t i = 0; i < delete_set.count; i++) {
-        nmo_object_id_t object_id = delete_set.ids[i];
+    for (size_t i = 0; i < ID_SET_COUNT(&delete_set); i++) {
+        nmo_object_id_t object_id = ID_SET_AT(&delete_set, i);
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
         if (obj == NULL) {
             continue;
