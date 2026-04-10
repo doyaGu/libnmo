@@ -146,6 +146,37 @@ TEST(vt, signature_only_not_executable) {
     nmo_context_release(ctx);
 }
 
+TEST(vt, builtin_overrides_json_signature) {
+    /* After GUID unification, looking up Addition (Virtools GUID) with
+     * Float+Float should find the builtin C implementation, not a
+     * JSON stub. This is the key invariant of the unified system. */
+    nmo_context_t *ctx = create_ctx_with_data();
+    ASSERT_TRUE(ctx != NULL);
+    nmo_operation_registry_t *op_reg = nmo_context_get_operation_registry(ctx);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    nmo_guid_t add_guid = nmo_guid_create(0x33CC6B49, 0x3589282B);
+    nmo_guid_t float_guid = nmo_guid_create(0x47884C3F, 0x432C2C20);
+    const nmo_type_descriptor_t *float_type = nmo_type_registry_find_by_guid(reg, float_guid);
+    ASSERT_TRUE(float_type != NULL);
+
+    const nmo_operation_tree_cell_t *cell = NULL;
+    nmo_status_t st = nmo_operation_registry_find(
+        op_reg, &add_guid, float_type, float_type, reg, &cell);
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_TRUE(cell != NULL);
+    ASSERT_TRUE(cell->desc.function != NULL);
+
+    /* Verify the function actually computes correctly */
+    float a = 1.5f, b = 2.5f, result = 0.0f;
+    st = cell->desc.function(&a, float_type, &b, float_type,
+                             &result, float_type, cell->desc.user_data);
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_FLOAT_EQ(4.0f, result, 0.001f);
+
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_addition);
     REGISTER_TEST(vt, operation_equal);
@@ -156,4 +187,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(vt, operation_signatures_loaded);
     REGISTER_TEST(vt, operation_signature_lookup);
     REGISTER_TEST(vt, signature_only_not_executable);
+    REGISTER_TEST(vt, builtin_overrides_json_signature);
 TEST_MAIN_END()

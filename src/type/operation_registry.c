@@ -288,8 +288,18 @@ static nmo_status_t insert_operation_cell(
     for (uint32_t i = 0; i < p2_layer->cell_count; i++) {
         nmo_operation_tree_cell_t *cell = &p2_layer->cells[i];
         if (nmo_guid_equals(cell->desc.result_type_guid, desc->result_type_guid)) {
-            /* Update if new priority is higher */
-            if (desc->priority > cell->desc.priority) {
+            /* Override policy: non-NULL function always beats NULL function
+             * (C implementation replaces JSON stub). When both are the same
+             * NULL/non-NULL status, higher priority wins. */
+            bool should_override = false;
+            if (desc->function && !cell->desc.function) {
+                should_override = true;
+            } else if (!desc->function && cell->desc.function) {
+                should_override = false;
+            } else {
+                should_override = (desc->priority > cell->desc.priority);
+            }
+            if (should_override) {
                 cell->desc = *desc;
                 cell->p1_type = p1_type;
                 cell->p2_type = p2_type;
