@@ -979,8 +979,8 @@ nmo_status_t nmo_register_builtin_types(nmo_type_registry_t *type_registry) {
     nmo_type_descriptor_t bool_type = {
         .guid = CKPGUID_BOOL,
         .name = "bool",
-        .size = sizeof(bool),
-        .alignment = alignof(bool),
+        .size = sizeof(int32_t),          /* Virtools BOOL is 4 bytes (int-sized) */
+        .alignment = sizeof(int32_t),
         .class_id = 0,
         .base_type = CKPGUID_INT, /* Virtools: Boolean derived from Integer */
         .category = NMO_TYPE_CATEGORY_SCALAR,
