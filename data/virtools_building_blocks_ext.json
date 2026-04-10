@@ -1774,8 +1774,8 @@
     "inputs": ["On", "Off"],
     "outputs": ["Out 0", "Out 1"],
     "input_params": [
-      {"name": "Key 0", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""},
-      {"name": "Key 1", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key 0", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""},
+      {"name": "Key 1", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [],
     "local_params": [],
@@ -1796,12 +1796,12 @@
     "outputs": ["On", "Off", "Updated String"],
     "input_params": [
       {"name": "Reset String", "type_guid": [1808797922, 290854890], "type_name": "String", "default_value": ""},
-      {"name": "End Key", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "End Key", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [
       {"name": "String", "type_guid": [1808797922, 290854890], "type_name": "String", "default_value": ""},
       {"name": "StringWithoutCaret", "type_guid": [1808797922, 290854890], "type_name": "String", "default_value": ""},
-      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "local_params": [
       {"name": "", "type_guid": [1515656957, 1155692247], "type_name": "Integer", "default_value": "0"},
@@ -1849,7 +1849,7 @@
     "inputs": ["In", "Off"],
     "outputs": ["Out"],
     "input_params": [
-      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [],
     "local_params": [],

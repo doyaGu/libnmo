@@ -1073,13 +1073,13 @@
     ],
     "local_params": [],
     "settings": [
-      {"name": "Key Zoom In", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Numpad -"},
-      {"name": "Key Zoom Out", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Numpad +"},
-      {"name": "Key Rotate Up", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Up Arrow"},
-      {"name": "Key Rotate Down", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Down Arrow"},
-      {"name": "Key Rotate Left", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Left Arrow"},
-      {"name": "Key Rotate Right", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Right Arrow"},
-      {"name": "Key Speed x2", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Right Shift"}
+      {"name": "Key Zoom In", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Numpad -"},
+      {"name": "Key Zoom Out", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Numpad +"},
+      {"name": "Key Rotate Up", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Up Arrow"},
+      {"name": "Key Rotate Down", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Down Arrow"},
+      {"name": "Key Rotate Left", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Left Arrow"},
+      {"name": "Key Rotate Right", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Right Arrow"},
+      {"name": "Key Speed x2", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Right Shift"}
     ]
   },
   {
@@ -1117,12 +1117,12 @@
     "settings": [
       {"name": "Limits", "type_guid": [450177678, 1584666912], "type_name": "Boolean", "default_value": "TRUE"},
       {"name": "Returns", "type_guid": [450177678, 1584666912], "type_name": "Boolean", "default_value": "TRUE"},
-      {"name": "Key Rotate Left", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Left Arrow"},
-      {"name": "Key Rotate Right", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Right Arrow"},
-      {"name": "Key Rotate Up", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Up Arrow"},
-      {"name": "Key Rotate Down", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "Down Arrow"},
-      {"name": "Key Zoom In", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "PREVIOUS"},
-      {"name": "Key Zoom Out", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": "NEXT"}
+      {"name": "Key Rotate Left", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Left Arrow"},
+      {"name": "Key Rotate Right", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Right Arrow"},
+      {"name": "Key Rotate Up", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Up Arrow"},
+      {"name": "Key Rotate Down", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "Down Arrow"},
+      {"name": "Key Zoom In", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "PREVIOUS"},
+      {"name": "Key Zoom Out", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": "NEXT"}
     ]
   },
   {
@@ -2067,7 +2067,7 @@
     "inputs": ["On", "Off"],
     "outputs": ["Pressed", "Released"],
     "input_params": [
-      {"name": "Key Waited", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key Waited", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [
       {"name": "Key State", "type_guid": [450177678, 1584666912], "type_name": "Boolean", "default_value": ""}
@@ -2089,7 +2089,7 @@
     "inputs": ["In"],
     "outputs": ["Out"],
     "input_params": [
-      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [],
     "local_params": [],
@@ -2152,8 +2152,8 @@
     "inputs": ["On", "Off"],
     "outputs": ["Out 0", "Out 1"],
     "input_params": [
-      {"name": "Key 0", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""},
-      {"name": "Key 1", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key 0", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""},
+      {"name": "Key 1", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [],
     "local_params": [],
@@ -2174,11 +2174,11 @@
     "outputs": ["On", "Off", "Updated String"],
     "input_params": [
       {"name": "Reset String", "type_guid": [1808797922, 290854890], "type_name": "String", "default_value": ""},
-      {"name": "End Key", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "End Key", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [
       {"name": "String", "type_guid": [1808797922, 290854890], "type_name": "String", "default_value": ""},
-      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "local_params": [
       {"name": "", "type_guid": [1515656957, 1155692247], "type_name": "Integer", "default_value": "0"},
@@ -9148,7 +9148,7 @@
       {"name": "Synchro Array Name", "type_guid": [1808797922, 290854890], "type_name": "String", "default_value": "Synchro Array"},
       {"name": "Min", "type_guid": [1200114751, 1126968352], "type_name": "Float", "default_value": "0"},
       {"name": "Max", "type_guid": [1200114751, 1126968352], "type_name": "Float", "default_value": "1"},
-      {"name": "Key 0", "type_guid": [4201520093, 1657973719], "type_name": null, "default_value": ""}
+      {"name": "Key 0", "type_guid": [4201520093, 1657973719], "type_name": "Keyboard Key", "default_value": ""}
     ],
     "output_params": [
       {"name": "Synchro Array", "type_guid": [38621937, 1736582066], "type_name": "Array", "default_value": ""}
