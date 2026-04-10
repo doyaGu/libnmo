@@ -177,18 +177,13 @@ add_unit_test(test_param_value)
 # Script walker
 add_unit_test(test_script_walker)
 
-# BB prototype registry + Virtools data loading (needs nmo_json for JSON loader)
-if(TARGET nmo_json)
-    add_executable(test_bb_registry test_bb_registry.c)
-    target_link_libraries(test_bb_registry PRIVATE nmo nmo_json test_framework)
-    add_test(NAME test_bb_registry COMMAND test_bb_registry)
-    set_tests_properties(test_bb_registry PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+# BB prototype registry (JSON loader now in nmo core)
+add_unit_test(test_bb_registry)
+set_tests_properties(test_bb_registry PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
-    add_executable(test_virtools_types test_virtools_types.c)
-    target_link_libraries(test_virtools_types PRIVATE nmo nmo_json test_framework)
-    add_test(NAME test_virtools_types COMMAND test_virtools_types)
-    set_tests_properties(test_virtools_types PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-endif()
+# Virtools data loading (param types + operations from JSON)
+add_unit_test(test_virtools_types)
+set_tests_properties(test_virtools_types PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Behavior ownership index
 add_unit_test(test_behavior_index)

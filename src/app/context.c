@@ -19,6 +19,9 @@
 #include "core/nmo_array.h"
 #include "app/nmo_session.h"
 #include "app/nmo_bb_registry.h"
+#include "app/nmo_virtools_loader.h"
+
+#include <stdlib.h> /* getenv */
 #include "object/nmo_object_repository.h"
 #include <stdlib.h>
 #include <string.h>
@@ -186,11 +189,23 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
+    /* Create BB prototype registry */
+    ctx->bb_registry = nmo_bb_registry_create(ctx->arena);
+
+    /* Load Virtools plugin data (param types, operations, BBs) from JSON.
+     * This happens BEFORE finalize so no begin_update hack is needed.
+     * data_dir is resolved from: desc->data_dir > NMO_DATA_DIR env > NULL (skip). */
+    {
+        const char *data_dir = (desc != NULL) ? desc->data_dir : NULL;
+        if (data_dir == NULL)
+            data_dir = getenv("NMO_DATA_DIR");
+        if (data_dir != NULL) {
+            nmo_virtools_load_data_dir(ctx->type_registry, ctx->bb_registry, data_dir);
+        }
+    }
+
     /* Compute state layouts for all types (ECS support) */
     nmo_type_registry_compute_state_layouts(ctx->type_registry);
-
-    /* Create BB prototype registry (populated later by JSON loader) */
-    ctx->bb_registry = nmo_bb_registry_create(ctx->arena);
 
     ctx->operation_registry = nmo_operation_registry_create(ctx->arena);
     if (ctx->operation_registry == NULL) {

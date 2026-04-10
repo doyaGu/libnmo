@@ -326,15 +326,15 @@ set(NMO_APP_SOURCES
     src/app/script_walker.c
     src/app/bb_registry.c
     src/app/behavior_index.c
+    src/app/virtools_loader.c
 )
 
 set(NMO_JSON_SOURCES
     src/app/json_util.c
     src/app/object_summary.c
-    src/app/virtools_loader.c
 )
 
-# Combine all sources
+# Combine all sources (yyjson compiled directly into nmo)
 set(NMO_SOURCES
     ${NMO_CORE_SOURCES}
     ${NMO_IO_SOURCES}
@@ -345,6 +345,7 @@ set(NMO_SOURCES
     ${NMO_EXTENSION_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_APP_SOURCES}
+    ${YYJSON_DIR}/src/yyjson.c
 )
 
 # Create library
@@ -359,7 +360,7 @@ target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS
 # Link dependencies
 target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
 
-target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps)
+target_include_directories(nmo PRIVATE ${PROJECT_SOURCE_DIR}/deps ${YYJSON_DIR}/src)
 
 if(YYJSON_FOUND)
     add_library(nmo_json STATIC ${NMO_JSON_SOURCES})

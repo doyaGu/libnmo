@@ -37,6 +37,7 @@ typedef struct nmo_context_desc {
     const nmo_allocator_t *allocator; /**< Memory allocator config (NULL for default) */
     const nmo_logger_t *logger;       /**< Logger config (NULL for default) */
     int thread_pool_size;       /**< Thread pool size (0 for no threading) */
+    const char *data_dir;       /**< Virtools data directory (NULL = auto-discover) */
 } nmo_context_desc_t;
 
 /**

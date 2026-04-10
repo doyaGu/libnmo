@@ -35,7 +35,11 @@ bool nmo_session_open_file_with_context(const char *path,
     *out_ctx = NULL;
     *out_session = NULL;
 
-    nmo_context_t *ctx = nmo_context_create(NULL);
+    /* Create context with data_dir="data" for Virtools data auto-loading */
+    nmo_context_desc_t desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.data_dir = "data";
+    nmo_context_t *ctx = nmo_context_create(&desc);
     if (!ctx) {
         nmo_set_error_text(errbuf, errbuf_size, "Failed to create libnmo context");
         return false;

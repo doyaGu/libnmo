@@ -148,9 +148,6 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
     if (!registry || !path)
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "null arg");
 
-    /* Reopen for mutation if finalized */
-    nmo_type_registry_begin_update(registry);
-
     yyjson_read_err err;
     yyjson_doc *doc = yyjson_read_file(path, 0, NULL, &err);
     if (!doc)
@@ -377,11 +374,6 @@ nmo_status_t nmo_virtools_load_data_dir(
         /* Also try extended BBs */
         snprintf(path, sizeof(path), "%s/virtools_building_blocks_ext.json", data_dir);
         nmo_virtools_load_building_blocks(bb_registry, path); /* optional */
-    }
-
-    /* Re-finalize registry after mutations */
-    if (registry) {
-        nmo_type_registry_finalize(registry);
     }
 
     if (loaded == 0)
