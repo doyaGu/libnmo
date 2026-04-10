@@ -99,24 +99,47 @@ NMO_API nmo_status_t nmo_script_walker_walk(
     void *user_data);
 
 /* ============================================================================
- * Parameter source tracing
+ * Parameter source tracing (typed chain)
  * ============================================================================ */
 
 /**
- * @brief Trace a ParameterIn back to its data source.
+ * @brief Step type in a parameter source chain.
+ */
+typedef enum nmo_param_chain_step_type {
+    NMO_CHAIN_STEP_START,            /**< Starting ParameterIn */
+    NMO_CHAIN_STEP_SHARED_SOURCE,    /**< Hop via SharedSource (pIn -> pIn) */
+    NMO_CHAIN_STEP_DIRECT_SOURCE,    /**< Hop via DirectSource (pIn -> pOut/pLocal) */
+} nmo_param_chain_step_type_t;
+
+/**
+ * @brief One step in a parameter source chain.
  *
- * Follows the source_id chain: ParameterIn -> ParameterOut/ParameterLocal,
- * possibly through ParameterOperations. Returns the chain of object IDs
- * from the input to the ultimate source.
+ * For ParameterIn nodes: type reflects how this node's own source is
+ * resolved (is_shared => SHARED_SOURCE, !is_shared => DIRECT_SOURCE).
+ * The first step is always START regardless of is_shared.
+ * For terminal nodes (ParameterOut/ParameterLocal): type is DIRECT_SOURCE.
+ */
+typedef struct nmo_param_chain_step {
+    nmo_object_id_t id;              /**< Object ID at this step */
+    nmo_param_chain_step_type_t type; /**< Source resolution type of this node */
+    nmo_object_id_t owner_id;        /**< Owning behavior ID (0 if unknown) */
+    nmo_class_id_t class_id;         /**< Object class (ParameterIn/Out/Local) */
+} nmo_param_chain_step_t;
+
+/**
+ * @brief Trace a ParameterIn back to its data source with typed steps.
+ *
+ * Each step reports whether it was a SharedSource or DirectSource hop,
+ * plus the owning behavior ID (via behavior_index if available).
  *
  * @param ctx            Context
  * @param session        Session
  * @param param_in_id    Starting ParameterIn object ID
- * @param out_chain      Output array of nmo_object_id_t (caller-inited)
- * @param max_depth      Maximum chain depth (0 = unlimited, 32 recommended)
+ * @param out_chain      Output array of nmo_param_chain_step_t (caller-inited)
+ * @param max_depth      Maximum chain depth (0 = default 32)
  * @return NMO_OK on success
  */
-NMO_API nmo_status_t nmo_script_walker_trace_param_source(
+NMO_API nmo_status_t nmo_script_walker_trace_param_chain(
     nmo_context_t *ctx,
     nmo_session_t *session,
     nmo_object_id_t param_in_id,

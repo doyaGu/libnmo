@@ -7,6 +7,7 @@
  */
 
 #include "app/nmo_script_walker.h"
+#include "app/nmo_behavior_index.h"
 #include "app/nmo_param_value.h"
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
@@ -176,7 +177,7 @@ nmo_status_t nmo_script_walker_walk(
  * Parameter source tracing
  * ============================================================================ */
 
-nmo_status_t nmo_script_walker_trace_param_source(
+nmo_status_t nmo_script_walker_trace_param_chain(
     nmo_context_t *ctx,
     nmo_session_t *session,
     nmo_object_id_t param_in_id,
@@ -185,7 +186,7 @@ nmo_status_t nmo_script_walker_trace_param_source(
 {
     if (!ctx || !session || !out_chain) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "NULL argument to nmo_script_walker_trace_param_source");
+                         "NULL argument to nmo_script_walker_trace_param_chain");
     }
 
     if (max_depth == 0) max_depth = 32;
@@ -196,25 +197,55 @@ nmo_status_t nmo_script_walker_trace_param_source(
                          "No object repository in session");
     }
 
+    const nmo_behavior_index_t *beh_index = nmo_session_get_behavior_index(session);
     nmo_object_id_t current_id = param_in_id;
 
     for (uint32_t step = 0; step < max_depth; ++step) {
         if (current_id == 0) break;
-
-        nmo_array_append(out_chain, &current_id);
 
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, current_id);
         if (!obj) break;
 
         nmo_class_id_t cid = nmo_object_get_class_id(obj);
 
+        nmo_object_id_t owner_id = 0;
+        if (beh_index) {
+            const nmo_port_owner_t *owner = nmo_behavior_index_find(beh_index, current_id);
+            if (owner) owner_id = owner->owner_id;
+        }
+
         if (cid == NMO_CID_PARAMETERIN) {
             const nmo_parameterin_state_t *pin =
                 (const nmo_parameterin_state_t *)nmo_object_get_state(obj);
+
+            nmo_param_chain_step_type_t step_type;
+            if (step == 0) {
+                step_type = NMO_CHAIN_STEP_START;
+            } else if (pin && pin->is_shared) {
+                step_type = NMO_CHAIN_STEP_SHARED_SOURCE;
+            } else {
+                step_type = NMO_CHAIN_STEP_DIRECT_SOURCE;
+            }
+
+            nmo_param_chain_step_t chain_step = {
+                current_id, step_type, owner_id, cid
+            };
+            if (nmo_array_append(out_chain, &chain_step) != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Out of memory in trace_param_chain");
+            }
+
             if (!pin || pin->source_id == 0) break;
             current_id = pin->source_id;
         } else {
             /* Reached a non-ParameterIn (ParameterOut, ParameterLocal, etc.) */
+            nmo_param_chain_step_t chain_step = {
+                current_id, NMO_CHAIN_STEP_DIRECT_SOURCE, owner_id, cid
+            };
+            if (nmo_array_append(out_chain, &chain_step) != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Out of memory in trace_param_chain");
+            }
             break;
         }
     }

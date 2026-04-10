@@ -38,9 +38,9 @@ TEST(script_walker, walk_null_args) {
 
 TEST(script_walker, trace_null_args) {
     nmo_array_t chain;
-    nmo_array_init(&chain, sizeof(nmo_object_id_t), 4, NULL);
+    nmo_array_init(&chain, sizeof(nmo_param_chain_step_t), 4, NULL);
 
-    nmo_status_t st = nmo_script_walker_trace_param_source(
+    nmo_status_t st = nmo_script_walker_trace_param_chain(
         NULL, NULL, 1, &chain, 32);
     ASSERT_NE(NMO_OK, st);
 

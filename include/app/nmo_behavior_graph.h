@@ -27,6 +27,8 @@ typedef struct nmo_behavior_graph_node {
     bool owns_name;
     nmo_class_id_t class_id;
     const char *class_name;
+    uint32_t depth;                   /* 0 = root behavior level */
+    nmo_object_id_t parent_id;        /* Parent behavior ID (0 for root-level) */
 } nmo_behavior_graph_node_t;
 
 typedef struct nmo_behavior_graph_edge {
@@ -58,9 +60,24 @@ typedef struct nmo_behavior_graph {
     size_t missing_nodes;
 } nmo_behavior_graph_t;
 
+/**
+ * @brief Build behavior graph with recursive sub-behavior expansion.
+ *
+ * Recursively expands graph-type sub-behaviors up to max_depth levels.
+ * Building blocks are always leaves. Uses behavior_index for O(1) IO
+ * owner lookups.
+ *
+ * @param ctx          Context
+ * @param session      Session with loaded file
+ * @param behavior_id  Root behavior ID
+ * @param max_depth    Maximum recursion depth (0 = root only, UINT32_MAX = unlimited)
+ * @param out_graph    Output graph structure
+ * @return true on success
+ */
 NMO_API bool nmo_behavior_graph_build(nmo_context_t *ctx,
                                       nmo_session_t *session,
                                       nmo_object_id_t behavior_id,
+                                      uint32_t max_depth,
                                       nmo_behavior_graph_t *out_graph);
 
 NMO_API void nmo_behavior_graph_free(nmo_behavior_graph_t *graph);

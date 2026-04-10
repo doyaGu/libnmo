@@ -35,6 +35,7 @@
 #include "type/nmo_type_system.h"
 #include "app/nmo_bb_registry.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -797,7 +798,7 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
-    if (!nmo_behavior_graph_build(c.ctx, c.session, behavior_id, &graph)) {
+    if (!nmo_behavior_graph_build(c.ctx, c.session, behavior_id, UINT32_MAX, &graph)) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
         nmo_error_code_t code = nmo_last_error_code();
