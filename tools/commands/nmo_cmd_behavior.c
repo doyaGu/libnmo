@@ -1495,6 +1495,8 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
+    const char *beh_name = nmo_object_get_name(beh);
+
     /* Build link table */
     typedef struct { nmo_object_id_t out_io; nmo_object_id_t in_io; int16_t delay; } trace_link_t;
     trace_link_t *links = (trace_link_t *)malloc(bs->sub_behavior_links.count * sizeof(trace_link_t));
@@ -1543,30 +1545,72 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
      * BB ownership context. Use BFS from all entry IOs (those that appear
      * as out_io but are not themselves targets of any link). */
 
-    /* Find entry IOs: out_ios that have no link targeting them as in_io */
+    /* Entry points: root behavior's own bIn ports + sub-behavior output
+     * IOs that have outgoing links but whose owning BB has no incoming
+     * behavior links (true graph roots). Start with root's bIn ports. */
     nmo_object_id_t entry_ios[64];
     size_t entry_count = 0;
+
+    /* Collect ALL IOs that appear as out_io in links */
     for (size_t i = 0; i < link_count && entry_count < 64; i++) {
         nmo_object_id_t candidate = links[i].out_io;
-        bool is_target = false;
-        for (size_t j = 0; j < link_count; j++) {
-            if (links[j].in_io == candidate) { is_target = true; break; }
+        bool dup = false;
+        for (size_t e = 0; e < entry_count; e++) {
+            if (entry_ios[e] == candidate) { dup = true; break; }
         }
-        if (!is_target) {
-            bool dup = false;
-            for (size_t e = 0; e < entry_count; e++) {
-                if (entry_ios[e] == candidate) { dup = true; break; }
+        if (!dup) entry_ios[entry_count++] = candidate;
+    }
+
+    /* Remove IOs that are reachable via chain: if an IO's owning BB has
+     * any input IO that appears as in_io of any link, then this BB is
+     * mid-chain (not an entry). Keep only IOs from BBs with no incoming. */
+    size_t filtered = 0;
+    for (size_t e = 0; e < entry_count; e++) {
+        nmo_object_id_t owner = find_io_owner(repo, bs, entry_ios[e]);
+        if (owner == 0) {
+            /* Root behavior's IO — always an entry */
+            entry_ios[filtered++] = entry_ios[e];
+            continue;
+        }
+
+        /* Check if this owner BB has ANY input IO that's a link target */
+        bool bb_has_incoming = false;
+        if (owner != NMO_OBJECT_ID_NONE) {
+            nmo_object_t *oobj = nmo_object_repository_find_by_id(repo, owner);
+            if (oobj && oobj->state) {
+                const nmo_behavior_state_t *obs = (const nmo_behavior_state_t *)oobj->state;
+                if (obs->inputs.data) {
+                    const nmo_object_id_t *iids = (const nmo_object_id_t *)obs->inputs.data;
+                    for (size_t ii = 0; ii < obs->inputs.count && !bb_has_incoming; ii++) {
+                        for (size_t li = 0; li < link_count; li++) {
+                            if (links[li].in_io == iids[ii]) {
+                                bb_has_incoming = true; break;
+                            }
+                        }
+                    }
+                }
             }
-            if (!dup) entry_ios[entry_count++] = candidate;
+        }
+
+        if (!bb_has_incoming) {
+            entry_ios[filtered++] = entry_ios[e];
         }
     }
+    entry_count = filtered;
 
     /* If --from specified, filter to matching entry */
     if (from_name) {
         size_t matched = 0;
         for (size_t e = 0; e < entry_count; e++) {
+            nmo_object_id_t owner = find_io_owner(repo, bs, entry_ios[e]);
+            const char *oname = (owner == 0) ? beh_name : resolve_name(repo, owner);
             const char *ion = resolve_name(repo, entry_ios[e]);
-            if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
+            /* Match against "owner.io" or just "io" */
+            char full_name[256];
+            snprintf(full_name, sizeof(full_name), "%s.%s",
+                     (oname && oname[0]) ? oname : "?", ion ? ion : "?");
+            if (nmo_tool_match_wildcard_ci(from_name, ion ? ion : "") ||
+                nmo_tool_match_wildcard_ci(from_name, full_name)) {
                 entry_ios[matched++] = entry_ios[e];
             }
         }
@@ -1578,63 +1622,71 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     }
 
-    const char *beh_name = nmo_object_get_name(beh);
     fprintf(c.out, "Execution Trace: %s [#%u]\n",
             (beh_name && beh_name[0]) ? beh_name : "(unnamed)", beh_id);
     fprintf(c.out, "Entry points: %zu, Links: %zu\n\n", entry_count, link_count);
 
-    /* BFS from each entry IO */
-    nmo_object_id_t *queue = (nmo_object_id_t *)malloc(512 * sizeof(nmo_object_id_t));
+    /* Iterative DFS with explicit stack — per-entry visited set for
+     * independent chain tracing with full depth display. */
+    typedef struct { nmo_object_id_t io; int depth; } stack_entry_t;
+    stack_entry_t *stack = (stack_entry_t *)malloc(512 * sizeof(stack_entry_t));
     nmo_object_id_t *visited = (nmo_object_id_t *)malloc(512 * sizeof(nmo_object_id_t));
-    if (!queue || !visited) {
-        free(links); free(queue); free(visited);
+    if (!stack || !visited) {
+        free(links); free(stack); free(visited);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    size_t vis_count = 0;
 
     for (size_t ei = 0; ei < entry_count; ei++) {
         nmo_object_id_t entry = entry_ios[ei];
         nmo_object_id_t entry_owner = find_io_owner(repo, bs, entry);
         const char *eowner = (entry_owner == 0) ? beh_name : resolve_name(repo, entry_owner);
 
-        fprintf(c.out, "── %s.%s\n",
+        fprintf(c.out, "%s.%s\n",
                 (eowner && eowner[0]) ? eowner : "?",
                 resolve_name(repo, entry));
 
-        size_t q_head = 0, q_tail = 0;
-        queue[q_tail++] = entry;
+        /* Per-entry visited set */
+        size_t sp = 0, vis_count = 0;
+        stack[sp].io = entry;
+        stack[sp].depth = 0;
+        sp++;
+        visited[vis_count++] = entry;
 
-        while (q_head < q_tail) {
-            nmo_object_id_t cur = queue[q_head++];
+        while (sp > 0) {
+            stack_entry_t cur = stack[--sp];
+            int d = cur.depth;
+            if (d > 12) continue;
 
             for (size_t li = 0; li < link_count; li++) {
-                if (links[li].out_io != cur) continue;
+                if (links[li].out_io != cur.io) continue;
 
                 nmo_object_id_t tgt = links[li].in_io;
                 nmo_object_id_t tgt_owner = find_io_owner(repo, bs, tgt);
                 const char *tname = (tgt_owner == 0) ? beh_name : resolve_name(repo, tgt_owner);
                 const char *tio = resolve_name(repo, tgt);
 
-                fprintf(c.out, "   → %s.%s",
+                for (int dd = 0; dd <= d; dd++) fprintf(c.out, "  ");
+                fprintf(c.out, "→ %s.%s",
                         (tname && tname[0]) ? tname : "?", tio);
                 if (links[li].delay != 0)
                     fprintf(c.out, "  (delay: %d)", links[li].delay);
                 fprintf(c.out, "\n");
 
-                /* Continue from target behavior's output IOs */
                 if (tgt_owner != 0 && tgt_owner != NMO_OBJECT_ID_NONE) {
                     nmo_object_t *to = nmo_object_repository_find_by_id(repo, tgt_owner);
                     if (to && to->state) {
                         const nmo_behavior_state_t *tbs = (const nmo_behavior_state_t *)to->state;
                         if (tbs->outputs.data) {
                             const nmo_object_id_t *oids = (const nmo_object_id_t *)tbs->outputs.data;
-                            for (size_t oi = 0; oi < tbs->outputs.count; oi++) {
+                            for (size_t oi = 0; oi < tbs->outputs.count && sp < 510; oi++) {
                                 bool seen = false;
                                 for (size_t v = 0; v < vis_count; v++) {
                                     if (visited[v] == oids[oi]) { seen = true; break; }
                                 }
-                                if (!seen && q_tail < 512) {
-                                    queue[q_tail++] = oids[oi];
+                                if (!seen) {
+                                    stack[sp].io = oids[oi];
+                                    stack[sp].depth = d + 1;
+                                    sp++;
                                     if (vis_count < 512) visited[vis_count++] = oids[oi];
                                 }
                             }
@@ -1647,7 +1699,7 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(c.out, "\n");
     }
 
-    free(queue);
+    free(stack);
     free(visited);
     free(links);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
