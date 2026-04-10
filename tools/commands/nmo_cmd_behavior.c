@@ -1005,26 +1005,106 @@ cleanup:
  * behavior dump — dump behavior tree with decoded parameter values
  * ============================================================================ */
 
+/* ============================================================================
+ * behavior dump — hierarchical tree view
+ * ============================================================================ */
+
+static void dump_behavior_tree(
+    FILE *out, nmo_object_repository_t *repo,
+    const nmo_type_registry_t *reg,
+    nmo_object_id_t beh_id, int depth, bool last_child, uint32_t branch_mask)
+{
+    if (depth > 16) return;
+
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, beh_id);
+    if (!obj) return;
+
+    const nmo_behavior_state_t *bs = (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!bs) return;
+
+    const char *name = nmo_object_get_name(obj);
+    bool is_bb = (bs->flags & 0x8000) != 0;
+    bool is_script = (bs->flags & 0x2) != 0;
+
+    /* Draw tree connectors */
+    for (int d = 0; d < depth; d++) {
+        if (d == depth - 1) {
+            fprintf(out, "%s", last_child ? "└── " : "├── ");
+        } else {
+            fprintf(out, "%s", (branch_mask & (1u << (unsigned)d)) ? "│   " : "    ");
+        }
+    }
+
+    /* Node label */
+    fprintf(out, "%s [#%u] (%s)",
+            (name && name[0]) ? name : "(unnamed)",
+            beh_id,
+            is_script ? "Script" : is_bb ? "BB" : "Graph");
+
+    /* Compact IO summary */
+    if (bs->inputs.count > 0 || bs->outputs.count > 0) {
+        fprintf(out, "  io:%zu/%zu", bs->inputs.count, bs->outputs.count);
+    }
+    if (bs->in_parameters.count > 0) {
+        fprintf(out, "  pIn:%zu", bs->in_parameters.count);
+    }
+    if (bs->out_parameters.count > 0) {
+        fprintf(out, "  pOut:%zu", bs->out_parameters.count);
+    }
+    fprintf(out, "\n");
+
+    /* Show input parameter signatures for BBs (compact, one line) */
+    if (is_bb && bs->in_parameters.count > 0 && depth < 8) {
+        /* Print tree prefix for continuation line */
+        for (int d = 0; d < depth; d++) {
+            fprintf(out, "%s", (branch_mask & (1u << (unsigned)d)) ? "│   " : "    ");
+        }
+        fprintf(out, "%s", (depth > 0) ? (last_child ? "    " : "│   ") : "");
+        fprintf(out, "  pIn: ");
+
+        const nmo_object_id_t *pids = (const nmo_object_id_t *)bs->in_parameters.data;
+        for (size_t i = 0; i < bs->in_parameters.count && i < 6; i++) {
+            if (i > 0) fprintf(out, ", ");
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, pids[i]);
+            const char *pn = p ? nmo_object_get_name(p) : "?";
+            nmo_guid_t tg = get_param_type_guid(p);
+            const char *tn = resolve_type(reg, tg);
+            fprintf(out, "%s[%s]", (pn && pn[0]) ? pn : "?", tn);
+        }
+        if (bs->in_parameters.count > 6) {
+            fprintf(out, " ...(+%zu)", bs->in_parameters.count - 6);
+        }
+        fprintf(out, "\n");
+    }
+
+    /* Recurse into sub-behaviors */
+    if (bs->sub_behaviors.count > 0) {
+        const nmo_object_id_t *sub_ids = (const nmo_object_id_t *)bs->sub_behaviors.data;
+        uint32_t next_mask = branch_mask;
+        if (depth > 0 && !last_child) {
+            next_mask |= (1u << (unsigned)depth);
+        }
+        for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+            bool is_last = (i == bs->sub_behaviors.count - 1);
+            dump_behavior_tree(out, repo, reg, sub_ids[i],
+                               depth + 1, is_last, next_mask);
+        }
+    }
+}
+
 int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--all", "-a", NMO_OPT_FLAG, "Dump all behaviors"},
+        {"--all", "-a", NMO_OPT_FLAG, "Dump all script behaviors as trees"},
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool dump_all = vals[0].val.flag;
+    bool dump_all = vals[0].present && vals[0].val.flag;
 
     const char *id_str = NULL;
-
-    if (dump_all) {
-        /* --all mode: only positional is the file */
-        if (r.pos_count < 1) {
-            fprintf(stderr, "Usage: nmo behavior dump --all <file>\n");
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-    } else {
+    if (!dump_all) {
         if (r.pos_count < 2) {
             fprintf(stderr, "Usage: nmo behavior dump [--all] [<id>] <file>\n");
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -1036,34 +1116,28 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
 
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+
     if (dump_all) {
-        /* Find and dump all scripts */
-        nmo_array_t scripts;
-        nmo_array_init(&scripts, sizeof(nmo_script_entry_t), 16, NULL);
+        /* Find scripts (behaviors with CKBEHAVIOR_SCRIPT flag) */
+        size_t total = 0;
+        nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
+        size_t printed = 0;
+        for (size_t i = 0; i < total; i++) {
+            nmo_class_id_t cid = nmo_object_get_class_id(all[i]);
+            if (!is_behavior_class(c.registry, cid)) continue;
+            const nmo_behavior_state_t *bs =
+                (const nmo_behavior_state_t *)nmo_object_get_state(all[i]);
+            if (!bs || !(bs->flags & 0x2)) continue;
 
-        nmo_script_walker_find_scripts(c.ctx, c.session, &scripts);
-
-        size_t count = scripts.count;
-        fprintf(c.out, "Scripts found: %zu\n\n", count);
-
-        for (size_t i = 0; i < count; ++i) {
-            const nmo_script_entry_t *entry =
-                (const nmo_script_entry_t *)nmo_array_get(&scripts, i);
-            fprintf(c.out, "=== Script #%u", entry->script_id);
-            if (entry->script_name && entry->script_name[0]) {
-                fprintf(c.out, " \"%s\"", entry->script_name);
-            }
-            fprintf(c.out, " (owner: #%u", entry->owner_id);
-            if (entry->owner_name && entry->owner_name[0]) {
-                fprintf(c.out, " \"%s\"", entry->owner_name);
-            }
-            fprintf(c.out, ") ===\n");
-
-            nmo_script_walker_dump_text(c.ctx, c.session, entry->script_id, c.out);
-            fprintf(c.out, "\n");
+            if (printed > 0) fprintf(c.out, "\n");
+            dump_behavior_tree(c.out, repo, c.registry,
+                               nmo_object_get_id(all[i]), 0, true, 0);
+            printed++;
         }
-
-        nmo_array_dispose(&scripts);
+        if (printed == 0) {
+            fprintf(c.out, "No script behaviors found.\n");
+        }
     } else {
         uint32_t object_id;
         if (!nmo_tool_parse_u32(id_str, &object_id)) {
@@ -1071,7 +1145,7 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
 
-        nmo_script_walker_dump_text(c.ctx, c.session, object_id, c.out);
+        dump_behavior_tree(c.out, repo, c.registry, object_id, 0, true, 0);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
