@@ -5,7 +5,7 @@
 
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
-#include "app/nmo_type_query.h"
+#include "type/nmo_type_query.h"
 
 #include <string.h>
 
@@ -366,17 +366,17 @@ void nmo_cli_close_output_stream(const nmo_cli_global_opts_t *opts, FILE *stream
 }
 
 const char *nmo_cli_class_name_from_id(nmo_context_t *ctx, nmo_class_id_t class_id) {
-    return nmo_type_query_class_name_from_id(ctx, class_id);
+    return nmo_type_query_class_name_from_id(nmo_context_get_type_registry(ctx), class_id);
 }
 
 nmo_class_id_t nmo_cli_class_id_from_name(nmo_context_t *ctx, const char *name) {
-    return nmo_type_query_class_id_from_name(ctx, name);
+    return nmo_type_query_class_id_from_name(nmo_context_get_type_registry(ctx), name);
 }
 
 nmo_class_id_t nmo_cli_class_get_parent(nmo_context_t *ctx, nmo_class_id_t class_id) {
-    return nmo_type_query_class_get_parent(ctx, class_id);
+    return nmo_type_query_class_get_parent(nmo_context_get_type_registry(ctx), class_id);
 }
 
 bool nmo_cli_class_is_derived_from(nmo_context_t *ctx, nmo_class_id_t class_id, nmo_class_id_t base_id) {
-    return nmo_type_query_class_is_derived_from(ctx, class_id, base_id);
+    return nmo_type_query_class_is_derived_from(nmo_context_get_type_registry(ctx), class_id, base_id);
 }

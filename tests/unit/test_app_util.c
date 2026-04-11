@@ -11,7 +11,7 @@
 #include "core/nmo_path.h"
 #include "session/nmo_session_util.h"
 #include "core/nmo_utils.h"
-#include "app/nmo_type_query.h"
+#include "type/nmo_type_query.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "yyjson.h"
@@ -47,15 +47,15 @@ TEST(app_util, type_query_roundtrip) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
-    const char *name = nmo_type_query_class_name_from_id(ctx, NMO_CID_OBJECT);
+    const char *name = nmo_type_query_class_name_from_id(nmo_context_get_type_registry(ctx), NMO_CID_OBJECT);
     ASSERT_NOT_NULL(name);
     ASSERT_TRUE(name[0] != '\0');
 
-    nmo_class_id_t class_id = nmo_type_query_class_id_from_name(ctx, name);
+    nmo_class_id_t class_id = nmo_type_query_class_id_from_name(nmo_context_get_type_registry(ctx), name);
     ASSERT_EQ(NMO_CID_OBJECT, class_id);
 
-    ASSERT_TRUE(nmo_type_query_class_is_derived_from(ctx, NMO_CID_CAMERA, NMO_CID_OBJECT));
-    ASSERT_FALSE(nmo_type_query_class_is_derived_from(ctx, NMO_CID_OBJECT, NMO_CID_CAMERA));
+    ASSERT_TRUE(nmo_type_query_class_is_derived_from(nmo_context_get_type_registry(ctx), NMO_CID_CAMERA, NMO_CID_OBJECT));
+    ASSERT_FALSE(nmo_type_query_class_is_derived_from(nmo_context_get_type_registry(ctx), NMO_CID_OBJECT, NMO_CID_CAMERA));
 
     nmo_session_t *session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Nop.cmo"));
     ASSERT_NOT_NULL(session);

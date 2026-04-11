@@ -6,8 +6,8 @@
  * Refactored to use nmo_ref_enumerate.h visitor pattern.
  */
 
-#include "session/nmo_ref_graph.h"
-#include "session/nmo_ref_enumerate.h"
+#include "object/nmo_ref_graph.h"
+#include "object/nmo_ref_enumerate.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 

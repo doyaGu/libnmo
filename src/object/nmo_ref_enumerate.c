@@ -6,7 +6,7 @@
  * vtable entries) to enumerate object references without hard-coded classes.
  */
 
-#include "session/nmo_ref_enumerate.h"
+#include "object/nmo_ref_enumerate.h"
 #include "format/nmo_object.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"

@@ -17,7 +17,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
-#include "session/nmo_ref_graph.h"  /* For nmo_ref_kind_t (Session layer) */
+#include "object/nmo_ref_graph.h"  /* For nmo_ref_kind_t (Session layer) */
 
 #ifdef __cplusplus
 extern "C" {

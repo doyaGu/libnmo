@@ -250,6 +250,8 @@ set(NMO_OBJECT_SOURCES
     src/object/builtin/ckanimation_schemas.c
     src/object/builtin/ckkinematicchain_schemas.c
     src/object/builtin/ckrendercontext_schemas.c
+    src/object/nmo_ref_graph.c
+    src/object/nmo_ref_enumerate.c
 )
 
 # Type System sources
@@ -270,6 +272,7 @@ set(NMO_TYPE_SOURCES
     src/type/builtin_trigonometry.c
     src/type/builtin_vector.c
     src/type/nmo_reflection.c
+    src/type/type_query.c
 )
 
 # DSL System sources
@@ -301,8 +304,6 @@ set(NMO_SESSION_SOURCES
     src/session/id_remap.c
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
-    src/session/nmo_ref_graph.c
-    src/session/nmo_ref_enumerate.c
     src/session/runtime_graph.c
     src/session/runtime_kernel.c
 )
@@ -323,7 +324,6 @@ set(NMO_APP_SOURCES
     src/app/chunk_index.c
     src/app/object_hierarchy.c
     src/app/object_diff.c
-    src/app/type_query.c
 )
 
 # Behavior layer sources

@@ -3,7 +3,7 @@
 #include "behavior/nmo_behavior_index.h"
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "app/nmo_type_query.h"
+#include "type/nmo_type_query.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -168,7 +168,7 @@ static bool add_graph_node_from_object(nmo_behavior_graph_node_t **nodes,
     }
     const char *name = nmo_object_get_name(obj);
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    const char *class_name = nmo_type_query_class_name_from_id(ctx, class_id);
+    const char *class_name = nmo_type_query_class_name_from_id(nmo_context_get_type_registry(ctx), class_id);
     const char *label = (name && name[0]) ? name : class_name;
     return add_graph_node(nodes, node_count, node_cap, id, kind, label, false, class_id, class_name);
 }
@@ -484,7 +484,7 @@ bool nmo_behavior_graph_build(nmo_context_t *ctx,
     out_graph->behavior_id = behavior_id;
     out_graph->behavior_name = nmo_object_get_name(behavior);
     out_graph->behavior_class_id = nmo_object_get_class_id(behavior);
-    out_graph->behavior_class_name = nmo_type_query_class_name_from_id(ctx, out_graph->behavior_class_id);
+    out_graph->behavior_class_name = nmo_type_query_class_name_from_id(gc.registry, out_graph->behavior_class_id);
     out_graph->nodes = gc.nodes;
     out_graph->node_count = gc.node_count;
     out_graph->edges = gc.edges;

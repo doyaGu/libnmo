@@ -27,24 +27,24 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * Falls back to inherited class descriptors when direct registration is absent.
  * @ownership borrowed
  */
-NMO_API const char *nmo_type_query_class_name_from_id(nmo_context_t *ctx, nmo_class_id_t class_id);
+NMO_API const char *nmo_type_query_class_name_from_id(const nmo_type_registry_t *registry, nmo_class_id_t class_id);
 
 /**
  * @brief Get class ID from class name.
  * @return Class ID, or 0 if not found.
  */
-NMO_API nmo_class_id_t nmo_type_query_class_id_from_name(nmo_context_t *ctx, const char *name);
+NMO_API nmo_class_id_t nmo_type_query_class_id_from_name(const nmo_type_registry_t *registry, const char *name);
 
 /**
  * @brief Get parent class ID.
  * @return Parent class ID, or 0 if root/not found.
  */
-NMO_API nmo_class_id_t nmo_type_query_class_get_parent(nmo_context_t *ctx, nmo_class_id_t class_id);
+NMO_API nmo_class_id_t nmo_type_query_class_get_parent(const nmo_type_registry_t *registry, nmo_class_id_t class_id);
 
 /**
  * @brief Check whether @p class_id derives from @p base_id.
  */
-NMO_API bool nmo_type_query_class_is_derived_from(nmo_context_t *ctx,
+NMO_API bool nmo_type_query_class_is_derived_from(const nmo_type_registry_t *registry,
                                                   nmo_class_id_t class_id,
                                                   nmo_class_id_t base_id);
 

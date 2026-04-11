@@ -149,7 +149,7 @@
 #include "app/nmo_object_diff.h"
 #include "app/nmo_object_hierarchy.h"
 #include "app/nmo_object_summary.h"
-#include "app/nmo_type_query.h"
+#include "type/nmo_type_query.h"
 
 #ifdef __cplusplus
 extern "C" {
