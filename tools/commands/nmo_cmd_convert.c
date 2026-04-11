@@ -227,8 +227,8 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
 {
     static const nmo_opt_def_t opts[] = {
         {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
-        {"--class",   NULL, NMO_OPT_STRING, "Filter by class name"},
-        {"--name",    NULL, NMO_OPT_STRING, "Filter by name pattern"},
+        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        {"--name",    "-n", NMO_OPT_STRING, "Filter by name pattern"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without modifying"},
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DRYRUN, OPT_COUNT };
@@ -969,7 +969,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
                         (uint64_t)nmo_object_get_id(final_objects[i]));
                     const char *cn = nmo_core_class_name(&c,
                         nmo_object_get_class_id(final_objects[i]));
-                    if (cn) nmo_cli_json_add_str_safe(doc, entry, "class", cn);
+                    if (cn) nmo_cli_json_add_str_safe(doc, entry, "class_name", cn);
                     const char *nm = nmo_object_get_name(final_objects[i]);
                     if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, entry, "name", nm);
                     nmo_cli_json_add_bool_safe(doc, entry, "is_dep", i < dep_count);

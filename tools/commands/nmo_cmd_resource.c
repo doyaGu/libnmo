@@ -132,7 +132,7 @@ static nmo_object_t *find_object_by_id(nmo_object_t **objects, size_t object_cou
 
 int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--sort", NULL, NMO_OPT_STRING, "Sort by: index (default), size, name"},
+        {"--sort", "-s", NMO_OPT_STRING, "Sort by: index (default), size, name"},
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];

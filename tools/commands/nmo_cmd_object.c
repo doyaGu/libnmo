@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_sort.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "app/nmo_object_summary.h"
@@ -76,23 +77,6 @@ static int list_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx
 /* ============================================================================
  * object list - sort infrastructure
  * ============================================================================ */
-
-typedef enum {
-    OBJ_SORT_NONE,
-    OBJ_SORT_ID,
-    OBJ_SORT_NAME,
-    OBJ_SORT_CLASS,
-    OBJ_SORT_SIZE,
-} obj_sort_key_t;
-
-static obj_sort_key_t parse_obj_sort_key(const char *s) {
-    if (!s) return OBJ_SORT_NONE;
-    if (strcmp(s, "id")    == 0) return OBJ_SORT_ID;
-    if (strcmp(s, "name")  == 0) return OBJ_SORT_NAME;
-    if (strcmp(s, "class") == 0) return OBJ_SORT_CLASS;
-    if (strcmp(s, "size")  == 0) return OBJ_SORT_SIZE;
-    return OBJ_SORT_NONE;
-}
 
 /** Dynamic array for collecting objects */
 typedef struct {
@@ -168,13 +152,13 @@ static int compare_obj_size(const void *a, const void *b) {
     return s_sort_reverse ? -cmp : cmp;
 }
 
-static obj_compare_fn obj_sort_comparator(obj_sort_key_t key) {
+static obj_compare_fn obj_sort_comparator(nmo_cli_sort_key_t key) {
     switch (key) {
-        case OBJ_SORT_ID:    return compare_obj_id;
-        case OBJ_SORT_NAME:  return compare_obj_name;
-        case OBJ_SORT_CLASS: return compare_obj_class;
-        case OBJ_SORT_SIZE:  return compare_obj_size;
-        default:             return NULL;
+        case NMO_CLI_SORT_ID:    return compare_obj_id;
+        case NMO_CLI_SORT_NAME:  return compare_obj_name;
+        case NMO_CLI_SORT_CLASS: return compare_obj_class;
+        case NMO_CLI_SORT_SIZE:  return compare_obj_size;
+        default:                 return NULL;
     }
 }
 
@@ -186,7 +170,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     static const nmo_opt_def_t opts[] = {
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
         {"--filter",  "-f", NMO_OPT_STRING, "Filter by DSL expression"},
-        {"--sort",    NULL,  NMO_OPT_STRING, "Sort by: id, name, class, size"},
+        {"--sort",    "-s",  NMO_OPT_STRING, "Sort by: id, name, class, size"},
         {"--reverse", "-r",  NMO_OPT_FLAG,   "Reverse sort direction"},
         {"--top",     NULL,  NMO_OPT_UINT,   "Show only first N results"},
     };
@@ -202,8 +186,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     uint32_t top_n               = vals[4].present ? vals[4].val.u : 0;
 
     /* Validate sort key early */
-    obj_sort_key_t sort_key = parse_obj_sort_key(sort_key_str);
-    if (sort_key_str && sort_key == OBJ_SORT_NONE) {
+    nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
+    if (sort_key_str && sort_key == NMO_CLI_SORT_NONE) {
         fprintf(stderr, "Error: Invalid sort key '%s' (use: id, name, class, size)\n", sort_key_str);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -231,7 +215,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
     }
 
-    bool needs_collect = (sort_key != OBJ_SORT_NONE) || (top_n > 0);
+    bool needs_collect = (sort_key != NMO_CLI_SORT_NONE) || (top_n > 0);
     nmo_core_iter_result_t result;
 
     if (needs_collect) {
@@ -240,7 +224,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &result);
 
         /* Sort if requested */
-        if (sort_key != OBJ_SORT_NONE && col.count > 1) {
+        if (sort_key != NMO_CLI_SORT_NONE && col.count > 1) {
             s_sort_ctx = &c;
             s_sort_reverse = reverse;
             obj_compare_fn cmp = obj_sort_comparator(sort_key);
@@ -607,7 +591,7 @@ int nmo_cmd_object_show(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Pass 2: nmo_opt for --depth and --full on cleaned argv */
     static const nmo_opt_def_t opts[] = {
-        {"--depth", NULL, NMO_OPT_UINT, "Recursion depth"},
+        {"--depth", "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
         {"--full",  NULL, NMO_OPT_FLAG, "Full detail mode"},
     };
     enum { OPT_DEPTH, OPT_FULL, OPT_COUNT };
@@ -876,7 +860,7 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         /* Record query */
         yyjson_mut_val *query = yyjson_mut_obj(doc);
         if (class_filter_str) {
-            yyjson_mut_obj_add_str(doc, query, "class", class_filter_str);
+            yyjson_mut_obj_add_str(doc, query, "class_name", class_filter_str);
         }
         if (name_filter) {
             yyjson_mut_obj_add_str(doc, query, "name_pattern", name_filter);

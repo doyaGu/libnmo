@@ -26,6 +26,7 @@ typedef struct nmo_type_registry nmo_type_registry_t;
 #define NMO_CLI_EXIT_STRICT_FAILURE  3  /**< Strict mode failure */
 #define NMO_CLI_EXIT_WARNING         4  /**< --fail-on-warning triggered */
 #define NMO_CLI_EXIT_INTERNAL_ERROR  5  /**< Internal error */
+#define NMO_CLI_EXIT_NOT_FOUND       6  /**< Object/resource not found */
 
 /**
  * @brief Output format for CLI commands

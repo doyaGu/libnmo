@@ -236,7 +236,7 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
             if (c.is_json) {
                 yyjson_mut_val *issue = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_str(doc, issue, "severity", "warning");
-                yyjson_mut_obj_add_uint(doc, issue, "object_id", obj_id);
+                yyjson_mut_obj_add_uint(doc, issue, "id", obj_id);
                 yyjson_mut_obj_add_uint(doc, issue, "class_id", nmo_object_get_class_id(obj));
                 const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
                 if (class_name) {
@@ -272,7 +272,7 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
             if (c.is_json) {
                 yyjson_mut_val *issue = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_str(doc, issue, "severity", "error");
-                yyjson_mut_obj_add_uint(doc, issue, "object_id", obj_id);
+                yyjson_mut_obj_add_uint(doc, issue, "id", obj_id);
                 yyjson_mut_obj_add_uint(doc, issue, "class_id", nmo_object_get_class_id(obj));
                 const char *class_name = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
                 if (class_name) {
@@ -945,7 +945,7 @@ int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t 
                 snprintf(cbuf, sizeof(cbuf), "Class#%u", cid);
                 cname = cbuf;
             }
-            yyjson_mut_obj_add_str(doc, entry, "class", cname);
+            yyjson_mut_obj_add_str(doc, entry, "class_name", cname);
             yyjson_mut_obj_add_uint(doc, entry, "size",
                                     (uint64_t)orphan_list[i].data_size);
             yyjson_mut_obj_add_uint(doc, entry, "outgoing",

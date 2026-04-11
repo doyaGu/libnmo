@@ -12,6 +12,7 @@ add_executable(nmo_cli
     nmo_cli_common.c
     nmo_cli_output.c
     nmo_cli_json.c
+    nmo_cli_sort.c
 
     # Session management
     nmo_tool_session.c

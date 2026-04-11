@@ -140,7 +140,7 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
             if (!chunk) continue;
 
             yyjson_mut_val *cv = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, cv, "object_id", nmo_object_get_id(obj));
+            yyjson_mut_obj_add_uint(doc, cv, "id", nmo_object_get_id(obj));
             yyjson_mut_obj_add_uint(doc, cv, "class_id", chunk->class_id);
             yyjson_mut_obj_add_uint(doc, cv, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));
             yyjson_mut_obj_add_uint(doc, cv, "compressed_size", (uint64_t)chunk->compressed_size);
@@ -153,7 +153,7 @@ int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
             const char *name = nmo_object_get_name(obj);
             if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, cv, "object_name", name);
+                nmo_cli_json_add_str_safe(doc, cv, "name", name);
             }
 
             yyjson_mut_arr_add_val(chunks, cv);
@@ -321,7 +321,7 @@ int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *gl
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--data",      "--include-data", NMO_OPT_FLAG, "Include chunk data"},
-        {"--max-bytes", NULL,             NMO_OPT_UINT, "Max bytes for data dump"},
+        {"--max-bytes", NULL,             NMO_OPT_UINT, "Max bytes for data dump (default: 4096)"},
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];

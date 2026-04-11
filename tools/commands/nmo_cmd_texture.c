@@ -820,8 +820,8 @@ int nmo_cmd_texture_extract(int argc, char **argv, const nmo_cli_global_opts_t *
         {"--out-dir",   "-d", NMO_OPT_STRING, "Output directory"},
         {"--id",        NULL,  NMO_OPT_UINT,   "Extract single texture by ID"},
         {"--name",      "-n", NMO_OPT_STRING, "Filter by name wildcard"},
-        {"--format",    "-f", NMO_OPT_STRING, "Output format: png, bmp, tga, jpg"},
-        {"--quality",   "-q", NMO_OPT_UINT,   "JPEG quality (1-100, default 90)"},
+        {"--format",    "-f", NMO_OPT_STRING, "Output format: png, bmp, tga, jpg (default: png)"},
+        {"--quality",   "-q", NMO_OPT_UINT,   "JPEG quality (1-100, default: 90)"},
         {"--overwrite", NULL,  NMO_OPT_FLAG,   "Overwrite existing files"},
     };
     nmo_opt_val_t vals[6];

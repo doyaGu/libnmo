@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_sort.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
@@ -363,23 +364,6 @@ typedef struct nmo_class_count_entry {
     size_t total_size;
 } nmo_class_count_entry_t;
 
-/* Sort key enum and parser */
-typedef enum {
-    CLASS_SORT_ID = 0,
-    CLASS_SORT_SIZE,
-    CLASS_SORT_COUNT,
-    CLASS_SORT_NAME,
-} class_sort_key_t;
-
-static class_sort_key_t parse_class_sort_key(const char *s) {
-    if (!s) return CLASS_SORT_ID;
-    if (strcmp(s, "id")    == 0) return CLASS_SORT_ID;
-    if (strcmp(s, "size")  == 0) return CLASS_SORT_SIZE;
-    if (strcmp(s, "count") == 0) return CLASS_SORT_COUNT;
-    if (strcmp(s, "name")  == 0) return CLASS_SORT_NAME;
-    return CLASS_SORT_ID;
-}
-
 /* File-static registry pointer for name comparator (qsort can't take context) */
 static const nmo_type_registry_t *s_class_sort_registry;
 
@@ -429,19 +413,19 @@ static int compare_class_by_name(const void *a, const void *b) {
 
 typedef int (*class_compare_fn)(const void *, const void *);
 
-static class_compare_fn class_sort_comparator(class_sort_key_t key) {
+static class_compare_fn class_sort_comparator(nmo_cli_sort_key_t key) {
     switch (key) {
-        case CLASS_SORT_ID:    return compare_class_by_id;
-        case CLASS_SORT_SIZE:  return compare_class_by_size;
-        case CLASS_SORT_COUNT: return compare_class_by_count;
-        case CLASS_SORT_NAME:  return compare_class_by_name;
-        default:               return compare_class_by_id;
+        case NMO_CLI_SORT_ID:    return compare_class_by_id;
+        case NMO_CLI_SORT_SIZE:  return compare_class_by_size;
+        case NMO_CLI_SORT_COUNT: return compare_class_by_count;
+        case NMO_CLI_SORT_NAME:  return compare_class_by_name;
+        default:                 return compare_class_by_id;
     }
 }
 
 int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--sort", NULL, NMO_OPT_STRING, "Sort by: id (default), size, count, name"},
+        {"--sort", "-s", NMO_OPT_STRING, "Sort by: id (default), size, count, name"},
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
@@ -451,15 +435,13 @@ int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *glo
     const char *sort_key_str = vals[0].present ? vals[0].val.str : NULL;
 
     /* Validate sort key early */
-    class_sort_key_t sort_key = parse_class_sort_key(sort_key_str);
-    if (sort_key_str &&
-        strcmp(sort_key_str, "id") != 0 &&
-        strcmp(sort_key_str, "size") != 0 &&
-        strcmp(sort_key_str, "count") != 0 &&
-        strcmp(sort_key_str, "name") != 0) {
+    nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
+    if (sort_key_str && sort_key == NMO_CLI_SORT_NONE) {
         fprintf(stderr, "Error: Invalid sort key '%s' (use: id, size, count, name)\n", sort_key_str);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
+    /* Default to sort by id when no key specified */
+    if (!sort_key_str) sort_key = NMO_CLI_SORT_ID;
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -685,7 +667,7 @@ static int space_class_cmp_size(const void *a, const void *b) {
 
 int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--top", NULL, NMO_OPT_UINT, "Show top N objects by size (default: 15)"},
+        {"--top", "-t", NMO_OPT_UINT, "Show top N objects by size (default: 15)"},
     };
     enum { OPT_TOP, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
@@ -790,7 +772,7 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
             cumul += classes[i].data_size;
             yyjson_mut_val *e = yyjson_mut_obj(doc);
             if (classes[i].class_name)
-                nmo_cli_json_add_str_safe(doc, e, "class", classes[i].class_name);
+                nmo_cli_json_add_str_safe(doc, e, "class_name", classes[i].class_name);
             nmo_cli_json_add_uint_safe(doc, e, "count", classes[i].count);
             nmo_cli_json_add_uint_safe(doc, e, "data_size", classes[i].data_size);
             nmo_cli_json_add_uint_safe(doc, e, "pack_size", classes[i].pack_size);
@@ -814,7 +796,7 @@ int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *globa
                     (uint64_t)nmo_object_get_id(obj_entries[i].obj));
                 const char *cn = nmo_core_class_name(&c,
                     nmo_object_get_class_id(obj_entries[i].obj));
-                if (cn) nmo_cli_json_add_str_safe(doc, e, "class", cn);
+                if (cn) nmo_cli_json_add_str_safe(doc, e, "class_name", cn);
                 const char *nm = nmo_object_get_name(obj_entries[i].obj);
                 if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, e, "name", nm);
                 nmo_cli_json_add_uint_safe(doc, e, "data_size", obj_entries[i].data_sz);

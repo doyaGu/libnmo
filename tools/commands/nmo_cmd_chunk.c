@@ -431,7 +431,7 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
     static const nmo_opt_def_t opts[] = {
         {"--index",     "-i", NMO_OPT_STRING, "Chunk index"},
         {"--hexdump",   NULL, NMO_OPT_FLAG,   "Include hex dump"},
-        {"--max-bytes", "-m", NMO_OPT_UINT,   "Max bytes for hexdump"},
+        {"--max-bytes", "-m", NMO_OPT_UINT,   "Max bytes for hexdump (default: 256)"},
     };
     nmo_opt_val_t vals[3];
     const char *pos[16];
@@ -585,12 +585,12 @@ int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *globa
         }
         yyjson_mut_obj_add_uint(doc, data, "depth", (uint64_t)depth);
 
-        yyjson_mut_obj_add_uint(doc, data, "object_id", object_id);
+        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
 
         if (target) {
             const char *obj_name = nmo_object_get_name(target);
             if (obj_name && obj_name[0]) {
-                nmo_cli_json_add_str_safe(doc, data, "object_name", obj_name);
+                nmo_cli_json_add_str_safe(doc, data, "name", obj_name);
             }
         }
 
@@ -782,7 +782,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
             }
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "object_id", nmo_object_get_id(obj));
+            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
 
             const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
             if (class_name) {
@@ -791,7 +791,7 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
 
             const char *name = nmo_object_get_name(obj);
             if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "object_name", name);
+                nmo_cli_json_add_str_safe(doc, item, "name", name);
             }
 
             yyjson_mut_obj_add_uint(doc, item, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));

@@ -288,7 +288,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
             for (int i = 0; i < result.diff_count; i++) {
                 yyjson_mut_val *diff = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_str(doc, diff, "type", diff_type_name(result.diffs[i].type));
-                yyjson_mut_obj_add_uint(doc, diff, "object_id", result.diffs[i].object_id);
+                yyjson_mut_obj_add_uint(doc, diff, "id", result.diffs[i].object_id);
                 nmo_cli_json_add_str_safe(doc, diff, "context", result.diffs[i].context);
                 yyjson_mut_arr_append(diffs, diff);
             }
@@ -717,7 +717,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
         yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
         yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
         if (specific_object) {
-            yyjson_mut_obj_add_uint(doc, data, "object_id", object_id);
+            yyjson_mut_obj_add_uint(doc, data, "id", object_id);
         }
         yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
         yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
@@ -739,7 +739,7 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
                 yyjson_mut_val *diff = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_str(doc, diff, "type", diff_type_name(type));
-                yyjson_mut_obj_add_uint(doc, diff, "object_id", result.diffs[i].object_id);
+                yyjson_mut_obj_add_uint(doc, diff, "id", result.diffs[i].object_id);
                 nmo_cli_json_add_str_safe(doc, diff, "context", result.diffs[i].context);
                 yyjson_mut_arr_append(diffs, diff);
             }
@@ -898,7 +898,7 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
             for (int i = 0; i < result.diff_count; i++) {
                 yyjson_mut_val *diff = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_str(doc, diff, "type", diff_type_name(result.diffs[i].type));
-                yyjson_mut_obj_add_uint(doc, diff, "object_id", result.diffs[i].object_id);
+                yyjson_mut_obj_add_uint(doc, diff, "id", result.diffs[i].object_id);
                 nmo_cli_json_add_str_safe(doc, diff, "context", result.diffs[i].context);
                 yyjson_mut_arr_append(diffs, diff);
             }
