@@ -1240,6 +1240,70 @@ static nmo_status_t nmo_struct_like_to_string(
         NMO_RETURN_OK();
     }
 
+    /* If no reflection fields, try specialized struct metadata */
+    if ((!type->fields || type->field_count == 0) && registry) {
+        const nmo_specialized_metadata_t *meta =
+            nmo_type_registry_get_metadata(registry, type->id);
+        if (meta &&
+            (meta->metadata_type == NMO_METADATA_TYPE_STRUCT ||
+             meta->metadata_type == NMO_METADATA_TYPE_UNION)) {
+            const nmo_struct_descriptor_t *sfields = NULL;
+            size_t scount = 0;
+            if (meta->metadata_type == NMO_METADATA_TYPE_STRUCT) {
+                sfields = meta->struct_meta.fields;
+                scount = meta->struct_meta.field_count;
+            } else {
+                sfields = meta->union_meta.fields;
+                scount = meta->union_meta.field_count;
+            }
+
+            if (sfields && scount > 0) {
+                nmo_string_builder_t sb = { .buf = buffer, .cap = buffer_size, .len = 0 };
+                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "{"));
+
+                bool first = true;
+                for (size_t i = 0; i < scount; i++) {
+                    const nmo_struct_descriptor_t *sf = &sfields[i];
+                    if ((uint64_t)sf->offset + sf->size > type->size) continue;
+
+                    const nmo_type_descriptor_t *ft =
+                        nmo_to_string_resolve_type(registry, sf->type_guid);
+                    const uint8_t *fptr = (const uint8_t *)value + sf->offset;
+
+                    if (!first) {
+                        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, ", "));
+                    }
+                    first = false;
+                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s=",
+                        sf->name ? sf->name : "<unnamed>"));
+
+                    if (!ft) {
+                        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<unknown>"));
+                        continue;
+                    }
+
+                    if (sf->array_count > 0) {
+                        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<array[%u]>",
+                            (unsigned)sf->array_count));
+                        continue;
+                    }
+
+                    char tmp[256];
+                    nmo_status_t r = nmo_type_value_to_string_impl(
+                        fptr, ft, registry, tmp, sizeof(tmp), depth + 1);
+                    if (r != NMO_OK) {
+                        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<error>"));
+                        continue;
+                    }
+                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s", tmp));
+                }
+
+                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "}"));
+                NMO_RETURN_OK();
+            }
+        }
+    }
+
     nmo_string_builder_t sb = { .buf = buffer, .cap = buffer_size, .len = 0 };
     NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "{"));
 

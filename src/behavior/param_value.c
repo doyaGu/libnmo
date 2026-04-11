@@ -204,7 +204,7 @@ nmo_status_t nmo_param_value_to_string(
     /* Try vtable to_string first (most types have this) */
     if (type->vtable && type->vtable->to_string) {
         nmo_status_t st = type->vtable->to_string(
-            data, type, buffer, buffer_size, NULL);
+            data, type, buffer, buffer_size, (void *)registry);
         if (st == NMO_OK) {
             return NMO_OK;
         }
