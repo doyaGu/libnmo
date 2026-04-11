@@ -16,7 +16,7 @@
 
 #include "nmo.h"
 #include "app/nmo_inspector.h"
-#include "session/nmo_serializer.h"
+#include "app/nmo_save.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"

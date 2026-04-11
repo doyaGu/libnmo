@@ -8,7 +8,7 @@
 #include "nmo_repl_session.h"
 
 #include "app/nmo_inspector.h"
-#include "session/nmo_serializer.h"
+#include "app/nmo_save.h"
 #include "app/nmo_stats.h"
 #include "behavior/nmo_param_value.h"
 #include "core/nmo_error.h"

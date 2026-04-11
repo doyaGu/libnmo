@@ -3,7 +3,7 @@
 
 #include "session/nmo_context.h"
 #include "app/nmo_load.h"
-#include "session/nmo_serializer.h"
+#include "app/nmo_save.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_internal.h"
 #include "core/nmo_arena.h"

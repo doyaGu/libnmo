@@ -195,22 +195,6 @@ NMO_API nmo_status_t nmo_serializer_commit(nmo_serializer_t *ctx, const char *pa
  */
 NMO_API nmo_save_stats_t nmo_serializer_get_stats(const nmo_serializer_t *ctx);
 
-/**
- * @brief Save file
- *
- * Two-phase commit: Layout & Serialize to memory, then Pack & Commit
- * atomically to disk.  When @p opts is NULL compression settings are
- * inherited from the session's original file (round-trip safe).
- *
- * @param session Session to save from
- * @param path    Output file path
- * @param opts    Save options (NULL for round-trip-safe defaults)
- * @return NMO_OK on success
- */
-NMO_API int nmo_save_file(nmo_session_t *session,
-                          const char *path,
-                          const nmo_save_options_t *opts);
-
 #ifdef __cplusplus
 }
 #endif

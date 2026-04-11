@@ -134,6 +134,7 @@
 #include "app/nmo_comparison.h"
 #include "app/nmo_inspector.h"
 #include "session/nmo_serializer.h"
+#include "app/nmo_save.h"
 #include "app/nmo_stats.h"
 #include "behavior/nmo_behavior_graph.h"
 #include "app/nmo_chunk_index.h"
