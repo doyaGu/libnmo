@@ -165,38 +165,6 @@ NMO_API nmo_load_stats_t nmo_deserializer_get_stats(
  */
 NMO_API void nmo_deserializer_destroy(nmo_deserializer_t *ctx);
 
-/* ============================================================================
- * Legacy ID remapping API (used internally by the pipeline)
- * ============================================================================ */
-
-/**
- * @brief Start ID remapping session
- */
-NMO_API nmo_deserializer_t *nmo_deserializer_start(
-    nmo_object_repository_t *repo,
-    nmo_object_id_t max_saved_id);
-
-NMO_API int nmo_deserializer_register(nmo_deserializer_t *session,
-                                      nmo_object_t *obj,
-                                      nmo_object_id_t file_index);
-
-NMO_API int nmo_deserializer_end(nmo_deserializer_t *session);
-
-NMO_API int nmo_deserializer_get_runtime_id(const nmo_deserializer_t *session,
-                                            nmo_object_id_t file_index,
-                                            nmo_object_id_t *out_runtime_id);
-
-NMO_API nmo_object_repository_t *nmo_deserializer_get_repository(
-    const nmo_deserializer_t *session);
-
-NMO_API nmo_object_id_t nmo_deserializer_get_id_base(
-    const nmo_deserializer_t *session);
-
-NMO_API nmo_object_id_t nmo_deserializer_get_max_saved_id(
-    const nmo_deserializer_t *session);
-
-NMO_API void nmo_deserializer_destroy_legacy(nmo_deserializer_t *session);
-
 #ifdef __cplusplus
 }
 #endif

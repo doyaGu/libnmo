@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "session/nmo_deserializer.h"
+#include "../../src/session/deserializer_internal.h"
 #include "session/nmo_id_remap.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -30,7 +30,7 @@ TEST(load_session_id_remap, create_destroy) {
     nmo_object_id_t max_saved = nmo_deserializer_get_max_saved_id(session);
     ASSERT_EQ(100, max_saved);
 
-    nmo_deserializer_destroy(session);
+    nmo_deserializer_destroy_legacy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -57,7 +57,7 @@ TEST(load_session_id_remap, with_existing_objects) {
     nmo_object_id_t id_base = nmo_deserializer_get_id_base(session);
     ASSERT_EQ(6, id_base);
 
-    nmo_deserializer_destroy(session);
+    nmo_deserializer_destroy_legacy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -94,7 +94,7 @@ TEST(load_session_id_remap, register_objects) {
 
     nmo_object_destroy(dup_obj);
 
-    nmo_deserializer_destroy(session);
+    nmo_deserializer_destroy_legacy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -143,7 +143,7 @@ TEST(load_session_id_remap, build_remap_table) {
     ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
 
     nmo_id_remap_table_destroy(table);
-    nmo_deserializer_destroy(session);
+    nmo_deserializer_destroy_legacy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -197,7 +197,7 @@ TEST(load_session_id_remap, remap_table_iteration) {
     ASSERT_NULL(entry);
 
     nmo_id_remap_table_destroy(table);
-    nmo_deserializer_destroy(session);
+    nmo_deserializer_destroy_legacy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -423,7 +423,7 @@ TEST(load_session_id_remap, load_session_end) {
 
     nmo_object_destroy(obj2);
 
-    nmo_deserializer_destroy(session);
+    nmo_deserializer_destroy_legacy(session);
     nmo_object_repository_destroy(repo);
 }
 

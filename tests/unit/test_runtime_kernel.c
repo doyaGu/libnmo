@@ -5,7 +5,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "session/nmo_object_system.h"
-#include "session/nmo_deserializer.h"
+#include "../../src/session/deserializer_internal.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "core/nmo_allocator.h"
@@ -543,7 +543,7 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     mutable_vtable->deserialize = old_deserialize;
     mutable_vtable->prepare_dependencies = old_prepare;
 
-    nmo_deserializer_destroy(load_session);
+    nmo_deserializer_destroy_legacy(load_session);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

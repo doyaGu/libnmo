@@ -6,7 +6,7 @@
 #include "session/nmo_object_system.h"
 
 #include "object/nmo_object_repository.h"
-#include "session/nmo_deserializer.h"
+#include "deserializer_internal.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_shadow_storage.h"
