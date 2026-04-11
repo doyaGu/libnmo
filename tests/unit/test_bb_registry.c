@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 #include "behavior/nmo_bb_registry.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 

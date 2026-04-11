@@ -1,6 +1,6 @@
 #include "app/nmo_type_query.h"
 
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_system.h"

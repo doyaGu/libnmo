@@ -13,7 +13,7 @@
 #include "app/nmo_object_summary.h"
 
 #include "nmo.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "app/nmo_object_hierarchy.h"
 #include "app/nmo_saver.h"
 #include "core/nmo_arena.h"

@@ -129,8 +129,8 @@
 #include "session/nmo_runtime_kernel.h"
 
 // App layer
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "app/nmo_comparison.h"
 #include "app/nmo_inspector.h"
 #include "app/nmo_saver.h"
@@ -142,7 +142,7 @@
 #include "app/nmo_object_diff.h"
 #include "app/nmo_object_hierarchy.h"
 #include "app/nmo_object_summary.h"
-#include "app/nmo_session_util.h"
+#include "session/nmo_session_util.h"
 #include "app/nmo_type_query.h"
 
 #ifdef __cplusplus

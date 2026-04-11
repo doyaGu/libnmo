@@ -20,8 +20,8 @@
 
 #include "app/nmo_saver.h"
 #include "app/nmo_save_buffer.h"
-#include "app/nmo_session.h"
-#include "app/nmo_context.h"
+#include "session/nmo_session.h"
+#include "session/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"

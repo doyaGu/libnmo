@@ -1,6 +1,6 @@
 #include "app/nmo_chunk_index.h"
 
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 

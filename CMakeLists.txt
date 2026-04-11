@@ -289,6 +289,7 @@ set(NMO_EXTENSION_SOURCES
     src/extension/extension_host.c
     src/extension/extension_diagnostics.c
     src/extension/virtools_data_plugin.c
+    src/extension/virtools_loader.c
 )
 
 # Session layer sources
@@ -322,7 +323,6 @@ set(NMO_APP_SOURCES
     src/app/chunk_index.c
     src/app/object_hierarchy.c
     src/app/object_diff.c
-    src/app/virtools_loader.c
 )
 
 # Behavior layer sources
@@ -344,12 +344,12 @@ set(NMO_SOURCES
     ${NMO_CORE_SOURCES}
     ${NMO_IO_SOURCES}
     ${NMO_FORMAT_SOURCES}
-    ${NMO_OBJECT_SOURCES}
     ${NMO_TYPE_SOURCES}
+    ${NMO_OBJECT_SOURCES}
     ${NMO_DSL_SOURCES}
-    ${NMO_EXTENSION_SOURCES}
-    ${NMO_BEHAVIOR_SOURCES}
     ${NMO_SESSION_SOURCES}
+    ${NMO_BEHAVIOR_SOURCES}
+    ${NMO_EXTENSION_SOURCES}
     ${NMO_APP_SOURCES}
     ${YYJSON_DIR}/src/yyjson.c
 )

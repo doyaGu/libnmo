@@ -9,7 +9,7 @@
 #include "app/nmo_json_util.h"
 #include "core/nmo_hex.h"
 #include "core/nmo_path.h"
-#include "app/nmo_session_util.h"
+#include "session/nmo_session_util.h"
 #include "core/nmo_utils.h"
 #include "app/nmo_type_query.h"
 #include "object/nmo_class_ids.h"

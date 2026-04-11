@@ -10,8 +10,8 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "behavior/nmo_script_walker.h"
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "core/nmo_array.h"
 #include "object/nmo_class_ids.h"
 

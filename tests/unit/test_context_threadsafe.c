@@ -4,7 +4,7 @@
  */
 
 #include "../test_framework.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include <stdio.h>
 
 #ifdef _WIN32

@@ -1,7 +1,7 @@
-#include "app/nmo_session_util.h"
+#include "session/nmo_session_util.h"
 
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "core/nmo_error.h"
 
 #include <string.h>

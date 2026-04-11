@@ -3,8 +3,8 @@
  * @brief Session implementation (Phase 8.2)
  */
 
-#include "app/nmo_session.h"
-#include "app/nmo_context.h"
+#include "session/nmo_session.h"
+#include "session/nmo_context.h"
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
 #include "session/nmo_runtime_kernel.h"

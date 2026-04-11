@@ -12,7 +12,7 @@
 
 #include "nmo.h"
 #include "app/nmo_chunk_index.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "app/nmo_hexdump.h"
 
 #include "format/nmo_chunk_api.h"

@@ -13,7 +13,7 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "behavior/nmo_param_value.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_class_ids.h"

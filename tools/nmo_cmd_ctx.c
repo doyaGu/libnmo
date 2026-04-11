@@ -7,7 +7,7 @@
 
 #include "nmo_tool_common.h"
 
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 
 #include <string.h>
 

@@ -8,11 +8,11 @@
 
 #include "app/nmo_parser.h"
 #include "app/nmo_saver.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "session/nmo_session_internal.h"
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_extension_diagnostics.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_logger.h"
 #include "session/nmo_runtime_kernel.h"

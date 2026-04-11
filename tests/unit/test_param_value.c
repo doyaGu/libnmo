@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "behavior/nmo_param_value.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
 #include "object/nmo_object_enum_defs.h"

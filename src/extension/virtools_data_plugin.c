@@ -10,7 +10,7 @@
 #include "extension/nmo_extension_abi.h"
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_extension_host.h"
-#include "app/nmo_virtools_loader.h"
+#include "extension/nmo_virtools_loader.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 

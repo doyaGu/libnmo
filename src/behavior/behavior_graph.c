@@ -1,8 +1,8 @@
 #include "behavior/nmo_behavior_graph.h"
 
 #include "behavior/nmo_behavior_index.h"
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "app/nmo_type_query.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"

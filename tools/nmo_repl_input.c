@@ -6,7 +6,7 @@
 #ifdef NMO_HAVE_ISOCLINE
 
 #include "nmo_repl_commands.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"

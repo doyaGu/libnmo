@@ -1,7 +1,7 @@
 #include "app/nmo_object_hierarchy.h"
 
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "session/nmo_ref_enumerate.h"
 

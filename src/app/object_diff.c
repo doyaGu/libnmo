@@ -1,7 +1,7 @@
 #include "app/nmo_object_diff.h"
 
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"

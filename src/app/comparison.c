@@ -12,7 +12,7 @@
 #endif
 
 #include "app/nmo_comparison.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_shadow_storage.h"
 #include "format/nmo_object.h"

@@ -20,7 +20,7 @@
 #ifndef NMO_OBJECT_SUMMARY_H
 #define NMO_OBJECT_SUMMARY_H
 
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "nmo_types.h"

@@ -4,7 +4,7 @@
  */
 
 #include "../test_framework.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_guid.h"

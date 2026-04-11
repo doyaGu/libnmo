@@ -3,7 +3,7 @@
  * @brief Global context implementation (Phase 8.1)
  */
 
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"
@@ -17,7 +17,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "behavior/nmo_bb_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
 

@@ -17,7 +17,7 @@
 #include "behavior/nmo_behavior_graph.h"
 #include "behavior/nmo_behavior_index.h"
 #include "behavior/nmo_script_walker.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
