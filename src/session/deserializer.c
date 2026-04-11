@@ -7,7 +7,6 @@
 #include "session/nmo_id_mapping.h"
 
 #include "session/nmo_session.h"
-#include "session/nmo_session_internal.h"
 #include "session/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_object_system.h"

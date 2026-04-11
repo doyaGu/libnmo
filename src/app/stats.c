@@ -8,7 +8,7 @@
 #include "app/nmo_stats.h"
 #include "app/nmo_json_stream.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_internal.h"
+#include "session/nmo_reference_resolver.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"

@@ -3,7 +3,6 @@
 
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_internal.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_bit_array.h"
 #include "object/nmo_ref_graph.h"

@@ -4,7 +4,6 @@
  */
 
 #include "session/nmo_session.h"
-#include "session/nmo_session_internal.h"
 #include "session/nmo_context.h"
 #include "app/nmo_load.h"
 #include "app/nmo_save.h"
@@ -92,6 +91,7 @@ typedef struct nmo_session {
 /**
  * Create session
  */
+static void nmo_session_build_behavior_index(nmo_session_t *session);
 nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     if (ctx == NULL) {
         return NULL;
@@ -295,7 +295,7 @@ nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *sessio
     return session ? session->behavior_index : NULL;
 }
 
-void nmo_session_build_behavior_index(nmo_session_t *session) {
+static void nmo_session_build_behavior_index(nmo_session_t *session) {
     if (!session || !session->context || session->behavior_index != NULL)
         return;
     session->behavior_index = nmo_behavior_index_create(session->arena);

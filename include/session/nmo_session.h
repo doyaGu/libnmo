@@ -23,6 +23,7 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_chunk_pool nmo_chunk_pool_t;
 typedef struct nmo_included_file nmo_included_file_t;
+typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_plugin_dep nmo_plugin_dep_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
@@ -123,6 +124,25 @@ NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t 
  * @ownership borrowed (owned by session)
  */
 NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session);
+
+/**
+ * @brief Get the session's reference resolver (may be NULL).
+ * @ownership borrowed
+ */
+NMO_API nmo_reference_resolver_t *nmo_session_get_reference_resolver(
+    const nmo_session_t *session);
+
+/**
+ * @brief Ensure a reference resolver exists on the session (lazy init).
+ * @ownership borrowed
+ */
+NMO_API nmo_reference_resolver_t *nmo_session_ensure_reference_resolver(
+    nmo_session_t *session);
+
+/**
+ * @brief Reset (destroy) the session's reference resolver.
+ */
+NMO_API void nmo_session_reset_reference_resolver(nmo_session_t *session);
 
 /**
  * @brief Set runtime operation callbacks (called by app layer during session setup)
