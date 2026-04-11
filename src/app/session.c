@@ -6,7 +6,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
 #include "app/nmo_load.h"
-#include "session/nmo_saver.h"
+#include "session/nmo_serializer.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/runtime_kernel_internal.h"
 #include "extension/nmo_extension_registry.h"

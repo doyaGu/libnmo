@@ -7,7 +7,7 @@
 #include "session/nmo_context.h"
 #include "core/nmo_logger.h"
 #include "app/nmo_load.h"
-#include "session/nmo_saver.h"
+#include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
 #include "app/nmo_comparison.h"
 #include "core/nmo_error.h"

@@ -2,7 +2,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_context.h"
 #include "app/nmo_load.h"
-#include "session/nmo_saver.h"
+#include "session/nmo_serializer.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h" // Include for nmo_object_t definition
 #include "core/nmo_error.h"

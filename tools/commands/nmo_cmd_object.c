@@ -15,7 +15,7 @@
 #include "nmo.h"
 #include "session/nmo_context.h"
 #include "app/nmo_object_hierarchy.h"
-#include "session/nmo_saver.h"
+#include "session/nmo_serializer.h"
 #include "core/nmo_arena.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_object_repository.h"

@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "app/nmo_load.h"
-#include "session/nmo_saver.h"
+#include "session/nmo_serializer.h"
 #include "io/nmo_io_mmap.h"
 
 #include <inttypes.h>
