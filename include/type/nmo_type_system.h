@@ -521,10 +521,7 @@ typedef struct nmo_type_descriptor {
  * - free: nmo_type_registry_destroy()/unregister
  */
 typedef struct nmo_type_alias_list {
-    const char **aliases;  /* Pointer array of alias strings */
-    size_t count;          /* Number of aliases */
-    size_t capacity;       /* Allocated alias slots */
-    uint16_t aliases_ownership;       /* Ownership of alias array */
+    nmo_arena_array_t arr;            /* Arena array of (const char *) */
     uint16_t alias_string_ownership;  /* Ownership of alias strings */
 } nmo_type_alias_list_t;
 
@@ -537,11 +534,7 @@ typedef struct nmo_type_alias_list {
  * - free: nmo_type_registry_destroy()/unregister
  */
 typedef struct nmo_type_child_list {
-    nmo_type_id_t *children; /* Pointer array of child type IDs */
-    size_t count;            /* Number of children */
-    size_t capacity;         /* Allocated child slots */
-    uint16_t children_ownership;      /* Ownership of children array */
-    uint16_t _reserved;               /* Padding / future use */
+    nmo_arena_array_t arr;            /* Arena array of nmo_type_id_t */
 } nmo_type_child_list_t;
 
 /* ============================================================================

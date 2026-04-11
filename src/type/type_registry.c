@@ -173,43 +173,30 @@ static nmo_status_t alias_list_append(
                          "Invalid arguments to alias_list_append");
     }
 
-    if (list->count >= list->capacity) {
-        size_t new_capacity = (list->capacity == 0) ? 4u : (list->capacity * 2u);
-        const char **new_aliases = (const char **)nmo_arena_alloc(
-            registry->arena,
-            new_capacity * sizeof(const char *),
-            _Alignof(const char *));
-        if (!new_aliases) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to grow alias list");
-        }
-        if (list->aliases && list->count > 0) {
-            memcpy(new_aliases, list->aliases, list->count * sizeof(const char *));
-        }
-        list->aliases = new_aliases;
-        list->capacity = new_capacity;
+    if (list->arr.arena == NULL) {
+        nmo_status_t init = nmo_arena_array_init(&list->arr, sizeof(const char *), 4, registry->arena);
+        if (init != NMO_OK) return init;
     }
 
-    list->aliases[list->count++] = alias;
-    NMO_RETURN_OK();
+    return nmo_arena_array_append(&list->arr, &alias);
 }
 
 static void free_alias_list(nmo_type_registry_t *registry, nmo_type_id_t type_id) {
     nmo_type_alias_list_t *list = get_alias_list(registry, type_id);
-    if (!list || list->count == 0 || !list->aliases) {
+    if (!list || list->arr.count == 0) {
         return;
     }
 
-    NMO_OWNERSHIP_EXPECT(list->aliases_ownership, NMO_OWNERSHIP_ARENA);
     NMO_OWNERSHIP_EXPECT(list->alias_string_ownership, NMO_OWNERSHIP_HEAP);
 
-    for (size_t i = 0; i < list->count; i++) {
-        if (list->aliases[i]) {
-            nmo_free(&registry->type_allocator, (void *)list->aliases[i]);
+    for (size_t i = 0; i < list->arr.count; i++) {
+        const char **alias = (const char **)nmo_arena_array_get(&list->arr, i);
+        if (alias && *alias) {
+            nmo_free(&registry->type_allocator, (void *)*alias);
         }
     }
 
-    list->count = 0;
+    nmo_arena_array_clear(&list->arr);
 }
 
 static nmo_status_t child_list_append(
@@ -222,26 +209,12 @@ static nmo_status_t child_list_append(
                          "Invalid arguments to child_list_append");
     }
 
-    if (list->count >= list->capacity) {
-        size_t new_capacity = (list->capacity == 0) ? 4u : (list->capacity * 2u);
-        nmo_type_id_t *new_children = (nmo_type_id_t *)nmo_alloc(
-            &registry->type_allocator,
-            new_capacity * sizeof(nmo_type_id_t),
-            _Alignof(nmo_type_id_t));
-        if (!new_children) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to grow child list");
-        }
-        if (list->children && list->count > 0) {
-            memcpy(new_children, list->children, list->count * sizeof(nmo_type_id_t));
-            nmo_free(&registry->type_allocator, list->children);
-        }
-        list->children = new_children;
-        list->capacity = new_capacity;
+    if (list->arr.arena == NULL) {
+        nmo_status_t init = nmo_arena_array_init(&list->arr, sizeof(nmo_type_id_t), 4, registry->arena);
+        if (init != NMO_OK) return init;
     }
 
-    list->children[list->count++] = child_id;
-    NMO_RETURN_OK();
+    return nmo_arena_array_append(&list->arr, &child_id);
 }
 
 static void child_list_remove(
@@ -250,14 +223,15 @@ static void child_list_remove(
     nmo_type_id_t child_id)
 {
     nmo_type_child_list_t *list = get_child_list(registry, parent_id);
-    if (!list || !list->children || list->count == 0) {
+    if (!list || list->arr.count == 0) {
         return;
     }
 
-    for (size_t i = 0; i < list->count; i++) {
-        if (list->children[i] == child_id) {
-            list->children[i] = list->children[list->count - 1];
-            list->count--;
+    nmo_type_id_t *data = (nmo_type_id_t *)list->arr.data;
+    for (size_t i = 0; i < list->arr.count; i++) {
+        if (data[i] == child_id) {
+            data[i] = data[list->arr.count - 1];
+            list->arr.count--;
             return;
         }
     }
@@ -267,12 +241,13 @@ static bool child_list_contains(
     const nmo_type_child_list_t *list,
     nmo_type_id_t child_id)
 {
-    if (!list || !list->children || list->count == 0) {
+    if (!list || list->arr.count == 0) {
         return false;
     }
 
-    for (size_t i = 0; i < list->count; i++) {
-        if (list->children[i] == child_id) {
+    const nmo_type_id_t *data = (const nmo_type_id_t *)list->arr.data;
+    for (size_t i = 0; i < list->arr.count; i++) {
+        if (data[i] == child_id) {
             return true;
         }
     }
@@ -318,19 +293,13 @@ static nmo_status_t ensure_parent_child_link(
 }
 
 static void free_child_list(nmo_type_registry_t *registry, nmo_type_id_t type_id) {
+    (void)registry;
     nmo_type_child_list_t *list = get_child_list(registry, type_id);
     if (!list) {
         return;
     }
 
-    NMO_OWNERSHIP_EXPECT(list->children_ownership, NMO_OWNERSHIP_HEAP);
-
-    if (list->children) {
-        nmo_free(&registry->type_allocator, list->children);
-        list->children = NULL;
-    }
-    list->count = 0;
-    list->capacity = 0;
+    nmo_arena_array_clear(&list->arr);
 }
 
 static void free_type_storage(
@@ -1024,14 +993,12 @@ nmo_status_t nmo_type_registry_register(
         *slot_ptr = type;
         nmo_type_alias_list_t *alias_list = get_alias_list(registry, (nmo_type_id_t)slot);
         if (alias_list) {
-            alias_list->count = 0;
-            alias_list->aliases_ownership = NMO_OWNERSHIP_ARENA;
+            nmo_arena_array_clear(&alias_list->arr);
             alias_list->alias_string_ownership = NMO_OWNERSHIP_HEAP;
         }
         nmo_type_child_list_t *child_list = get_child_list(registry, (nmo_type_id_t)slot);
         if (child_list) {
-            child_list->count = 0;
-            child_list->children_ownership = NMO_OWNERSHIP_HEAP;
+            nmo_arena_array_clear(&child_list->arr);
         }
     } else {
         // Append new slot
@@ -1041,7 +1008,6 @@ nmo_status_t nmo_type_registry_register(
             return res;
         }
         nmo_type_alias_list_t alias_list = {0};
-        alias_list.aliases_ownership = NMO_OWNERSHIP_ARENA;
         alias_list.alias_string_ownership = NMO_OWNERSHIP_HEAP;
         res = nmo_arena_array_append(&registry->alias_lists, &alias_list);
         if (res != NMO_OK) {
@@ -1050,7 +1016,6 @@ nmo_status_t nmo_type_registry_register(
             return res;
         }
         nmo_type_child_list_t child_list = {0};
-        child_list.children_ownership = NMO_OWNERSHIP_HEAP;
         res = nmo_arena_array_append(&registry->child_lists, &child_list);
         if (res != NMO_OK) {
             nmo_arena_array_pop(&registry->alias_lists, NULL);
@@ -1175,9 +1140,9 @@ nmo_status_t nmo_type_registry_unregister(
     }
     {
         nmo_type_alias_list_t *alias_list = get_alias_list(registry, type_id);
-        if (alias_list && alias_list->count > 0 && alias_list->aliases) {
-            for (size_t i = 0; i < alias_list->count; i++) {
-                const char *alias_key = alias_list->aliases[i];
+        if (alias_list && alias_list->arr.count > 0) {
+            for (size_t i = 0; i < alias_list->arr.count; i++) {
+                const char *alias_key = *(const char **)nmo_arena_array_get(&alias_list->arr, i);
                 if (alias_key) {
                     nmo_hash_table_remove(registry->name_map, &alias_key);
                 }

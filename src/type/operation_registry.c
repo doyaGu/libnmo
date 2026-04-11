@@ -1,16 +1,16 @@
-﻿/**
+/**
  * @file operation_registry.c
  * @brief Operation registry implementation (Phase 6.1)
  */
 
 #include "type/nmo_operation_system.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_arena_array.h"
 #include "core/nmo_hash_table.h"
 #include "core/nmo_logger.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 #include <stdlib.h>
-#include <stdalign.h>
 
 /**
  * @brief Hash function wrapper for GUID keys
@@ -102,64 +102,40 @@ static nmo_operation_family_t *find_or_create_family(
     /* Search in hash map first (O(1)) */
     uint32_t family_index = 0;
     if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) == NMO_OK) {
-        return registry->families[family_index];
+        return *(nmo_operation_family_t **)nmo_arena_array_get(&registry->families, family_index);
     }
-    
+
     /* Not found, create new family */
-    if (registry->family_count >= registry->family_capacity) {
-        /* Expand family array */
-        uint32_t new_capacity = registry->family_capacity * 2;
-        nmo_operation_family_t **new_families = (nmo_operation_family_t **)nmo_arena_alloc(
-            registry->arena,
-            new_capacity * sizeof(nmo_operation_family_t *),
-            alignof(nmo_operation_family_t *)
-        );
-        if (!new_families) {
-            return NULL;
-        }
-        
-        /* Copy existing families */
-        memcpy(new_families, registry->families, 
-               registry->family_count * sizeof(nmo_operation_family_t *));
-        
-        registry->families = new_families;
-        registry->family_capacity = new_capacity;
-    }
-    
+
     /* Allocate new family */
     nmo_operation_family_t *family = (nmo_operation_family_t *)nmo_arena_alloc(
-        registry->arena, sizeof(nmo_operation_family_t), alignof(nmo_operation_family_t)
+        registry->arena, sizeof(nmo_operation_family_t), _Alignof(nmo_operation_family_t)
     );
     if (!family) {
         return NULL;
     }
-    
+
     memset(family, 0, sizeof(*family));
     family->operation_guid = *operation_guid;
-    
+
     /* Initial capacity for P1 layers */
-    family->layer_capacity = 4;
-    family->p1_layers = (nmo_operation_p1_layer_t *)nmo_arena_alloc(
-        registry->arena,
-        family->layer_capacity * sizeof(nmo_operation_p1_layer_t),
-        alignof(nmo_operation_p1_layer_t)
-    );
-    if (!family->p1_layers) {
-        return NULL;
-    }
-    
-    /* Add to registry (commit after map insertion) */
-    family_index = registry->family_count;
-    registry->families[family_index] = family;
-    
-    /* Add to hash map */
-    if (nmo_hash_table_insert(registry->family_map, operation_guid, &family_index) != NMO_OK) {
-        registry->families[family_index] = NULL;
+    if (nmo_arena_array_init(&family->p1_layers, sizeof(nmo_operation_p1_layer_t), 4, registry->arena) != NMO_OK) {
         return NULL;
     }
 
-    registry->family_count++;
-    
+    /* Add to registry (commit after map insertion) */
+    family_index = (uint32_t)registry->families.count;
+    if (nmo_arena_array_append(&registry->families, &family) != NMO_OK) {
+        return NULL;
+    }
+
+    /* Add to hash map */
+    if (nmo_hash_table_insert(registry->family_map, operation_guid, &family_index) != NMO_OK) {
+        /* Roll back the append by decrementing count */
+        registry->families.count--;
+        return NULL;
+    }
+
     return family;
 }
 
@@ -172,49 +148,28 @@ static nmo_operation_p1_layer_t *find_or_create_p1_layer(
     const nmo_guid_t *p1_type_guid
 ) {
     /* Linear search (small array, typically < 10 elements) */
-    for (uint32_t i = 0; i < family->layer_count; i++) {
-        if (nmo_guid_equals(family->p1_layers[i].p1_type_guid, *p1_type_guid)) {
-            return &family->p1_layers[i];
+    for (size_t i = 0; i < family->p1_layers.count; i++) {
+        nmo_operation_p1_layer_t *layer = (nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, i);
+        if (nmo_guid_equals(layer->p1_type_guid, *p1_type_guid)) {
+            return layer;
         }
     }
-    
+
     /* Not found, create new P1 layer */
-    if (family->layer_count >= family->layer_capacity) {
-        /* Expand P1 layer array */
-        uint32_t new_capacity = family->layer_capacity * 2;
-        nmo_operation_p1_layer_t *new_layers = (nmo_operation_p1_layer_t *)nmo_arena_alloc(
-            registry->arena,
-            new_capacity * sizeof(nmo_operation_p1_layer_t),
-            alignof(nmo_operation_p1_layer_t)
-        );
-        if (!new_layers) {
-            return NULL;
-        }
-        
-        /* Copy existing layers */
-        memcpy(new_layers, family->p1_layers, 
-               family->layer_count * sizeof(nmo_operation_p1_layer_t));
-        
-        family->p1_layers = new_layers;
-        family->layer_capacity = new_capacity;
-    }
-    
-    /* Initialize new P1 layer */
-    nmo_operation_p1_layer_t *p1_layer = &family->p1_layers[family->layer_count++];
-    memset(p1_layer, 0, sizeof(*p1_layer));
-    p1_layer->p1_type_guid = *p1_type_guid;
-    
-    /* Initial capacity for P2 layers */
-    p1_layer->layer_capacity = 4;
-    p1_layer->p2_layers = (nmo_operation_p2_layer_t *)nmo_arena_alloc(
-        registry->arena,
-        p1_layer->layer_capacity * sizeof(nmo_operation_p2_layer_t),
-        alignof(nmo_operation_p2_layer_t)
-    );
-    if (!p1_layer->p2_layers) {
+    nmo_operation_p1_layer_t *p1_layer = NULL;
+    if (nmo_arena_array_extend(&family->p1_layers, 1, (void **)&p1_layer) != NMO_OK) {
         return NULL;
     }
-    
+
+    /* Initialize new P1 layer */
+    memset(p1_layer, 0, sizeof(*p1_layer));
+    p1_layer->p1_type_guid = *p1_type_guid;
+
+    /* Initial capacity for P2 layers */
+    if (nmo_arena_array_init(&p1_layer->p2_layers, sizeof(nmo_operation_p2_layer_t), 4, registry->arena) != NMO_OK) {
+        return NULL;
+    }
+
     return p1_layer;
 }
 
@@ -227,49 +182,28 @@ static nmo_operation_p2_layer_t *find_or_create_p2_layer(
     const nmo_guid_t *p2_type_guid
 ) {
     /* Linear search */
-    for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
-        if (nmo_guid_equals(p1_layer->p2_layers[i].p2_type_guid, *p2_type_guid)) {
-            return &p1_layer->p2_layers[i];
+    for (size_t i = 0; i < p1_layer->p2_layers.count; i++) {
+        nmo_operation_p2_layer_t *layer = (nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, i);
+        if (nmo_guid_equals(layer->p2_type_guid, *p2_type_guid)) {
+            return layer;
         }
     }
-    
+
     /* Not found, create new P2 layer */
-    if (p1_layer->layer_count >= p1_layer->layer_capacity) {
-        /* Expand P2 layer array */
-        uint32_t new_capacity = p1_layer->layer_capacity * 2;
-        nmo_operation_p2_layer_t *new_layers = (nmo_operation_p2_layer_t *)nmo_arena_alloc(
-            registry->arena,
-            new_capacity * sizeof(nmo_operation_p2_layer_t),
-            alignof(nmo_operation_p2_layer_t)
-        );
-        if (!new_layers) {
-            return NULL;
-        }
-        
-        /* Copy existing layers */
-        memcpy(new_layers, p1_layer->p2_layers,
-               p1_layer->layer_count * sizeof(nmo_operation_p2_layer_t));
-        
-        p1_layer->p2_layers = new_layers;
-        p1_layer->layer_capacity = new_capacity;
-    }
-    
-    /* Initialize new P2 layer */
-    nmo_operation_p2_layer_t *p2_layer = &p1_layer->p2_layers[p1_layer->layer_count++];
-    memset(p2_layer, 0, sizeof(*p2_layer));
-    p2_layer->p2_type_guid = *p2_type_guid;
-    
-    /* Initial capacity for cells */
-    p2_layer->cell_capacity = 4;
-    p2_layer->cells = (nmo_operation_tree_cell_t *)nmo_arena_alloc(
-        registry->arena,
-        p2_layer->cell_capacity * sizeof(nmo_operation_tree_cell_t),
-        alignof(nmo_operation_tree_cell_t)
-    );
-    if (!p2_layer->cells) {
+    nmo_operation_p2_layer_t *p2_layer = NULL;
+    if (nmo_arena_array_extend(&p1_layer->p2_layers, 1, (void **)&p2_layer) != NMO_OK) {
         return NULL;
     }
-    
+
+    /* Initialize new P2 layer */
+    memset(p2_layer, 0, sizeof(*p2_layer));
+    p2_layer->p2_type_guid = *p2_type_guid;
+
+    /* Initial capacity for cells */
+    if (nmo_arena_array_init(&p2_layer->cells, sizeof(nmo_operation_tree_cell_t), 4, registry->arena) != NMO_OK) {
+        return NULL;
+    }
+
     return p2_layer;
 }
 
@@ -285,8 +219,8 @@ static nmo_status_t insert_operation_cell(
     const nmo_type_descriptor_t *result_type
 ) {
     /* Check if operation already exists (by result type GUID) */
-    for (uint32_t i = 0; i < p2_layer->cell_count; i++) {
-        nmo_operation_tree_cell_t *cell = &p2_layer->cells[i];
+    for (size_t i = 0; i < p2_layer->cells.count; i++) {
+        nmo_operation_tree_cell_t *cell = (nmo_operation_tree_cell_t *)nmo_arena_array_get(&p2_layer->cells, i);
         if (nmo_guid_equals(cell->desc.result_type_guid, desc->result_type_guid)) {
             /* Override policy: non-NULL function always beats NULL function
              * (C implementation replaces JSON stub). When both are the same
@@ -308,39 +242,23 @@ static nmo_status_t insert_operation_cell(
             NMO_RETURN_OK();
         }
     }
-    
+
     /* Not found, add new cell */
-    if (p2_layer->cell_count >= p2_layer->cell_capacity) {
-        /* Expand cell array */
-        uint32_t new_capacity = p2_layer->cell_capacity * 2;
-        nmo_operation_tree_cell_t *new_cells = (nmo_operation_tree_cell_t *)nmo_arena_alloc(
-            registry->arena,
-            new_capacity * sizeof(nmo_operation_tree_cell_t),
-            alignof(nmo_operation_tree_cell_t)
-        );
-        if (!new_cells) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                    "Failed to expand cell array");
-        }
-        
-        /* Copy existing cells */
-        memcpy(new_cells, p2_layer->cells,
-               p2_layer->cell_count * sizeof(nmo_operation_tree_cell_t));
-        
-        p2_layer->cells = new_cells;
-        p2_layer->cell_capacity = new_capacity;
+    nmo_operation_tree_cell_t *cell = NULL;
+    if (nmo_arena_array_extend(&p2_layer->cells, 1, (void **)&cell) != NMO_OK) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                "Failed to expand cell array");
     }
-    
-    /* Add new cell */
-    nmo_operation_tree_cell_t *cell = &p2_layer->cells[p2_layer->cell_count++];
+
+    /* Initialize new cell */
     memset(cell, 0, sizeof(*cell));
     cell->desc = *desc;
     cell->p1_type = p1_type;
     cell->p2_type = p2_type;
     cell->result_type = result_type;
-    
+
     registry->total_operations++;
-    
+
     NMO_RETURN_OK();
 }
 
@@ -352,21 +270,21 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
     if (!arena) {
         return NULL;
     }
-    
+
     nmo_operation_registry_t *registry = (nmo_operation_registry_t *)nmo_arena_alloc(
-        arena, sizeof(nmo_operation_registry_t), alignof(nmo_operation_registry_t)
+        arena, sizeof(nmo_operation_registry_t), _Alignof(nmo_operation_registry_t)
     );
     if (!registry) {
         return NULL;
     }
-    
+
     memset(registry, 0, sizeof(*registry));
     registry->arena = arena;
     registry->registry_version = 0;
     registry->cache_version = 0;
     registry->cached_type_registry_version = 0;
     registry->finalized = false;
-    
+
     /* Create hash map for O(1) family lookup: GUID -> family index */
     registry->family_map = nmo_hash_table_create(
         NULL,                      /* allocator - use default */
@@ -379,15 +297,9 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
     if (!registry->family_map) {
         return NULL;
     }
-    
+
     /* Allocate initial family array */
-    registry->family_capacity = 16;
-    registry->families = (nmo_operation_family_t **)nmo_arena_alloc(
-        arena,
-        registry->family_capacity * sizeof(nmo_operation_family_t *),
-        alignof(nmo_operation_family_t *)
-    );
-    if (!registry->families) {
+    if (nmo_arena_array_init(&registry->families, sizeof(nmo_operation_family_t *), 16, arena) != NMO_OK) {
         nmo_hash_table_destroy(registry->family_map);
         registry->family_map = NULL;
         return NULL;
@@ -406,7 +318,7 @@ nmo_operation_registry_t *nmo_operation_registry_create(nmo_arena_t *arena) {
         registry->family_map = NULL;
         return NULL;
     }
-    
+
     return registry;
 }
 
@@ -459,7 +371,7 @@ nmo_status_t nmo_operation_registry_register(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Operation registry is finalized; cannot register operations");
     }
-    
+
     /* Resolve type descriptors from type registry */
     const nmo_type_descriptor_t *p1_type = nmo_type_registry_find_by_guid(
         type_registry, desc->p1_type_guid
@@ -469,7 +381,7 @@ nmo_status_t nmo_operation_registry_register(
                                 "P1 type not found in type registry (op='%s')",
                                 desc->name ? desc->name : "<unnamed>");
     }
-    
+
     const nmo_type_descriptor_t *p2_type = NULL;
     if (!(desc->flags & NMO_OP_UNARY)) {
         p2_type = nmo_type_registry_find_by_guid(type_registry, desc->p2_type_guid);
@@ -479,7 +391,7 @@ nmo_status_t nmo_operation_registry_register(
                                     desc->name ? desc->name : "<unnamed>");
         }
     }
-    
+
     const nmo_type_descriptor_t *result_type = nmo_type_registry_find_by_guid(
         type_registry, desc->result_type_guid
     );
@@ -488,14 +400,14 @@ nmo_status_t nmo_operation_registry_register(
                                 "Result type not found in type registry (op='%s')",
                                 desc->name ? desc->name : "<unnamed>");
     }
-    
+
     /* Navigate 4D tree: Operation -> P1 -> P2 -> Cell */
     nmo_operation_family_t *family = find_or_create_family(registry, &desc->operation_guid);
     if (!family) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to create operation family");
     }
-    
+
     nmo_operation_p1_layer_t *p1_layer = find_or_create_p1_layer(
         registry, family, &desc->p1_type_guid
     );
@@ -503,11 +415,11 @@ nmo_status_t nmo_operation_registry_register(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to create P1 layer");
     }
-    
+
     /* For unary operations, use NULL_GUID for P2 */
-    nmo_guid_t p2_guid = (desc->flags & NMO_OP_UNARY) ? 
+    nmo_guid_t p2_guid = (desc->flags & NMO_OP_UNARY) ?
         (nmo_guid_t){0, 0} : desc->p2_type_guid;
-    
+
     nmo_operation_p2_layer_t *p2_layer = find_or_create_p2_layer(
         registry, p1_layer, &p2_guid
     );
@@ -515,12 +427,12 @@ nmo_status_t nmo_operation_registry_register(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Failed to create P2 layer");
     }
-    
+
     /* Insert operation cell */
     nmo_status_t result = insert_operation_cell(
         registry, p2_layer, desc, p1_type, p2_type, result_type
     );
-    
+
     if (result == NMO_OK) {
         if (!family->name) {
             family->name = desc->name;
@@ -529,7 +441,7 @@ nmo_status_t nmo_operation_registry_register(
         family->total_operations++; /* registration events, may count overrides */
         registry->registry_version++;
     }
-    
+
     return result;
 }
 
@@ -549,20 +461,20 @@ nmo_status_t nmo_operation_registry_register_bulk(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                          "Operation registry is finalized; cannot register operations");
     }
-    
+
     /* Register operations one by one */
     uint32_t success_count = 0;
     for (uint32_t i = 0; i < count; i++) {
         nmo_status_t result = nmo_operation_registry_register(
             registry, &descs[i], type_registry
         );
-        
+
         if (result != NMO_OK) {
             /* Log error if logger provided */
             if (logger) {
                 char err_msg[256];
                 nmo_last_error_message_copy(err_msg, sizeof(err_msg));
-                nmo_log_warn(logger, "Failed to register operation %u (%s): %s", 
+                nmo_log_warn(logger, "Failed to register operation %u (%s): %s",
                            i, descs[i].name ? descs[i].name : "unnamed",
                            err_msg[0] ? err_msg : "Unknown error");
             }
@@ -570,13 +482,13 @@ nmo_status_t nmo_operation_registry_register_bulk(
             success_count++;
         }
     }
-    
+
     /* Return success if at least one operation registered */
     if (success_count == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                                 "Failed to register any operations");
     }
-    
+
     NMO_RETURN_OK();
 }
 
@@ -590,22 +502,22 @@ nmo_status_t nmo_operation_registry_register_bulk(
 static const nmo_operation_tree_cell_t *find_cell_best(
     const nmo_operation_p2_layer_t *p2_layer
 ) {
-    if (p2_layer->cell_count == 0) {
+    if (p2_layer->cells.count == 0) {
         return NULL;
     }
-    
+
     /* Return first cell (or highest priority if we track that) */
-    const nmo_operation_tree_cell_t *best_cell = &p2_layer->cells[0];
+    const nmo_operation_tree_cell_t *best_cell = (const nmo_operation_tree_cell_t *)nmo_arena_array_get(&p2_layer->cells, 0);
     uint32_t best_priority = best_cell->desc.priority;
-    
-    for (uint32_t i = 1; i < p2_layer->cell_count; i++) {
-        const nmo_operation_tree_cell_t *cell = &p2_layer->cells[i];
+
+    for (size_t i = 1; i < p2_layer->cells.count; i++) {
+        const nmo_operation_tree_cell_t *cell = (const nmo_operation_tree_cell_t *)nmo_arena_array_get(&p2_layer->cells, i);
         if (cell->desc.priority > best_priority) {
             best_cell = cell;
             best_priority = cell->desc.priority;
         }
     }
-    
+
     return best_cell;
 }
 
@@ -616,12 +528,12 @@ static const nmo_operation_tree_cell_t *find_cell_by_result(
     const nmo_operation_p2_layer_t *p2_layer,
     nmo_guid_t result_type_guid
 ) {
-    if (!p2_layer || p2_layer->cell_count == 0) {
+    if (!p2_layer || p2_layer->cells.count == 0) {
         return NULL;
     }
 
-    for (uint32_t i = 0; i < p2_layer->cell_count; i++) {
-        const nmo_operation_tree_cell_t *cell = &p2_layer->cells[i];
+    for (size_t i = 0; i < p2_layer->cells.count; i++) {
+        const nmo_operation_tree_cell_t *cell = (const nmo_operation_tree_cell_t *)nmo_arena_array_get(&p2_layer->cells, i);
         if (nmo_guid_equals(cell->desc.result_type_guid, result_type_guid)) {
             return cell;
         }
@@ -652,7 +564,7 @@ static nmo_status_t find_p2_layer(
                     "Operation family not found");
     }
 
-    const nmo_operation_family_t *family = registry->families[family_index];
+    const nmo_operation_family_t *family = *(nmo_operation_family_t **)nmo_arena_array_get(&registry->families, family_index);
     if (!family) {
         NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
                                 "Family index points to NULL");
@@ -664,9 +576,10 @@ static nmo_status_t find_p2_layer(
     int32_t best_p1_depth = -1;
 
     /* First try exact match */
-    for (uint32_t i = 0; i < family->layer_count; i++) {
-        if (nmo_guid_equals(family->p1_layers[i].p1_type_guid, p1_type->guid)) {
-            p1_layer = &family->p1_layers[i];
+    for (size_t i = 0; i < family->p1_layers.count; i++) {
+        nmo_operation_p1_layer_t *candidate = (nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, i);
+        if (nmo_guid_equals(candidate->p1_type_guid, p1_type->guid)) {
+            p1_layer = candidate;
             break;
         }
     }
@@ -678,9 +591,10 @@ static nmo_status_t find_p2_layer(
 
         if (p1_type_id != NMO_TYPE_ID_INVALID) {
             /* Find best compatible type (closest parent) */
-            for (uint32_t i = 0; i < family->layer_count; i++) {
+            for (size_t i = 0; i < family->p1_layers.count; i++) {
+                nmo_operation_p1_layer_t *candidate = (nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, i);
                 nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
-                    type_registry, family->p1_layers[i].p1_type_guid);
+                    type_registry, candidate->p1_type_guid);
 
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p1_type derives from candidate */
@@ -689,7 +603,7 @@ static nmo_status_t find_p2_layer(
 
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p1_depth < 0 || depth < best_p1_depth)) {
-                        compatible_p1_layer = &family->p1_layers[i];
+                        compatible_p1_layer = candidate;
                         best_p1_depth = depth;
                     }
                 }
@@ -711,9 +625,10 @@ static nmo_status_t find_p2_layer(
     int32_t best_p2_depth = -1;
 
     /* First try exact match */
-    for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
-        if (nmo_guid_equals(p1_layer->p2_layers[i].p2_type_guid, p2_guid)) {
-            p2_layer = &p1_layer->p2_layers[i];
+    for (size_t i = 0; i < p1_layer->p2_layers.count; i++) {
+        nmo_operation_p2_layer_t *candidate = (nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, i);
+        if (nmo_guid_equals(candidate->p2_type_guid, p2_guid)) {
+            p2_layer = candidate;
             break;
         }
     }
@@ -725,9 +640,10 @@ static nmo_status_t find_p2_layer(
 
         if (p2_type_id != NMO_TYPE_ID_INVALID) {
             /* Find best compatible type (closest parent) */
-            for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
+            for (size_t i = 0; i < p1_layer->p2_layers.count; i++) {
+                nmo_operation_p2_layer_t *candidate = (nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, i);
                 nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
-                    type_registry, p1_layer->p2_layers[i].p2_type_guid);
+                    type_registry, candidate->p2_type_guid);
 
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p2_type derives from candidate */
@@ -736,7 +652,7 @@ static nmo_status_t find_p2_layer(
 
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p2_depth < 0 || depth < best_p2_depth)) {
-                        compatible_p2_layer = &p1_layer->p2_layers[i];
+                        compatible_p2_layer = candidate;
                         best_p2_depth = depth;
                     }
                 }
@@ -884,7 +800,7 @@ nmo_status_t nmo_operation_registry_find(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid parameters");
     }
-    
+
     *out_cell = NULL;
     registry->total_lookups++;
 
@@ -919,124 +835,128 @@ nmo_status_t nmo_operation_registry_find(
             }
         }
     }
-    
+
     /* Step 1: Find operation family by GUID (O(1) hash lookup) */
     uint32_t family_index = 0;
     if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                     "Operation family not found");
     }
-    
-    const nmo_operation_family_t *family = registry->families[family_index];
+
+    const nmo_operation_family_t *family = *(nmo_operation_family_t **)nmo_arena_array_get(&registry->families, family_index);
     if (!family) {
         NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
                                 "Family index points to NULL");
     }
-    
+
     /* Step 2: Find P1 layer by type GUID (linear search with inheritance fallback) */
     const nmo_operation_p1_layer_t *p1_layer = NULL;
     const nmo_operation_p1_layer_t *compatible_p1_layer = NULL;
     int32_t best_p1_depth = -1;
-    
+
     /* First try exact match */
-    for (uint32_t i = 0; i < family->layer_count; i++) {
-        if (nmo_guid_equals(family->p1_layers[i].p1_type_guid, p1_type->guid)) {
-            p1_layer = &family->p1_layers[i];
+    for (size_t i = 0; i < family->p1_layers.count; i++) {
+        nmo_operation_p1_layer_t *candidate = (nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, i);
+        if (nmo_guid_equals(candidate->p1_type_guid, p1_type->guid)) {
+            p1_layer = candidate;
             break;
         }
     }
-    
+
     /* If no exact match and type_registry available, try inheritance matching */
     if (!p1_layer && type_registry) {
         nmo_type_id_t p1_type_id = nmo_type_registry_guid_to_type_id(
             type_registry, p1_type->guid);
-        
+
         if (p1_type_id != NMO_TYPE_ID_INVALID) {
             /* Find best compatible type (closest parent) */
-            for (uint32_t i = 0; i < family->layer_count; i++) {
+            for (size_t i = 0; i < family->p1_layers.count; i++) {
+                nmo_operation_p1_layer_t *candidate = (nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, i);
                 nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
-                    type_registry, family->p1_layers[i].p1_type_guid);
-                
+                    type_registry, candidate->p1_type_guid);
+
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p1_type derives from candidate */
                     int32_t depth = nmo_type_get_derivation_depth(
                         (nmo_type_registry_t *)type_registry, p1_type_id, candidate_id);
-                    
+
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p1_depth < 0 || depth < best_p1_depth)) {
-                        compatible_p1_layer = &family->p1_layers[i];
+                        compatible_p1_layer = candidate;
                         best_p1_depth = depth;
                     }
                 }
             }
-            
+
             p1_layer = compatible_p1_layer;
         }
     }
-    
+
     if (!p1_layer) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                 "P1 type not found in family (no compatible type)");
     }
-    
+
     /* Step 3: Find P2 layer by type GUID (linear search with inheritance fallback) */
     nmo_guid_t p2_guid = p2_type ? p2_type->guid : (nmo_guid_t){0, 0};
     const nmo_operation_p2_layer_t *p2_layer = NULL;
     const nmo_operation_p2_layer_t *compatible_p2_layer = NULL;
     int32_t best_p2_depth = -1;
-    
+
     /* First try exact match */
-    for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
-        if (nmo_guid_equals(p1_layer->p2_layers[i].p2_type_guid, p2_guid)) {
-            p2_layer = &p1_layer->p2_layers[i];
+    for (size_t i = 0; i < p1_layer->p2_layers.count; i++) {
+        nmo_operation_p2_layer_t *candidate = (nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, i);
+        if (nmo_guid_equals(candidate->p2_type_guid, p2_guid)) {
+            p2_layer = candidate;
             break;
         }
     }
-    
+
     /* If no exact match and type_registry available, try inheritance matching */
     if (!p2_layer && p2_type && type_registry) {
         nmo_type_id_t p2_type_id = nmo_type_registry_guid_to_type_id(
             type_registry, p2_guid);
-        
+
         if (p2_type_id != NMO_TYPE_ID_INVALID) {
             /* Find best compatible type (closest parent) */
-            for (uint32_t i = 0; i < p1_layer->layer_count; i++) {
+            for (size_t i = 0; i < p1_layer->p2_layers.count; i++) {
+                nmo_operation_p2_layer_t *candidate = (nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, i);
                 nmo_type_id_t candidate_id = nmo_type_registry_guid_to_type_id(
-                    type_registry, p1_layer->p2_layers[i].p2_type_guid);
-                
+                    type_registry, candidate->p2_type_guid);
+
                 if (candidate_id != NMO_TYPE_ID_INVALID) {
                     /* Check if p2_type derives from candidate */
                     int32_t depth = nmo_type_get_derivation_depth(
                         (nmo_type_registry_t *)type_registry, p2_type_id, candidate_id);
-                    
+
                     /* Update if better match (closer parent = lower depth) */
                     if (depth >= 0 && (best_p2_depth < 0 || depth < best_p2_depth)) {
-                        compatible_p2_layer = &p1_layer->p2_layers[i];
+                        compatible_p2_layer = candidate;
                         best_p2_depth = depth;
                     }
                 }
             }
-            
+
             p2_layer = compatible_p2_layer;
         }
     }
-    
+
     if (!p2_layer) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                 "P2 type not found in P1 layer (no compatible type)");
     }
-    
+
     /* Step 4: Find operation cell (best match) */
     const nmo_operation_tree_cell_t *cell = find_cell_best(p2_layer);
     if (!cell) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                 "No operation cell found in P2 layer");
     }
-    
+
     /* Update statistics (mutable cast for statistics) */
     nmo_operation_tree_cell_t *mutable_cell = (nmo_operation_tree_cell_t *)cell;
     mutable_cell->call_count++;
-    
+
     *out_cell = cell;
     if (type_registry) {
         nmo_type_id_t p1_id = nmo_type_registry_guid_to_type_id(type_registry, p1_type->guid);
@@ -1058,7 +978,7 @@ nmo_status_t nmo_operation_registry_find(
             }
         }
     }
-    
+
     NMO_RETURN_OK();
 }
 
@@ -1077,17 +997,17 @@ nmo_status_t nmo_operation_registry_execute(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid parameters");
     }
-    
+
     /* Find operation */
     const nmo_operation_tree_cell_t *cell = NULL;
     nmo_status_t result = nmo_operation_registry_find_typed(
         registry, operation_guid, p1_type, p2_type, result_type, type_registry, &cell
     );
-    
+
     if (result != NMO_OK) {
         return result;
     }
-    
+
     if (!cell) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                                 "Operation not found");
@@ -1118,18 +1038,18 @@ const nmo_operation_family_t *nmo_operation_registry_get_family(
     if (!registry || !operation_guid) {
         return NULL;
     }
-    
+
     /* Lookup in hash map */
     uint32_t family_index = 0;
     if (nmo_hash_table_get(registry->family_map, operation_guid, &family_index) != NMO_OK) {
         return NULL;
     }
-    
-    if (family_index >= registry->family_count) {
+
+    if (family_index >= registry->families.count) {
         return NULL;
     }
-    
-    return registry->families[family_index];
+
+    return *(nmo_operation_family_t **)nmo_arena_array_get(&registry->families, family_index);
 }
 
 nmo_status_t nmo_operation_family_enumerate(
@@ -1141,17 +1061,17 @@ nmo_status_t nmo_operation_family_enumerate(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid parameters");
     }
-    
+
     /* Enumerate all operations in family (3-level nested loop) */
-    for (uint32_t i = 0; i < family->layer_count; i++) {
-        const nmo_operation_p1_layer_t *p1_layer = &family->p1_layers[i];
-        
-        for (uint32_t j = 0; j < p1_layer->layer_count; j++) {
-            const nmo_operation_p2_layer_t *p2_layer = &p1_layer->p2_layers[j];
-            
-            for (uint32_t k = 0; k < p2_layer->cell_count; k++) {
-                const nmo_operation_tree_cell_t *cell = &p2_layer->cells[k];
-                
+    for (size_t i = 0; i < family->p1_layers.count; i++) {
+        const nmo_operation_p1_layer_t *p1_layer = (const nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, i);
+
+        for (size_t j = 0; j < p1_layer->p2_layers.count; j++) {
+            const nmo_operation_p2_layer_t *p2_layer = (const nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, j);
+
+            for (size_t k = 0; k < p2_layer->cells.count; k++) {
+                const nmo_operation_tree_cell_t *cell = (const nmo_operation_tree_cell_t *)nmo_arena_array_get(&p2_layer->cells, k);
+
                 nmo_status_t result = callback(cell, user_data);
                 if (result != NMO_OK) {
                     return result;  /* Stop on error */
@@ -1159,7 +1079,7 @@ nmo_status_t nmo_operation_family_enumerate(
             }
         }
     }
-    
+
     NMO_RETURN_OK();
 }
 
@@ -1176,7 +1096,7 @@ void nmo_operation_registry_get_stats(
     if (!registry) {
         return;
     }
-    
+
     if (out_total_operations) {
         *out_total_operations = registry->total_operations;
     }
@@ -1195,34 +1115,34 @@ void nmo_operation_registry_debug_print(
     if (!registry || !logger) {
         return;
     }
-    
+
     nmo_log_info(logger, "=== Operation Registry Debug ===");
-    nmo_log_info(logger, "Total families: %u", registry->family_count);
-    nmo_log_info(logger, "Total operations: %llu", 
+    nmo_log_info(logger, "Total families: %zu", registry->families.count);
+    nmo_log_info(logger, "Total operations: %llu",
                  (unsigned long long)registry->total_operations);
-    nmo_log_info(logger, "Total lookups: %llu", 
+    nmo_log_info(logger, "Total lookups: %llu",
                  (unsigned long long)registry->total_lookups);
-    
-    for (uint32_t i = 0; i < registry->family_count; i++) {
-        const nmo_operation_family_t *family = registry->families[i];
+
+    for (size_t i = 0; i < registry->families.count; i++) {
+        const nmo_operation_family_t *family = *(nmo_operation_family_t **)nmo_arena_array_get(&registry->families, i);
         if (!family) continue;
-        
+
         nmo_log_info(logger, "\nFamily: %s", family->name ? family->name : "Unknown");
-        nmo_log_info(logger, "  Total operations: %llu", 
+        nmo_log_info(logger, "  Total operations: %llu",
                      (unsigned long long)family->total_operations);
-        nmo_log_info(logger, "  P1 layers: %u", family->layer_count);
-        
-        for (uint32_t j = 0; j < family->layer_count; j++) {
-            const nmo_operation_p1_layer_t *p1_layer = &family->p1_layers[j];
-            nmo_log_info(logger, "    P1 layer %u: %u P2 layers", j, p1_layer->layer_count);
-            
-            for (uint32_t k = 0; k < p1_layer->layer_count; k++) {
-                const nmo_operation_p2_layer_t *p2_layer = &p1_layer->p2_layers[k];
-                nmo_log_info(logger, "      P2 layer %u: %u cells", k, p2_layer->cell_count);
-                
-                for (uint32_t m = 0; m < p2_layer->cell_count; m++) {
-                    const nmo_operation_tree_cell_t *cell = &p2_layer->cells[m];
-                    nmo_log_info(logger, "        Cell %u: %s (calls: %llu, priority: %u)",
+        nmo_log_info(logger, "  P1 layers: %zu", family->p1_layers.count);
+
+        for (size_t j = 0; j < family->p1_layers.count; j++) {
+            const nmo_operation_p1_layer_t *p1_layer = (const nmo_operation_p1_layer_t *)nmo_arena_array_get(&family->p1_layers, j);
+            nmo_log_info(logger, "    P1 layer %zu: %zu P2 layers", j, p1_layer->p2_layers.count);
+
+            for (size_t k = 0; k < p1_layer->p2_layers.count; k++) {
+                const nmo_operation_p2_layer_t *p2_layer = (const nmo_operation_p2_layer_t *)nmo_arena_array_get(&p1_layer->p2_layers, k);
+                nmo_log_info(logger, "      P2 layer %zu: %zu cells", k, p2_layer->cells.count);
+
+                for (size_t m = 0; m < p2_layer->cells.count; m++) {
+                    const nmo_operation_tree_cell_t *cell = (const nmo_operation_tree_cell_t *)nmo_arena_array_get(&p2_layer->cells, m);
+                    nmo_log_info(logger, "        Cell %zu: %s (calls: %llu, priority: %u)",
                                 m, cell->desc.name ? cell->desc.name : "Unknown",
                                 (unsigned long long)cell->call_count,
                                 cell->desc.priority);

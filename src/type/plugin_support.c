@@ -423,7 +423,7 @@ nmo_status_t nmo_type_registry_unregister_derived(
 
     nmo_type_child_list_t *child_list =
         (nmo_type_child_list_t *)nmo_arena_array_get(&registry->child_lists, (size_t)base_id);
-    if (!child_list || child_list->count == 0 || !child_list->children) {
+    if (!child_list || child_list->arr.count == 0 || !child_list->arr.data) {
         /* Defensive fallback for registries that had unresolved base links. */
         for (size_t i = 0; i < registry->types.count; i++) {
             nmo_type_descriptor_t *type = *(nmo_type_descriptor_t **)nmo_arena_array_get((nmo_arena_array_t*)&registry->types, i);
@@ -447,15 +447,15 @@ nmo_status_t nmo_type_registry_unregister_derived(
     nmo_allocator_t alloc = nmo_allocator_default();
     nmo_type_id_t *children = (nmo_type_id_t *)nmo_alloc(
         &alloc,
-        child_list->count * sizeof(nmo_type_id_t),
+        child_list->arr.count * sizeof(nmo_type_id_t),
         _Alignof(nmo_type_id_t));
     if (!children) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "Failed to allocate child list snapshot");
     }
 
-    memcpy(children, child_list->children, child_list->count * sizeof(nmo_type_id_t));
-    size_t child_count = child_list->count;
+    memcpy(children, child_list->arr.data, child_list->arr.count * sizeof(nmo_type_id_t));
+    size_t child_count = child_list->arr.count;
 
     for (size_t i = 0; i < child_count; i++) {
         nmo_type_descriptor_t *child = (nmo_type_descriptor_t *)nmo_type_registry_get_by_id(registry, children[i]);

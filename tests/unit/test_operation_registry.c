@@ -150,9 +150,9 @@ TEST(operation_registry, create_destroy) {
     nmo_operation_registry_t *registry = nmo_operation_registry_create(arena);
     ASSERT_NE(NULL, registry);
     ASSERT_NE(NULL, registry->arena);
-    ASSERT_NE(NULL, registry->families);
+    ASSERT_NE(NULL, registry->families.data);
     ASSERT_NE(NULL, registry->family_map);
-    ASSERT_EQ(0, registry->family_count);
+    ASSERT_EQ(0u, registry->families.count);
     ASSERT_EQ(0, registry->total_operations);
     
     nmo_operation_registry_destroy(registry);

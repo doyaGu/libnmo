@@ -153,6 +153,24 @@ NMO_API size_t nmo_bb_registry_count(const nmo_bb_registry_t *registry);
  */
 NMO_API size_t nmo_bb_registry_builtin_count(const nmo_bb_registry_t *registry);
 
+/**
+ * @brief Visitor callback for nmo_bb_registry_foreach().
+ * @return 0 to continue iteration, non-zero to stop
+ */
+typedef int (*nmo_bb_registry_visitor_fn)(const nmo_bb_proto_t *proto, void *user_data);
+
+/**
+ * @brief Iterate over all registered BB prototypes.
+ *
+ * @param registry   Registry
+ * @param visitor    Callback invoked for each prototype
+ * @param user_data  Opaque pointer passed to visitor
+ */
+NMO_API void nmo_bb_registry_foreach(
+    const nmo_bb_registry_t *registry,
+    nmo_bb_registry_visitor_fn visitor,
+    void *user_data);
+
 /* ============================================================================
  * Static (no-instance) builtin lookups
  *

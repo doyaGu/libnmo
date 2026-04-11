@@ -21,6 +21,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_arena_array.h"
 #include "type/nmo_type_system.h"
 
 #ifdef __cplusplus
@@ -138,9 +139,7 @@ typedef struct nmo_operation_tree_cell {
 typedef struct nmo_operation_p2_layer {
     nmo_guid_t p2_type_guid;             /**< P2 type GUID (for verification) */
     
-    nmo_operation_tree_cell_t *cells;    /**< Sorted array of cells (by p2_type_guid) */
-    uint32_t cell_count;                 /**< Number of cells */
-    uint32_t cell_capacity;              /**< Allocated capacity */
+    nmo_arena_array_t cells;             /**< Sorted array of cells (nmo_operation_tree_cell_t) */
 } nmo_operation_p2_layer_t;
 
 /**
@@ -151,9 +150,7 @@ typedef struct nmo_operation_p2_layer {
 typedef struct nmo_operation_p1_layer {
     nmo_guid_t p1_type_guid;             /**< P1 type GUID (for verification) */
     
-    nmo_operation_p2_layer_t *p2_layers; /**< Sorted array of P2 layers (by p2_type_guid) */
-    uint32_t layer_count;                /**< Number of P2 layers */
-    uint32_t layer_capacity;             /**< Allocated capacity */
+    nmo_arena_array_t p2_layers;         /**< Sorted array of P2 layers (nmo_operation_p2_layer_t) */
 } nmo_operation_p1_layer_t;
 
 /**
@@ -167,9 +164,7 @@ typedef struct nmo_operation_family {
     const char *name;                    /**< Operation name (e.g., "Add") */
     const char *description;             /**< Human-readable description */
     
-    nmo_operation_p1_layer_t *p1_layers; /**< Sorted array of P1 layers */
-    uint32_t layer_count;                /**< Number of P1 layers */
-    uint32_t layer_capacity;             /**< Allocated capacity */
+    nmo_arena_array_t p1_layers;         /**< Sorted array of P1 layers (nmo_operation_p1_layer_t) */
     
     /* Statistics */
     uint64_t total_operations;           /**< Total number of operations in family */
@@ -200,9 +195,7 @@ typedef struct nmo_operation_registry {
     nmo_arena_t *arena;                  /**< Arena for all allocations */
     
     /* Operation families (root level) */
-    nmo_operation_family_t **families;   /**< Array of operation family pointers */
-    uint32_t family_count;               /**< Number of families */
-    uint32_t family_capacity;            /**< Allocated capacity */
+    nmo_arena_array_t families;          /**< Array of operation family pointers (nmo_operation_family_t *) */
     
     /* GUID-based hash map for O(1) family lookup */
     nmo_hash_table_t *family_map;        /**< GUID -> family index */

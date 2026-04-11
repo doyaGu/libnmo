@@ -8,49 +8,43 @@
 #include "behavior/nmo_bb_registry.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_hash_table.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 /* ============================================================================
- * Dynamic entry storage (hash map)
+ * Hash helpers (same pattern as operation_registry.c)
  * ============================================================================ */
 
-#define HASH_BUCKETS 512
+static size_t guid_hash_wrapper(const void *key, size_t key_size) {
+    (void)key_size;
+    return (size_t)nmo_guid_hash(*(const nmo_guid_t *)key);
+}
 
-typedef struct dyn_bb_entry {
-    nmo_bb_proto_t proto;
-    struct dyn_bb_entry *next;
-} dyn_bb_entry_t;
+static int guid_compare_wrapper(const void *key1, const void *key2, size_t key_size) {
+    (void)key_size;
+    return nmo_guid_equals(*(const nmo_guid_t *)key1, *(const nmo_guid_t *)key2) ? 0 : -1;
+}
+
+/* ============================================================================
+ * Registry structure
+ * ============================================================================ */
 
 struct nmo_bb_registry {
     nmo_arena_t *arena;
-    dyn_bb_entry_t *buckets[HASH_BUCKETS];
-    size_t count;
+    nmo_hash_table_t *guid_map; /**< GUID -> nmo_bb_proto_t * */
 };
-
-static uint32_t bucket_of(nmo_guid_t guid) {
-    return nmo_guid_hash(guid) % HASH_BUCKETS;
-}
 
 /* ============================================================================
  * Arena deep-copy helpers
  * ============================================================================ */
-
-static char *arena_strdup(nmo_arena_t *arena, const char *s) {
-    if (!s) return NULL;
-    size_t len = strlen(s);
-    char *dst = (char *)nmo_arena_alloc(arena, len + 1, 1);
-    if (dst) memcpy(dst, s, len + 1);
-    return dst;
-}
 
 static const char **arena_dup_strings(nmo_arena_t *arena, const char *const *src, uint32_t count) {
     if (!src || count == 0) return NULL;
     const char **dst = (const char **)nmo_arena_alloc(arena, count * sizeof(const char *), _Alignof(const char *));
     if (!dst) return NULL;
     for (uint32_t i = 0; i < count; i++)
-        dst[i] = arena_strdup(arena, src[i]);
+        dst[i] = nmo_arena_strdup(arena, src[i]);
     return dst;
 }
 
@@ -60,7 +54,7 @@ static nmo_bb_param_desc_t *arena_dup_params(nmo_arena_t *arena, const nmo_bb_pa
         arena, count * sizeof(*dst), _Alignof(nmo_bb_param_desc_t));
     if (!dst) return NULL;
     for (uint32_t i = 0; i < count; i++) {
-        dst[i].name = arena_strdup(arena, src[i].name);
+        dst[i].name = nmo_arena_strdup(arena, src[i].name);
         dst[i].type_guid = src[i].type_guid;
     }
     return dst;
@@ -68,10 +62,10 @@ static nmo_bb_param_desc_t *arena_dup_params(nmo_arena_t *arena, const nmo_bb_pa
 
 static void deep_copy_proto(nmo_arena_t *arena, nmo_bb_proto_t *dst, const nmo_bb_proto_t *src) {
     dst->guid = src->guid;
-    dst->name = arena_strdup(arena, src->name);
-    dst->description = arena_strdup(arena, src->description);
-    dst->category = arena_strdup(arena, src->category);
-    dst->dll = arena_strdup(arena, src->dll);
+    dst->name = nmo_arena_strdup(arena, src->name);
+    dst->description = nmo_arena_strdup(arena, src->description);
+    dst->category = nmo_arena_strdup(arena, src->category);
+    dst->dll = nmo_arena_strdup(arena, src->dll);
     dst->version = src->version;
     dst->compatible_class_id = src->compatible_class_id;
     dst->behavior_flags = src->behavior_flags;
@@ -100,19 +94,29 @@ nmo_bb_registry_t *nmo_bb_registry_create(nmo_arena_t *arena) {
     if (!r) return NULL;
     memset(r, 0, sizeof(*r));
     r->arena = arena;
+    r->guid_map = nmo_hash_table_create(
+        NULL,
+        sizeof(nmo_guid_t),
+        sizeof(nmo_bb_proto_t *),
+        256,
+        guid_hash_wrapper,
+        guid_compare_wrapper);
+    if (!r->guid_map) return NULL;
     return r;
 }
 
 void nmo_bb_registry_destroy(nmo_bb_registry_t *registry) {
-    (void)registry; /* arena-allocated */
+    if (registry && registry->guid_map) {
+        nmo_hash_table_destroy(registry->guid_map);
+        registry->guid_map = NULL;
+    }
 }
 
 const nmo_bb_proto_t *nmo_bb_registry_find(const nmo_bb_registry_t *registry, nmo_guid_t guid) {
-    if (!registry) return NULL;
-    uint32_t idx = bucket_of(guid);
-    for (dyn_bb_entry_t *e = registry->buckets[idx]; e; e = e->next) {
-        if (nmo_guid_equals(e->proto.guid, guid))
-            return &e->proto;
+    if (!registry || !registry->guid_map) return NULL;
+    nmo_bb_proto_t *proto = NULL;
+    if (nmo_hash_table_get(registry->guid_map, &guid, &proto) == NMO_OK) {
+        return proto;
     }
     return NULL;
 }
@@ -123,56 +127,75 @@ const char *nmo_bb_registry_get_name(const nmo_bb_registry_t *registry, nmo_guid
 }
 
 nmo_status_t nmo_bb_registry_add(nmo_bb_registry_t *registry, const nmo_bb_proto_t *proto) {
-    if (!registry || !proto) {
+    if (!registry || !proto || !registry->guid_map) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "NULL argument to nmo_bb_registry_add");
     }
 
     /* Update existing? */
-    uint32_t idx = bucket_of(proto->guid);
-    for (dyn_bb_entry_t *e = registry->buckets[idx]; e; e = e->next) {
-        if (nmo_guid_equals(e->proto.guid, proto->guid)) {
-            deep_copy_proto(registry->arena, &e->proto, proto);
-            return NMO_OK;
-        }
+    nmo_bb_proto_t *existing = NULL;
+    if (nmo_hash_table_get(registry->guid_map, &proto->guid, &existing) == NMO_OK) {
+        deep_copy_proto(registry->arena, existing, proto);
+        return NMO_OK;
     }
 
-    /* New entry */
-    dyn_bb_entry_t *entry = (dyn_bb_entry_t *)nmo_arena_alloc(
-        registry->arena, sizeof(*entry), _Alignof(dyn_bb_entry_t));
+    /* New entry: arena-allocate proto and deep-copy */
+    nmo_bb_proto_t *entry = (nmo_bb_proto_t *)nmo_arena_alloc(
+        registry->arena, sizeof(*entry), _Alignof(nmo_bb_proto_t));
     if (!entry) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "arena alloc failed");
     }
     memset(entry, 0, sizeof(*entry));
-    deep_copy_proto(registry->arena, &entry->proto, proto);
-    entry->next = registry->buckets[idx];
-    registry->buckets[idx] = entry;
-    registry->count++;
+    deep_copy_proto(registry->arena, entry, proto);
+
+    nmo_status_t st = nmo_hash_table_insert(registry->guid_map, &proto->guid, &entry);
+    if (st != NMO_OK) return st;
+
     return NMO_OK;
 }
 
 bool nmo_bb_registry_remove(nmo_bb_registry_t *registry, nmo_guid_t guid) {
-    if (!registry) return false;
-    uint32_t idx = bucket_of(guid);
-    dyn_bb_entry_t **pp = &registry->buckets[idx];
-    while (*pp) {
-        if (nmo_guid_equals((*pp)->proto.guid, guid)) {
-            *pp = (*pp)->next;
-            registry->count--;
-            return true;
-        }
-        pp = &(*pp)->next;
-    }
-    return false;
+    if (!registry || !registry->guid_map) return false;
+    return nmo_hash_table_remove(registry->guid_map, &guid) == NMO_OK;
 }
 
 size_t nmo_bb_registry_count(const nmo_bb_registry_t *registry) {
-    return registry ? registry->count : 0;
+    if (!registry || !registry->guid_map) return 0;
+    return nmo_hash_table_get_count(registry->guid_map);
 }
 
 size_t nmo_bb_registry_builtin_count(const nmo_bb_registry_t *registry) {
     (void)registry;
     return 0; /* no builtin data — all loaded at runtime */
+}
+
+/* ============================================================================
+ * Iteration
+ * ============================================================================ */
+
+typedef struct bb_foreach_ctx {
+    nmo_bb_registry_visitor_fn visitor;
+    void *user_data;
+} bb_foreach_ctx_t;
+
+static int bb_iterate_adapter(const void *key, void *value, void *user_data) {
+    (void)key;
+    bb_foreach_ctx_t *ctx = (bb_foreach_ctx_t *)user_data;
+    nmo_bb_proto_t *proto = *(nmo_bb_proto_t **)value;
+    if (proto && ctx->visitor) {
+        return ctx->visitor(proto, ctx->user_data) ? 0 : 1;
+    }
+    return 1;
+}
+
+void nmo_bb_registry_foreach(
+    const nmo_bb_registry_t *registry,
+    nmo_bb_registry_visitor_fn visitor,
+    void *user_data)
+{
+    if (!registry || !registry->guid_map || !visitor) return;
+    bb_foreach_ctx_t ctx = { .visitor = visitor, .user_data = user_data };
+    nmo_hash_table_iterate(registry->guid_map, bb_iterate_adapter, &ctx);
 }
 
 /* Static (no-instance) lookups — always return NULL in pure-dynamic mode */

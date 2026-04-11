@@ -6,6 +6,7 @@
 #include "type/nmo_type_string.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_guid.h"
+#include "core/nmo_arena_array.h"
 #include "core/nmo_array.h"
 
 #include <math.h>
@@ -997,10 +998,11 @@ static bool eval_call(nmo_dsl_eval_state_t *ev, const nmo_dsl_call_t *call, nmo_
         /* Find operation family by name */
         nmo_operation_registry_t *ops = ev->ctx->ops;
         const nmo_operation_family_t *fam = NULL;
-        for (uint32_t fi = 0; fi < ops->family_count; ++fi) {
-            if (ops->families[fi] && ops->families[fi]->name &&
-                strcmp(ops->families[fi]->name, args[0].as.s) == 0) {
-                fam = ops->families[fi];
+        for (size_t fi = 0; fi < ops->families.count; ++fi) {
+            nmo_operation_family_t *fam_ptr = *(nmo_operation_family_t **)nmo_arena_array_get(&ops->families, fi);
+            if (fam_ptr && fam_ptr->name &&
+                strcmp(fam_ptr->name, args[0].as.s) == 0) {
+                fam = fam_ptr;
                 break;
             }
         }
