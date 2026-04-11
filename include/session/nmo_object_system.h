@@ -30,8 +30,21 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
-typedef struct nmo_deserializer nmo_deserializer_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
+
+/**
+ * @brief Callback to register a file_index → runtime_id mapping
+ */
+typedef int (*nmo_id_register_fn)(void *user_data,
+                                  nmo_object_t *obj,
+                                  nmo_object_id_t file_index);
+
+/**
+ * @brief Callback to look up runtime_id by file_index
+ */
+typedef int (*nmo_id_lookup_fn)(void *user_data,
+                                nmo_object_id_t file_index,
+                                nmo_object_id_t *out_runtime_id);
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 
 typedef struct nmo_object_desc nmo_object_desc_t;
@@ -58,7 +71,8 @@ typedef struct nmo_type_runtime nmo_type_runtime_t;
  * @param scratch_arena Arena used only for the returned created_objects array
  * @param repo Target repository (takes ownership of objects)
  * @param id_sanitizer Optional sanitizer for file_id <-> runtime_id mapping
- * @param load_session Load-session mapping (required)
+ * @param id_register_fn Callback to register file_index → runtime_id
+ * @param id_register_ctx User data for register callback
  * @param descs Header1 descriptors array
  * @param desc_count Number of descriptors
  * @param logger Optional logger for progress/errors
@@ -70,7 +84,8 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
     nmo_id_sanitizer_t *id_sanitizer,
-    nmo_deserializer_t *load_session,
+    nmo_id_register_fn id_register_fn,
+    void *id_register_ctx,
     const nmo_object_desc_t *descs,
     size_t desc_count,
     nmo_logger_t *logger,
@@ -95,7 +110,8 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
  * @param scratch_arena Arena used for temporary allocations/rollback tracking
  * @param repo Target repository
  * @param id_sanitizer Optional sanitizer for file_id <-> runtime_id mapping
- * @param load_session Load session (required)
+ * @param id_register_fn Callback to register file_index → runtime_id
+ * @param id_register_ctx User data for register callback
  * @param descs Header1 descriptors array
  * @param desc_count Number of descriptors
  * @param object_data Data-section object entries (can be NULL)
@@ -111,7 +127,8 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
     nmo_id_sanitizer_t *id_sanitizer,
-    nmo_deserializer_t *load_session,
+    nmo_id_register_fn id_register_fn,
+    void *id_register_ctx,
     const nmo_object_desc_t *descs,
     size_t desc_count,
     const nmo_object_data_t *object_data,
@@ -137,7 +154,8 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
  * @param shadow_storage Optional shadow storage for capturing unconsumed chunk tails
  * @param deser_flags Flags forwarded to nmo_deserialize_context_create()
  * @param reference_resolver Optional resolver for registering discovered references
- * @param load_session Load session providing file_index -> runtime_id mapping
+ * @param id_lookup_fn Callback to look up runtime_id by file_index
+ * @param id_lookup_ctx User data for lookup callback
  * @param file_object_count Header1 object table size (max file index + 1)
  * @param out_stats Optional stats output
  * @return NMO_OK (errors are reported in stats; fatal errors return code)
@@ -150,7 +168,8 @@ NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_shadow_storage_t *shadow_storage,
     uint32_t deser_flags,
     nmo_reference_resolver_t *reference_resolver,
-    const nmo_deserializer_t *load_session,
+    nmo_id_lookup_fn id_lookup_fn,
+    void *id_lookup_ctx,
     size_t file_object_count,
     nmo_object_system_deserialize_stats_t *out_stats);
 

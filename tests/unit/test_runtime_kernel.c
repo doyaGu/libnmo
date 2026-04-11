@@ -12,6 +12,12 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_runtime.h"
 
+static int test_id_lookup(void *ctx, nmo_object_id_t file_index,
+                          nmo_object_id_t *out_id) {
+    return nmo_deserializer_get_runtime_id(
+        (const nmo_deserializer_t *)ctx, file_index, out_id);
+}
+
 static nmo_object_id_t g_runtime_delete_probe_id = 0;
 static int g_runtime_post_delete_called = 0;
 static int g_runtime_post_delete_after_remove = 0;
@@ -527,6 +533,7 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
             NULL,
             0,
             NULL,
+            test_id_lookup,
             load_session,
             1,
             &stats));

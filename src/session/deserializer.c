@@ -613,6 +613,18 @@ nmo_load_options_t nmo_load_options_default(void) {
 }
 
 /* ============================================================================
+ * Callback wrappers for object_system decoupling
+ * ============================================================================ */
+
+static int cb_id_register(void *ctx, nmo_object_t *obj, nmo_object_id_t file_index) {
+    return nmo_deserializer_register((nmo_deserializer_t *)ctx, obj, file_index);
+}
+
+static int cb_id_lookup(void *ctx, nmo_object_id_t file_index, nmo_object_id_t *out_id) {
+    return nmo_deserializer_get_runtime_id((const nmo_deserializer_t *)ctx, file_index, out_id);
+}
+
+/* ============================================================================
  * Phased deserializer API
  * ============================================================================ */
 
@@ -1105,6 +1117,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             arena,
             repo,
             id_sanitizer,
+            cb_id_register,
             load_session,
             ds->hdr1.objects,
             ds->hdr1.object_count,
@@ -1216,6 +1229,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             shadow_storage,
             NMO_DESER_FLAG_FILE_MODE | NMO_DESER_FLAG_PRESERVE_RAW,
             reference_resolver,
+            cb_id_lookup,
             load_session,
             ds->hdr1.object_count,
             &deser_stats);
