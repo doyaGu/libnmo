@@ -58,6 +58,10 @@ typedef struct nmo_extension_instance {
     /** Registered type GUIDs (for rollback) */
     nmo_guid_t *type_guids;
     size_t type_guid_count;
+
+    /** Registered operation GUIDs (for tracking) */
+    nmo_guid_t *operation_guids;
+    size_t operation_guid_count;
 } nmo_extension_instance_t;
 
 /**
@@ -80,8 +84,14 @@ struct nmo_extension_registry {
     /** Type registry for type contributions */
     nmo_type_registry_t *type_registry;
 
+    /** Operation registry for operation contributions */
+    nmo_operation_registry_t *operation_registry;
+
     /** Manager registry for manager contributions */
     nmo_manager_registry_t *manager_registry;
+
+    /** Opaque user data (e.g. data_dir path for built-in extensions) */
+    void *user_data;
 };
 
 /* ============================================================================
@@ -131,6 +141,27 @@ nmo_manager_registry_t *nmo_extension_registry_get_manager_registry(
     return registry ? registry->manager_registry : NULL;
 }
 
+nmo_operation_registry_t *nmo_extension_registry_get_operation_registry(
+    nmo_extension_registry_t *registry)
+{
+    return registry ? registry->operation_registry : NULL;
+}
+
+void nmo_extension_registry_set_user_data(
+    nmo_extension_registry_t *registry,
+    void *user_data)
+{
+    if (registry != NULL) {
+        registry->user_data = user_data;
+    }
+}
+
+void *nmo_extension_registry_get_user_data(
+    const nmo_extension_registry_t *registry)
+{
+    return registry ? registry->user_data : NULL;
+}
+
 /* ============================================================================
  * Registry Lifecycle
  * ============================================================================ */
@@ -138,6 +169,7 @@ nmo_manager_registry_t *nmo_extension_registry_get_manager_registry(
 nmo_extension_registry_t *nmo_extension_registry_create(
     nmo_allocator_t *allocator,
     nmo_type_registry_t *type_registry,
+    nmo_operation_registry_t *operation_registry,
     nmo_manager_registry_t *manager_registry)
 {
     if (type_registry == NULL || manager_registry == NULL) {
@@ -159,6 +191,7 @@ nmo_extension_registry_t *nmo_extension_registry_create(
     memset(registry, 0, sizeof(*registry));
     registry->allocator = alloc;
     registry->type_registry = type_registry;
+    registry->operation_registry = operation_registry;
     registry->manager_registry = manager_registry;
 
     /* Create GUID -> instance hash table */
@@ -634,8 +667,11 @@ static nmo_status_t register_single_plugin(
         instance->manager_id_count = host_ctx.manager_id_count;
         instance->type_guids = host_ctx.type_guids;
         instance->type_guid_count = host_ctx.type_guid_count;
+        instance->operation_guids = host_ctx.operation_guids;
+        instance->operation_guid_count = host_ctx.operation_guid_count;
         instance->info.manager_count = host_ctx.manager_id_count;
         instance->info.type_count = host_ctx.type_guid_count;
+        instance->info.operation_count = host_ctx.operation_guid_count;
 
         instance->info.flags |= NMO_EXTENSION_FLAG_INITIALIZED;
 

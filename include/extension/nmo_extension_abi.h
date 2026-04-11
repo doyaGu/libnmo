@@ -36,7 +36,7 @@ typedef struct nmo_runtime_event_ctx nmo_runtime_event_ctx_t;
 /**
  * @brief Current ABI version (exact match required)
  */
-#define NMO_EXTENSION_ABI_VERSION 3u
+#define NMO_EXTENSION_ABI_VERSION 4u
 
 /**
  * @brief Default symbol name for extension query function
@@ -175,6 +175,38 @@ typedef struct nmo_extension_type_desc {
 } nmo_extension_type_desc_t;
 
 /**
+ * @brief Operation contribution descriptor
+ *
+ * Describes an operation to be registered by an extension.
+ * Maps to the internal nmo_operation_desc_t.
+ */
+typedef struct nmo_extension_operation_desc {
+    /** Operation family GUID (e.g. Add, Multiply) */
+    nmo_guid_t operation_guid;
+
+    /** Parameter 1 type GUID */
+    nmo_guid_t p1_type_guid;
+
+    /** Parameter 2 type GUID (NMO_GUID_NULL for unary) */
+    nmo_guid_t p2_type_guid;
+
+    /** Result type GUID */
+    nmo_guid_t result_type_guid;
+
+    /** Operation flags (NMO_OP_UNARY, etc.) */
+    uint32_t flags;
+
+    /** Priority for ambiguous matches (higher = preferred) */
+    uint32_t priority;
+
+    /** Human-readable name (host will deep-copy) */
+    const char *name;
+
+    /** Human-readable description (host will deep-copy) */
+    const char *description;
+} nmo_extension_operation_desc_t;
+
+/**
  * @brief Host API function table
  *
  * Provided to extensions during init(). Extensions use this to register
@@ -216,13 +248,28 @@ typedef struct nmo_extension_host {
         nmo_guid_t plugin_guid,
         const nmo_extension_type_desc_t *descs,
         size_t desc_count);
+
+    /**
+     * @brief Register operation contributions
+     *
+     * @param host_user Opaque host context (from init callback)
+     * @param plugin_guid Caller plugin GUID (for rollback tracking)
+     * @param descs Array of operation descriptors
+     * @param desc_count Number of descriptors
+     * @return NMO_OK on success
+     */
+    nmo_status_t (*register_operations)(
+        void *host_user,
+        nmo_guid_t plugin_guid,
+        const nmo_extension_operation_desc_t *descs,
+        size_t desc_count);
 } nmo_extension_host_t;
 
 /**
  * @brief Minimum struct_size the extension requires to safely read all fields
  */
 #define NMO_EXTENSION_HOST_REQUIRED_SIZE \
-    (offsetof(nmo_extension_host_t, register_types) + sizeof(((nmo_extension_host_t *)0)->register_types))
+    (offsetof(nmo_extension_host_t, register_operations) + sizeof(((nmo_extension_host_t *)0)->register_operations))
 
 /* ============================================================================
  * Query Function Signature

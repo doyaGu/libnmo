@@ -57,6 +57,11 @@ typedef struct nmo_extension_host_context {
     nmo_guid_t *type_guids;
     size_t type_guid_count;
     size_t type_guid_capacity;
+
+    /** Array of registered operation GUIDs (for tracking) */
+    nmo_guid_t *operation_guids;
+    size_t operation_guid_count;
+    size_t operation_guid_capacity;
 } nmo_extension_host_context_t;
 
 /* ============================================================================

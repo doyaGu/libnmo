@@ -6,6 +6,7 @@
 #include "extension/nmo_extension_host.h"
 #include "extension/nmo_extension_registry.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_operation_system.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
@@ -15,8 +16,10 @@
  * Forward Declarations for Registry Internals
  * ============================================================================ */
 
-/* Access type and manager registries from extension registry */
+/* Access registries from extension registry */
 extern nmo_type_registry_t *nmo_extension_registry_get_type_registry(
+    nmo_extension_registry_t *registry);
+extern nmo_operation_registry_t *nmo_extension_registry_get_operation_registry(
     nmo_extension_registry_t *registry);
 extern nmo_manager_registry_t *nmo_extension_registry_get_manager_registry(
     nmo_extension_registry_t *registry);
@@ -156,6 +159,101 @@ static nmo_status_t host_register_types(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t host_register_operations(
+    void *host_user,
+    nmo_guid_t plugin_guid,
+    const nmo_extension_operation_desc_t *descs,
+    size_t desc_count)
+{
+    (void)plugin_guid;
+
+    if (host_user == NULL || descs == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+            "host_user and descs are required");
+    }
+
+    nmo_extension_host_context_t *ctx = (nmo_extension_host_context_t *)host_user;
+
+    nmo_operation_registry_t *op_registry =
+        nmo_extension_registry_get_operation_registry(ctx->registry);
+    if (op_registry == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+            "No operation registry available in extension registry");
+    }
+
+    nmo_type_registry_t *type_registry =
+        nmo_extension_registry_get_type_registry(ctx->registry);
+
+    for (size_t i = 0; i < desc_count; i++) {
+        const nmo_extension_operation_desc_t *desc = &descs[i];
+
+        /* Ensure capacity for GUID tracking */
+        if (ctx->operation_guid_count >= ctx->operation_guid_capacity) {
+            size_t new_cap = ctx->operation_guid_capacity == 0
+                ? 8 : ctx->operation_guid_capacity * 2;
+            nmo_guid_t *new_guids = nmo_arena_alloc(
+                ctx->plugin_arena, new_cap * sizeof(nmo_guid_t),
+                alignof(nmo_guid_t));
+            if (new_guids == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                    "Failed to allocate operation GUID tracking");
+            }
+            if (ctx->operation_guids && ctx->operation_guid_count > 0) {
+                memcpy(new_guids, ctx->operation_guids,
+                       ctx->operation_guid_count * sizeof(nmo_guid_t));
+            }
+            ctx->operation_guids = new_guids;
+            ctx->operation_guid_capacity = new_cap;
+        }
+
+        /* Build internal operation descriptor */
+        nmo_operation_desc_t op_desc;
+        memset(&op_desc, 0, sizeof(op_desc));
+        op_desc.operation_guid = desc->operation_guid;
+        op_desc.p1_type_guid = desc->p1_type_guid;
+        op_desc.p2_type_guid = desc->p2_type_guid;
+        op_desc.result_type_guid = desc->result_type_guid;
+        op_desc.function = NULL;  /* signature-only registration */
+        op_desc.user_data = NULL;
+        op_desc.flags = desc->flags;
+        op_desc.priority = desc->priority;
+
+        /* Deep-copy name into plugin arena */
+        if (desc->name) {
+            size_t name_len = strlen(desc->name);
+            char *name_copy = nmo_arena_alloc(ctx->plugin_arena, name_len + 1, 1);
+            if (name_copy == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                    "Failed to copy operation name");
+            }
+            memcpy(name_copy, desc->name, name_len + 1);
+            op_desc.name = name_copy;
+        }
+
+        /* Deep-copy description */
+        if (desc->description) {
+            size_t desc_len = strlen(desc->description);
+            char *desc_copy = nmo_arena_alloc(ctx->plugin_arena, desc_len + 1, 1);
+            if (desc_copy == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                    "Failed to copy operation description");
+            }
+            memcpy(desc_copy, desc->description, desc_len + 1);
+            op_desc.description = desc_copy;
+        }
+
+        nmo_status_t status = nmo_operation_registry_register(
+            op_registry, &op_desc, type_registry);
+        if (status != NMO_OK) {
+            return status;
+        }
+
+        ctx->operation_guids[ctx->operation_guid_count++] = desc->operation_guid;
+    }
+
+    NMO_RETURN_OK();
+}
+
 /* ============================================================================
  * Static Host API Table
  * ============================================================================ */
@@ -165,6 +263,7 @@ static const nmo_extension_host_t s_host_api = {
     .struct_size = sizeof(nmo_extension_host_t),
     .register_managers = host_register_managers,
     .register_types = host_register_types,
+    .register_operations = host_register_operations,
 };
 
 const nmo_extension_host_t *nmo_extension_host_get_api(void)
@@ -224,6 +323,8 @@ nmo_status_t nmo_extension_host_context_rollback(nmo_extension_host_context_t *c
 
     ctx->type_guid_count = 0;
     ctx->manager_id_count = 0;
+    /* Operations cannot be unregistered; just clear the tracking count */
+    ctx->operation_guid_count = 0;
 
     NMO_RETURN_OK();
 }

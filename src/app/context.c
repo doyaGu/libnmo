@@ -20,6 +20,7 @@
 #include "app/nmo_session.h"
 #include "app/nmo_bb_registry.h"
 #include "app/nmo_virtools_loader.h"
+#include "extension/nmo_virtools_data_plugin.h"
 
 #include <stdlib.h> /* getenv */
 #include "object/nmo_object_repository.h"
@@ -259,6 +260,7 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
     ctx->extension_registry = nmo_extension_registry_create(
         ctx->allocator,
         ctx->type_registry,
+        ctx->operation_registry,
         ctx->manager_registry);
     if (ctx->extension_registry == NULL) {
         nmo_manager_registry_destroy(ctx->manager_registry);
@@ -267,6 +269,13 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
         return NULL;
+    }
+
+    /* Register built-in Virtools data plugin for introspection */
+    {
+        const nmo_extension_plugin_t *vt_plugin = nmo_virtools_data_plugin_get();
+        nmo_extension_registry_register_static(
+            ctx->extension_registry, vt_plugin, 1);
     }
 
     /* Install object-id string resolvers once per process */

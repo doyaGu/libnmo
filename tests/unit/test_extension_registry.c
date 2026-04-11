@@ -115,7 +115,7 @@ TEST(extension, create_destroy) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     size_t count = nmo_extension_registry_get_count(registry);
@@ -130,7 +130,7 @@ TEST(extension, register_static_single) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid = NMO_GUID(0x12345678, 0x9ABCDEF0);
@@ -158,7 +158,7 @@ TEST(extension, duplicate_guid) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid = NMO_GUID(0xAAAAAAAA, 0xBBBBBBBB);
@@ -181,7 +181,7 @@ TEST(extension, unload_by_guid) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     nmo_guid_t guid = NMO_GUID(0x11111111, 0x22222222);
@@ -209,7 +209,7 @@ TEST(extension, abi_version_mismatch) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     nmo_extension_plugin_t plugin = {0};
@@ -265,7 +265,7 @@ TEST(extension, host_register_manager_callbacks) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     g_ext_manager_preload_hits = 0;
@@ -302,7 +302,7 @@ TEST(extension, list_returns_contiguous_info_records) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     nmo_extension_plugin_t plugins[2];
@@ -328,7 +328,7 @@ TEST(extension, shutdown_receives_host_context) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     nmo_extension_plugin_t plugin = create_test_plugin(
@@ -350,7 +350,7 @@ TEST(extension, register_static_error_refinalizes_type_registry) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(g_type_registry));
@@ -369,7 +369,7 @@ TEST(extension, load_library_error_refinalizes_type_registry) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(g_type_registry));
@@ -387,7 +387,7 @@ TEST(extension, unload_not_found_refinalizes_type_registry) {
     setup_registries();
 
     nmo_extension_registry_t *registry = nmo_extension_registry_create(
-        NULL, g_type_registry, g_manager_registry);
+        NULL, g_type_registry, NULL, g_manager_registry);
     ASSERT_NOT_NULL(registry);
 
     ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(g_type_registry));

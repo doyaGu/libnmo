@@ -32,6 +32,7 @@ extern "C" {
 
 typedef struct nmo_extension_registry nmo_extension_registry_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
+typedef struct nmo_operation_registry nmo_operation_registry_t;
 typedef struct nmo_manager_registry nmo_manager_registry_t;
 
 /* ============================================================================
@@ -81,6 +82,9 @@ typedef struct nmo_extension_plugin_info {
 
     /** Number of type contributions */
     size_t type_count;
+
+    /** Number of operation contributions */
+    size_t operation_count;
 } nmo_extension_plugin_info_t;
 
 /* ============================================================================
@@ -92,6 +96,7 @@ typedef struct nmo_extension_plugin_info {
  *
  * @param allocator Allocator for registry structures (NULL for default)
  * @param type_registry Type registry for type contributions (required)
+ * @param operation_registry Operation registry for operation contributions (may be NULL)
  * @param manager_registry Manager registry for manager contributions (required)
  * @return New registry or NULL on failure
  * @ownership owned
@@ -99,6 +104,7 @@ typedef struct nmo_extension_plugin_info {
 NMO_API nmo_extension_registry_t *nmo_extension_registry_create(
     nmo_allocator_t *allocator,
     nmo_type_registry_t *type_registry,
+    nmo_operation_registry_t *operation_registry,
     nmo_manager_registry_t *manager_registry);
 
 /**
@@ -230,6 +236,33 @@ NMO_API const nmo_extension_plugin_info_t *nmo_extension_registry_find(
  * @return Number of loaded plugins
  */
 NMO_API size_t nmo_extension_registry_get_count(const nmo_extension_registry_t *registry);
+
+/* ============================================================================
+ * User Data
+ * ============================================================================ */
+
+/**
+ * @brief Set opaque user data on the registry
+ *
+ * Plugins can retrieve this during init() via
+ * nmo_extension_registry_get_user_data().  Typical use: store a data
+ * directory path so built-in extensions can find their resources.
+ *
+ * @param registry Extension registry
+ * @param user_data Opaque pointer (ownership stays with caller)
+ */
+NMO_API void nmo_extension_registry_set_user_data(
+    nmo_extension_registry_t *registry,
+    void *user_data);
+
+/**
+ * @brief Get the opaque user data stored on the registry
+ *
+ * @param registry Extension registry
+ * @return Previously stored pointer, or NULL
+ */
+NMO_API void *nmo_extension_registry_get_user_data(
+    const nmo_extension_registry_t *registry);
 
 #ifdef __cplusplus
 }
