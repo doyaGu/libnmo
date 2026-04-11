@@ -1062,136 +1062,6 @@ static const nmo_type_descriptor_t *nmo_to_string_resolve_type(
     return t;
 }
 
-static nmo_status_t nmo_object_id_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
-}
-
-static nmo_status_t nmo_guid_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    int wrote = nmo_guid_format(*(const nmo_guid_t *)value, buffer, buffer_size);
-    if (wrote < 0) {
-        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
-    }
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_string_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_string_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_pointer_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    const void *ptr = *(const void *const *)value;
-    if (!ptr) {
-        snprintf(buffer, buffer_size, "null");
-    } else {
-        uintptr_t v = (uintptr_t)ptr;
-        snprintf(buffer, buffer_size, "0x%llX", (unsigned long long)v);
-    }
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_rect_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    const nmo_rect_t *r = (const nmo_rect_t *)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", r->left, r->top, r->right, r->bottom);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_box_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    const nmo_box_t *b = (const nmo_box_t *)value;
-    snprintf(buffer, buffer_size,
-             "((%.6g, %.6g, %.6g), (%.6g, %.6g, %.6g))",
-             b->min.x, b->min.y, b->min.z,
-             b->max.x, b->max.y, b->max.z);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_eulerangles_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    const nmo_eulerangles_t *e = (const nmo_eulerangles_t *)value;
-    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)", e->x, e->y, e->z);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_int_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_int_to_string(value, buffer, buffer_size, false);
-}
-
-static nmo_status_t nmo_uint32_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%u", *(const uint32_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_int8_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%d", (int)*(const int8_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_uint8_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint8_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_int16_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%d", (int)*(const int16_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_uint16_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint16_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_int64_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%lld", (long long)*(const int64_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_uint64_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%llu", (unsigned long long)*(const uint64_t *)value);
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_double_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    double d = *(const double *)value;
-    if (isnan(d)) {
-        snprintf(buffer, buffer_size, "NaN");
-    } else if (isinf(d)) {
-        snprintf(buffer, buffer_size, d > 0 ? "Infinity" : "-Infinity");
-    } else {
-        snprintf(buffer, buffer_size, "%.6g", d);
-    }
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_float_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_float_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_bool_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_bool_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_vector2_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_vector2_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_vector3_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_vector_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_vector4_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_vector4_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_quaternion_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_quaternion_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_matrix_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_matrix_to_string(value, buffer, buffer_size);
-}
-
-static nmo_status_t nmo_color_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    return nmo_color_to_string(value, buffer, buffer_size);
-}
 
 /* Semantic vtable handlers — new signature */
 
@@ -2444,74 +2314,216 @@ uint32_t nmo_hash_bytes_box(const void *instance)
         return (parse_fn)(value, registry, string); \
     }
 
-NMO_DEFINE_VT_TO_STRING(int32, nmo_int_value_to_string)
+/* Hand-written vtable to_string handlers for types with extra args or inline logic */
+
+nmo_status_t nmo_vt_to_string_int32(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    return nmo_int_to_string(value, buffer, buffer_size, false);
+}
 NMO_DEFINE_VT_FROM_STRING(int32, nmo_parse_int32)
 
-NMO_DEFINE_VT_TO_STRING(uint32, nmo_uint32_value_to_string)
+nmo_status_t nmo_vt_to_string_uint32(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%u", *(const uint32_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(uint32, nmo_parse_uint32)
 
-NMO_DEFINE_VT_TO_STRING(int8, nmo_int8_value_to_string)
+nmo_status_t nmo_vt_to_string_int8(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%d", (int)*(const int8_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(int8, nmo_parse_int8)
 
-NMO_DEFINE_VT_TO_STRING(uint8, nmo_uint8_value_to_string)
+nmo_status_t nmo_vt_to_string_uint8(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint8_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(uint8, nmo_parse_uint8)
 
-NMO_DEFINE_VT_TO_STRING(int16, nmo_int16_value_to_string)
+nmo_status_t nmo_vt_to_string_int16(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%d", (int)*(const int16_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(int16, nmo_parse_int16)
 
-NMO_DEFINE_VT_TO_STRING(uint16, nmo_uint16_value_to_string)
+nmo_status_t nmo_vt_to_string_uint16(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%u", (unsigned)*(const uint16_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(uint16, nmo_parse_uint16)
 
-NMO_DEFINE_VT_TO_STRING(int64, nmo_int64_value_to_string)
+nmo_status_t nmo_vt_to_string_int64(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%lld", (long long)*(const int64_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(int64, nmo_parse_int64)
 
-NMO_DEFINE_VT_TO_STRING(uint64, nmo_uint64_value_to_string)
+nmo_status_t nmo_vt_to_string_uint64(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    snprintf(buffer, buffer_size, "%llu", (unsigned long long)*(const uint64_t *)value);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(uint64, nmo_parse_uint64)
 
-NMO_DEFINE_VT_TO_STRING(float, nmo_float_value_to_string)
+NMO_DEFINE_VT_TO_STRING(float, nmo_float_to_string)
 NMO_DEFINE_VT_FROM_STRING(float, nmo_parse_float)
 
-NMO_DEFINE_VT_TO_STRING(double, nmo_double_value_to_string)
+nmo_status_t nmo_vt_to_string_double(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    double d = *(const double *)value;
+    if (isnan(d)) {
+        snprintf(buffer, buffer_size, "NaN");
+    } else if (isinf(d)) {
+        snprintf(buffer, buffer_size, d > 0 ? "Infinity" : "-Infinity");
+    } else {
+        snprintf(buffer, buffer_size, "%.6g", d);
+    }
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(double, nmo_parse_double)
 
-NMO_DEFINE_VT_TO_STRING(bool, nmo_bool_value_to_string)
+NMO_DEFINE_VT_TO_STRING(bool, nmo_bool_to_string)
 NMO_DEFINE_VT_FROM_STRING(bool, nmo_parse_bool)
 
-NMO_DEFINE_VT_TO_STRING(string, nmo_string_value_to_string)
+NMO_DEFINE_VT_TO_STRING(string, nmo_string_to_string)
 NMO_DEFINE_VT_FROM_STRING(string, nmo_parse_string)
 
-NMO_DEFINE_VT_TO_STRING(pointer, nmo_pointer_value_to_string)
+nmo_status_t nmo_vt_to_string_pointer(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    const void *ptr = *(const void *const *)value;
+    if (!ptr) {
+        snprintf(buffer, buffer_size, "null");
+    } else {
+        uintptr_t v = (uintptr_t)ptr;
+        snprintf(buffer, buffer_size, "0x%llX", (unsigned long long)v);
+    }
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(pointer, nmo_parse_pointer)
 
-NMO_DEFINE_VT_TO_STRING(guid, nmo_guid_value_to_string)
+nmo_status_t nmo_vt_to_string_guid(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    int wrote = nmo_guid_format(*(const nmo_guid_t *)value, buffer, buffer_size);
+    if (wrote < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
+    }
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(guid, nmo_parse_guid)
 
-NMO_DEFINE_VT_TO_STRING(object_id, nmo_object_id_value_to_string)
+nmo_status_t nmo_vt_to_string_object_id(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
+}
 NMO_DEFINE_VT_FROM_STRING(object_id, nmo_parse_object_id)
 
-NMO_DEFINE_VT_TO_STRING(vector2, nmo_vector2_value_to_string)
+NMO_DEFINE_VT_TO_STRING(vector2, nmo_vector2_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector2, nmo_parse_vector2)
 
-NMO_DEFINE_VT_TO_STRING(vector3, nmo_vector3_value_to_string)
+NMO_DEFINE_VT_TO_STRING(vector3, nmo_vector_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector3, nmo_parse_vector3)
 
-NMO_DEFINE_VT_TO_STRING(vector4, nmo_vector4_value_to_string)
+NMO_DEFINE_VT_TO_STRING(vector4, nmo_vector4_to_string)
 NMO_DEFINE_VT_FROM_STRING(vector4, nmo_parse_vector4)
 
-NMO_DEFINE_VT_TO_STRING(quaternion, nmo_quaternion_value_to_string)
+NMO_DEFINE_VT_TO_STRING(quaternion, nmo_quaternion_to_string)
 NMO_DEFINE_VT_FROM_STRING(quaternion, nmo_parse_quaternion)
 
-NMO_DEFINE_VT_TO_STRING(matrix, nmo_matrix_value_to_string)
+NMO_DEFINE_VT_TO_STRING(matrix, nmo_matrix_to_string)
 NMO_DEFINE_VT_FROM_STRING(matrix, nmo_parse_matrix)
 
-NMO_DEFINE_VT_TO_STRING(color, nmo_color_value_to_string)
+NMO_DEFINE_VT_TO_STRING(color, nmo_color_to_string)
 NMO_DEFINE_VT_FROM_STRING(color, nmo_parse_color)
 
-NMO_DEFINE_VT_TO_STRING(rect, nmo_rect_value_to_string)
+nmo_status_t nmo_vt_to_string_rect(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    const nmo_rect_t *r = (const nmo_rect_t *)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g, %.6g)", r->left, r->top, r->right, r->bottom);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(rect, nmo_parse_rect)
 
-NMO_DEFINE_VT_TO_STRING(eulerangles, nmo_eulerangles_value_to_string)
+nmo_status_t nmo_vt_to_string_eulerangles(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    const nmo_eulerangles_t *e = (const nmo_eulerangles_t *)value;
+    snprintf(buffer, buffer_size, "(%.6g, %.6g, %.6g)", e->x, e->y, e->z);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(eulerangles, nmo_parse_eulerangles)
 
-NMO_DEFINE_VT_TO_STRING(box, nmo_box_value_to_string)
+nmo_status_t nmo_vt_to_string_box(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
+    const nmo_box_t *b = (const nmo_box_t *)value;
+    snprintf(buffer, buffer_size,
+             "((%.6g, %.6g, %.6g), (%.6g, %.6g, %.6g))",
+             b->min.x, b->min.y, b->min.z,
+             b->max.x, b->max.y, b->max.z);
+    NMO_RETURN_OK();
+}
 NMO_DEFINE_VT_FROM_STRING(box, nmo_parse_box)
