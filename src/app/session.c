@@ -21,7 +21,7 @@
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
-#include "app/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_index.h"
 #include <stddef.h>
 #include <string.h>
 

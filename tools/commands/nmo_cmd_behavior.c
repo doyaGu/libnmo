@@ -14,9 +14,9 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "app/nmo_behavior_graph.h"
-#include "app/nmo_behavior_index.h"
-#include "app/nmo_script_walker.h"
+#include "behavior/nmo_behavior_graph.h"
+#include "behavior/nmo_behavior_index.h"
+#include "behavior/nmo_script_walker.h"
 #include "app/nmo_context.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
@@ -34,7 +34,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
-#include "app/nmo_bb_registry.h"
+#include "behavior/nmo_bb_registry.h"
 
 #include <stdint.h>
 #include <stdio.h>

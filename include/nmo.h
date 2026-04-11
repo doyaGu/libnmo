@@ -135,7 +135,7 @@
 #include "app/nmo_inspector.h"
 #include "app/nmo_saver.h"
 #include "app/nmo_stats.h"
-#include "app/nmo_behavior_graph.h"
+#include "behavior/nmo_behavior_graph.h"
 #include "app/nmo_chunk_index.h"
 #include "app/nmo_json_stream.h"
 #include "app/nmo_json_util.h"

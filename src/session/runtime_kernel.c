@@ -18,7 +18,7 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "type/nmo_reflection.h"
-#include "app/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_index.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"

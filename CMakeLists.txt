@@ -321,13 +321,17 @@ set(NMO_APP_SOURCES
     src/app/type_query.c
     src/app/chunk_index.c
     src/app/object_hierarchy.c
-    src/app/behavior_graph.c
     src/app/object_diff.c
-    src/app/param_value.c
-    src/app/script_walker.c
-    src/app/bb_registry.c
-    src/app/behavior_index.c
     src/app/virtools_loader.c
+)
+
+# Behavior layer sources
+set(NMO_BEHAVIOR_SOURCES
+    src/behavior/bb_registry.c
+    src/behavior/behavior_graph.c
+    src/behavior/behavior_index.c
+    src/behavior/script_walker.c
+    src/behavior/param_value.c
 )
 
 set(NMO_JSON_SOURCES
@@ -344,6 +348,7 @@ set(NMO_SOURCES
     ${NMO_TYPE_SOURCES}
     ${NMO_DSL_SOURCES}
     ${NMO_EXTENSION_SOURCES}
+    ${NMO_BEHAVIOR_SOURCES}
     ${NMO_SESSION_SOURCES}
     ${NMO_APP_SOURCES}
     ${YYJSON_DIR}/src/yyjson.c

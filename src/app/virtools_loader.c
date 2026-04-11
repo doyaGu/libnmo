@@ -6,7 +6,7 @@
  */
 
 #include "app/nmo_virtools_loader.h"
-#include "app/nmo_bb_registry.h"
+#include "behavior/nmo_bb_registry.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_operation_system.h"
 #include "core/nmo_guid.h"

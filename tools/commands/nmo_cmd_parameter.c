@@ -14,7 +14,7 @@
 
 #include "nmo.h"
 #include "app/nmo_context.h"
-#include "app/nmo_param_value.h"
+#include "behavior/nmo_param_value.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_parameter_schemas.h"

@@ -4,7 +4,7 @@
  */
 
 #include "../test_framework.h"
-#include "app/nmo_behavior_index.h"
+#include "behavior/nmo_behavior_index.h"
 #include "app/nmo_context.h"
 #include "app/nmo_session.h"
 #include "core/nmo_arena.h"

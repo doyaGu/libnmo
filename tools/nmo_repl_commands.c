@@ -10,7 +10,7 @@
 #include "app/nmo_inspector.h"
 #include "app/nmo_saver.h"
 #include "app/nmo_stats.h"
-#include "app/nmo_param_value.h"
+#include "behavior/nmo_param_value.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "dsl/nmo_dsl.h"

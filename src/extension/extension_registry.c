@@ -87,7 +87,7 @@ struct nmo_extension_registry {
     /** Operation registry for operation contributions */
     nmo_operation_registry_t *operation_registry;
 
-    /** BB registry for building block contributions (TODO: move to behavior layer) */
+    /** BB registry for building block contributions (behavior layer) */
     nmo_bb_registry_t *bb_registry;
 
     /** Manager registry for manager contributions */

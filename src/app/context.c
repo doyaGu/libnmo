@@ -18,7 +18,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "app/nmo_session.h"
-#include "app/nmo_bb_registry.h"
+#include "behavior/nmo_bb_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
 
 #include <stdlib.h> /* getenv */
