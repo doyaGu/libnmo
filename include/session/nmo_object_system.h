@@ -30,7 +30,7 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 
 typedef struct nmo_shadow_storage nmo_shadow_storage_t;
-typedef struct nmo_load_session nmo_load_session_t;
+typedef struct nmo_deserializer nmo_deserializer_t;
 typedef struct nmo_id_sanitizer nmo_id_sanitizer_t;
 typedef struct nmo_reference_resolver nmo_reference_resolver_t;
 
@@ -70,7 +70,7 @@ NMO_API nmo_status_t nmo_object_system_create_objects_from_header1(
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
     nmo_id_sanitizer_t *id_sanitizer,
-    nmo_load_session_t *load_session,
+    nmo_deserializer_t *load_session,
     const nmo_object_desc_t *descs,
     size_t desc_count,
     nmo_logger_t *logger,
@@ -111,7 +111,7 @@ NMO_API nmo_status_t nmo_object_system_prepare_loaded_objects(
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
     nmo_id_sanitizer_t *id_sanitizer,
-    nmo_load_session_t *load_session,
+    nmo_deserializer_t *load_session,
     const nmo_object_desc_t *descs,
     size_t desc_count,
     const nmo_object_data_t *object_data,
@@ -150,7 +150,7 @@ NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_shadow_storage_t *shadow_storage,
     uint32_t deser_flags,
     nmo_reference_resolver_t *reference_resolver,
-    const nmo_load_session_t *load_session,
+    const nmo_deserializer_t *load_session,
     size_t file_object_count,
     nmo_object_system_deserialize_stats_t *out_stats);
 

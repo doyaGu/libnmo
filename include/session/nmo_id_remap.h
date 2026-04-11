@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_load_session nmo_load_session_t;
+typedef struct nmo_deserializer nmo_deserializer_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object nmo_object_t;
 
@@ -52,7 +52,7 @@ typedef struct nmo_id_remap_plan nmo_id_remap_plan_t;
  * @note Returned table is caller-owned; destroy via nmo_id_remap_table_destroy().
  * @ownership owned
  */
-NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session);
+NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_deserializer_t *session);
 
 /**
  * @brief Lookup remapped ID

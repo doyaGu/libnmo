@@ -6,7 +6,7 @@
 #include "session/nmo_object_system.h"
 
 #include "object/nmo_object_repository.h"
-#include "session/nmo_load_session.h"
+#include "session/nmo_deserializer.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_shadow_storage.h"
@@ -249,7 +249,7 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
     nmo_id_sanitizer_t *id_sanitizer,
-    nmo_load_session_t *load_session,
+    nmo_deserializer_t *load_session,
     const nmo_object_desc_t *descs,
     size_t desc_count,
     nmo_logger_t *logger,
@@ -331,7 +331,7 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
             return file_index_result;
         }
 
-        int reg_result = nmo_load_session_register(load_session, obj, (nmo_object_id_t)i);
+        int reg_result = nmo_deserializer_register(load_session, obj, (nmo_object_id_t)i);
         if (reg_result != NMO_OK) {
             object_system_rollback_created(repo, created, desc_count);
             if (id_sanitizer != NULL) {
@@ -371,7 +371,7 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     nmo_arena_t *scratch_arena,
     nmo_object_repository_t *repo,
     nmo_id_sanitizer_t *id_sanitizer,
-    nmo_load_session_t *load_session,
+    nmo_deserializer_t *load_session,
     const nmo_object_desc_t *descs,
     size_t desc_count,
     const nmo_object_data_t *object_data,
@@ -564,7 +564,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_shadow_storage_t *shadow_storage,
     uint32_t deser_flags,
     nmo_reference_resolver_t *reference_resolver,
-    const nmo_load_session_t *load_session,
+    const nmo_deserializer_t *load_session,
     size_t file_object_count,
     nmo_object_system_deserialize_stats_t *out_stats)
 {
@@ -580,7 +580,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
 
     for (size_t file_index = 0; file_index < file_object_count; file_index++) {
         nmo_object_id_t runtime_id = NMO_OBJECT_ID_INVALID;
-        int id_result = nmo_load_session_get_runtime_id(load_session,
+        int id_result = nmo_deserializer_get_runtime_id(load_session,
                                                        (nmo_object_id_t)file_index,
                                                        &runtime_id);
         if (id_result != NMO_OK) {

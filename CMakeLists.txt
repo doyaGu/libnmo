@@ -296,7 +296,7 @@ set(NMO_EXTENSION_SOURCES
 set(NMO_SESSION_SOURCES
     src/session/object_system.c
     src/session/builder.c
-    src/session/load_session.c
+    src/session/deserializer.c
     src/session/id_remap.c
     src/session/id_sanitizer.c
     src/session/reference_resolver.c

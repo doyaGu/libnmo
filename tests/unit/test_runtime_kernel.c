@@ -1,11 +1,11 @@
 #include "test_framework.h"
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "session/nmo_object_system.h"
-#include "session/nmo_load_session.h"
+#include "session/nmo_deserializer.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "core/nmo_allocator.h"
@@ -512,9 +512,9 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     nmo_chunk_close(chunk);
     obj->chunk = chunk;
 
-    nmo_load_session_t *load_session = nmo_load_session_start(repo, 1);
+    nmo_deserializer_t *load_session = nmo_deserializer_start(repo, 1);
     ASSERT_NOT_NULL(load_session);
-    ASSERT_EQ(NMO_OK, nmo_load_session_register(load_session, obj, 0));
+    ASSERT_EQ(NMO_OK, nmo_deserializer_register(load_session, obj, 0));
 
     nmo_object_system_deserialize_stats_t stats = {0};
     ASSERT_EQ(
@@ -543,7 +543,7 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     mutable_vtable->deserialize = old_deserialize;
     mutable_vtable->prepare_dependencies = old_prepare;
 
-    nmo_load_session_destroy(load_session);
+    nmo_deserializer_destroy(load_session);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

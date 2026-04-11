@@ -143,7 +143,7 @@ set_tests_properties(test_nmo_baseline PROPERTIES WORKING_DIRECTORY "${CMAKE_SOU
 # add_unit_test(test_reference_resolver)
 # add_unit_test(test_session_reference_resolver)
 # add_unit_test(test_save_pipeline)  # Uses old schema system - DISABLED
-add_unit_test(test_load_session_id_remap)
+add_unit_test(test_deserializer_id_remap)
 add_unit_test(test_session)
 
 # App layer tests (Phase 7)

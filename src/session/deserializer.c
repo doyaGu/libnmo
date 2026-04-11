@@ -1,9 +1,9 @@
 ﻿/**
- * @file load_session.c
- * @brief Load session implementation for object ID remapping
+ * @file deserializer.c
+ * @brief Deserializer implementation for object ID remapping
  */
 
-#include "session/nmo_load_session.h"
+#include "session/nmo_deserializer.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
@@ -17,7 +17,7 @@
 /**
  * Load session structure
  */
-typedef struct nmo_load_session {
+typedef struct nmo_deserializer {
     nmo_object_repository_t *repo;
     nmo_object_id_t saved_id_max;
     nmo_object_id_t id_base;
@@ -27,12 +27,12 @@ typedef struct nmo_load_session {
 
     int active;
     nmo_arena_t *arena;
-} nmo_load_session_t;
+} nmo_deserializer_t;
 
 /**
  * Start load session
  */
-nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
+nmo_deserializer_t *nmo_deserializer_start(nmo_object_repository_t *repo,
                                            nmo_object_id_t max_saved_id) {
     if (repo == NULL) {
         return NULL;
@@ -43,13 +43,13 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
         return NULL;
     }
 
-    nmo_load_session_t *session = (nmo_load_session_t *) nmo_arena_alloc(
-        arena, sizeof(nmo_load_session_t), sizeof(void *));
+    nmo_deserializer_t *session = (nmo_deserializer_t *) nmo_arena_alloc(
+        arena, sizeof(nmo_deserializer_t), sizeof(void *));
     if (session == NULL) {
         nmo_arena_destroy(arena);
         return NULL;
     }
-    memset(session, 0, sizeof(nmo_load_session_t));
+    memset(session, 0, sizeof(nmo_deserializer_t));
     session->arena = arena;
 
     /* Initialize mapping table using generic hash table */
@@ -95,7 +95,7 @@ nmo_load_session_t *nmo_load_session_start(nmo_object_repository_t *repo,
 /**
  * Register object with file object index
  */
-int nmo_load_session_register(nmo_load_session_t *session,
+int nmo_deserializer_register(nmo_deserializer_t *session,
                               nmo_object_t *obj,
                               nmo_object_id_t file_index) {
     if (session == NULL || obj == NULL || !session->active) {
@@ -119,7 +119,7 @@ int nmo_load_session_register(nmo_load_session_t *session,
 /**
  * End load session
  */
-int nmo_load_session_end(nmo_load_session_t *session) {
+int nmo_deserializer_end(nmo_deserializer_t *session) {
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -128,7 +128,7 @@ int nmo_load_session_end(nmo_load_session_t *session) {
     return NMO_OK;
 }
 
-int nmo_load_session_get_runtime_id(const nmo_load_session_t *session,
+int nmo_deserializer_get_runtime_id(const nmo_deserializer_t *session,
                                     nmo_object_id_t file_index,
                                     nmo_object_id_t *out_runtime_id)
 {
@@ -149,29 +149,29 @@ int nmo_load_session_get_runtime_id(const nmo_load_session_t *session,
 /**
  * Get object repository
  */
-nmo_object_repository_t *nmo_load_session_get_repository(
-    const nmo_load_session_t *session) {
+nmo_object_repository_t *nmo_deserializer_get_repository(
+    const nmo_deserializer_t *session) {
     return session ? session->repo : NULL;
 }
 
 /**
  * Get ID base
  */
-nmo_object_id_t nmo_load_session_get_id_base(const nmo_load_session_t *session) {
+nmo_object_id_t nmo_deserializer_get_id_base(const nmo_deserializer_t *session) {
     return session ? session->id_base : 0;
 }
 
 /**
  * Get max saved ID
  */
-nmo_object_id_t nmo_load_session_get_max_saved_id(const nmo_load_session_t *session) {
+nmo_object_id_t nmo_deserializer_get_max_saved_id(const nmo_deserializer_t *session) {
     return session ? session->saved_id_max : 0;
 }
 
 /**
  * Destroy load session
  */
-void nmo_load_session_destroy(nmo_load_session_t *session) {
+void nmo_deserializer_destroy(nmo_deserializer_t *session) {
     if (session != NULL) {
         nmo_hash_table_destroy(session->id_mappings);
         nmo_arena_destroy(session->arena);
@@ -201,7 +201,7 @@ static int collect_mapping(const void *key, void *value, void *user_data) {
 /**
  * Get all mappings (internal helper for id_remap.c)
  */
-int nmo_load_session_get_mappings(const nmo_load_session_t *session,
+int nmo_load_session_get_mappings(const nmo_deserializer_t *session,
                                   nmo_object_id_t **file_ids,
                                   nmo_object_id_t **runtime_ids,
                                   size_t *count) {

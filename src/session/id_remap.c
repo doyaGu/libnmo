@@ -4,14 +4,14 @@
  */
 
 #include "session/nmo_id_remap.h"
-#include "session/nmo_load_session.h"
+#include "session/nmo_deserializer.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include <string.h>
 #include <stdalign.h>
 
 /* Forward declaration for load session internal function */
-extern int nmo_load_session_get_mappings(const nmo_load_session_t *session,
+extern int nmo_load_session_get_mappings(const nmo_deserializer_t *session,
                                          nmo_object_id_t **file_indices,
                                          nmo_object_id_t **runtime_ids,
                                          size_t *count);
@@ -30,7 +30,7 @@ typedef struct nmo_id_remap_plan {
  * Load-time ID Remapping (file object index -> runtime ID)
  * ============================================================================ */
 
-nmo_id_remap_table_t *nmo_build_remap_table(nmo_load_session_t *session) {
+nmo_id_remap_table_t *nmo_build_remap_table(nmo_deserializer_t *session) {
     if (session == NULL) {
         return NULL;
     }

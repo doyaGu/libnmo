@@ -29,7 +29,7 @@
 #include "format/nmo_object.h"
 #include "format/nmo_manager.h"
 #include "format/nmo_manager_registry.h"
-#include "session/nmo_load_session.h"
+#include "session/nmo_deserializer.h"
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_object_repository.h"
@@ -549,7 +549,7 @@ static int nmo_load_file_with_io(
     nmo_log(logger, NMO_LOG_INFO, "Phase 5: Starting load session (max ID: %u)",
             header.max_id_saved);
 
-    nmo_load_session_t *load_session = nmo_load_session_start(repo, header.max_id_saved);
+    nmo_deserializer_t *load_session = nmo_deserializer_start(repo, header.max_id_saved);
     if (load_session == NULL) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to start load session");
         nmo_io_close(io);
@@ -613,7 +613,7 @@ static int nmo_load_file_with_io(
     if (missing_plugins > 0 && enforce_plugin_dependencies) {
         nmo_log(logger, NMO_LOG_ERROR,
                 "Missing %zu required plugin(s); aborting due to NMO_LOAD_CHECK_DEPENDENCIES", missing_plugins);
-        nmo_load_session_destroy(load_session);
+        nmo_deserializer_destroy(load_session);
         nmo_io_close(io);
         return NMO_ERR_NOT_FOUND;
     }
@@ -664,7 +664,7 @@ static int nmo_load_file_with_io(
         void *packed_buffer = nmo_arena_alloc(arena, header.data_pack_size, 16);
         if (packed_buffer == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate packed data buffer");
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return NMO_ERR_NOMEM;
         }
@@ -673,7 +673,7 @@ static int nmo_load_file_with_io(
         int read_result = nmo_io_read(io, packed_buffer, header.data_pack_size, &bytes_read);
         if (read_result != NMO_OK || bytes_read != header.data_pack_size) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return NMO_ERR_INVALID_ARGUMENT;
         }
@@ -689,7 +689,7 @@ static int nmo_load_file_with_io(
             data_buffer = nmo_arena_alloc(arena, header.data_unpack_size, 16);
             if (data_buffer == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked data buffer");
-                nmo_load_session_destroy(load_session);
+                nmo_deserializer_destroy(load_session);
                 nmo_io_close(io);
                 return NMO_ERR_NOMEM;
             }
@@ -701,7 +701,7 @@ static int nmo_load_file_with_io(
             if (uncompress_result != MZ_OK) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress data section: %d",
                         uncompress_result);
-                nmo_load_session_destroy(load_session);
+                nmo_deserializer_destroy(load_session);
                 nmo_io_close(io);
                 return NMO_ERR_INVALID_ARGUMENT;
             }
@@ -709,7 +709,7 @@ static int nmo_load_file_with_io(
             if (dest_len != header.data_unpack_size) {
                 nmo_log(logger, NMO_LOG_ERROR, "Data decompression size mismatch: expected %u, got %lu",
                         header.data_unpack_size, dest_len);
-                nmo_load_session_destroy(load_session);
+                nmo_deserializer_destroy(load_session);
                 nmo_io_close(io);
                 return NMO_ERR_INVALID_ARGUMENT;
             }
@@ -736,7 +736,7 @@ static int nmo_load_file_with_io(
                                         &data_sect, chunk_pool, arena);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return result;
         }
@@ -760,7 +760,7 @@ static int nmo_load_file_with_io(
         if (included_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to load included files (code=%d)", included_result);
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return included_result;
         }
@@ -820,7 +820,7 @@ static int nmo_load_file_with_io(
         if (prep_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to prepare loaded objects (code=%d)", prep_result);
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return prep_result;
         }
@@ -896,8 +896,8 @@ static int nmo_load_file_with_io(
         const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
         if (type_rt == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
-            nmo_load_session_end(load_session);
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_end(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return NMO_ERR_INVALID_STATE;
         }
@@ -923,8 +923,8 @@ static int nmo_load_file_with_io(
 
         if (deser_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "  Repository deserialization failed (code=%d)", deser_result);
-            nmo_load_session_end(load_session);
-            nmo_load_session_destroy(load_session);
+            nmo_deserializer_end(load_session);
+            nmo_deserializer_destroy(load_session);
             nmo_io_close(io);
             return deser_result;
         }
@@ -942,8 +942,8 @@ skip_object_processing:
     nmo_object_repository_get_all(repo, &repo_count);
 
     /* Cleanup */
-    nmo_load_session_end(load_session);
-    nmo_load_session_destroy(load_session);
+    nmo_deserializer_end(load_session);
+    nmo_deserializer_destroy(load_session);
     nmo_io_close(io);
 
     nmo_log(logger, NMO_LOG_INFO, "Load complete: %zu objects loaded", repo_count);
