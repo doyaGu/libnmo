@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "app/nmo_parser.h"
+#include "app/nmo_load.h"
 #include <string.h>
 
 /* ============================================================================

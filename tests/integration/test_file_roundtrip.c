@@ -6,9 +6,9 @@
  * It tests file saving and loading with existing data files.
  */
 
-#include "app/nmo_session.h"
-#include "app/nmo_parser.h"
-#include "app/nmo_context.h"
+#include "session/nmo_session.h"
+#include "app/nmo_load.h"
+#include "session/nmo_context.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

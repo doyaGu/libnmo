@@ -4,7 +4,7 @@
  */
 
 #include "nmo.h"
-#include "app/nmo_parser.h"
+#include "app/nmo_load.h"
 #include "app/nmo_comparison.h"
 #include "test_framework.h"  // For NMO_TEST_DATA_FILE macro
 #include <stdio.h>

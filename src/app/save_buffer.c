@@ -3,7 +3,7 @@
  * @brief Memory buffer for two-phase save pipeline
  */
 
-#include "app/nmo_save_buffer.h"
+#include "nmo_save_buffer.h"
 #include "core/nmo_allocator.h"
 #include <limits.h>
 #include <stdlib.h>

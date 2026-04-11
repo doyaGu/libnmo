@@ -311,7 +311,7 @@ set(NMO_APP_SOURCES
     src/app/context.c
     src/app/session.c
     src/app/session_util.c
-    src/app/parser.c
+    src/app/load.c
     src/app/saver.c
     src/app/save_buffer.c
     src/app/comparison.c

@@ -4,9 +4,9 @@
  */
 
 #include "test_framework.h"
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
-#include "app/nmo_parser.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
+#include "app/nmo_load.h"
 #include "session/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"

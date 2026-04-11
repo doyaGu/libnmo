@@ -1,10 +1,10 @@
 /**
- * @file nmo_parser.h
- * @brief Load pipeline API
+ * @file nmo_load.h
+ * @brief High-level file load API
  */
 
-#ifndef NMO_APP_PARSER_H
-#define NMO_APP_PARSER_H
+#ifndef NMO_LOAD_H
+#define NMO_LOAD_H
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
@@ -85,4 +85,4 @@ NMO_API int nmo_load_file(nmo_session_t *session,
 }
 #endif
 
-#endif /* NMO_APP_PARSER_H */
+#endif /* NMO_LOAD_H */

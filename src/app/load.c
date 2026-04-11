@@ -6,7 +6,7 @@
  * architecture implemented in save_pipeline.c (Phase 1.4).
  */
 
-#include "app/nmo_parser.h"
+#include "app/nmo_load.h"
 #include "session/nmo_saver.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_internal.h"

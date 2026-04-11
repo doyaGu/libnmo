@@ -3,9 +3,9 @@
  * @brief Integration test for mmap load strategy on real files
  */
 
-#include "app/nmo_parser.h"
-#include "app/nmo_session.h"
-#include "app/nmo_context.h"
+#include "app/nmo_load.h"
+#include "session/nmo_session.h"
+#include "session/nmo_context.h"
 #include "format/nmo_header.h"
 #include "io/nmo_io_file.h"
 #include "io/nmo_io_mmap.h"

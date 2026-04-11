@@ -7,9 +7,9 @@
  */
 
 #include "../test_framework.h"
-#include "app/nmo_context.h"
-#include "app/nmo_parser.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "app/nmo_load.h"
+#include "session/nmo_session.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
 #include "core/nmo_error.h"

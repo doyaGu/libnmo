@@ -2,7 +2,7 @@
 #include "session/runtime_kernel_internal.h"
 
 #include "session/nmo_context.h"
-#include "app/nmo_parser.h"
+#include "app/nmo_load.h"
 #include "session/nmo_saver.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_internal.h"
