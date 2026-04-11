@@ -242,3 +242,51 @@ int nmo_load_session_get_mappings(const nmo_deserializer_t *session,
 
     return NMO_OK;
 }
+
+/* ============================================================================
+ * Phased deserializer API (new)
+ *
+ * TODO: Migrate load pipeline from app/load.c into these functions.
+ * Currently stubs that return NMO_ERR_NOT_IMPLEMENTED.
+ * ============================================================================ */
+
+nmo_deserializer_t *nmo_deserializer_create(
+    nmo_session_t *session,
+    nmo_io_interface_t *io,
+    const nmo_load_options_t *options)
+{
+    (void)session; (void)io; (void)options;
+    return NULL; /* TODO: implement */
+}
+
+nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ctx)
+{
+    (void)ctx;
+    return NMO_ERR_NOT_IMPLEMENTED;
+}
+
+nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ctx)
+{
+    (void)ctx;
+    return NMO_ERR_NOT_IMPLEMENTED;
+}
+
+nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ctx)
+{
+    (void)ctx;
+    return NMO_ERR_NOT_IMPLEMENTED;
+}
+
+nmo_load_stats_t nmo_deserializer_get_stats(const nmo_deserializer_t *ctx)
+{
+    nmo_load_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    (void)ctx;
+    return stats;
+}
+
+void nmo_deserializer_destroy_legacy(nmo_deserializer_t *session)
+{
+    /* Alias for backward compatibility with legacy API */
+    nmo_deserializer_destroy(session);
+}
