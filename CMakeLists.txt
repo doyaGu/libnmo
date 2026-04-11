@@ -306,6 +306,8 @@ set(NMO_SESSION_SOURCES
     src/session/reference_resolver.c
     src/session/runtime_graph.c
     src/session/runtime_kernel.c
+    src/session/runtime_ref_remap.c
+    src/session/runtime_delete.c
 )
 
 # App layer sources

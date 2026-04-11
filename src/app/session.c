@@ -8,7 +8,7 @@
 #include "app/nmo_load.h"
 #include "app/nmo_save.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/runtime_kernel_internal.h"
+#include "session/nmo_runtime_delete.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -755,7 +755,7 @@ int nmo_session_preview_destroy(
         return NMO_ERR_INVALID_STATE;
     }
 
-    return runtime_kernel_preview_delete(
+    return nmo_runtime_preview_delete(
         repo, type_rt, arena,
         object_ids, object_count, flags,
         out_expanded_ids, out_expanded_count);
