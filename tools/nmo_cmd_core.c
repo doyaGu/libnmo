@@ -14,6 +14,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -599,5 +600,77 @@ bool nmo_core_dsl_format(const nmo_dsl_value_t *value, char *buf,
         default:
             snprintf(buf, buf_size, "<unknown>");
             return false;
+    }
+}
+
+/* ============================================================================
+ * 6. DSL error display with source context
+ * ============================================================================ */
+
+void nmo_core_dsl_print_error(FILE *stream, const char *source,
+                              const char *prefix) {
+    /* Get last error detail */
+    char detail[256];
+    size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
+
+    /* Try to parse "line:col: message" from the error detail */
+    uint32_t err_line = 0;
+    uint32_t err_col = 0;
+    const char *err_msg = NULL;
+
+    if (detail_len > 0) {
+        char *p = detail;
+        char *end = NULL;
+        unsigned long l = strtoul(p, &end, 10);
+        if (end && end != p && *end == ':') {
+            p = end + 1;
+            unsigned long c = strtoul(p, &end, 10);
+            if (end && end != p && *end == ':') {
+                err_line = (uint32_t)l;
+                err_col = (uint32_t)c;
+                /* Skip ": " */
+                err_msg = end + 1;
+                while (*err_msg == ' ') err_msg++;
+            }
+        }
+    }
+
+    /* Print the main error line */
+    if (err_msg && err_msg[0]) {
+        if (err_line > 0 && err_col > 0) {
+            fprintf(stream, "%s at line %u, column %u: %s\n",
+                    prefix, err_line, err_col, err_msg);
+        } else {
+            fprintf(stream, "%s: %s\n", prefix, err_msg);
+        }
+    } else if (detail_len > 0) {
+        fprintf(stream, "%s: %s\n", prefix, detail);
+    } else {
+        fprintf(stream, "%s\n", prefix);
+    }
+
+    /* Show source context with caret if we have position info */
+    if (source && err_line > 0 && err_col > 0) {
+        /* Find the start of the error line in source */
+        const char *line_start = source;
+        for (uint32_t i = 1; i < err_line && *line_start; i++) {
+            while (*line_start && *line_start != '\n') line_start++;
+            if (*line_start == '\n') line_start++;
+        }
+
+        /* Find the end of this line */
+        const char *line_end = line_start;
+        while (*line_end && *line_end != '\n' && *line_end != '\r') line_end++;
+
+        size_t line_len = (size_t)(line_end - line_start);
+        if (line_len > 0) {
+            fprintf(stream, "  %.*s\n", (int)line_len, line_start);
+            /* Print caret at err_col (1-based) */
+            fprintf(stream, "  ");
+            for (uint32_t i = 1; i < err_col; i++) {
+                fputc(' ', stream);
+            }
+            fprintf(stream, "^\n");
+        }
     }
 }

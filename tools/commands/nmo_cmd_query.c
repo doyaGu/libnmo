@@ -324,16 +324,9 @@ int nmo_cmd_query_eval(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_status_t status = nmo_dsl_eval_one(registry, &eval_ctx, expr_str, &result);
 
     if (status != NMO_OK) {
+        nmo_core_dsl_print_error(stderr, expr_str, "Error: DSL evaluation failed");
         free(stdin_buffer);
-        /* Capture detailed error before closing session (which may clear it) */
-        char detail[256];
-        size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
         nmo_tool_close_session(ctx, session);
-        if (detail_len > 0) {
-            fprintf(stderr, "Error: %s\n", detail);
-        } else {
-            fprintf(stderr, "Error: DSL evaluation failed: %s\n", nmo_error_string(status));
-        }
         if (!obj_opt) {
             fprintf(stderr, "Hint: Use --object <id|name> to evaluate in the context of an object\n");
         }
@@ -418,9 +411,9 @@ int nmo_cmd_query_script(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     nmo_status_t status = nmo_dsl_compile(registry, NULL, script_source, &compile_opts, &program);
     if (status != NMO_OK) {
+        nmo_core_dsl_print_error(stderr, script_source, "Error: Failed to compile script");
         free(script_source);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: Failed to compile script: %s\n", nmo_error_string(status));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -532,9 +525,9 @@ int nmo_cmd_query_schema(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     nmo_status_t status = nmo_dsl_compile(registry, NULL, schema_source, &compile_opts, &program);
     if (status != NMO_OK) {
+        nmo_core_dsl_print_error(stderr, schema_source, "Error: Failed to compile schema");
         free(schema_source);
         nmo_context_release(ctx);
-        fprintf(stderr, "Error: Failed to compile schema: %s\n", nmo_error_string(status));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -618,9 +611,9 @@ int nmo_cmd_query_module(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     nmo_status_t status = nmo_dsl_compile(registry, NULL, module_source, &compile_opts, &program);
     if (status != NMO_OK) {
+        nmo_core_dsl_print_error(stderr, module_source, "Error: Failed to compile module");
         free(module_source);
         nmo_tool_close_session(ctx, session);
-        fprintf(stderr, "Error: Failed to compile module: %s\n", nmo_error_string(status));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 

@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -198,6 +199,20 @@ bool nmo_core_dsl_is_truthy(const nmo_dsl_value_t *val);
  * @return true if formatted successfully
  */
 bool nmo_core_dsl_format(const nmo_dsl_value_t *val, char *buf, size_t sz);
+
+/**
+ * @brief Print a DSL compile/eval error with source context and caret
+ *
+ * Reads the last error message (expected format "line:col: message"),
+ * prints the error message then shows the relevant source line with
+ * a caret (^) pointing to the error column.
+ *
+ * @param stream  Output stream for the error (typically stderr)
+ * @param source  The original DSL source string
+ * @param prefix  Error prefix (e.g. "Error: Failed to compile filter")
+ */
+void nmo_core_dsl_print_error(FILE *stream, const char *source,
+                              const char *prefix);
 
 #ifdef __cplusplus
 }

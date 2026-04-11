@@ -44,7 +44,7 @@ static int list_json_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
     yyjson_mut_obj_add_uint(d->doc, item, "class_id", class_id);
     const char *class_name = nmo_core_class_name(c, class_id);
-    if (class_name) yyjson_mut_obj_add_str(d->doc, item, "class_name", class_name);
+    if (class_name) nmo_cli_json_add_str_safe(d->doc, item, "class_name", class_name);
     const char *name = nmo_object_get_name(obj);
     if (name && name[0]) nmo_cli_json_add_str_safe(d->doc, item, "name", name);
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
@@ -163,8 +163,168 @@ static obj_compare_fn obj_sort_comparator(nmo_cli_sort_key_t key) {
 }
 
 /* ============================================================================
- * object list
+ * object list (single-file core + batch support)
  * ============================================================================ */
+
+/** User data forwarded through batch handler for object list */
+typedef struct {
+    const char *class_filter_str;
+    const char *filter_expr;
+    const char *sort_key_str;
+    bool reverse;
+    uint32_t top_n;
+} object_list_opts_t;
+
+static int object_list_single(const char *file_path,
+                              const nmo_cli_global_opts_t *global,
+                              void *user_data,
+                              yyjson_mut_doc *doc,
+                              yyjson_mut_val *data)
+{
+    /* In text mode the framework wraps user_data in nmo_tool_text_output_ctx_t;
+       in JSON mode user_data is the raw pointer we passed to batch_run. */
+    const nmo_tool_text_output_ctx_t *text_ctx = NULL;
+    const object_list_opts_t *opts = NULL;
+    if (doc && data) {
+        opts = (const object_list_opts_t *)user_data;
+    } else {
+        text_ctx = (const nmo_tool_text_output_ctx_t *)user_data;
+        opts = text_ctx ? (const object_list_opts_t *)text_ctx->user_data : NULL;
+    }
+    const char *class_filter_str = opts ? opts->class_filter_str : NULL;
+    const char *filter_expr      = opts ? opts->filter_expr : NULL;
+    const char *sort_key_str     = opts ? opts->sort_key_str : NULL;
+    bool reverse                 = opts ? opts->reverse : false;
+    uint32_t top_n               = opts ? opts->top_n : 0;
+
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256];
+
+    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    /* Build a lightweight cmd_ctx for core helpers */
+    nmo_cmd_ctx_t c;
+    memset(&c, 0, sizeof(c));
+    c.global = global;
+    c.ctx = ctx;
+    c.session = session;
+    c.registry = nmo_context_get_type_registry(ctx);
+    c.is_json = (doc != NULL);
+    c.file_path = file_path;
+    c.out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
+    c.colorize = text_ctx ? text_ctx->colorize : false;
+
+    /* Build filter */
+    nmo_core_object_filter_t filter = {0};
+    if (class_filter_str) {
+        filter.class_id = nmo_core_class_id(&c, class_filter_str);
+        if (!filter.class_id) {
+            fprintf(stderr, "Error: Unknown class '%s'\n", class_filter_str);
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        filter.class_derived = true;
+    }
+    if (filter_expr) {
+        nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
+        nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
+        if (st != NMO_OK) {
+            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
+            nmo_tool_close_session(ctx, session);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+    }
+
+    nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
+    bool needs_collect = (sort_key != NMO_CLI_SORT_NONE) || (top_n > 0);
+    nmo_core_iter_result_t result;
+    int rc = NMO_CLI_EXIT_SUCCESS;
+
+    if (needs_collect) {
+        obj_collect_t col = {0};
+        nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &result);
+
+        if (sort_key != NMO_CLI_SORT_NONE && col.count > 1) {
+            s_sort_ctx = &c;
+            s_sort_reverse = reverse;
+            obj_compare_fn cmp = obj_sort_comparator(sort_key);
+            if (cmp) {
+                qsort(col.objects, col.count, sizeof(nmo_object_t *), cmp);
+            }
+        }
+
+        size_t output_count = col.count;
+        if (top_n > 0 && (size_t)top_n < output_count) {
+            output_count = (size_t)top_n;
+        }
+
+        if (doc && data) {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            for (size_t i = 0; i < output_count; ++i) {
+                list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
+                list_json_visitor(i, col.objects[i], &c, &jd);
+            }
+            yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)output_count);
+            yyjson_mut_obj_add_val(doc, data, "objects", arr);
+        } else {
+            static const nmo_cli_table_col_t columns[] = {
+                {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+                {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+                {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+                {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+            };
+            nmo_cli_table_t table;
+            nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+            for (size_t i = 0; i < output_count; ++i) {
+                list_table_data_t td = { .table = &table, .ctx = &c };
+                list_table_visitor(i, col.objects[i], &c, &td);
+            }
+            fprintf(c.out, "Objects: %zu", result.matched);
+            if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
+            if (filter_expr) fprintf(c.out, " (filtered by: %s)", filter_expr);
+            if (top_n > 0) fprintf(c.out, " (showing top %u)", top_n);
+            fprintf(c.out, "\n\n");
+            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_free(&table);
+        }
+        free(col.objects);
+    } else {
+        if (doc && data) {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
+            nmo_core_iter_objects(&c, &filter, list_json_visitor, &jd, &result);
+            yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
+            yyjson_mut_obj_add_val(doc, data, "objects", arr);
+        } else {
+            static const nmo_cli_table_col_t columns[] = {
+                {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+                {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+                {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+                {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+            };
+            nmo_cli_table_t table;
+            nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+            list_table_data_t td = { .table = &table, .ctx = &c };
+            nmo_core_iter_objects(&c, &filter, list_table_visitor, &td, &result);
+            fprintf(c.out, "Objects: %zu", result.matched);
+            if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
+            if (filter_expr) fprintf(c.out, " (filtered by: %s)", filter_expr);
+            fprintf(c.out, "\n\n");
+            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_free(&table);
+        }
+    }
+
+    if (filter.dsl_filter) {
+        nmo_dsl_program_destroy(filter.dsl_filter);
+    }
+    nmo_tool_close_session(ctx, session);
+    return rc;
+}
 
 int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
@@ -192,6 +352,34 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
+    /* Batch mode */
+    if (global->batch_mode) {
+        static const char *const value_opts[] = {
+            "--class", "-c", "--filter", "-f", "--sort", "-s", "--top",
+        };
+        const char *paths[256];
+        size_t count = nmo_tool_find_file_args_ex(
+            argc, argv, paths, 256, value_opts,
+            sizeof(value_opts) / sizeof(value_opts[0]));
+
+        if (count == 0) {
+            fprintf(stderr, "Error: No files specified\n");
+            fprintf(stderr, "Usage: nmo --batch object list [options] <file1> <file2> ...\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+
+        object_list_opts_t opts = {
+            .class_filter_str = class_filter_str,
+            .filter_expr = filter_expr,
+            .sort_key_str = sort_key_str,
+            .reverse = reverse,
+            .top_n = top_n,
+        };
+        return nmo_tool_batch_run(paths, count, global, "object.list",
+                                  object_list_single, &opts);
+    }
+
+    /* Single file mode */
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
@@ -210,7 +398,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
         nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
         if (st != NMO_OK) {
-            fprintf(stderr, "Error: Failed to compile filter expression: %s\n", filter_expr);
+            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
@@ -219,7 +407,7 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
     nmo_core_iter_result_t result;
 
     if (needs_collect) {
-        /* Path A: collect → sort → truncate → output */
+        /* Path A: collect -> sort -> truncate -> output */
         obj_collect_t col = {0};
         nmo_core_iter_objects(&c, &filter, obj_collect_visitor, &col, &result);
 
@@ -1500,7 +1688,7 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
         nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
         if (st != NMO_OK) {
-            fprintf(stderr, "Error: Failed to compile filter expression: %s\n", filter_expr);
+            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }

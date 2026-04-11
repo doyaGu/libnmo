@@ -933,7 +933,7 @@ static int cmd_query(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_dsl_program_t *program = NULL;
     nmo_status_t st = nmo_dsl_compile(c.registry, NULL, expr_buf, &compile_opts, &program);
     if (st != NMO_OK) {
-        fprintf(stderr, "Error: Failed to compile expression: %s\n", expr_buf);
+        nmo_core_dsl_print_error(stderr, expr_buf, "Error: Failed to compile expression");
         return -1;
     }
 

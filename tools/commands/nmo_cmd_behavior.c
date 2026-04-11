@@ -35,6 +35,7 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 #include "behavior/nmo_bb_registry.h"
+#include "behavior/nmo_param_value.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -149,7 +150,139 @@ static const nmo_cli_graph_node_t *find_graph_node(
     return NULL;
 }
 
+/* ---- behavior list: per-file handler for batch mode ---- */
+
+static int behavior_list_single(const char *file_path,
+                                const nmo_cli_global_opts_t *global,
+                                void *user_data,
+                                yyjson_mut_doc *doc,
+                                yyjson_mut_val *data)
+{
+    const nmo_tool_text_output_ctx_t *text_ctx =
+        (const nmo_tool_text_output_ctx_t *)user_data;
+
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256];
+
+    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    if (!registry) {
+        fprintf(stderr, "Error: Type registry unavailable\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to get objects\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    size_t behavior_count = 0;
+
+    if (doc && data) {
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_object_t *obj = objects[i];
+            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+            if (!is_behavior_class(registry, class_id)) continue;
+
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
+            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
+
+            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+            if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
+
+            const char *name = nmo_object_get_name(obj);
+            if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
+
+            yyjson_mut_arr_add_val(arr, item);
+            behavior_count++;
+        }
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)behavior_count);
+        yyjson_mut_obj_add_val(doc, data, "objects", arr);
+    } else {
+        FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
+        bool colorize = text_ctx ? text_ctx->colorize : false;
+
+        static const nmo_cli_table_col_t columns[] = {
+            {"ID",   NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"TYPE", NMO_CLI_ALIGN_LEFT,  6, 0},
+            {"IO",   NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"PIN",  NMO_CLI_ALIGN_RIGHT, 4, 0},
+            {"POUT", NMO_CLI_ALIGN_RIGHT, 4, 0},
+            {"SUB",  NMO_CLI_ALIGN_RIGHT, 4, 0},
+            {"NAME", NMO_CLI_ALIGN_LEFT, 24, 50},
+        };
+        nmo_cli_table_t table;
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_object_t *obj = objects[i];
+            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+            if (!is_behavior_class(registry, class_id)) continue;
+
+            const nmo_behavior_state_t *bs =
+                (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+
+            char id_buf[16];
+            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+            const char *type_str = "Graph";
+            if (bs) {
+                if (bs->flags & 0x2) type_str = "Script";
+                else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) type_str = "BB";
+            }
+
+            char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
+            size_t n_io = bs ? (bs->inputs.count + bs->outputs.count) : 0;
+            snprintf(io_buf, sizeof(io_buf), "%zu", n_io);
+            snprintf(pin_buf, sizeof(pin_buf), "%zu", bs ? bs->in_parameters.count : 0);
+            snprintf(pout_buf, sizeof(pout_buf), "%zu", bs ? bs->out_parameters.count : 0);
+            snprintf(sub_buf, sizeof(sub_buf), "%zu", bs ? bs->sub_behaviors.count : 0);
+
+            const char *name = nmo_object_get_name(obj);
+            const char *cells[] = {
+                id_buf, type_str, io_buf, pin_buf, pout_buf, sub_buf,
+                (name && name[0]) ? name : "-",
+            };
+            nmo_cli_table_add_row(&table, cells, 7);
+            behavior_count++;
+        }
+
+        fprintf(out, "Behaviors: %zu\n\n", behavior_count);
+        nmo_cli_table_print(&table, out, colorize);
+        nmo_cli_table_free(&table);
+    }
+
+    (void)global;
+    nmo_tool_close_session(ctx, session);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_behavior_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Batch mode */
+    if (global->batch_mode) {
+        const char *paths[256];
+        size_t count = nmo_tool_find_file_args(argc, argv, paths, 256);
+        if (count == 0) {
+            fprintf(stderr, "Error: No files specified\n");
+            fprintf(stderr, "Usage: nmo --batch behavior list <file1> <file2> ...\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return nmo_tool_batch_run(paths, count, global, "behavior.list",
+                                  behavior_list_single, NULL);
+    }
+
+    /* Single file mode */
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
@@ -673,14 +806,44 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *tname = resolve_type(c.registry, tg);
             fprintf(c.out, "  pIn  %zu: %-24s  [%s]", i,
                     (pname && pname[0]) ? pname : "(unnamed)", tname);
-            /* Show source */
+            /* Show source with shared chain tracing */
             if (p && nmo_object_get_class_id(p) == NMO_CID_PARAMETERIN) {
                 const nmo_parameterin_state_t *pin =
                     (const nmo_parameterin_state_t *)nmo_object_get_state(p);
                 if (pin && pin->source_id != 0) {
-                    const char *src = resolve_name(repo, pin->source_id);
-                    fprintf(c.out, "  <- %s", src ? src : "?");
-                    if (pin->is_shared) fprintf(c.out, " (shared)");
+                    if (pin->is_shared) {
+                        /* Trace shared chain to find direct source */
+                        uint32_t shared_hops = 0;
+                        nmo_object_id_t cur_id = pin->source_id;
+                        while (shared_hops < 32) {
+                            nmo_object_t *cur_obj = nmo_object_repository_find_by_id(repo, cur_id);
+                            if (!cur_obj) break;
+                            if (nmo_object_get_class_id(cur_obj) != NMO_CID_PARAMETERIN) break;
+                            const nmo_parameterin_state_t *cur_pin =
+                                (const nmo_parameterin_state_t *)nmo_object_get_state(cur_obj);
+                            if (!cur_pin || cur_pin->source_id == 0) break;
+                            if (!cur_pin->is_shared) {
+                                /* Reached direct source */
+                                cur_id = cur_pin->source_id;
+                                shared_hops++;
+                                break;
+                            }
+                            cur_id = cur_pin->source_id;
+                            shared_hops++;
+                        }
+                        const char *final_name = resolve_name(repo, cur_id);
+                        nmo_object_t *final_obj = nmo_object_repository_find_by_id(repo, cur_id);
+                        nmo_guid_t final_tg = get_param_type_guid(final_obj);
+                        const char *final_type = resolve_type(c.registry, final_tg);
+                        fprintf(c.out, "  <- %s [%s] via %u shared link%s",
+                                final_name ? final_name : "?",
+                                final_type,
+                                shared_hops,
+                                shared_hops == 1 ? "" : "s");
+                    } else {
+                        const char *src = resolve_name(repo, pin->source_id);
+                        fprintf(c.out, "  <- %s", src ? src : "?");
+                    }
                 }
             }
             fprintf(c.out, "\n");
@@ -697,8 +860,23 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *pname = p ? nmo_object_get_name(p) : "?";
             nmo_guid_t tg = get_param_type_guid(p);
             const char *tname = resolve_type(c.registry, tg);
-            fprintf(c.out, "  pOut %zu: %-24s  [%s]\n", i,
+            fprintf(c.out, "  pOut %zu: %-24s  [%s]", i,
                     (pname && pname[0]) ? pname : "(unnamed)", tname);
+            /* Decode value if available */
+            if (p && (nmo_object_get_class_id(p) == NMO_CID_PARAMETEROUT ||
+                      nmo_object_get_class_id(p) == NMO_CID_PARAMETER)) {
+                const nmo_parameter_state_t *ps =
+                    (const nmo_parameter_state_t *)nmo_object_get_state(p);
+                if (ps && ps->has_state) {
+                    char val_buf[256];
+                    if (nmo_param_value_to_string(ps, c.registry, c.session,
+                                                  val_buf, sizeof(val_buf)) == NMO_OK
+                        && val_buf[0] != '\0') {
+                        fprintf(c.out, " = %s", val_buf);
+                    }
+                }
+            }
+            fprintf(c.out, "\n");
         }
     }
 
@@ -712,8 +890,23 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *pname = p ? nmo_object_get_name(p) : "?";
             nmo_guid_t tg = get_param_type_guid(p);
             const char *tname = resolve_type(c.registry, tg);
-            fprintf(c.out, "  local %zu: %-24s  [%s]\n", i,
+            fprintf(c.out, "  local %zu: %-24s  [%s]", i,
                     (pname && pname[0]) ? pname : "(unnamed)", tname);
+            /* Decode value if available */
+            if (p && (nmo_object_get_class_id(p) == NMO_CID_PARAMETERLOCAL ||
+                      nmo_object_get_class_id(p) == NMO_CID_PARAMETER)) {
+                const nmo_parameter_state_t *ps =
+                    (const nmo_parameter_state_t *)nmo_object_get_state(p);
+                if (ps && ps->has_state) {
+                    char val_buf[256];
+                    if (nmo_param_value_to_string(ps, c.registry, c.session,
+                                                  val_buf, sizeof(val_buf)) == NMO_OK
+                        && val_buf[0] != '\0') {
+                        fprintf(c.out, " = %s", val_buf);
+                    }
+                }
+            }
+            fprintf(c.out, "\n");
         }
     }
 
@@ -730,22 +923,26 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             }
             const nmo_parameteroperation_state_t *op_state =
                 (const nmo_parameteroperation_state_t *)op_obj->state;
-            const char *op_name = nmo_type_registry_guid_to_name(c.registry, op_state->operation_guid);
-            fprintf(c.out, "  pOp %zu: %s", i,
-                    op_name ? op_name : "(unknown op)");
-            if (op_state->has_in1) {
-                const char *n1 = resolve_name(repo, op_state->in1_id);
-                fprintf(c.out, "  in1=%s", n1 ? n1 : "?");
-            }
-            if (op_state->has_in2) {
-                const char *n2 = resolve_name(repo, op_state->in2_id);
-                fprintf(c.out, "  in2=%s", n2 ? n2 : "?");
-            }
+            const char *op_name = nmo_type_registry_guid_to_name(
+                c.registry, op_state->operation_guid);
+            /* Resolve in1, in2, out names and types */
+            const char *n1 = op_state->has_in1 ? resolve_name(repo, op_state->in1_id) : NULL;
+            const char *n2 = op_state->has_in2 ? resolve_name(repo, op_state->in2_id) : NULL;
+            const char *no = op_state->has_out ? resolve_name(repo, op_state->out_id) : NULL;
+            /* Resolve result type from out parameter */
+            const char *out_type = "?";
             if (op_state->has_out) {
-                const char *no = resolve_name(repo, op_state->out_id);
-                fprintf(c.out, "  out=%s", no ? no : "?");
+                nmo_object_t *out_p = nmo_object_repository_find_by_id(repo, op_state->out_id);
+                nmo_guid_t otg = get_param_type_guid(out_p);
+                out_type = resolve_type(c.registry, otg);
             }
-            fprintf(c.out, "\n");
+            /* Display as: [OP] in1 + in2 -> out [Type] */
+            fprintf(c.out, "  [%s] ", op_name ? op_name : "?");
+            if (n1) fprintf(c.out, "%s", n1);
+            if (n1 && n2) fprintf(c.out, " + ");
+            if (n2) fprintf(c.out, "%s", n2);
+            if (no) fprintf(c.out, " -> %s", no);
+            fprintf(c.out, "  [%s]\n", out_type);
         }
     }
 
@@ -959,7 +1156,227 @@ static uint32_t compute_tree_depth(nmo_object_repository_t *repo,
     return max_d;
 }
 
+/* ---- behavior stats: per-file handler for batch mode ---- */
+
+static int behavior_stats_single(const char *file_path,
+                                 const nmo_cli_global_opts_t *global,
+                                 void *user_data,
+                                 yyjson_mut_doc *doc,
+                                 yyjson_mut_val *data)
+{
+    const nmo_tool_text_output_ctx_t *text_ctx =
+        (const nmo_tool_text_output_ctx_t *)user_data;
+
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256];
+
+    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    if (!registry) {
+        fprintf(stderr, "Error: Type registry unavailable\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to get objects\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(ctx);
+
+    size_t total_behaviors = 0, n_scripts = 0, n_graphs = 0, n_bbs = 0;
+    size_t n_parameters = 0, n_links = 0, n_operations = 0;
+
+    nmo_cli_bb_proto_count_t *protos = NULL;
+    size_t proto_count = 0, proto_cap = 0;
+
+    nmo_object_id_t *script_ids = NULL;
+    size_t script_id_count = 0, script_id_cap = 0;
+
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *obj = objects[i];
+        nmo_class_id_t cid = nmo_object_get_class_id(obj);
+
+        if (cid == NMO_CID_PARAMETERIN || cid == NMO_CID_PARAMETEROUT ||
+            cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
+            n_parameters++; continue;
+        }
+        if (cid == NMO_CID_BEHAVIORLINK) { n_links++; continue; }
+        if (cid == NMO_CID_PARAMETEROPERATION) { n_operations++; continue; }
+        if (!is_behavior_class(registry, cid)) continue;
+
+        total_behaviors++;
+        const nmo_behavior_state_t *bs =
+            (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+        if (!bs) continue;
+
+        if (bs->flags & CKBEHAVIOR_SCRIPT) {
+            n_scripts++;
+            if (script_id_count == script_id_cap) {
+                size_t new_cap = (script_id_cap == 0) ? 16 : (script_id_cap * 2);
+                nmo_object_id_t *na = (nmo_object_id_t *)realloc(
+                    script_ids, new_cap * sizeof(*script_ids));
+                if (na) { script_ids = na; script_id_cap = new_cap; }
+            }
+            if (script_id_count < script_id_cap)
+                script_ids[script_id_count++] = nmo_object_get_id(obj);
+        } else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+            n_bbs++;
+            if (!nmo_guid_is_null(bs->block_guid)) {
+                bool found = false;
+                for (size_t j = 0; j < proto_count; j++) {
+                    if (protos[j].guid.d1 == bs->block_guid.d1 &&
+                        protos[j].guid.d2 == bs->block_guid.d2) {
+                        protos[j].count++; found = true; break;
+                    }
+                }
+                if (!found) {
+                    if (proto_count == proto_cap) {
+                        size_t new_cap = (proto_cap == 0) ? 64 : (proto_cap * 2);
+                        nmo_cli_bb_proto_count_t *na =
+                            (nmo_cli_bb_proto_count_t *)realloc(
+                                protos, new_cap * sizeof(*protos));
+                        if (na) { protos = na; proto_cap = new_cap; }
+                    }
+                    if (proto_count < proto_cap) {
+                        protos[proto_count] = (nmo_cli_bb_proto_count_t){
+                            .guid = bs->block_guid,
+                            .name = nmo_bb_registry_get_name(bb_reg, bs->block_guid),
+                            .count = 1,
+                        };
+                        proto_count++;
+                    }
+                }
+            }
+        } else {
+            n_graphs++;
+        }
+    }
+
+    if (proto_count > 1)
+        qsort(protos, proto_count, sizeof(*protos), bb_proto_count_cmp_desc);
+
+    uint32_t max_depth = 0;
+    for (size_t i = 0; i < script_id_count; i++) {
+        uint32_t d = compute_tree_depth(repo, registry, script_ids[i], 0);
+        if (d > max_depth) max_depth = d;
+    }
+
+    if (doc && data) {
+        yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)total_behaviors);
+        yyjson_mut_obj_add_uint(doc, data, "scripts", (uint64_t)n_scripts);
+        yyjson_mut_obj_add_uint(doc, data, "graphs", (uint64_t)n_graphs);
+        yyjson_mut_obj_add_uint(doc, data, "building_blocks", (uint64_t)n_bbs);
+
+        yyjson_mut_val *proto_arr = yyjson_mut_arr(doc);
+        size_t top_n = proto_count < 10 ? proto_count : 10;
+        for (size_t i = 0; i < top_n; i++) {
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            if (protos[i].name)
+                nmo_cli_json_add_str_safe(doc, item, "name", protos[i].name);
+            char guid_buf[24];
+            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
+                     protos[i].guid.d1, protos[i].guid.d2);
+            nmo_cli_json_add_str_safe(doc, item, "guid", guid_buf);
+            yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)protos[i].count);
+            yyjson_mut_arr_add_val(proto_arr, item);
+        }
+        yyjson_mut_obj_add_val(doc, data, "top_bb_prototypes", proto_arr);
+
+        yyjson_mut_obj_add_uint(doc, data, "total_parameters", (uint64_t)n_parameters);
+        yyjson_mut_obj_add_uint(doc, data, "total_links", (uint64_t)n_links);
+        yyjson_mut_obj_add_uint(doc, data, "total_operations", (uint64_t)n_operations);
+        yyjson_mut_obj_add_uint(doc, data, "max_tree_depth", (uint64_t)max_depth);
+    } else {
+        FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
+        bool colorize = text_ctx ? text_ctx->colorize : false;
+
+        nmo_cli_print_heading(out, "Behavior Statistics", colorize);
+        fprintf(out, "\n");
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%zu", total_behaviors);
+        nmo_cli_print_kv(out, "Total behaviors", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_scripts);
+        nmo_cli_print_kv(out, "Scripts", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_graphs);
+        nmo_cli_print_kv(out, "Graphs", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_bbs);
+        nmo_cli_print_kv(out, "Building Blocks", buf, 22, colorize);
+
+        if (proto_count > 0) {
+            fprintf(out, "\n");
+            nmo_cli_print_heading(out, "Top BB Prototypes", colorize);
+            fprintf(out, "\n");
+
+            static const nmo_cli_table_col_t proto_columns[] = {
+                {"Name", NMO_CLI_ALIGN_LEFT, 28, 50},
+                {"Count", NMO_CLI_ALIGN_RIGHT, 6, 0},
+            };
+            nmo_cli_table_t table;
+            nmo_cli_table_init(&table, proto_columns,
+                               sizeof(proto_columns) / sizeof(proto_columns[0]));
+
+            size_t top_n = proto_count < 10 ? proto_count : 10;
+            for (size_t i = 0; i < top_n; i++) {
+                char count_buf[16];
+                snprintf(count_buf, sizeof(count_buf), "%zu", protos[i].count);
+                char name_buf[80];
+                if (protos[i].name)
+                    snprintf(name_buf, sizeof(name_buf), "%s", protos[i].name);
+                else
+                    snprintf(name_buf, sizeof(name_buf), "{%08X-%08X}",
+                             protos[i].guid.d1, protos[i].guid.d2);
+                const char *cells[] = { name_buf, count_buf };
+                nmo_cli_table_add_row(&table, cells, 2);
+            }
+            nmo_cli_table_print(&table, out, colorize);
+            nmo_cli_table_free(&table);
+        }
+
+        fprintf(out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", n_parameters);
+        nmo_cli_print_kv(out, "Parameters", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_links);
+        nmo_cli_print_kv(out, "Links", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_operations);
+        nmo_cli_print_kv(out, "Operations", buf, 22, colorize);
+        snprintf(buf, sizeof(buf), "%u", max_depth);
+        nmo_cli_print_kv(out, "Max tree depth", buf, 22, colorize);
+    }
+
+    (void)global;
+    free(protos);
+    free(script_ids);
+    nmo_tool_close_session(ctx, session);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Batch mode */
+    if (global->batch_mode) {
+        const char *paths[256];
+        size_t count = nmo_tool_find_file_args(argc, argv, paths, 256);
+        if (count == 0) {
+            fprintf(stderr, "Error: No files specified\n");
+            fprintf(stderr, "Usage: nmo --batch behavior stats <file1> <file2> ...\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return nmo_tool_batch_run(paths, count, global, "behavior.stats",
+                                  behavior_stats_single, NULL);
+    }
+
+    /* Single file mode */
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;
@@ -2433,8 +2850,13 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                                 (uint64_t)link_count);
         json_entries = yyjson_mut_arr(doc);
     } else {
-        fprintf(c.out, "Execution Trace: %s [#%u]\n",
-                (beh_name && beh_name[0]) ? beh_name : "(unnamed)", beh_id);
+        /* Type label for root behavior */
+        const char *root_label = "[Graph]";
+        if (bs->flags & CKBEHAVIOR_SCRIPT) root_label = "[Script]";
+        else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) root_label = "[BB]";
+        fprintf(c.out, "Execution Trace: %s %s [#%u]\n",
+                (beh_name && beh_name[0]) ? beh_name : "(unnamed)",
+                root_label, beh_id);
         fprintf(c.out, "Entry points: %zu, Links: %zu\n\n",
                 entry_count, link_count);
     }
@@ -2523,8 +2945,39 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                 } else {
                     for (uint32_t dd = 0; dd <= cur.depth; dd++)
                         fprintf(c.out, "  ");
-                    fprintf(c.out, "\xe2\x86\x92 %s.%s", tname,
-                            tio ? tio : "?");
+                    /* Resolve type label and prototype name */
+                    const char *type_label = "";
+                    const char *proto_name = NULL;
+                    bool entering_subgraph = false;
+                    if (tgt_owner != 0) {
+                        nmo_object_t *tgt_obj = nmo_object_repository_find_by_id(repo, tgt_owner);
+                        if (tgt_obj && tgt_obj->state) {
+                            const nmo_behavior_state_t *tgt_bs =
+                                (const nmo_behavior_state_t *)tgt_obj->state;
+                            if (tgt_bs->flags & CKBEHAVIOR_SCRIPT)
+                                type_label = " [Script]";
+                            else if (tgt_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+                                type_label = " [BB]";
+                                if (!nmo_guid_is_null(tgt_bs->block_guid)) {
+                                    proto_name = nmo_bb_registry_get_name(
+                                        nmo_context_get_bb_registry(c.ctx),
+                                        tgt_bs->block_guid);
+                                }
+                            } else {
+                                type_label = " [Graph]";
+                                entering_subgraph = true;
+                            }
+                        }
+                    }
+                    if (entering_subgraph)
+                        fprintf(c.out, "\xe2\x96\xb6 ");
+                    else
+                        fprintf(c.out, "\xe2\x86\x92 ");
+                    /* Show "name" [Proto] or just "name" */
+                    fprintf(c.out, "%s", tname);
+                    if (proto_name)
+                        fprintf(c.out, " [%s]", proto_name);
+                    fprintf(c.out, ".%s%s", tio ? tio : "?", type_label);
                     if (links[li].delay != 0)
                         fprintf(c.out, "  (delay: %d)", links[li].delay);
                     fprintf(c.out, "\n");

@@ -109,7 +109,122 @@ static void format_hex_dump(const uint8_t *data, size_t len, size_t max_bytes,
     }
 }
 
+/* ---- parameter list: per-file handler for batch mode ---- */
+
+static int parameter_list_single(const char *file_path,
+                                 const nmo_cli_global_opts_t *global,
+                                 void *user_data,
+                                 yyjson_mut_doc *doc,
+                                 yyjson_mut_val *data)
+{
+    const nmo_tool_text_output_ctx_t *text_ctx =
+        (const nmo_tool_text_output_ctx_t *)user_data;
+
+    nmo_context_t *ctx = NULL;
+    nmo_session_t *session = NULL;
+    char errbuf[256];
+
+    if (!nmo_tool_open_session(file_path, &ctx, &session, errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    if (!registry) {
+        fprintf(stderr, "Error: Type registry unavailable\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_object_t **objects = NULL;
+    size_t object_count = 0;
+    if (nmo_session_get_objects(session, &objects, &object_count) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to get objects\n");
+        nmo_tool_close_session(ctx, session);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    size_t param_count = 0;
+
+    if (doc && data) {
+        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_object_t *obj = objects[i];
+            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+            if (!is_parameter_class(registry, class_id)) continue;
+
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
+            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
+
+            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+            if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
+
+            const char *name = nmo_object_get_name(obj);
+            if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
+
+            yyjson_mut_arr_add_val(arr, item);
+            param_count++;
+        }
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)param_count);
+        yyjson_mut_obj_add_val(doc, data, "objects", arr);
+    } else {
+        FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
+        bool colorize = text_ctx ? text_ctx->colorize : false;
+
+        static const nmo_cli_table_col_t columns[] = {
+            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
+            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
+        };
+        nmo_cli_table_t table;
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_object_t *obj = objects[i];
+            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+            if (!is_parameter_class(registry, class_id)) continue;
+
+            char id_buf[16];
+            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+
+            const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+            const char *name = nmo_object_get_name(obj);
+
+            const char *cells[] = {
+                id_buf,
+                class_name ? class_name : "-",
+                (name && name[0]) ? name : "-",
+            };
+            nmo_cli_table_add_row(&table, cells, 3);
+            param_count++;
+        }
+
+        fprintf(out, "Parameters: %zu\n\n", param_count);
+        nmo_cli_table_print(&table, out, colorize);
+        nmo_cli_table_free(&table);
+    }
+
+    (void)global;
+    nmo_tool_close_session(ctx, session);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Batch mode */
+    if (global->batch_mode) {
+        const char *paths[256];
+        size_t count = nmo_tool_find_file_args(argc, argv, paths, 256);
+        if (count == 0) {
+            fprintf(stderr, "Error: No files specified\n");
+            fprintf(stderr, "Usage: nmo --batch parameter list <file1> <file2> ...\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        return nmo_tool_batch_run(paths, count, global, "parameter.list",
+                                  parameter_list_single, NULL);
+    }
+
+    /* Single file mode */
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
     if (rc) return rc;

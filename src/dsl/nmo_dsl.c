@@ -35,12 +35,22 @@ static nmo_status_t compile_parse_error(const nmo_dsl_parser_t *ps, const char *
     if (ps && ps->lx.err[0]) {
         msg = ps->lx.err;
     }
+    /* Include line:col in the error message so callers can extract position */
+    if (ps) {
+        uint32_t line = ps->lx.tok.line;
+        uint32_t col  = ps->lx.tok.col;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "%u:%u: %s", line, col, msg);
+    }
     NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "%s", msg);
 }
 
 static nmo_status_t compile_expect_eof(const nmo_dsl_parser_t *ps) {
     if (!nmo_dsl_parser_at_eof(ps)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "trailing tokens");
+        uint32_t line = ps->lx.tok.line;
+        uint32_t col  = ps->lx.tok.col;
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "%u:%u: trailing tokens", line, col);
     }
     NMO_RETURN_OK();
 }

@@ -838,7 +838,7 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_dsl_compile_options_t compile_opts = { .mode = NMO_DSL_MODE_EXPRESSION };
         nmo_status_t st = nmo_dsl_compile(c.registry, NULL, filter_expr, &compile_opts, &filter.dsl_filter);
         if (st != NMO_OK) {
-            fprintf(stderr, "Error: Failed to compile filter expression: %s\n", filter_expr);
+            nmo_core_dsl_print_error(stderr, filter_expr, "Error: Failed to compile filter expression");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
     }
