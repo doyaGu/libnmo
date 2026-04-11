@@ -34,7 +34,7 @@ nmo_id_remap_table_t *nmo_build_remap_table(nmo_deserializer_t *session) {
     nmo_object_id_t *runtime_ids = NULL;
     size_t count = 0;
 
-    int result = nmo_load_session_get_mappings(session, &file_indices, &runtime_ids, &count);
+    int result = nmo_deserializer_get_mappings(session, &file_indices, &runtime_ids, &count);
     if (result != NMO_OK || count == 0) {
         return NULL;
     }

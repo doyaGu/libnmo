@@ -550,7 +550,7 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     mutable_vtable->deserialize = old_deserialize;
     mutable_vtable->prepare_dependencies = old_prepare;
 
-    nmo_deserializer_destroy_legacy(load_session);
+    nmo_deserializer_destroy_id_session(load_session);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

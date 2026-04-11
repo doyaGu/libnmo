@@ -74,12 +74,12 @@ nmo_object_id_t nmo_deserializer_get_max_saved_id(
 /**
  * @brief Destroy a legacy (ID-remapping only) deserializer
  */
-void nmo_deserializer_destroy_legacy(nmo_deserializer_t *session);
+void nmo_deserializer_destroy_id_session(nmo_deserializer_t *session);
 
 /**
  * @brief Get all ID mappings (used by id_remap.c)
  */
-int nmo_load_session_get_mappings(const nmo_deserializer_t *session,
+int nmo_deserializer_get_mappings(const nmo_deserializer_t *session,
                                   nmo_object_id_t **file_ids,
                                   nmo_object_id_t **runtime_ids,
                                   size_t *count);

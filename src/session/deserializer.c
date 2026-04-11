@@ -14,8 +14,8 @@
 #include "session/nmo_id_remap.h"
 #include "session/nmo_id_sanitizer.h"
 
-#include "extension/nmo_extension_registry.h"
-#include "extension/nmo_extension_diagnostics.h"
+/* Plugin dependency checking uses extension layer (diagnostic only).
+ * Session layer accesses this via session getters, not direct include. */
 
 #include "object/nmo_object_repository.h"
 #include "object/nmo_shadow_storage.h"
@@ -217,7 +217,7 @@ nmo_object_id_t nmo_deserializer_get_max_saved_id(const nmo_deserializer_t *sess
     return session ? session->saved_id_max : 0;
 }
 
-void nmo_deserializer_destroy_legacy(nmo_deserializer_t *session) {
+void nmo_deserializer_destroy_id_session(nmo_deserializer_t *session) {
     if (session != NULL) {
         nmo_hash_table_destroy(session->id_mappings);
         nmo_arena_destroy(session->remap_arena);
@@ -241,7 +241,7 @@ static int collect_mapping(const void *key, void *value, void *user_data) {
     return 1; /* Continue iteration */
 }
 
-int nmo_load_session_get_mappings(const nmo_deserializer_t *session,
+int nmo_deserializer_get_mappings(const nmo_deserializer_t *session,
                                   nmo_object_id_t **file_ids,
                                   nmo_object_id_t **runtime_ids,
                                   size_t *count) {
@@ -891,10 +891,10 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
 
             if (entry->status_flags & NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) {
                 nmo_log(logger, NMO_LOG_WARN,
-                        "  Missing plugin %zu: guid=%s category=%s version=%u",
+                        "  Missing plugin %zu: guid=%s category=%u version=%u",
                         i,
                         guid_buffer,
-                        nmo_extension_category_label(entry->category),
+                        (unsigned)entry->category,
                         entry->required_version);
                 continue;
             }
@@ -926,7 +926,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     if (missing_plugins > 0 && enforce_plugin_dependencies) {
         nmo_log(logger, NMO_LOG_ERROR,
                 "Missing %zu required plugin(s); aborting due to NMO_LOAD_CHECK_DEPENDENCIES", missing_plugins);
-        nmo_deserializer_destroy_legacy(load_session);
+        nmo_deserializer_destroy_id_session(load_session);
         ds->load_session = NULL;
         return NMO_ERR_NOT_FOUND;
     }
@@ -976,7 +976,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         void *packed_buffer = nmo_arena_alloc(arena, ds->header.data_pack_size, 16);
         if (packed_buffer == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate packed data buffer");
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return NMO_ERR_NOMEM;
         }
@@ -985,7 +985,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         int read_result = nmo_io_read(io, packed_buffer, ds->header.data_pack_size, &bytes_read);
         if (read_result != NMO_OK || bytes_read != ds->header.data_pack_size) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return NMO_ERR_INVALID_ARGUMENT;
         }
@@ -1001,7 +1001,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             data_buffer = nmo_arena_alloc(arena, ds->header.data_unpack_size, 16);
             if (data_buffer == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked data buffer");
-                nmo_deserializer_destroy_legacy(load_session);
+                nmo_deserializer_destroy_id_session(load_session);
                 ds->load_session = NULL;
                 return NMO_ERR_NOMEM;
             }
@@ -1013,7 +1013,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             if (uncompress_result != MZ_OK) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress data section: %d",
                         uncompress_result);
-                nmo_deserializer_destroy_legacy(load_session);
+                nmo_deserializer_destroy_id_session(load_session);
                 ds->load_session = NULL;
                 return NMO_ERR_INVALID_ARGUMENT;
             }
@@ -1021,7 +1021,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             if (dest_len != ds->header.data_unpack_size) {
                 nmo_log(logger, NMO_LOG_ERROR, "Data decompression size mismatch: expected %u, got %lu",
                         ds->header.data_unpack_size, dest_len);
-                nmo_deserializer_destroy_legacy(load_session);
+                nmo_deserializer_destroy_id_session(load_session);
                 ds->load_session = NULL;
                 return NMO_ERR_INVALID_ARGUMENT;
             }
@@ -1048,7 +1048,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                                         &ds->data_sect, ds->chunk_pool, arena);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return result;
         }
@@ -1072,7 +1072,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         if (included_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to load included files (code=%d)", included_result);
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return included_result;
         }
@@ -1131,7 +1131,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         if (prep_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to prepare loaded objects (code=%d)", prep_result);
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return prep_result;
         }
@@ -1208,7 +1208,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         if (type_rt == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
             nmo_deserializer_end(load_session);
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return NMO_ERR_INVALID_STATE;
         }
@@ -1237,7 +1237,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         if (deser_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "  Repository deserialization failed (code=%d)", deser_result);
             nmo_deserializer_end(load_session);
-            nmo_deserializer_destroy_legacy(load_session);
+            nmo_deserializer_destroy_id_session(load_session);
             ds->load_session = NULL;
             return deser_result;
         }
@@ -1265,7 +1265,7 @@ skip_object_processing:
 
     /* Cleanup load session */
     nmo_deserializer_end(load_session);
-    nmo_deserializer_destroy_legacy(load_session);
+    nmo_deserializer_destroy_id_session(load_session);
     ds->load_session = NULL;
 
     /* Close IO now that all reads are done */
@@ -1326,7 +1326,7 @@ void nmo_deserializer_destroy(nmo_deserializer_t *ds)
 
     /* Clean up load session if still active (error path) */
     if (ds->load_session != NULL) {
-        nmo_deserializer_destroy_legacy(ds->load_session);
+        nmo_deserializer_destroy_id_session(ds->load_session);
         ds->load_session = NULL;
     }
 
