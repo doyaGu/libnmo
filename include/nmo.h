@@ -122,7 +122,7 @@
 // Session layer
 #include "session/nmo_load_session.h"
 #include "format/nmo_id_remap.h"
-#include "session/nmo_parser.h"
+#include "app/nmo_parser.h"
 #include "session/nmo_builder.h"
 #include "session/nmo_object_system.h"
 #include "session/nmo_runtime_graph.h"
@@ -133,7 +133,7 @@
 #include "session/nmo_session.h"
 #include "app/nmo_comparison.h"
 #include "app/nmo_inspector.h"
-#include "app/nmo_saver.h"
+#include "session/nmo_saver.h"
 #include "app/nmo_stats.h"
 #include "behavior/nmo_behavior_graph.h"
 #include "app/nmo_chunk_index.h"

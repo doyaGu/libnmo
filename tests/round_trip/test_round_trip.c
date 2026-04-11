@@ -4,11 +4,11 @@
  */
 
 #include "../test_framework.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "core/nmo_logger.h"
 #include "app/nmo_parser.h"
-#include "app/nmo_saver.h"
-#include "app/nmo_session.h"
+#include "session/nmo_saver.h"
+#include "session/nmo_session.h"
 #include "app/nmo_comparison.h"
 #include "core/nmo_error.h"
 #include <stdio.h>

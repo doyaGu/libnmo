@@ -319,10 +319,10 @@ set(NMO_APP_SOURCES
     src/app/inspector.c
     src/app/json_stream.c
     src/app/hexdump.c
-    src/app/type_query.c
     src/app/chunk_index.c
     src/app/object_hierarchy.c
     src/app/object_diff.c
+    src/app/type_query.c
 )
 
 # Behavior layer sources

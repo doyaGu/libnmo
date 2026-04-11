@@ -13,7 +13,7 @@
 
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
-#include "app/nmo_saver.h"
+#include "session/nmo_saver.h"
 #include "object/nmo_object_repository.h"
 
 #include <stdio.h>
