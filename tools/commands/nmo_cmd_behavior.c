@@ -70,8 +70,9 @@ static bool parse_behavior_graph_args(int argc, char **argv,
         {"--max-nodes", NULL, NMO_OPT_UINT, "Max nodes to display"},
         {"--max-edges", NULL, NMO_OPT_UINT, "Max edges to display"},
         {"--depth",     "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
+        {"--json",      "-j", NMO_OPT_FLAG, "JSON output"},
     };
-    enum { OPT_DOT, OPT_MAX_NODES, OPT_MAX_EDGES, OPT_DEPTH, OPT_COUNT };
+    enum { OPT_DOT, OPT_MAX_NODES, OPT_MAX_EDGES, OPT_DEPTH, OPT_JSON, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -296,9 +297,10 @@ static nmo_guid_t get_param_type_guid(nmo_object_t *obj) {
 
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--raw", NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
+        {"--raw",  NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
+        {"--json", "-j", NMO_OPT_FLAG, "JSON output"},
     };
-    enum { OPT_RAW, OPT_COUNT };
+    enum { OPT_RAW, OPT_JSON, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -345,8 +347,277 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     const char *name = nmo_object_get_name(beh);
 
     if (c.is_json) {
-        /* For JSON, delegate to object show for now */
-        return nmo_cmd_object_show(argc, argv, global);
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        yyjson_mut_obj_add_uint(doc, data, "id", target_id);
+        nmo_cli_json_add_str_safe(doc, data, "name",
+                                  (name && name[0]) ? name : "");
+        yyjson_mut_obj_add_uint(doc, data, "class_id",
+                                nmo_object_get_class_id(beh));
+        const char *cls_name = nmo_cli_class_name_from_id(
+            c.ctx, nmo_object_get_class_id(beh));
+        if (cls_name) {
+            nmo_cli_json_add_str_safe(doc, data, "class_name", cls_name);
+        }
+
+        bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+        bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
+        nmo_cli_json_add_str_safe(doc, data, "behavior_type",
+                                  is_script ? "Script"
+                                            : is_bb ? "BB" : "Graph");
+        yyjson_mut_obj_add_uint(doc, data, "flags", bs->flags);
+        yyjson_mut_obj_add_int(doc, data, "priority", bs->priority);
+        yyjson_mut_obj_add_int(doc, data, "compatible_class_id",
+                               bs->compatible_class_id);
+
+        if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+            char guid_buf[24];
+            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
+                     bs->block_guid.d1, bs->block_guid.d2);
+            nmo_cli_json_add_str_safe(doc, data, "bb_guid", guid_buf);
+            yyjson_mut_obj_add_uint(doc, data, "bb_version",
+                                    bs->block_version);
+            const char *proto_name = nmo_bb_registry_get_name(
+                nmo_context_get_bb_registry(c.ctx), bs->block_guid);
+            if (proto_name) {
+                nmo_cli_json_add_str_safe(doc, data, "bb_proto_name",
+                                          proto_name);
+            }
+        }
+
+        if (bs->target_parameter_id != 0) {
+            yyjson_mut_obj_add_uint(doc, data, "target_parameter_id",
+                                    bs->target_parameter_id);
+        }
+
+        /* IO Ports: inputs */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->inputs.data;
+            for (size_t i = 0; i < bs->inputs.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                nmo_cli_json_add_str_safe(doc, item, "name",
+                                          resolve_name(repo, ids[i]));
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "inputs", arr);
+        }
+
+        /* IO Ports: outputs */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->outputs.data;
+            for (size_t i = 0; i < bs->outputs.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                nmo_cli_json_add_str_safe(doc, item, "name",
+                                          resolve_name(repo, ids[i]));
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "outputs", arr);
+        }
+
+        /* Input parameters */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->in_parameters.data;
+            for (size_t i = 0; i < bs->in_parameters.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                nmo_object_t *p =
+                    nmo_object_repository_find_by_id(repo, ids[i]);
+                const char *pname = p ? nmo_object_get_name(p) : NULL;
+                nmo_cli_json_add_str_safe(doc, item, "name",
+                    (pname && pname[0]) ? pname : "");
+                nmo_guid_t tg = get_param_type_guid(p);
+                nmo_cli_json_add_str_safe(doc, item, "type",
+                                          resolve_type(c.registry, tg));
+                if (p && nmo_object_get_class_id(p) == NMO_CID_PARAMETERIN) {
+                    const nmo_parameterin_state_t *pin =
+                        (const nmo_parameterin_state_t *)
+                            nmo_object_get_state(p);
+                    if (pin && pin->source_id != 0) {
+                        yyjson_mut_obj_add_uint(doc, item, "source_id",
+                                                pin->source_id);
+                        if (pin->is_shared) {
+                            yyjson_mut_obj_add_bool(doc, item, "is_shared",
+                                                    true);
+                        }
+                    }
+                }
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "input_parameters", arr);
+        }
+
+        /* Output parameters */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->out_parameters.data;
+            for (size_t i = 0; i < bs->out_parameters.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                nmo_object_t *p =
+                    nmo_object_repository_find_by_id(repo, ids[i]);
+                const char *pname = p ? nmo_object_get_name(p) : NULL;
+                nmo_cli_json_add_str_safe(doc, item, "name",
+                    (pname && pname[0]) ? pname : "");
+                nmo_guid_t tg = get_param_type_guid(p);
+                nmo_cli_json_add_str_safe(doc, item, "type",
+                                          resolve_type(c.registry, tg));
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "output_parameters", arr);
+        }
+
+        /* Local parameters */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->local_parameters.data;
+            for (size_t i = 0; i < bs->local_parameters.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                nmo_object_t *p =
+                    nmo_object_repository_find_by_id(repo, ids[i]);
+                const char *pname = p ? nmo_object_get_name(p) : NULL;
+                nmo_cli_json_add_str_safe(doc, item, "name",
+                    (pname && pname[0]) ? pname : "");
+                nmo_guid_t tg = get_param_type_guid(p);
+                nmo_cli_json_add_str_safe(doc, item, "type",
+                                          resolve_type(c.registry, tg));
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "local_parameters", arr);
+        }
+
+        /* Operations */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *op_ids =
+                (const nmo_object_id_t *)bs->operations.data;
+            for (size_t i = 0; i < bs->operations.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", op_ids[i]);
+                nmo_object_t *op_obj =
+                    nmo_object_repository_find_by_id(repo, op_ids[i]);
+                if (op_obj && op_obj->state) {
+                    const nmo_parameteroperation_state_t *op_state =
+                        (const nmo_parameteroperation_state_t *)op_obj->state;
+                    const char *op_name = nmo_type_registry_guid_to_name(
+                        c.registry, op_state->operation_guid);
+                    if (op_name) {
+                        nmo_cli_json_add_str_safe(doc, item, "operation",
+                                                  op_name);
+                    }
+                    if (op_state->has_in1) {
+                        yyjson_mut_obj_add_uint(doc, item, "in1_id",
+                                                op_state->in1_id);
+                    }
+                    if (op_state->has_in2) {
+                        yyjson_mut_obj_add_uint(doc, item, "in2_id",
+                                                op_state->in2_id);
+                    }
+                    if (op_state->has_out) {
+                        yyjson_mut_obj_add_uint(doc, item, "out_id",
+                                                op_state->out_id);
+                    }
+                }
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "operations", arr);
+        }
+
+        /* Sub-behaviors */
+        {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->sub_behaviors.data;
+            for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                nmo_object_t *sub =
+                    nmo_object_repository_find_by_id(repo, ids[i]);
+                const char *sname = sub ? nmo_object_get_name(sub) : NULL;
+                nmo_cli_json_add_str_safe(doc, item, "name",
+                    (sname && sname[0]) ? sname : "");
+                if (sub && sub->state) {
+                    const nmo_behavior_state_t *sub_bs =
+                        (const nmo_behavior_state_t *)sub->state;
+                    bool sub_bb =
+                        (sub_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+                    bool sub_script = (sub_bs->flags & CKBEHAVIOR_SCRIPT) != 0;
+                    nmo_cli_json_add_str_safe(doc, item, "type",
+                        sub_script ? "Script" : sub_bb ? "BB" : "Graph");
+                    if (sub_bb && !nmo_guid_is_null(sub_bs->block_guid)) {
+                        const char *proto = nmo_bb_registry_get_name(
+                            nmo_context_get_bb_registry(c.ctx),
+                            sub_bs->block_guid);
+                        if (proto) {
+                            nmo_cli_json_add_str_safe(doc, item,
+                                                      "proto_name", proto);
+                        }
+                    }
+                }
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "sub_behaviors", arr);
+        }
+
+        /* Behavior links */
+        {
+            const nmo_behavior_index_t *bidx =
+                nmo_session_get_behavior_index(c.session);
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            const nmo_object_id_t *ids =
+                (const nmo_object_id_t *)bs->sub_behavior_links.data;
+            for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
+                nmo_object_t *link_obj =
+                    nmo_object_repository_find_by_id(repo, ids[i]);
+                if (!link_obj || !link_obj->state) continue;
+                const nmo_behaviorlink_state_t *ls =
+                    (const nmo_behaviorlink_state_t *)link_obj->state;
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, item, "id", ids[i]);
+                yyjson_mut_obj_add_uint(doc, item, "in_io_id", ls->in_io_id);
+                yyjson_mut_obj_add_uint(doc, item, "out_io_id",
+                                        ls->out_io_id);
+                if (bidx) {
+                    const nmo_port_owner_t *sp =
+                        nmo_behavior_index_find(bidx, ls->in_io_id);
+                    const nmo_port_owner_t *tp =
+                        nmo_behavior_index_find(bidx, ls->out_io_id);
+                    if (sp) {
+                        yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
+                                                sp->owner_id);
+                    }
+                    if (tp) {
+                        yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
+                                                tp->owner_id);
+                    }
+                }
+                yyjson_mut_obj_add_int(doc, item, "activation_delay",
+                                       ls->activation_delay);
+                yyjson_mut_arr_add_val(arr, item);
+            }
+            yyjson_mut_obj_add_val(doc, data, "behavior_links", arr);
+        }
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.show");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
 
     /* Text output: BB signature view */
@@ -1303,14 +1574,77 @@ static void dump_behavior_tree(
     }
 }
 
+static void dump_behavior_tree_json(
+    yyjson_mut_doc *doc, yyjson_mut_val *arr,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *reg,
+    const nmo_bb_registry_t *bb_reg,
+    nmo_object_id_t beh_id, int depth)
+{
+    if (depth > 16) return;
+
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, beh_id);
+    if (!obj) return;
+
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!bs) return;
+
+    const char *name = nmo_object_get_name(obj);
+    bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+    bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
+
+    yyjson_mut_val *node = yyjson_mut_obj(doc);
+    yyjson_mut_obj_add_uint(doc, node, "id", beh_id);
+    yyjson_mut_obj_add_int(doc, node, "depth", depth);
+    nmo_cli_json_add_str_safe(doc, node, "name",
+        (name && name[0]) ? name : "");
+    nmo_cli_json_add_str_safe(doc, node, "type",
+        is_script ? "Script" : is_bb ? "BB" : "Graph");
+    yyjson_mut_obj_add_uint(doc, node, "input_count",
+                            (uint64_t)bs->inputs.count);
+    yyjson_mut_obj_add_uint(doc, node, "output_count",
+                            (uint64_t)bs->outputs.count);
+    yyjson_mut_obj_add_uint(doc, node, "in_param_count",
+                            (uint64_t)bs->in_parameters.count);
+    yyjson_mut_obj_add_uint(doc, node, "out_param_count",
+                            (uint64_t)bs->out_parameters.count);
+    yyjson_mut_obj_add_uint(doc, node, "sub_count",
+                            (uint64_t)bs->sub_behaviors.count);
+
+    if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+        char guid_buf[24];
+        snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
+                 bs->block_guid.d1, bs->block_guid.d2);
+        nmo_cli_json_add_str_safe(doc, node, "bb_guid", guid_buf);
+        const char *proto = nmo_bb_registry_get_name(bb_reg, bs->block_guid);
+        if (proto) {
+            nmo_cli_json_add_str_safe(doc, node, "proto_name", proto);
+        }
+    }
+
+    yyjson_mut_arr_add_val(arr, node);
+
+    /* Recurse into sub-behaviors */
+    if (bs->sub_behaviors.count > 0) {
+        const nmo_object_id_t *sub_ids =
+            (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+            dump_behavior_tree_json(doc, arr, repo, reg, bb_reg,
+                                    sub_ids[i], depth + 1);
+        }
+    }
+}
+
 int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--all", "-a", NMO_OPT_FLAG, "Dump all script behaviors as trees"},
+        {"--all",  "-a", NMO_OPT_FLAG, "Dump all script behaviors as trees"},
+        {"--json", "-j", NMO_OPT_FLAG, "JSON output"},
     };
-    nmo_opt_val_t vals[1];
+    nmo_opt_val_t vals[2];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool dump_all = vals[0].present && vals[0].val.flag;
 
@@ -1329,7 +1663,39 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
 
-    if (dump_all) {
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *tree = yyjson_mut_arr(doc);
+        const nmo_bb_registry_t *bb_reg =
+            nmo_context_get_bb_registry(c.ctx);
+
+        if (dump_all) {
+            size_t total = 0;
+            nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
+            for (size_t i = 0; i < total; i++) {
+                nmo_class_id_t cid = nmo_object_get_class_id(all[i]);
+                if (!is_behavior_class(c.registry, cid)) continue;
+                const nmo_behavior_state_t *bs =
+                    (const nmo_behavior_state_t *)nmo_object_get_state(all[i]);
+                if (!bs || !(bs->flags & 0x2)) continue;
+                dump_behavior_tree_json(doc, tree, repo, c.registry, bb_reg,
+                                        nmo_object_get_id(all[i]), 0);
+            }
+        } else {
+            uint32_t object_id;
+            if (!nmo_tool_parse_u32(id_str, &object_id)) {
+                fprintf(stderr, "Error: Invalid object ID '%s'\n", id_str);
+                yyjson_mut_doc_free(doc);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+            dump_behavior_tree_json(doc, tree, repo, c.registry, bb_reg,
+                                    object_id, 0);
+        }
+
+        yyjson_mut_obj_add_val(doc, data, "tree", tree);
+        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.dump");
+    } else if (dump_all) {
         /* Find scripts (behaviors with CKBEHAVIOR_SCRIPT flag) */
         size_t total = 0;
         nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
@@ -1438,8 +1804,9 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--op-type",    "-o", NMO_OPT_STRING, "Filter by operation type name"},
         {"--scripts",    NULL, NMO_OPT_FLAG,   "Show only scripts"},
         {"--bbs",        NULL, NMO_OPT_FLAG,   "Show only building blocks"},
+        {"--json",       "-j", NMO_OPT_FLAG,   "JSON output"},
     };
-    enum { OPT_NAME, OPT_GUID, OPT_PTYPE, OPT_OPTYPE, OPT_SCRIPTS, OPT_BBS, OPT_COUNT };
+    enum { OPT_NAME, OPT_GUID, OPT_PTYPE, OPT_OPTYPE, OPT_SCRIPTS, OPT_BBS, OPT_JSON, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
@@ -1461,6 +1828,15 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_object_t **all = nmo_object_repository_get_all(repo, &total);
 
     size_t match_count = 0;
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *json_data = NULL;
+    yyjson_mut_val *json_results = NULL;
+    if (c.is_json) {
+        doc = nmo_cmd_ctx_json_begin(&c);
+        json_data = yyjson_mut_obj(doc);
+        json_results = yyjson_mut_arr(doc);
+    }
 
     static const nmo_cli_table_col_t columns[] = {
         {"ID",   NMO_CLI_ALIGN_RIGHT, 5, 0},
@@ -1498,15 +1874,36 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (ptype_pat && !behavior_has_param_type(repo, c.registry, bs, ptype_pat)) continue;
         if (optype_pat && !behavior_has_op_type(repo, c.registry, bs, optype_pat)) continue;
 
-        if (!c.is_json) {
+        if (c.is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, item, "id",
+                                    nmo_object_get_id(all[i]));
+            nmo_cli_json_add_str_safe(doc, item, "name",
+                (name && name[0]) ? name : "");
+            nmo_cli_json_add_str_safe(doc, item, "type",
+                is_script ? "Script" : is_bb ? "BB" : "Graph");
+            if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+                char guid_buf[24];
+                snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
+                         bs->block_guid.d1, bs->block_guid.d2);
+                nmo_cli_json_add_str_safe(doc, item, "bb_guid", guid_buf);
+                const char *proto_name = nmo_bb_registry_get_name(
+                    nmo_context_get_bb_registry(c.ctx), bs->block_guid);
+                if (proto_name) {
+                    nmo_cli_json_add_str_safe(doc, item, "proto_name",
+                                              proto_name);
+                }
+            }
+            yyjson_mut_arr_add_val(json_results, item);
+        } else {
             char id_buf[16];
             snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(all[i]));
 
             /* Resolve BB prototype name */
             char proto_buf[64] = "-";
             if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-        
-                const char *proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);
+                const char *proto_name = nmo_bb_registry_get_name(
+                    nmo_context_get_bb_registry(c.ctx), bs->block_guid);
                 if (proto_name) {
                     snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
                 } else {
@@ -1526,7 +1923,12 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         match_count++;
     }
 
-    if (!c.is_json) {
+    if (c.is_json) {
+        yyjson_mut_obj_add_uint(doc, json_data, "match_count",
+                                (uint64_t)match_count);
+        yyjson_mut_obj_add_val(doc, json_data, "results", json_results);
+        nmo_cmd_ctx_json_end(&c, doc, json_data, "behavior.find");
+    } else {
         fprintf(c.out, "Found: %zu behavior(s)\n\n", match_count);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
@@ -1601,8 +2003,9 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     static const nmo_opt_def_t opts[] = {
         {"--from",  NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
         {"--depth", "-d", NMO_OPT_UINT,   "Max trace depth (default: unlimited)"},
+        {"--json",  "-j", NMO_OPT_FLAG,   "JSON output"},
     };
-    enum { OPT_FROM, OPT_DEPTH, OPT_COUNT };
+    enum { OPT_FROM, OPT_DEPTH, OPT_JSON, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
@@ -1648,7 +2051,20 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     if (link_count == 0) {
-        fprintf(c.out, "No behavior links to trace.\n");
+        if (c.is_json) {
+            yyjson_mut_doc *doc0 = nmo_cmd_ctx_json_begin(&c);
+            yyjson_mut_val *d0 = yyjson_mut_obj(doc0);
+            yyjson_mut_obj_add_uint(doc0, d0, "behavior_id", beh_id);
+            nmo_cli_json_add_str_safe(doc0, d0, "behavior_name",
+                (beh_name && beh_name[0]) ? beh_name : "");
+            yyjson_mut_obj_add_uint(doc0, d0, "entry_count", 0);
+            yyjson_mut_obj_add_uint(doc0, d0, "link_count", 0);
+            yyjson_mut_obj_add_val(doc0, d0, "entries",
+                                   yyjson_mut_arr(doc0));
+            nmo_cmd_ctx_json_end(&c, doc0, d0, "behavior.trace");
+        } else {
+            fprintf(c.out, "No behavior links to trace.\n");
+        }
         free(links);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
@@ -1715,10 +2131,6 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     }
 
-    fprintf(c.out, "Execution Trace: %s [#%u]\n",
-            (beh_name && beh_name[0]) ? beh_name : "(unnamed)", beh_id);
-    fprintf(c.out, "Entry points: %zu, Links: %zu\n\n", entry_count, link_count);
-
     /* DFS with explicit stack, per-entry visited set */
     typedef struct { nmo_object_id_t io; uint32_t depth; } stack_entry_t;
     size_t stack_cap = (link_count > 512) ? link_count * 2 : 1024;
@@ -1729,22 +2141,59 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *json_data = NULL;
+    yyjson_mut_val *json_entries = NULL;
+    if (c.is_json) {
+        doc = nmo_cmd_ctx_json_begin(&c);
+        json_data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, json_data, "behavior_id", beh_id);
+        nmo_cli_json_add_str_safe(doc, json_data, "behavior_name",
+            (beh_name && beh_name[0]) ? beh_name : "");
+        yyjson_mut_obj_add_uint(doc, json_data, "entry_count",
+                                (uint64_t)entry_count);
+        yyjson_mut_obj_add_uint(doc, json_data, "link_count",
+                                (uint64_t)link_count);
+        json_entries = yyjson_mut_arr(doc);
+    } else {
+        fprintf(c.out, "Execution Trace: %s [#%u]\n",
+                (beh_name && beh_name[0]) ? beh_name : "(unnamed)", beh_id);
+        fprintf(c.out, "Entry points: %zu, Links: %zu\n\n",
+                entry_count, link_count);
+    }
+
     for (size_t ei = 0; ei < entry_count; ei++) {
         nmo_object_id_t entry = entry_ios[ei];
 
         /* Resolve entry owner via behavior_index */
         const char *eowner = beh_name;
+        nmo_object_id_t entry_owner_id = beh_id;
         if (beh_index) {
             const nmo_port_owner_t *po = nmo_behavior_index_find(beh_index, entry);
             if (po && po->owner_id != beh_id) {
+                entry_owner_id = po->owner_id;
                 const char *n = resolve_name(repo, po->owner_id);
                 if (n && n[0]) eowner = n;
             }
         }
 
-        fprintf(c.out, "%s.%s\n",
-                (eowner && eowner[0]) ? eowner : "?",
-                resolve_name(repo, entry));
+        yyjson_mut_val *json_entry = NULL;
+        yyjson_mut_val *json_steps = NULL;
+        if (c.is_json) {
+            json_entry = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, json_entry, "entry_io_id", entry);
+            nmo_cli_json_add_str_safe(doc, json_entry, "entry_io_name",
+                                      resolve_name(repo, entry));
+            yyjson_mut_obj_add_uint(doc, json_entry, "entry_owner_id",
+                                    entry_owner_id);
+            nmo_cli_json_add_str_safe(doc, json_entry, "entry_owner_name",
+                (eowner && eowner[0]) ? eowner : "");
+            json_steps = yyjson_mut_arr(doc);
+        } else {
+            fprintf(c.out, "%s.%s\n",
+                    (eowner && eowner[0]) ? eowner : "?",
+                    resolve_name(repo, entry));
+        }
 
         size_t sp = 0, vis_count = 0;
         stack[sp].io = entry;
@@ -1774,11 +2223,35 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                 }
                 const char *tio = resolve_name(repo, tgt);
 
-                for (uint32_t dd = 0; dd <= cur.depth; dd++) fprintf(c.out, "  ");
-                fprintf(c.out, "\xe2\x86\x92 %s.%s", tname, tio ? tio : "?");
-                if (links[li].delay != 0)
-                    fprintf(c.out, "  (delay: %d)", links[li].delay);
-                fprintf(c.out, "\n");
+                if (c.is_json) {
+                    yyjson_mut_val *step = yyjson_mut_obj(doc);
+                    yyjson_mut_obj_add_uint(doc, step, "depth", cur.depth);
+                    yyjson_mut_obj_add_uint(doc, step, "source_io_id",
+                                            cur.io);
+                    yyjson_mut_obj_add_uint(doc, step, "target_io_id", tgt);
+                    nmo_cli_json_add_str_safe(doc, step, "target_io_name",
+                        tio ? tio : "");
+                    if (tgt_owner != 0) {
+                        yyjson_mut_obj_add_uint(doc, step,
+                                                "target_owner_id",
+                                                tgt_owner);
+                        nmo_cli_json_add_str_safe(doc, step,
+                            "target_owner_name", tname);
+                    }
+                    if (links[li].delay != 0) {
+                        yyjson_mut_obj_add_int(doc, step, "delay",
+                                               links[li].delay);
+                    }
+                    yyjson_mut_arr_add_val(json_steps, step);
+                } else {
+                    for (uint32_t dd = 0; dd <= cur.depth; dd++)
+                        fprintf(c.out, "  ");
+                    fprintf(c.out, "\xe2\x86\x92 %s.%s", tname,
+                            tio ? tio : "?");
+                    if (links[li].delay != 0)
+                        fprintf(c.out, "  (delay: %d)", links[li].delay);
+                    fprintf(c.out, "\n");
+                }
 
                 /* Continue through: add target owner's outputs to stack */
                 if (tgt_owner != 0) {
@@ -1805,7 +2278,17 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
         }
 
-        fprintf(c.out, "\n");
+        if (c.is_json) {
+            yyjson_mut_obj_add_val(doc, json_entry, "steps", json_steps);
+            yyjson_mut_arr_add_val(json_entries, json_entry);
+        } else {
+            fprintf(c.out, "\n");
+        }
+    }
+
+    if (c.is_json) {
+        yyjson_mut_obj_add_val(doc, json_data, "entries", json_entries);
+        nmo_cmd_ctx_json_end(&c, doc, json_data, "behavior.trace");
     }
 
     free(stack);

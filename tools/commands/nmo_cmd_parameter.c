@@ -584,11 +584,12 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
     static const nmo_opt_def_t opts[] = {
         {"--all",  "-a", NMO_OPT_FLAG,   "Dump all parameters"},
         {"--type", NULL, NMO_OPT_STRING, "Filter by type GUID"},
+        {"--json", "-j", NMO_OPT_FLAG,   "JSON output"},
     };
-    nmo_opt_val_t vals[2];
+    nmo_opt_val_t vals[3];
     const char *pos[16];
     nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
-    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool dump_all = vals[0].val.flag;
     const char *type_guid_str = vals[1].present ? vals[1].val.str : NULL;
@@ -634,6 +635,22 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
 
+    /* JSON setup */
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *jdata = NULL;
+    yyjson_mut_val *jarr = NULL;
+    if (c.is_json) {
+        doc = nmo_cmd_ctx_json_begin(&c);
+        jdata = yyjson_mut_obj(doc);
+        jarr = yyjson_mut_arr(doc);
+    }
+
+    size_t dump_count = 0;
+
+    /* Collect objects to dump */
+    nmo_object_t **targets = NULL;
+    size_t target_count = 0;
+
     if (dump_all) {
         nmo_object_t **objects = NULL;
         size_t object_count = 0;
@@ -641,35 +658,8 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
             fprintf(stderr, "Error: Failed to get objects\n");
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-
-            if (!is_parameter_class(c.registry, class_id)) {
-                continue;
-            }
-
-            /* Apply type GUID filter if specified */
-            if (has_filter) {
-                const void *st = nmo_object_get_state(obj);
-                nmo_guid_t obj_type_guid = NMO_GUID_NULL;
-
-                if (class_id == NMO_CID_PARAMETERIN) {
-                    const nmo_parameterin_state_t *pin = (const nmo_parameterin_state_t *)st;
-                    if (pin) obj_type_guid = pin->type_guid;
-                } else if (st) {
-                    const nmo_parameter_state_t *pst = (const nmo_parameter_state_t *)st;
-                    obj_type_guid = pst->type_guid;
-                }
-
-                if (!nmo_guid_equals(obj_type_guid, filter_guid)) {
-                    continue;
-                }
-            }
-
-            dump_parameter_details(obj, c.ctx, c.session, c.out);
-        }
+        targets = objects;
+        target_count = object_count;
     } else {
         nmo_object_t *obj = repo ? nmo_object_repository_find_by_id(repo, object_id) : NULL;
         if (!obj) {
@@ -682,13 +672,24 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
             fprintf(stderr, "Error: Object #%u is not a parameter (class %u)\n", object_id, cid);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
         }
+        targets = &obj;
+        target_count = 1;
+    }
+
+    for (size_t i = 0; i < target_count; ++i) {
+        nmo_object_t *obj = targets[i];
+        nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+
+        if (dump_all && !is_parameter_class(c.registry, class_id)) {
+            continue;
+        }
 
         /* Apply type GUID filter if specified */
         if (has_filter) {
             const void *st = nmo_object_get_state(obj);
             nmo_guid_t obj_type_guid = NMO_GUID_NULL;
 
-            if (cid == NMO_CID_PARAMETERIN) {
+            if (class_id == NMO_CID_PARAMETERIN) {
                 const nmo_parameterin_state_t *pin = (const nmo_parameterin_state_t *)st;
                 if (pin) obj_type_guid = pin->type_guid;
             } else if (st) {
@@ -697,12 +698,103 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
 
             if (!nmo_guid_equals(obj_type_guid, filter_guid)) {
-                fprintf(stderr, "Error: Parameter #%u type does not match filter\n", object_id);
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+                if (!dump_all) {
+                    fprintf(stderr, "Error: Parameter #%u type does not match filter\n", object_id);
+                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+                }
+                continue;
             }
         }
 
-        dump_parameter_details(obj, c.ctx, c.session, c.out);
+        if (c.is_json) {
+            /* Emit JSON object per parameter — mirrors parameter show JSON */
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            nmo_object_id_t oid = nmo_object_get_id(obj);
+            yyjson_mut_obj_add_uint(doc, item, "id", oid);
+            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
+            const char *cn = nmo_cli_class_name_from_id(c.ctx, class_id);
+            if (cn) nmo_cli_json_add_str_safe(doc, item, "class_name", cn);
+            const char *nm = nmo_object_get_name(obj);
+            if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, item, "name", nm);
+
+            const void *state = nmo_object_get_state(obj);
+            if (state) {
+                nmo_guid_t tg = NMO_GUID_NULL;
+                const nmo_parameter_state_t *pstate = NULL;
+                nmo_object_id_t owner_id = 0;
+                nmo_object_id_t source_id = 0;
+                uint8_t is_shared = 0;
+                uint32_t dest_count = 0;
+
+                if (class_id == NMO_CID_PARAMETERIN) {
+                    const nmo_parameterin_state_t *pin = (const nmo_parameterin_state_t *)state;
+                    tg = pin->type_guid;
+                    owner_id = pin->owner_id;
+                    source_id = pin->source_id;
+                    is_shared = pin->is_shared;
+                } else if (class_id == NMO_CID_PARAMETEROUT) {
+                    const nmo_parameterout_state_t *pout = (const nmo_parameterout_state_t *)state;
+                    pstate = (const nmo_parameter_state_t *)state;
+                    tg = pstate->type_guid;
+                    owner_id = pout->owner_id;
+                    dest_count = pout->destination_count;
+                } else if (class_id == NMO_CID_PARAMETERLOCAL) {
+                    const nmo_parameterlocal_state_t *ploc = (const nmo_parameterlocal_state_t *)state;
+                    pstate = (const nmo_parameter_state_t *)state;
+                    tg = pstate->type_guid;
+                    owner_id = ploc->owner_id;
+                } else if (class_id != NMO_CID_PARAMETEROPERATION) {
+                    pstate = (const nmo_parameter_state_t *)state;
+                    tg = pstate->type_guid;
+                }
+
+                const char *tn = NULL;
+                if (class_id == NMO_CID_PARAMETERIN && !nmo_guid_is_null(tg)) {
+                    tn = nmo_type_registry_guid_to_name(c.registry, tg);
+                } else if (pstate) {
+                    tn = nmo_param_value_type_name(pstate, c.registry);
+                }
+                if (tn) nmo_cli_json_add_str_safe(doc, item, "type_name", tn);
+
+                if (!nmo_guid_is_null(tg)) {
+                    char gbuf[64];
+                    nmo_guid_format(tg, gbuf, sizeof(gbuf));
+                    nmo_cli_json_add_str_safe(doc, item, "type_guid", gbuf);
+                }
+
+                if (pstate) {
+                    nmo_cli_json_add_str_safe(doc, item, "mode",
+                        nmo_param_mode_to_string(pstate->mode));
+                    char *vbuf = format_parameter_value(pstate, (nmo_type_registry_t *)c.registry, c.session, NULL);
+                    if (vbuf) {
+                        nmo_cli_json_add_str_safe(doc, item, "value", vbuf);
+                        free(vbuf);
+                    }
+                    if (pstate->buffer_data.data) {
+                        yyjson_mut_obj_add_uint(doc, item, "buffer_size",
+                            (uint64_t)pstate->buffer_data.count);
+                    }
+                }
+
+                if (owner_id) yyjson_mut_obj_add_uint(doc, item, "owner_id", owner_id);
+                if (source_id) {
+                    yyjson_mut_obj_add_uint(doc, item, "source_id", source_id);
+                    yyjson_mut_obj_add_bool(doc, item, "is_shared", is_shared != 0);
+                }
+                if (dest_count) yyjson_mut_obj_add_uint(doc, item, "destination_count", dest_count);
+            }
+
+            yyjson_mut_arr_add_val(jarr, item);
+        } else {
+            dump_parameter_details(obj, c.ctx, c.session, c.out);
+        }
+        dump_count++;
+    }
+
+    if (c.is_json) {
+        yyjson_mut_obj_add_uint(doc, jdata, "count", (uint64_t)dump_count);
+        yyjson_mut_obj_add_val(doc, jdata, "parameters", jarr);
+        nmo_cmd_ctx_json_end(&c, doc, jdata, "parameter.dump");
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
