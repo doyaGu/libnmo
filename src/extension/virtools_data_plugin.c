@@ -13,18 +13,7 @@
 #include "extension/nmo_virtools_loader.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
-
-typedef struct nmo_type_registry nmo_type_registry_t;
-typedef struct nmo_operation_registry nmo_operation_registry_t;
-typedef struct nmo_bb_registry nmo_bb_registry_t;
-
-/* Internal accessors — implemented in extension_registry.c */
-extern nmo_type_registry_t *nmo_extension_registry_get_type_registry(
-    nmo_extension_registry_t *registry);
-extern nmo_operation_registry_t *nmo_extension_registry_get_operation_registry(
-    nmo_extension_registry_t *registry);
-extern nmo_bb_registry_t *nmo_extension_registry_get_bb_registry(
-    nmo_extension_registry_t *registry);
+#include "extension_registry_internal.h"
 
 static nmo_status_t virtools_data_init(
     const nmo_extension_host_t *host,

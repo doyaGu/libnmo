@@ -21,8 +21,8 @@
 #include "behavior/nmo_bb_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
 
-#include <stdlib.h> /* getenv */
 #include "object/nmo_object_repository.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdalign.h>
@@ -233,8 +233,12 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         if (data_dir == NULL)
             data_dir = getenv("NMO_DATA_DIR");
         if (data_dir != NULL) {
+            /* Deep-copy data_dir into arena — getenv() return is volatile */
+            size_t len = strlen(data_dir);
+            char *dir_copy = (char *)nmo_arena_alloc(ctx->arena, len + 1, 1);
+            if (dir_copy) memcpy(dir_copy, data_dir, len + 1);
             nmo_extension_registry_set_user_data(ctx->extension_registry,
-                                                 (void *)data_dir);
+                                                 (void *)dir_copy);
             const nmo_extension_plugin_t *vt_plugin = nmo_virtools_data_plugin_get();
             nmo_extension_registry_register_static(
                 ctx->extension_registry, vt_plugin, 1);

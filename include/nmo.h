@@ -128,22 +128,27 @@
 #include "session/nmo_runtime_graph.h"
 #include "session/nmo_runtime_kernel.h"
 
-// App layer
+// Session layer (context, session, serializer)
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
+#include "session/nmo_session_util.h"
+#include "session/nmo_serializer.h"
+
+// Behavior layer
+#include "behavior/nmo_behavior_graph.h"
+
+// App layer
+#include "app/nmo_load.h"
+#include "app/nmo_save.h"
 #include "app/nmo_comparison.h"
 #include "app/nmo_inspector.h"
-#include "session/nmo_serializer.h"
-#include "app/nmo_save.h"
 #include "app/nmo_stats.h"
-#include "behavior/nmo_behavior_graph.h"
 #include "app/nmo_chunk_index.h"
 #include "app/nmo_json_stream.h"
 #include "app/nmo_json_util.h"
 #include "app/nmo_object_diff.h"
 #include "app/nmo_object_hierarchy.h"
 #include "app/nmo_object_summary.h"
-#include "session/nmo_session_util.h"
 #include "app/nmo_type_query.h"
 
 #ifdef __cplusplus

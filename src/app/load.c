@@ -1,6 +1,6 @@
 ﻿/**
- * @file parser.c
- * @brief Load and save pipeline implementation (Phase 9 & 10)
+ * @file load.c
+ * @brief High-level file load implementation
  *
  * The save pipeline has been refactored to use the two-phase commit
  * architecture implemented in save_pipeline.c (Phase 1.4).
