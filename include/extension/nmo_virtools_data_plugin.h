@@ -2,8 +2,9 @@
  * @file nmo_virtools_data_plugin.h
  * @brief Built-in Virtools data extension plugin
  *
- * Provides access to the static plugin descriptor for the built-in
- * Virtools data extension.  Registered by context.c during creation.
+ * Loads Virtools parameter types, operation signatures, and BB prototypes
+ * from JSON files. Registered as a static extension during context creation.
+ * Reads data_dir from extension_registry user_data.
  */
 
 #ifndef NMO_VIRTOOLS_DATA_PLUGIN_H
@@ -17,9 +18,7 @@ extern "C" {
 
 /**
  * @brief Get the Virtools data plugin descriptor
- *
  * @return Static plugin descriptor (process lifetime)
- * @ownership static
  */
 const nmo_extension_plugin_t *nmo_virtools_data_plugin_get(void);
 

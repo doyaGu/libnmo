@@ -87,6 +87,9 @@ struct nmo_extension_registry {
     /** Operation registry for operation contributions */
     nmo_operation_registry_t *operation_registry;
 
+    /** BB registry for building block contributions (TODO: move to behavior layer) */
+    nmo_bb_registry_t *bb_registry;
+
     /** Manager registry for manager contributions */
     nmo_manager_registry_t *manager_registry;
 
@@ -147,6 +150,12 @@ nmo_operation_registry_t *nmo_extension_registry_get_operation_registry(
     return registry ? registry->operation_registry : NULL;
 }
 
+nmo_bb_registry_t *nmo_extension_registry_get_bb_registry(
+    nmo_extension_registry_t *registry)
+{
+    return registry ? registry->bb_registry : NULL;
+}
+
 void nmo_extension_registry_set_user_data(
     nmo_extension_registry_t *registry,
     void *user_data)
@@ -170,6 +179,7 @@ nmo_extension_registry_t *nmo_extension_registry_create(
     nmo_allocator_t *allocator,
     nmo_type_registry_t *type_registry,
     nmo_operation_registry_t *operation_registry,
+    nmo_bb_registry_t *bb_registry,
     nmo_manager_registry_t *manager_registry)
 {
     if (type_registry == NULL || manager_registry == NULL) {
@@ -192,6 +202,7 @@ nmo_extension_registry_t *nmo_extension_registry_create(
     registry->allocator = alloc;
     registry->type_registry = type_registry;
     registry->operation_registry = operation_registry;
+    registry->bb_registry = bb_registry;
     registry->manager_registry = manager_registry;
 
     /* Create GUID -> instance hash table */

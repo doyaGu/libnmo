@@ -19,7 +19,6 @@
 #include "core/nmo_array.h"
 #include "app/nmo_session.h"
 #include "app/nmo_bb_registry.h"
-#include "app/nmo_virtools_loader.h"
 #include "extension/nmo_virtools_data_plugin.h"
 
 #include <stdlib.h> /* getenv */
@@ -203,30 +202,56 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
         return NULL;
     }
 
-    /* Load Virtools plugin data (param types, operations, BBs) from JSON.
-     * This happens BEFORE finalize so no begin_update hack is needed.
-     * Operations get both GUID→name in type_registry AND full signatures
-     * (p1/p2/result types, function=NULL) in operation_registry.
-     * data_dir is resolved from: desc->data_dir > NMO_DATA_DIR env > NULL (skip). */
+    ctx->manager_registry = nmo_manager_registry_create(ctx->arena);
+    if (ctx->manager_registry == NULL) {
+        nmo_operation_registry_destroy(ctx->operation_registry);
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    ctx->extension_registry = nmo_extension_registry_create(
+        ctx->allocator,
+        ctx->type_registry,
+        ctx->operation_registry,
+        ctx->bb_registry,
+        ctx->manager_registry);
+    if (ctx->extension_registry == NULL) {
+        nmo_manager_registry_destroy(ctx->manager_registry);
+        nmo_operation_registry_destroy(ctx->operation_registry);
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    /* Register built-in Virtools data plugin — loads param types,
+     * operation signatures, and BB prototypes from JSON. */
     {
         const char *data_dir = (desc != NULL) ? desc->data_dir : NULL;
         if (data_dir == NULL)
             data_dir = getenv("NMO_DATA_DIR");
         if (data_dir != NULL) {
-            nmo_virtools_load_data_dir(ctx->type_registry, ctx->operation_registry,
-                                       ctx->bb_registry, data_dir);
+            nmo_extension_registry_set_user_data(ctx->extension_registry,
+                                                 (void *)data_dir);
+            const nmo_extension_plugin_t *vt_plugin = nmo_virtools_data_plugin_get();
+            nmo_extension_registry_register_static(
+                ctx->extension_registry, vt_plugin, 1);
         }
     }
 
-    /* Compute state layouts for all types (ECS support) */
+    /* Compute state layouts for all types (including those loaded by plugin) */
     nmo_type_registry_compute_state_layouts(ctx->type_registry);
 
     /* Register builtin operations with C implementations.
-     * These may override signature-only entries from JSON. */
+     * These override signature-only entries from JSON via function-aware policy. */
     nmo_status_t op_result = nmo_register_builtin_operations(
         ctx->operation_registry,
         ctx->type_registry);
     if (op_result != NMO_OK) {
+        nmo_extension_registry_destroy(ctx->extension_registry);
+        nmo_manager_registry_destroy(ctx->manager_registry);
         nmo_operation_registry_destroy(ctx->operation_registry);
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
@@ -241,41 +266,13 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
 
     nmo_status_t runtime_result = nmo_type_runtime_finalize(&ctx->type_runtime);
     if (runtime_result != NMO_OK) {
-        nmo_operation_registry_destroy(ctx->operation_registry);
-        nmo_type_registry_destroy(ctx->type_registry);
-        nmo_arena_destroy(ctx->arena);
-        nmo_free(&effective_allocator, ctx);
-        return NULL;
-    }
-
-    ctx->manager_registry = nmo_manager_registry_create(ctx->arena);
-    if (ctx->manager_registry == NULL) {
-        nmo_operation_registry_destroy(ctx->operation_registry);
-        nmo_type_registry_destroy(ctx->type_registry);
-        nmo_arena_destroy(ctx->arena);
-        nmo_free(&effective_allocator, ctx);
-        return NULL;
-    }
-
-    ctx->extension_registry = nmo_extension_registry_create(
-        ctx->allocator,
-        ctx->type_registry,
-        ctx->operation_registry,
-        ctx->manager_registry);
-    if (ctx->extension_registry == NULL) {
+        nmo_extension_registry_destroy(ctx->extension_registry);
         nmo_manager_registry_destroy(ctx->manager_registry);
         nmo_operation_registry_destroy(ctx->operation_registry);
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         nmo_free(&effective_allocator, ctx);
         return NULL;
-    }
-
-    /* Register built-in Virtools data plugin for introspection */
-    {
-        const nmo_extension_plugin_t *vt_plugin = nmo_virtools_data_plugin_get();
-        nmo_extension_registry_register_static(
-            ctx->extension_registry, vt_plugin, 1);
     }
 
     /* Install object-id string resolvers once per process */
