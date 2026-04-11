@@ -2,7 +2,6 @@
 #define NMO_SESSION_INTERNAL_H
 
 #include "session/nmo_session.h"
-#include "behavior/nmo_behavior_index.h"
 #include "session/nmo_reference_resolver.h"
 
 #ifdef __cplusplus

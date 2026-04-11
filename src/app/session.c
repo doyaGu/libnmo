@@ -4,6 +4,7 @@
  */
 
 #include "session/nmo_session.h"
+#include "session/nmo_session_internal.h"
 #include "session/nmo_context.h"
 #include "app/nmo_load.h"
 #include "app/nmo_save.h"
@@ -83,6 +84,9 @@ typedef struct nmo_session {
 
     /* Behavior ownership index (built after load) */
     nmo_behavior_index_t *behavior_index;
+
+    /* Runtime operation callbacks (set by app layer, used by runtime kernel) */
+    nmo_runtime_ops_t runtime_ops;
 } nmo_session_t;
 
 /**
@@ -189,6 +193,11 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     /* Initialize file header */
     session->file_header = NULL;
     session->file_header_size = 0;
+
+    /* Set runtime operation callbacks (app-layer implementations) */
+    session->runtime_ops.load_file = nmo_load_file;
+    session->runtime_ops.save_file = nmo_save_file;
+    session->runtime_ops.post_load = nmo_session_build_behavior_index;
 
     return session;
 }
@@ -1178,4 +1187,14 @@ void nmo_session_reset_reference_resolver(nmo_session_t *session) {
             session->reference_resolver_arena = NULL;
         }
     }
+}
+
+void nmo_session_set_runtime_ops(nmo_session_t *session,
+                                 const nmo_runtime_ops_t *ops) {
+    if (session && ops) session->runtime_ops = *ops;
+}
+
+const nmo_runtime_ops_t *nmo_session_get_runtime_ops(
+    const nmo_session_t *session) {
+    return session ? &session->runtime_ops : NULL;
 }

@@ -2,13 +2,11 @@
 #include "session/runtime_kernel_internal.h"
 
 #include "session/nmo_context.h"
-#include "app/nmo_load.h"
-#include "app/nmo_save.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_internal.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_bit_array.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_logger.h"
 #include "format/nmo_manager.h"
@@ -18,7 +16,6 @@
 #include "object/nmo_object_repository.h"
 #include "session/nmo_reference_resolver.h"
 #include "type/nmo_reflection.h"
-#include "behavior/nmo_behavior_index.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
@@ -1128,8 +1125,11 @@ int nmo_runtime_kernel_finalize_load(
         }
     }
 
-    /* Build behavior ownership index now that all objects are remapped */
-    nmo_session_build_behavior_index(session);
+    /* Post-load callback (e.g., build behavior index) */
+    {
+        const nmo_runtime_ops_t *ops = nmo_session_get_runtime_ops(session);
+        if (ops && ops->post_load) ops->post_load(session);
+    }
 
     uint32_t manager_errors = 0;
     (void)runtime_dispatch_manager_event(
@@ -1171,18 +1171,26 @@ int nmo_runtime_kernel_execute(
 
     int result = NMO_OK;
     switch (request->kind) {
-        case NMO_RUNTIME_OP_LOAD:
-            result = nmo_load_file(
-                session,
-                request->payload.load.path,
-                request->payload.load.options);
+        case NMO_RUNTIME_OP_LOAD: {
+            const nmo_runtime_ops_t *ops = nmo_session_get_runtime_ops(session);
+            if (ops && ops->load_file)
+                result = ops->load_file(session,
+                    request->payload.load.path,
+                    request->payload.load.options);
+            else
+                result = NMO_ERR_NOT_IMPLEMENTED;
             break;
-        case NMO_RUNTIME_OP_SAVE:
-            result = nmo_save_file(
-                session,
-                request->payload.save.path,
-                request->payload.save.options);
+        }
+        case NMO_RUNTIME_OP_SAVE: {
+            const nmo_runtime_ops_t *ops = nmo_session_get_runtime_ops(session);
+            if (ops && ops->save_file)
+                result = ops->save_file(session,
+                    request->payload.save.path,
+                    request->payload.save.options);
+            else
+                result = NMO_ERR_NOT_IMPLEMENTED;
             break;
+        }
         case NMO_RUNTIME_OP_CREATE:
             result = runtime_execute_create(session, request, out_report);
             break;

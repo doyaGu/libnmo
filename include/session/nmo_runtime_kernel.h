@@ -13,6 +13,20 @@ typedef struct nmo_session nmo_session_t;
 typedef struct nmo_load_options nmo_load_options_t;
 typedef struct nmo_save_options nmo_save_options_t;
 
+/**
+ * @brief Runtime operation callbacks (set by app layer, called by runtime kernel)
+ *
+ * These callbacks decouple the session-layer runtime kernel from
+ * app-layer load/save functions and behavior-layer index building.
+ */
+typedef struct nmo_runtime_ops {
+    int (*load_file)(nmo_session_t *session, const char *path,
+                     const nmo_load_options_t *opts);
+    int (*save_file)(nmo_session_t *session, const char *path,
+                     const nmo_save_options_t *opts);
+    void (*post_load)(nmo_session_t *session); /**< Called after remap (e.g., build behavior index) */
+} nmo_runtime_ops_t;
+
 typedef enum nmo_runtime_op_kind {
     NMO_RUNTIME_OP_LOAD = 0,
     NMO_RUNTIME_OP_SAVE,

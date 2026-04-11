@@ -8,6 +8,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "session/nmo_runtime_kernel.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena_array.h"
 #include "session/nmo_runtime_kernel.h"
@@ -122,6 +123,18 @@ NMO_API nmo_object_repository_t *nmo_session_get_repository(const nmo_session_t 
  * @ownership borrowed (owned by session)
  */
 NMO_API nmo_behavior_index_t *nmo_session_get_behavior_index(const nmo_session_t *session);
+
+/**
+ * @brief Set runtime operation callbacks (called by app layer during session setup)
+ */
+NMO_API void nmo_session_set_runtime_ops(nmo_session_t *session,
+                                         const nmo_runtime_ops_t *ops);
+
+/**
+ * @brief Get runtime operation callbacks
+ */
+NMO_API const nmo_runtime_ops_t *nmo_session_get_runtime_ops(
+    const nmo_session_t *session);
 
 /**
  * @brief Execute unified runtime operation.
