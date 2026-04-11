@@ -5,7 +5,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "session/nmo_object_system.h"
-#include "../../src/session/deserializer_internal.h"
+#include "session/nmo_id_mapping.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "core/nmo_allocator.h"
@@ -14,8 +14,8 @@
 
 static int test_id_lookup(void *ctx, nmo_object_id_t file_index,
                           nmo_object_id_t *out_id) {
-    return nmo_deserializer_get_runtime_id(
-        (const nmo_deserializer_t *)ctx, file_index, out_id);
+    return nmo_id_mapping_get_runtime_id(
+        (const nmo_id_mapping_t *)ctx, file_index, out_id);
 }
 
 static nmo_object_id_t g_runtime_delete_probe_id = 0;
@@ -518,9 +518,9 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     nmo_chunk_close(chunk);
     obj->chunk = chunk;
 
-    nmo_deserializer_t *load_session = nmo_deserializer_start(repo, 1);
+    nmo_id_mapping_t *load_session = nmo_id_mapping_create(repo, 1);
     ASSERT_NOT_NULL(load_session);
-    ASSERT_EQ(NMO_OK, nmo_deserializer_register(load_session, obj, 0));
+    ASSERT_EQ(NMO_OK, nmo_id_mapping_register(load_session, obj, 0));
 
     nmo_object_system_deserialize_stats_t stats = {0};
     ASSERT_EQ(
@@ -550,7 +550,7 @@ TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize) {
     mutable_vtable->deserialize = old_deserialize;
     mutable_vtable->prepare_dependencies = old_prepare;
 
-    nmo_deserializer_destroy_id_session(load_session);
+    nmo_id_mapping_destroy(load_session);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

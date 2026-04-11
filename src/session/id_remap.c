@@ -4,7 +4,7 @@
  */
 
 #include "session/nmo_id_remap.h"
-#include "deserializer_internal.h"
+#include "session/nmo_id_mapping.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include <string.h>
@@ -24,17 +24,17 @@ typedef struct nmo_id_remap_plan {
  * Load-time ID Remapping (file object index -> runtime ID)
  * ============================================================================ */
 
-nmo_id_remap_table_t *nmo_build_remap_table(nmo_deserializer_t *session) {
-    if (session == NULL) {
+nmo_id_remap_table_t *nmo_build_remap_table(nmo_id_mapping_t *mapping) {
+    if (mapping == NULL) {
         return NULL;
     }
 
-    /* Get mappings from load session */
+    /* Get mappings from ID mapping */
     nmo_object_id_t *file_indices = NULL;
     nmo_object_id_t *runtime_ids = NULL;
     size_t count = 0;
 
-    int result = nmo_deserializer_get_mappings(session, &file_indices, &runtime_ids, &count);
+    int result = nmo_id_mapping_get_all(mapping, &file_indices, &runtime_ids, &count);
     if (result != NMO_OK || count == 0) {
         return NULL;
     }

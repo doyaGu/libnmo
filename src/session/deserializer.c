@@ -4,7 +4,7 @@
  */
 
 #include "session/nmo_deserializer.h"
-#include "deserializer_internal.h"
+#include "session/nmo_id_mapping.h"
 
 #include "session/nmo_session.h"
 #include "session/nmo_session_internal.h"
@@ -78,210 +78,25 @@ typedef struct nmo_deserializer {
     /* Data section */
     nmo_data_section_t data_sect;
 
-    /* ID remapping (formerly nmo_load_session) */
-    nmo_object_id_t saved_id_max;
-    nmo_object_id_t id_base;
-    nmo_hash_table_t *id_mappings;
-    int active;
-    nmo_arena_t *remap_arena;
+    /* ID remapping */
+    nmo_id_mapping_t *id_mapping;
 
     /* Phase tracking: 0=none, 1=header, 2=objects, 3=finalized */
     int phase_completed;
-
-    /* Internal load session pointer (for object_system calls) */
-    nmo_deserializer_t *load_session;
 } nmo_deserializer_t;
 
 /* ============================================================================
- * Internal ID-remapping API (legacy load session)
+ * Callback wrappers for object_system decoupling
  * ============================================================================ */
 
-nmo_deserializer_t *nmo_deserializer_start(nmo_object_repository_t *repo,
-                                           nmo_object_id_t max_saved_id) {
-    if (repo == NULL) {
-        return NULL;
-    }
-
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    if (arena == NULL) {
-        return NULL;
-    }
-
-    nmo_deserializer_t *session = (nmo_deserializer_t *) nmo_arena_alloc(
-        arena, sizeof(nmo_deserializer_t), sizeof(void *));
-    if (session == NULL) {
-        nmo_arena_destroy(arena);
-        return NULL;
-    }
-    memset(session, 0, sizeof(nmo_deserializer_t));
-    session->remap_arena = arena;
-
-    /* Initialize mapping table using generic hash table */
-    size_t initial_capacity = 64;
-    session->id_mappings = nmo_hash_table_create(
-        NULL,
-        sizeof(nmo_object_id_t),    /* key: file object index */
-        sizeof(nmo_object_id_t),    /* value: runtime_id */
-        initial_capacity,
-        nmo_hash_uint32,            /* hash function for uint32_t */
-        NULL                        /* use default memcmp */
-    );
-
-    if (session->id_mappings == NULL) {
-        nmo_arena_destroy(arena);
-        return NULL;
-    }
-
-    session->repo = repo;
-    session->saved_id_max = max_saved_id;
-    session->active = 1;
-
-    /* Track next available runtime ID base (for potential remap logic). */
-    size_t existing_count = nmo_object_repository_get_count(repo);
-    if (existing_count > 0) {
-        /* Find max existing ID */
-        size_t count;
-        nmo_object_t **objects = nmo_object_repository_get_all(repo, &count);
-        nmo_object_id_t max_id = 0;
-        for (size_t i = 0; i < count; i++) {
-            if (objects[i]->id > max_id) {
-                max_id = objects[i]->id;
-            }
-        }
-        session->id_base = max_id + 1;
-    } else {
-        session->id_base = 1; /* Start from 1 (0 is invalid) */
-    }
-
-    return session;
+static int cb_id_register(void *ctx, nmo_object_t *obj, nmo_object_id_t file_index) {
+    return nmo_id_mapping_register((nmo_id_mapping_t *)ctx, obj, file_index);
 }
 
-int nmo_deserializer_register(nmo_deserializer_t *session,
-                              nmo_object_t *obj,
-                              nmo_object_id_t file_index) {
-    if (session == NULL || obj == NULL || !session->active) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    /* Check if already registered */
-    if (nmo_hash_table_contains(session->id_mappings, &file_index)) {
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    /* Add mapping */
-    nmo_status_t result = nmo_hash_table_insert(session->id_mappings, &file_index, &obj->id);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    return NMO_OK;
+static int cb_id_lookup(void *ctx, nmo_object_id_t file_index, nmo_object_id_t *out_id) {
+    return nmo_id_mapping_get_runtime_id((const nmo_id_mapping_t *)ctx, file_index, out_id);
 }
 
-int nmo_deserializer_end(nmo_deserializer_t *session) {
-    if (session == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    session->active = 0;
-    return NMO_OK;
-}
-
-int nmo_deserializer_get_runtime_id(const nmo_deserializer_t *session,
-                                    nmo_object_id_t file_index,
-                                    nmo_object_id_t *out_runtime_id)
-{
-    if (session == NULL || out_runtime_id == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_object_id_t runtime_id = 0;
-    nmo_status_t result = nmo_hash_table_get(session->id_mappings, &file_index, &runtime_id);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    *out_runtime_id = runtime_id;
-    return NMO_OK;
-}
-
-nmo_object_repository_t *nmo_deserializer_get_repository(
-    const nmo_deserializer_t *session) {
-    return session ? session->repo : NULL;
-}
-
-nmo_object_id_t nmo_deserializer_get_id_base(const nmo_deserializer_t *session) {
-    return session ? session->id_base : 0;
-}
-
-nmo_object_id_t nmo_deserializer_get_max_saved_id(const nmo_deserializer_t *session) {
-    return session ? session->saved_id_max : 0;
-}
-
-void nmo_deserializer_destroy_id_session(nmo_deserializer_t *session) {
-    if (session != NULL) {
-        nmo_hash_table_destroy(session->id_mappings);
-        nmo_arena_destroy(session->remap_arena);
-    }
-}
-
-/**
- * Iterator context for collecting mappings
- */
-typedef struct {
-    nmo_object_id_t *file_ids;
-    nmo_object_id_t *runtime_ids;
-    size_t index;
-} mapping_collector_t;
-
-static int collect_mapping(const void *key, void *value, void *user_data) {
-    mapping_collector_t *collector = (mapping_collector_t *)user_data;
-    collector->file_ids[collector->index] = *(const nmo_object_id_t *)key;
-    collector->runtime_ids[collector->index] = *(nmo_object_id_t *)value;
-    collector->index++;
-    return 1; /* Continue iteration */
-}
-
-int nmo_deserializer_get_mappings(const nmo_deserializer_t *session,
-                                  nmo_object_id_t **file_ids,
-                                  nmo_object_id_t **runtime_ids,
-                                  size_t *count) {
-    if (session == NULL || file_ids == NULL || runtime_ids == NULL || count == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    size_t mapping_count = nmo_hash_table_get_count(session->id_mappings);
-    if (mapping_count == 0) {
-        *file_ids = NULL;
-        *runtime_ids = NULL;
-        *count = 0;
-        return NMO_OK;
-    }
-
-    /* Allocate arrays */
-    nmo_object_id_t *fids = (nmo_object_id_t *) nmo_arena_alloc(
-        session->remap_arena, mapping_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
-    nmo_object_id_t *rids = (nmo_object_id_t *) nmo_arena_alloc(
-        session->remap_arena, mapping_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
-
-    if (fids == NULL || rids == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-
-    /* Collect mappings using iterator */
-    mapping_collector_t collector = {
-        .file_ids = fids,
-        .runtime_ids = rids,
-        .index = 0
-    };
-
-    nmo_hash_table_iterate(session->id_mappings, collect_mapping, &collector);
-
-    *file_ids = fids;
-    *runtime_ids = rids;
-    *count = mapping_count;
-
-    return NMO_OK;
-}
 
 /* ============================================================================
  * Static helpers (migrated from load.c)
@@ -613,18 +428,6 @@ nmo_load_options_t nmo_load_options_default(void) {
 }
 
 /* ============================================================================
- * Callback wrappers for object_system decoupling
- * ============================================================================ */
-
-static int cb_id_register(void *ctx, nmo_object_t *obj, nmo_object_id_t file_index) {
-    return nmo_deserializer_register((nmo_deserializer_t *)ctx, obj, file_index);
-}
-
-static int cb_id_lookup(void *ctx, nmo_object_id_t file_index, nmo_object_id_t *out_id) {
-    return nmo_deserializer_get_runtime_id((const nmo_deserializer_t *)ctx, file_index, out_id);
-}
-
-/* ============================================================================
  * Phased deserializer API
  * ============================================================================ */
 
@@ -667,7 +470,7 @@ nmo_deserializer_t *nmo_deserializer_create(
     ds->shadow_storage = nmo_session_get_shadow_storage(session);
     ds->chunk_pool = NULL;
     ds->phase_completed = 0;
-    ds->load_session = NULL;
+    ds->id_mapping = NULL;
 
     return ds;
 }
@@ -862,12 +665,12 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     nmo_log(logger, NMO_LOG_INFO, "Phase 5: Starting load session (max ID: %u)",
             ds->header.max_id_saved);
 
-    nmo_deserializer_t *load_session = nmo_deserializer_start(repo, ds->header.max_id_saved);
-    if (load_session == NULL) {
+    nmo_id_mapping_t *id_map = nmo_id_mapping_create(repo, ds->header.max_id_saved);
+    if (id_map == NULL) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to start load session");
         return NMO_ERR_NOMEM;
     }
-    ds->load_session = load_session;
+    ds->id_mapping = id_map;
 
     /* Phase 6: Check Plugin Dependencies */
     nmo_log(logger, NMO_LOG_INFO, "Phase 6: Checking plugin dependencies (%u plugins)",
@@ -926,8 +729,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     if (missing_plugins > 0 && enforce_plugin_dependencies) {
         nmo_log(logger, NMO_LOG_ERROR,
                 "Missing %zu required plugin(s); aborting due to NMO_LOAD_CHECK_DEPENDENCIES", missing_plugins);
-        nmo_deserializer_destroy_id_session(load_session);
-        ds->load_session = NULL;
+        nmo_id_mapping_destroy(id_map);
+        ds->id_mapping = NULL;
         return NMO_ERR_NOT_FOUND;
     }
 
@@ -976,8 +779,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         void *packed_buffer = nmo_arena_alloc(arena, ds->header.data_pack_size, 16);
         if (packed_buffer == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate packed data buffer");
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return NMO_ERR_NOMEM;
         }
 
@@ -985,8 +788,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         int read_result = nmo_io_read(io, packed_buffer, ds->header.data_pack_size, &bytes_read);
         if (read_result != NMO_OK || bytes_read != ds->header.data_pack_size) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return NMO_ERR_INVALID_ARGUMENT;
         }
 
@@ -1001,8 +804,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             data_buffer = nmo_arena_alloc(arena, ds->header.data_unpack_size, 16);
             if (data_buffer == NULL) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate unpacked data buffer");
-                nmo_deserializer_destroy_id_session(load_session);
-                ds->load_session = NULL;
+                nmo_id_mapping_destroy(id_map);
+                ds->id_mapping = NULL;
                 return NMO_ERR_NOMEM;
             }
 
@@ -1013,16 +816,16 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             if (uncompress_result != MZ_OK) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress data section: %d",
                         uncompress_result);
-                nmo_deserializer_destroy_id_session(load_session);
-                ds->load_session = NULL;
+                nmo_id_mapping_destroy(id_map);
+                ds->id_mapping = NULL;
                 return NMO_ERR_INVALID_ARGUMENT;
             }
 
             if (dest_len != ds->header.data_unpack_size) {
                 nmo_log(logger, NMO_LOG_ERROR, "Data decompression size mismatch: expected %u, got %lu",
                         ds->header.data_unpack_size, dest_len);
-                nmo_deserializer_destroy_id_session(load_session);
-                ds->load_session = NULL;
+                nmo_id_mapping_destroy(id_map);
+                ds->id_mapping = NULL;
                 return NMO_ERR_INVALID_ARGUMENT;
             }
 
@@ -1048,8 +851,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                                         &ds->data_sect, ds->chunk_pool, arena);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse data section");
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return result;
         }
 
@@ -1072,8 +875,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         if (included_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to load included files (code=%d)", included_result);
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return included_result;
         }
     }
@@ -1118,7 +921,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             repo,
             id_sanitizer,
             cb_id_register,
-            load_session,
+            id_map,
             ds->hdr1.objects,
             ds->hdr1.object_count,
             ds->data_sect.objects,
@@ -1131,8 +934,8 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         if (prep_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to prepare loaded objects (code=%d)", prep_result);
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return prep_result;
         }
 
@@ -1207,9 +1010,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ds->ctx);
         if (type_rt == NULL) {
             nmo_log(logger, NMO_LOG_ERROR, "Type registry not initialized in context");
-            nmo_deserializer_end(load_session);
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_end(id_map);
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return NMO_ERR_INVALID_STATE;
         }
 
@@ -1230,15 +1033,15 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             NMO_DESER_FLAG_FILE_MODE | NMO_DESER_FLAG_PRESERVE_RAW,
             reference_resolver,
             cb_id_lookup,
-            load_session,
+            id_map,
             ds->hdr1.object_count,
             &deser_stats);
 
         if (deser_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "  Repository deserialization failed (code=%d)", deser_result);
-            nmo_deserializer_end(load_session);
-            nmo_deserializer_destroy_id_session(load_session);
-            ds->load_session = NULL;
+            nmo_id_mapping_end(id_map);
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
             return deser_result;
         }
 
@@ -1264,9 +1067,9 @@ skip_object_processing:
     ds->stats.data_size = ds->header.data_unpack_size;
 
     /* Cleanup load session */
-    nmo_deserializer_end(load_session);
-    nmo_deserializer_destroy_id_session(load_session);
-    ds->load_session = NULL;
+    nmo_id_mapping_end(id_map);
+    nmo_id_mapping_destroy(id_map);
+    ds->id_mapping = NULL;
 
     /* Close IO now that all reads are done */
     nmo_io_close(io);
@@ -1325,9 +1128,9 @@ void nmo_deserializer_destroy(nmo_deserializer_t *ds)
     }
 
     /* Clean up load session if still active (error path) */
-    if (ds->load_session != NULL) {
-        nmo_deserializer_destroy_id_session(ds->load_session);
-        ds->load_session = NULL;
+    if (ds->id_mapping != NULL) {
+        nmo_id_mapping_destroy(ds->id_mapping);
+        ds->id_mapping = NULL;
     }
 
     /* Close IO if still open (error path) */

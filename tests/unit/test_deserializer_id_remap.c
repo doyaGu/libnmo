@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "../../src/session/deserializer_internal.h"
+#include "session/nmo_id_mapping.h"
 #include "session/nmo_id_remap.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -21,16 +21,16 @@ TEST(load_session_id_remap, create_destroy) {
     nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
 
-    nmo_deserializer_t* session = nmo_deserializer_start(repo, 100);
+    nmo_id_mapping_t* session = nmo_id_mapping_create(repo, 100);
     ASSERT_NOT_NULL(session);
 
-    nmo_object_id_t id_base = nmo_deserializer_get_id_base(session);
+    nmo_object_id_t id_base = nmo_id_mapping_get_id_base(session);
     ASSERT_EQ(1, id_base);
 
-    nmo_object_id_t max_saved = nmo_deserializer_get_max_saved_id(session);
+    nmo_object_id_t max_saved = nmo_id_mapping_get_max_saved_id(session);
     ASSERT_EQ(100, max_saved);
 
-    nmo_deserializer_destroy_id_session(session);
+    nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -51,13 +51,13 @@ TEST(load_session_id_remap, with_existing_objects) {
     }
 
     /* Start load session */
-    nmo_deserializer_t* session = nmo_deserializer_start(repo, 50);
+    nmo_id_mapping_t* session = nmo_id_mapping_create(repo, 50);
     ASSERT_NOT_NULL(session);
 
-    nmo_object_id_t id_base = nmo_deserializer_get_id_base(session);
+    nmo_object_id_t id_base = nmo_id_mapping_get_id_base(session);
     ASSERT_EQ(6, id_base);
 
-    nmo_deserializer_destroy_id_session(session);
+    nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -70,7 +70,7 @@ TEST(load_session_id_remap, register_objects) {
     nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
 
-    nmo_deserializer_t* session = nmo_deserializer_start(repo, 10);
+    nmo_id_mapping_t* session = nmo_id_mapping_create(repo, 10);
     ASSERT_NOT_NULL(session);
 
     /* Create and register objects */
@@ -81,7 +81,7 @@ TEST(load_session_id_remap, register_objects) {
         ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
         /* Register with file object index */
-        int result = nmo_deserializer_register(session, repo_obj, (nmo_object_id_t)i);
+        int result = nmo_id_mapping_register(session, repo_obj, (nmo_object_id_t)i);
         ASSERT_EQ(NMO_OK, result);
     }
 
@@ -89,12 +89,12 @@ TEST(load_session_id_remap, register_objects) {
     nmo_object_t* dup_obj = nmo_object_create(&allocator, 999, 0x00000001);
     ASSERT_NOT_NULL(dup_obj);
 
-    int result = nmo_deserializer_register(session, dup_obj, 0);  // Duplicate file index 0
+    int result = nmo_id_mapping_register(session, dup_obj, 0);  // Duplicate file index 0
     ASSERT_EQ(NMO_ERR_INVALID_STATE, result);
 
     nmo_object_destroy(dup_obj);
 
-    nmo_deserializer_destroy_id_session(session);
+    nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -107,7 +107,7 @@ TEST(load_session_id_remap, build_remap_table) {
     nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
 
-    nmo_deserializer_t* session = nmo_deserializer_start(repo, 5);
+    nmo_id_mapping_t* session = nmo_id_mapping_create(repo, 5);
     ASSERT_NOT_NULL(session);
 
     /* Register objects */
@@ -117,7 +117,7 @@ TEST(load_session_id_remap, build_remap_table) {
         nmo_object_t *repo_obj = obj;
         ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
-        nmo_deserializer_register(session, repo_obj, (nmo_object_id_t)i);  // File object indices: 0-4
+        nmo_id_mapping_register(session, repo_obj, (nmo_object_id_t)i);  // File object indices: 0-4
     }
 
     /* Build remap table */
@@ -143,7 +143,7 @@ TEST(load_session_id_remap, build_remap_table) {
     ASSERT_EQ(NMO_ERR_NOT_FOUND, result);
 
     nmo_id_remap_table_destroy(table);
-    nmo_deserializer_destroy_id_session(session);
+    nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -156,7 +156,7 @@ TEST(load_session_id_remap, remap_table_iteration) {
     nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
 
-    nmo_deserializer_t* session = nmo_deserializer_start(repo, 3);
+    nmo_id_mapping_t* session = nmo_id_mapping_create(repo, 3);
     ASSERT_NOT_NULL(session);
 
     /* Register objects */
@@ -165,7 +165,7 @@ TEST(load_session_id_remap, remap_table_iteration) {
         ASSERT_NOT_NULL(obj);
         nmo_object_t *repo_obj = obj;
         ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
-        nmo_deserializer_register(session, repo_obj, (nmo_object_id_t)i);
+        nmo_id_mapping_register(session, repo_obj, (nmo_object_id_t)i);
     }
 
     nmo_id_remap_table_t* table = nmo_build_remap_table(session);
@@ -197,7 +197,7 @@ TEST(load_session_id_remap, remap_table_iteration) {
     ASSERT_NULL(entry);
 
     nmo_id_remap_table_destroy(table);
-    nmo_deserializer_destroy_id_session(session);
+    nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
 
@@ -398,7 +398,7 @@ TEST(load_session_id_remap, load_session_end) {
     nmo_object_repository_t* repo = nmo_object_repository_create(&allocator);
     ASSERT_NOT_NULL(repo);
 
-    nmo_deserializer_t* session = nmo_deserializer_start(repo, 5);
+    nmo_id_mapping_t* session = nmo_id_mapping_create(repo, 5);
     ASSERT_NOT_NULL(session);
 
     /* Register an object */
@@ -407,23 +407,23 @@ TEST(load_session_id_remap, load_session_end) {
     nmo_object_t *repo_obj = obj;
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
 
-    int result = nmo_deserializer_register(session, repo_obj, 0);
+    int result = nmo_id_mapping_register(session, repo_obj, 0);
     ASSERT_EQ(NMO_OK, result);
 
     /* End session */
-    result = nmo_deserializer_end(session);
+    result = nmo_id_mapping_end(session);
     ASSERT_EQ(NMO_OK, result);
 
     /* Try to register after end - should fail */
     nmo_object_t* obj2 = nmo_object_create(&allocator, 101, 0x00000001);
     ASSERT_NOT_NULL(obj2);
 
-    result = nmo_deserializer_register(session, obj2, 1);
+    result = nmo_id_mapping_register(session, obj2, 1);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
     nmo_object_destroy(obj2);
 
-    nmo_deserializer_destroy_id_session(session);
+    nmo_id_mapping_destroy(session);
     nmo_object_repository_destroy(repo);
 }
 

@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 /* Forward declarations */
-typedef struct nmo_deserializer nmo_deserializer_t;
+typedef struct nmo_id_mapping nmo_id_mapping_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object nmo_object_t;
 
@@ -47,12 +47,12 @@ typedef struct nmo_id_remap_plan nmo_id_remap_plan_t;
  * Creates a remap table that maps file object indices (SaveFindObjectIndex, 0-based)
  * to runtime IDs based on the mappings recorded during the load session.
  * 
- * @param session Load session containing ID mappings
+ * @param mapping ID mapping containing file_index → runtime_id entries
  * @return Remap table or NULL on error
  * @note Returned table is caller-owned; destroy via nmo_id_remap_table_destroy().
  * @ownership owned
  */
-NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_deserializer_t *session);
+NMO_API nmo_id_remap_table_t *nmo_build_remap_table(nmo_id_mapping_t *mapping);
 
 /**
  * @brief Lookup remapped ID
