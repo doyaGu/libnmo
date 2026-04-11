@@ -288,7 +288,7 @@ static nmo_guid_t get_param_type_guid(nmo_object_t *obj) {
         const nmo_parameterin_state_t *s = (const nmo_parameterin_state_t *)obj->state;
         return s->type_guid;
     }
-    if (cid == NMO_CID_PARAMETEROUT || cid == NMO_CID_PARAMETERLOCAL) {
+    if (cid == NMO_CID_PARAMETEROUT || cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
         const nmo_parameter_state_t *s = (const nmo_parameter_state_t *)obj->state;
         return s->type_guid;
     }
@@ -913,21 +913,50 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
+/* BB prototype count entry for stats */
 typedef struct {
-    nmo_class_id_t class_id;
+    nmo_guid_t guid;
+    const char *name; /* Borrowed from BB registry */
     size_t count;
-} nmo_cli_class_count_t;
+} nmo_cli_bb_proto_count_t;
 
-static int class_count_cmp_desc(const void *a, const void *b) {
-    const nmo_cli_class_count_t *aa = (const nmo_cli_class_count_t *)a;
-    const nmo_cli_class_count_t *bb = (const nmo_cli_class_count_t *)b;
+static int bb_proto_count_cmp_desc(const void *a, const void *b) {
+    const nmo_cli_bb_proto_count_t *aa = (const nmo_cli_bb_proto_count_t *)a;
+    const nmo_cli_bb_proto_count_t *bb = (const nmo_cli_bb_proto_count_t *)b;
     if (aa->count != bb->count) {
         return (aa->count < bb->count) ? 1 : -1;
     }
-    if (aa->class_id != bb->class_id) {
-        return (aa->class_id < bb->class_id) ? -1 : 1;
-    }
     return 0;
+}
+
+/* Compute max depth of behavior tree rooted at beh_id */
+static uint32_t compute_tree_depth(nmo_object_repository_t *repo,
+                                   const nmo_type_registry_t *registry,
+                                   nmo_object_id_t beh_id,
+                                   uint32_t cur_depth) {
+    if (cur_depth > 256) return cur_depth;
+    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, beh_id);
+    if (!obj) return cur_depth;
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    if (!registry || !nmo_type_registry_is_class_derived_from(
+            registry, (uint32_t)cid, (uint32_t)NMO_CID_BEHAVIOR))
+        return cur_depth;
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!bs) return cur_depth;
+    if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) return cur_depth;
+
+    uint32_t max_d = cur_depth;
+    if (bs->sub_behaviors.data) {
+        const nmo_object_id_t *subs =
+            (const nmo_object_id_t *)bs->sub_behaviors.data;
+        for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+            uint32_t d = compute_tree_depth(repo, registry, subs[i],
+                                            cur_depth + 1);
+            if (d > max_d) max_d = d;
+        }
+    }
+    return max_d;
 }
 
 int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -947,67 +976,157 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    nmo_cli_class_count_t *by_class = NULL;
-    size_t by_class_count = 0;
-    size_t by_class_cap = 0;
-    size_t total = 0;
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    const nmo_bb_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
+
+    /* Counters */
+    size_t total_behaviors = 0;
+    size_t n_scripts = 0;
+    size_t n_graphs = 0;
+    size_t n_bbs = 0;
+    size_t n_parameters = 0;
+    size_t n_links = 0;
+    size_t n_operations = 0;
+
+    /* BB prototype counting */
+    nmo_cli_bb_proto_count_t *protos = NULL;
+    size_t proto_count = 0;
+    size_t proto_cap = 0;
+
+    /* Script IDs for depth computation */
+    nmo_object_id_t *script_ids = NULL;
+    size_t script_id_count = 0;
+    size_t script_id_cap = 0;
 
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *obj = objects[i];
-        nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-        if (!is_behavior_class(c.registry, class_id)) {
+        nmo_class_id_t cid = nmo_object_get_class_id(obj);
+
+        /* Count parameters, links, operations by class */
+        if (cid == NMO_CID_PARAMETERIN || cid == NMO_CID_PARAMETEROUT ||
+            cid == NMO_CID_PARAMETERLOCAL || cid == NMO_CID_PARAMETER) {
+            n_parameters++;
             continue;
         }
-        total++;
-
-        bool found = false;
-        for (size_t j = 0; j < by_class_count; ++j) {
-            if (by_class[j].class_id == class_id) {
-                by_class[j].count++;
-                found = true;
-                break;
-            }
+        if (cid == NMO_CID_BEHAVIORLINK) {
+            n_links++;
+            continue;
         }
-        if (found) {
+        if (cid == NMO_CID_PARAMETEROPERATION) {
+            n_operations++;
             continue;
         }
 
-        if (by_class_count == by_class_cap) {
-            size_t new_cap = (by_class_cap == 0) ? 8 : (by_class_cap * 2);
-            nmo_cli_class_count_t *new_arr = (nmo_cli_class_count_t *)realloc(by_class, new_cap * sizeof(*by_class));
-            if (!new_arr) {
-                free(by_class);
-                fprintf(stderr, "Error: Out of memory\n");
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        if (!is_behavior_class(c.registry, cid))
+            continue;
+
+        total_behaviors++;
+        const nmo_behavior_state_t *bs =
+            (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+        if (!bs) continue;
+
+        if (bs->flags & CKBEHAVIOR_SCRIPT) {
+            n_scripts++;
+            /* Track script ID for depth computation */
+            if (script_id_count == script_id_cap) {
+                size_t new_cap = (script_id_cap == 0) ? 16 : (script_id_cap * 2);
+                nmo_object_id_t *na = (nmo_object_id_t *)realloc(
+                    script_ids, new_cap * sizeof(*script_ids));
+                if (na) {
+                    script_ids = na;
+                    script_id_cap = new_cap;
+                }
             }
-            by_class = new_arr;
-            by_class_cap = new_cap;
+            if (script_id_count < script_id_cap) {
+                script_ids[script_id_count++] = nmo_object_get_id(obj);
+            }
+        } else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+            n_bbs++;
+            /* Count BB prototype */
+            if (!nmo_guid_is_null(bs->block_guid)) {
+                bool found = false;
+                for (size_t j = 0; j < proto_count; j++) {
+                    if (protos[j].guid.d1 == bs->block_guid.d1 &&
+                        protos[j].guid.d2 == bs->block_guid.d2) {
+                        protos[j].count++;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    if (proto_count == proto_cap) {
+                        size_t new_cap = (proto_cap == 0) ? 64 : (proto_cap * 2);
+                        nmo_cli_bb_proto_count_t *na =
+                            (nmo_cli_bb_proto_count_t *)realloc(
+                                protos, new_cap * sizeof(*protos));
+                        if (na) {
+                            protos = na;
+                            proto_cap = new_cap;
+                        }
+                    }
+                    if (proto_count < proto_cap) {
+                        const char *pname = nmo_bb_registry_get_name(
+                            bb_reg, bs->block_guid);
+                        protos[proto_count] = (nmo_cli_bb_proto_count_t){
+                            .guid = bs->block_guid,
+                            .name = pname,
+                            .count = 1,
+                        };
+                        proto_count++;
+                    }
+                }
+            }
+        } else {
+            n_graphs++;
         }
-        by_class[by_class_count++] = (nmo_cli_class_count_t){.class_id = class_id, .count = 1};
     }
 
-    qsort(by_class, by_class_count, sizeof(*by_class), class_count_cmp_desc);
+    /* Sort prototypes by count descending */
+    if (proto_count > 1) {
+        qsort(protos, proto_count, sizeof(*protos), bb_proto_count_cmp_desc);
+    }
+
+    /* Compute max tree depth across all scripts */
+    uint32_t max_depth = 0;
+    for (size_t i = 0; i < script_id_count; i++) {
+        uint32_t d = compute_tree_depth(repo, c.registry, script_ids[i], 0);
+        if (d > max_depth) max_depth = d;
+    }
 
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
 
-        yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)total);
+        yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)total_behaviors);
+        yyjson_mut_obj_add_uint(doc, data, "scripts", (uint64_t)n_scripts);
+        yyjson_mut_obj_add_uint(doc, data, "graphs", (uint64_t)n_graphs);
+        yyjson_mut_obj_add_uint(doc, data, "building_blocks", (uint64_t)n_bbs);
 
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < by_class_count; ++i) {
+        /* Top BB prototypes (all, sorted) */
+        yyjson_mut_val *proto_arr = yyjson_mut_arr(doc);
+        size_t top_n = proto_count < 10 ? proto_count : 10;
+        for (size_t i = 0; i < top_n; i++) {
             yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "class_id", (uint64_t)by_class[i].class_id);
-            yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)by_class[i].count);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, by_class[i].class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
+            if (protos[i].name) {
+                nmo_cli_json_add_str_safe(doc, item, "name", protos[i].name);
             }
-
-            yyjson_mut_arr_add_val(arr, item);
+            char guid_buf[24];
+            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
+                     protos[i].guid.d1, protos[i].guid.d2);
+            nmo_cli_json_add_str_safe(doc, item, "guid", guid_buf);
+            yyjson_mut_obj_add_uint(doc, item, "count",
+                                    (uint64_t)protos[i].count);
+            yyjson_mut_arr_add_val(proto_arr, item);
         }
-        yyjson_mut_obj_add_val(doc, data, "by_class", arr);
+        yyjson_mut_obj_add_val(doc, data, "top_bb_prototypes", proto_arr);
+
+        yyjson_mut_obj_add_uint(doc, data, "total_parameters",
+                                (uint64_t)n_parameters);
+        yyjson_mut_obj_add_uint(doc, data, "total_links", (uint64_t)n_links);
+        yyjson_mut_obj_add_uint(doc, data, "total_operations",
+                                (uint64_t)n_operations);
+        yyjson_mut_obj_add_uint(doc, data, "max_tree_depth",
+                                (uint64_t)max_depth);
 
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.stats");
     } else {
@@ -1015,38 +1134,61 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(c.out, "\n");
 
         char buf[64];
-        snprintf(buf, sizeof(buf), "%zu", total);
-        nmo_cli_print_kv(c.out, "Total", buf, 16, c.colorize);
-        fprintf(c.out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", total_behaviors);
+        nmo_cli_print_kv(c.out, "Total behaviors", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_scripts);
+        nmo_cli_print_kv(c.out, "Scripts", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_graphs);
+        nmo_cli_print_kv(c.out, "Graphs", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_bbs);
+        nmo_cli_print_kv(c.out, "Building Blocks", buf, 22, c.colorize);
 
-        static const nmo_cli_table_col_t columns[] = {
-            {"Class ID", NMO_CLI_ALIGN_RIGHT, 8, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 32},
-            {"Count", NMO_CLI_ALIGN_RIGHT, 5, 0},
-        };
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+        /* Top BB prototypes */
+        if (proto_count > 0) {
+            fprintf(c.out, "\n");
+            nmo_cli_print_heading(c.out, "Top BB Prototypes", c.colorize);
+            fprintf(c.out, "\n");
 
-        for (size_t i = 0; i < by_class_count; ++i) {
-            char class_id_buf[16];
-            char count_buf[16];
-            snprintf(class_id_buf, sizeof(class_id_buf), "%u", (unsigned)by_class[i].class_id);
-            snprintf(count_buf, sizeof(count_buf), "%zu", by_class[i].count);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, by_class[i].class_id);
-            const char *cells[] = {
-                class_id_buf,
-                class_name ? class_name : "-",
-                count_buf,
+            static const nmo_cli_table_col_t proto_columns[] = {
+                {"Name", NMO_CLI_ALIGN_LEFT, 28, 50},
+                {"Count", NMO_CLI_ALIGN_RIGHT, 6, 0},
             };
-            nmo_cli_table_add_row(&table, cells, 3);
+            nmo_cli_table_t table;
+            nmo_cli_table_init(&table, proto_columns,
+                               sizeof(proto_columns) / sizeof(proto_columns[0]));
+
+            size_t top_n = proto_count < 10 ? proto_count : 10;
+            for (size_t i = 0; i < top_n; i++) {
+                char count_buf[16];
+                snprintf(count_buf, sizeof(count_buf), "%zu", protos[i].count);
+                char name_buf[80];
+                if (protos[i].name) {
+                    snprintf(name_buf, sizeof(name_buf), "%s", protos[i].name);
+                } else {
+                    snprintf(name_buf, sizeof(name_buf), "{%08X-%08X}",
+                             protos[i].guid.d1, protos[i].guid.d2);
+                }
+                const char *cells[] = { name_buf, count_buf };
+                nmo_cli_table_add_row(&table, cells, 2);
+            }
+
+            nmo_cli_table_print(&table, c.out, c.colorize);
+            nmo_cli_table_free(&table);
         }
 
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
+        fprintf(c.out, "\n");
+        snprintf(buf, sizeof(buf), "%zu", n_parameters);
+        nmo_cli_print_kv(c.out, "Parameters", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_links);
+        nmo_cli_print_kv(c.out, "Links", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%zu", n_operations);
+        nmo_cli_print_kv(c.out, "Operations", buf, 22, c.colorize);
+        snprintf(buf, sizeof(buf), "%u", max_depth);
+        nmo_cli_print_kv(c.out, "Max tree depth", buf, 22, c.colorize);
     }
 
-    free(by_class);
+    free(protos);
+    free(script_ids);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -1275,6 +1417,10 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             if (nodes[i].class_name && nodes[i].class_name[0]) {
                 yyjson_mut_obj_add_str(doc, node, "class_name", nodes[i].class_name);
             }
+            yyjson_mut_obj_add_uint(doc, node, "depth", (uint64_t)nodes[i].depth);
+            if (nodes[i].parent_id != 0) {
+                yyjson_mut_obj_add_uint(doc, node, "parent_id", (uint64_t)nodes[i].parent_id);
+            }
             yyjson_mut_arr_add_val(nodes_arr, node);
         }
 
@@ -1352,8 +1498,11 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
         fprintf(c.out, "\n");
 
+        nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+
         static const nmo_cli_table_col_t node_columns[] = {
             {"ID", NMO_CLI_ALIGN_RIGHT, 6, 0},
+            {"D", NMO_CLI_ALIGN_RIGHT, 2, 0},
             {"Kind", NMO_CLI_ALIGN_LEFT, 12, 16},
             {"Name", NMO_CLI_ALIGN_LEFT, 22, 50},
             {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
@@ -1363,14 +1512,40 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
 
         for (size_t i = 0; i < emit_node_count; ++i) {
             char id_buf[16];
+            char depth_buf[8];
             snprintf(id_buf, sizeof(id_buf), "%u", nodes[i].id);
+            snprintf(depth_buf, sizeof(depth_buf), "%u", nodes[i].depth);
+
+            /* For operation nodes, resolve the operation name */
+            char op_name_buf[80];
+            const char *display_name = (nodes[i].name && nodes[i].name[0]) ? nodes[i].name : "-";
+            if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0) {
+                nmo_object_t *op_obj = nmo_object_repository_find_by_id(repo, nodes[i].id);
+                if (op_obj && op_obj->state) {
+                    const nmo_parameteroperation_state_t *op_state =
+                        (const nmo_parameteroperation_state_t *)op_obj->state;
+                    const char *op_type = nmo_type_registry_guid_to_name(
+                        c.registry, op_state->operation_guid);
+                    if (op_type) {
+                        if (display_name && strcmp(display_name, "-") != 0) {
+                            snprintf(op_name_buf, sizeof(op_name_buf), "%s (%s)",
+                                     display_name, op_type);
+                        } else {
+                            snprintf(op_name_buf, sizeof(op_name_buf), "%s", op_type);
+                        }
+                        display_name = op_name_buf;
+                    }
+                }
+            }
+
             const char *cells[] = {
                 id_buf,
+                depth_buf,
                 nodes[i].kind ? nodes[i].kind : "-",
-                (nodes[i].name && nodes[i].name[0]) ? nodes[i].name : "-",
+                display_name,
                 (nodes[i].class_name && nodes[i].class_name[0]) ? nodes[i].class_name : "-",
             };
-            nmo_cli_table_add_row(&node_table, cells, 4);
+            nmo_cli_table_add_row(&node_table, cells, 5);
         }
 
         nmo_cli_table_print(&node_table, c.out, c.colorize);
@@ -1421,17 +1596,44 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
 
             /* in_io = source, out_io = target (Virtools SDK naming) */
             if (edge_ref.kind && strcmp(edge_ref.kind, "behavior_link") == 0) {
-                snprintf(meta_buf, sizeof(meta_buf), "io %u->%u %d/%d",
-                         edge_ref.in_io_id,
-                         edge_ref.out_io_id,
-                         edge_ref.activation_delay,
-                         edge_ref.initial_activation_delay);
+                const char *src_io = resolve_name(repo, edge_ref.in_io_id);
+                const char *tgt_io = resolve_name(repo, edge_ref.out_io_id);
+                if (edge_ref.activation_delay != 0 || edge_ref.initial_activation_delay != 0) {
+                    snprintf(meta_buf, sizeof(meta_buf), "%s->%s %d/%d",
+                             src_io, tgt_io,
+                             edge_ref.activation_delay,
+                             edge_ref.initial_activation_delay);
+                } else {
+                    snprintf(meta_buf, sizeof(meta_buf), "%s->%s",
+                             src_io, tgt_io);
+                }
             } else if (edge_ref.kind && strcmp(edge_ref.kind, "io_link") == 0) {
-                snprintf(meta_buf, sizeof(meta_buf), "io %u->%u",
-                         edge_ref.in_io_id,
-                         edge_ref.out_io_id);
-            } else if (edge_ref.kind && strcmp(edge_ref.kind, "param_source") == 0 && edge_ref.is_shared) {
-                snprintf(meta_buf, sizeof(meta_buf), "shared");
+                const char *src_io = resolve_name(repo, edge_ref.in_io_id);
+                const char *tgt_io = resolve_name(repo, edge_ref.out_io_id);
+                snprintf(meta_buf, sizeof(meta_buf), "%s->%s",
+                         src_io, tgt_io);
+            } else if (edge_ref.kind && (strcmp(edge_ref.kind, "param_local") == 0 ||
+                        strcmp(edge_ref.kind, "param_in") == 0 ||
+                        strcmp(edge_ref.kind, "param_out") == 0 ||
+                        strcmp(edge_ref.kind, "param_source") == 0 ||
+                        strcmp(edge_ref.kind, "param_dest") == 0 ||
+                        strcmp(edge_ref.kind, "op_in1") == 0 ||
+                        strcmp(edge_ref.kind, "op_in2") == 0 ||
+                        strcmp(edge_ref.kind, "op_out") == 0)) {
+                /* Look up the parameter node to get its type name */
+                nmo_object_id_t param_id = edge_ref.from_id;
+                if (strcmp(edge_ref.kind, "param_out") == 0 ||
+                    strcmp(edge_ref.kind, "op_out") == 0) {
+                    param_id = edge_ref.to_id;
+                }
+                nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
+                nmo_guid_t tg = get_param_type_guid(param_obj);
+                const char *tname = resolve_type(c.registry, tg);
+                if (edge_ref.is_shared) {
+                    snprintf(meta_buf, sizeof(meta_buf), "%s (shared)", tname);
+                } else {
+                    snprintf(meta_buf, sizeof(meta_buf), "%s", tname);
+                }
             } else {
                 snprintf(meta_buf, sizeof(meta_buf), "-");
             }
@@ -1455,21 +1657,96 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             nmo_cli_print_heading(c.out, "DOT Graph", c.colorize);
             fprintf(c.out, "\n");
             fprintf(c.out, "digraph behavior_graph {\n");
-            fprintf(c.out, "  node [shape=box, fontname=\"Courier\"];\n");
+            fprintf(c.out, "  node [shape=box, fontname=\"Courier\", style=filled];\n");
             for (size_t i = 0; i < emit_node_count; ++i) {
                 const char *label = (nodes[i].name && nodes[i].name[0]) ? nodes[i].name :
                     (nodes[i].class_name && nodes[i].class_name[0]) ? nodes[i].class_name :
                     (nodes[i].kind ? nodes[i].kind : "node");
+
+                /* Resolve operation type for operation nodes */
+                char dot_op_buf[80];
+                if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0) {
+                    nmo_object_t *op_obj = nmo_object_repository_find_by_id(repo, nodes[i].id);
+                    if (op_obj && op_obj->state) {
+                        const nmo_parameteroperation_state_t *op_state =
+                            (const nmo_parameteroperation_state_t *)op_obj->state;
+                        const char *op_type = nmo_type_registry_guid_to_name(
+                            c.registry, op_state->operation_guid);
+                        if (op_type) {
+                            snprintf(dot_op_buf, sizeof(dot_op_buf), "%s", op_type);
+                            label = dot_op_buf;
+                        }
+                    }
+                }
+
+                /* Color by kind */
+                const char *fillcolor = "white";
+                if (nodes[i].kind) {
+                    if (strcmp(nodes[i].kind, "behavior") == 0) {
+                        /* Sub-kind: check behavior flags */
+                        nmo_object_t *bobj = nmo_object_repository_find_by_id(repo, nodes[i].id);
+                        if (bobj && bobj->state) {
+                            const nmo_behavior_state_t *bst =
+                                (const nmo_behavior_state_t *)bobj->state;
+                            if (bst->flags & CKBEHAVIOR_SCRIPT)
+                                fillcolor = "lightgreen";
+                            else if (bst->flags & CKBEHAVIOR_BUILDINGBLOCK)
+                                fillcolor = "lightblue";
+                            else
+                                fillcolor = "lightyellow";
+                        } else {
+                            fillcolor = "lightyellow";
+                        }
+                    } else if (strcmp(nodes[i].kind, "parameter") == 0) {
+                        fillcolor = "lemonchiffon";
+                    } else if (strcmp(nodes[i].kind, "operation") == 0) {
+                        fillcolor = "lightsalmon";
+                    } else if (strcmp(nodes[i].kind, "io") == 0) {
+                        fillcolor = "lightgray";
+                    }
+                }
+
                 fprintf(c.out, "  n%u [label=\"", nodes[i].id);
                 dot_write_label(c.out, label);
-                fprintf(c.out, "\"];\n");
+                fprintf(c.out, "\", fillcolor=\"%s\"];\n", fillcolor);
             }
             for (size_t i = 0; i < emit_edge_count; ++i) {
                 size_t edge_index = emit_edge_indices ? emit_edge_indices[i] : i;
                 const nmo_cli_graph_edge_t edge_ref = edges[edge_index];
-                const char *edge_label = edge_ref.kind ? edge_ref.kind : "link";
+                char dot_edge_label[128];
+
+                if (edge_ref.kind && strcmp(edge_ref.kind, "behavior_link") == 0) {
+                    /* Show port names */
+                    const char *src_io = resolve_name(repo, edge_ref.in_io_id);
+                    const char *tgt_io = resolve_name(repo, edge_ref.out_io_id);
+                    snprintf(dot_edge_label, sizeof(dot_edge_label), "%s->%s",
+                             src_io, tgt_io);
+                } else if (edge_ref.kind && (strcmp(edge_ref.kind, "param_local") == 0 ||
+                            strcmp(edge_ref.kind, "param_in") == 0 ||
+                            strcmp(edge_ref.kind, "param_out") == 0 ||
+                            strcmp(edge_ref.kind, "param_source") == 0 ||
+                            strcmp(edge_ref.kind, "param_dest") == 0 ||
+                            strcmp(edge_ref.kind, "op_in1") == 0 ||
+                            strcmp(edge_ref.kind, "op_in2") == 0 ||
+                            strcmp(edge_ref.kind, "op_out") == 0)) {
+                    /* Show parameter type name */
+                    nmo_object_id_t pid = edge_ref.from_id;
+                    if (strcmp(edge_ref.kind, "param_out") == 0 ||
+                        strcmp(edge_ref.kind, "op_out") == 0) {
+                        pid = edge_ref.to_id;
+                    }
+                    nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, pid);
+                    nmo_guid_t ptg = get_param_type_guid(pobj);
+                    const char *ptn = resolve_type(c.registry, ptg);
+                    snprintf(dot_edge_label, sizeof(dot_edge_label), "%s",
+                             ptn);
+                } else {
+                    snprintf(dot_edge_label, sizeof(dot_edge_label), "%s",
+                             edge_ref.kind ? edge_ref.kind : "link");
+                }
+
                 fprintf(c.out, "  n%u -> n%u [label=\"", edge_ref.from_id, edge_ref.to_id);
-                dot_write_label(c.out, edge_label);
+                dot_write_label(c.out, dot_edge_label);
                 fprintf(c.out, "\"];\n");
             }
             fprintf(c.out, "}\n");
