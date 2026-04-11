@@ -63,18 +63,6 @@ NMO_API nmo_status_t nmo_object_default_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_API nmo_status_t nmo_object_default_to_string(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    char *buffer,
-    size_t buffer_size,
-    void *context);
-
-NMO_API nmo_status_t nmo_object_default_from_string(
-    void *value,
-    const nmo_type_descriptor_t *type,
-    const char *string,
-    void *context);
 
 /* ============================================================================
  * Generic Deep-Copy Helpers
@@ -248,8 +236,8 @@ static uint32_t nmo_##_name##_hash(const void *instance) { \
     .validate = (_validate), \
     .equals = (_equals), \
     .hash = (_hash), \
-    .to_string = nmo_object_default_to_string, \
-    .from_string = nmo_object_default_from_string, \
+    .to_string = NULL, \
+    .from_string = NULL, \
     .enumerate_refs = NULL
 
 /**
@@ -266,8 +254,8 @@ static uint32_t nmo_##_name##_hash(const void *instance) { \
     .validate = (_validate), \
     .equals = (_equals), \
     .hash = (_hash), \
-    .to_string = nmo_object_default_to_string, \
-    .from_string = nmo_object_default_from_string, \
+    .to_string = NULL, \
+    .from_string = NULL, \
     .enumerate_refs = (_enumerate_refs)
 
 /* ============================================================================

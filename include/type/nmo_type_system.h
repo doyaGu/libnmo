@@ -314,9 +314,19 @@ typedef nmo_status_t (*nmo_type_validate_fn)(const void *instance, const nmo_typ
 typedef bool (*nmo_type_equals_fn)(const void *a, const void *b);
 typedef uint32_t (*nmo_type_hash_fn)(const void *instance);
 
-/* Phase 6.4: String conversion function pointers */
-typedef nmo_status_t (*nmo_type_to_string_fn)(const void *value, const nmo_type_descriptor_t *type, char *buffer, size_t buffer_size, void *context);
-typedef nmo_status_t (*nmo_type_from_string_fn)(void *value, const nmo_type_descriptor_t *type, const char *string, void *context);
+/* String conversion function pointers — vtable-driven dispatch (Phase 6.4) */
+typedef nmo_status_t (*nmo_type_to_string_fn)(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth);
+typedef nmo_status_t (*nmo_type_from_string_fn)(
+    void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    const char *string);
 
 /* ============================================================================
  * Reference Enumeration (Reflection)

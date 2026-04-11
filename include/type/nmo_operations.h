@@ -114,6 +114,16 @@ NMO_API nmo_status_t nmo_register_builtin_types(
 );
 
 /**
+ * @brief Patch vtables for JSON-loaded types (e.g. Time)
+ *
+ * Call after extension loading to attach vtables to types that were
+ * registered from JSON data rather than from nmo_register_builtin_types.
+ */
+NMO_API nmo_status_t nmo_builtin_types_patch_vtables(
+    nmo_type_registry_t *type_registry
+);
+
+/**
  * @brief Register arithmetic operations
  */
 NMO_API nmo_status_t nmo_register_arithmetic_operations(

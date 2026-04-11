@@ -201,24 +201,14 @@ nmo_status_t nmo_param_value_to_string(
         return format_hex_preview(data, data_size, buffer, buffer_size);
     }
 
-    /* Try vtable to_string first (most types have this) */
-    if (type->vtable && type->vtable->to_string) {
-        nmo_status_t st = type->vtable->to_string(
-            data, type, buffer, buffer_size, (void *)registry);
-        if (st == NMO_OK) {
-            return NMO_OK;
-        }
-        /* Fall through to generic path on failure */
-    }
-
-    /* Try the general-purpose converter */
+    /* Unified dispatch: vtable -> category fallback -> hex */
     nmo_status_t st = nmo_type_value_to_string(
         data, type, registry, buffer, buffer_size);
     if (st == NMO_OK) {
         return NMO_OK;
     }
 
-    /* Final fallback: hex dump */
+    /* Fallback for types where the converter fails */
     return format_hex_preview(data, data_size, buffer, buffer_size);
 }
 

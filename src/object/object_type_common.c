@@ -122,26 +122,6 @@ nmo_status_t nmo_object_default_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_object_default_to_string(
-    const void *value,
-    const nmo_type_descriptor_t *type,
-    char *buffer,
-    size_t buffer_size,
-    void *context)
-{
-    const nmo_type_registry_t *registry = (const nmo_type_registry_t *)context;
-    return nmo_type_value_to_string(value, type, registry, buffer, buffer_size);
-}
-
-nmo_status_t nmo_object_default_from_string(
-    void *value,
-    const nmo_type_descriptor_t *type,
-    const char *string,
-    void *context)
-{
-    const nmo_type_registry_t *registry = (const nmo_type_registry_t *)context;
-    return nmo_type_value_from_string(value, type, registry, string);
-}
 
 nmo_status_t nmo_object_copy_bytes(
     nmo_arena_t *arena,

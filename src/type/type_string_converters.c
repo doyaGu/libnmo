@@ -1062,8 +1062,6 @@ static const nmo_type_descriptor_t *nmo_to_string_resolve_type(
     return t;
 }
 
-typedef nmo_status_t (*nmo_value_to_string_fn)(const void *value, char *buffer, size_t buffer_size);
-
 static nmo_status_t nmo_object_id_value_to_string(const void *value, char *buffer, size_t buffer_size) {
     return nmo_object_id_to_string(value, buffer, buffer_size, NULL);
 }
@@ -1195,102 +1193,76 @@ static nmo_status_t nmo_color_value_to_string(const void *value, char *buffer, s
     return nmo_color_to_string(value, buffer, buffer_size);
 }
 
-static nmo_status_t nmo_angle_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+/* Semantic vtable handlers — new signature */
+
+nmo_status_t nmo_vt_to_string_angle(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
     float rad = *(const float *)value;
     double deg = (double)rad * (180.0 / M_PI);
     snprintf(buffer, buffer_size, "%.6g\xC2\xB0", deg);
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_percentage_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+nmo_status_t nmo_vt_to_string_percentage(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
     float f = *(const float *)value;
     snprintf(buffer, buffer_size, "%.6g%%", (double)f * 100.0);
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_time_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+nmo_status_t nmo_vt_to_string_time(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
     float f = *(const float *)value;
     snprintf(buffer, buffer_size, "%.1f ms", (double)f);
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_classid_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+nmo_status_t nmo_vt_to_string_classid(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)type; (void)registry; (void)depth;
     int32_t cid = *(const int32_t *)value;
     snprintf(buffer, buffer_size, "ClassID(%d)", cid);
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_none_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    (void)value;
+nmo_status_t nmo_vt_to_string_none(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)value; (void)type; (void)registry; (void)depth;
     snprintf(buffer, buffer_size, "(none)");
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_voidbuf_value_to_string(const void *value, char *buffer, size_t buffer_size) {
-    /* Void buffers have no intrinsic size from the handler signature, show address */
-    (void)value;
+nmo_status_t nmo_vt_to_string_voidbuf(
+    const void *value, const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer, size_t buffer_size, int depth)
+{
+    (void)value; (void)type; (void)registry; (void)depth;
     snprintf(buffer, buffer_size, "<voidbuf>");
     NMO_RETURN_OK();
 }
 
-typedef struct nmo_guid_to_string_entry {
-    nmo_guid_t guid;
-    nmo_value_to_string_fn fn;
-} nmo_guid_to_string_entry_t;
+enum { NMO_MAX_TO_STRING_DEPTH = 6 };
 
-static const nmo_guid_to_string_entry_t nmo_guid_to_string_table[] = {
-    {NMO_GUID_INIT(CKPGUID_ID_D1, CKPGUID_ID_D2), nmo_object_id_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_GUID_D1, CKPGUID_GUID_D2), nmo_guid_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_STRING_D1, CKPGUID_STRING_D2), nmo_string_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_POINTER_D1, CKPGUID_POINTER_D2), nmo_pointer_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_INT8_D1, CKPGUID_INT8_D2), nmo_int8_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_UINT8_D1, CKPGUID_UINT8_D2), nmo_uint8_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_INT16_D1, CKPGUID_INT16_D2), nmo_int16_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_UINT16_D1, CKPGUID_UINT16_D2), nmo_uint16_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_INT_D1, CKPGUID_INT_D2), nmo_int_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_UINT32_D1, CKPGUID_UINT32_D2), nmo_uint32_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_INT64_D1, CKPGUID_INT64_D2), nmo_int64_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_UINT64_D1, CKPGUID_UINT64_D2), nmo_uint64_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_DOUBLE_D1, CKPGUID_DOUBLE_D2), nmo_double_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2), nmo_float_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_BOOL_D1, CKPGUID_BOOL_D2), nmo_bool_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_2DVECTOR_D1, CKPGUID_2DVECTOR_D2), nmo_vector2_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_VECTOR_D1, CKPGUID_VECTOR_D2), nmo_vector3_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_VECTOR4_D1, CKPGUID_VECTOR4_D2), nmo_vector4_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_QUATERNION_D1, CKPGUID_QUATERNION_D2), nmo_quaternion_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_MATRIX_D1, CKPGUID_MATRIX_D2), nmo_matrix_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2), nmo_color_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_RECT_D1, CKPGUID_RECT_D2), nmo_rect_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_BOX_D1, CKPGUID_BOX_D2), nmo_box_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2), nmo_eulerangles_value_to_string},
-    /* Derived float types with semantic formatting */
-    {NMO_GUID_INIT(CKPGUID_ANGLE_D1, CKPGUID_ANGLE_D2), nmo_angle_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_PERCENTAGE_D1, CKPGUID_PERCENTAGE_D2), nmo_percentage_value_to_string},
-    {CKPGUID_TIME_INIT, nmo_time_value_to_string},
-    /* Derived int type */
-    {CKPGUID_CLASSID_INIT, nmo_classid_value_to_string},
-    /* Special types */
-    {CKPGUID_NONE_INIT, nmo_none_value_to_string},
-    {CKPGUID_VOIDBUF_INIT, nmo_voidbuf_value_to_string}
-};
-
-static bool nmo_value_to_string_by_guid(
-    nmo_guid_t guid,
-    const void *value,
-    char *buffer,
-    size_t buffer_size,
-    nmo_status_t *out_status)
-{
-    for (size_t i = 0; i < sizeof(nmo_guid_to_string_table) / sizeof(nmo_guid_to_string_table[0]); i++) {
-        if (nmo_guid_equals(guid, nmo_guid_to_string_table[i].guid)) {
-            *out_status = nmo_guid_to_string_table[i].fn(value, buffer, buffer_size);
-            return true;
-        }
-    }
-    return false;
-}
-
-static nmo_status_t nmo_type_value_to_string_impl(
+static nmo_status_t nmo_type_value_to_string_depth(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
@@ -1307,8 +1279,6 @@ static nmo_status_t nmo_struct_like_to_string(
     size_t buffer_size,
     int depth
 ) {
-    enum { NMO_MAX_TO_STRING_DEPTH = 6 };
-
     if (!value || !type || !buffer) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments for struct_to_string");
@@ -1376,14 +1346,18 @@ static nmo_status_t nmo_struct_like_to_string(
                         continue;
                     }
 
-                    char tmp[256];
-                    nmo_status_t r = nmo_type_value_to_string_impl(
-                        fptr, ft, registry, tmp, sizeof(tmp), depth + 1);
-                    if (r != NMO_OK) {
+                    size_t saved = sb.len;
+                    size_t avail = sb.cap > sb.len ? sb.cap - sb.len : 0;
+                    if (avail == 0) break;
+                    char *slot = sb.buf + sb.len;
+                    nmo_status_t r = nmo_type_value_to_string_depth(
+                        fptr, ft, registry, slot, avail, depth + 1);
+                    if (r == NMO_OK) {
+                        sb.len += strlen(slot);
+                    } else {
+                        sb.len = saved;
                         NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<error>"));
-                        continue;
                     }
-                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s", tmp));
                 }
 
                 NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "}"));
@@ -1489,89 +1463,35 @@ static nmo_status_t nmo_struct_like_to_string(
             continue;
         }
 
-        char tmp[256];
-        nmo_status_t r = nmo_type_value_to_string_impl(field_ptr, field_type, registry,
-                                                       tmp, sizeof(tmp), depth + 1);
-        if (r != NMO_OK) {
+        size_t saved = sb.len;
+        size_t avail = sb.cap > sb.len ? sb.cap - sb.len : 0;
+        if (avail == 0) break;
+        char *slot = sb.buf + sb.len;
+        nmo_status_t r = nmo_type_value_to_string_depth(
+            field_ptr, field_type, registry, slot, avail, depth + 1);
+        if (r == NMO_OK) {
+            sb.len += strlen(slot);
+        } else {
+            sb.len = saved;
             NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<error>"));
-            continue;
         }
-
-        NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s", tmp));
     }
 
     NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "}"));
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_type_value_to_string_impl(
+static nmo_status_t nmo_hex_fallback_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
     char *buffer,
     size_t buffer_size,
-    int depth
-) {
-    if (!value || !type || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments for type_value_to_string");
-    }
+    int depth)
+{
+    (void)registry;
+    (void)depth;
 
-    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
-        return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
-    }
-    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
-        return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
-    }
-
-    nmo_guid_t effective_guid = type->guid;
-    nmo_status_t result = NMO_OK;
-
-    /* If a type provides a custom to_string implementation, prefer it.
-     * This makes vtables authoritative for parameter value types.
-     *
-     * IMPORTANT: Skip nmo_object_default_to_string (the default trampoline).
-     * It calls the PUBLIC nmo_type_value_to_string which resets depth to 0,
-     * creating infinite recursion and stack overflow.  Object types with
-     * reflection fields are better handled by struct-like rendering below
-     * which properly tracks recursion depth. */
-    if (type->vtable && type->vtable->to_string) {
-        /* Skip the default object trampoline that re-enters this function.
-         * Types with reflection fields will fall through to struct-like
-         * rendering which respects the depth limit. */
-        extern nmo_status_t nmo_object_default_to_string(
-            const void *, const nmo_type_descriptor_t *, char *, size_t, void *);
-        if (type->vtable->to_string != nmo_object_default_to_string) {
-            return type->vtable->to_string(value, type, buffer, buffer_size, (void *)registry);
-        }
-    }
-
-    /* Prefer explicit built-in GUID formatting over generic struct formatting.
-     * Some builtin composites may be registered with STRUCT category. */
-    if (nmo_value_to_string_by_guid(effective_guid, value, buffer, buffer_size, &result)) {
-        return result;
-    }
-
-    if (type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION)) {
-        return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
-    }
-
-    /* Object types can also carry reflection fields; render those like structs. */
-    if (type->fields && type->field_count > 0) {
-        return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
-    }
-
-    if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
-        return nmo_float_to_string(value, buffer, buffer_size);
-    }
-    if (type->size == sizeof(int32_t) && type->alignment == _Alignof(int32_t)) {
-        return nmo_int_to_string(value, buffer, buffer_size, false);
-    }
-    if (type->size == sizeof(bool)) {
-        return nmo_bool_to_string(value, buffer, buffer_size);
-    }
-
-    /* Show hex for small values, hex dump for medium, preview for large */
     if (type->size <= 4) {
         uint32_t v = 0;
         memcpy(&v, value, type->size);
@@ -1598,6 +1518,60 @@ static nmo_status_t nmo_type_value_to_string_impl(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_type_default_to_string(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    if (type->category & NMO_TYPE_CATEGORY_ENUM) {
+        return nmo_enum_to_string(value, type, registry, buffer, buffer_size, true);
+    }
+    if (type->category & NMO_TYPE_CATEGORY_FLAGS) {
+        return nmo_flags_to_string(value, type, registry, buffer, buffer_size, true);
+    }
+    if ((type->category & (NMO_TYPE_CATEGORY_STRUCT | NMO_TYPE_CATEGORY_UNION))
+        || (type->fields && type->field_count > 0)) {
+        return nmo_struct_like_to_string(value, type, registry, buffer, buffer_size, depth);
+    }
+    return nmo_hex_fallback_to_string(value, type, registry, buffer, buffer_size, depth);
+}
+
+static nmo_status_t nmo_type_value_to_string_depth(
+    const void *value,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    if (!value || !type || !buffer) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for type_value_to_string");
+    }
+
+    if (depth > NMO_MAX_TO_STRING_DEPTH) {
+        if (type->name) {
+            snprintf(buffer, buffer_size, "<%s ...>", type->name);
+        } else {
+            snprintf(buffer, buffer_size, "<type %u bytes>", type->size);
+        }
+        NMO_RETURN_OK();
+    }
+
+    /* Level 1: custom vtable handler */
+    if (type->vtable && type->vtable->to_string) {
+        return type->vtable->to_string(value, type, registry,
+                                       buffer, buffer_size, depth);
+    }
+
+    /* Level 2: generic formatting by category */
+    return nmo_type_default_to_string(value, type, registry,
+                                      buffer, buffer_size, depth);
+}
+
 nmo_status_t nmo_type_value_to_string(
     const void *value,
     const nmo_type_descriptor_t *type,
@@ -1605,11 +1579,8 @@ nmo_status_t nmo_type_value_to_string(
     char *buffer,
     size_t buffer_size)
 {
-    if (!value || !type || !buffer) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for type_value_to_string");
-    }
-
-    return nmo_type_value_to_string_impl(value, type, registry, buffer, buffer_size, 0);
+    return nmo_type_value_to_string_depth(value, type, registry,
+                                          buffer, buffer_size, 0);
 }
 
 static nmo_status_t parse_i64(const char *string, int64_t *out_value)
@@ -1681,11 +1652,6 @@ static nmo_status_t parse_f64(const char *string, double *out_value)
     *out_value = parsed;
     NMO_RETURN_OK();
 }
-
-typedef nmo_status_t (*nmo_value_from_string_fn)(
-    void *value,
-    const nmo_type_registry_t *registry,
-    const char *string);
 
 static nmo_status_t nmo_parse_int8(
     void *value,
@@ -2101,52 +2067,38 @@ static nmo_status_t nmo_parse_eulerangles(
     NMO_RETURN_OK();
 }
 
-typedef struct nmo_guid_from_string_entry {
-    nmo_guid_t guid;
-    nmo_value_from_string_fn fn;
-} nmo_guid_from_string_entry_t;
-
-static const nmo_guid_from_string_entry_t nmo_guid_from_string_table[] = {
-    {NMO_GUID_INIT(CKPGUID_INT8_D1, CKPGUID_INT8_D2), nmo_parse_int8},
-    {NMO_GUID_INIT(CKPGUID_INT16_D1, CKPGUID_INT16_D2), nmo_parse_int16},
-    {NMO_GUID_INIT(CKPGUID_INT_D1, CKPGUID_INT_D2), nmo_parse_int32},
-    {NMO_GUID_INIT(CKPGUID_INT64_D1, CKPGUID_INT64_D2), nmo_parse_int64},
-    {NMO_GUID_INIT(CKPGUID_UINT8_D1, CKPGUID_UINT8_D2), nmo_parse_uint8},
-    {NMO_GUID_INIT(CKPGUID_UINT16_D1, CKPGUID_UINT16_D2), nmo_parse_uint16},
-    {NMO_GUID_INIT(CKPGUID_UINT32_D1, CKPGUID_UINT32_D2), nmo_parse_uint32},
-    {NMO_GUID_INIT(CKPGUID_UINT64_D1, CKPGUID_UINT64_D2), nmo_parse_uint64},
-    {NMO_GUID_INIT(CKPGUID_ID_D1, CKPGUID_ID_D2), nmo_parse_object_id},
-    {NMO_GUID_INIT(CKPGUID_GUID_D1, CKPGUID_GUID_D2), nmo_parse_guid},
-    {NMO_GUID_INIT(CKPGUID_POINTER_D1, CKPGUID_POINTER_D2), nmo_parse_pointer},
-    {NMO_GUID_INIT(CKPGUID_BOOL_D1, CKPGUID_BOOL_D2), nmo_parse_bool},
-    {NMO_GUID_INIT(CKPGUID_FLOAT_D1, CKPGUID_FLOAT_D2), nmo_parse_float},
-    {NMO_GUID_INIT(CKPGUID_DOUBLE_D1, CKPGUID_DOUBLE_D2), nmo_parse_double},
-    {NMO_GUID_INIT(CKPGUID_STRING_D1, CKPGUID_STRING_D2), nmo_parse_string},
-    {NMO_GUID_INIT(CKPGUID_2DVECTOR_D1, CKPGUID_2DVECTOR_D2), nmo_parse_vector2},
-    {NMO_GUID_INIT(CKPGUID_VECTOR_D1, CKPGUID_VECTOR_D2), nmo_parse_vector3},
-    {NMO_GUID_INIT(CKPGUID_VECTOR4_D1, CKPGUID_VECTOR4_D2), nmo_parse_vector4},
-    {NMO_GUID_INIT(CKPGUID_QUATERNION_D1, CKPGUID_QUATERNION_D2), nmo_parse_quaternion},
-    {NMO_GUID_INIT(CKPGUID_MATRIX_D1, CKPGUID_MATRIX_D2), nmo_parse_matrix},
-    {NMO_GUID_INIT(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2), nmo_parse_color},
-    {NMO_GUID_INIT(CKPGUID_RECT_D1, CKPGUID_RECT_D2), nmo_parse_rect},
-    {NMO_GUID_INIT(CKPGUID_BOX_D1, CKPGUID_BOX_D2), nmo_parse_box},
-    {NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2), nmo_parse_eulerangles}
-};
-
-static bool nmo_value_from_string_by_guid(
-    nmo_guid_t guid,
+static nmo_status_t nmo_scalar_from_string_by_size(
     void *value,
+    const nmo_type_descriptor_t *type,
     const nmo_type_registry_t *registry,
-    const char *string,
-    nmo_status_t *out_status)
+    const char *string)
 {
-    for (size_t i = 0; i < sizeof(nmo_guid_from_string_table) / sizeof(nmo_guid_from_string_table[0]); i++) {
-        if (nmo_guid_equals(guid, nmo_guid_from_string_table[i].guid)) {
-            *out_status = nmo_guid_from_string_table[i].fn(value, registry, string);
-            return true;
-        }
+    if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
+        return nmo_float_from_string(value, string);
     }
-    return false;
+    if (type->size == sizeof(double) && type->alignment == _Alignof(double)) {
+        double parsed = 0.0;
+        NMO_RETURN_IF_ERROR(parse_f64(string, &parsed));
+        *(double *)value = parsed;
+        NMO_RETURN_OK();
+    }
+    if (type->size == sizeof(int32_t) && type->alignment == _Alignof(int32_t)) {
+        return nmo_int_from_string(value, string);
+    }
+    if (type->size == sizeof(uint32_t) && type->alignment == _Alignof(uint32_t)) {
+        return nmo_parse_uint32(value, registry, string);
+    }
+    if (type->size == sizeof(bool) && type->alignment == _Alignof(bool)) {
+        return nmo_bool_from_string(value, string);
+    }
+    if (type->size == sizeof(nmo_guid_t) && type->alignment == _Alignof(nmo_guid_t)) {
+        return nmo_parse_guid(value, registry, string);
+    }
+    if (type->size == sizeof(void *) && type->alignment == _Alignof(void *)) {
+        return nmo_parse_pointer(value, registry, string);
+    }
+    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
+                     "Type-from-string not implemented for this type");
 }
 
 nmo_status_t nmo_type_value_from_string(
@@ -2156,10 +2108,16 @@ nmo_status_t nmo_type_value_from_string(
     const char *string)
 {
     if (!value || !type || !string) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for type_value_from_string");
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for type_value_from_string");
     }
 
-    // Dispatch based on type category
+    /* Level 1: custom vtable handler */
+    if (type->vtable && type->vtable->from_string) {
+        return type->vtable->from_string(value, type, registry, string);
+    }
+
+    /* Level 2: category fallback */
     if (type->category & NMO_TYPE_CATEGORY_ENUM) {
         return nmo_enum_from_string(value, type, registry, string);
     }
@@ -2167,45 +2125,14 @@ nmo_status_t nmo_type_value_from_string(
         return nmo_flags_from_string(value, type, registry, string);
     }
 
-    /* Custom converter hook (if a type registers one) */
-    if (type->vtable && type->vtable->from_string) {
-        return type->vtable->from_string(value, type, string, (void *)registry);
+    /* Level 3: scalar size fallback for derived types */
+    if (type->category & (NMO_TYPE_CATEGORY_SCALAR | NMO_TYPE_CATEGORY_POINTER
+                          | NMO_TYPE_CATEGORY_OBJECT_REF)) {
+        return nmo_scalar_from_string_by_size(value, type, registry, string);
     }
 
-    nmo_status_t result = NMO_OK;
-    if (nmo_value_from_string_by_guid(type->guid, value, registry, string, &result)) {
-        return result;
-    }
-
-    /* Scalar fallback for derived types (e.g., ANGLE, PERCENTAGE, KEY, CLASSID) */
-    if (type->category & (NMO_TYPE_CATEGORY_SCALAR | NMO_TYPE_CATEGORY_POINTER | NMO_TYPE_CATEGORY_OBJECT_REF)) {
-        if (type->size == sizeof(float) && type->alignment == _Alignof(float)) {
-            return nmo_float_from_string(value, string);
-        }
-        if (type->size == sizeof(double) && type->alignment == _Alignof(double)) {
-            double parsed = 0.0;
-            NMO_RETURN_IF_ERROR(parse_f64(string, &parsed));
-            *(double *)value = parsed;
-            NMO_RETURN_OK();
-        }
-        if (type->size == sizeof(int32_t) && type->alignment == _Alignof(int32_t)) {
-            return nmo_int_from_string(value, string);
-        }
-        if (type->size == sizeof(uint32_t) && type->alignment == _Alignof(uint32_t)) {
-            return nmo_parse_uint32(value, registry, string);
-        }
-        if (type->size == sizeof(bool) && type->alignment == _Alignof(bool)) {
-            return nmo_bool_from_string(value, string);
-        }
-        if (type->size == sizeof(nmo_guid_t) && type->alignment == _Alignof(nmo_guid_t)) {
-            return nmo_parse_guid(value, registry, string);
-        }
-        if (type->size == sizeof(void *) && type->alignment == _Alignof(void *)) {
-            return nmo_parse_pointer(value, registry, string);
-        }
-    }
-
-    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR, "Type-from-string not implemented for this type");
+    NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
+                     "Type-from-string not implemented for this type");
 }
 
 /* ============================================================================
@@ -2499,20 +2426,22 @@ uint32_t nmo_hash_bytes_box(const void *instance)
 #define NMO_DEFINE_VT_TO_STRING(name, value_to_string_fn) \
     nmo_status_t nmo_vt_to_string_##name( \
         const void *value, const nmo_type_descriptor_t *type, \
-        char *buffer, size_t buffer_size, void *context) \
+        const nmo_type_registry_t *registry, \
+        char *buffer, size_t buffer_size, int depth) \
     { \
         (void)type; \
-        (void)context; \
+        (void)registry; \
+        (void)depth; \
         return (value_to_string_fn)(value, buffer, buffer_size); \
     }
 
 #define NMO_DEFINE_VT_FROM_STRING(name, parse_fn) \
     nmo_status_t nmo_vt_from_string_##name( \
         void *value, const nmo_type_descriptor_t *type, \
-        const char *string, void *context) \
+        const nmo_type_registry_t *registry, const char *string) \
     { \
         (void)type; \
-        return (parse_fn)(value, (const nmo_type_registry_t *)context, string); \
+        return (parse_fn)(value, registry, string); \
     }
 
 NMO_DEFINE_VT_TO_STRING(int32, nmo_int_value_to_string)
