@@ -1,8 +1,8 @@
 #include "test_framework.h"
 
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "app/nmo_object_diff.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"

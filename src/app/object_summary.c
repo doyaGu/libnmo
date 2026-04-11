@@ -25,7 +25,7 @@
 #include "type/nmo_type_guids.h"
 #include "object/nmo_param_guids.h"
 #include "core/nmo_guid.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_guids.h"
 #include "core/nmo_array.h"

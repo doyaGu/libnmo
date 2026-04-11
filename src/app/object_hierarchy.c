@@ -3,7 +3,7 @@
 #include "session/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_object.h"
-#include "session/nmo_ref_enumerate.h"
+#include "object/nmo_ref_enumerate.h"
 
 #include <stdlib.h>
 #include <string.h>

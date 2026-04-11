@@ -18,7 +18,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"

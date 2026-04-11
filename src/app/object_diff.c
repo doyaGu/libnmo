@@ -10,7 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_string.h"

@@ -10,7 +10,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>

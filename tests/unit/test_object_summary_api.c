@@ -7,7 +7,7 @@
 #include "nmo.h"
 
 #include "app/nmo_object_summary.h"
-#include "app/nmo_session_util.h"
+#include "session/nmo_session_util.h"
 #include "yyjson.h"
 
 static nmo_object_t *find_reflective_object(nmo_context_t *ctx, nmo_session_t *session) {

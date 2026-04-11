@@ -6,7 +6,7 @@
 #include "nmo_cmd_core.h"
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 #include "object/nmo_object_repository.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"

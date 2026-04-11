@@ -11,7 +11,7 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 
 #include <stdio.h>

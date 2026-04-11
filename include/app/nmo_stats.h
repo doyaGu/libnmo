@@ -2,7 +2,7 @@
 #define NMO_STATS_H
 
 #include "nmo_types.h"
-#include "app/nmo_session.h"
+#include "session/nmo_session.h"
 #include <stdio.h>
 
 /**

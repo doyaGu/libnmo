@@ -28,7 +28,7 @@
 #include "core/nmo_array.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>

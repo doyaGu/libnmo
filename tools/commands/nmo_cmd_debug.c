@@ -12,7 +12,7 @@
 
 #include "nmo.h"
 #include "app/nmo_stats.h"
-#include "app/nmo_context.h"
+#include "session/nmo_context.h"
 
 #include <stdio.h>
 #include <string.h>

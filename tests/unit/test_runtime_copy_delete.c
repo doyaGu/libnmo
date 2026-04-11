@@ -1,6 +1,6 @@
 #include "test_framework.h"
-#include "app/nmo_context.h"
-#include "app/nmo_session.h"
+#include "session/nmo_context.h"
+#include "session/nmo_session.h"
 
 TEST(runtime_copy_delete, copy_then_delete_roundtrip) {
     nmo_context_desc_t desc = {0};

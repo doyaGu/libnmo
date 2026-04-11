@@ -13,7 +13,7 @@
 
 #include "nmo_cmd_ctx.h"
 #include "nmo.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 #include "dsl/nmo_dsl.h"
 
 #include <stdbool.h>

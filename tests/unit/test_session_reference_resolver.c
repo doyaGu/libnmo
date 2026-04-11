@@ -1,6 +1,6 @@
 #include "test_framework.h"
-#include "app/nmo_session.h"
-#include "app/nmo_context.h"
+#include "session/nmo_session.h"
+#include "session/nmo_context.h"
 #include "session/nmo_reference_resolver.h"
 
 TEST(session_reference_resolver, ensure_and_reset) {

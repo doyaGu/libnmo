@@ -19,7 +19,7 @@
 #include "core/nmo_arena.h"
 #include "dsl/nmo_dsl.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 
 #include <stdio.h>
 #include <string.h>

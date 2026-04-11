@@ -23,7 +23,7 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 
 #include <stdio.h>
 #include <string.h>

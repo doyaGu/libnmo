@@ -1,7 +1,7 @@
 #include "session/nmo_runtime_graph.h"
 
 #include "core/nmo_arena.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 #include <string.h>
 
 struct nmo_runtime_graph {

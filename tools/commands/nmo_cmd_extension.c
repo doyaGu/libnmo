@@ -8,8 +8,8 @@
 #include "../nmo_cli_output.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
-#include "app/nmo_session.h"
-#include "app/nmo_context.h"
+#include "session/nmo_session.h"
+#include "session/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_guid.h"
 #include <stdio.h>

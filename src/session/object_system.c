@@ -10,7 +10,7 @@
 #include "session/nmo_id_sanitizer.h"
 #include "object/nmo_shadow_storage.h"
 #include "session/nmo_reference_resolver.h"
-#include "session/nmo_ref_enumerate.h"
+#include "object/nmo_ref_enumerate.h"
 
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"

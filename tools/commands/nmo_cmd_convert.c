@@ -15,7 +15,7 @@
 #include "session/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
-#include "session/nmo_ref_graph.h"
+#include "object/nmo_ref_graph.h"
 #include "format/nmo_object.h"
 #include <inttypes.h>
 #include <stdio.h>
