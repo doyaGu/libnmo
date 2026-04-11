@@ -141,6 +141,25 @@ static void object_export_usage(FILE *out) {
     fprintf(out, "  --id <n>             Export specific object by ID\n");
 }
 
+static void object_impact_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object impact <id> <file>\n\n");
+    fprintf(out, "Show what would be affected if the specified object were deleted.\n");
+    fprintf(out, "Reports direct dependents (incoming references) and the full\n");
+    fprintf(out, "cascade deletion set.\n");
+}
+
+static void object_orphans_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object orphans [options] <file>\n\n");
+    fprintf(out, "Find objects not reachable from any root (CKLevel, CKScene, etc).\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --class, -c <name>   Filter by class (includes derived classes)\n");
+}
+
+static void object_cycles_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object cycles <file>\n\n");
+    fprintf(out, "Detect circular references in the object graph using DFS.\n");
+}
+
 static void debug_load_phases_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug load-phases <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
@@ -484,6 +503,9 @@ static const nmo_cli_action_t object_actions[] = {
     {"refs", "r", "Show object references", nmo_cmd_object_refs, object_refs_usage},
     {"rename", "ren", "Rename an object", nmo_cmd_object_rename, object_rename_usage},
     {"export", "x", "Export objects as semantic JSON", nmo_cmd_object_export, object_export_usage},
+    {"impact", "imp", "Show deletion impact", nmo_cmd_object_impact, object_impact_usage},
+    {"orphans", "orp", "Find unreachable objects", nmo_cmd_object_orphans, object_orphans_usage},
+    {"cycles", "cyc", "Detect circular references", nmo_cmd_object_cycles, object_cycles_usage},
 };
 
 /* behavior group actions */

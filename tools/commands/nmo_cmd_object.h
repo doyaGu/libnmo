@@ -47,6 +47,21 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
  */
 int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo object impact - Show deletion impact analysis
+ */
+int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief nmo object orphans - Find unreachable objects
+ */
+int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
+/**
+ * @brief nmo object cycles - Detect circular references
+ */
+int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif
