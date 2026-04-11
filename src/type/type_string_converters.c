@@ -11,6 +11,7 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_guids.h"
+#include "object/nmo_param_guids.h"
 #include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
@@ -22,6 +23,10 @@
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* ============================================================================
  * Float Converters
@@ -512,25 +517,37 @@ nmo_status_t nmo_enum_to_string(
 
     int32_t enum_value = *(const int32_t*)value;
 
-    // If name not requested or no registry, output numeric value
+    /* If name not requested or no registry, output numeric value with type context */
     if (!use_name || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
-        snprintf(buffer, buffer_size, "%d", enum_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+        } else {
+            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+        }
         NMO_RETURN_OK();
     }
 
-    // Access enum metadata from registry
+    /* Access enum metadata from registry */
     if (type->specialized_index >= registry->metadata.count) {
-        snprintf(buffer, buffer_size, "%d", enum_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+        } else {
+            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+        }
         NMO_RETURN_OK();
     }
 
     const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_ENUM) {
-        snprintf(buffer, buffer_size, "%d", enum_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+        } else {
+            snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+        }
         NMO_RETURN_OK();
     }
 
-    // Search for matching enum value
+    /* Search for matching enum value */
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
         if (metadata->enum_meta.values[i].value == enum_value) {
             snprintf(buffer, buffer_size, "%s", metadata->enum_meta.values[i].name);
@@ -538,8 +555,12 @@ nmo_status_t nmo_enum_to_string(
         }
     }
 
-    // No name found, output numeric value
-    snprintf(buffer, buffer_size, "%d", enum_value);
+    /* No name found, output numeric value with type context */
+    if (type->name) {
+        snprintf(buffer, buffer_size, "%s(%d)", type->name, enum_value);
+    } else {
+        snprintf(buffer, buffer_size, "enum(%d)", enum_value);
+    }
     NMO_RETURN_OK();
 }
 
@@ -606,25 +627,37 @@ nmo_status_t nmo_flags_to_string(
 
     uint32_t flags_value = *(const uint32_t*)value;
 
-    // If names not requested or no registry, output hex
+    /* If names not requested or no registry, output hex with type context */
     if (!use_names || !registry || type->specialized_index == NMO_SPECIALIZED_INDEX_INVALID) {
-        snprintf(buffer, buffer_size, "0x%X", flags_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
         NMO_RETURN_OK();
     }
 
-    // Access flags metadata from registry
+    /* Access flags metadata from registry */
     if (type->specialized_index >= registry->metadata.count) {
-        snprintf(buffer, buffer_size, "0x%X", flags_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
         NMO_RETURN_OK();
     }
 
     const nmo_specialized_metadata_t *metadata = *(nmo_specialized_metadata_t**)nmo_arena_array_get((nmo_arena_array_t*)&registry->metadata, type->specialized_index);
     if (!metadata || metadata->metadata_type != NMO_METADATA_TYPE_FLAGS) {
-        snprintf(buffer, buffer_size, "0x%X", flags_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
         NMO_RETURN_OK();
     }
 
-    // Build name1|name2 format
+    /* Build name1|name2 format */
     size_t offset = 0;
     bool first = true;
     for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
@@ -640,9 +673,13 @@ nmo_status_t nmo_flags_to_string(
         }
     }
 
-    // If no flags matched, output hex
+    /* If no flags matched, output hex with type context */
     if (first) {
-        snprintf(buffer, buffer_size, "0x%X", flags_value);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "%s(0x%X)", type->name, flags_value);
+        } else {
+            snprintf(buffer, buffer_size, "flags(0x%X)", flags_value);
+        }
     } else {
         buffer[offset] = '\0';
     }
@@ -1158,6 +1195,44 @@ static nmo_status_t nmo_color_value_to_string(const void *value, char *buffer, s
     return nmo_color_to_string(value, buffer, buffer_size);
 }
 
+static nmo_status_t nmo_angle_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    float rad = *(const float *)value;
+    double deg = (double)rad * (180.0 / M_PI);
+    snprintf(buffer, buffer_size, "%.6g\xC2\xB0", deg);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_percentage_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    float f = *(const float *)value;
+    snprintf(buffer, buffer_size, "%.6g%%", (double)f * 100.0);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_time_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    float f = *(const float *)value;
+    snprintf(buffer, buffer_size, "%.1f ms", (double)f);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_classid_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    int32_t cid = *(const int32_t *)value;
+    snprintf(buffer, buffer_size, "ClassID(%d)", cid);
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_none_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    (void)value;
+    snprintf(buffer, buffer_size, "(none)");
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_voidbuf_value_to_string(const void *value, char *buffer, size_t buffer_size) {
+    /* Void buffers have no intrinsic size from the handler signature, show address */
+    (void)value;
+    snprintf(buffer, buffer_size, "<voidbuf>");
+    NMO_RETURN_OK();
+}
+
 typedef struct nmo_guid_to_string_entry {
     nmo_guid_t guid;
     nmo_value_to_string_fn fn;
@@ -1187,7 +1262,16 @@ static const nmo_guid_to_string_entry_t nmo_guid_to_string_table[] = {
     {NMO_GUID_INIT(CKPGUID_COLOR_D1, CKPGUID_COLOR_D2), nmo_color_value_to_string},
     {NMO_GUID_INIT(CKPGUID_RECT_D1, CKPGUID_RECT_D2), nmo_rect_value_to_string},
     {NMO_GUID_INIT(CKPGUID_BOX_D1, CKPGUID_BOX_D2), nmo_box_value_to_string},
-    {NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2), nmo_eulerangles_value_to_string}
+    {NMO_GUID_INIT(CKPGUID_EULERANGLES_D1, CKPGUID_EULERANGLES_D2), nmo_eulerangles_value_to_string},
+    /* Derived float types with semantic formatting */
+    {NMO_GUID_INIT(CKPGUID_ANGLE_D1, CKPGUID_ANGLE_D2), nmo_angle_value_to_string},
+    {NMO_GUID_INIT(CKPGUID_PERCENTAGE_D1, CKPGUID_PERCENTAGE_D2), nmo_percentage_value_to_string},
+    {CKPGUID_TIME_INIT, nmo_time_value_to_string},
+    /* Derived int type */
+    {CKPGUID_CLASSID_INIT, nmo_classid_value_to_string},
+    /* Special types */
+    {CKPGUID_NONE_INIT, nmo_none_value_to_string},
+    {CKPGUID_VOIDBUF_INIT, nmo_voidbuf_value_to_string}
 };
 
 static bool nmo_value_to_string_by_guid(
@@ -1223,7 +1307,7 @@ static nmo_status_t nmo_struct_like_to_string(
     size_t buffer_size,
     int depth
 ) {
-    enum { NMO_MAX_TO_STRING_DEPTH = 3 };
+    enum { NMO_MAX_TO_STRING_DEPTH = 6 };
 
     if (!value || !type || !buffer) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -1234,9 +1318,13 @@ static nmo_status_t nmo_struct_like_to_string(
     }
 
     if (depth >= NMO_MAX_TO_STRING_DEPTH) {
-        snprintf(buffer, buffer_size, "<%s %u bytes>",
-                 (type->category & NMO_TYPE_CATEGORY_UNION) ? "union" : "struct",
-                 type->size);
+        if (type->name) {
+            snprintf(buffer, buffer_size, "<%s ...>", type->name);
+        } else {
+            snprintf(buffer, buffer_size, "<%s %u bytes>",
+                     (type->category & NMO_TYPE_CATEGORY_UNION) ? "union" : "struct",
+                     type->size);
+        }
         NMO_RETURN_OK();
     }
 
@@ -1483,7 +1571,30 @@ static nmo_status_t nmo_type_value_to_string_impl(
         return nmo_bool_to_string(value, buffer, buffer_size);
     }
 
-    snprintf(buffer, buffer_size, "<binary %u bytes>", type->size);
+    /* Show hex for small values, hex dump for medium, preview for large */
+    if (type->size <= 4) {
+        uint32_t v = 0;
+        memcpy(&v, value, type->size);
+        snprintf(buffer, buffer_size, "0x%0*X (%u bytes)",
+                 (int)type->size * 2, v, type->size);
+    } else if (type->size <= 16) {
+        size_t pos = 0;
+        for (size_t i = 0; i < type->size && pos + 3 < buffer_size; i++) {
+            pos += (size_t)snprintf(buffer + pos, buffer_size - pos, "%s%02X",
+                                    i > 0 ? " " : "",
+                                    ((const uint8_t *)value)[i]);
+        }
+    } else {
+        size_t pos = (size_t)snprintf(buffer, buffer_size, "<%u bytes: ",
+                                      type->size);
+        for (size_t i = 0; i < 8 && i < type->size && pos + 3 < buffer_size; i++) {
+            pos += (size_t)snprintf(buffer + pos, buffer_size - pos, "%02X ",
+                                    ((const uint8_t *)value)[i]);
+        }
+        if (pos + 4 < buffer_size) {
+            snprintf(buffer + pos, buffer_size - pos, "...>");
+        }
+    }
     NMO_RETURN_OK();
 }
 

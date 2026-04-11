@@ -532,8 +532,8 @@ TEST(type_string, enum_to_string_by_value) {
     nmo_status_t result = nmo_enum_to_string(&value, type, registry, buffer, sizeof(buffer), false);
     
     ASSERT_EQ(NMO_OK, result);
-    ASSERT_STR_EQ("2", buffer);
-    
+    ASSERT_STR_EQ("Color(2)", buffer);
+
     teardown();
 }
 
@@ -644,8 +644,8 @@ TEST(type_string, flags_to_string_by_hex) {
     nmo_status_t result = nmo_flags_to_string(&value, type, registry, buffer, sizeof(buffer), false);
     
     ASSERT_EQ(NMO_OK, result);
-    ASSERT_STR_EQ("0x7", buffer);
-    
+    ASSERT_STR_EQ("FileMode(0x7)", buffer);
+
     teardown();
 }
 
