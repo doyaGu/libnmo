@@ -19,6 +19,7 @@
 #include "behavior/nmo_script_walker.h"
 #include "session/nmo_context.h"
 #include "core/nmo_array.h"
+#include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -148,6 +149,86 @@ static const nmo_cli_graph_node_t *find_graph_node(
         }
     }
     return NULL;
+}
+
+/* ---- Interface data helpers ---- */
+
+static const nmo_interface_behavior_t *find_interface_sub(
+    const nmo_interface_data_t *idata, nmo_object_id_t behavior_id)
+{
+    if (!idata) return NULL;
+    for (size_t i = 0; i < idata->sub_count; i++) {
+        if (idata->subs[i].behavior_id == behavior_id)
+            return &idata->subs[i];
+    }
+    return NULL;
+}
+
+static bool find_interface_position(const nmo_interface_data_t *idata,
+                                     nmo_object_id_t behavior_id,
+                                     float *out_x, float *out_y) {
+    if (!idata) return false;
+    if (idata->script.behavior_id == behavior_id) {
+        *out_x = idata->script.h_pos;
+        *out_y = idata->script.v_pos;
+        return true;
+    }
+    for (size_t i = 0; i < idata->sub_count; i++) {
+        if (idata->subs[i].behavior_id == behavior_id) {
+            *out_x = idata->subs[i].h_pos;
+            *out_y = idata->subs[i].v_pos;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool find_operation_position(const nmo_interface_data_t *idata,
+                                     nmo_object_id_t op_id,
+                                     float *out_x, float *out_y) {
+    if (!idata) return false;
+    for (size_t i = 0; i < idata->script.body.operation_count; i++) {
+        if (idata->script.body.operations[i].id == op_id) {
+            *out_x = idata->script.body.operations[i].h_pos;
+            *out_y = idata->script.body.operations[i].v_pos;
+            return true;
+        }
+    }
+    for (size_t s = 0; s < idata->sub_count; s++) {
+        for (size_t i = 0; i < idata->subs[s].body.operation_count; i++) {
+            if (idata->subs[s].body.operations[i].id == op_id) {
+                *out_x = idata->subs[s].body.operations[i].h_pos;
+                *out_y = idata->subs[s].body.operations[i].v_pos;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static const nmo_interface_link_t *find_interface_link(
+    const nmo_interface_data_t *idata, nmo_object_id_t link_id)
+{
+    if (!idata || link_id == 0) return NULL;
+    for (size_t i = 0; i < idata->script.body.link_count; i++) {
+        if (idata->script.body.links[i].link_id == link_id)
+            return &idata->script.body.links[i];
+    }
+    for (size_t s = 0; s < idata->sub_count; s++) {
+        for (size_t i = 0; i < idata->subs[s].body.link_count; i++) {
+            if (idata->subs[s].body.links[i].link_id == link_id)
+                return &idata->subs[s].body.links[i];
+        }
+    }
+    return NULL;
+}
+
+static const char *interface_color_to_hex(uint32_t color, char *buf, size_t size) {
+    uint8_t r = (color >> 16) & 0xFF;
+    uint8_t g = (color >> 8) & 0xFF;
+    uint8_t b = color & 0xFF;
+    snprintf(buf, size, "#%02X%02X%02X", r, g, b);
+    return buf;
 }
 
 /* ---- behavior list: per-file handler for batch mode ---- */
@@ -749,6 +830,25 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             yyjson_mut_obj_add_val(doc, data, "behavior_links", arr);
         }
 
+        if (bs->interface_data) {
+            const nmo_interface_body_t *ibody = &bs->interface_data->script.body;
+            yyjson_mut_val *comments_arr = yyjson_mut_arr(doc);
+            for (size_t ci = 0; ci < ibody->comment_count; ci++) {
+                const nmo_interface_comment_t *cm = &ibody->comments[ci];
+                yyjson_mut_val *cobj = yyjson_mut_obj(doc);
+                yyjson_mut_obj_add_uint(doc, cobj, "index", ci);
+                if (cm->text) yyjson_mut_obj_add_str(doc, cobj, "text", cm->text);
+                yyjson_mut_obj_add_real(doc, cobj, "left", (double)cm->left);
+                yyjson_mut_obj_add_real(doc, cobj, "top", (double)cm->top);
+                yyjson_mut_obj_add_real(doc, cobj, "right", (double)cm->right);
+                yyjson_mut_obj_add_real(doc, cobj, "bottom", (double)cm->bottom);
+                if (cm->style_flags)
+                    yyjson_mut_obj_add_uint(doc, cobj, "style_flags", cm->style_flags);
+                yyjson_mut_arr_add_val(comments_arr, cobj);
+            }
+            yyjson_mut_obj_add_val(doc, data, "comments", comments_arr);
+        }
+
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.show");
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
     }
@@ -763,6 +863,8 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
     bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
     fprintf(c.out, "  Type: %s\n", is_script ? "Script" : is_bb ? "Building Block" : "Graph");
+    if (bs->interface_data && (bs->interface_data->script.flags & NMO_INTERFACE_FLAG_FOLDED))
+        fprintf(c.out, "  Layout: Folded\n");
     if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
 
         const char *proto_name = nmo_bb_registry_get_name(nmo_context_get_bb_registry(c.ctx),bs->block_guid);
@@ -895,15 +997,30 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             /* Decode value if available */
             if (p && (nmo_object_get_class_id(p) == NMO_CID_PARAMETERLOCAL ||
                       nmo_object_get_class_id(p) == NMO_CID_PARAMETER)) {
-                const nmo_parameter_state_t *ps =
+                const nmo_parameter_state_t *lps =
                     (const nmo_parameter_state_t *)nmo_object_get_state(p);
-                if (ps && ps->has_state) {
+                if (lps && lps->has_state) {
                     char val_buf[256];
-                    if (nmo_param_value_to_string(ps, c.registry, c.session,
+                    if (nmo_param_value_to_string(lps, c.registry, c.session,
                                                   val_buf, sizeof(val_buf)) == NMO_OK
                         && val_buf[0] != '\0') {
                         fprintf(c.out, " = %s", val_buf);
                     }
+                }
+            }
+            if (bs->interface_data && bs->interface_data->script.body.has_params) {
+                const nmo_interface_param_set_t *ips = &bs->interface_data->script.body.params;
+                if (i < ips->local_count) {
+                    const nmo_interface_param_t *ip = &ips->locals[i];
+                    fprintf(c.out, "  grid=(%d,%d)", ip->h_pos, ip->v_pos);
+                    if (ip->style & NMO_INTERFACE_PARAM_STYLE_COLLAPSED)
+                        fprintf(c.out, " [collapsed]");
+                    else if (ip->style & NMO_INTERFACE_PARAM_STYLE_NAMEVALUE)
+                        fprintf(c.out, " [name+value]");
+                    else if (ip->style & NMO_INTERFACE_PARAM_STYLE_VALUE)
+                        fprintf(c.out, " [value]");
+                    else if (ip->style & NMO_INTERFACE_PARAM_STYLE_NAME)
+                        fprintf(c.out, " [name]");
                 }
             }
             fprintf(c.out, "\n");
@@ -971,6 +1088,15 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             } else {
                 fprintf(c.out, "  [%zu] #%u %s", i, ids[i],
                         (sname && sname[0]) ? sname : "(unnamed)");
+            }
+            {
+                const nmo_interface_behavior_t *isub = find_interface_sub(bs->interface_data, ids[i]);
+                if (isub) {
+                    if (isub->flags & NMO_INTERFACE_FLAG_FOLDED)
+                        fprintf(c.out, " [folded]");
+                    if (isub->flags & NMO_INTERFACE_FLAG_HEADER_ONLY)
+                        fprintf(c.out, " [header-only]");
+                }
             }
             fprintf(c.out, "\n");
         }
@@ -1107,6 +1233,31 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
     }
 
+    /* Interface: Comments (script body only -- sub-behavior comments belong
+     * to the sub-behavior's own behavior show output) */
+    if (bs->interface_data && bs->interface_data->script.body.comment_count > 0) {
+        fprintf(c.out, "\n");
+        nmo_cli_print_heading(c.out, "Comments", c.colorize);
+        const nmo_interface_body_t *body = &bs->interface_data->script.body;
+        for (size_t ci = 0; ci < body->comment_count; ci++) {
+            const nmo_interface_comment_t *cm = &body->comments[ci];
+            fprintf(c.out, "  [%zu] ", ci);
+            if (cm->text && cm->text[0]) {
+                size_t tlen = strlen(cm->text);
+                if (tlen > 60)
+                    fprintf(c.out, "\"%.57s...\"", cm->text);
+                else
+                    fprintf(c.out, "\"%s\"", cm->text);
+            } else {
+                fprintf(c.out, "(empty)");
+            }
+            fprintf(c.out, "  rect=(%.0f,%.0f,%.0f,%.0f)", cm->left, cm->top, cm->right, cm->bottom);
+            if (cm->style_flags)
+                fprintf(c.out, "  flags=0x%X", cm->style_flags);
+            fprintf(c.out, "\n");
+        }
+    }
+
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
 
@@ -1196,6 +1347,8 @@ static int behavior_stats_single(const char *file_path,
 
     size_t total_behaviors = 0, n_scripts = 0, n_graphs = 0, n_bbs = 0;
     size_t n_parameters = 0, n_links = 0, n_operations = 0;
+    size_t n_with_interface = 0, n_total_comments = 0;
+    size_t n_total_routing_points = 0, n_folded = 0, n_with_snapshot = 0;
 
     nmo_cli_bb_proto_count_t *protos = NULL;
     size_t proto_count = 0, proto_cap = 0;
@@ -1219,6 +1372,22 @@ static int behavior_stats_single(const char *file_path,
         const nmo_behavior_state_t *bs =
             (const nmo_behavior_state_t *)nmo_object_get_state(obj);
         if (!bs) continue;
+
+        if (bs->interface_data) {
+            n_with_interface++;
+            const nmo_interface_data_t *id = bs->interface_data;
+            n_total_comments += id->script.body.comment_count;
+            if (id->script.has_snapshot) n_with_snapshot++;
+            if (id->script.flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
+            for (size_t s = 0; s < id->sub_count; s++) {
+                n_total_comments += id->subs[s].body.comment_count;
+                if (id->subs[s].flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
+                for (size_t l = 0; l < id->subs[s].body.link_count; l++)
+                    n_total_routing_points += id->subs[s].body.links[l].point_count;
+            }
+            for (size_t l = 0; l < id->script.body.link_count; l++)
+                n_total_routing_points += id->script.body.links[l].point_count;
+        }
 
         if (bs->flags & CKBEHAVIOR_SCRIPT) {
             n_scripts++;
@@ -1297,6 +1466,16 @@ static int behavior_stats_single(const char *file_path,
         yyjson_mut_obj_add_uint(doc, data, "total_links", (uint64_t)n_links);
         yyjson_mut_obj_add_uint(doc, data, "total_operations", (uint64_t)n_operations);
         yyjson_mut_obj_add_uint(doc, data, "max_tree_depth", (uint64_t)max_depth);
+
+        if (n_with_interface > 0) {
+            yyjson_mut_val *iface = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, iface, "with_interface_data", (uint64_t)n_with_interface);
+            yyjson_mut_obj_add_uint(doc, iface, "comments", (uint64_t)n_total_comments);
+            yyjson_mut_obj_add_uint(doc, iface, "folded", (uint64_t)n_folded);
+            yyjson_mut_obj_add_uint(doc, iface, "routing_points", (uint64_t)n_total_routing_points);
+            yyjson_mut_obj_add_uint(doc, iface, "with_snapshot", (uint64_t)n_with_snapshot);
+            yyjson_mut_obj_add_val(doc, data, "interface_layout", iface);
+        }
     } else {
         FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
         bool colorize = text_ctx ? text_ctx->colorize : false;
@@ -1353,6 +1532,22 @@ static int behavior_stats_single(const char *file_path,
         nmo_cli_print_kv(out, "Operations", buf, 22, colorize);
         snprintf(buf, sizeof(buf), "%u", max_depth);
         nmo_cli_print_kv(out, "Max tree depth", buf, 22, colorize);
+
+        if (n_with_interface > 0) {
+            fprintf(out, "\n");
+            nmo_cli_print_heading(out, "Interface Layout", colorize);
+            fprintf(out, "\n");
+            snprintf(buf, sizeof(buf), "%zu / %zu", n_with_interface, total_behaviors);
+            nmo_cli_print_kv(out, "With interface data", buf, 22, colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_total_comments);
+            nmo_cli_print_kv(out, "Comments", buf, 22, colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_folded);
+            nmo_cli_print_kv(out, "Folded behaviors", buf, 22, colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_total_routing_points);
+            nmo_cli_print_kv(out, "Link routing points", buf, 22, colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_with_snapshot);
+            nmo_cli_print_kv(out, "With snapshot", buf, 22, colorize);
+        }
     }
 
     (void)global;
@@ -1404,6 +1599,8 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t n_parameters = 0;
     size_t n_links = 0;
     size_t n_operations = 0;
+    size_t n_with_interface = 0, n_total_comments = 0;
+    size_t n_total_routing_points = 0, n_folded = 0, n_with_snapshot = 0;
 
     /* BB prototype counting */
     nmo_cli_bb_proto_count_t *protos = NULL;
@@ -1441,6 +1638,22 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         const nmo_behavior_state_t *bs =
             (const nmo_behavior_state_t *)nmo_object_get_state(obj);
         if (!bs) continue;
+
+        if (bs->interface_data) {
+            n_with_interface++;
+            const nmo_interface_data_t *id = bs->interface_data;
+            n_total_comments += id->script.body.comment_count;
+            if (id->script.has_snapshot) n_with_snapshot++;
+            if (id->script.flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
+            for (size_t si = 0; si < id->sub_count; si++) {
+                n_total_comments += id->subs[si].body.comment_count;
+                if (id->subs[si].flags & NMO_INTERFACE_FLAG_FOLDED) n_folded++;
+                for (size_t li = 0; li < id->subs[si].body.link_count; li++)
+                    n_total_routing_points += id->subs[si].body.links[li].point_count;
+            }
+            for (size_t li = 0; li < id->script.body.link_count; li++)
+                n_total_routing_points += id->script.body.links[li].point_count;
+        }
 
         if (bs->flags & CKBEHAVIOR_SCRIPT) {
             n_scripts++;
@@ -1545,6 +1758,16 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         yyjson_mut_obj_add_uint(doc, data, "max_tree_depth",
                                 (uint64_t)max_depth);
 
+        if (n_with_interface > 0) {
+            yyjson_mut_val *iface = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_uint(doc, iface, "with_interface_data", (uint64_t)n_with_interface);
+            yyjson_mut_obj_add_uint(doc, iface, "comments", (uint64_t)n_total_comments);
+            yyjson_mut_obj_add_uint(doc, iface, "folded", (uint64_t)n_folded);
+            yyjson_mut_obj_add_uint(doc, iface, "routing_points", (uint64_t)n_total_routing_points);
+            yyjson_mut_obj_add_uint(doc, iface, "with_snapshot", (uint64_t)n_with_snapshot);
+            yyjson_mut_obj_add_val(doc, data, "interface_layout", iface);
+        }
+
         nmo_cmd_ctx_json_end(&c, doc, data, "behavior.stats");
     } else {
         nmo_cli_print_heading(c.out, "Behavior Statistics", c.colorize);
@@ -1602,6 +1825,22 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_cli_print_kv(c.out, "Operations", buf, 22, c.colorize);
         snprintf(buf, sizeof(buf), "%u", max_depth);
         nmo_cli_print_kv(c.out, "Max tree depth", buf, 22, c.colorize);
+
+        if (n_with_interface > 0) {
+            fprintf(c.out, "\n");
+            nmo_cli_print_heading(c.out, "Interface Layout", c.colorize);
+            fprintf(c.out, "\n");
+            snprintf(buf, sizeof(buf), "%zu / %zu", n_with_interface, total_behaviors);
+            nmo_cli_print_kv(c.out, "With interface data", buf, 22, c.colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_total_comments);
+            nmo_cli_print_kv(c.out, "Comments", buf, 22, c.colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_folded);
+            nmo_cli_print_kv(c.out, "Folded behaviors", buf, 22, c.colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_total_routing_points);
+            nmo_cli_print_kv(c.out, "Link routing points", buf, 22, c.colorize);
+            snprintf(buf, sizeof(buf), "%zu", n_with_snapshot);
+            nmo_cli_print_kv(c.out, "With snapshot", buf, 22, c.colorize);
+        }
     }
 
     free(protos);
@@ -2073,7 +2312,21 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
             fprintf(c.out, "\n");
             nmo_cli_print_heading(c.out, "DOT Graph", c.colorize);
             fprintf(c.out, "\n");
+            /* Look up interface data for the root behavior */
+            const nmo_interface_data_t *idata = NULL;
+            {
+                nmo_object_t *root_beh = nmo_object_repository_find_by_id(repo, behavior_id);
+                if (root_beh) {
+                    const nmo_behavior_state_t *root_bs =
+                        (const nmo_behavior_state_t *)nmo_object_get_state(root_beh);
+                    if (root_bs)
+                        idata = root_bs->interface_data;
+                }
+            }
+
             fprintf(c.out, "digraph behavior_graph {\n");
+            if (idata)
+                fprintf(c.out, "  graph [layout=neato, overlap=false];\n");
             fprintf(c.out, "  node [shape=box, fontname=\"Courier\", style=filled];\n");
             for (size_t i = 0; i < emit_node_count; ++i) {
                 const char *label = (nodes[i].name && nodes[i].name[0]) ? nodes[i].name :
@@ -2123,9 +2376,26 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
                     }
                 }
 
+                /* Override color for script root from interface data */
+                char color_hex_buf[8];
+                if (idata && idata->script.color != 0 && idata->script.behavior_id == nodes[i].id)
+                    fillcolor = interface_color_to_hex(idata->script.color, color_hex_buf, sizeof(color_hex_buf));
+
+                /* Position from interface data */
+                float px, py;
+                bool has_pos = false;
+                if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0)
+                    has_pos = find_operation_position(idata, nodes[i].id, &px, &py);
+                else
+                    has_pos = find_interface_position(idata, nodes[i].id, &px, &py);
+
+                /* Write node with optional position */
                 fprintf(c.out, "  n%u [label=\"", nodes[i].id);
                 dot_write_label(c.out, label);
-                fprintf(c.out, "\", fillcolor=\"%s\"];\n", fillcolor);
+                fprintf(c.out, "\", fillcolor=\"%s\"", fillcolor);
+                if (has_pos)
+                    fprintf(c.out, ", pos=\"%.0f,%.0f!\"", px, -py);
+                fprintf(c.out, "];\n");
             }
             for (size_t i = 0; i < emit_edge_count; ++i) {
                 size_t edge_index = emit_edge_indices ? emit_edge_indices[i] : i;
@@ -2162,9 +2432,14 @@ int nmo_cmd_behavior_graph(int argc, char **argv, const nmo_cli_global_opts_t *g
                              edge_ref.kind ? edge_ref.kind : "link");
                 }
 
+                const nmo_interface_link_t *ilink = find_interface_link(idata, edge_ref.link_id);
+
                 fprintf(c.out, "  n%u -> n%u [label=\"", edge_ref.from_id, edge_ref.to_id);
                 dot_write_label(c.out, dot_edge_label);
-                fprintf(c.out, "\"];\n");
+                fprintf(c.out, "\"");
+                if (ilink && ilink->highlight)
+                    fprintf(c.out, ", style=bold, color=red");
+                fprintf(c.out, "];\n");
             }
             fprintf(c.out, "}\n");
         }
