@@ -210,6 +210,7 @@ typedef struct nmo_interface_extra {
 
 typedef struct nmo_interface_data {
     uint32_t version;                       /* 0x12-0x16 */
+    bool sectioned_layout;                  /* true = Dev.exe sectioned, false = inline */
     nmo_interface_script_header_t script;   /* root behavior (entry 0) */
     size_t sub_count;                       /* total_count - 1 */
     nmo_interface_behavior_t *subs;         /* [sub_count] */
@@ -229,7 +230,8 @@ typedef struct nmo_interface_data {
 typedef struct nmo_interface_parse_ctx {
     bool (*is_building_block)(nmo_object_id_t id, void *user_data);
     void *user_data;
-    bool use_dev_interface_layout;          /* v0x0D+ Dev.exe sectioned body layout */
+    /* Layout (inline vs sectioned) is auto-detected from the identifier
+     * chain — no caller flag needed. */
 } nmo_interface_parse_ctx_t;
 
 /* ================================================================

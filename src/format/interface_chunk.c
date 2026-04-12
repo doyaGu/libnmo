@@ -18,12 +18,16 @@
  * position in the identifier chain, so reads are non-sequential.
  * ================================================================ */
 
-#define DEV_SECTION_HEADER           0x01000000u
-#define DEV_SECTION_OPERATIONS       0x02000000u
-#define DEV_SECTION_LINKS            0x03000000u
-#define DEV_SECTION_COMMENTS         0x08000000u
-#define DEV_SECTION_UNKNOWN_FLAG     0x0A000000u
-#define DEV_SECTION_SCRIPT_HEADER    0x07000000u
+/* Values from Dev.exe reverse-engineering (VirtoolsScriptDeobfuscation).
+ * InterfaceDataSectionId(layoutIndex, base) = base + layoutIndex. */
+#define DEV_SECTION_HEADER           0xB0010000u
+#define DEV_SECTION_OPERATIONS       0xB0020000u
+#define DEV_SECTION_LINKS            0xB0030000u
+#define DEV_SECTION_SCRIPT_HEADER    0xB0070000u
+#define DEV_SECTION_COMMENTS         0xB0080000u
+#define DEV_SECTION_UNKNOWN_FLAG     0xB00A0000u
+#define DEV_SECTION_SCRIPT_MARKER    0xB0000002u
+#define DEV_SECTION_GRAPH_MARKER     0xB0000000u
 
 /* ================================================================
  * Internal helpers - forward declarations
@@ -130,9 +134,6 @@ static uint32_t behavior_section_id(size_t behavior_index, uint32_t base)
     return (uint32_t)behavior_index + base;
 }
 
-/* use_dev_interface_layout removed — layout is auto-detected via
- * identifier probing.  use_sectioned is passed down explicitly. */
-
 /* ================================================================
  * Public API
  * ================================================================ */
@@ -174,21 +175,30 @@ nmo_status_t nmo_interface_chunk_parse(
                          NMO_INTERFACE_VERSION_MAX);
     }
 
-    /* Detect sectioned layout: Dev.exe writes script-type identifiers
-     * (2 = script, 3 = non-script) before the behavior count.  Standard
-     * Virtools files only have version identifiers (1 / 0xB0000001).
-     * If we find identifier 2 or 3, the file uses sectioned layout. */
+    /* Detect sectioned layout.  Dev.exe writes script-type identifiers
+     * before the behavior count.  Standard Virtools files only have
+     * version identifiers (1 / 0xB0000001).
+     *
+     * The reference Save path writes DEV_SECTION_SCRIPT_MARKER (0xB0000002)
+     * and DEV_SECTION_GRAPH_MARKER (0xB0000000), while its Load path seeks
+     * plain 2/3.  We probe both sets for maximum compatibility. */
     bool use_sectioned = false;
     bool found = false;
-    st = optional_seek_identifier(chunk, 2u, &found);
+    st = optional_seek_identifier(chunk, DEV_SECTION_SCRIPT_MARKER, &found);
     NMO_RETURN_IF_ERROR(st);
-    if (found) {
-        use_sectioned = true;
-    } else {
+    if (!found) {
+        st = optional_seek_identifier(chunk, 2u, &found);
+        NMO_RETURN_IF_ERROR(st);
+    }
+    if (!found) {
+        st = optional_seek_identifier(chunk, DEV_SECTION_GRAPH_MARKER, &found);
+        NMO_RETURN_IF_ERROR(st);
+    }
+    if (!found) {
         st = optional_seek_identifier(chunk, 3u, &found);
         NMO_RETURN_IF_ERROR(st);
-        if (found) use_sectioned = true;
     }
+    use_sectioned = found;
 
     /* Read total behavior count */
     int32_t total_count = 0;
@@ -202,13 +212,15 @@ nmo_status_t nmo_interface_chunk_parse(
     }
 
     out->version = version;
+    out->sectioned_layout = use_sectioned;
     out->sub_count = (total_count > 1) ? (size_t)(total_count - 1) : 0;
 
     /* Seek to script header section (sectioned layout only).
      * For inline layout the header follows sequentially. */
     if (use_sectioned) {
-        (void)optional_seek_identifier(chunk,
+        st = optional_seek_identifier(chunk,
             DEV_SECTION_SCRIPT_HEADER, &found);
+        NMO_RETURN_IF_ERROR(st);
     }
     st = parse_script_header(chunk, arena, version, use_sectioned,
                              &out->script);
@@ -236,8 +248,9 @@ nmo_status_t nmo_interface_chunk_parse(
         for (size_t i = 0; i < out->sub_count; i++) {
             uint32_t layout_index = (uint32_t)(i + 1);
             if (use_sectioned) {
-                (void)optional_seek_identifier(chunk,
+                st = optional_seek_identifier(chunk,
                     DEV_SECTION_HEADER + layout_index, &found);
+                NMO_RETURN_IF_ERROR(st);
             }
             st = parse_sub_behavior(chunk, arena, version, ctx,
                                     layout_index, &out->subs[i]);

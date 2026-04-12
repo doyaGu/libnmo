@@ -1126,7 +1126,7 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
     memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = is_building_block_cb;
     ctx.user_data = repo;
-    ctx.use_dev_interface_layout = false;
+    /* Layout (inline vs sectioned) is auto-detected by the parser. */
 
     nmo_status_t first_error = NMO_OK;
     for (size_t i = 0; i < count; i++) {
