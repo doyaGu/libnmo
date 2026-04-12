@@ -30,8 +30,11 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
+typedef struct nmo_interface_data nmo_interface_data_t;
+typedef struct nmo_logger nmo_logger_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
+typedef struct nmo_object_repository nmo_object_repository_t;
 
 /* =============================================================================
  * CKBehavior STATE STRUCTURES
@@ -112,8 +115,9 @@ typedef struct nmo_behavior_state {
     bool has_single_activity;              /**< Whether activity flags are present */
     
     /* Interface chunk (optional, for editing) */
-    nmo_chunk_t *interface_chunk;          /**< Interface data chunk */
+    nmo_chunk_t *interface_chunk;          /**< Raw interface chunk (cleared after post-load parse) */
     bool has_interface;                    /**< Whether interface identifier is present */
+    nmo_interface_data_t *interface_data;  /**< Parsed interface data (set in post-load) */
 } nmo_behavior_state_t;
 
 /* =============================================================================
@@ -141,6 +145,22 @@ NMO_API nmo_status_t nmo_behavior_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+/**
+ * @brief Parse all pending interface chunks in the repository
+ *
+ * Called after all objects are loaded and IDs remapped. For each CKBehavior
+ * with a raw interface_chunk, parses it into structured interface_data.
+ * Failed chunks are kept as raw interface_chunk data so callers can still
+ * preserve or inspect them.
+ *
+ * @param repo  Object repository
+ * @param logger Optional logger for parse failures
+ * @return NMO_OK if all interface chunks parsed, otherwise the first parse error
+ */
+NMO_API nmo_status_t nmo_behavior_parse_all_interfaces(
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_behavior_vtable, nmo_register_behavior_type)
 

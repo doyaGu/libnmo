@@ -22,6 +22,7 @@
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
 #include "behavior/nmo_behavior_index.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -92,6 +93,7 @@ typedef struct nmo_session {
  * Create session
  */
 static void nmo_session_build_behavior_index(nmo_session_t *session);
+static void nmo_session_post_load(nmo_session_t *session);
 nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     if (ctx == NULL) {
         return NULL;
@@ -197,7 +199,7 @@ nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
     /* Set runtime operation callbacks (app-layer implementations) */
     session->runtime_ops.load_file = nmo_load_file;
     session->runtime_ops.save_file = nmo_save_file;
-    session->runtime_ops.post_load = nmo_session_build_behavior_index;
+    session->runtime_ops.post_load = nmo_session_post_load;
 
     return session;
 }
@@ -301,6 +303,22 @@ static void nmo_session_build_behavior_index(nmo_session_t *session) {
     session->behavior_index = nmo_behavior_index_create(session->arena);
     if (session->behavior_index != NULL) {
         nmo_behavior_index_build(session->behavior_index, session->context, session);
+    }
+}
+
+static void nmo_session_post_load(nmo_session_t *session) {
+    nmo_session_build_behavior_index(session);
+    if (session && session->repository) {
+        nmo_logger_t *logger = session->context
+            ? nmo_context_get_logger(session->context)
+            : NULL;
+        nmo_status_t st = nmo_behavior_parse_all_interfaces(
+            session->repository, logger);
+        if (st != NMO_OK && logger) {
+            nmo_log(logger, NMO_LOG_WARN,
+                    "Post-load interface parsing reported errors; first status=%d",
+                    st);
+        }
     }
 }
 

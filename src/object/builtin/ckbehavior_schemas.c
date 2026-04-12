@@ -27,7 +27,10 @@
 #include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_interface_chunk.h"
+#include "format/nmo_object.h"
 #include "core/nmo_error.h"
+#include "core/nmo_logger.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
@@ -484,7 +487,11 @@ nmo_status_t nmo_behavior_deserialize(
         out_state->has_interface = true;
         nmo_chunk_t *interface_chunk = NULL;
         nmo_status_t sub_result = nmo_chunk_read_sub_chunk(chunk, &interface_chunk);
-        if (sub_result == NMO_OK) {
+        if (sub_result == NMO_OK && interface_chunk) {
+            /* Clear file_context so post-load parsing reads raw file IDs.
+             * The is_building_block callback uses find_by_file_id, which
+             * expects original CK_IDs rather than remapped runtime IDs. */
+            nmo_chunk_set_file_context(interface_chunk, NULL);
             out_state->interface_chunk = interface_chunk;
         } else {
             out_state->interface_chunk = NULL;
@@ -1083,6 +1090,107 @@ static void nmo_behavior_post_delete(
     (void)instance;
     (void)type;
     (void)context;
+}
+
+/* ============================================================================
+ * Post-load interface chunk parsing
+ * ============================================================================ */
+
+static bool is_building_block_cb(nmo_object_id_t id, void *user_data) {
+    if (id == 0) return false;
+    nmo_object_repository_t *repo = (nmo_object_repository_t *)user_data;
+    nmo_object_t *obj = nmo_object_repository_find_by_file_id(repo, id);
+    if (!obj) return false;
+    if (obj->class_id != NMO_CID_BEHAVIOR) return false;
+    const nmo_behavior_state_t *state =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!state) return false;
+    return (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+}
+
+nmo_status_t nmo_behavior_parse_all_interfaces(
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger)
+{
+    if (!repo) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t count = 0;
+    nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
+    if (!all || count == 0) {
+        return NMO_OK;
+    }
+
+    nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.is_building_block = is_building_block_cb;
+    ctx.user_data = repo;
+    ctx.use_dev_interface_layout = true;
+
+    nmo_status_t first_error = NMO_OK;
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_t *obj = all[i];
+        if (!obj || obj->class_id != NMO_CID_BEHAVIOR) continue;
+
+        nmo_behavior_state_t *state =
+            (nmo_behavior_state_t *)nmo_object_get_state(obj);
+        if (!state || !state->interface_chunk) continue;
+        if ((state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0) {
+            continue;
+        }
+
+        /* Skip chunks with no data -- nothing to parse */
+        if (state->interface_chunk->data.count == 0) continue;
+
+        nmo_arena_t *arena = nmo_object_get_storage_arena(obj);
+        if (!arena) {
+            if (first_error == NMO_OK) {
+                first_error = NMO_ERR_INVALID_ARGUMENT;
+            }
+            if (logger) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Behavior interface parse skipped: object id=%u file_id=%u name='%s' has no storage arena",
+                        obj->id, obj->file_id, obj->name ? obj->name : "");
+            }
+            continue;
+        }
+
+        nmo_interface_data_t *idata = (nmo_interface_data_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_interface_data_t), _Alignof(nmo_interface_data_t));
+        if (!idata) {
+            if (first_error == NMO_OK) {
+                first_error = NMO_ERR_NOMEM;
+            }
+            if (logger) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Behavior interface parse skipped: object id=%u file_id=%u name='%s' allocation failed",
+                        obj->id, obj->file_id, obj->name ? obj->name : "");
+            }
+            continue;
+        }
+
+        nmo_status_t st = nmo_interface_chunk_parse(
+            state->interface_chunk, arena, &ctx, idata);
+
+        if (st == NMO_OK) {
+            state->interface_data = idata;
+            state->interface_chunk = NULL;  /* raw blob no longer needed */
+        } else {
+            state->interface_data = NULL;
+            if (first_error == NMO_OK) {
+                first_error = st;
+            }
+            if (logger) {
+                nmo_log(logger, NMO_LOG_WARN,
+                        "Behavior interface parse failed: object id=%u file_id=%u name='%s' status=%d: %s",
+                        obj->id, obj->file_id, obj->name ? obj->name : "", st,
+                        nmo_last_error_message());
+            }
+        }
+    }
+
+    return first_error;
 }
 
 /* ============================================================================
