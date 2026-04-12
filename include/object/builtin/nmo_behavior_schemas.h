@@ -115,9 +115,9 @@ typedef struct nmo_behavior_state {
     bool has_single_activity;              /**< Whether activity flags are present */
     
     /* Interface chunk (optional, for editing) */
-    nmo_chunk_t *interface_chunk;          /**< Raw interface chunk retained for byte-level save round-trip */
+    nmo_chunk_t *interface_chunk;          /**< Original InterfaceChunk oracle retained for diagnostics */
     bool has_interface;                    /**< Whether interface identifier is present */
-    nmo_interface_data_t *interface_data;  /**< Parsed interface data (set in post-load) */
+    nmo_interface_data_t *interface_data;  /**< Structured InterfaceChunk data used for save after successful parse */
 } nmo_behavior_state_t;
 
 /* =============================================================================

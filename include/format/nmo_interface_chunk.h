@@ -13,6 +13,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "format/nmo_image.h"
 
 #include <stdbool.h>
 
@@ -144,8 +145,18 @@ typedef struct nmo_interface_body {
     size_t comment_count;
 
     nmo_interface_param_set_t params;       /* empty for building blocks */
+    bool has_params;                        /* false for BBs in inline mode */
 
     nmo_interface_graph_io_t *graph_io;     /* non-BB, non-script only */
+    bool has_graph_io;                      /* true when graph_io was present */
+
+    /* Section presence flags (sectioned layout only).
+     * Distinguish absent section from present-but-empty. */
+    bool has_links_section;
+    bool has_operations_section;
+    bool has_comments_section;
+    bool has_unknown_flag_section;
+    int32_t unknown_flag;
 } nmo_interface_body_t;
 
 /* --- Script header (root behavior, entry 0) --- */
@@ -157,8 +168,10 @@ typedef struct nmo_interface_script_header {
     float h_pos, v_pos;                     /* behavior rect position */
     float h_start_pos, v_start_pos;         /* script start position */
     float v_size;
-    void *snapshot_data;                    /* raw bitmap bytes */
-    size_t snapshot_size;
+    nmo_image_desc_t snapshot_desc;         /* decoded bitmap descriptor */
+    void *snapshot_data;                    /* decoded pixels, NULL for empty */
+    size_t snapshot_size;                   /* byte size of snapshot_data */
+    bool has_snapshot;                      /* true when snapshot_desc has image data */
     uint32_t color;                         /* v >= 0x14, else 0 */
     nmo_interface_body_t body;              /* empty if flags & 0x8000 */
 } nmo_interface_script_header_t;
@@ -255,6 +268,22 @@ NMO_API nmo_status_t nmo_interface_chunk_parse(
     nmo_arena_t *arena,
     const nmo_interface_parse_ctx_t *ctx,
     nmo_interface_data_t *out);
+
+/**
+ * @brief Serialize structured interface data into an InterfaceChunk.
+ *
+ * Writes from nmo_interface_data_t only.  This function must not copy a
+ * previously loaded raw InterfaceChunk as its implementation.
+ *
+ * @param chunk  Target chunk to write
+ * @param data   Structured InterfaceChunk data
+ * @param ctx    Context for building-block decisions in inline layouts
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_status_t nmo_interface_chunk_write(
+    nmo_chunk_t *chunk,
+    const nmo_interface_data_t *data,
+    const nmo_interface_parse_ctx_t *ctx);
 
 #ifdef __cplusplus
 }

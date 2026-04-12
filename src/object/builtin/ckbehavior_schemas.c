@@ -648,7 +648,20 @@ nmo_status_t nmo_behavior_serialize(
         result = nmo_chunk_write_identifier(out_chunk, interface_id);
         if (result != NMO_OK) return result;
 
-        if (in_state->interface_chunk) {
+        if (in_state->interface_data) {
+            nmo_chunk_t *interface_out = nmo_chunk_create(out_chunk->arena);
+            if (!interface_out) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Cannot allocate InterfaceChunk output");
+            }
+            result = nmo_interface_chunk_write(interface_out,
+                                               in_state->interface_data,
+                                               NULL);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_sub_chunk(out_chunk, interface_out);
+            if (result != NMO_OK) return result;
+        } else if (in_state->interface_chunk) {
+            /* Building blocks skip interface parsing -- fall back to raw chunk */
             result = nmo_chunk_write_sub_chunk(out_chunk, in_state->interface_chunk);
             if (result != NMO_OK) return result;
         } else {

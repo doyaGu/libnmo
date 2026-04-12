@@ -327,12 +327,16 @@ static nmo_status_t parse_script_header(
     st = nmo_chunk_read_bitmap_legacy(chunk, &bitmap_desc, &bitmap_pixels);
     NMO_RETURN_IF_ERROR(st);
 
+    out->snapshot_desc = bitmap_desc;
     if (bitmap_pixels && bitmap_desc.width > 0 && bitmap_desc.height > 0) {
         out->snapshot_data = bitmap_pixels;
-        out->snapshot_size = (size_t)bitmap_desc.width * (size_t)bitmap_desc.height * 4;
+        out->snapshot_size = (size_t)bitmap_desc.width * (size_t)bitmap_desc.height * 4u;
+        out->has_snapshot = true;
     } else {
+        memset(&out->snapshot_desc, 0, sizeof(out->snapshot_desc));
         out->snapshot_data = NULL;
         out->snapshot_size = 0;
+        out->has_snapshot = false;
     }
 
     if (version >= 0x14 && !use_sectioned) {
@@ -460,10 +464,17 @@ static nmo_status_t parse_body(
          * (0x04/0x05/0x06/0x09) that we don't parse yet. */
         bool found = false;
 
+        out->has_links_section = false;
+        out->has_operations_section = false;
+        out->has_comments_section = false;
+        out->has_unknown_flag_section = false;
+        out->unknown_flag = 0;
+
         st = optional_seek_identifier(chunk,
             behavior_section_id(behavior_index, DEV_SECTION_LINKS), &found);
         NMO_RETURN_IF_ERROR(st);
         if (found) {
+            out->has_links_section = true;
             st = parse_links(chunk, arena, out, true);
             NMO_RETURN_IF_ERROR(st);
         }
@@ -472,6 +483,7 @@ static nmo_status_t parse_body(
             behavior_section_id(behavior_index, DEV_SECTION_OPERATIONS), &found);
         NMO_RETURN_IF_ERROR(st);
         if (found) {
+            out->has_operations_section = true;
             st = parse_operations(chunk, arena, out);
             NMO_RETURN_IF_ERROR(st);
         }
@@ -480,6 +492,7 @@ static nmo_status_t parse_body(
             behavior_section_id(behavior_index, DEV_SECTION_COMMENTS), &found);
         NMO_RETURN_IF_ERROR(st);
         if (found) {
+            out->has_comments_section = true;
             st = parse_comments(chunk, arena, version, out);
             NMO_RETURN_IF_ERROR(st);
         }
@@ -492,8 +505,8 @@ static nmo_status_t parse_body(
             &found);
         NMO_RETURN_IF_ERROR(st);
         if (found) {
-            int32_t ignored = 0;
-            st = nmo_chunk_read_int(chunk, &ignored);
+            out->has_unknown_flag_section = true;
+            st = nmo_chunk_read_int(chunk, &out->unknown_flag);
             NMO_RETURN_IF_ERROR(st);
         }
 
@@ -502,6 +515,12 @@ static nmo_status_t parse_body(
 
     /* ---- Inline layout (standard Virtools files) ----
      * Body sections are sequential: links, ops, comments, params, graph IO. */
+
+    out->has_links_section = true;
+    out->has_operations_section = true;
+    out->has_comments_section = true;
+    out->has_unknown_flag_section = false;
+    out->unknown_flag = 0;
 
     st = parse_links(chunk, arena, out, false);
     NMO_RETURN_IF_ERROR(st);
@@ -518,13 +537,16 @@ static nmo_status_t parse_body(
     }
 
     if (!is_building_block) {
+        out->has_params = true;
         st = parse_parameters(chunk, arena, version, &out->params);
         NMO_RETURN_IF_ERROR(st);
     } else {
+        out->has_params = false;
         memset(&out->params, 0, sizeof(out->params));
     }
 
     out->graph_io = NULL;
+    out->has_graph_io = false;
     if (!is_script) {
         bool need_graph_io = false;
         if (version == NMO_INTERFACE_VERSION_MIN) {
@@ -544,6 +566,7 @@ static nmo_status_t parse_body(
             st = parse_graph_io(chunk, arena, gio);
             NMO_RETURN_IF_ERROR(st);
             out->graph_io = gio;
+            out->has_graph_io = true;
         }
     }
 
@@ -1180,5 +1203,547 @@ static nmo_status_t parse_extra_data(
         }
     }
 
+    return NMO_OK;
+}
+
+/* ================================================================
+ * Writer helpers
+ * ================================================================ */
+
+static nmo_status_t write_empty_legacy_bitmap(nmo_chunk_t *chunk)
+{
+    nmo_status_t st;
+    st = nmo_chunk_write_int(chunk, 0);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_int(chunk, 0);
+    NMO_RETURN_IF_ERROR(st);
+    return NMO_OK;
+}
+
+static nmo_status_t write_endpoint_data(nmo_chunk_t *chunk,
+                                        const nmo_interface_endpoint_t *ep)
+{
+    nmo_status_t st;
+    st = nmo_chunk_write_object_id(chunk, ep->id);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_int(chunk, ep->index);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, ep->type);
+    NMO_RETURN_IF_ERROR(st);
+    return NMO_OK;
+}
+
+static nmo_status_t write_links(nmo_chunk_t *chunk,
+                                const nmo_interface_body_t *body,
+                                bool split_type_and_highlight)
+{
+    nmo_status_t st;
+    st = nmo_chunk_write_int(chunk, (int32_t)body->link_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    for (size_t i = 0; i < body->link_count; i++) {
+        const nmo_interface_link_t *link = &body->links[i];
+
+        if (split_type_and_highlight) {
+            st = nmo_chunk_write_int(chunk, link->highlight ? 1 : 0);
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_int(chunk, (int32_t)link->type);
+            NMO_RETURN_IF_ERROR(st);
+        } else {
+            uint32_t raw_type = link->type;
+            if (link->highlight) {
+                raw_type |= NMO_INTERFACE_LINK_HIGHLIGHT_FLAG;
+            }
+            st = nmo_chunk_write_dword(chunk, raw_type);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = nmo_chunk_write_object_id(chunk, link->link_id);
+        NMO_RETURN_IF_ERROR(st);
+
+        st = write_endpoint_data(chunk, &link->start);
+        NMO_RETURN_IF_ERROR(st);
+
+        st = nmo_chunk_write_int(chunk, (int32_t)link->point_count);
+        NMO_RETURN_IF_ERROR(st);
+
+        for (size_t j = 0; j < link->point_count; j++) {
+            st = nmo_chunk_write_float(chunk, link->points[j * 2]);
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_float(chunk, link->points[j * 2 + 1]);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = write_endpoint_data(chunk, &link->end);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    return NMO_OK;
+}
+
+static nmo_status_t write_operations(nmo_chunk_t *chunk,
+                                     const nmo_interface_body_t *body)
+{
+    nmo_status_t st;
+    st = nmo_chunk_write_int(chunk, (int32_t)body->operation_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    for (size_t i = 0; i < body->operation_count; i++) {
+        st = nmo_chunk_write_object_id(chunk, body->operations[i].id);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, body->operations[i].h_pos);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, body->operations[i].v_pos);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    return NMO_OK;
+}
+
+static nmo_status_t write_comments(nmo_chunk_t *chunk,
+                                   uint32_t version,
+                                   const nmo_interface_body_t *body)
+{
+    nmo_status_t st;
+    st = nmo_chunk_write_int(chunk, (int32_t)body->comment_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    for (size_t i = 0; i < body->comment_count; i++) {
+        const nmo_interface_comment_t *c = &body->comments[i];
+        st = nmo_chunk_write_float(chunk, c->left);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, c->top);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, c->right);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, c->bottom);
+        NMO_RETURN_IF_ERROR(st);
+
+        st = nmo_chunk_write_string(chunk, c->text);
+        NMO_RETURN_IF_ERROR(st);
+
+        if (version >= 0x16) {
+            st = nmo_chunk_write_dword(chunk, c->style_flags);
+            NMO_RETURN_IF_ERROR(st);
+        }
+    }
+
+    return NMO_OK;
+}
+
+static nmo_status_t write_parameters(nmo_chunk_t *chunk,
+                                     uint32_t version,
+                                     const nmo_interface_param_set_t *params)
+{
+    nmo_status_t st;
+
+    /* Local parameters */
+    st = nmo_chunk_write_int(chunk, (int32_t)params->local_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    for (size_t i = 0; i < params->local_count; i++) {
+        st = nmo_chunk_write_int(chunk, params->locals[i].h_pos);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_int(chunk, params->locals[i].v_pos);
+        NMO_RETURN_IF_ERROR(st);
+    }
+    for (size_t i = 0; i < params->local_count; i++) {
+        st = nmo_chunk_write_int(chunk, (int32_t)params->locals[i].style);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    /* Shared parameters */
+    st = nmo_chunk_write_int(chunk, (int32_t)params->shared_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    for (size_t i = 0; i < params->shared_count; i++) {
+        st = nmo_chunk_write_int(chunk, params->shared[i].h_pos);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_int(chunk, params->shared[i].v_pos);
+        NMO_RETURN_IF_ERROR(st);
+    }
+    for (size_t i = 0; i < params->shared_count; i++) {
+        st = nmo_chunk_write_int(chunk, (int32_t)params->shared[i].style);
+        NMO_RETURN_IF_ERROR(st);
+    }
+    for (size_t i = 0; i < params->shared_count; i++) {
+        if (version >= 0x15) {
+            st = nmo_chunk_write_object_id(chunk, params->shared[i].source_id);
+            NMO_RETURN_IF_ERROR(st);
+        } else {
+            /* Legacy 3-field format: ignored_id, source_id, ignored_int */
+            st = nmo_chunk_write_object_id(chunk, 0);
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_object_id(chunk, params->shared[i].source_id);
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_int(chunk, 0);
+            NMO_RETURN_IF_ERROR(st);
+        }
+    }
+
+    return NMO_OK;
+}
+
+static nmo_status_t write_graph_io(nmo_chunk_t *chunk,
+                                   const nmo_interface_graph_io_t *gio)
+{
+    nmo_status_t st;
+
+    /* 4 arrays, each: count + (value, marker) pairs.
+     * Markers: -1 for inputs, +1 for outputs. */
+    struct {
+        const int32_t *data;
+        size_t count;
+        int32_t marker;
+    } arrays[4] = {
+        { gio->inward_inputs,   gio->inward_input_count,   -1 },
+        { gio->outward_inputs,  gio->outward_input_count,  -1 },
+        { gio->inward_outputs,  gio->inward_output_count,   1 },
+        { gio->outward_outputs, gio->outward_output_count,  1 },
+    };
+
+    for (int a = 0; a < 4; a++) {
+        st = nmo_chunk_write_int(chunk, (int32_t)arrays[a].count);
+        NMO_RETURN_IF_ERROR(st);
+        for (size_t i = 0; i < arrays[a].count; i++) {
+            st = nmo_chunk_write_int(chunk, arrays[a].data[i]);
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_int(chunk, arrays[a].marker);
+            NMO_RETURN_IF_ERROR(st);
+        }
+    }
+
+    return NMO_OK;
+}
+
+/* ================================================================
+ * Script header writer
+ * ================================================================ */
+
+static nmo_status_t write_script_header(
+    nmo_chunk_t *chunk,
+    const nmo_interface_data_t *data)
+{
+    nmo_status_t st;
+    const nmo_interface_script_header_t *hdr = &data->script;
+
+    st = nmo_chunk_write_object_id(chunk, hdr->behavior_id);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, hdr->flags);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, hdr->script_index);
+    NMO_RETURN_IF_ERROR(st);
+
+    st = nmo_chunk_write_float(chunk, hdr->h_pos);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, hdr->v_pos);
+    NMO_RETURN_IF_ERROR(st);
+
+    st = nmo_chunk_write_float(chunk, hdr->h_start_pos);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, hdr->v_start_pos);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, hdr->v_size);
+    NMO_RETURN_IF_ERROR(st);
+
+    /* Bitmap (snapshot) */
+    if (hdr->has_snapshot && hdr->snapshot_data) {
+        st = nmo_chunk_write_bitmap_legacy(chunk, &hdr->snapshot_desc, NULL);
+        NMO_RETURN_IF_ERROR(st);
+    } else {
+        st = write_empty_legacy_bitmap(chunk);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    /* Color (inline layout, v >= 0x14 only) */
+    if (data->version >= 0x14 && !data->sectioned_layout) {
+        st = nmo_chunk_write_dword(chunk, hdr->color);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    return NMO_OK;
+}
+
+/* ================================================================
+ * Sub-behavior header writer
+ * ================================================================ */
+
+static nmo_status_t write_sub_header(
+    nmo_chunk_t *chunk,
+    const nmo_interface_behavior_t *sub)
+{
+    nmo_status_t st;
+
+    st = nmo_chunk_write_object_id(chunk, sub->behavior_id);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, sub->flags);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, sub->depth);
+    NMO_RETURN_IF_ERROR(st);
+
+    st = nmo_chunk_write_float(chunk, sub->h_pos);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, sub->v_pos);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, sub->h_size);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, sub->v_size);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, sub->h_expand_size);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_float(chunk, sub->v_expand_size);
+    NMO_RETURN_IF_ERROR(st);
+
+    return NMO_OK;
+}
+
+/* ================================================================
+ * Body writer
+ * ================================================================ */
+
+static nmo_status_t write_body(
+    nmo_chunk_t *chunk,
+    const nmo_interface_data_t *data,
+    const nmo_interface_parse_ctx_t *ctx,
+    const nmo_interface_body_t *body,
+    nmo_object_id_t behavior_id,
+    size_t behavior_index,
+    bool is_script)
+{
+    nmo_status_t st;
+    uint32_t version = data->version;
+
+    if (data->sectioned_layout) {
+        /* ---- Sectioned layout (Dev.exe files) ---- */
+        if (body->has_links_section) {
+            st = nmo_chunk_write_identifier(chunk,
+                behavior_section_id(behavior_index, DEV_SECTION_LINKS));
+            NMO_RETURN_IF_ERROR(st);
+            st = write_links(chunk, body, true);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        if (body->has_operations_section) {
+            st = nmo_chunk_write_identifier(chunk,
+                behavior_section_id(behavior_index, DEV_SECTION_OPERATIONS));
+            NMO_RETURN_IF_ERROR(st);
+            st = write_operations(chunk, body);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        if (body->has_comments_section) {
+            st = nmo_chunk_write_identifier(chunk,
+                behavior_section_id(behavior_index, DEV_SECTION_COMMENTS));
+            NMO_RETURN_IF_ERROR(st);
+            st = write_comments(chunk, version, body);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        if (body->has_unknown_flag_section) {
+            st = nmo_chunk_write_identifier(chunk,
+                behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG));
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_int(chunk, body->unknown_flag);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        return NMO_OK;
+    }
+
+    /* ---- Inline layout ---- */
+    st = write_links(chunk, body, false);
+    NMO_RETURN_IF_ERROR(st);
+
+    st = write_operations(chunk, body);
+    NMO_RETURN_IF_ERROR(st);
+
+    st = write_comments(chunk, version, body);
+    NMO_RETURN_IF_ERROR(st);
+
+    (void)ctx; (void)behavior_id; (void)is_script;
+
+    if (body->has_params) {
+        st = write_parameters(chunk, version, &body->params);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    if (body->has_graph_io && body->graph_io) {
+        st = write_graph_io(chunk, body->graph_io);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    return NMO_OK;
+}
+
+/* ================================================================
+ * Extra data writer
+ * ================================================================ */
+
+static nmo_status_t write_extra_data(nmo_chunk_t *chunk,
+                                     const nmo_interface_extra_t *extra)
+{
+    nmo_status_t st;
+
+    if (!extra->present) {
+        return NMO_OK;
+    }
+
+    /* Write identifier */
+    uint32_t id;
+    switch (extra->version) {
+    case 3: id = NMO_INTERFACE_EXTRA_ID_V3; break;
+    case 2: id = NMO_INTERFACE_EXTRA_ID_V2; break;
+    default: id = NMO_INTERFACE_EXTRA_ID_V1; break;
+    }
+
+    /* Write as raw DWORDs (identifier value + next-pointer=0) to avoid
+     * corrupting the identifier chain that write_identifier back-patches. */
+    st = nmo_chunk_write_dword(chunk, id);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, 0);
+    NMO_RETURN_IF_ERROR(st);
+
+    /* Entry count */
+    st = nmo_chunk_write_int(chunk, (int32_t)extra->entry_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    for (size_t i = 0; i < extra->entry_count; i++) {
+        const nmo_interface_extra_entry_t *entry = &extra->entries[i];
+
+        st = nmo_chunk_write_dword(chunk, entry->type);
+        NMO_RETURN_IF_ERROR(st);
+
+        switch (entry->type) {
+        case 1: /* fall through */
+        case 2:
+            st = nmo_chunk_write_object_id(chunk, entry->id1);
+            NMO_RETURN_IF_ERROR(st);
+            break;
+        case 3:
+            st = nmo_chunk_write_object_id(chunk, entry->id1);
+            NMO_RETURN_IF_ERROR(st);
+            st = nmo_chunk_write_object_id(chunk, entry->id2);
+            NMO_RETURN_IF_ERROR(st);
+            break;
+        case 4:
+            st = nmo_chunk_write_int(chunk, entry->value);
+            NMO_RETURN_IF_ERROR(st);
+            break;
+        default:
+            break;
+        }
+
+        /* Sub-entries for version >= 2 */
+        if (extra->version >= 2) {
+            st = nmo_chunk_write_int(chunk, (int32_t)entry->sub_count);
+            NMO_RETURN_IF_ERROR(st);
+
+            for (size_t j = 0; j < entry->sub_count; j++) {
+                const nmo_interface_extra_sub_t *sub = &entry->sub_entries[j];
+
+                /* Reverse v2 adjustment: value1 >= 6 -> value1 - 2 */
+                int32_t write_value1 = sub->value1;
+                if (extra->version == 2 && write_value1 >= 6) {
+                    write_value1 -= 2;
+                }
+
+                st = nmo_chunk_write_int(chunk, write_value1);
+                NMO_RETURN_IF_ERROR(st);
+                st = nmo_chunk_write_int(chunk, sub->value2);
+                NMO_RETURN_IF_ERROR(st);
+                st = nmo_chunk_write_object_id(chunk, sub->id1);
+                NMO_RETURN_IF_ERROR(st);
+
+                if (extra_sub_has_id2(sub->value1)) {
+                    st = nmo_chunk_write_object_id(chunk, sub->id2);
+                    NMO_RETURN_IF_ERROR(st);
+                } else {
+                    st = nmo_chunk_write_buffer(chunk,
+                        sub->data, sub->data_size);
+                    NMO_RETURN_IF_ERROR(st);
+                }
+            }
+        }
+    }
+
+    return NMO_OK;
+}
+
+/* ================================================================
+ * Public writer
+ * ================================================================ */
+
+nmo_status_t nmo_interface_chunk_write(
+    nmo_chunk_t *chunk,
+    const nmo_interface_data_t *data,
+    const nmo_interface_parse_ctx_t *ctx)
+{
+    if (!chunk || !data) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "interface_chunk_write: NULL argument");
+    }
+
+    nmo_status_t st = nmo_chunk_start_write(chunk);
+    NMO_RETURN_IF_ERROR(st);
+
+    /* Version identifier */
+    st = nmo_chunk_write_identifier(chunk, 1u);
+    NMO_RETURN_IF_ERROR(st);
+    st = nmo_chunk_write_dword(chunk, data->version);
+    NMO_RETURN_IF_ERROR(st);
+
+    /* Script marker for sectioned layout */
+    if (data->sectioned_layout) {
+        st = nmo_chunk_write_identifier(chunk, DEV_SECTION_SCRIPT_MARKER);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    /* Total behavior count */
+    int32_t total_count = (int32_t)(1 + data->sub_count);
+    st = nmo_chunk_write_int(chunk, total_count);
+    NMO_RETURN_IF_ERROR(st);
+
+    /* Script header section identifier (sectioned only) */
+    if (data->sectioned_layout) {
+        st = nmo_chunk_write_identifier(chunk, DEV_SECTION_SCRIPT_HEADER);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    /* Script header */
+    st = write_script_header(chunk, data);
+    NMO_RETURN_IF_ERROR(st);
+
+    /* Script body */
+    if (data->script.body.has_body) {
+        st = write_body(chunk, data, ctx, &data->script.body,
+                        data->script.behavior_id, 0, true);
+        NMO_RETURN_IF_ERROR(st);
+    }
+
+    /* Sub-behaviors */
+    for (size_t i = 0; i < data->sub_count; i++) {
+        uint32_t layout_index = (uint32_t)(i + 1);
+
+        if (data->sectioned_layout) {
+            st = nmo_chunk_write_identifier(chunk,
+                DEV_SECTION_HEADER + layout_index);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = write_sub_header(chunk, &data->subs[i]);
+        NMO_RETURN_IF_ERROR(st);
+
+        if (data->subs[i].body.has_body) {
+            st = write_body(chunk, data, ctx, &data->subs[i].body,
+                            data->subs[i].behavior_id, layout_index, false);
+            NMO_RETURN_IF_ERROR(st);
+        }
+    }
+
+    /* Extra data */
+    st = write_extra_data(chunk, &data->extra);
+    NMO_RETURN_IF_ERROR(st);
+
+    nmo_chunk_close(chunk);
     return NMO_OK;
 }

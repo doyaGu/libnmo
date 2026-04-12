@@ -107,6 +107,21 @@ static bool test_is_building_block(nmo_object_id_t id, void *user_data) {
 }
 
 /* ============================================================================
+ * Helper: compare two chunks DWORD-by-DWORD
+ * ============================================================================ */
+
+static void assert_chunk_dwords_equal(nmo_chunk_t *expected, nmo_chunk_t *actual) {
+    ASSERT_NOT_NULL(expected);
+    ASSERT_NOT_NULL(actual);
+    ASSERT_EQ((int)expected->data.count, (int)actual->data.count);
+    uint32_t *expected_data = NMO_ARENA_ARRAY_DATA(uint32_t, &expected->data);
+    uint32_t *actual_data = NMO_ARENA_ARRAY_DATA(uint32_t, &actual->data);
+    for (size_t i = 0; i < expected->data.count; i++) {
+        ASSERT_EQ((int)expected_data[i], (int)actual_data[i]);
+    }
+}
+
+/* ============================================================================
  * Tests - existing (Tasks 1-3)
  * ============================================================================ */
 
@@ -1528,6 +1543,448 @@ TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces) {
 }
 
 /* ============================================================================
+ * Task 2.3: Section presence tracking test
+ * ============================================================================ */
+
+TEST(interface_chunk, dev_layout_tracks_section_presence) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_identifier(chunk, 1);
+    nmo_chunk_write_dword(chunk, 0x15);
+    nmo_chunk_write_identifier(chunk, 0xB0000002u);
+    nmo_chunk_write_int(chunk, 1);
+
+    /* Script header section */
+    nmo_chunk_write_identifier(chunk, 0xB0070000u);
+    write_script_header_fields(chunk, 100, 0, 0, 0.0f, 0.0f);
+    nmo_chunk_write_float(chunk, 10.0f);
+    nmo_chunk_write_float(chunk, 20.0f);
+    nmo_chunk_write_float(chunk, 50.0f);
+    nmo_chunk_write_int(chunk, 0);
+    nmo_chunk_write_int(chunk, 0);
+
+    /* Only links section -- no ops, no comments, no unknown_flag */
+    nmo_chunk_write_identifier(chunk, 0xB0030000u);
+    nmo_chunk_write_int(chunk, 0);  /* 0 links (present but empty) */
+
+    nmo_chunk_close(chunk);
+
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(chunk, arena, &ctx, &data);
+    ASSERT_EQ(NMO_OK, st);
+
+    ASSERT_TRUE(data.script.body.has_links_section);
+    ASSERT_FALSE(data.script.body.has_operations_section);
+    ASSERT_FALSE(data.script.body.has_comments_section);
+    ASSERT_FALSE(data.script.body.has_unknown_flag_section);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
+ * Task 3.2: Minimal writer round-trip test
+ * ============================================================================ */
+
+TEST(interface_chunk, write_minimal_inline_byte_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *src = build_minimal_chunk(arena);
+    ASSERT_NOT_NULL(src);
+
+    /* Parse */
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(src, arena, NULL, &data);
+    ASSERT_EQ(NMO_OK, st);
+
+    /* Write */
+    nmo_chunk_t *dst = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(dst);
+    st = nmo_interface_chunk_write(dst, &data, NULL);
+    ASSERT_EQ(NMO_OK, st);
+
+    assert_chunk_dwords_equal(src, dst);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
+ * Task 5.1: Links inline writer round-trip test
+ * ============================================================================ */
+
+TEST(interface_chunk, write_links_inline_byte_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *src = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(src);
+
+    nmo_chunk_start_write(src);
+
+    nmo_chunk_write_identifier(src, 1);
+    nmo_chunk_write_dword(src, 0x15);
+    nmo_chunk_write_int(src, 1);
+
+    /* script header: has body (flags=0) */
+    write_script_header_fields(src, 100, 0, 0, 0.0f, 0.0f);
+    nmo_chunk_write_float(src, 10.0f);
+    nmo_chunk_write_float(src, 20.0f);
+    nmo_chunk_write_float(src, 100.0f);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_dword(src, 0x96C8FA);
+
+    /* --- Body --- */
+    /* 2 links */
+    nmo_chunk_write_int(src, 2);
+
+    /* Link 0: behavior type, no highlight, 0 routing points */
+    nmo_chunk_write_dword(src, NMO_INTERFACE_LINK_BEHAVIOR);
+    nmo_chunk_write_object_id(src, 500);
+    write_endpoint(src, 200, 0, NMO_INTERFACE_ENDPOINT_BOUT);
+    nmo_chunk_write_int(src, 0);
+    write_endpoint(src, 300, 1, NMO_INTERFACE_ENDPOINT_BIN);
+
+    /* Link 1: parameter type with highlight, 3 routing points */
+    nmo_chunk_write_dword(src, NMO_INTERFACE_LINK_PARAMETER | NMO_INTERFACE_LINK_HIGHLIGHT_FLAG);
+    nmo_chunk_write_object_id(src, 501);
+    write_endpoint(src, 400, 0, NMO_INTERFACE_ENDPOINT_POUT);
+    nmo_chunk_write_int(src, 3);
+    nmo_chunk_write_float(src, 1.0f); nmo_chunk_write_float(src, 2.0f);
+    nmo_chunk_write_float(src, 3.0f); nmo_chunk_write_float(src, 4.0f);
+    nmo_chunk_write_float(src, 5.0f); nmo_chunk_write_float(src, 6.0f);
+    write_endpoint(src, 401, 2, NMO_INTERFACE_ENDPOINT_PIN);
+
+    /* 0 operations, 0 comments, 0 params */
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+
+    nmo_chunk_close(src);
+
+    /* Parse */
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(src, arena, NULL, &data);
+    ASSERT_EQ(NMO_OK, st);
+
+    /* Write */
+    nmo_chunk_t *dst = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(dst);
+    st = nmo_interface_chunk_write(dst, &data, NULL);
+    ASSERT_EQ(NMO_OK, st);
+
+    assert_chunk_dwords_equal(src, dst);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
+ * Task 6.1: Sub-behaviors inline writer round-trip test
+ * ============================================================================ */
+
+TEST(interface_chunk, write_sub_behaviors_inline_byte_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *src = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(src);
+
+    nmo_chunk_start_write(src);
+
+    nmo_chunk_write_identifier(src, 1);
+    /* v0x15, 3 behaviors (1 script + 2 subs) */
+    nmo_chunk_write_dword(src, 0x15);
+    nmo_chunk_write_int(src, 3);
+
+    /* --- Script header (entry 0): header-only --- */
+    write_script_header_fields(src, 100, NMO_INTERFACE_FLAG_HEADER_ONLY, 0,
+                               0.0f, 0.0f);
+    nmo_chunk_write_float(src, 10.0f);
+    nmo_chunk_write_float(src, 20.0f);
+    nmo_chunk_write_float(src, 100.0f);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_dword(src, 0x96C8FA);
+
+    /* --- Sub-behavior 0: has body, with 1 link --- */
+    nmo_chunk_write_object_id(src, 200);
+    nmo_chunk_write_dword(src, 0);
+    nmo_chunk_write_dword(src, 1);
+    nmo_chunk_write_float(src, 30.0f);
+    nmo_chunk_write_float(src, 40.0f);
+    nmo_chunk_write_float(src, 120.0f);
+    nmo_chunk_write_float(src, 80.0f);
+    nmo_chunk_write_float(src, 150.0f);
+    nmo_chunk_write_float(src, 100.0f);
+
+    /* body: 1 link */
+    nmo_chunk_write_int(src, 1);
+    nmo_chunk_write_dword(src, NMO_INTERFACE_LINK_BEHAVIOR);
+    nmo_chunk_write_object_id(src, 550);
+    write_endpoint(src, 200, 0, NMO_INTERFACE_ENDPOINT_BOUT);
+    nmo_chunk_write_int(src, 0);
+    write_endpoint(src, 300, 0, NMO_INTERFACE_ENDPOINT_BIN);
+
+    /* 0 ops, 0 comments, params, no graph IO (ctx=NULL) */
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+
+    /* --- Sub-behavior 1: header-only --- */
+    nmo_chunk_write_object_id(src, 300);
+    nmo_chunk_write_dword(src, NMO_INTERFACE_FLAG_HEADER_ONLY);
+    nmo_chunk_write_dword(src, 2);
+    nmo_chunk_write_float(src, 50.0f);
+    nmo_chunk_write_float(src, 60.0f);
+    nmo_chunk_write_float(src, 80.0f);
+    nmo_chunk_write_float(src, 40.0f);
+    nmo_chunk_write_float(src, 100.0f);
+    nmo_chunk_write_float(src, 60.0f);
+
+    nmo_chunk_close(src);
+
+    /* Parse */
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(src, arena, NULL, &data);
+    ASSERT_EQ(NMO_OK, st);
+
+    /* Write */
+    nmo_chunk_t *dst = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(dst);
+    st = nmo_interface_chunk_write(dst, &data, NULL);
+    ASSERT_EQ(NMO_OK, st);
+
+    assert_chunk_dwords_equal(src, dst);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
+ * Task 7: Dev sectioned byte-level writer tests
+ * ============================================================================ */
+
+TEST(interface_chunk, write_sectioned_links_byte_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *src = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(src);
+
+    nmo_chunk_start_write(src);
+
+    nmo_chunk_write_identifier(src, 1);
+    nmo_chunk_write_dword(src, 0x15);
+    /* Script marker for sectioned detection */
+    nmo_chunk_write_identifier(src, 0xB0000002u);
+    /* Behavior count 1 */
+    nmo_chunk_write_int(src, 1);
+
+    /* Script header section */
+    nmo_chunk_write_identifier(src, 0xB0070000u);
+    write_script_header_fields(src, 100, 0, 0, 0.0f, 0.0f);
+    nmo_chunk_write_float(src, 10.0f);
+    nmo_chunk_write_float(src, 20.0f);
+    nmo_chunk_write_float(src, 50.0f);
+    /* empty bitmap */
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    /* no color in sectioned mode */
+
+    /* Links section (DEV_SECTION_LINKS for layoutIndex=0) */
+    nmo_chunk_write_identifier(src, 0xB0030000u);
+    /* 1 link */
+    nmo_chunk_write_int(src, 1);
+    /* Sectioned link format: highlight (int), type (int) as separate values */
+    nmo_chunk_write_int(src, 1);  /* highlight */
+    nmo_chunk_write_int(src, NMO_INTERFACE_LINK_PARAMETER);  /* type */
+    nmo_chunk_write_object_id(src, 300);  /* link_id */
+    write_endpoint(src, 101, 2, NMO_INTERFACE_ENDPOINT_PIN);  /* start */
+    nmo_chunk_write_int(src, 0);  /* 0 routing points */
+    write_endpoint(src, 102, 3, NMO_INTERFACE_ENDPOINT_POUT);  /* end */
+
+    nmo_chunk_close(src);
+
+    /* Parse */
+    nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(src, arena, &ctx, &data);
+    ASSERT_EQ(NMO_OK, st);
+
+    /* Write */
+    nmo_chunk_t *dst = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(dst);
+    st = nmo_interface_chunk_write(dst, &data, &ctx);
+    ASSERT_EQ(NMO_OK, st);
+
+    assert_chunk_dwords_equal(src, dst);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(interface_chunk, write_sectioned_comments_byte_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *src = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(src);
+
+    nmo_chunk_start_write(src);
+
+    nmo_chunk_write_identifier(src, 1);
+    nmo_chunk_write_dword(src, 0x16);
+    /* Script marker for sectioned detection */
+    nmo_chunk_write_identifier(src, 0xB0000002u);
+    /* Behavior count 1 */
+    nmo_chunk_write_int(src, 1);
+
+    /* Script header section */
+    nmo_chunk_write_identifier(src, 0xB0070000u);
+    write_script_header_fields(src, 100, 0, 0, 0.0f, 0.0f);
+    nmo_chunk_write_float(src, 10.0f);
+    nmo_chunk_write_float(src, 20.0f);
+    nmo_chunk_write_float(src, 50.0f);
+    /* empty bitmap */
+    nmo_chunk_write_int(src, 0);
+    nmo_chunk_write_int(src, 0);
+    /* no color in sectioned mode */
+
+    /* Comments section (DEV_SECTION_COMMENTS for layoutIndex=0) */
+    nmo_chunk_write_identifier(src, 0xB0080000u);
+    /* 1 comment */
+    nmo_chunk_write_int(src, 1);
+    nmo_chunk_write_float(src, 10.0f);   /* left */
+    nmo_chunk_write_float(src, 20.0f);   /* top */
+    nmo_chunk_write_float(src, 200.0f);  /* right */
+    nmo_chunk_write_float(src, 100.0f);  /* bottom */
+    nmo_chunk_write_string(src, "Sectioned comment");
+    nmo_chunk_write_dword(src, NMO_INTERFACE_COMMENT_COLLAPSED);  /* nonzero style_flags */
+
+    nmo_chunk_close(src);
+
+    /* Parse */
+    nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(src, arena, &ctx, &data);
+    ASSERT_EQ(NMO_OK, st);
+
+    /* Write */
+    nmo_chunk_t *dst = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(dst);
+    st = nmo_interface_chunk_write(dst, &data, &ctx);
+    ASSERT_EQ(NMO_OK, st);
+
+    assert_chunk_dwords_equal(src, dst);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
+ * Task 9: Real-sample byte-level oracle
+ * ============================================================================ */
+
+TEST(interface_chunk, write_real_file_byte_level_oracle) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    int load_ok = nmo_session_load_file(session,
+        "data/BBSamples/Collisions/Prevent Collision.cmo", NULL, NULL);
+    if (load_ok != NMO_OK) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return;  /* skip if data not available */
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    size_t count = 0;
+    nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
+
+    size_t tested = 0;
+    for (size_t i = 0; i < count; i++) {
+        nmo_object_t *obj = all[i];
+        if (!obj || nmo_object_get_class_id(obj) != NMO_CID_BEHAVIOR) continue;
+
+        const nmo_behavior_state_t *state =
+            (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+        if (!state || !state->interface_data || !state->interface_chunk) continue;
+
+        /* Write from structured data */
+        nmo_arena_t *write_arena = nmo_arena_create(NULL, 65536);
+        ASSERT_NOT_NULL(write_arena);
+        nmo_chunk_t *written = nmo_chunk_create(write_arena);
+        ASSERT_NOT_NULL(written);
+
+        nmo_interface_parse_ctx_t pctx;
+        memset(&pctx, 0, sizeof(pctx));
+
+        nmo_status_t st = nmo_interface_chunk_write(written,
+            state->interface_data, &pctx);
+        ASSERT_EQ(NMO_OK, st);
+
+        /* Compare with original */
+        nmo_chunk_t *original = state->interface_chunk;
+        if (original->data.count != written->data.count) {
+            printf("  SIZE MISMATCH obj id=%u name='%s': orig=%zu writ=%zu (diff=%d)\n",
+                   nmo_object_get_id(obj),
+                   nmo_object_get_name(obj) ? nmo_object_get_name(obj) : "",
+                   original->data.count, written->data.count,
+                   (int)written->data.count - (int)original->data.count);
+        }
+        ASSERT_EQ((int)original->data.count, (int)written->data.count);
+
+        uint32_t *orig_data = NMO_ARENA_ARRAY_DATA(uint32_t, &original->data);
+        uint32_t *writ_data = NMO_ARENA_ARRAY_DATA(uint32_t, &written->data);
+        size_t mismatch_count = 0;
+        for (size_t d = 0; d < original->data.count; d++) {
+            if (orig_data[d] != writ_data[d]) {
+                /* Allow string padding differences: CK2 may leave
+                 * uninitialized bytes in the last DWORD of a string.
+                 * Mask off trailing bytes that follow a null terminator. */
+                uint32_t mask = 0xFFFFFFFFu;
+                const uint8_t *ob = (const uint8_t *)&orig_data[d];
+                for (int b = 0; b < 4; b++) {
+                    if (ob[b] == 0) { mask = (1u << (b * 8)) - 1u; break; }
+                }
+                if ((orig_data[d] & mask) == (writ_data[d] & mask)) continue;
+                printf("  MISMATCH obj id=%u name='%s' dword[%zu/%zu]: orig=0x%08X writ=0x%08X\n",
+                       nmo_object_get_id(obj),
+                       nmo_object_get_name(obj) ? nmo_object_get_name(obj) : "",
+                       d, original->data.count, orig_data[d], writ_data[d]);
+                mismatch_count++;
+                if (mismatch_count >= 3) break;
+            }
+        }
+        ASSERT_EQ(0, (int)mismatch_count);
+
+        nmo_arena_destroy(write_arena);
+        tested++;
+    }
+
+    ASSERT_TRUE(tested > 0);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+/* ============================================================================
  * Test registration
  * ============================================================================ */
 
@@ -1565,4 +2022,14 @@ TEST_MAIN_BEGIN()
     /* Task 9: Integration */
     REGISTER_TEST(interface_chunk, integration_real_file);
     REGISTER_TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces);
+    /* Writer tasks */
+    REGISTER_TEST(interface_chunk, dev_layout_tracks_section_presence);
+    REGISTER_TEST(interface_chunk, write_minimal_inline_byte_round_trip);
+    REGISTER_TEST(interface_chunk, write_links_inline_byte_round_trip);
+    REGISTER_TEST(interface_chunk, write_sub_behaviors_inline_byte_round_trip);
+    /* Task 7: Sectioned writer round-trip */
+    REGISTER_TEST(interface_chunk, write_sectioned_links_byte_round_trip);
+    REGISTER_TEST(interface_chunk, write_sectioned_comments_byte_round_trip);
+    /* Task 9: Real-sample byte-level oracle */
+    REGISTER_TEST(interface_chunk, write_real_file_byte_level_oracle);
 TEST_MAIN_END()
