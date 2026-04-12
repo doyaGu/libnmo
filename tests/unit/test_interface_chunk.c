@@ -427,15 +427,18 @@ TEST(interface_chunk, dev_layout_omits_color_and_inline_body) {
     nmo_chunk_start_write(chunk);
     nmo_chunk_write_identifier(chunk, 1);
     nmo_chunk_write_dword(chunk, 0x15);
+    /* Identifier 2 = script type → triggers sectioned layout detection */
+    nmo_chunk_write_identifier(chunk, 2);
     nmo_chunk_write_int(chunk, 1);
 
+    /* Script header section */
+    nmo_chunk_write_identifier(chunk, 0x07000000u);
     write_script_header_fields(chunk, 100, 0, 0, 0.0f, 0.0f);
     nmo_chunk_write_float(chunk, 10.0f);
     nmo_chunk_write_float(chunk, 20.0f);
     nmo_chunk_write_float(chunk, 50.0f);
     nmo_chunk_write_int(chunk, 0);
     nmo_chunk_write_int(chunk, 0);
-    nmo_chunk_write_dword(chunk, 0x0000000A);
 
     nmo_chunk_close(chunk);
 
@@ -467,8 +470,11 @@ TEST(interface_chunk, dev_layout_parse_sectioned_links) {
     nmo_chunk_start_write(chunk);
     nmo_chunk_write_identifier(chunk, 1);
     nmo_chunk_write_dword(chunk, 0x15);
+    nmo_chunk_write_identifier(chunk, 2);
     nmo_chunk_write_int(chunk, 1);
 
+    /* Script header section */
+    nmo_chunk_write_identifier(chunk, 0x07000000u);
     write_script_header_fields(chunk, 100, 0, 0, 0.0f, 0.0f);
     nmo_chunk_write_float(chunk, 10.0f);
     nmo_chunk_write_float(chunk, 20.0f);
@@ -476,6 +482,7 @@ TEST(interface_chunk, dev_layout_parse_sectioned_links) {
     nmo_chunk_write_int(chunk, 0);
     nmo_chunk_write_int(chunk, 0);
 
+    /* Links section for script (layoutIndex=0) */
     nmo_chunk_write_identifier(chunk, 0x03000000u);
     nmo_chunk_write_int(chunk, 1);
     nmo_chunk_write_int(chunk, 1);

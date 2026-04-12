@@ -11,6 +11,21 @@
 #include <string.h>
 
 /* ================================================================
+ * Section identifiers for v >= 0x0D sectioned layout
+ *
+ * CK2's CKBehavior::SaveInterfaceData writes each header and body
+ * section behind its own identifier.  SeekIdentifier jumps to the
+ * position in the identifier chain, so reads are non-sequential.
+ * ================================================================ */
+
+#define DEV_SECTION_HEADER           0x01000000u
+#define DEV_SECTION_OPERATIONS       0x02000000u
+#define DEV_SECTION_LINKS            0x03000000u
+#define DEV_SECTION_COMMENTS         0x08000000u
+#define DEV_SECTION_UNKNOWN_FLAG     0x0A000000u
+#define DEV_SECTION_SCRIPT_HEADER    0x07000000u
+
+/* ================================================================
  * Internal helpers - forward declarations
  * ================================================================ */
 
@@ -18,7 +33,7 @@ static nmo_status_t parse_script_header(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     uint32_t version,
-    const nmo_interface_parse_ctx_t *ctx,
+    bool use_sectioned,
     nmo_interface_script_header_t *out);
 
 static nmo_status_t parse_sub_behavior(
@@ -29,11 +44,6 @@ static nmo_status_t parse_sub_behavior(
     size_t behavior_index,
     nmo_interface_behavior_t *out);
 
-static nmo_status_t parse_graph_io(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    nmo_interface_graph_io_t *out);
-
 static nmo_status_t parse_body(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -42,7 +52,19 @@ static nmo_status_t parse_body(
     nmo_object_id_t behavior_id,
     size_t behavior_index,
     bool is_script,
+    bool use_sectioned,
     nmo_interface_body_t *out);
+
+static nmo_status_t parse_parameters(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    uint32_t version,
+    nmo_interface_param_set_t *params);
+
+static nmo_status_t parse_graph_io(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_interface_graph_io_t *out);
 
 static nmo_status_t parse_links(
     nmo_chunk_t *chunk,
@@ -61,21 +83,6 @@ static nmo_status_t parse_comments(
     uint32_t version,
     nmo_interface_body_t *body);
 
-static nmo_status_t parse_parameters(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    uint32_t version,
-    nmo_interface_param_set_t *params);
-
-static nmo_status_t parse_body_sectioned(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    uint32_t version,
-    const nmo_interface_parse_ctx_t *ctx,
-    nmo_object_id_t behavior_id,
-    size_t behavior_index,
-    bool is_script,
-    nmo_interface_body_t *out);
 
 static nmo_status_t parse_extra_data(
     nmo_chunk_t *chunk,
@@ -123,10 +130,8 @@ static uint32_t behavior_section_id(size_t behavior_index, uint32_t base)
     return (uint32_t)behavior_index + base;
 }
 
-static bool use_dev_interface_layout(const nmo_interface_parse_ctx_t *ctx)
-{
-    return ctx && ctx->use_dev_interface_layout;
-}
+/* use_dev_interface_layout removed — layout is auto-detected via
+ * identifier probing.  use_sectioned is passed down explicitly. */
 
 /* ================================================================
  * Public API
@@ -169,6 +174,22 @@ nmo_status_t nmo_interface_chunk_parse(
                          NMO_INTERFACE_VERSION_MAX);
     }
 
+    /* Detect sectioned layout: Dev.exe writes script-type identifiers
+     * (2 = script, 3 = non-script) before the behavior count.  Standard
+     * Virtools files only have version identifiers (1 / 0xB0000001).
+     * If we find identifier 2 or 3, the file uses sectioned layout. */
+    bool use_sectioned = false;
+    bool found = false;
+    st = optional_seek_identifier(chunk, 2u, &found);
+    NMO_RETURN_IF_ERROR(st);
+    if (found) {
+        use_sectioned = true;
+    } else {
+        st = optional_seek_identifier(chunk, 3u, &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) use_sectioned = true;
+    }
+
     /* Read total behavior count */
     int32_t total_count = 0;
     st = nmo_chunk_read_int(chunk, &total_count);
@@ -183,9 +204,23 @@ nmo_status_t nmo_interface_chunk_parse(
     out->version = version;
     out->sub_count = (total_count > 1) ? (size_t)(total_count - 1) : 0;
 
-    /* Parse script header (entry 0) */
-    st = parse_script_header(chunk, arena, version, ctx, &out->script);
+    /* Seek to script header section (sectioned layout only).
+     * For inline layout the header follows sequentially. */
+    if (use_sectioned) {
+        (void)optional_seek_identifier(chunk,
+            DEV_SECTION_SCRIPT_HEADER, &found);
+    }
+    st = parse_script_header(chunk, arena, version, use_sectioned,
+                             &out->script);
     NMO_RETURN_IF_ERROR(st);
+
+    /* Script body */
+    if (out->script.body.has_body) {
+        st = parse_body(chunk, arena, version, ctx,
+                        out->script.behavior_id, 0, true,
+                        use_sectioned, &out->script.body);
+        NMO_RETURN_IF_ERROR(st);
+    }
 
     /* Sub-behavior loop */
     if (out->sub_count > 0) {
@@ -199,8 +234,22 @@ nmo_status_t nmo_interface_chunk_parse(
         memset(out->subs, 0, out->sub_count * sizeof(nmo_interface_behavior_t));
 
         for (size_t i = 0; i < out->sub_count; i++) {
-            st = parse_sub_behavior(chunk, arena, version, ctx, i + 1, &out->subs[i]);
+            uint32_t layout_index = (uint32_t)(i + 1);
+            if (use_sectioned) {
+                (void)optional_seek_identifier(chunk,
+                    DEV_SECTION_HEADER + layout_index, &found);
+            }
+            st = parse_sub_behavior(chunk, arena, version, ctx,
+                                    layout_index, &out->subs[i]);
             NMO_RETURN_IF_ERROR(st);
+
+            /* Sub-behavior body */
+            if (out->subs[i].body.has_body) {
+                st = parse_body(chunk, arena, version, ctx,
+                                out->subs[i].behavior_id, layout_index,
+                                false, use_sectioned, &out->subs[i].body);
+                NMO_RETURN_IF_ERROR(st);
+            }
         }
     } else {
         out->subs = NULL;
@@ -221,9 +270,10 @@ static nmo_status_t parse_script_header(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     uint32_t version,
-    const nmo_interface_parse_ctx_t *ctx,
+    bool use_sectioned,
     nmo_interface_script_header_t *out)
 {
+    (void)arena;
     nmo_status_t st;
 
     /* behavior_id */
@@ -273,7 +323,7 @@ static nmo_status_t parse_script_header(
         out->snapshot_size = 0;
     }
 
-    if (version >= 0x14 && !use_dev_interface_layout(ctx)) {
+    if (version >= 0x14 && !use_sectioned) {
         st = nmo_chunk_read_dword(chunk, &out->color);
         NMO_RETURN_IF_ERROR(st);
     } else {
@@ -283,18 +333,12 @@ static nmo_status_t parse_script_header(
         out->color = 0;
     }
 
-    /* Body */
+    /* Determine whether body is present (caller will parse it) */
     out->body.has_body = !(out->flags & NMO_INTERFACE_FLAG_HEADER_ONLY);
     if (out->body.has_body &&
         (out->flags & NMO_INTERFACE_FLAG_FOLDED) &&
         folded_script_body_is_omitted(chunk)) {
         out->body.has_body = false;
-    }
-
-    if (out->body.has_body) {
-        st = parse_body(chunk, arena, version, ctx,
-                        out->behavior_id, 0, true, &out->body);
-        NMO_RETURN_IF_ERROR(st);
     }
 
     return NMO_OK;
@@ -345,6 +389,7 @@ static nmo_status_t parse_sub_behavior(
     size_t behavior_index,
     nmo_interface_behavior_t *out)
 {
+    (void)arena; (void)version; (void)ctx; (void)behavior_index;
     nmo_status_t st;
 
     /* behavior_id */
@@ -373,14 +418,8 @@ static nmo_status_t parse_sub_behavior(
     st = nmo_chunk_read_float(chunk, &out->v_expand_size);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Body */
+    /* Determine whether body is present (caller will parse it) */
     out->body.has_body = !(out->flags & NMO_INTERFACE_FLAG_HEADER_ONLY);
-
-    if (out->body.has_body) {
-        st = parse_body(chunk, arena, version, ctx,
-                        out->behavior_id, behavior_index, false, &out->body);
-        NMO_RETURN_IF_ERROR(st);
-    }
 
     return NMO_OK;
 }
@@ -397,42 +436,67 @@ static nmo_status_t parse_body(
     nmo_object_id_t behavior_id,
     size_t behavior_index,
     bool is_script,
+    bool use_sectioned,
     nmo_interface_body_t *out)
 {
     nmo_status_t st;
 
-    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
-    nmo_chunk_parser_state_t saved_state;
-    if (state) {
-        saved_state = *state;
-    }
+    if (use_sectioned) {
+        /* ---- Sectioned layout (Dev.exe files) ----
+         * Each section is behind its own SeekIdentifier.
+         * Params and graph IO live in separate section IDs
+         * (0x04/0x05/0x06/0x09) that we don't parse yet. */
+        bool found = false;
 
-    st = parse_body_sectioned(chunk, arena, version, ctx,
-                              behavior_id, behavior_index, is_script, out);
-    if (st == NMO_OK) {
-        return NMO_OK;
-    }
-    if (state) {
-        *state = saved_state;
-    }
-    if (st != NMO_ERR_NOT_FOUND) {
-        return st;
-    }
-    if (version >= 0x0Du && use_dev_interface_layout(ctx)) {
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_LINKS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            st = parse_links(chunk, arena, out, true);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_OPERATIONS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            st = parse_operations(chunk, arena, out);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_COMMENTS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            st = parse_comments(chunk, arena, version, out);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
         memset(&out->params, 0, sizeof(out->params));
         out->graph_io = NULL;
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG),
+            &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            int32_t ignored = 0;
+            st = nmo_chunk_read_int(chunk, &ignored);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
         return NMO_OK;
     }
 
-    /* Links */
+    /* ---- Inline layout (standard Virtools files) ----
+     * Body sections are sequential: links, ops, comments, params, graph IO. */
+
     st = parse_links(chunk, arena, out, false);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Operations */
     st = parse_operations(chunk, arena, out);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Comments */
     st = parse_comments(chunk, arena, version, out);
     NMO_RETURN_IF_ERROR(st);
 
@@ -441,7 +505,6 @@ static nmo_status_t parse_body(
         is_building_block = ctx->is_building_block(behavior_id, ctx->user_data);
     }
 
-    /* Parameters: skipped for building blocks */
     if (!is_building_block) {
         st = parse_parameters(chunk, arena, version, &out->params);
         NMO_RETURN_IF_ERROR(st);
@@ -449,7 +512,6 @@ static nmo_status_t parse_body(
         memset(&out->params, 0, sizeof(out->params));
     }
 
-    /* Graph IO: non-script, non-BB only; or all non-scripts at v0x12 */
     out->graph_io = NULL;
     if (!is_script) {
         bool need_graph_io = false;
@@ -474,77 +536,6 @@ static nmo_status_t parse_body(
     }
 
     return NMO_OK;
-}
-
-static nmo_status_t parse_body_sectioned(
-    nmo_chunk_t *chunk,
-    nmo_arena_t *arena,
-    uint32_t version,
-    const nmo_interface_parse_ctx_t *ctx,
-    nmo_object_id_t behavior_id,
-    size_t behavior_index,
-    bool is_script,
-    nmo_interface_body_t *out)
-{
-    nmo_status_t st;
-    bool found = false;
-    bool found_any = false;
-
-    bool is_building_block = false;
-    if (ctx && ctx->is_building_block) {
-        is_building_block = ctx->is_building_block(behavior_id, ctx->user_data);
-    }
-
-    st = optional_seek_identifier(chunk,
-        behavior_section_id(behavior_index, 0x03000000u), &found);
-    NMO_RETURN_IF_ERROR(st);
-    if (found) {
-        found_any = true;
-        st = parse_links(chunk, arena, out, true);
-        NMO_RETURN_IF_ERROR(st);
-    }
-
-    st = optional_seek_identifier(chunk,
-        behavior_section_id(behavior_index, 0x02000000u), &found);
-    NMO_RETURN_IF_ERROR(st);
-    if (found) {
-        found_any = true;
-        st = parse_operations(chunk, arena, out);
-        NMO_RETURN_IF_ERROR(st);
-    }
-
-    st = optional_seek_identifier(chunk,
-        behavior_section_id(behavior_index, 0x08000000u), &found);
-    NMO_RETURN_IF_ERROR(st);
-    if (found) {
-        found_any = true;
-        st = parse_comments(chunk, arena, version, out);
-        NMO_RETURN_IF_ERROR(st);
-    }
-
-    /*
-     * Dev.exe 2.5 stores parameter display data in later section IDs
-     * (0x04000000/0x09000000, plus 0x05000000/0x06000000 for graph IO).
-     * Those sections do not share the old inline combined parameter layout, so
-     * leave them empty here until the public structure can represent the extra
-     * mapping data without lossy interpretation.
-     */
-    (void)is_building_block;
-    (void)is_script;
-    memset(&out->params, 0, sizeof(out->params));
-    out->graph_io = NULL;
-
-    st = optional_seek_identifier(chunk,
-        behavior_section_id(behavior_index, 0x0A000000u), &found);
-    NMO_RETURN_IF_ERROR(st);
-    if (found) {
-        int32_t ignored = 0;
-        found_any = true;
-        st = nmo_chunk_read_int(chunk, &ignored);
-        NMO_RETURN_IF_ERROR(st);
-    }
-
-    return found_any ? NMO_OK : NMO_ERR_NOT_FOUND;
 }
 
 /* ================================================================
@@ -754,7 +745,7 @@ static nmo_status_t parse_comments(
         st = nmo_chunk_read_float(chunk, &c->bottom);
         NMO_RETURN_IF_ERROR(st);
 
-        /* text (arena-allocated by chunk reader) */
+        /* text (arena-allocated by chunk reader; returns size_t, 0 on empty/error) */
         char *text = NULL;
         nmo_chunk_read_string(chunk, &text);
         c->text = text;
@@ -772,7 +763,7 @@ static nmo_status_t parse_comments(
 }
 
 /* ================================================================
- * Parameters (local + shared)
+ * Parameters (local + shared) — inline layout only
  * ================================================================ */
 
 static nmo_status_t parse_parameters(
@@ -783,7 +774,6 @@ static nmo_status_t parse_parameters(
 {
     nmo_status_t st;
 
-    /* --- Local parameters --- */
     int32_t local_count = 0;
     st = nmo_chunk_read_int(chunk, &local_count);
     NMO_RETURN_IF_ERROR(st);
@@ -804,27 +794,23 @@ static nmo_status_t parse_parameters(
         }
         memset(params->locals, 0, params->local_count * sizeof(nmo_interface_param_t));
 
-        /* positions */
         for (size_t i = 0; i < params->local_count; i++) {
             st = nmo_chunk_read_int(chunk, &params->locals[i].h_pos);
             NMO_RETURN_IF_ERROR(st);
             st = nmo_chunk_read_int(chunk, &params->locals[i].v_pos);
             NMO_RETURN_IF_ERROR(st);
         }
-
-        /* styles */
         for (size_t i = 0; i < params->local_count; i++) {
             int32_t style = 0;
             st = nmo_chunk_read_int(chunk, &style);
             NMO_RETURN_IF_ERROR(st);
             params->locals[i].style = (uint32_t)style;
-            params->locals[i].source_id = 0; /* locals have no source */
+            params->locals[i].source_id = 0;
         }
     } else {
         params->locals = NULL;
     }
 
-    /* --- Shared parameters --- */
     int32_t shared_count = 0;
     st = nmo_chunk_read_int(chunk, &shared_count);
     NMO_RETURN_IF_ERROR(st);
@@ -845,29 +831,23 @@ static nmo_status_t parse_parameters(
         }
         memset(params->shared, 0, params->shared_count * sizeof(nmo_interface_param_t));
 
-        /* positions */
         for (size_t i = 0; i < params->shared_count; i++) {
             st = nmo_chunk_read_int(chunk, &params->shared[i].h_pos);
             NMO_RETURN_IF_ERROR(st);
             st = nmo_chunk_read_int(chunk, &params->shared[i].v_pos);
             NMO_RETURN_IF_ERROR(st);
         }
-
-        /* styles */
         for (size_t i = 0; i < params->shared_count; i++) {
             int32_t style = 0;
             st = nmo_chunk_read_int(chunk, &style);
             NMO_RETURN_IF_ERROR(st);
             params->shared[i].style = (uint32_t)style;
         }
-
-        /* source IDs */
         for (size_t i = 0; i < params->shared_count; i++) {
             if (version >= 0x15) {
                 st = nmo_chunk_read_object_id(chunk, &params->shared[i].source_id);
                 NMO_RETURN_IF_ERROR(st);
             } else {
-                /* Legacy: skip ObjectID, read ObjectID, skip INT */
                 nmo_object_id_t ignored_id = 0;
                 int32_t ignored_int = 0;
                 st = nmo_chunk_read_object_id(chunk, &ignored_id);
@@ -886,7 +866,7 @@ static nmo_status_t parse_parameters(
 }
 
 /* ================================================================
- * Graph IO (port ordering for graph behaviors)
+ * Graph IO (port ordering) — inline layout only
  * ================================================================ */
 
 static nmo_status_t parse_graph_io_array(
@@ -896,41 +876,29 @@ static nmo_status_t parse_graph_io_array(
     size_t *out_count)
 {
     nmo_status_t st;
-
     int32_t count = 0;
     st = nmo_chunk_read_int(chunk, &count);
     NMO_RETURN_IF_ERROR(st);
 
     if (count < 0 || count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "interface chunk: graph IO array count %d out of range",
-                         count);
+                         "interface chunk: graph IO array count %d out of range", count);
     }
-
     *out_count = (size_t)count;
+    if (count == 0) { *out_array = NULL; return NMO_OK; }
 
-    if (count == 0) {
-        *out_array = NULL;
-        return NMO_OK;
-    }
-
-    *out_array = nmo_arena_alloc(arena,
-        (size_t)count * sizeof(int32_t), alignof(int32_t));
+    *out_array = nmo_arena_alloc(arena, (size_t)count * sizeof(int32_t), alignof(int32_t));
     if (!*out_array) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "interface chunk: cannot allocate graph IO array");
     }
-
     for (int32_t i = 0; i < count; i++) {
         st = nmo_chunk_read_int(chunk, &(*out_array)[i]);
         NMO_RETURN_IF_ERROR(st);
-
-        /* Skip the second int of each pair (terminator / flag) */
         int32_t ignored = 0;
         st = nmo_chunk_read_int(chunk, &ignored);
         NMO_RETURN_IF_ERROR(st);
     }
-
     return NMO_OK;
 }
 
@@ -940,23 +908,14 @@ static nmo_status_t parse_graph_io(
     nmo_interface_graph_io_t *out)
 {
     nmo_status_t st;
-
-    st = parse_graph_io_array(chunk, arena,
-        &out->inward_inputs, &out->inward_input_count);
+    st = parse_graph_io_array(chunk, arena, &out->inward_inputs, &out->inward_input_count);
     NMO_RETURN_IF_ERROR(st);
-
-    st = parse_graph_io_array(chunk, arena,
-        &out->outward_inputs, &out->outward_input_count);
+    st = parse_graph_io_array(chunk, arena, &out->outward_inputs, &out->outward_input_count);
     NMO_RETURN_IF_ERROR(st);
-
-    st = parse_graph_io_array(chunk, arena,
-        &out->inward_outputs, &out->inward_output_count);
+    st = parse_graph_io_array(chunk, arena, &out->inward_outputs, &out->inward_output_count);
     NMO_RETURN_IF_ERROR(st);
-
-    st = parse_graph_io_array(chunk, arena,
-        &out->outward_outputs, &out->outward_output_count);
+    st = parse_graph_io_array(chunk, arena, &out->outward_outputs, &out->outward_output_count);
     NMO_RETURN_IF_ERROR(st);
-
     return NMO_OK;
 }
 
@@ -1051,7 +1010,12 @@ static nmo_status_t parse_extra_data(
     st = nmo_chunk_read_int(chunk, &entry_count);
     NMO_RETURN_IF_ERROR(st);
 
-    out->entry_count = (entry_count > 0) ? (size_t)entry_count : 0;
+    if (entry_count < 0 || entry_count > 100000) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "interface chunk: extra entry count %d out of range",
+                         entry_count);
+    }
+    out->entry_count = (size_t)entry_count;
 
     if (out->entry_count == 0) {
         out->entries = NULL;
@@ -1101,7 +1065,12 @@ static nmo_status_t parse_extra_data(
             st = nmo_chunk_read_int(chunk, &sub_count);
             NMO_RETURN_IF_ERROR(st);
 
-            entry->sub_count = (sub_count > 0) ? (size_t)sub_count : 0;
+            if (sub_count < 0 || sub_count > 100000) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "interface chunk: extra sub-entry count %d out of range",
+                                 sub_count);
+            }
+            entry->sub_count = (size_t)sub_count;
 
             if (entry->sub_count > 0) {
                 entry->sub_entries = nmo_arena_alloc(arena,

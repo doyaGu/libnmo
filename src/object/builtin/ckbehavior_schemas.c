@@ -1126,7 +1126,7 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
     memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = is_building_block_cb;
     ctx.user_data = repo;
-    ctx.use_dev_interface_layout = true;
+    ctx.use_dev_interface_layout = false;
 
     nmo_status_t first_error = NMO_OK;
     for (size_t i = 0; i < count; i++) {
@@ -1157,7 +1157,7 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
         }
 
         nmo_interface_data_t *idata = (nmo_interface_data_t *)nmo_arena_alloc(
-            arena, sizeof(nmo_interface_data_t), _Alignof(nmo_interface_data_t));
+            arena, sizeof(nmo_interface_data_t), alignof(nmo_interface_data_t));
         if (!idata) {
             if (first_error == NMO_OK) {
                 first_error = NMO_ERR_NOMEM;
