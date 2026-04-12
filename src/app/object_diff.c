@@ -357,18 +357,23 @@ static bool scalar_equal(const nmo_type_field_t *f,
                          const void *p1, const void *p2,
                          const nmo_object_repository_t *repo1,
                          const nmo_object_repository_t *repo2,
-                         const match_lookup_t *lookup)
+                         const match_lookup_t *lookup,
+                         const nmo_type_registry_t *registry)
 {
     if (!f) return false;
     if (!p1 || !p2) return p1 == p2;
 
-    /* Pointer fields: compare pointed-to data, not pointer addresses */
+    /* Pointer fields: compare pointed-to data, not pointer addresses.
+     * Resolve the pointee type via registry to get the real struct size. */
     if (f->flags & NMO_FIELD_POINTER) {
         const void *a_ptr = *(const void *const *)p1;
         const void *b_ptr = *(const void *const *)p2;
         if (a_ptr == NULL && b_ptr == NULL) return true;
         if (a_ptr == NULL || b_ptr == NULL) return false;
-        return memcmp(a_ptr, b_ptr, f->size) == 0;
+        const nmo_type_descriptor_t *pointee = registry
+            ? nmo_type_registry_find_by_guid(registry, f->type_guid) : NULL;
+        size_t cmp_size = (pointee && pointee->size > 0) ? pointee->size : f->size;
+        return memcmp(a_ptr, b_ptr, cmp_size) == 0;
     }
 
     if (is_object_ref(f) && f->size >= sizeof(uint32_t) && !(f->flags & NMO_FIELD_REPEATED)) {
@@ -412,7 +417,8 @@ static bool repeated_equal(const nmo_type_field_t *f1,
     return memcmp(a1->data, a2->data, a1->count * a1->element_size) == 0;
 }
 
-static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const void *p2)
+static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const void *p2,
+                               const nmo_type_registry_t *registry)
 {
     if (!f) return false;
     if (!p1 || !p2) return p1 == p2;
@@ -423,7 +429,10 @@ static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const 
         const void *b_ptr = *(const void *const *)p2;
         if (a_ptr == NULL && b_ptr == NULL) return true;
         if (a_ptr == NULL || b_ptr == NULL) return false;
-        return memcmp(a_ptr, b_ptr, f->size) == 0;
+        const nmo_type_descriptor_t *pointee = registry
+            ? nmo_type_registry_find_by_guid(registry, f->type_guid) : NULL;
+        size_t cmp_size = (pointee && pointee->size > 0) ? pointee->size : f->size;
+        return memcmp(a_ptr, b_ptr, cmp_size) == 0;
     }
     if (nmo_guid_equals(f->type_guid, CKPGUID_STRING) && f->size == sizeof(char *)) {
         const char *s1 = *(const char *const *)p1;
@@ -484,8 +493,8 @@ static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
-                same = use_refs ? scalar_equal(f1, p1, p2, repo1, repo2, lookup)
-                                : scalar_equal_noref(f1, p1, p2);
+                same = use_refs ? scalar_equal(f1, p1, p2, repo1, repo2, lookup, reg1)
+                                : scalar_equal_noref(f1, p1, p2, reg1);
             }
             if (same) eq++;
         }
@@ -1566,7 +1575,7 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
-                same = scalar_equal(f1, p1, p2, s1->repo, s2->repo, lookup);
+                same = scalar_equal(f1, p1, p2, s1->repo, s2->repo, lookup, s1->registry);
             }
             if (same) continue;
 
@@ -1602,7 +1611,7 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
-                same = scalar_equal(f1, p1, p2, s1->repo, s2->repo, lookup);
+                same = scalar_equal(f1, p1, p2, s1->repo, s2->repo, lookup, s1->registry);
             }
             if (same) continue;
 
