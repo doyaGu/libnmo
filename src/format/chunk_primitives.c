@@ -293,7 +293,7 @@ size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
         return 0;
     }
 
-    size_t dwords = (len + 3) / 4;
+    size_t dwords = ((size_t) len + 3u) / 4u;
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         *out_str = NULL;
@@ -328,7 +328,7 @@ nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
         size = 0;
     }
 
-    size_t dwords = (size + 3) / 4;
+    size_t dwords = ((size_t) size + 3u) / 4u;
 
     // Write size
     nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
@@ -365,7 +365,7 @@ nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t dwords = (size + 3) / 4;
+    size_t dwords = ((size_t) size + 3u) / 4u;
 
     nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
@@ -402,7 +402,7 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
         NMO_RETURN_OK();
     }
 
-    size_t dwords = (size + 3) / 4;
+    size_t dwords = ((size_t) size + 3u) / 4u;
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -449,7 +449,7 @@ size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
         return 0; // Buffer too small
     }
 
-    size_t dwords = (size + 3) / 4;
+    size_t dwords = ((size_t) size + 3u) / 4u;
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
         return 0;

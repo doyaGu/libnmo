@@ -1246,35 +1246,30 @@ nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
     }
     size_t start_pos = state->current_pos;
 
-    int32_t total_a = 0;
-    int32_t total_b = 0;
-    nmo_status_t result = nmo_chunk_read_int(chunk, &total_a);
+    int32_t sequence_value = 0;
+    int32_t buffer_size = 0;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &sequence_value);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
-    result = nmo_chunk_read_int(chunk, &total_b);
+    result = nmo_chunk_read_int(chunk, &buffer_size);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
 
-    if (total_a != total_b) {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Legacy bitmap size mismatch");
-    }
+    /* CKStateChunk::ReadBitmap consumes a leading sequence dword, but the
+     * actual payload length comes from the following ReadBuffer size. */
+    (void)sequence_value;
 
-    if (total_a <= 0) {
+    if (buffer_size <= 0) {
         NMO_RETURN_OK();
     }
 
-    if (total_a < 5) {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Legacy bitmap payload too small");
+    if (buffer_size < 5) {
+        const uint8_t *short_payload = NULL;
+        result = nmo_chunk_bitmap_map_bytes(chunk, (size_t)buffer_size, &short_payload);
+        NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
+        NMO_RETURN_OK();
     }
 
     const uint8_t *payload = NULL;
-    result = nmo_chunk_bitmap_map_bytes(chunk, (size_t)total_a, &payload);
+    result = nmo_chunk_bitmap_map_bytes(chunk, (size_t)buffer_size, &payload);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
 
     if (!payload) {
@@ -1287,41 +1282,34 @@ nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
 
     char signature[5];
     memcpy(signature, payload, 5);
-    if (signature[0] != 'C' || signature[1] != 'K') {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Legacy bitmap signature invalid");
-    }
 
-    char extension[4] = {0};
-    nmo_chunk_bitmap_extension_from_signature((const uint8_t *)signature, extension);
-    if (extension[0] == '\0') {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Legacy bitmap extension missing");
+    char extension[4] = "tga";
+    const uint8_t *encoded_data = payload;
+    size_t encoded_size = (size_t)buffer_size;
+
+    if (signature[0] == 'C' && signature[1] == 'K') {
+        nmo_chunk_bitmap_extension_from_signature((const uint8_t *)signature, extension);
+        if (extension[0] == '\0') {
+            NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
+                state,
+                start_pos,
+                NMO_ERR_CORRUPT,
+                "Legacy bitmap extension missing");
+        }
+        if (strcmp(extension, "dib") == 0) {
+            memcpy(extension, "bmp", 4);
+        }
+        encoded_data = payload + 5;
+        encoded_size = (size_t)buffer_size - 5u;
     }
 
     const nmo_image_codec_t *codec = nmo_image_codec_find_by_extension(extension);
     if (!codec) {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_NOT_SUPPORTED,
-            "Legacy bitmap codec not available");
+        NMO_RETURN_OK();
     }
 
-    size_t encoded_size = (size_t)total_a - 5u;
-    const uint8_t *encoded_data = payload + 5;
     if (encoded_size == 0) {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Legacy bitmap payload empty");
+        NMO_RETURN_OK();
     }
 
     int decoded_width = 0;
@@ -1345,15 +1333,12 @@ nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
                            &decoded_height,
                            &decoded_pixels,
                            &decoded_channels);
-    NMO_CHUNK_BITMAP_RETURN_IF_ERROR_SCRATCH_WITH_ROLLBACK(result, scratch, state, start_pos);
+    if (result != NMO_OK) {
+        return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
+    }
 
     if (decoded_width <= 0 || decoded_height <= 0) {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_SCRATCH_WITH_ROLLBACK(
-            scratch,
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Legacy bitmap decoded dimensions invalid");
+        return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
     }
 
     size_t pixel_count = (size_t)decoded_width * (size_t)decoded_height;

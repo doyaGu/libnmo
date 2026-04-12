@@ -350,7 +350,7 @@ static int run_single_test(test_entry_t *entry) {
                                  NULL, NULL, 0, execution_time);
         printf("[PASS] %s::%s (%.2fms)\n", entry->suite_name, 
                entry->test_name, execution_time);
-    } else if (test_passed && g_test_suite->count > before_count) {
+    } else if (g_test_suite->count > before_count) {
         /* Assertion failed - a result was added */
         test_result *result = &g_test_suite->results[g_test_suite->count - 1];
         printf("[FAIL] %s::%s\n", entry->suite_name, entry->test_name);
@@ -362,6 +362,10 @@ static int run_single_test(test_entry_t *entry) {
         }
         printf("       (%.2fms)\n", result->execution_time_ms);
         test_passed = 0;  /* Mark test as failed */
+    } else {
+        printf("[FAIL] %s::%s\n", entry->suite_name, entry->test_name);
+        printf("       Test failed without a recorded assertion result\n");
+        test_passed = 0;
     }
     
     return test_passed;
