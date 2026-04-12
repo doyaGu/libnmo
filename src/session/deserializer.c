@@ -1065,10 +1065,9 @@ skip_object_processing:
     ds->stats.data_compressed = (ds->header.data_pack_size != ds->header.data_unpack_size);
     ds->stats.data_size = ds->header.data_unpack_size;
 
-    /* Cleanup load session */
+    /* End ID mapping active phase but keep the remap table alive.
+     * Sub-chunks with file_context may still reference it through finalize. */
     nmo_id_mapping_end(id_map);
-    nmo_id_mapping_destroy(id_map);
-    ds->id_mapping = NULL;
 
     /* Close IO now that all reads are done */
     nmo_io_close(io);
@@ -1104,6 +1103,12 @@ nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ds)
     if (runtime_result != NMO_OK) {
         nmo_log(logger, NMO_LOG_WARN,
                 "Runtime load finalization failed: %d (continuing)", runtime_result);
+    }
+
+    /* Now safe to release the ID mapping; finalize (remap + post_load) is complete. */
+    if (ds->id_mapping != NULL) {
+        nmo_id_mapping_destroy(ds->id_mapping);
+        ds->id_mapping = NULL;
     }
 
     ds->phase_completed = 3;
