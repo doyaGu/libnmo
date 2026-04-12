@@ -1256,10 +1256,14 @@ NMO_API nmo_status_t nmo_chunk_write_bitmap_legacy(nmo_chunk_t *chunk,
 
 /**
  * @brief Read legacy bitmap payload (CKStateChunk::ReadBitmap)
+ *
+ * @param out_props  Optional: receives the codec properties used to decode
+ *                   (extension, format).  Pass NULL to skip.
  */
 NMO_API nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
                                                   nmo_image_desc_t *out_desc,
-                                                  uint8_t **out_pixels);
+                                                  uint8_t **out_pixels,
+                                                  nmo_bitmap_properties_t *out_props);
 
 // =============================================================================
 // ADVANCED OPERATIONS

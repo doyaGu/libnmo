@@ -76,7 +76,7 @@ TEST(chunk_legacy_bitmap, png_roundtrip) {
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
-    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels, NULL);
     ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(decoded_pixels);
     ASSERT_EQ(decoded.width, desc.width);
@@ -113,7 +113,7 @@ TEST(chunk_legacy_bitmap, bmp_forces_opaque_alpha) {
     nmo_chunk_start_read(chunk);
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
-    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels, NULL);
     ASSERT_EQ(result, NMO_OK);
     ASSERT_NOT_NULL(decoded_pixels);
     ASSERT_EQ(decoded.width, desc.width);
@@ -159,7 +159,7 @@ TEST(chunk_legacy_bitmap, truncated_payload_keeps_position) {
 
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
-    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels, NULL);
     ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(decoded_pixels);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
@@ -189,7 +189,7 @@ TEST(chunk_legacy_bitmap, short_payload_consumes_as_empty_bitmap) {
 
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
-    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels, NULL);
     ASSERT_EQ(result, NMO_OK);
     ASSERT_NULL(decoded_pixels);
     ASSERT_EQ(decoded.width, 0);
@@ -223,7 +223,7 @@ TEST(chunk_legacy_bitmap, signature_only_payload_consumes_as_empty_bitmap) {
 
     nmo_image_desc_t decoded;
     uint8_t *decoded_pixels = NULL;
-    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels, NULL);
     ASSERT_EQ(result, NMO_OK);
     ASSERT_NULL(decoded_pixels);
     ASSERT_EQ(decoded.width, 0);

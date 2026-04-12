@@ -1232,13 +1232,15 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
 
 nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
                                           nmo_image_desc_t *out_desc,
-                                          uint8_t **out_pixels) {
+                                          uint8_t **out_pixels,
+                                          nmo_bitmap_properties_t *out_props) {
     if (!chunk || !out_desc || !out_pixels) {
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Invalid chunk or output arguments");
     }
 
     *out_pixels = NULL;
     memset(out_desc, 0, sizeof(*out_desc));
+    if (out_props) memset(out_props, 0, sizeof(*out_props));
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
     if (!state) {
@@ -1306,6 +1308,13 @@ nmo_status_t nmo_chunk_read_bitmap_legacy(nmo_chunk_t *chunk,
     const nmo_image_codec_t *codec = nmo_image_codec_find_by_extension(extension);
     if (!codec) {
         NMO_RETURN_OK();
+    }
+
+    /* Report codec properties to caller for round-trip fidelity */
+    if (out_props) {
+        out_props->format = codec->format;
+        out_props->extension = NULL; /* caller must copy extension if needed */
+        out_props->save_alpha = true;
     }
 
     if (encoded_size == 0) {

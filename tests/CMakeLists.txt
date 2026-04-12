@@ -18,6 +18,10 @@ add_subdirectory(performance)
 # Stress tests
 add_subdirectory(stress)
 
+# Batch oracle tool (not a CTest target — run manually)
+add_executable(batch_interface_oracle batch_interface_oracle.c)
+target_link_libraries(batch_interface_oracle PRIVATE nmo)
+
 # Fuzz tests (optional)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/CMakeLists.txt)
     add_subdirectory(fuzz)

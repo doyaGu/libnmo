@@ -172,6 +172,7 @@ typedef struct nmo_interface_script_header {
     void *snapshot_data;                    /* decoded pixels, NULL for empty */
     size_t snapshot_size;                   /* byte size of snapshot_data */
     bool has_snapshot;                      /* true when snapshot_desc has image data */
+    nmo_bitmap_properties_t snapshot_props; /* original codec properties for write */
     uint32_t color;                         /* v >= 0x14, else 0 */
     nmo_interface_body_t body;              /* empty if flags & 0x8000 */
 } nmo_interface_script_header_t;

@@ -322,18 +322,23 @@ static nmo_status_t parse_script_header(
      */
     nmo_image_desc_t bitmap_desc;
     uint8_t *bitmap_pixels = NULL;
+    nmo_bitmap_properties_t bitmap_props;
     memset(&bitmap_desc, 0, sizeof(bitmap_desc));
+    memset(&bitmap_props, 0, sizeof(bitmap_props));
 
-    st = nmo_chunk_read_bitmap_legacy(chunk, &bitmap_desc, &bitmap_pixels);
+    st = nmo_chunk_read_bitmap_legacy(chunk, &bitmap_desc, &bitmap_pixels,
+                                      &bitmap_props);
     NMO_RETURN_IF_ERROR(st);
 
     out->snapshot_desc = bitmap_desc;
+    out->snapshot_props = bitmap_props;
     if (bitmap_pixels && bitmap_desc.width > 0 && bitmap_desc.height > 0) {
         out->snapshot_data = bitmap_pixels;
         out->snapshot_size = (size_t)bitmap_desc.width * (size_t)bitmap_desc.height * 4u;
         out->has_snapshot = true;
     } else {
         memset(&out->snapshot_desc, 0, sizeof(out->snapshot_desc));
+        memset(&out->snapshot_props, 0, sizeof(out->snapshot_props));
         out->snapshot_data = NULL;
         out->snapshot_size = 0;
         out->has_snapshot = false;
@@ -1446,9 +1451,11 @@ static nmo_status_t write_script_header(
     st = nmo_chunk_write_float(chunk, hdr->v_size);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Bitmap (snapshot) */
+    /* Bitmap (snapshot): use original codec properties for round-trip fidelity */
     if (hdr->has_snapshot && hdr->snapshot_data) {
-        st = nmo_chunk_write_bitmap_legacy(chunk, &hdr->snapshot_desc, NULL);
+        nmo_image_desc_t desc = hdr->snapshot_desc;
+        desc.image_data = (uint8_t *)hdr->snapshot_data;
+        st = nmo_chunk_write_bitmap_legacy(chunk, &desc, &hdr->snapshot_props);
         NMO_RETURN_IF_ERROR(st);
     } else {
         st = write_empty_legacy_bitmap(chunk);
