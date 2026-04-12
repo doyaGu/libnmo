@@ -114,6 +114,27 @@ TEST(chunk_truncation, read_string_truncated_payload) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_truncation, read_string_max_length_overflow_keeps_position) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_dword(chunk, UINT32_MAX);
+    nmo_chunk_close(chunk);
+    nmo_chunk_start_read(chunk);
+
+    char *str = (char *)0xDEAD;
+    size_t len = nmo_chunk_read_string(chunk, &str);
+    ASSERT_EQ(len, 0u);
+    ASSERT_NULL(str);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_truncation, read_buffer_truncated_payload) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -129,6 +150,27 @@ TEST(chunk_truncation, read_buffer_truncated_payload) {
     nmo_chunk_start_read(chunk);
 
     void *data = NULL;
+    size_t size = 0;
+    nmo_status_t result = nmo_chunk_read_buffer(chunk, &data, &size);
+    ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_truncation, read_buffer_max_size_overflow_is_truncated) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_dword(chunk, UINT32_MAX);
+    nmo_chunk_close(chunk);
+    nmo_chunk_start_read(chunk);
+
+    void *data = (void *)0xDEAD;
     size_t size = 0;
     nmo_status_t result = nmo_chunk_read_buffer(chunk, &data, &size);
     ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
@@ -212,7 +254,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_truncation, read_float_on_empty_chunk);
     REGISTER_TEST(chunk_truncation, read_guid_insufficient_data);
     REGISTER_TEST(chunk_truncation, read_string_truncated_payload);
+    REGISTER_TEST(chunk_truncation, read_string_max_length_overflow_keeps_position);
     REGISTER_TEST(chunk_truncation, read_buffer_truncated_payload);
+    REGISTER_TEST(chunk_truncation, read_buffer_max_size_overflow_is_truncated);
     REGISTER_TEST(chunk_truncation, read_object_id_on_empty_chunk);
     REGISTER_TEST(chunk_truncation, read_dword_array_insufficient);
     REGISTER_TEST(chunk_truncation, read_vector3_insufficient);

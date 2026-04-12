@@ -567,5 +567,6 @@ TEST(round_trip, sample_files) {
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(round_trip, sample_files);
+    /* Full-corpus round-trip runs can exceed the default 30s unit timeout. */
+    REGISTER_TEST_WITH_TIMEOUT(round_trip, sample_files, 180.0);
 TEST_MAIN_END()

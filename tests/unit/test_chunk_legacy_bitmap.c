@@ -167,8 +167,76 @@ TEST(chunk_legacy_bitmap, truncated_payload_keeps_position) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_legacy_bitmap, short_payload_consumes_as_empty_bitmap) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 256 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_int(chunk, 1);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_int(chunk, 4);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x11223344u);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_image_desc_t decoded;
+    uint8_t *decoded_pixels = NULL;
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_NULL(decoded_pixels);
+    ASSERT_EQ(decoded.width, 0);
+    ASSERT_EQ(decoded.height, 0);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 3u);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_legacy_bitmap, signature_only_payload_consumes_as_empty_bitmap) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 256 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_status_t result = nmo_chunk_start_write(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_write_int(chunk, 1);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_int(chunk, 5);
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x504A4B43u); /* CKJP */
+    ASSERT_EQ(result, NMO_OK);
+    result = nmo_chunk_write_dword(chunk, 0x00000047u); /* G */
+    ASSERT_EQ(result, NMO_OK);
+
+    result = nmo_chunk_start_read(chunk);
+    ASSERT_EQ(result, NMO_OK);
+
+    nmo_image_desc_t decoded;
+    uint8_t *decoded_pixels = NULL;
+    result = nmo_chunk_read_bitmap_legacy(chunk, &decoded, &decoded_pixels);
+    ASSERT_EQ(result, NMO_OK);
+    ASSERT_NULL(decoded_pixels);
+    ASSERT_EQ(decoded.width, 0);
+    ASSERT_EQ(decoded.height, 0);
+    ASSERT_EQ(nmo_chunk_get_position(chunk), 4u);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_legacy_bitmap, png_roundtrip);
     REGISTER_TEST(chunk_legacy_bitmap, bmp_forces_opaque_alpha);
     REGISTER_TEST(chunk_legacy_bitmap, truncated_payload_keeps_position);
+    REGISTER_TEST(chunk_legacy_bitmap, short_payload_consumes_as_empty_bitmap);
+    REGISTER_TEST(chunk_legacy_bitmap, signature_only_payload_consumes_as_empty_bitmap);
 TEST_MAIN_END()
