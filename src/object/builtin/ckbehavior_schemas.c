@@ -123,7 +123,8 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
     NMO_FIELD(nmo_behavior_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS),
     NMO_FIELD(nmo_behavior_state_t, has_single_activity, CKPGUID_BOOL),
     NMO_FIELD_OPT(nmo_behavior_state_t, interface_chunk, CKPGUID_STATECHUNK),
-    NMO_FIELD(nmo_behavior_state_t, has_interface, CKPGUID_BOOL)
+    NMO_FIELD(nmo_behavior_state_t, has_interface, CKPGUID_BOOL),
+    NMO_FIELD_PTR(nmo_behavior_state_t, interface_data, NMO_GUID_IFACE_DATA)
 };
 
 /* =============================================================================

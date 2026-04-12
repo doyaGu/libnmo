@@ -362,6 +362,15 @@ static bool scalar_equal(const nmo_type_field_t *f,
     if (!f) return false;
     if (!p1 || !p2) return p1 == p2;
 
+    /* Pointer fields: compare pointed-to data, not pointer addresses */
+    if (f->flags & NMO_FIELD_POINTER) {
+        const void *a_ptr = *(const void *const *)p1;
+        const void *b_ptr = *(const void *const *)p2;
+        if (a_ptr == NULL && b_ptr == NULL) return true;
+        if (a_ptr == NULL || b_ptr == NULL) return false;
+        return memcmp(a_ptr, b_ptr, f->size) == 0;
+    }
+
     if (is_object_ref(f) && f->size >= sizeof(uint32_t) && !(f->flags & NMO_FIELD_REPEATED)) {
         nmo_object_id_t id1 = *(const nmo_object_id_t *)p1;
         nmo_object_id_t id2 = *(const nmo_object_id_t *)p2;
@@ -408,6 +417,14 @@ static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const 
     if (!f) return false;
     if (!p1 || !p2) return p1 == p2;
     if (is_object_ref(f)) return true;
+    /* Pointer fields: compare pointed-to data, not pointer addresses */
+    if (f->flags & NMO_FIELD_POINTER) {
+        const void *a_ptr = *(const void *const *)p1;
+        const void *b_ptr = *(const void *const *)p2;
+        if (a_ptr == NULL && b_ptr == NULL) return true;
+        if (a_ptr == NULL || b_ptr == NULL) return false;
+        return memcmp(a_ptr, b_ptr, f->size) == 0;
+    }
     if (nmo_guid_equals(f->type_guid, CKPGUID_STRING) && f->size == sizeof(char *)) {
         const char *s1 = *(const char *const *)p1;
         const char *s2 = *(const char *const *)p2;
@@ -1445,6 +1462,20 @@ static void format_field_value(char *buf, size_t buf_size,
     if (!field || !ptr) {
         snprintf(buf, buf_size, "(null)");
         return;
+    }
+
+    /* Pointer fields: dereference before formatting */
+    if (field->flags & NMO_FIELD_POINTER) {
+        const void *pointed = *(const void *const *)ptr;
+        if (!pointed) {
+            snprintf(buf, buf_size, "(null)");
+            return;
+        }
+        if (field->flags & NMO_FIELD_REPEATED) {
+            snprintf(buf, buf_size, "<ptr array>");
+            return;
+        }
+        ptr = pointed;
     }
 
     if ((field->flags & NMO_FIELD_REPEATED) && field->size == sizeof(nmo_array_t)) {

@@ -140,6 +140,43 @@ extern "C" {
     }
 
 /**
+ * @brief Define a pointer-to-struct field (dereference before formatting)
+ */
+#define NMO_FIELD_PTR(_struct, _ptr_field, _pointee_type_guid) \
+    { \
+        .name = #_ptr_field, \
+        .description = NULL, \
+        .type_guid = _pointee_type_guid##_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _ptr_field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
+        .flags = NMO_FIELD_POINTER | NMO_FIELD_OPTIONAL, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_NONE, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL \
+    }
+
+/**
+ * @brief Define a raw pointer+count array field
+ * Count discovered via {singular}_count naming convention.
+ */
+#define NMO_FIELD_PTR_ARRAY(_struct, _ptr_field, _elem_type_guid) \
+    { \
+        .name = #_ptr_field, \
+        .description = NULL, \
+        .type_guid = _elem_type_guid##_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _ptr_field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
+        .flags = NMO_FIELD_POINTER | NMO_FIELD_REPEATED, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_NONE, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL \
+    }
+
+/**
  * @brief Define a field with full specification
  */
 #define NMO_FIELD_FULL(_struct, _field, _type_guid, _flags, _semantic) \

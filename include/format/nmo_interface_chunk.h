@@ -67,6 +67,36 @@ typedef struct nmo_chunk nmo_chunk_t;
 #define NMO_INTERFACE_VERSION_MIN             0x12u
 #define NMO_INTERFACE_VERSION_MAX             0x16u
 
+/* Reflection type GUIDs (libnmo-internal) */
+#define NMO_GUID_IFACE_ENDPOINT         NMO_GUID(0x6FED2001, 0x00000001)
+#define NMO_GUID_IFACE_ENDPOINT_INIT    NMO_GUID_INIT(0x6FED2001, 0x00000001)
+#define NMO_GUID_IFACE_LINK             NMO_GUID(0x6FED2002, 0x00000001)
+#define NMO_GUID_IFACE_LINK_INIT        NMO_GUID_INIT(0x6FED2002, 0x00000001)
+#define NMO_GUID_IFACE_OPERATION        NMO_GUID(0x6FED2003, 0x00000001)
+#define NMO_GUID_IFACE_OPERATION_INIT   NMO_GUID_INIT(0x6FED2003, 0x00000001)
+#define NMO_GUID_IFACE_COMMENT          NMO_GUID(0x6FED2004, 0x00000001)
+#define NMO_GUID_IFACE_COMMENT_INIT     NMO_GUID_INIT(0x6FED2004, 0x00000001)
+#define NMO_GUID_IFACE_PARAM            NMO_GUID(0x6FED2005, 0x00000001)
+#define NMO_GUID_IFACE_PARAM_INIT       NMO_GUID_INIT(0x6FED2005, 0x00000001)
+#define NMO_GUID_IFACE_PARAM_SET        NMO_GUID(0x6FED2006, 0x00000001)
+#define NMO_GUID_IFACE_PARAM_SET_INIT   NMO_GUID_INIT(0x6FED2006, 0x00000001)
+#define NMO_GUID_IFACE_GRAPH_IO         NMO_GUID(0x6FED2007, 0x00000001)
+#define NMO_GUID_IFACE_GRAPH_IO_INIT    NMO_GUID_INIT(0x6FED2007, 0x00000001)
+#define NMO_GUID_IFACE_BODY             NMO_GUID(0x6FED2008, 0x00000001)
+#define NMO_GUID_IFACE_BODY_INIT        NMO_GUID_INIT(0x6FED2008, 0x00000001)
+#define NMO_GUID_IFACE_SCRIPT_HDR       NMO_GUID(0x6FED2009, 0x00000001)
+#define NMO_GUID_IFACE_SCRIPT_HDR_INIT  NMO_GUID_INIT(0x6FED2009, 0x00000001)
+#define NMO_GUID_IFACE_BEHAVIOR         NMO_GUID(0x6FED200A, 0x00000001)
+#define NMO_GUID_IFACE_BEHAVIOR_INIT    NMO_GUID_INIT(0x6FED200A, 0x00000001)
+#define NMO_GUID_IFACE_EXTRA_SUB        NMO_GUID(0x6FED200B, 0x00000001)
+#define NMO_GUID_IFACE_EXTRA_SUB_INIT   NMO_GUID_INIT(0x6FED200B, 0x00000001)
+#define NMO_GUID_IFACE_EXTRA_ENTRY      NMO_GUID(0x6FED200C, 0x00000001)
+#define NMO_GUID_IFACE_EXTRA_ENTRY_INIT NMO_GUID_INIT(0x6FED200C, 0x00000001)
+#define NMO_GUID_IFACE_EXTRA            NMO_GUID(0x6FED200D, 0x00000001)
+#define NMO_GUID_IFACE_EXTRA_INIT       NMO_GUID_INIT(0x6FED200D, 0x00000001)
+#define NMO_GUID_IFACE_DATA             NMO_GUID(0x6FED200E, 0x00000001)
+#define NMO_GUID_IFACE_DATA_INIT        NMO_GUID_INIT(0x6FED200E, 0x00000001)
+
 /* ================================================================
  * Data structures
  * ================================================================ */
@@ -285,6 +315,20 @@ NMO_API nmo_status_t nmo_interface_chunk_write(
     nmo_chunk_t *chunk,
     const nmo_interface_data_t *data,
     const nmo_interface_parse_ctx_t *ctx);
+
+/* Forward declaration */
+typedef struct nmo_type_registry nmo_type_registry_t;
+
+/**
+ * @brief Register interface chunk struct types in the type registry.
+ *
+ * Registers reflection descriptors for all 14 interface chunk structs.
+ * Must be called after builtin types are registered.
+ *
+ * @param registry Type registry
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_register_interface_types(nmo_type_registry_t *registry);
 
 #ifdef __cplusplus
 }

@@ -15,6 +15,8 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_type_string.h"
 
 #include <string.h>
 
@@ -1985,6 +1987,64 @@ TEST(interface_chunk, write_real_file_byte_level_oracle) {
 }
 
 /* ============================================================================
+ * Reflection tests
+ * ============================================================================ */
+
+TEST(interface_chunk, reflection_types_registered) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+
+    /* The type registry is accessible from the context */
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(reg);
+
+    /* Check that key types are registered */
+    const nmo_type_descriptor_t *data_type =
+        nmo_type_registry_find_by_guid(reg, NMO_GUID_IFACE_DATA);
+    ASSERT_NOT_NULL(data_type);
+    ASSERT_TRUE(data_type->field_count > 0);
+
+    const nmo_type_descriptor_t *link_type =
+        nmo_type_registry_find_by_guid(reg, NMO_GUID_IFACE_LINK);
+    ASSERT_NOT_NULL(link_type);
+
+    const nmo_type_descriptor_t *body_type =
+        nmo_type_registry_find_by_guid(reg, NMO_GUID_IFACE_BODY);
+    ASSERT_NOT_NULL(body_type);
+
+    nmo_context_release(ctx);
+}
+
+TEST(interface_chunk, reflection_data_to_string) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(reg);
+
+    const nmo_type_descriptor_t *data_type =
+        nmo_type_registry_find_by_guid(reg, NMO_GUID_IFACE_DATA);
+    ASSERT_NOT_NULL(data_type);
+
+    /* Create minimal interface data */
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    data.version = 0x15;
+    data.sub_count = 3;
+    data.script.body.link_count = 10;
+
+    char buffer[512];
+    nmo_status_t st = nmo_type_value_to_string(
+        &data, data_type, reg, buffer, sizeof(buffer));
+    ASSERT_EQ(NMO_OK, st);
+
+    /* Verify output contains version */
+    ASSERT_NOT_NULL(strstr(buffer, "0x15"));
+
+    nmo_context_release(ctx);
+}
+
+/* ============================================================================
  * Test registration
  * ============================================================================ */
 
@@ -2032,4 +2092,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, write_sectioned_comments_byte_round_trip);
     /* Task 9: Real-sample byte-level oracle */
     REGISTER_TEST(interface_chunk, write_real_file_byte_level_oracle);
+    /* Reflection tests */
+    REGISTER_TEST(interface_chunk, reflection_types_registered);
+    REGISTER_TEST(interface_chunk, reflection_data_to_string);
 TEST_MAIN_END()

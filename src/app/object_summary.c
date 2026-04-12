@@ -1443,6 +1443,97 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         return true;
     }
 
+    /* Handle pointer+repeated array fields (raw T* + count).
+     * MUST come before generic NMO_FIELD_REPEATED which assumes nmo_array_t. */
+    if ((field->flags & NMO_FIELD_POINTER) && (field->flags & NMO_FIELD_REPEATED)) {
+        const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
+        uint64_t count = nmo_summary_guess_array_count(ctx->owner_type, ctx->owner_instance, field);
+        size_t elem_size = field_type ? (size_t)field_type->size : sizeof(uint32_t);
+
+        if (ctx->out->is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
+            yyjson_mut_obj_add_bool(ctx->out->json_doc, item, "is_array", true);
+            yyjson_mut_obj_add_uint(ctx->out->json_doc, item, "count", count);
+            if (array_ptr && count > 0) {
+                yyjson_mut_val *preview = yyjson_mut_arr(ctx->out->json_doc);
+                uint64_t emit = count < ctx->config->array_preview_max ? count : ctx->config->array_preview_max;
+                for (uint64_t i = 0; i < emit; ++i) {
+                    const uint8_t *ep = (const uint8_t *)array_ptr + i * elem_size;
+                    yyjson_mut_val *ev = NULL;
+                    nmo_summary_format_value_to_json(ctx->out, ctx->registry, field_type,
+                                                     field->type_guid, ep, elem_size, &ev);
+                    yyjson_mut_arr_add_val(preview, ev ? ev : yyjson_mut_null(ctx->out->json_doc));
+                }
+                yyjson_mut_obj_add_val(ctx->out->json_doc, item, "preview", preview);
+            }
+            yyjson_mut_arr_add_val(ctx->json_fields, item);
+        } else {
+            char label[128];
+            snprintf(label, sizeof(label), "%s[%llu]", field->name, (unsigned long long)count);
+            if (!array_ptr || count == 0) {
+                nmo_cli_print_kv(ctx->out->stream, label, "(empty)", ctx->label_width, ctx->out->colorize);
+            } else {
+                uint64_t emit = count < ctx->config->text_preview_max ? count : ctx->config->text_preview_max;
+                char preview[512] = "";
+                size_t pos = 0;
+                for (uint64_t i = 0; i < emit && pos < sizeof(preview) - 32; ++i) {
+                    const uint8_t *ep = (const uint8_t *)array_ptr + i * elem_size;
+                    char eb[256];
+                    nmo_summary_format_value(ctx->registry, field_type, field->type_guid,
+                                            ep, elem_size, eb, sizeof(eb));
+                    if (i > 0) pos += snprintf(preview + pos, sizeof(preview) - pos, ", ");
+                    pos += snprintf(preview + pos, sizeof(preview) - pos, "%s", eb);
+                }
+                if (count > emit)
+                    snprintf(preview + pos, sizeof(preview) - pos, " ... (+%llu)", (unsigned long long)(count - emit));
+                nmo_cli_print_kv(ctx->out->stream, label, preview, ctx->label_width, ctx->out->colorize);
+            }
+        }
+        return true;
+    }
+
+    /* Handle pointer-to-struct fields (dereference before formatting) */
+    if ((field->flags & NMO_FIELD_POINTER) && !(field->flags & NMO_FIELD_REPEATED)) {
+        const void *pointed = field_ptr ? *(const void *const *)field_ptr : NULL;
+        if (!pointed) {
+            if (ctx->out->is_json) {
+                yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+                nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
+                yyjson_mut_obj_add_null(ctx->out->json_doc, item, "value");
+                yyjson_mut_arr_add_val(ctx->json_fields, item);
+            } else {
+                nmo_cli_print_kv(ctx->out->stream, field->name, "(null)",
+                                 ctx->label_width, ctx->out->colorize);
+            }
+            return true;
+        }
+        char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+        if (field_type) {
+            nmo_summary_format_value(ctx->registry, field_type, field->type_guid,
+                                     pointed, field_type->size,
+                                     value_buf, sizeof(value_buf));
+        } else {
+            snprintf(value_buf, sizeof(value_buf), "<ptr %p>", pointed);
+        }
+        if (ctx->out->is_json) {
+            yyjson_mut_val *item = yyjson_mut_obj(ctx->out->json_doc);
+            nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "name", field->name);
+            yyjson_mut_val *jv = NULL;
+            if (field_type) {
+                nmo_summary_format_value_to_json(ctx->out, ctx->registry, field_type,
+                                                  field->type_guid, pointed, field_type->size, &jv);
+            }
+            yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value",
+                                    jv ? jv : yyjson_mut_null(ctx->out->json_doc));
+            yyjson_mut_arr_add_val(ctx->json_fields, item);
+        } else {
+            nmo_cli_print_kv(ctx->out->stream, field->name, value_buf,
+                             ctx->label_width, ctx->out->colorize);
+        }
+        return true;
+    }
+
     /* Handle repeated (array) fields */
     if (field->flags & NMO_FIELD_REPEATED) {
         const void *array_ptr = field_ptr ? *(const void*const*)field_ptr : NULL;

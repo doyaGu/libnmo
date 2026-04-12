@@ -1254,6 +1254,22 @@ static nmo_status_t nmo_struct_like_to_string(
             continue;
         }
 
+        /* Handle pointer fields: dereference before formatting */
+        if (field->flags & NMO_FIELD_POINTER) {
+            if (!(field->flags & NMO_FIELD_REPEATED)) {
+                const void *ptr_val = field_ptr ? *(const void *const *)field_ptr : NULL;
+                if (!ptr_val) {
+                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "(null)"));
+                    continue;
+                }
+                field_ptr = (const uint8_t *)ptr_val;
+            } else {
+                /* pointer+repeated: show count only */
+                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
+                continue;
+            }
+        }
+
         if (field->flags & NMO_FIELD_REPEATED) {
             uint64_t count = 0;
 

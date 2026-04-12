@@ -20,6 +20,7 @@
 #include "session/nmo_session.h"
 #include "behavior/nmo_bb_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
+#include "format/nmo_interface_chunk.h"
 
 #include "object/nmo_object_repository.h"
 
@@ -182,6 +183,15 @@ nmo_context_t *nmo_context_create(const nmo_context_desc_t *desc) {
 
     /* Register Virtools object types after builtin types */
     type_result = nmo_register_object_types(ctx->type_registry);
+    if (type_result != NMO_OK) {
+        nmo_type_registry_destroy(ctx->type_registry);
+        nmo_arena_destroy(ctx->arena);
+        nmo_free(&effective_allocator, ctx);
+        return NULL;
+    }
+
+    /* Register interface chunk types for behavior reflection */
+    type_result = nmo_register_interface_types(ctx->type_registry);
     if (type_result != NMO_OK) {
         nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
