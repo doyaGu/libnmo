@@ -1175,7 +1175,7 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
 
         if (st == NMO_OK) {
             state->interface_data = idata;
-            state->interface_chunk = NULL;  /* raw blob no longer needed */
+            /* Keep the raw chunk for byte-level save round-trip. */
         } else {
             state->interface_data = NULL;
             if (first_error == NMO_OK) {

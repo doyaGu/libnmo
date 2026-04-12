@@ -30,7 +30,7 @@
 #define DEV_SECTION_GRAPH_MARKER     0xB0000000u
 
 /* ================================================================
- * Internal helpers - forward declarations
+ * Internal helpers
  * ================================================================ */
 
 static nmo_status_t parse_script_header(
@@ -86,7 +86,6 @@ static nmo_status_t parse_comments(
     nmo_arena_t *arena,
     uint32_t version,
     nmo_interface_body_t *body);
-
 
 static nmo_status_t parse_extra_data(
     nmo_chunk_t *chunk,
@@ -713,6 +712,55 @@ static nmo_status_t parse_operations(
  * Comments
  * ================================================================ */
 
+static nmo_status_t read_interface_string(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    const char **out)
+{
+    if (!chunk || !arena || !out) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "interface chunk: string reader NULL argument");
+    }
+
+    size_t start_pos = nmo_chunk_get_position(chunk);
+    if (start_pos == (size_t)-1) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "interface chunk: string reader has no parser state");
+    }
+
+    uint32_t size = 0;
+    nmo_status_t st = nmo_chunk_read_dword(chunk, &size);
+    NMO_RETURN_IF_ERROR(st);
+
+    if (size == 0) {
+        *out = NULL;
+        return NMO_OK;
+    }
+
+    size_t payload_dwords = ((size_t)size + 3u) / 4u;
+    if (!nmo_chunk_has_read_capacity(chunk, payload_dwords)) {
+        (void)nmo_chunk_goto(chunk, start_pos);
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "interface chunk: truncated string payload");
+    }
+
+    char *text = nmo_arena_alloc(arena, (size_t)size, 1);
+    if (!text) {
+        (void)nmo_chunk_goto(chunk, start_pos);
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "interface chunk: cannot allocate string");
+    }
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    memcpy(text, &data[state->current_pos], (size_t)size);
+    text[size - 1u] = '\0';
+    state->current_pos += payload_dwords;
+
+    *out = text;
+    return NMO_OK;
+}
+
 static nmo_status_t parse_comments(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -758,10 +806,8 @@ static nmo_status_t parse_comments(
         st = nmo_chunk_read_float(chunk, &c->bottom);
         NMO_RETURN_IF_ERROR(st);
 
-        /* text (arena-allocated by chunk reader; returns size_t, 0 on empty/error) */
-        char *text = NULL;
-        nmo_chunk_read_string(chunk, &text);
-        c->text = text;
+        st = read_interface_string(chunk, arena, &c->text);
+        NMO_RETURN_IF_ERROR(st);
 
         /* style flags (v >= 0x16) */
         if (version >= 0x16) {

@@ -515,6 +515,47 @@ TEST(interface_chunk, dev_layout_parse_sectioned_links) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, dev_layout_rejects_truncated_comment_string) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_identifier(chunk, 1);
+    nmo_chunk_write_dword(chunk, 0x16);
+    nmo_chunk_write_identifier(chunk, 0xB0000002u);
+    nmo_chunk_write_int(chunk, 1);
+
+    nmo_chunk_write_identifier(chunk, 0xB0070000u);
+    write_script_header_fields(chunk, 100, 0, 0, 0.0f, 0.0f);
+    nmo_chunk_write_float(chunk, 10.0f);
+    nmo_chunk_write_float(chunk, 20.0f);
+    nmo_chunk_write_float(chunk, 50.0f);
+    nmo_chunk_write_int(chunk, 0);
+    nmo_chunk_write_int(chunk, 0);
+
+    nmo_chunk_write_identifier(chunk, 0xB0080000u);
+    nmo_chunk_write_int(chunk, 1);
+    nmo_chunk_write_float(chunk, 1.0f);
+    nmo_chunk_write_float(chunk, 2.0f);
+    nmo_chunk_write_float(chunk, 3.0f);
+    nmo_chunk_write_float(chunk, 4.0f);
+    nmo_chunk_write_dword(chunk, 5); /* needs two payload DWORDs */
+
+    nmo_chunk_close(chunk);
+
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    nmo_status_t st = nmo_interface_chunk_parse(chunk, arena, &ctx, &data);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, st);
+
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Task 5: Operations, comments, parameters tests
  * ============================================================================ */
@@ -1422,8 +1463,8 @@ TEST(interface_chunk, integration_real_file) {
             /* Verify basic fields */
             ASSERT_TRUE(state->interface_data->version >= NMO_INTERFACE_VERSION_MIN);
             ASSERT_TRUE(state->interface_data->version <= NMO_INTERFACE_VERSION_MAX);
-            /* Raw chunk should have been cleared */
-            ASSERT_NULL(state->interface_chunk);
+            /* Raw chunk is retained for byte-level save round-trip */
+            ASSERT_NOT_NULL(state->interface_chunk);
         }
     }
 
@@ -1479,7 +1520,7 @@ TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces) {
     ASSERT_NOT_NULL(state);
     ASSERT_TRUE(state->has_interface);
     ASSERT_NOT_NULL(state->interface_data);
-    ASSERT_NULL(state->interface_chunk);
+    ASSERT_NOT_NULL(state->interface_chunk);
     ASSERT_TRUE(state->interface_data->sub_count > 0);
 
     nmo_session_destroy(session);
@@ -1503,6 +1544,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, parse_links);
     REGISTER_TEST(interface_chunk, dev_layout_omits_color_and_inline_body);
     REGISTER_TEST(interface_chunk, dev_layout_parse_sectioned_links);
+    REGISTER_TEST(interface_chunk, dev_layout_rejects_truncated_comment_string);
     /* Task 5: Operations, comments, parameters */
     REGISTER_TEST(interface_chunk, parse_operations);
     REGISTER_TEST(interface_chunk, parse_comments_v16);

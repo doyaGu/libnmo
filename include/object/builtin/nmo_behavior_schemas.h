@@ -115,7 +115,7 @@ typedef struct nmo_behavior_state {
     bool has_single_activity;              /**< Whether activity flags are present */
     
     /* Interface chunk (optional, for editing) */
-    nmo_chunk_t *interface_chunk;          /**< Raw interface chunk (cleared after post-load parse) */
+    nmo_chunk_t *interface_chunk;          /**< Raw interface chunk retained for byte-level save round-trip */
     bool has_interface;                    /**< Whether interface identifier is present */
     nmo_interface_data_t *interface_data;  /**< Parsed interface data (set in post-load) */
 } nmo_behavior_state_t;
@@ -151,8 +151,8 @@ NMO_API nmo_status_t nmo_behavior_remap_dependencies(
  *
  * Called after all objects are loaded and IDs remapped. For each CKBehavior
  * with a raw interface_chunk, parses it into structured interface_data.
- * Failed chunks are kept as raw interface_chunk data so callers can still
- * preserve or inspect them.
+ * Successful and failed chunks are both kept as raw interface_chunk data so
+ * callers can still preserve or inspect the original bytes.
  *
  * @param repo  Object repository
  * @param logger Optional logger for parse failures
