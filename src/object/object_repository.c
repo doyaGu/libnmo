@@ -32,6 +32,9 @@ typedef struct nmo_object_repository {
     /* Name hash table (for name lookup only) */
     nmo_hash_table_t *name_table; /* const char* -> nmo_object_t* */
 
+    /* File ID hash table (for original CK_ID lookup) */
+    nmo_hash_table_t *file_id_table; /* nmo_object_id_t -> nmo_object_t* */
+
     /* Runtime ID allocator */
     nmo_object_id_t next_runtime_id;
 
@@ -246,6 +249,23 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
         return NULL;
     }
 
+    /* Create file ID hash table */
+    repo->file_id_table = nmo_hash_table_create(
+        &repo->allocator,
+        sizeof(nmo_object_id_t),
+        sizeof(nmo_object_t *),
+        INITIAL_CAPACITY,
+        nmo_hash_uint32,
+        NULL
+    );
+
+    if (repo->file_id_table == NULL) {
+        nmo_hash_table_destroy(repo->name_table);
+        nmo_indexed_map_destroy(repo->id_map);
+        nmo_free(&repo->base_allocator, repo);
+        return NULL;
+    }
+
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
     return repo;
 }
@@ -257,6 +277,7 @@ void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
     if (repo != NULL) {
         nmo_indexed_map_destroy(repo->id_map);
         nmo_hash_table_destroy(repo->name_table);
+        nmo_hash_table_destroy(repo->file_id_table);
         nmo_free(&repo->allocator, repo->scratch_all);
         nmo_free(&repo->allocator, repo->scratch_class);
         nmo_free(&repo->base_allocator, repo);
@@ -315,6 +336,11 @@ int nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object_t **obj_
         }
     }
 
+    /* Add to file ID table if object has a file ID */
+    if (obj->file_id != 0) {
+        nmo_hash_table_insert(repo->file_id_table, &obj->file_id, &obj);
+    }
+
     int result = nmo_object_repository_notify_add(repo, obj);
     if (result != NMO_OK) {
         /* Keep structures consistent if index update fails */
@@ -367,6 +393,23 @@ nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_repository_t *
 }
 
 /**
+ * Find object by file ID (original CK_ID from file)
+ */
+nmo_object_t *nmo_object_repository_find_by_file_id(const nmo_object_repository_t *repo,
+                                                     nmo_object_id_t file_id) {
+    if (repo == NULL || file_id == 0) {
+        return NULL;
+    }
+
+    nmo_object_t *obj = NULL;
+    if (nmo_hash_table_get(repo->file_id_table, &file_id, &obj) == NMO_OK) {
+        return obj;
+    }
+
+    return NULL;
+}
+
+/**
  * Remove object
  */
 int nmo_object_repository_take(
@@ -392,6 +435,11 @@ int nmo_object_repository_take(
     }
 
     nmo_object_repository_unlink_name(repo, obj);
+
+    /* Remove from file ID table */
+    if (obj->file_id != 0) {
+        nmo_hash_table_remove(repo->file_id_table, &obj->file_id);
+    }
 
     result = nmo_object_repository_remove_without_dispose(repo, id);
     if (result != NMO_OK) {
@@ -587,6 +635,7 @@ int nmo_object_repository_clear(nmo_object_repository_t *repo) {
 
     nmo_indexed_map_clear(repo->id_map);
     nmo_hash_table_clear(repo->name_table);
+    nmo_hash_table_clear(repo->file_id_table);
     repo->next_runtime_id = 1;
 
     return NMO_OK;

@@ -81,6 +81,14 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_name(const nmo_object_reposi
                                                          const char *name);
 
 /**
+ * @brief Find object by file ID (original CK_ID stored in file)
+ * @ownership borrowed (owned by repository)
+ * @return Object or NULL if not found or file_id is 0
+ */
+NMO_API nmo_object_t *nmo_object_repository_find_by_file_id(const nmo_object_repository_t *repository,
+                                                             nmo_object_id_t file_id);
+
+/**
  * @brief Find objects by class
  * @param repository Repository
  * @param class_id Class ID
