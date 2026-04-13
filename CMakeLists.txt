@@ -194,6 +194,7 @@ set(NMO_FORMAT_SOURCES
     src/format/nmo_stb_adapter.c
     src/format/interface_chunk.c
     src/format/interface_chunk_types.c
+    src/format/interface_edit.c
 )
 
 # Object layer sources
