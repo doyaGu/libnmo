@@ -517,6 +517,7 @@ static const nmo_cli_action_t behavior_actions[] = {
     {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL},
     {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, NULL},
     {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, NULL},
+    {"interface", "iface", "Show interface layout data", nmo_cmd_behavior_interface, NULL},
 };
 
 /* parameter group actions */
