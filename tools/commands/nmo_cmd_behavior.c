@@ -20,7 +20,9 @@
 #include "session/nmo_context.h"
 #include "core/nmo_array.h"
 #include "format/nmo_interface_chunk.h"
+#include "format/nmo_interface_edit.h"
 #include "format/nmo_object.h"
+#include "app/nmo_save.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
@@ -3596,7 +3598,464 @@ static void iface_print_body_text(FILE *out, const nmo_interface_body_t *body,
     }
 }
 
+/* ================================================================
+ * Interface edit: shared helpers
+ * ================================================================ */
+
+static int iface_edit_open_ctx(nmo_cmd_ctx_t *c, const char *file_path,
+                               const nmo_cli_global_opts_t *global)
+{
+    memset(c, 0, sizeof(*c));
+    c->global = global;
+    c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                  global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    c->file_path = file_path;
+
+    char errbuf[256];
+    if (!nmo_tool_open_session(file_path, &c->ctx, &c->session,
+                               errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c->registry = nmo_context_get_type_registry(c->ctx);
+
+    char out_err[128];
+    c->out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!c->out) {
+        nmo_tool_close_session(c->ctx, c->session);
+        c->ctx = NULL;
+        c->session = NULL;
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c->colorize = nmo_cli_should_colorize(global, c->out);
+    return 0;
+}
+
+static nmo_interface_data_t *iface_edit_get_data(
+    nmo_cmd_ctx_t *c, uint32_t target_id,
+    nmo_object_t **out_obj)
+{
+    nmo_object_repository_t *repo = nmo_session_get_repository(c->session);
+    nmo_object_t *beh = nmo_object_repository_find_by_id(repo, target_id);
+    if (!beh) {
+        fprintf(stderr, "Error: Object %u not found\n", target_id);
+        return NULL;
+    }
+    if (!is_behavior_class(c->registry, nmo_object_get_class_id(beh))) {
+        fprintf(stderr, "Error: Object %u is not a CKBehavior\n", target_id);
+        return NULL;
+    }
+    nmo_behavior_state_t *bs = (nmo_behavior_state_t *)nmo_object_get_state(beh);
+    if (!bs || !bs->interface_data) {
+        fprintf(stderr, "Error: Behavior %u has no interface data\n", target_id);
+        return NULL;
+    }
+    if (out_obj) *out_obj = beh;
+    return bs->interface_data;
+}
+
+static int iface_edit_save(nmo_cmd_ctx_t *c, const char *output_path)
+{
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c->session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
+/* ================================================================
+ * Interface edit: verb handlers
+ * ================================================================ */
+
+static int iface_cmd_set_pos(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    enum { OPT_OUTPUT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 5) {
+        fprintf(stderr, "Usage: nmo behavior interface set-pos <id> <beh_id> <h> <v> <file> -o <out>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t target_id, beh_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!nmo_tool_parse_u32(r.pos_args[1], &beh_id)) {
+        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[1]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    char *endp;
+    float h = strtof(r.pos_args[2], &endp);
+    if (*endp != '\0') {
+        fprintf(stderr, "Error: Invalid float '%s'\n", r.pos_args[2]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    float v = strtof(r.pos_args[3], &endp);
+    if (*endp != '\0') {
+        fprintf(stderr, "Error: Invalid float '%s'\n", r.pos_args[3]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    nmo_cmd_ctx_t c;
+    int rc = iface_edit_open_ctx(&c, file_path, global);
+    if (rc) return rc;
+
+    nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
+    if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    if (idata->script.behavior_id == beh_id) {
+        idata->script.h_pos = h;
+        idata->script.v_pos = v;
+    } else {
+        nmo_interface_behavior_t *sub = nmo_interface_find_sub(idata, beh_id);
+        if (!sub) {
+            fprintf(stderr, "Error: Behavior %u not found in interface data\n", beh_id);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        sub->h_pos = h;
+        sub->v_pos = v;
+    }
+
+    rc = iface_edit_save(&c, output_path);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return nmo_cmd_ctx_done(&c, rc);
+
+    fprintf(c.out, "Moved behavior %u to (%.1f, %.1f)\n", beh_id, (double)h, (double)v);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+static int iface_cmd_fold(int argc, char **argv, const nmo_cli_global_opts_t *global, bool fold) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    enum { OPT_OUTPUT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 3) {
+        fprintf(stderr, "Usage: nmo behavior interface %s <id> <beh_id> <file> -o <out>\n",
+                fold ? "fold" : "unfold");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t target_id, beh_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!nmo_tool_parse_u32(r.pos_args[1], &beh_id)) {
+        fprintf(stderr, "Error: Invalid behavior ID '%s'\n", r.pos_args[1]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    nmo_cmd_ctx_t c;
+    int rc = iface_edit_open_ctx(&c, file_path, global);
+    if (rc) return rc;
+
+    nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
+    if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    uint32_t *flags = NULL;
+    if (idata->script.behavior_id == beh_id) {
+        flags = &idata->script.flags;
+    } else {
+        nmo_interface_behavior_t *sub = nmo_interface_find_sub(idata, beh_id);
+        if (!sub) {
+            fprintf(stderr, "Error: Behavior %u not found in interface data\n", beh_id);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        flags = &sub->flags;
+    }
+
+    if (fold) {
+        *flags |= NMO_INTERFACE_FLAG_FOLDED;
+    } else {
+        *flags &= ~NMO_INTERFACE_FLAG_FOLDED;
+    }
+
+    rc = iface_edit_save(&c, output_path);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return nmo_cmd_ctx_done(&c, rc);
+
+    fprintf(c.out, "%s behavior %u\n", fold ? "Folded" : "Unfolded", beh_id);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+static int iface_cmd_set_color(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
+    };
+    enum { OPT_OUTPUT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 3) {
+        fprintf(stderr, "Usage: nmo behavior interface set-color <id> <color> <file> -o <out>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t target_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *color_str = r.pos_args[1];
+    char *endp;
+    unsigned long color_val = strtoul(color_str, &endp, 16);
+    if (*endp != '\0' || color_val > 0xFFFFFF) {
+        fprintf(stderr, "Error: Invalid color '%s' (expected RRGGBB or 0xRRGGBB)\n", color_str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    nmo_cmd_ctx_t c;
+    int rc = iface_edit_open_ctx(&c, file_path, global);
+    if (rc) return rc;
+
+    nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
+    if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    idata->script.color = (uint32_t)color_val;
+
+    if (idata->version < 0x14 || idata->sectioned_layout) {
+        fprintf(stderr, "Warning: color will not be written "
+                "(version 0x%02X%s)\n",
+                idata->version,
+                idata->sectioned_layout ? ", sectioned layout" : " < 0x14");
+    }
+
+    rc = iface_edit_save(&c, output_path);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return nmo_cmd_ctx_done(&c, rc);
+
+    fprintf(c.out, "Set script color to #%06X\n", (unsigned)color_val);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+static int iface_cmd_add_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o",    NMO_OPT_STRING, "Output file path"},
+        {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
+        {"--text",   "-t",    NMO_OPT_STRING, "Comment text"},
+        {"--rect",   "-r",    NMO_OPT_STRING, "Rectangle L,T,R,B"},
+    };
+    enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_RECT, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos_arr[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!vals[OPT_TEXT].present) {
+        fprintf(stderr, "Error: --text required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (!vals[OPT_RECT].present) {
+        fprintf(stderr, "Error: --rect required (L,T,R,B)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Usage: nmo behavior interface add-comment <id> [--body <beh_id>] "
+                "--text \"...\" --rect L,T,R,B <file> -o <out>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t target_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    float left, top, right, bottom;
+    if (sscanf(vals[OPT_RECT].val.str, "%f,%f,%f,%f", &left, &top, &right, &bottom) != 4) {
+        fprintf(stderr, "Error: Invalid --rect format '%s', expected L,T,R,B\n",
+                vals[OPT_RECT].val.str);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    nmo_cmd_ctx_t c;
+    int rc = iface_edit_open_ctx(&c, file_path, global);
+    if (rc) return rc;
+
+    nmo_object_t *beh_obj = NULL;
+    nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, &beh_obj);
+    if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    uint32_t body_id = idata->script.behavior_id;
+    if (vals[OPT_BODY].present) {
+        if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &body_id)) {
+            fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    nmo_interface_body_t *body = nmo_interface_find_body(idata, body_id);
+    if (!body) {
+        fprintf(stderr, "Error: Behavior %u has no body (not found or header-only)\n", body_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_arena_t *arena = nmo_object_get_storage_arena(beh_obj);
+    size_t idx = 0;
+    nmo_status_t st = nmo_interface_body_add_comment(
+        body, arena, vals[OPT_TEXT].val.str, left, top, right, bottom, 0, &idx);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: %s\n", nmo_error_string(st));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    rc = iface_edit_save(&c, output_path);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return nmo_cmd_ctx_done(&c, rc);
+
+    fprintf(c.out, "Added comment at index %zu to behavior %u\n", idx, body_id);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+static int iface_cmd_remove_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o",    NMO_OPT_STRING, "Output file path"},
+        {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
+    };
+    enum { OPT_OUTPUT, OPT_BODY, OPT_COUNT };
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos_arr[8];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    if (!output_path) {
+        fprintf(stderr, "Error: -o/--output required\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    if (r.pos_count < 3) {
+        fprintf(stderr, "Usage: nmo behavior interface remove-comment <id> <index> "
+                "[--body <beh_id>] <file> -o <out>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t target_id;
+    if (!nmo_tool_parse_u32(r.pos_args[0], &target_id)) {
+        fprintf(stderr, "Error: Invalid ID '%s'\n", r.pos_args[0]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    uint32_t index_val;
+    if (!nmo_tool_parse_u32(r.pos_args[1], &index_val)) {
+        fprintf(stderr, "Error: Invalid index '%s'\n", r.pos_args[1]);
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *file_path = r.pos_args[r.pos_count - 1];
+
+    nmo_cmd_ctx_t c;
+    int rc = iface_edit_open_ctx(&c, file_path, global);
+    if (rc) return rc;
+
+    nmo_interface_data_t *idata = iface_edit_get_data(&c, target_id, NULL);
+    if (!idata) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+
+    uint32_t body_id = idata->script.behavior_id;
+    if (vals[OPT_BODY].present) {
+        if (!nmo_tool_parse_u32(vals[OPT_BODY].val.str, &body_id)) {
+            fprintf(stderr, "Error: Invalid --body ID '%s'\n", vals[OPT_BODY].val.str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    nmo_interface_body_t *body = nmo_interface_find_body(idata, body_id);
+    if (!body) {
+        fprintf(stderr, "Error: Behavior %u has no body (not found or header-only)\n", body_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    if ((size_t)index_val >= body->comment_count) {
+        fprintf(stderr, "Error: Comment index %u out of range (count=%zu)\n",
+                index_val, body->comment_count);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    nmo_status_t st = nmo_interface_body_remove_comment(body, (size_t)index_val);
+    if (st != NMO_OK) {
+        fprintf(stderr, "Error: %s\n", nmo_error_string(st));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    rc = iface_edit_save(&c, output_path);
+    if (rc != NMO_CLI_EXIT_SUCCESS) return nmo_cmd_ctx_done(&c, rc);
+
+    fprintf(c.out, "Removed comment %u from behavior %u\n", index_val, body_id);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ================================================================
+ * Interface read-only command (existing) with verb dispatch
+ * ================================================================ */
+
 int nmo_cmd_behavior_interface(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    /* Check for edit subcommand verb.
+     * The dispatch system passes (argc-1, argv+1) from the group level,
+     * so argv[0] = "interface" (the action name) and the user's first
+     * positional arg (verb or <id>) is in argv[1].
+     * Shift by 1 so the verb name lands in argv[0] — nmo_opt_parse
+     * skips argv[0] (the "command name") and starts at argv[1]. */
+    if (argc >= 2 && argv[1][0] != '-') {
+        const char *verb = argv[1];
+        if (strcmp(verb, "set-pos") == 0)
+            return iface_cmd_set_pos(argc - 1, argv + 1, global);
+        if (strcmp(verb, "fold") == 0)
+            return iface_cmd_fold(argc - 1, argv + 1, global, true);
+        if (strcmp(verb, "unfold") == 0)
+            return iface_cmd_fold(argc - 1, argv + 1, global, false);
+        if (strcmp(verb, "set-color") == 0)
+            return iface_cmd_set_color(argc - 1, argv + 1, global);
+        if (strcmp(verb, "add-comment") == 0)
+            return iface_cmd_add_comment(argc - 1, argv + 1, global);
+        if (strcmp(verb, "remove-comment") == 0)
+            return iface_cmd_remove_comment(argc - 1, argv + 1, global);
+    }
+    /* Fall through to existing read-only path */
+
     static const nmo_opt_def_t opts[] = {
         {"--brief", "-b", NMO_OPT_FLAG, "Brief summary output"},
         {"--json",  "-j", NMO_OPT_FLAG, "JSON output"},
