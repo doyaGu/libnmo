@@ -3415,6 +3415,7 @@ static void iface_json_add_endpoint(yyjson_mut_doc *doc, yyjson_mut_val *obj,
 static yyjson_mut_val *iface_json_body(yyjson_mut_doc *doc, const nmo_interface_body_t *body) {
     yyjson_mut_val *bo = yyjson_mut_obj(doc);
     yyjson_mut_obj_add_bool(doc, bo, "has_body", body->has_body);
+    if (!body->has_body) return bo;
 
     /* Links */
     {
@@ -3548,7 +3549,7 @@ static yyjson_mut_val *iface_json_body(yyjson_mut_doc *doc, const nmo_interface_
     yyjson_mut_obj_add_bool(doc, bo, "has_operations_section", body->has_operations_section);
     yyjson_mut_obj_add_bool(doc, bo, "has_comments_section", body->has_comments_section);
     yyjson_mut_obj_add_bool(doc, bo, "has_unknown_flag_section", body->has_unknown_flag_section);
-    if (body->unknown_flag)
+    if (body->has_unknown_flag_section)
         yyjson_mut_obj_add_int(doc, bo, "unknown_flag", body->unknown_flag);
 
     return bo;
@@ -3590,7 +3591,7 @@ static void iface_print_body_text(FILE *out, const nmo_interface_body_t *body,
         nmo_cli_print_heading(out, heading, colorize);
         iface_print_body_graph_io(out, body->graph_io);
     }
-    if (body->has_unknown_flag_section && body->unknown_flag) {
+    if (body->has_unknown_flag_section) {
         fprintf(out, "  unknown_flag: %d\n", body->unknown_flag);
     }
 }
