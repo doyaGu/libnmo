@@ -44,6 +44,10 @@ typedef struct nmo_cli_action {
     const char *brief;      /**< One-line description */
     nmo_cli_action_handler_t handler;
     nmo_cli_action_usage_t print_usage;
+    /* Sub-action support (NULL = leaf action) */
+    const struct nmo_cli_action *sub_actions; /**< Sub-action table, NULL for leaf */
+    size_t sub_action_count;                  /**< Number of sub-actions */
+    const char *default_sub;                  /**< Default sub-action name for fallback */
 } nmo_cli_action_t;
 
 /**

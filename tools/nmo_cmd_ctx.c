@@ -52,6 +52,43 @@ int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
+                               const nmo_cli_global_opts_t *global)
+{
+    memset(c, 0, sizeof(*c));
+    c->global = global;
+    c->is_json = (global->format == NMO_CLI_FORMAT_JSON ||
+                  global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+
+    c->file_path = file_path;
+    if (!c->file_path) {
+        fprintf(stderr, "Error: No file specified\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    char errbuf[256];
+    if (!nmo_tool_open_session(c->file_path, &c->ctx, &c->session,
+                               errbuf, sizeof(errbuf))) {
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c->registry = nmo_context_get_type_registry(c->ctx);
+
+    char out_err[128];
+    c->out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    if (!c->out) {
+        nmo_tool_close_session(c->ctx, c->session);
+        c->ctx = NULL;
+        c->session = NULL;
+        fprintf(stderr, "Error: %s\n", out_err);
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    c->colorize = nmo_cli_should_colorize(global, c->out);
+    return NMO_CLI_EXIT_SUCCESS;
+}
+
 int nmo_cmd_ctx_init_no_file(nmo_cmd_ctx_t *c,
                              const nmo_cli_global_opts_t *global)
 {

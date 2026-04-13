@@ -478,129 +478,130 @@ static void texture_extract_usage(FILE *out) {
 
 /* file group actions */
 static const nmo_cli_action_t file_actions[] = {
-    {"info", "i", "Show file summary", nmo_cmd_file_info, file_info_usage},
-    {"header", "hdr", "Show file header fields", nmo_cmd_file_header, file_header_usage},
-    {"stats", "st", "Show file statistics", nmo_cmd_file_stats, file_stats_usage},
-    {"classes", "cls", "Show class ID distribution", nmo_cmd_file_classes, file_classes_usage},
-    {"plugins", "pl", "Show plugin dependencies", nmo_cmd_file_plugins, file_plugins_usage},
-    {"space", "sp", "Analyze space usage", nmo_cmd_file_space, file_space_usage},
+    {"info", "i", "Show file summary", nmo_cmd_file_info, file_info_usage, NULL, 0, NULL},
+    {"header", "hdr", "Show file header fields", nmo_cmd_file_header, file_header_usage, NULL, 0, NULL},
+    {"stats", "st", "Show file statistics", nmo_cmd_file_stats, file_stats_usage, NULL, 0, NULL},
+    {"classes", "cls", "Show class ID distribution", nmo_cmd_file_classes, file_classes_usage, NULL, 0, NULL},
+    {"plugins", "pl", "Show plugin dependencies", nmo_cmd_file_plugins, file_plugins_usage, NULL, 0, NULL},
+    {"space", "sp", "Analyze space usage", nmo_cmd_file_space, file_space_usage, NULL, 0, NULL},
 };
 
 /* chunk group actions */
 static const nmo_cli_action_t chunk_actions[] = {
-    {"list", "ls", "List all chunks", nmo_cmd_chunk_list, chunk_list_usage},
-    {"tree", "t", "Show chunk hierarchy", nmo_cmd_chunk_tree, chunk_tree_usage},
-    {"show", "s", "Show chunk details", nmo_cmd_chunk_show, chunk_show_usage},
-    {"find", "f", "Find chunks by class/name", nmo_cmd_chunk_find, chunk_find_usage},
+    {"list", "ls", "List all chunks", nmo_cmd_chunk_list, chunk_list_usage, NULL, 0, NULL},
+    {"tree", "t", "Show chunk hierarchy", nmo_cmd_chunk_tree, chunk_tree_usage, NULL, 0, NULL},
+    {"show", "s", "Show chunk details", nmo_cmd_chunk_show, chunk_show_usage, NULL, 0, NULL},
+    {"find", "f", "Find chunks by class/name", nmo_cmd_chunk_find, chunk_find_usage, NULL, 0, NULL},
 };
 
 /* object group actions */
 static const nmo_cli_action_t object_actions[] = {
-    {"list", "ls", "List objects", nmo_cmd_object_list, object_list_usage},
-    {"tree", "t", "Show object hierarchy", nmo_cmd_object_tree, object_tree_usage},
-    {"show", "s", "Show object details", nmo_cmd_object_show, object_show_usage},
-    {"find", "f", "Find objects by query", nmo_cmd_object_find, object_find_usage},
-    {"refs", "r", "Show object references", nmo_cmd_object_refs, object_refs_usage},
-    {"rename", "ren", "Rename an object", nmo_cmd_object_rename, object_rename_usage},
-    {"export", "x", "Export objects as semantic JSON", nmo_cmd_object_export, object_export_usage},
-    {"impact", "imp", "Show deletion impact", nmo_cmd_object_impact, object_impact_usage},
-    {"orphans", "orp", "Find unreachable objects", nmo_cmd_object_orphans, object_orphans_usage},
-    {"cycles", "cyc", "Detect circular references", nmo_cmd_object_cycles, object_cycles_usage},
+    {"list", "ls", "List objects", nmo_cmd_object_list, object_list_usage, NULL, 0, NULL},
+    {"tree", "t", "Show object hierarchy", nmo_cmd_object_tree, object_tree_usage, NULL, 0, NULL},
+    {"show", "s", "Show object details", nmo_cmd_object_show, object_show_usage, NULL, 0, NULL},
+    {"find", "f", "Find objects by query", nmo_cmd_object_find, object_find_usage, NULL, 0, NULL},
+    {"refs", "r", "Show object references", nmo_cmd_object_refs, object_refs_usage, NULL, 0, NULL},
+    {"rename", "ren", "Rename an object", nmo_cmd_object_rename, object_rename_usage, NULL, 0, NULL},
+    {"export", "x", "Export objects as semantic JSON", nmo_cmd_object_export, object_export_usage, NULL, 0, NULL},
+    {"impact", "imp", "Show deletion impact", nmo_cmd_object_impact, object_impact_usage, NULL, 0, NULL},
+    {"orphans", "orp", "Find unreachable objects", nmo_cmd_object_orphans, object_orphans_usage, NULL, 0, NULL},
+    {"cycles", "cyc", "Detect circular references", nmo_cmd_object_cycles, object_cycles_usage, NULL, 0, NULL},
 };
 
 /* behavior group actions */
 static const nmo_cli_action_t behavior_actions[] = {
-    {"list", "ls", "List behaviors", nmo_cmd_behavior_list, behavior_list_usage},
-    {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage},
-    {"show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage},
-    {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage},
-    {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL},
-    {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, NULL},
-    {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, NULL},
-    {"interface", "iface", "Show interface layout data", nmo_cmd_behavior_interface, NULL},
+    {"list", "ls", "List behaviors", nmo_cmd_behavior_list, behavior_list_usage, NULL, 0, NULL},
+    {"stats", "st", "Show behavior statistics", nmo_cmd_behavior_stats, behavior_stats_usage, NULL, 0, NULL},
+    {"show", "s", "Show behavior signature", nmo_cmd_behavior_show, behavior_show_usage, NULL, 0, NULL},
+    {"graph", "g", "Export behavior graph", nmo_cmd_behavior_graph, behavior_graph_usage, NULL, 0, NULL},
+    {"dump", "d", "Dump behavior tree with decoded values", nmo_cmd_behavior_dump, NULL, NULL, 0, NULL},
+    {"find", "f", "Search behaviors by name/GUID/type", nmo_cmd_behavior_find, NULL, NULL, 0, NULL},
+    {"trace", "tr", "Trace execution path from IO", nmo_cmd_behavior_trace, NULL, NULL, 0, NULL},
+    {"interface", "iface", "Interface layout commands", NULL, NULL,
+        nmo_behavior_interface_sub_actions, NMO_BEHAVIOR_INTERFACE_SUB_ACTION_COUNT, "show"},
 };
 
 /* parameter group actions */
 static const nmo_cli_action_t parameter_actions[] = {
-    {"list", "ls", "List parameters", nmo_cmd_parameter_list, parameter_list_usage},
-    {"show", "s", "Show parameter object", nmo_cmd_parameter_show, parameter_show_usage},
-    {"dump", "d", "Dump parameter with decoded value", nmo_cmd_parameter_dump, parameter_dump_usage},
+    {"list", "ls", "List parameters", nmo_cmd_parameter_list, parameter_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show parameter object", nmo_cmd_parameter_show, parameter_show_usage, NULL, 0, NULL},
+    {"dump", "d", "Dump parameter with decoded value", nmo_cmd_parameter_dump, parameter_dump_usage, NULL, 0, NULL},
 };
 
 /* resource group actions */
 static const nmo_cli_action_t resource_actions[] = {
-    {"list", "ls", "List resources", nmo_cmd_resource_list, resource_list_usage},
-    {"show", "s", "Show resource details", nmo_cmd_resource_show, resource_show_usage},
-    {"extract", "x", "Extract embedded resources", nmo_cmd_resource_extract, resource_extract_usage},
+    {"list", "ls", "List resources", nmo_cmd_resource_list, resource_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show resource details", nmo_cmd_resource_show, resource_show_usage, NULL, 0, NULL},
+    {"extract", "x", "Extract embedded resources", nmo_cmd_resource_extract, resource_extract_usage, NULL, 0, NULL},
 };
 
 /* type group actions */
 static const nmo_cli_action_t type_actions[] = {
-    {"list", "ls", "List registered types", nmo_cmd_type_list, type_list_usage},
-    {"show", "s", "Show type details", nmo_cmd_type_show, type_show_usage},
-    {"class-tree", "ct", "Show class hierarchy tree", nmo_cmd_type_class_tree, type_class_tree_usage},
+    {"list", "ls", "List registered types", nmo_cmd_type_list, type_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show type details", nmo_cmd_type_show, type_show_usage, NULL, 0, NULL},
+    {"class-tree", "ct", "Show class hierarchy tree", nmo_cmd_type_class_tree, type_class_tree_usage, NULL, 0, NULL},
 };
 
 /* validate group actions */
 static const nmo_cli_action_t validate_actions[] = {
-    {"all", "a", "Run all validation checks", nmo_cmd_validate_all, validate_all_usage},
-    {"structure", "st", "Validate file structure", nmo_cmd_validate_structure, validate_structure_usage},
-    {"references", "ref", "Validate object references", nmo_cmd_validate_references, validate_references_usage},
-    {"resources", "res", "Validate embedded resources", nmo_cmd_validate_resources, validate_resources_usage},
-    {"orphans", "orp", "Find unreferenced objects", nmo_cmd_validate_orphans, validate_orphans_usage},
+    {"all", "a", "Run all validation checks", nmo_cmd_validate_all, validate_all_usage, NULL, 0, NULL},
+    {"structure", "st", "Validate file structure", nmo_cmd_validate_structure, validate_structure_usage, NULL, 0, NULL},
+    {"references", "ref", "Validate object references", nmo_cmd_validate_references, validate_references_usage, NULL, 0, NULL},
+    {"resources", "res", "Validate embedded resources", nmo_cmd_validate_resources, validate_resources_usage, NULL, 0, NULL},
+    {"orphans", "orp", "Find unreferenced objects", nmo_cmd_validate_orphans, validate_orphans_usage, NULL, 0, NULL},
 };
 
 /* convert group actions */
 static const nmo_cli_action_t convert_actions[] = {
-    {"copy", "cp", "Round-trip copy with save options", nmo_cmd_convert_copy, convert_copy_usage},
-    {"version", "v", "Show/modify file version metadata", nmo_cmd_convert_version, convert_version_usage},
-    {"strip", "st", "Remove objects by class/name pattern", nmo_cmd_convert_strip, convert_strip_usage},
-    {"merge", "m", "Merge objects from source into target", nmo_cmd_convert_merge, convert_merge_usage},
-    {"export", "x", "Export selected objects to new file", nmo_cmd_convert_export, convert_export_usage},
+    {"copy", "cp", "Round-trip copy with save options", nmo_cmd_convert_copy, convert_copy_usage, NULL, 0, NULL},
+    {"version", "v", "Show/modify file version metadata", nmo_cmd_convert_version, convert_version_usage, NULL, 0, NULL},
+    {"strip", "st", "Remove objects by class/name pattern", nmo_cmd_convert_strip, convert_strip_usage, NULL, 0, NULL},
+    {"merge", "m", "Merge objects from source into target", nmo_cmd_convert_merge, convert_merge_usage, NULL, 0, NULL},
+    {"export", "x", "Export selected objects to new file", nmo_cmd_convert_export, convert_export_usage, NULL, 0, NULL},
 };
 
 /* diff group actions */
 static const nmo_cli_action_t diff_actions[] = {
-    {"summary", "s", "Show diff summary", nmo_cmd_diff_summary, diff_summary_usage},
-    {"objects", "obj", "Diff objects between files", nmo_cmd_diff_objects, diff_objects_usage},
-    {"chunks", "ch", "Diff chunks between files", nmo_cmd_diff_chunks, diff_chunks_usage},
-    {"full", "f", "Full comparison", nmo_cmd_diff_full, diff_full_usage},
+    {"summary", "s", "Show diff summary", nmo_cmd_diff_summary, diff_summary_usage, NULL, 0, NULL},
+    {"objects", "obj", "Diff objects between files", nmo_cmd_diff_objects, diff_objects_usage, NULL, 0, NULL},
+    {"chunks", "ch", "Diff chunks between files", nmo_cmd_diff_chunks, diff_chunks_usage, NULL, 0, NULL},
+    {"full", "f", "Full comparison", nmo_cmd_diff_full, diff_full_usage, NULL, 0, NULL},
 };
 
 /* query group actions */
 static const nmo_cli_action_t query_actions[] = {
-    {"eval", "e", "Evaluate DSL expression", nmo_cmd_query_eval, query_eval_usage},
-    {"script", "s", "Execute DSL script", nmo_cmd_query_script, query_script_usage},
-    {"schema", "sc", "Apply DSL schema", nmo_cmd_query_schema, query_schema_usage},
-    {"module", "m", "Run DSL module", nmo_cmd_query_module, query_module_usage},
+    {"eval", "e", "Evaluate DSL expression", nmo_cmd_query_eval, query_eval_usage, NULL, 0, NULL},
+    {"script", "s", "Execute DSL script", nmo_cmd_query_script, query_script_usage, NULL, 0, NULL},
+    {"schema", "sc", "Apply DSL schema", nmo_cmd_query_schema, query_schema_usage, NULL, 0, NULL},
+    {"module", "m", "Run DSL module", nmo_cmd_query_module, query_module_usage, NULL, 0, NULL},
 };
 
 /* extension group actions */
 static const nmo_cli_action_t extension_actions[] = {
-    {"list", "ls", "List registered extensions", nmo_cmd_extension_list, extension_list_usage},
-    {"load", "ld", "Load extension DLL", nmo_cmd_extension_load, extension_load_usage},
-    {"info", "i", "Query extension metadata", nmo_cmd_extension_info, extension_info_usage},
-    {"check", "ch", "Check plugin dependencies", nmo_cmd_extension_check, extension_check_usage},
+    {"list", "ls", "List registered extensions", nmo_cmd_extension_list, extension_list_usage, NULL, 0, NULL},
+    {"load", "ld", "Load extension DLL", nmo_cmd_extension_load, extension_load_usage, NULL, 0, NULL},
+    {"info", "i", "Query extension metadata", nmo_cmd_extension_info, extension_info_usage, NULL, 0, NULL},
+    {"check", "ch", "Check plugin dependencies", nmo_cmd_extension_check, extension_check_usage, NULL, 0, NULL},
 };
 
 /* texture group actions */
 static const nmo_cli_action_t texture_actions[] = {
-    {"list", "ls", "List textures", nmo_cmd_texture_list, texture_list_usage},
-    {"show", "s", "Show texture details", nmo_cmd_texture_show, texture_show_usage},
-    {"extract", "x", "Extract textures as images", nmo_cmd_texture_extract, texture_extract_usage},
+    {"list", "ls", "List textures", nmo_cmd_texture_list, texture_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show texture details", nmo_cmd_texture_show, texture_show_usage, NULL, 0, NULL},
+    {"extract", "x", "Extract textures as images", nmo_cmd_texture_extract, texture_extract_usage, NULL, 0, NULL},
 };
 
 /* debug group actions */
 static const nmo_cli_action_t debug_actions[] = {
-    {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage},
-    {"chunks", "ch", "Show chunk parse details", nmo_cmd_debug_chunks, debug_chunks_usage},
-    {"objects", "obj", "Show object load details", nmo_cmd_debug_objects, debug_objects_usage},
-    {"export", "x", "Export JSON snapshot for debugging", nmo_cmd_debug_export, debug_export_usage},
+    {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage, NULL, 0, NULL},
+    {"chunks", "ch", "Show chunk parse details", nmo_cmd_debug_chunks, debug_chunks_usage, NULL, 0, NULL},
+    {"objects", "obj", "Show object load details", nmo_cmd_debug_objects, debug_objects_usage, NULL, 0, NULL},
+    {"export", "x", "Export JSON snapshot for debugging", nmo_cmd_debug_export, debug_export_usage, NULL, 0, NULL},
 };
 
 /* repl group - single action */
 static const nmo_cli_action_t repl_actions[] = {
-    {"start", NULL, "Start interactive REPL", nmo_cmd_repl_start, repl_start_usage},
+    {"start", NULL, "Start interactive REPL", nmo_cmd_repl_start, repl_start_usage, NULL, 0, NULL},
 };
 
 /* ============================================================================
@@ -734,6 +735,112 @@ void nmo_cli_print_group_help(const nmo_cli_group_t *group, FILE *out) {
 }
 
 /* ============================================================================
+ * Sub-action support
+ * ============================================================================ */
+
+static const nmo_cli_action_t *nmo_cli_find_sub_action(
+    const nmo_cli_action_t *parent, const char *name)
+{
+    for (size_t i = 0; i < parent->sub_action_count; ++i) {
+        const nmo_cli_action_t *a = &parent->sub_actions[i];
+        if (nmo_tool_streq_ci(name, a->name)) return a;
+        if (a->alias && nmo_tool_streq_ci(name, a->alias)) return a;
+    }
+    return NULL;
+}
+
+static void nmo_cli_print_sub_action_help(
+    const nmo_cli_group_t *group,
+    const nmo_cli_action_t *parent,
+    FILE *out)
+{
+    fprintf(out, "Usage: nmo %s %s <command> [options] [file]\n\n",
+            group->name, parent->name);
+    fprintf(out, "%s\n\n", parent->brief);
+    fprintf(out, "Commands:\n");
+    for (size_t i = 0; i < parent->sub_action_count; ++i) {
+        const nmo_cli_action_t *a = &parent->sub_actions[i];
+        const char *suffix = "";
+        if (parent->default_sub && strcmp(a->name, parent->default_sub) == 0)
+            suffix = " (default)";
+        if (a->alias)
+            fprintf(out, "  %-16s (%-3s)  %s%s\n",
+                    a->name, a->alias, a->brief, suffix);
+        else
+            fprintf(out, "  %-16s        %s%s\n",
+                    a->name, a->brief, suffix);
+    }
+}
+
+static int nmo_cli_dispatch_sub_action(
+    const nmo_cli_group_t *group,
+    const nmo_cli_action_t *parent,
+    int argc, char **argv,
+    const nmo_cli_global_opts_t *global)
+{
+    /* argv[0] = action name (e.g. "interface"), argv[1..] = user args */
+
+    /* No user args: default sub-action or show help */
+    if (argc < 2) {
+        if (parent->default_sub) {
+            const nmo_cli_action_t *def =
+                nmo_cli_find_sub_action(parent, parent->default_sub);
+            if (def) return def->handler(argc, argv, global);
+        }
+        nmo_cli_print_sub_action_help(group, parent,
+            global->show_help ? stdout : stderr);
+        return global->show_help ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Explicit --help: show sub-action list */
+    if (nmo_tool_streq_ci(argv[1], "--help") ||
+        nmo_tool_streq_ci(argv[1], "-h")) {
+        nmo_cli_print_sub_action_help(group, parent, stdout);
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+
+    /* Try to match argv[1] as a sub-action name.
+     * Skip if it starts with a digit (positional arg, not a verb)
+     * or a dash (option flag). */
+    const char *sub_name = argv[1];
+    const nmo_cli_action_t *sub = NULL;
+    if (sub_name[0] != '-' &&
+        !(sub_name[0] >= '0' && sub_name[0] <= '9')) {
+        sub = nmo_cli_find_sub_action(parent, sub_name);
+    }
+
+    if (sub) {
+        /* Check for --help on this specific sub-action */
+        for (int i = 2; i < argc; ++i) {
+            if (nmo_tool_streq_ci(argv[i], "--help") ||
+                nmo_tool_streq_ci(argv[i], "-h")) {
+                fprintf(stdout, "Usage: nmo %s %s %s [options] [file]\n\n",
+                        group->name, parent->name, sub->name);
+                fprintf(stdout, "%s\n\n", sub->brief);
+                if (sub->print_usage) sub->print_usage(stdout);
+                return NMO_CLI_EXIT_SUCCESS;
+            }
+        }
+        /* Dispatch: shift past action name, sub-action name in argv[0]
+         * (nmo_opt_parse skips argv[0] as the "command name") */
+        return sub->handler(argc - 1, argv + 1, global);
+    }
+
+    /* No match — fall back to default sub-action.
+     * Do NOT shift argv — the unmatched arg (e.g. <id>) must remain
+     * visible as a positional arg. argv[0] = action name. */
+    if (parent->default_sub) {
+        sub = nmo_cli_find_sub_action(parent, parent->default_sub);
+        if (sub) return sub->handler(argc, argv, global);
+    }
+
+    fprintf(stderr, "Error: Unknown sub-command '%s' in '%s %s'\n\n",
+            sub_name, group->name, parent->name);
+    nmo_cli_print_sub_action_help(group, parent, stderr);
+    return NMO_CLI_EXIT_ARG_ERROR;
+}
+
+/* ============================================================================
  * Dispatch
  * ============================================================================ */
 
@@ -801,7 +908,13 @@ int nmo_cli_dispatch(int argc, char **argv, const nmo_cli_global_opts_t *global)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    /* Check for help in remaining args */
+    /* Sub-action dispatch takes over entirely (handles its own --help) */
+    if (action->sub_actions && action->sub_action_count > 0) {
+        return nmo_cli_dispatch_sub_action(group, action,
+                                           argc - 1, argv + 1, global);
+    }
+
+    /* Check for help in remaining args (leaf actions only) */
     for (int i = 2; i < argc; ++i) {
         if (nmo_tool_streq_ci(argv[i], "--help") || nmo_tool_streq_ci(argv[i], "-h")) {
             fprintf(stdout, "Usage: nmo %s %s [options] [file]\n\n", group->name, action->name);
@@ -813,6 +926,6 @@ int nmo_cli_dispatch(int argc, char **argv, const nmo_cli_global_opts_t *global)
         }
     }
 
-    /* Dispatch to action handler */
+    /* Dispatch to leaf action handler */
     return action->handler(argc - 1, argv + 1, global);
 }

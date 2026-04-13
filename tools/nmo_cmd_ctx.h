@@ -69,6 +69,16 @@ int nmo_cmd_ctx_init(nmo_cmd_ctx_t *c, int argc, char **argv,
                      const nmo_cli_global_opts_t *global);
 
 /**
+ * @brief Initialize context with an explicit file path.
+ *
+ * For write commands where -o is a separate option and the input file
+ * path is known before ctx_init. Avoids the auto-detect logic of
+ * nmo_cmd_ctx_init that may pick up -o's value.
+ */
+int nmo_cmd_ctx_init_with_file(nmo_cmd_ctx_t *c, const char *file_path,
+                               const nmo_cli_global_opts_t *global);
+
+/**
  * @brief Initialize context for commands that don't need a file/session.
  *
  * Opens output stream only. c->ctx, c->session, c->registry are NULL.
