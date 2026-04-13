@@ -5,8 +5,10 @@
 
 #include "test_framework.h"
 #include "format/nmo_interface_chunk.h"
+#include "format/nmo_chunk_context.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_id_remap.h"
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
@@ -15,8 +17,10 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/nmo_serialize_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
+#include "app/nmo_save.h"
 
 #include <string.h>
 
@@ -42,7 +46,10 @@ static void write_script_header_fields(nmo_chunk_t *chunk,
     nmo_chunk_write_float(chunk, v_pos);   /* rect.vPos */
 }
 
-static nmo_chunk_t *build_minimal_chunk(nmo_arena_t *arena) {
+static nmo_chunk_t *build_minimal_chunk_with_behavior_id(
+    nmo_arena_t *arena,
+    nmo_object_id_t behavior_id)
+{
     nmo_chunk_t *chunk = nmo_chunk_create(arena);
     if (!chunk) return NULL;
 
@@ -55,7 +62,7 @@ static nmo_chunk_t *build_minimal_chunk(nmo_arena_t *arena) {
     nmo_chunk_write_int(chunk, 1);
 
     /* --- script header (entry 0) --- */
-    write_script_header_fields(chunk, 100, NMO_INTERFACE_FLAG_HEADER_ONLY, 0,
+    write_script_header_fields(chunk, behavior_id, NMO_INTERFACE_FLAG_HEADER_ONLY, 0,
                                0.0f, 0.0f);
     /* h_start_pos, v_start_pos, v_size */
     nmo_chunk_write_float(chunk, 10.0f);
@@ -69,6 +76,10 @@ static nmo_chunk_t *build_minimal_chunk(nmo_arena_t *arena) {
 
     nmo_chunk_close(chunk);
     return chunk;
+}
+
+static nmo_chunk_t *build_minimal_chunk(nmo_arena_t *arena) {
+    return build_minimal_chunk_with_behavior_id(arena, 100);
 }
 
 /* ============================================================================
@@ -2045,6 +2056,234 @@ TEST(interface_chunk, reflection_data_to_string) {
 }
 
 /* ============================================================================
+ * Serialize integration: structured writer is used by save path
+ * ============================================================================ */
+
+TEST(interface_chunk, serialize_structured_write_round_trip) {
+    /* Load a real file, modify an interface_data field, save, reload,
+     * verify the modification is present.  If the save path copied
+     * the raw interface_chunk instead of using the structured writer,
+     * the modification would be lost. */
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    int load_ok = nmo_session_load_file(session,
+        "data/BBSamples/Collisions/Prevent Collision.cmo", NULL, NULL);
+    if (load_ok != NMO_OK) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return;  /* skip if data not available */
+    }
+
+    /* Find behavior 253 (file_id 250), a Script with interface_data */
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *obj = nmo_object_repository_find_by_file_id(repo, 250);
+    if (!obj) {
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+        return;
+    }
+
+    nmo_behavior_state_t *state =
+        (nmo_behavior_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+    ASSERT_NOT_NULL(state->interface_data);
+
+    /* Record original value and modify */
+    float original_h_start = state->interface_data->script.h_start_pos;
+    float modified_h_start = original_h_start + 42.0f;
+    state->interface_data->script.h_start_pos = modified_h_start;
+
+    /* Save to temp file */
+    const char *temp_path = "test_interface_serialize_tmp.cmo";
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_ok = nmo_save_file(session, temp_path, &save_opts);
+    ASSERT_EQ(NMO_OK, save_ok);
+
+    nmo_session_destroy(session);
+
+    /* Reload and verify the modification persisted */
+    nmo_session_t *session2 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session2);
+    int load2_ok = nmo_session_load_file(session2, temp_path, NULL, NULL);
+    ASSERT_EQ(NMO_OK, load2_ok);
+
+    nmo_object_repository_t *repo2 = nmo_session_get_repository(session2);
+    nmo_object_t *obj2 = nmo_object_repository_find_by_file_id(repo2, 250);
+    ASSERT_NOT_NULL(obj2);
+
+    const nmo_behavior_state_t *state2 =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj2);
+    ASSERT_NOT_NULL(state2);
+    ASSERT_NOT_NULL(state2->interface_data);
+    ASSERT_EQ(nmo_object_get_id(obj2), state2->interface_data->script.behavior_id);
+
+    /* The modified h_start_pos must have survived save/reload.
+     * If the raw chunk was copied instead of using the structured writer,
+     * this will still show the original value. */
+    ASSERT_FLOAT_EQ(modified_h_start, state2->interface_data->script.h_start_pos, 0.01f);
+
+    const char *temp_path2 = "test_interface_serialize_tmp2.cmo";
+    int save2_ok = nmo_save_file(session2, temp_path2, &save_opts);
+    ASSERT_EQ(NMO_OK, save2_ok);
+    nmo_session_destroy(session2);
+
+    nmo_session_t *session3 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session3);
+    int load3_ok = nmo_session_load_file(session3, temp_path2, NULL, NULL);
+    ASSERT_EQ(NMO_OK, load3_ok);
+
+    nmo_object_repository_t *repo3 = nmo_session_get_repository(session3);
+    nmo_object_t *obj3 = nmo_object_repository_find_by_file_id(repo3, 250);
+    ASSERT_NOT_NULL(obj3);
+
+    const nmo_behavior_state_t *state3 =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj3);
+    ASSERT_NOT_NULL(state3);
+    ASSERT_NOT_NULL(state3->interface_data);
+    ASSERT_EQ(nmo_object_get_id(obj3), state3->interface_data->script.behavior_id);
+    ASSERT_FLOAT_EQ(modified_h_start, state3->interface_data->script.h_start_pos, 0.01f);
+
+    nmo_session_destroy(session3);
+    nmo_context_release(ctx);
+    remove(temp_path);
+    remove(temp_path2);
+}
+
+TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *obj = nmo_object_create(NULL, 253, NMO_CID_BEHAVIOR);
+    ASSERT_NOT_NULL(obj);
+    obj->file_id = 250;
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(obj, sizeof(nmo_behavior_state_t)));
+
+    nmo_behavior_state_t *state =
+        (nmo_behavior_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+    state->has_interface = true;
+    state->interface_chunk = build_minimal_chunk_with_behavior_id(arena, 250);
+    ASSERT_NOT_NULL(state->interface_chunk);
+
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 250, 250));
+
+    nmo_chunk_file_context_t file_ctx;
+    file_ctx.runtime_to_file = NULL;
+    file_ctx.file_to_runtime = file_to_runtime;
+    nmo_chunk_set_file_context(state->interface_chunk, &file_ctx);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+    ASSERT_NULL(obj);
+
+    ASSERT_EQ(NMO_OK, nmo_behavior_parse_all_interfaces(repo, NULL));
+
+    nmo_object_t *stored = nmo_object_repository_find_by_id(repo, 253);
+    ASSERT_NOT_NULL(stored);
+    state = (nmo_behavior_state_t *)nmo_object_get_state(stored);
+    ASSERT_NOT_NULL(state);
+    ASSERT_NOT_NULL(state->interface_data);
+    ASSERT_EQ((nmo_object_id_t)250, state->interface_data->script.behavior_id);
+    ASSERT_FALSE(state->interface_ids_are_runtime);
+
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
+}
+
+TEST(interface_chunk, serialize_raw_interface_ids_requires_repository_for_file_context) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(runtime_to_file, 253, 5));
+
+    nmo_chunk_file_context_t file_ctx;
+    file_ctx.runtime_to_file = runtime_to_file;
+    file_ctx.file_to_runtime = NULL;
+
+    nmo_chunk_t *out_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(out_chunk);
+    out_chunk->class_id = NMO_CID_BEHAVIOR;
+    out_chunk->chunk_version = 7;
+    out_chunk->data_version = 7;
+    nmo_chunk_set_file_context(out_chunk, &file_ctx);
+
+    nmo_interface_data_t idata;
+    memset(&idata, 0, sizeof(idata));
+    idata.version = 0x14;
+    idata.script.behavior_id = 250;
+    idata.script.flags = NMO_INTERFACE_FLAG_HEADER_ONLY;
+    idata.script.v_size = 100.0f;
+    idata.script.color = 0x96C8FA;
+
+    nmo_behavior_state_t state;
+    memset(&state, 0, sizeof(state));
+    state.has_interface = true;
+    state.interface_data = &idata;
+    state.interface_ids_are_runtime = false;
+
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_status_t st = nmo_behavior_serialize(&state, out_chunk, NULL, &ser_ctx);
+    ASSERT_NE(NMO_OK, st);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(interface_chunk, behavior_copy_deep_copies_interface_data) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_interface_behavior_t subs[1];
+    memset(subs, 0, sizeof(subs));
+    subs[0].behavior_id = 134;
+    subs[0].h_pos = 12.0f;
+
+    nmo_interface_data_t idata;
+    memset(&idata, 0, sizeof(idata));
+    idata.version = 0x15;
+    idata.script.behavior_id = 250;
+    idata.script.flags = NMO_INTERFACE_FLAG_HEADER_ONLY;
+    idata.sub_count = 1;
+    idata.subs = subs;
+
+    nmo_behavior_state_t src;
+    memset(&src, 0, sizeof(src));
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&src, NULL, NULL));
+    src.has_interface = true;
+    src.interface_data = &idata;
+    src.interface_ids_are_runtime = false;
+
+    nmo_behavior_state_t dst;
+    memset(&dst, 0, sizeof(dst));
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&dst, NULL, NULL));
+    nmo_type_descriptor_t behavior_type;
+    memset(&behavior_type, 0, sizeof(behavior_type));
+    behavior_type.size = sizeof(nmo_behavior_state_t);
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.copy(&src, &dst, &behavior_type, arena));
+
+    ASSERT_NOT_NULL(dst.interface_data);
+    ASSERT_TRUE(dst.interface_data != src.interface_data);
+    ASSERT_NOT_NULL(dst.interface_data->subs);
+    ASSERT_TRUE(dst.interface_data->subs != src.interface_data->subs);
+    ASSERT_EQ(src.interface_data->subs[0].behavior_id,
+              dst.interface_data->subs[0].behavior_id);
+
+    src.interface_data->subs[0].behavior_id = 999;
+    ASSERT_EQ((nmo_object_id_t)134, dst.interface_data->subs[0].behavior_id);
+
+    nmo_arena_destroy(arena);
+}
+
+/* ============================================================================
  * Test registration
  * ============================================================================ */
 
@@ -2095,4 +2334,9 @@ TEST_MAIN_BEGIN()
     /* Reflection tests */
     REGISTER_TEST(interface_chunk, reflection_types_registered);
     REGISTER_TEST(interface_chunk, reflection_data_to_string);
+    /* Serialize integration */
+    REGISTER_TEST(interface_chunk, serialize_structured_write_round_trip);
+    REGISTER_TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw);
+    REGISTER_TEST(interface_chunk, serialize_raw_interface_ids_requires_repository_for_file_context);
+    REGISTER_TEST(interface_chunk, behavior_copy_deep_copies_interface_data);
 TEST_MAIN_END()

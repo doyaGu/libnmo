@@ -27,6 +27,8 @@
 #include "object/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_context.h"
+#include "format/nmo_id_remap.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "core/nmo_error.h"
@@ -124,7 +126,8 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
     NMO_FIELD(nmo_behavior_state_t, has_single_activity, CKPGUID_BOOL),
     NMO_FIELD_OPT(nmo_behavior_state_t, interface_chunk, CKPGUID_STATECHUNK),
     NMO_FIELD(nmo_behavior_state_t, has_interface, CKPGUID_BOOL),
-    NMO_FIELD_PTR(nmo_behavior_state_t, interface_data, NMO_GUID_IFACE_DATA)
+    NMO_FIELD_PTR(nmo_behavior_state_t, interface_data, NMO_GUID_IFACE_DATA),
+    NMO_FIELD(nmo_behavior_state_t, interface_ids_are_runtime, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -489,10 +492,11 @@ nmo_status_t nmo_behavior_deserialize(
         nmo_chunk_t *interface_chunk = NULL;
         nmo_status_t sub_result = nmo_chunk_read_sub_chunk(chunk, &interface_chunk);
         if (sub_result == NMO_OK && interface_chunk) {
-            /* Clear file_context so post-load parsing reads raw file IDs.
-             * The is_building_block callback uses find_by_file_id, which
-             * expects original CK_IDs rather than remapped runtime IDs. */
-            nmo_chunk_set_file_context(interface_chunk, NULL);
+            /* Legacy file-authored interface chunks can set file_flag while
+             * still storing raw CK_IDs and a separate object-ID table. */
+            if (interface_chunk->ids.count > 0) {
+                nmo_chunk_set_file_context(interface_chunk, NULL);
+            }
             out_state->interface_chunk = interface_chunk;
         } else {
             out_state->interface_chunk = NULL;
@@ -542,6 +546,49 @@ nmo_status_t nmo_behavior_deserialize(
         }
     }
 
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t build_interface_file_index_remap(
+    nmo_arena_t *arena,
+    nmo_object_repository_t *repo,
+    const nmo_id_remap_t *runtime_to_file_index,
+    nmo_id_remap_t **out_remap)
+{
+    if (!out_remap) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid interface remap output");
+    }
+    *out_remap = NULL;
+
+    if (!arena || !repo || !runtime_to_file_index) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    if (!remap) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Cannot allocate interface ID remap");
+    }
+
+    size_t count = 0;
+    nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
+    for (size_t i = 0; all && i < count; ++i) {
+        nmo_object_t *obj = all[i];
+        if (!obj || obj->file_id == 0) {
+            continue;
+        }
+
+        nmo_object_id_t file_index = 0;
+        if (nmo_id_remap_lookup_id(runtime_to_file_index,
+                                   obj->id,
+                                   &file_index) == NMO_OK) {
+            nmo_status_t st = nmo_id_remap_add(remap, obj->file_id, file_index);
+            NMO_RETURN_IF_ERROR(st);
+        }
+    }
+
+    *out_remap = remap;
     NMO_RETURN_OK();
 }
 
@@ -654,6 +701,43 @@ nmo_status_t nmo_behavior_serialize(
             if (!interface_out) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Cannot allocate InterfaceChunk output");
+            }
+            const nmo_serialize_context_t *ser_ctx =
+                nmo_serialize_context_try(context);
+            nmo_object_repository_t *repo = ser_ctx
+                ? (nmo_object_repository_t *)ser_ctx->repository
+                : NULL;
+            if (out_chunk->file_context != NULL &&
+                out_chunk->file_context->runtime_to_file != NULL) {
+                if (in_state->interface_ids_are_runtime) {
+                    nmo_chunk_set_file_context(interface_out, out_chunk->file_context);
+                } else if (repo != NULL) {
+                    nmo_id_remap_t *interface_remap = NULL;
+                    result = build_interface_file_index_remap(
+                        out_chunk->arena,
+                        repo,
+                        out_chunk->file_context->runtime_to_file,
+                        &interface_remap);
+                    if (result != NMO_OK) return result;
+
+                    nmo_chunk_file_context_t *interface_file_ctx =
+                        (nmo_chunk_file_context_t *)nmo_arena_alloc(
+                            out_chunk->arena,
+                            sizeof(nmo_chunk_file_context_t),
+                            alignof(nmo_chunk_file_context_t));
+                    if (!interface_file_ctx) {
+                        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                         "Cannot allocate InterfaceChunk file context");
+                    }
+                    interface_file_ctx->runtime_to_file = interface_remap;
+                    interface_file_ctx->file_to_runtime = NULL;
+                    nmo_chunk_set_file_context(interface_out, interface_file_ctx);
+                } else {
+                    NMO_RETURN_ERROR(
+                        NMO_ERR_INVALID_ARGUMENT,
+                        NMO_SEVERITY_ERROR,
+                        "Cannot serialize raw InterfaceChunk IDs in file context without object repository");
+                }
             }
             result = nmo_interface_chunk_write(interface_out,
                                                in_state->interface_data,
@@ -812,6 +896,240 @@ nmo_status_t nmo_behavior_serialize(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_interface_copy_array(
+    nmo_arena_t *arena,
+    void **dst,
+    const void *src,
+    size_t elem_size,
+    size_t count,
+    const char *label)
+{
+    if (!dst || !arena) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid interface copy arguments");
+    }
+    *dst = NULL;
+    if (count == 0) {
+        NMO_RETURN_OK();
+    }
+    if (!src) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing %s data for interface copy", label);
+    }
+    if (elem_size != 0 && count > ((size_t)-1) / elem_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Interface copy size overflow for %s", label);
+    }
+    void *copy = nmo_arena_alloc(arena, elem_size * count, alignof(max_align_t));
+    if (!copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Cannot allocate %s for interface copy", label);
+    }
+    memcpy(copy, src, elem_size * count);
+    *dst = copy;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_interface_copy_bytes(
+    nmo_arena_t *arena,
+    void **dst,
+    const void *src,
+    size_t size,
+    const char *label)
+{
+    return nmo_interface_copy_array(arena, dst, src, sizeof(uint8_t), size, label);
+}
+
+static nmo_status_t nmo_interface_copy_string(
+    nmo_arena_t *arena,
+    const char **dst,
+    const char *src)
+{
+    if (!dst) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid interface string copy output");
+    }
+    *dst = NULL;
+    if (!src) {
+        NMO_RETURN_OK();
+    }
+    void *copy = NULL;
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_bytes(
+        arena, &copy, src, strlen(src) + 1u, "comment text"));
+    *dst = (const char *)copy;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_interface_copy_graph_io(
+    nmo_arena_t *arena,
+    nmo_interface_graph_io_t **dst,
+    const nmo_interface_graph_io_t *src)
+{
+    if (!dst) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid graph IO copy output");
+    }
+    *dst = NULL;
+    if (!src) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_interface_graph_io_t *copy =
+        (nmo_interface_graph_io_t *)nmo_arena_alloc(
+            arena, sizeof(*copy), alignof(nmo_interface_graph_io_t));
+    if (!copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Cannot allocate graph IO copy");
+    }
+    *copy = *src;
+    copy->inward_inputs = NULL;
+    copy->outward_inputs = NULL;
+    copy->inward_outputs = NULL;
+    copy->outward_outputs = NULL;
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&copy->inward_inputs, src->inward_inputs,
+        sizeof(int32_t), src->inward_input_count, "graph inward inputs"));
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&copy->outward_inputs, src->outward_inputs,
+        sizeof(int32_t), src->outward_input_count, "graph outward inputs"));
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&copy->inward_outputs, src->inward_outputs,
+        sizeof(int32_t), src->inward_output_count, "graph inward outputs"));
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&copy->outward_outputs, src->outward_outputs,
+        sizeof(int32_t), src->outward_output_count, "graph outward outputs"));
+
+    *dst = copy;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_interface_copy_body(
+    nmo_arena_t *arena,
+    nmo_interface_body_t *dst,
+    const nmo_interface_body_t *src)
+{
+    if (!dst || !src) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid interface body copy arguments");
+    }
+    *dst = *src;
+    dst->links = NULL;
+    dst->operations = NULL;
+    dst->comments = NULL;
+    dst->params.locals = NULL;
+    dst->params.shared = NULL;
+    dst->graph_io = NULL;
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&dst->links, src->links, sizeof(nmo_interface_link_t),
+        src->link_count, "interface links"));
+    for (size_t i = 0; i < dst->link_count; ++i) {
+        dst->links[i].points = NULL;
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+            arena, (void **)&dst->links[i].points, src->links[i].points,
+            sizeof(float), src->links[i].point_count * 2u,
+            "interface link points"));
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&dst->operations, src->operations,
+        sizeof(nmo_interface_operation_t), src->operation_count,
+        "interface operations"));
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&dst->comments, src->comments,
+        sizeof(nmo_interface_comment_t), src->comment_count,
+        "interface comments"));
+    for (size_t i = 0; i < dst->comment_count; ++i) {
+        dst->comments[i].text = NULL;
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_string(
+            arena, &dst->comments[i].text, src->comments[i].text));
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&dst->params.locals, src->params.locals,
+        sizeof(nmo_interface_param_t), src->params.local_count,
+        "interface local params"));
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&dst->params.shared, src->params.shared,
+        sizeof(nmo_interface_param_t), src->params.shared_count,
+        "interface shared params"));
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_graph_io(
+        arena, &dst->graph_io, src->graph_io));
+
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_interface_copy_data(
+    nmo_arena_t *arena,
+    nmo_interface_data_t **dst,
+    const nmo_interface_data_t *src)
+{
+    if (!dst) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid interface data copy output");
+    }
+    *dst = NULL;
+    if (!src) {
+        NMO_RETURN_OK();
+    }
+
+    nmo_interface_data_t *copy =
+        (nmo_interface_data_t *)nmo_arena_alloc(
+            arena, sizeof(*copy), alignof(nmo_interface_data_t));
+    if (!copy) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Cannot allocate interface data copy");
+    }
+    *copy = *src;
+    copy->script.snapshot_data = NULL;
+    copy->script.body = (nmo_interface_body_t){0};
+    copy->subs = NULL;
+    copy->extra.entries = NULL;
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_bytes(
+        arena, &copy->script.snapshot_data, src->script.snapshot_data,
+        src->script.snapshot_size, "script snapshot"));
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_body(
+        arena, &copy->script.body, &src->script.body));
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&copy->subs, src->subs,
+        sizeof(nmo_interface_behavior_t), src->sub_count,
+        "interface sub behaviors"));
+    for (size_t i = 0; i < copy->sub_count; ++i) {
+        copy->subs[i].body = (nmo_interface_body_t){0};
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_body(
+            arena, &copy->subs[i].body, &src->subs[i].body));
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+        arena, (void **)&copy->extra.entries, src->extra.entries,
+        sizeof(nmo_interface_extra_entry_t), src->extra.entry_count,
+        "interface extra entries"));
+    for (size_t i = 0; i < copy->extra.entry_count; ++i) {
+        nmo_interface_extra_entry_t *dst_entry = &copy->extra.entries[i];
+        const nmo_interface_extra_entry_t *src_entry = &src->extra.entries[i];
+        dst_entry->sub_entries = NULL;
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+            arena, (void **)&dst_entry->sub_entries, src_entry->sub_entries,
+            sizeof(nmo_interface_extra_sub_t), src_entry->sub_count,
+            "interface extra sub entries"));
+        for (size_t j = 0; j < dst_entry->sub_count; ++j) {
+            dst_entry->sub_entries[j].data = NULL;
+            NMO_RETURN_IF_ERROR(nmo_interface_copy_bytes(
+                arena, &dst_entry->sub_entries[j].data,
+                src_entry->sub_entries[j].data,
+                src_entry->sub_entries[j].data_size,
+                "interface extra sub data"));
+        }
+    }
+
+    *dst = copy;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t nmo_behavior_copy(
     const void *src,
     void *dst,
@@ -839,7 +1157,8 @@ static nmo_status_t nmo_behavior_copy(
                                                      &s->local_parameter_chunks));
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->inputs, &d->inputs, &s->inputs.allocator));
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->outputs, &d->outputs, &s->outputs.allocator));
-    return nmo_object_copy_chunk(arena, &d->interface_chunk, s->interface_chunk);
+    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->interface_chunk, s->interface_chunk));
+    return nmo_interface_copy_data(arena, &d->interface_data, s->interface_data);
 }
 
 static nmo_status_t nmo_behavior_validate(
@@ -1110,16 +1429,56 @@ static void nmo_behavior_post_delete(
  * Post-load interface chunk parsing
  * ============================================================================ */
 
+typedef struct nmo_interface_lookup_ctx {
+    nmo_object_repository_t *repo;
+    bool prefer_runtime_ids;
+} nmo_interface_lookup_ctx_t;
+
 static bool is_building_block_cb(nmo_object_id_t id, void *user_data) {
     if (id == 0) return false;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)user_data;
-    nmo_object_t *obj = nmo_object_repository_find_by_file_id(repo, id);
+    nmo_interface_lookup_ctx_t *lookup =
+        (nmo_interface_lookup_ctx_t *)user_data;
+    if (!lookup || !lookup->repo) return false;
+
+    nmo_object_repository_t *repo = lookup->repo;
+    nmo_object_t *obj = NULL;
+    if (lookup->prefer_runtime_ids) {
+        obj = nmo_object_repository_find_by_id(repo, id);
+        if (!obj) {
+            obj = nmo_object_repository_find_by_file_id(repo, id);
+        }
+    } else {
+        obj = nmo_object_repository_find_by_file_id(repo, id);
+        if (!obj) {
+            obj = nmo_object_repository_find_by_id(repo, id);
+        }
+    }
     if (!obj) return false;
     if (obj->class_id != NMO_CID_BEHAVIOR) return false;
     const nmo_behavior_state_t *state =
         (const nmo_behavior_state_t *)nmo_object_get_state(obj);
     if (!state) return false;
     return (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+}
+
+static bool interface_script_id_matches_object(
+    const nmo_interface_data_t *data,
+    const nmo_object_t *obj,
+    bool prefer_runtime_ids)
+{
+    if (!data || !obj || data->script.behavior_id == 0) {
+        return false;
+    }
+
+    if (prefer_runtime_ids) {
+        return data->script.behavior_id == obj->id;
+    }
+
+    if (obj->file_id != 0) {
+        return data->script.behavior_id == obj->file_id;
+    }
+
+    return data->script.behavior_id == obj->id;
 }
 
 nmo_status_t nmo_behavior_parse_all_interfaces(
@@ -1136,10 +1495,14 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
         return NMO_OK;
     }
 
+    nmo_interface_lookup_ctx_t lookup_ctx;
+    memset(&lookup_ctx, 0, sizeof(lookup_ctx));
+    lookup_ctx.repo = repo;
+
     nmo_interface_parse_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = is_building_block_cb;
-    ctx.user_data = repo;
+    ctx.user_data = &lookup_ctx;
     /* Layout (inline vs sectioned) is auto-detected by the parser. */
 
     nmo_status_t first_error = NMO_OK;
@@ -1184,14 +1547,39 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
             continue;
         }
 
+        lookup_ctx.prefer_runtime_ids =
+            (nmo_chunk_get_file_context(state->interface_chunk) != NULL);
         nmo_status_t st = nmo_interface_chunk_parse(
             state->interface_chunk, arena, &ctx, idata);
+        if (st == NMO_OK &&
+            !interface_script_id_matches_object(idata, obj, lookup_ctx.prefer_runtime_ids)) {
+            NMO_SET_LAST_ERROR(NMO_ERR_INVALID_FORMAT,
+                               NMO_SEVERITY_WARNING,
+                               "InterfaceChunk script behavior ID does not match selected ID space");
+            st = NMO_ERR_INVALID_FORMAT;
+        }
+        if (st != NMO_OK &&
+            nmo_chunk_get_file_context(state->interface_chunk) != NULL) {
+            nmo_chunk_set_file_context(state->interface_chunk, NULL);
+            lookup_ctx.prefer_runtime_ids = false;
+            st = nmo_interface_chunk_parse(
+                state->interface_chunk, arena, &ctx, idata);
+            if (st == NMO_OK &&
+                !interface_script_id_matches_object(idata, obj, false)) {
+                NMO_SET_LAST_ERROR(NMO_ERR_INVALID_FORMAT,
+                                   NMO_SEVERITY_WARNING,
+                                   "InterfaceChunk script behavior ID does not match raw ID space");
+                st = NMO_ERR_INVALID_FORMAT;
+            }
+        }
 
         if (st == NMO_OK) {
             state->interface_data = idata;
+            state->interface_ids_are_runtime = lookup_ctx.prefer_runtime_ids;
             /* Keep the raw chunk for byte-level save round-trip. */
         } else {
             state->interface_data = NULL;
+            state->interface_ids_are_runtime = false;
             if (first_error == NMO_OK) {
                 first_error = st;
             }

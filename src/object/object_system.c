@@ -359,6 +359,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx)
@@ -455,7 +456,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     }
 
     nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+        arena, repo, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
 
     result = schema_type->vtable->serialize(obj->data, new_chunk, schema_type, &ser_ctx);
 
@@ -506,4 +507,3 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
 
     return new_chunk;
 }
-

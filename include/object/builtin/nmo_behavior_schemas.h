@@ -118,6 +118,7 @@ typedef struct nmo_behavior_state {
     nmo_chunk_t *interface_chunk;          /**< Original InterfaceChunk oracle retained for diagnostics */
     bool has_interface;                    /**< Whether interface identifier is present */
     nmo_interface_data_t *interface_data;  /**< Structured InterfaceChunk data used for save after successful parse */
+    bool interface_ids_are_runtime;        /**< Interface object IDs are runtime IDs rather than raw CK/file IDs */
 } nmo_behavior_state_t;
 
 /* =============================================================================

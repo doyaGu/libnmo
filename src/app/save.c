@@ -157,6 +157,7 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx,
@@ -891,7 +892,8 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
 
         nmo_chunk_t *old_chunk = obj->chunk;
         obj->chunk = serialize_object_with_schema(
-            obj, ctx->type_rt, ctx->arena, ctx->logger, shadow_storage, ctx->chunk_file_ctx, require_schema);
+            obj, ctx->type_rt, ctx->arena, ctx->repo, ctx->logger, shadow_storage,
+            ctx->chunk_file_ctx, require_schema);
 
         if (obj->chunk == NULL) {
             if (require_schema) {
@@ -1560,13 +1562,15 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
+    nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx,
     int require_schema)
 {
     nmo_chunk_t *chunk = nmo_object_system_serialize_object_chunk(
-        obj, type_rt, arena, logger, shadow_storage, file_ctx);
+        obj, type_rt, arena, repo, logger,
+        shadow_storage, file_ctx);
 
     if (!require_schema) {
         return chunk;
