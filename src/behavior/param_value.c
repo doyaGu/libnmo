@@ -9,6 +9,7 @@
 
 #include "behavior/nmo_param_value.h"
 #include "type/nmo_type_string.h"
+#include "type/nmo_type_guids.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hex.h"
 #include "core/nmo_error.h"
@@ -90,6 +91,66 @@ static nmo_status_t format_hex_preview(
         buffer[pos++] = '.';
         buffer[pos++] = '.';
     }
+    buffer[pos] = '\0';
+    return NMO_OK;
+}
+
+static nmo_status_t format_raw_string_buffer(
+    const void *data, size_t size,
+    char *buffer, size_t buffer_size)
+{
+    if (!data || !buffer || buffer_size < 3) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for string buffer preview");
+    }
+
+    const unsigned char *bytes = (const unsigned char *)data;
+    size_t text_size = size;
+    if (text_size > 0 && bytes[text_size - 1] == '\0') {
+        text_size--;
+    }
+
+    size_t pos = 0;
+    buffer[pos++] = '"';
+
+    for (size_t i = 0; i < text_size && pos + 2 < buffer_size; i++) {
+        unsigned char c = bytes[i];
+        const char *escape = NULL;
+        char hex_escape[5];
+
+        switch (c) {
+        case '"':  escape = "\\\""; break;
+        case '\\': escape = "\\\\"; break;
+        case '\n': escape = "\\n";  break;
+        case '\r': escape = "\\r";  break;
+        case '\t': escape = "\\t";  break;
+        default:
+            break;
+        }
+
+        if (escape) {
+            size_t len = strlen(escape);
+            if (pos + len + 2 > buffer_size) {
+                break;
+            }
+            memcpy(buffer + pos, escape, len);
+            pos += len;
+        } else if (c >= 32 && c <= 126) {
+            if (pos + 3 > buffer_size) {
+                break;
+            }
+            buffer[pos++] = (char)c;
+        } else {
+            if (pos + 6 > buffer_size) {
+                break;
+            }
+            snprintf(hex_escape, sizeof(hex_escape), "\\x%02X", (unsigned)c);
+            memcpy(buffer + pos, hex_escape, 4);
+            pos += 4;
+        }
+    }
+
+    buffer[pos++] = '"';
     buffer[pos] = '\0';
     return NMO_OK;
 }
@@ -190,6 +251,10 @@ nmo_status_t nmo_param_value_to_string(
     if (!data || data_size == 0) {
         snprintf(buffer, buffer_size, "(empty buffer)");
         return NMO_OK;
+    }
+
+    if (nmo_guid_equals(param->type_guid, CKPGUID_STRING)) {
+        return format_raw_string_buffer(data, data_size, buffer, buffer_size);
     }
 
     /* Look up the type descriptor */

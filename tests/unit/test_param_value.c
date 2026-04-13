@@ -218,6 +218,23 @@ TEST(param_value, decode_string) {
     nmo_context_release(ctx);
 }
 
+TEST(param_value, decode_raw_string_buffer) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
+
+    const char raw[] = "My Font";
+    nmo_parameter_state_t p = make_buffer_param(
+        CKPGUID_STRING, raw, sizeof(raw));
+
+    char buf[256];
+    nmo_status_t st = nmo_param_value_to_string(&p, reg, NULL, buf, sizeof(buf));
+    ASSERT_EQ(NMO_OK, st);
+    ASSERT_STR_EQ("\"My Font\"", buf);
+
+    nmo_context_release(ctx);
+}
+
 /* ============================================================================
  * Tests: hex fallback for unknown type
  * ============================================================================ */
@@ -347,6 +364,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(param_value, decode_int);
     REGISTER_TEST(param_value, decode_bool_true);
     REGISTER_TEST(param_value, decode_string);
+    REGISTER_TEST(param_value, decode_raw_string_buffer);
     REGISTER_TEST(param_value, unknown_type_hex_fallback);
     REGISTER_TEST(param_value, format_summary);
     REGISTER_TEST(param_value, format_summary_unknown_type);
