@@ -195,6 +195,7 @@ set(NMO_FORMAT_SOURCES
     src/format/interface_chunk.c
     src/format/interface_chunk_types.c
     src/format/interface_edit.c
+    src/format/obj_parser.c
 )
 
 # Object layer sources

@@ -27,6 +27,8 @@
 #include "commands/nmo_cmd_scene.h"
 #include "commands/nmo_cmd_entity.h"
 #include "commands/nmo_cmd_material.h"
+#include "commands/nmo_cmd_animation.h"
+#include "commands/nmo_cmd_mesh.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -639,6 +641,69 @@ static void material_show_usage(FILE *out) {
     fprintf(out, "Show material details: colors, specular power, textures, blend modes.\n");
 }
 
+/* Mesh command usage */
+static void mesh_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo mesh list <file>\n\n");
+    fprintf(out, "List all CKMesh objects with vertex/face/material counts.\n");
+}
+
+static void mesh_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo mesh show <id> <file>\n\n");
+    fprintf(out, "Show mesh details: geometry, bounds, material groups.\n");
+}
+
+static void mesh_export_usage(FILE *out) {
+    fprintf(out, "Usage: nmo mesh export --out-dir <dir> [--id <n> | --all] <file>\n\n");
+    fprintf(out, "Export mesh as Wavefront OBJ + MTL files.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --out-dir, -d <dir>  Output directory (required)\n");
+    fprintf(out, "  --id <n>             Export single mesh by ID\n");
+    fprintf(out, "  --all, -a            Export all meshes\n");
+}
+
+static void mesh_import_usage(FILE *out) {
+    fprintf(out, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Import a Wavefront OBJ file into an NMO mesh.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  --replace <id>         Replace existing mesh by ID\n");
+    fprintf(out, "  --name, -n <name>      Mesh name\n");
+}
+
+/* Animation command usage */
+static void animation_list_usage(FILE *out) {
+    fprintf(out, "Usage: nmo animation list <file>\n\n");
+    fprintf(out, "List all animation objects (CKAnimation, CKKeyedAnimation, CKObjectAnimation).\n");
+}
+
+static void animation_show_usage(FILE *out) {
+    fprintf(out, "Usage: nmo animation show <id> <file>\n\n");
+    fprintf(out, "Show animation details based on class type.\n");
+}
+
+static void animation_keys_usage(FILE *out) {
+    fprintf(out, "Usage: nmo animation keys <id> <file>\n\n");
+    fprintf(out, "Show decoded key data for a CKObjectAnimation.\n");
+    fprintf(out, "Decodes position, rotation, and other controller keys.\n");
+}
+
+static void animation_export_usage(FILE *out) {
+    fprintf(out, "Usage: nmo animation export [--all | <id>] --out-dir <dir> <file>\n\n");
+    fprintf(out, "Export CKObjectAnimation data as JSON.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --out-dir, -d <dir>  Output directory (required)\n");
+    fprintf(out, "  --id, -i <n>         Export single animation by ID\n");
+    fprintf(out, "  --all                Export all CKObjectAnimation objects\n");
+}
+
+static void animation_import_usage(FILE *out) {
+    fprintf(out, "Usage: nmo animation import <json-file> <nmo-file> -o <output>\n\n");
+    fprintf(out, "Import animation data from JSON into an NMO file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  --replace <id>         Replace existing animation by ID\n");
+}
+
 /* ============================================================================
  * Action definitions for each group
  * ============================================================================ */
@@ -793,6 +858,23 @@ static const nmo_cli_action_t material_actions[] = {
     {"show", "s", "Show material details", nmo_cmd_material_show, material_show_usage, NULL, 0, NULL},
 };
 
+/* mesh group actions */
+static const nmo_cli_action_t mesh_actions[] = {
+    {"list", "ls", "List meshes", nmo_cmd_mesh_list, mesh_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show mesh details", nmo_cmd_mesh_show, mesh_show_usage, NULL, 0, NULL},
+    {"export", "x", "Export mesh as OBJ", nmo_cmd_mesh_export, mesh_export_usage, NULL, 0, NULL},
+    {"import", "imp", "Import OBJ into mesh", nmo_cmd_mesh_import, mesh_import_usage, NULL, 0, NULL},
+};
+
+/* animation group actions */
+static const nmo_cli_action_t animation_actions[] = {
+    {"list", "ls", "List animation objects", nmo_cmd_animation_list, animation_list_usage, NULL, 0, NULL},
+    {"show", "s", "Show animation details", nmo_cmd_animation_show, animation_show_usage, NULL, 0, NULL},
+    {"keys", "k", "Show decoded key data", nmo_cmd_animation_keys, animation_keys_usage, NULL, 0, NULL},
+    {"export", "x", "Export animation as JSON", nmo_cmd_animation_export, animation_export_usage, NULL, 0, NULL},
+    {"import", "imp", "Import animation from JSON", nmo_cmd_animation_import, animation_import_usage, NULL, 0, NULL},
+};
+
 /* debug group actions */
 static const nmo_cli_action_t debug_actions[] = {
     {"load-phases", "lp", "Show load pipeline phases", nmo_cmd_debug_load_phases, debug_load_phases_usage, NULL, 0, NULL},
@@ -824,6 +906,8 @@ static const nmo_cli_group_t groups[] = {
     {"scene", "sc", "Scene/level inspection", scene_actions, ARRAY_SIZE(scene_actions)},
     {"entity", "ent", "3D entity inspection", entity_actions, ARRAY_SIZE(entity_actions)},
     {"material", "mat", "Material inspection", material_actions, ARRAY_SIZE(material_actions)},
+    {"mesh", "m", "Mesh inspection and export", mesh_actions, ARRAY_SIZE(mesh_actions)},
+    {"animation", "anim", "Animation inspection and export", animation_actions, ARRAY_SIZE(animation_actions)},
     {"type", "t", "Type system information", type_actions, ARRAY_SIZE(type_actions)},
     {"validate", "val", "File validation", validate_actions, ARRAY_SIZE(validate_actions)},
     {"convert", "conv", "Format conversion", convert_actions, ARRAY_SIZE(convert_actions)},
