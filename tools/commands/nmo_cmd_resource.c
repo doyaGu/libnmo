@@ -13,6 +13,10 @@
 #include "nmo.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
+#include "app/nmo_save.h"
+#include "core/nmo_arena.h"
+#include "core/nmo_error.h"
+#include "format/nmo_stb_adapter.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -628,5 +632,679 @@ int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t 
     }
 
     return nmo_cmd_ctx_done(&c, exit_code);
+}
+
+/* ============================================================================
+ * Helpers for write commands
+ * ============================================================================ */
+
+static const char *path_basename(const char *path) {
+    const char *slash = strrchr(path, '/');
+    const char *bslash = strrchr(path, '\\');
+    const char *last = NULL;
+    if (slash && bslash) {
+        last = (slash > bslash) ? slash : bslash;
+    } else if (slash) {
+        last = slash;
+    } else if (bslash) {
+        last = bslash;
+    }
+    return last ? last + 1 : path;
+}
+
+static int read_file_to_memory(const char *path, uint8_t **out_data, uint32_t *out_size) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: Cannot open '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fprintf(stderr, "Error: Cannot seek in '%s': %s\n", path, strerror(errno));
+        fclose(f);
+        return -1;
+    }
+    long sz = ftell(f);
+    if (sz < 0) {
+        fprintf(stderr, "Error: Cannot get size of '%s': %s\n", path, strerror(errno));
+        fclose(f);
+        return -1;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fprintf(stderr, "Error: Cannot rewind '%s': %s\n", path, strerror(errno));
+        fclose(f);
+        return -1;
+    }
+    uint8_t *data = (uint8_t *)malloc((size_t)sz);
+    if (!data) {
+        fprintf(stderr, "Error: Out of memory reading '%s'\n", path);
+        fclose(f);
+        return -1;
+    }
+    if (sz > 0) {
+        size_t rd = fread(data, 1, (size_t)sz, f);
+        if (rd != (size_t)sz) {
+            fprintf(stderr, "Error: Short read on '%s'\n", path);
+            free(data);
+            fclose(f);
+            return -1;
+        }
+    }
+    fclose(f);
+    *out_data = data;
+    *out_size = (uint32_t)sz;
+    return 0;
+}
+
+/* ============================================================================
+ * resource import
+ * ============================================================================ */
+
+int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file (required)"},
+        {"--name",   "-n", NMO_OPT_STRING, "Resource name (default: basename of disk file)"},
+        {"--owner",  NULL, NMO_OPT_STRING, "Owner object IDs (comma-separated)"},
+    };
+    nmo_opt_val_t vals[3];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[0].present ? vals[0].val.str : NULL;
+    if (!output_path || !*output_path) {
+        fprintf(stderr, "Error: Missing --output\n");
+        fprintf(stderr, "Usage: nmo resource import -o <output> [--name <name>] [--owner <ids>] <disk-file> <nmo-file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *name_str = vals[1].present ? vals[1].val.str : NULL;
+    const char *owner_str = vals[2].present ? vals[2].val.str : NULL;
+
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Error: Expected <disk-file> <nmo-file>\n");
+        fprintf(stderr, "Usage: nmo resource import -o <output> [--name <name>] [--owner <ids>] <disk-file> <nmo-file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *disk_file = r.pos_args[0];
+    const char *nmo_file = r.pos_args[r.pos_count - 1];
+
+    /* Read disk file */
+    uint8_t *file_data = NULL;
+    uint32_t file_size = 0;
+    if (read_file_to_memory(disk_file, &file_data, &file_size) != 0) {
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    /* Resource name */
+    const char *res_name = name_str ? name_str : path_basename(disk_file);
+
+    /* Parse owner IDs */
+    nmo_object_id_t owner_ids[64];
+    uint32_t owner_count = 0;
+    if (owner_str && *owner_str) {
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "%s", owner_str);
+        char *tok = strtok(buf, ",");
+        while (tok && owner_count < 64) {
+            uint32_t id;
+            if (!nmo_tool_parse_u32_dec(tok, &id)) {
+                fprintf(stderr, "Error: Invalid owner ID '%s'\n", tok);
+                free(file_data);
+                return NMO_CLI_EXIT_ARG_ERROR;
+            }
+            owner_ids[owner_count++] = id;
+            tok = strtok(NULL, ",");
+        }
+    }
+
+    /* Open NMO session */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_file, global);
+    if (rc) {
+        free(file_data);
+        return rc;
+    }
+
+    /* Add included file */
+    nmo_included_file_metadata_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.owner_ids = owner_ids;
+    meta.owner_count = owner_count;
+
+    int add_rc = nmo_session_add_included_file_ex(c.session, res_name, file_data, file_size, &meta);
+    if (add_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to add resource: %s\n", nmo_error_string(add_rc));
+        free(file_data);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Get the new index */
+    uint32_t count = 0;
+    (void)nmo_session_get_included_files(c.session, &count);
+    uint32_t new_index = count > 0 ? count - 1 : 0;
+
+    /* Save */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        free(file_data);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "index", new_index);
+        nmo_cli_json_add_str_safe(doc, data, "name", res_name);
+        yyjson_mut_obj_add_uint(doc, data, "size", file_size);
+        yyjson_mut_obj_add_uint(doc, data, "owner_count", owner_count);
+        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(&c, doc, data, "resource.import");
+    } else {
+        fprintf(c.out, "Imported resource:\n");
+        char idx_buf[32];
+        snprintf(idx_buf, sizeof(idx_buf), "%u", new_index);
+        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
+        nmo_cli_print_kv(c.out, "Name", res_name, 12, c.colorize);
+        char size_buf[32];
+        snprintf(size_buf, sizeof(size_buf), "%u", file_size);
+        nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
+        char own_buf[32];
+        snprintf(own_buf, sizeof(own_buf), "%u", owner_count);
+        nmo_cli_print_kv(c.out, "Owners", own_buf, 12, c.colorize);
+        fprintf(c.out, "\nSaved to: %s\n", output_path);
+    }
+
+    free(file_data);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * resource replace
+ * ============================================================================ */
+
+int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output", "-o", NMO_OPT_STRING, "Output file (required)"},
+        {"--index",  "-i", NMO_OPT_STRING, "Resource index"},
+        {"--name",   "-n", NMO_OPT_STRING, "Resource name"},
+    };
+    nmo_opt_val_t vals[3];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[0].present ? vals[0].val.str : NULL;
+    if (!output_path || !*output_path) {
+        fprintf(stderr, "Error: Missing --output\n");
+        fprintf(stderr, "Usage: nmo resource replace -o <output> [--index <n> | --name <name>] <disk-file> <nmo-file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *index_str = vals[1].present ? vals[1].val.str : NULL;
+    const char *name_str = vals[2].present ? vals[2].val.str : NULL;
+
+    if (!index_str && !name_str) {
+        fprintf(stderr, "Error: Specify --index or --name to identify the resource\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (r.pos_count < 2) {
+        fprintf(stderr, "Error: Expected <disk-file> <nmo-file>\n");
+        fprintf(stderr, "Usage: nmo resource replace -o <output> [--index <n> | --name <name>] <disk-file> <nmo-file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *disk_file = r.pos_args[0];
+    const char *nmo_file = r.pos_args[r.pos_count - 1];
+
+    /* Read disk file */
+    uint8_t *file_data = NULL;
+    uint32_t file_size = 0;
+    if (read_file_to_memory(disk_file, &file_data, &file_size) != 0) {
+        return NMO_CLI_EXIT_IO_ERROR;
+    }
+
+    /* Open NMO session */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_file, global);
+    if (rc) {
+        free(file_data);
+        return rc;
+    }
+
+    /* Find resource */
+    uint32_t count = 0;
+    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+
+    uint32_t res_index = 0;
+    const nmo_included_file_t *res = NULL;
+
+    if (index_str) {
+        uint32_t idx;
+        if (!nmo_tool_parse_u32_dec(index_str, &idx)) {
+            fprintf(stderr, "Error: Invalid index '%s'\n", index_str);
+            free(file_data);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (idx >= count) {
+            fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
+            free(file_data);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+        }
+        res_index = idx;
+        res = &files[idx];
+    } else {
+        for (uint32_t i = 0; i < count; ++i) {
+            if (files[i].name && strcmp(files[i].name, name_str) == 0) {
+                res_index = i;
+                res = &files[i];
+                break;
+            }
+        }
+        if (!res) {
+            fprintf(stderr, "Error: Resource '%s' not found\n", name_str);
+            free(file_data);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+        }
+    }
+
+    uint32_t old_size = res->size;
+    const char *res_name = res->name ? res->name : "";
+
+    /* Replace payload */
+    int rep_rc = nmo_session_replace_included_file(c.session, res_index, file_data, file_size);
+    if (rep_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to replace resource: %s\n", nmo_error_string(rep_rc));
+        free(file_data);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Save */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        free(file_data);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "index", res_index);
+        nmo_cli_json_add_str_safe(doc, data, "name", res_name);
+        yyjson_mut_obj_add_uint(doc, data, "old_size", old_size);
+        yyjson_mut_obj_add_uint(doc, data, "new_size", file_size);
+        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(&c, doc, data, "resource.replace");
+    } else {
+        fprintf(c.out, "Replaced resource:\n");
+        char idx_buf[32];
+        snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
+        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
+        nmo_cli_print_kv(c.out, "Name", *res_name ? res_name : "-", 12, c.colorize);
+        char old_buf[32];
+        snprintf(old_buf, sizeof(old_buf), "%u -> %u", old_size, file_size);
+        nmo_cli_print_kv(c.out, "Size", old_buf, 12, c.colorize);
+        fprintf(c.out, "\nSaved to: %s\n", output_path);
+    }
+
+    free(file_data);
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * resource remove
+ * ============================================================================ */
+
+int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--index",   "-i", NMO_OPT_STRING, "Resource index"},
+        {"--name",    "-n", NMO_OPT_STRING, "Resource name"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview only, do not save"},
+    };
+    nmo_opt_val_t vals[4];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[0].present ? vals[0].val.str : NULL;
+    const char *index_str = vals[1].present ? vals[1].val.str : NULL;
+    const char *name_str = vals[2].present ? vals[2].val.str : NULL;
+    const bool dry_run = vals[3].val.flag;
+
+    if (!dry_run && (!output_path || !*output_path)) {
+        fprintf(stderr, "Error: Missing --output (required unless --dry-run)\n");
+        fprintf(stderr, "Usage: nmo resource remove -o <output> [--index <n> | --name <name>] [--dry-run] <nmo-file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (!index_str && !name_str) {
+        fprintf(stderr, "Error: Specify --index or --name to identify the resource\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    if (r.pos_count < 1) {
+        fprintf(stderr, "Error: Expected <nmo-file>\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    const char *nmo_file = r.pos_args[r.pos_count - 1];
+
+    /* Open NMO session (use init_with_file for both paths to ensure
+     * consistent file resolution between dry-run and actual mode) */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, nmo_file, global);
+    if (rc) return rc;
+
+    /* Find resource */
+    uint32_t count = 0;
+    nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+
+    uint32_t res_index = 0;
+    const nmo_included_file_t *res = NULL;
+
+    if (index_str) {
+        uint32_t idx;
+        if (!nmo_tool_parse_u32_dec(index_str, &idx)) {
+            fprintf(stderr, "Error: Invalid index '%s'\n", index_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (idx >= count) {
+            fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+        }
+        res_index = idx;
+        res = &files[idx];
+    } else {
+        for (uint32_t i = 0; i < count; ++i) {
+            if (files[i].name && strcmp(files[i].name, name_str) == 0) {
+                res_index = i;
+                res = &files[i];
+                break;
+            }
+        }
+        if (!res) {
+            fprintf(stderr, "Error: Resource '%s' not found\n", name_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+        }
+    }
+
+    const char *res_name = res->name ? res->name : "";
+    uint32_t res_size = res->size;
+    uint32_t res_owner_count = (uint32_t)res->owner_ids.count;
+
+    if (dry_run) {
+        if (c.is_json) {
+            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+            yyjson_mut_val *data = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_bool(doc, data, "dry_run", true);
+            yyjson_mut_obj_add_uint(doc, data, "index", res_index);
+            nmo_cli_json_add_str_safe(doc, data, "name", res_name);
+            yyjson_mut_obj_add_uint(doc, data, "size", res_size);
+            yyjson_mut_obj_add_uint(doc, data, "owner_count", res_owner_count);
+            yyjson_mut_obj_add_uint(doc, data, "total_count", count);
+            nmo_cmd_ctx_json_end(&c, doc, data, "resource.remove");
+        } else {
+            fprintf(c.out, "Would remove resource:\n");
+            char idx_buf[32];
+            snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
+            nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
+            nmo_cli_print_kv(c.out, "Name", *res_name ? res_name : "-", 12, c.colorize);
+            char size_buf[32];
+            snprintf(size_buf, sizeof(size_buf), "%u", res_size);
+            nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
+            char own_buf[32];
+            snprintf(own_buf, sizeof(own_buf), "%u", res_owner_count);
+            nmo_cli_print_kv(c.out, "Owners", own_buf, 12, c.colorize);
+            fprintf(c.out, "\n(dry run, no changes made)\n");
+        }
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+
+    /* Remove */
+    int rm_rc = nmo_session_remove_included_file(c.session, res_index);
+    if (rm_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to remove resource: %s\n", nmo_error_string(rm_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* Save */
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+    if (save_rc != NMO_OK) {
+        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
+    }
+
+    /* Get new count after removal */
+    uint32_t new_count = 0;
+    (void)nmo_session_get_included_files(c.session, &new_count);
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "index", res_index);
+        nmo_cli_json_add_str_safe(doc, data, "name", res_name);
+        yyjson_mut_obj_add_uint(doc, data, "size", res_size);
+        yyjson_mut_obj_add_uint(doc, data, "before_count", count);
+        yyjson_mut_obj_add_uint(doc, data, "after_count", new_count);
+        yyjson_mut_obj_add_str(doc, data, "output", output_path);
+        nmo_cmd_ctx_json_end(&c, doc, data, "resource.remove");
+    } else {
+        fprintf(c.out, "Removed resource:\n");
+        char idx_buf[32];
+        snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
+        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
+        nmo_cli_print_kv(c.out, "Name", *res_name ? res_name : "-", 12, c.colorize);
+        char cnt_buf[32];
+        snprintf(cnt_buf, sizeof(cnt_buf), "%u -> %u", count, new_count);
+        nmo_cli_print_kv(c.out, "Count", cnt_buf, 12, c.colorize);
+        fprintf(c.out, "\nSaved to: %s\n", output_path);
+    }
+
+    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * resource info
+ * ============================================================================ */
+
+static const char *detect_format(const uint8_t *data, uint32_t size) {
+    if (size >= 5 && data[0] == 'C' && data[1] == 'K') {
+        return "CK";
+    }
+    if (size >= 8 &&
+        data[0] == 0x89 && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' &&
+        data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A) {
+        return "PNG";
+    }
+    if (size >= 2 && data[0] == 'B' && data[1] == 'M') {
+        return "BMP";
+    }
+    if (size >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+        return "JPEG";
+    }
+    if (size >= 4 && data[0] == 'D' && data[1] == 'D' && data[2] == 'S' && data[3] == ' ') {
+        return "DDS";
+    }
+    if (size >= 12 &&
+        data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' &&
+        data[8] == 'W' && data[9] == 'A' && data[10] == 'V' && data[11] == 'E') {
+        return "WAV";
+    }
+    return "unknown";
+}
+
+int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--index", "-i", NMO_OPT_STRING, "Resource index (in NMO)"},
+        {"--name",  "-n", NMO_OPT_STRING, "Resource name (in NMO)"},
+    };
+    nmo_opt_val_t vals[2];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *index_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *name_str = vals[1].present ? vals[1].val.str : NULL;
+
+    bool from_nmo = (index_str != NULL || name_str != NULL);
+
+    const uint8_t *payload = NULL;
+    uint32_t payload_size = 0;
+    uint8_t *file_data = NULL;
+    const char *res_name = NULL;
+    nmo_cmd_ctx_t c;
+    bool ctx_opened = false;
+
+    if (from_nmo) {
+        /* Open NMO, find resource */
+        int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+        if (rc) return rc;
+        ctx_opened = true;
+
+        uint32_t count = 0;
+        nmo_included_file_t *files = nmo_session_get_included_files(c.session, &count);
+        const nmo_included_file_t *res = NULL;
+
+        if (index_str) {
+            uint32_t idx;
+            if (!nmo_tool_parse_u32_dec(index_str, &idx)) {
+                fprintf(stderr, "Error: Invalid index '%s'\n", index_str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+            if (idx >= count) {
+                fprintf(stderr, "Error: Index %u out of range (count=%u)\n", idx, count);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+            }
+            res = &files[idx];
+        } else {
+            for (uint32_t i = 0; i < count; ++i) {
+                if (files[i].name && strcmp(files[i].name, name_str) == 0) {
+                    res = &files[i];
+                    break;
+                }
+            }
+            if (!res) {
+                fprintf(stderr, "Error: Resource '%s' not found\n", name_str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+            }
+        }
+
+        payload = (const uint8_t *)res->data;
+        payload_size = res->size;
+        res_name = res->name;
+    } else {
+        /* Read external file */
+        if (r.pos_count < 1) {
+            fprintf(stderr, "Error: Expected <file>\n");
+            fprintf(stderr, "Usage: nmo resource info [--index <n> | --name <name>] <file>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+
+        const char *disk_path = r.pos_args[0];
+        uint32_t fsize = 0;
+        if (read_file_to_memory(disk_path, &file_data, &fsize) != 0) {
+            return NMO_CLI_EXIT_IO_ERROR;
+        }
+        payload = file_data;
+        payload_size = fsize;
+        res_name = path_basename(disk_path);
+
+        /* Open a minimal context for output formatting */
+        int rc = nmo_cmd_ctx_init_no_file(&c, global);
+        if (rc) {
+            free(file_data);
+            return rc;
+        }
+        ctx_opened = true;
+    }
+
+    /* Detect format */
+    const char *format = "unknown";
+    char ck_sig[8];
+    ck_sig[0] = '\0';
+
+    if (payload && payload_size > 0) {
+        format = detect_format(payload, payload_size);
+        if (strcmp(format, "CK") == 0 && payload_size >= 5) {
+            snprintf(ck_sig, sizeof(ck_sig), "CK%.3s", (const char *)payload + 2);
+        }
+    }
+
+    /* Try to get image dimensions for supported formats */
+    int img_width = 0;
+    int img_height = 0;
+    int img_channels = 0;
+    bool has_dims = false;
+
+    if (payload && payload_size > 0 &&
+        (strcmp(format, "PNG") == 0 || strcmp(format, "BMP") == 0 ||
+         strcmp(format, "JPEG") == 0)) {
+        nmo_arena_t *tmp_arena = nmo_arena_create(NULL, 0);
+        if (tmp_arena) {
+            uint8_t *decoded = nmo_stbi_load_from_memory(
+                tmp_arena, payload, (int)payload_size,
+                &img_width, &img_height, &img_channels, 0);
+            if (decoded) {
+                has_dims = true;
+            }
+            nmo_arena_destroy(tmp_arena);
+        }
+    }
+
+    /* Output */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+
+        if (res_name) {
+            nmo_cli_json_add_str_safe(doc, data, "name", res_name);
+        }
+        yyjson_mut_obj_add_uint(doc, data, "size", payload_size);
+        yyjson_mut_obj_add_str(doc, data, "format", format);
+        if (ck_sig[0]) {
+            yyjson_mut_obj_add_str(doc, data, "ck_signature", ck_sig);
+        }
+        if (has_dims) {
+            yyjson_mut_obj_add_int(doc, data, "width", img_width);
+            yyjson_mut_obj_add_int(doc, data, "height", img_height);
+            yyjson_mut_obj_add_int(doc, data, "channels", img_channels);
+        }
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "resource.info");
+    } else {
+        nmo_cli_print_heading(c.out, "Resource Info", c.colorize);
+
+        if (res_name) {
+            nmo_cli_print_kv(c.out, "Name", res_name, 12, c.colorize);
+        }
+        char size_buf[32];
+        snprintf(size_buf, sizeof(size_buf), "%u", payload_size);
+        nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
+        nmo_cli_print_kv(c.out, "Format", format, 12, c.colorize);
+        if (ck_sig[0]) {
+            nmo_cli_print_kv(c.out, "CK Signature", ck_sig, 12, c.colorize);
+        }
+        if (has_dims) {
+            char dim_buf[64];
+            snprintf(dim_buf, sizeof(dim_buf), "%dx%d (%d channels)", img_width, img_height, img_channels);
+            nmo_cli_print_kv(c.out, "Dimensions", dim_buf, 12, c.colorize);
+        }
+    }
+
+    free(file_data);
+    if (ctx_opened) {
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    }
+    return NMO_CLI_EXIT_SUCCESS;
 }
 

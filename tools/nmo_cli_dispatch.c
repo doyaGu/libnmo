@@ -160,6 +160,19 @@ static void object_cycles_usage(FILE *out) {
     fprintf(out, "Detect circular references in the object graph using DFS.\n");
 }
 
+static void object_delete_usage(FILE *out) {
+    fprintf(out, "Usage: nmo object delete [options] <id>[,<id>,...] <file> -o <output>\n\n");
+    fprintf(out, "Delete objects from a file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <file>  Output file (required unless --dry-run)\n");
+    fprintf(out, "  -c, --class <name>   Filter by class (includes derived)\n");
+    fprintf(out, "  -n, --name <pat>     Filter by name wildcard pattern\n");
+    fprintf(out, "  -f, --filter <expr>  Filter by DSL expression\n");
+    fprintf(out, "  --cascade            Delete dependents (default: safe-detach)\n");
+    fprintf(out, "  --dry-run            Preview only, do not save\n");
+    fprintf(out, "  --strict             Fail if any ID not found\n");
+}
+
 static void debug_load_phases_usage(FILE *out) {
     fprintf(out, "Usage: nmo debug load-phases <file>\n\n");
     fprintf(out, "Show load pipeline phase details including reference resolution\n");
@@ -263,6 +276,44 @@ static void resource_extract_usage(FILE *out) {
     fprintf(out, "Entries marked metadata-only or with no payload are skipped.\n");
 }
 
+static void resource_import_usage(FILE *out) {
+    fprintf(out, "Usage: nmo resource import -o <output> [--name <name>] [--owner <ids>] <disk-file> <nmo-file>\n\n");
+    fprintf(out, "Import a file from disk as a new included resource.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -n, --name <name>      Resource name (default: basename of disk file)\n");
+    fprintf(out, "  --owner <ids>          Owner object IDs (comma-separated)\n");
+}
+
+static void resource_replace_usage(FILE *out) {
+    fprintf(out, "Usage: nmo resource replace -o <output> [--index <n> | --name <name>] <disk-file> <nmo-file>\n\n");
+    fprintf(out, "Replace the payload of an existing included resource.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required)\n");
+    fprintf(out, "  -i, --index <n>        Resource index\n");
+    fprintf(out, "  -n, --name <name>      Resource name\n");
+}
+
+static void resource_remove_usage(FILE *out) {
+    fprintf(out, "Usage: nmo resource remove -o <output> [--index <n> | --name <name>] [--dry-run] <nmo-file>\n\n");
+    fprintf(out, "Remove an included file from the NMO.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  -i, --index <n>        Resource index\n");
+    fprintf(out, "  -n, --name <name>      Resource name\n");
+    fprintf(out, "  --dry-run              Preview only, do not save\n");
+}
+
+static void resource_info_usage(FILE *out) {
+    fprintf(out, "Usage: nmo resource info [--index <n> | --name <name>] <file>\n\n");
+    fprintf(out, "Detect format and show metadata for a resource.\n");
+    fprintf(out, "If --index or --name is given, reads from NMO included files.\n");
+    fprintf(out, "Otherwise reads the positional file from disk.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -i, --index <n>        Resource index (in NMO)\n");
+    fprintf(out, "  -n, --name <name>      Resource name (in NMO)\n");
+}
+
 static void behavior_list_usage(FILE *out) {
     fprintf(out, "Usage: nmo behavior list <file>\n\n");
     fprintf(out, "List behavior objects in the file (CKBehavior-derived).\n");
@@ -311,6 +362,22 @@ static void parameter_dump_usage(FILE *out) {
     fprintf(out, "  nmo parameter dump 100 data/Balls.nmo\n");
     fprintf(out, "  nmo parameter dump --all data/Balls.nmo\n");
     fprintf(out, "  nmo parameter dump --all --type {guid} data/Balls.nmo\n");
+}
+
+static void parameter_set_usage(FILE *out) {
+    fprintf(out, "Usage: nmo parameter set <param-id> <value> <file> -o <output>\n");
+    fprintf(out, "       nmo parameter set --owner <beh-id> --name <name> <value> <file> -o <output>\n");
+    fprintf(out, "       nmo parameter set --owner <beh-id> --index <n> <value> <file> -o <output>\n");
+    fprintf(out, "       nmo parameter set --hex <param-id> <hex-value> <file> -o <output>\n");
+    fprintf(out, "       nmo parameter set --dry-run <param-id> <value> <file>\n\n");
+    fprintf(out, "Set a parameter value and save to a new file.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
+    fprintf(out, "  -b, --owner <id>       Owner behavior/object ID\n");
+    fprintf(out, "  -n, --name <name>      Parameter name within owner\n");
+    fprintf(out, "  -i, --index <n>        Parameter index within owner\n");
+    fprintf(out, "  --hex                  Value is raw hex bytes\n");
+    fprintf(out, "  --dry-run              Show old/new without saving\n");
 }
 
 static void type_class_tree_usage(FILE *out) {
@@ -506,6 +573,7 @@ static const nmo_cli_action_t object_actions[] = {
     {"impact", "imp", "Show deletion impact", nmo_cmd_object_impact, object_impact_usage, NULL, 0, NULL},
     {"orphans", "orp", "Find unreachable objects", nmo_cmd_object_orphans, object_orphans_usage, NULL, 0, NULL},
     {"cycles", "cyc", "Detect circular references", nmo_cmd_object_cycles, object_cycles_usage, NULL, 0, NULL},
+    {"delete", "del", "Delete objects", nmo_cmd_object_delete, object_delete_usage, NULL, 0, NULL},
 };
 
 /* behavior group actions */
@@ -526,6 +594,7 @@ static const nmo_cli_action_t parameter_actions[] = {
     {"list", "ls", "List parameters", nmo_cmd_parameter_list, parameter_list_usage, NULL, 0, NULL},
     {"show", "s", "Show parameter object", nmo_cmd_parameter_show, parameter_show_usage, NULL, 0, NULL},
     {"dump", "d", "Dump parameter with decoded value", nmo_cmd_parameter_dump, parameter_dump_usage, NULL, 0, NULL},
+    {"set", NULL, "Set parameter value", nmo_cmd_parameter_set, parameter_set_usage, NULL, 0, NULL},
 };
 
 /* resource group actions */
@@ -533,6 +602,10 @@ static const nmo_cli_action_t resource_actions[] = {
     {"list", "ls", "List resources", nmo_cmd_resource_list, resource_list_usage, NULL, 0, NULL},
     {"show", "s", "Show resource details", nmo_cmd_resource_show, resource_show_usage, NULL, 0, NULL},
     {"extract", "x", "Extract embedded resources", nmo_cmd_resource_extract, resource_extract_usage, NULL, 0, NULL},
+    {"import", "imp", "Import resource from disk", nmo_cmd_resource_import, resource_import_usage, NULL, 0, NULL},
+    {"replace", "rep", "Replace resource payload", nmo_cmd_resource_replace, resource_replace_usage, NULL, 0, NULL},
+    {"remove", "rm", "Remove included file", nmo_cmd_resource_remove, resource_remove_usage, NULL, 0, NULL},
+    {"info", NULL, "Detect resource format", nmo_cmd_resource_info, resource_info_usage, NULL, 0, NULL},
 };
 
 /* type group actions */

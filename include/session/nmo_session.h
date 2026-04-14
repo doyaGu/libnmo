@@ -499,6 +499,29 @@ NMO_API nmo_included_file_t *nmo_session_get_included_files(
     const nmo_session_t *session,
     uint32_t *out_count);
 
+/**
+ * @brief Replace payload of an existing included file.
+ *
+ * Arena-allocates new payload; preserves name and owners.
+ * Old data leaks into arena (freed on session destroy).
+ * Clears BORROWED flag so save pipeline serializes individually.
+ */
+NMO_API int nmo_session_replace_included_file(
+    nmo_session_t *session,
+    uint32_t index,
+    const void *new_data,
+    uint32_t new_size);
+
+/**
+ * @brief Remove an included file by index.
+ *
+ * Shifts subsequent entries down. Invalidates the shadow included-files
+ * blob so the save pipeline serializes entries individually.
+ */
+NMO_API int nmo_session_remove_included_file(
+    nmo_session_t *session,
+    uint32_t index);
+
 typedef struct nmo_runtime_load_stats {
     size_t total_objects;
     uint32_t flags;

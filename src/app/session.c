@@ -597,6 +597,65 @@ nmo_included_file_t *nmo_session_get_included_files(
     return (nmo_included_file_t *) session->included_files.data;
 }
 
+int nmo_session_replace_included_file(
+    nmo_session_t *session,
+    uint32_t index,
+    const void *new_data,
+    uint32_t new_size
+) {
+    if (session == NULL || index >= session->included_files.count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (new_size > 0 && new_data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_included_file_t *entry = (nmo_included_file_t *)nmo_arena_array_get(
+        &session->included_files, index);
+    if (entry == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    /* Arena-allocate new payload (old data leaks into arena, freed on destroy) */
+    void *payload = NULL;
+    if (new_size > 0) {
+        payload = nmo_arena_alloc(session->arena, new_size, 1);
+        if (payload == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(payload, new_data, new_size);
+    }
+
+    entry->data = payload;
+    entry->size = new_size;
+    /* Clear BORROWED flag so save pipeline serializes individually */
+    entry->attributes &= ~NMO_INCLUDED_FILE_ATTR_BORROWED;
+    return NMO_OK;
+}
+
+int nmo_session_remove_included_file(
+    nmo_session_t *session,
+    uint32_t index
+) {
+    if (session == NULL || index >= session->included_files.count) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_status_t rc = nmo_arena_array_remove(&session->included_files, index, NULL);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    /* Invalidate shadow blob — it still contains the removed file's data.
+     * Without this, the save pipeline's all_borrowed check would pass
+     * and write the stale shadow blob verbatim. */
+    if (session->shadow_storage != NULL) {
+        nmo_shadow_capture_included_files(session->shadow_storage, NULL, 0);
+    }
+
+    return NMO_OK;
+}
+
 /* High-level convenience API */
 
 /**

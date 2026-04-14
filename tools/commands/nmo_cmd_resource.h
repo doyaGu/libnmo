@@ -15,6 +15,10 @@ extern "C" {
 int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *global);
 int nmo_cmd_resource_extract(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *global);
+int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
 #ifdef __cplusplus
 }

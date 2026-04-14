@@ -23,10 +23,15 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_string.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/nmo_object_repository.h"
+#include "app/nmo_save.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 static int is_parameter_class(const nmo_type_registry_t *registry, nmo_class_id_t class_id) {
     if (!registry) {
@@ -913,5 +918,472 @@ int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+/* ============================================================================
+ * parameter set - Set a parameter value and save
+ *
+ *   nmo parameter set <param-id> <value> <file> -o <output>
+ *   nmo parameter set --owner <beh-id> --name "Speed" <value> <file> -o <output>
+ *   nmo parameter set --owner <beh-id> --index 2 <value> <file> -o <output>
+ *   nmo parameter set --hex <param-id> <hex-value> <file> -o <output>
+ *   nmo parameter set --dry-run <param-id> <value> <file>
+ * ============================================================================ */
+
+/**
+ * @brief Get mutable parameter base state from an object by class ID.
+ *
+ * Returns NULL for ParameterIn and ParameterOperation (no buffer data).
+ */
+static nmo_parameter_state_t *get_mutable_pstate(nmo_object_t *obj) {
+    void *raw = nmo_object_get_state(obj);
+    if (!raw) return NULL;
+
+    nmo_class_id_t cid = nmo_object_get_class_id(obj);
+    if (cid == NMO_CID_PARAMETER) {
+        return (nmo_parameter_state_t *)raw;
+    } else if (cid == NMO_CID_PARAMETEROUT) {
+        return &((nmo_parameterout_state_t *)raw)->base;
+    } else if (cid == NMO_CID_PARAMETERLOCAL) {
+        return &((nmo_parameterlocal_state_t *)raw)->base;
+    }
+    return NULL;
+}
+
+/**
+ * @brief Parse a hex string into a byte buffer.
+ * Accepts: "4142ff" or "41 42 ff" (spaces optional).
+ * @return Number of bytes written, or (size_t)-1 on error.
+ */
+static size_t parse_hex_bytes(const char *hex_str, uint8_t *out, size_t out_cap) {
+    size_t written = 0;
+    const char *p = hex_str;
+
+    while (*p) {
+        /* Skip whitespace */
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (!*p) break;
+
+        if (!isxdigit((unsigned char)p[0]) || !isxdigit((unsigned char)p[1])) {
+            return (size_t)-1;
+        }
+        if (written >= out_cap) {
+            return (size_t)-1;
+        }
+
+        unsigned int byte_val = 0;
+        if (sscanf(p, "%2x", &byte_val) != 1) {
+            return (size_t)-1;
+        }
+        out[written++] = (uint8_t)byte_val;
+        p += 2;
+    }
+    return written;
+}
+
+/**
+ * @brief Find a parameter by owner behavior + name.
+ *
+ * Searches the behavior's in_parameters, out_parameters, and local_parameters
+ * arrays.  ParameterIn objects are skipped (no buffer data).
+ */
+static nmo_object_t *find_param_by_owner_name(
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    nmo_object_t *owner_obj,
+    const char *param_name)
+{
+    const void *owner_state = nmo_object_get_state(owner_obj);
+    if (!owner_state) return NULL;
+
+    const nmo_behavior_state_t *bstate = (const nmo_behavior_state_t *)owner_state;
+
+    const nmo_array_t *arrays[] = {
+        &bstate->in_parameters,
+        &bstate->out_parameters,
+        &bstate->local_parameters,
+    };
+
+    for (int a = 0; a < 3; a++) {
+        const nmo_array_t *arr = arrays[a];
+        if (!arr->data || arr->count == 0) continue;
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
+        for (size_t i = 0; i < arr->count; i++) {
+            nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, ids[i]);
+            if (!pobj) continue;
+
+            nmo_class_id_t pcid = nmo_object_get_class_id(pobj);
+            if (pcid == NMO_CID_PARAMETERIN) continue;
+            if (!is_parameter_class(registry, pcid)) continue;
+
+            const char *pname = nmo_object_get_name(pobj);
+            if (pname && strcmp(pname, param_name) == 0) {
+                return pobj;
+            }
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Find a parameter by owner behavior + flat index.
+ *
+ * Index counts across out_parameters then local_parameters (skips
+ * in_parameters since they have no buffer data).
+ */
+static nmo_object_t *find_param_by_owner_index(
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *registry,
+    nmo_object_t *owner_obj,
+    uint32_t flat_index)
+{
+    const void *owner_state = nmo_object_get_state(owner_obj);
+    if (!owner_state) return NULL;
+
+    const nmo_behavior_state_t *bstate = (const nmo_behavior_state_t *)owner_state;
+
+    const nmo_array_t *arrays[] = {
+        &bstate->out_parameters,
+        &bstate->local_parameters,
+    };
+
+    uint32_t running = 0;
+    for (int a = 0; a < 2; a++) {
+        const nmo_array_t *arr = arrays[a];
+        if (!arr->data || arr->count == 0) continue;
+        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
+        for (size_t i = 0; i < arr->count; i++) {
+            nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, ids[i]);
+            if (!pobj) continue;
+            nmo_class_id_t pcid = nmo_object_get_class_id(pobj);
+            if (!is_parameter_class(registry, pcid)) continue;
+            if (pcid == NMO_CID_PARAMETERIN) continue;
+
+            if (running == flat_index) {
+                return pobj;
+            }
+            running++;
+        }
+    }
+    return NULL;
+}
+
+int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
+    static const nmo_opt_def_t opts[] = {
+        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        {"--owner",   "-b", NMO_OPT_STRING, "Owner behavior/object ID"},
+        {"--name",    "-n", NMO_OPT_STRING, "Parameter name within owner"},
+        {"--index",   "-i", NMO_OPT_UINT,   "Parameter index within owner"},
+        {"--hex",     NULL, NMO_OPT_FLAG,   "Value is raw hex bytes"},
+        {"--dry-run", NULL, NMO_OPT_FLAG,   "Show old/new without saving"},
+    };
+    enum { OPT_OUTPUT, OPT_OWNER, OPT_NAME, OPT_INDEX, OPT_HEX, OPT_DRYRUN, OPT_COUNT };
+
+    nmo_opt_val_t vals[OPT_COUNT];
+    const char *pos[16];
+    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
+        return NMO_CLI_EXIT_ARG_ERROR;
+
+    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *owner_str   = vals[OPT_OWNER].present  ? vals[OPT_OWNER].val.str  : NULL;
+    const char *name_str    = vals[OPT_NAME].present   ? vals[OPT_NAME].val.str   : NULL;
+    bool has_index          = vals[OPT_INDEX].present;
+    uint32_t param_index    = has_index ? vals[OPT_INDEX].val.u : 0;
+    bool hex_mode           = vals[OPT_HEX].present && vals[OPT_HEX].val.flag;
+    bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+
+    if (!dry_run && !output_path) {
+        fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+
+    /* Determine positional args layout */
+    bool owner_mode = (owner_str != NULL);
+    const char *id_str = NULL;
+    const char *value_str = NULL;
+    const char *file_path = NULL;
+
+    if (owner_mode) {
+        /* --owner <beh-id> [--name|--index] <value> <file> */
+        if (r.pos_count < 2) {
+            fprintf(stderr, "Usage: nmo parameter set --owner <beh-id> "
+                    "[--name <name> | --index <n>] <value> <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        value_str = r.pos_args[0];
+        file_path = r.pos_args[r.pos_count - 1];
+    } else {
+        /* <param-id> <value> <file> */
+        if (r.pos_count < 3) {
+            fprintf(stderr, "Usage: nmo parameter set <param-id> <value> <file> -o <output>\n");
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        id_str    = r.pos_args[0];
+        value_str = r.pos_args[1];
+        file_path = r.pos_args[r.pos_count - 1];
+    }
+
+    /* Open session */
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init_with_file(&c, file_path, global);
+    if (rc) return rc;
+
+    if (!c.registry) {
+        fprintf(stderr, "Error: Type registry unavailable\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(c.session);
+    nmo_object_t *param_obj = NULL;
+
+    /* ---- Locate parameter ---- */
+    if (owner_mode) {
+        uint32_t owner_id;
+        if (!nmo_tool_parse_u32(owner_str, &owner_id)) {
+            fprintf(stderr, "Error: Invalid owner ID '%s'\n", owner_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        nmo_object_t *owner_obj = repo ? nmo_object_repository_find_by_id(repo, owner_id) : NULL;
+        if (!owner_obj) {
+            fprintf(stderr, "Error: Owner object #%u not found\n", owner_id);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+        }
+
+        if (name_str) {
+            param_obj = find_param_by_owner_name(repo, c.registry, owner_obj, name_str);
+            if (!param_obj) {
+                fprintf(stderr, "Error: No parameter named '%s' in owner #%u\n",
+                        name_str, owner_id);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+            }
+        } else if (has_index) {
+            param_obj = find_param_by_owner_index(repo, c.registry, owner_obj, param_index);
+            if (!param_obj) {
+                fprintf(stderr, "Error: Parameter index %u out of range in owner #%u\n",
+                        param_index, owner_id);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+            }
+        } else {
+            fprintf(stderr, "Error: --owner requires --name or --index\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    } else {
+        /* Direct ID mode */
+        uint32_t param_id;
+        if (!nmo_tool_parse_u32(id_str, &param_id)) {
+            fprintf(stderr, "Error: Invalid parameter ID '%s'\n", id_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        param_obj = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
+        if (!param_obj) {
+            fprintf(stderr, "Error: Object #%u not found\n", param_id);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+        }
+        nmo_class_id_t cid = nmo_object_get_class_id(param_obj);
+        if (!is_parameter_class(c.registry, cid)) {
+            fprintf(stderr, "Error: Object #%u is not a parameter (class %u)\n",
+                    param_id, cid);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        if (cid == NMO_CID_PARAMETERIN) {
+            fprintf(stderr, "Error: ParameterIn objects have no buffer data to set\n");
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+    }
+
+    /* ---- Get mutable parameter state ---- */
+    nmo_parameter_state_t *pstate = get_mutable_pstate(param_obj);
+    if (!pstate) {
+        fprintf(stderr, "Error: Cannot access parameter state\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    /* ---- Format old value ---- */
+    char *old_value_str = format_parameter_value(pstate,
+        (nmo_type_registry_t *)c.registry, c.session, NULL);
+
+    const char *param_name = nmo_object_get_name(param_obj);
+    const char *type_name = nmo_param_value_type_name(pstate,
+        (nmo_type_registry_t *)c.registry);
+
+    /* ---- Parse and write new value ---- */
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
+
+    if (hex_mode) {
+        /* Raw hex mode: write bytes directly into buffer */
+        if (pstate->mode != CKPARAM_MODE_BUFFER) {
+            fprintf(stderr, "Error: --hex only supported for MODE_BUFFER parameters\n");
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+
+        size_t max_len = strlen(value_str) / 2 + 1;
+        uint8_t *hex_buf = (uint8_t *)malloc(max_len);
+        if (!hex_buf) {
+            fprintf(stderr, "Error: Out of memory\n");
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        size_t hex_len = parse_hex_bytes(value_str, hex_buf, max_len);
+        if (hex_len == (size_t)-1) {
+            fprintf(stderr, "Error: Invalid hex string '%s'\n", value_str);
+            free(hex_buf);
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+
+        if (pstate->buffer_data.data && hex_len <= pstate->buffer_data.count) {
+            memcpy(pstate->buffer_data.data, hex_buf, hex_len);
+            if (hex_len < pstate->buffer_data.count) {
+                memset((uint8_t *)pstate->buffer_data.data + hex_len, 0,
+                       pstate->buffer_data.count - hex_len);
+            }
+        } else if (pstate->buffer_data.data && hex_len > pstate->buffer_data.count) {
+            fprintf(stderr, "Error: Hex data (%zu bytes) exceeds buffer size (%zu bytes)\n",
+                    hex_len, pstate->buffer_data.count);
+            free(hex_buf);
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        } else {
+            fprintf(stderr, "Error: No buffer data in parameter\n");
+            free(hex_buf);
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+        free(hex_buf);
+    } else if (pstate->mode == CKPARAM_MODE_BUFFER) {
+        /* Look up type descriptor for string parsing */
+        const nmo_type_descriptor_t *type_desc =
+            nmo_type_registry_find_by_guid(c.registry, pstate->type_guid);
+        if (!type_desc) {
+            fprintf(stderr, "Error: Unknown parameter type\n");
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        if (!pstate->buffer_data.data || pstate->buffer_data.count == 0) {
+            fprintf(stderr, "Error: Parameter has no buffer data\n");
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        size_t buf_size = type_desc->size > 0 ? type_desc->size : pstate->buffer_data.count;
+        uint8_t *tmp_buf = (uint8_t *)calloc(1, buf_size);
+        if (!tmp_buf) {
+            fprintf(stderr, "Error: Out of memory\n");
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        nmo_status_t parse_rc = nmo_type_value_from_string(
+            tmp_buf, type_desc, c.registry, value_str);
+        if (parse_rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to parse '%s' as %s: %s\n",
+                    value_str,
+                    type_name ? type_name : "unknown",
+                    nmo_error_string(parse_rc));
+            free(tmp_buf);
+            free(old_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+        }
+
+        size_t copy_len = buf_size < pstate->buffer_data.count
+                        ? buf_size : pstate->buffer_data.count;
+        memcpy(pstate->buffer_data.data, tmp_buf, copy_len);
+        free(tmp_buf);
+    } else if (pstate->mode == CKPARAM_MODE_OBJECT) {
+        /* Parse as object reference: #<id> or name */
+        if (value_str[0] == '#') {
+            uint32_t ref_id;
+            if (!nmo_tool_parse_u32(value_str + 1, &ref_id)) {
+                fprintf(stderr, "Error: Invalid object ID '%s'\n", value_str);
+                free(old_value_str);
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+            }
+            pstate->object_id = ref_id;
+        } else {
+            nmo_object_t *ref_obj = nmo_object_repository_find_by_name(repo, value_str);
+            if (!ref_obj) {
+                uint32_t ref_id;
+                if (nmo_tool_parse_u32(value_str, &ref_id)) {
+                    pstate->object_id = ref_id;
+                } else {
+                    fprintf(stderr, "Error: Object '%s' not found\n", value_str);
+                    free(old_value_str);
+                    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_NOT_FOUND);
+                }
+            } else {
+                pstate->object_id = nmo_object_get_id(ref_obj);
+            }
+        }
+    } else {
+        fprintf(stderr, "Error: Unsupported parameter mode '%s'\n",
+                nmo_param_mode_to_string(pstate->mode));
+        free(old_value_str);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
+    }
+
+    /* ---- Format new value ---- */
+    char *new_value_str = format_parameter_value(pstate,
+        (nmo_type_registry_t *)c.registry, c.session, NULL);
+
+    /* ---- Output ---- */
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        if (!doc) {
+            free(old_value_str);
+            free(new_value_str);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "id", nmo_object_get_id(param_obj));
+        if (param_name && param_name[0])
+            nmo_cli_json_add_str_safe(doc, data, "name", param_name);
+        if (type_name)
+            nmo_cli_json_add_str_safe(doc, data, "type", type_name);
+        nmo_cli_json_add_str_safe(doc, data, "mode",
+            nmo_param_mode_to_string(pstate->mode));
+        if (old_value_str)
+            nmo_cli_json_add_str_safe(doc, data, "old_value", old_value_str);
+        if (new_value_str)
+            nmo_cli_json_add_str_safe(doc, data, "new_value", new_value_str);
+        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
+        if (!dry_run && output_path)
+            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
+
+        nmo_cmd_ctx_json_end(&c, doc, data, "parameter.set");
+    } else {
+        fprintf(c.out, "Parameter #%u", nmo_object_get_id(param_obj));
+        if (param_name && param_name[0])
+            fprintf(c.out, " (%s)", param_name);
+        fprintf(c.out, "\n");
+        if (type_name)
+            fprintf(c.out, "  Type:  %s\n", type_name);
+        fprintf(c.out, "  Old:   %s\n", old_value_str ? old_value_str : "(none)");
+        fprintf(c.out, "  New:   %s\n", new_value_str ? new_value_str : "(none)");
+
+        if (dry_run) {
+            fprintf(c.out, "  (dry run - not saved)\n");
+        }
+    }
+
+    /* ---- Save ---- */
+    if (!dry_run && output_path) {
+        nmo_save_options_t save_opts = nmo_save_options_default();
+        int save_rc = nmo_save_file(c.session, output_path, &save_opts);
+        if (save_rc != NMO_OK) {
+            fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+            exit_code = NMO_CLI_EXIT_IO_ERROR;
+        } else if (!c.is_json) {
+            fprintf(c.out, "Saved to: %s\n", output_path);
+        }
+    }
+
+    free(old_value_str);
+    free(new_value_str);
+    return nmo_cmd_ctx_done(&c, exit_code);
 }
 

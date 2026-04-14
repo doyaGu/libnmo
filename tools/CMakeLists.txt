@@ -34,6 +34,8 @@ add_executable(nmo_cli
     commands/nmo_cmd_file.c
     commands/nmo_cmd_chunk.c
     commands/nmo_cmd_object.c
+    commands/nmo_cmd_object_refs.c
+    commands/nmo_cmd_object_write.c
     commands/nmo_cmd_debug.c
     commands/nmo_cmd_repl.c
     commands/nmo_cmd_type.c
